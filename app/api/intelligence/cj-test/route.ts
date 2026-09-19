@@ -1,16 +1,21 @@
-﻿import { searchGoogleProducts } from "@/lib/sources/brightdata/client";
+﻿import { searchCJProducts } from "@/lib/sources/cj";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const result = await searchGoogleProducts("wireless earbuds");
+    const result = await searchCJProducts("wireless earbuds", {
+      page: 1,
+      size: 5,
+    });
 
     return Response.json({
       ok: true,
       query: result.query,
+      totalRecords: result.totalRecords,
+      totalPages: result.totalPages,
       productCount: result.products.length,
-      firstProducts: result.products.slice(0, 3),
+      products: result.products,
     });
   } catch (error) {
     return Response.json(

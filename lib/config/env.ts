@@ -47,3 +47,9 @@ export function getSupabasePublicConfig() {
 export function getSupabaseServiceRoleKey() {
   return process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? "";
 }
+
+export function getCJConfig() {
+  return {
+    apiKey: process.env.CJ_API_KEY?.trim() ?? "",
+  };
+}
