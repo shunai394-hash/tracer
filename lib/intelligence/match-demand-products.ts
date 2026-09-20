@@ -1,7 +1,7 @@
 import "server-only";
 
 import { classifyDemandIntent } from "@/lib/intelligence/classify-demand-intent";
-
+import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type DemandProductMatchResult = {
@@ -250,7 +250,11 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
 
     let intent = detectProductIntent(query);
 
-    if (!intent.isProduct && intent.reason === "no_product_signal") {
+    if (
+      !intent.isProduct &&
+      intent.reason === "no_product_signal" &&
+      isGeminiConfigured()
+    ) {
       try {
         const aiIntent = await classifyDemandIntent(query);
 

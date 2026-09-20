@@ -7,15 +7,44 @@ import { persistDemandCJProducts } from "@/lib/intelligence/persist-demand-cj-pr
 import { researchDemandCandidateWithCJ } from "@/lib/intelligence/research-demand-cj";
 import { scoreProductIntelligence } from "@/lib/intelligence/score-products";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
+import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
+import {
+  GeminiConfigError,
+  GeminiRequestError,
+  GeminiTimeoutError,
+} from "@/lib/ai/gemini/errors";
 
 export type PipelineStepResult = {
   name: string;
   ok: boolean;
+  skipped?: boolean;
+  retryable?: boolean;
   result?: unknown;
   error?: string;
 };
+
+function classifyFailure(error: unknown): {
+  retryable: boolean;
+  skippable: boolean;
+  message: string;
+} {
+  const message = error instanceof Error ? error.message : "Unknown error";
+  const geminiFailure =
+    error instanceof GeminiConfigError ||
+    error instanceof GeminiRequestError ||
+    error instanceof GeminiTimeoutError ||
+    /gemini|429|quota|rate limit/i.test(message);
+
+  return {
+    retryable:
+      geminiFailure ||
+      /timeout|temporar|econnreset|503|502|fetch failed/i.test(message),
+    skippable: geminiFailure,
+    message,
+  };
+}
 
 async function runStep(
   name: string,
@@ -23,13 +52,25 @@ async function runStep(
 ): Promise<PipelineStepResult> {
   try {
     const result = await fn();
-    return { name, ok: true, result };
+    const skipped =
+      result !== null &&
+      typeof result === "object" &&
+      "skipped" in result &&
+      (result as { skipped?: boolean }).skipped === true;
+
+    return { name, ok: true, skipped, result };
   } catch (error) {
+    const classified = classifyFailure(error);
     console.error(`[TRACER PIPELINE ${name}]`, error);
     return {
       name,
-      ok: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      ok: classified.skippable,
+      skipped: classified.skippable,
+      retryable: classified.retryable,
+      error: classified.message,
+      result: classified.skippable
+        ? { skipped: true, reason: "isolated_failure", retryable: classified.retryable }
+        : undefined,
     };
   }
 }
@@ -55,30 +96,92 @@ async function researchLimitedSupply(): Promise<unknown> {
   }
 
   if (!isGeminiConfigured()) {
-    return { skipped: true, reason: "gemini_not_configured", candidateId: candidate.id };
+    return {
+      skipped: true,
+      reason: "gemini_not_configured",
+      candidateId: candidate.id,
+      note: "CJ research uses Gemini for query ideation only; intelligence scoring continues without it",
+    };
   }
 
-  const researched = await researchDemandCandidateWithCJ(candidate.id);
-  const persisted = await persistDemandCJProducts(candidate.id, 1);
+  try {
+    const researched = await researchDemandCandidateWithCJ(candidate.id);
+    const persisted = await persistDemandCJProducts(candidate.id, 1);
+    return { researched, persisted };
+  } catch (error) {
+    const classified = classifyFailure(error);
+    if (classified.skippable) {
+      return {
+        skipped: true,
+        retryable: classified.retryable,
+        reason: "gemini_failed",
+        candidateId: candidate.id,
+        error: classified.message,
+      };
+    }
+    throw error;
+  }
+}
 
-  return { researched, persisted };
+async function inspectDemandObservations(): Promise<unknown> {
+  const supabase = createSupabaseAdminClient();
+  const { count, error } = await supabase
+    .from("demand_observations")
+    .select("id", { count: "exact", head: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return {
+    observations: count ?? 0,
+    source: "demand_observations",
+    note: "Demand rows are written by discovery; this step only verifies they remain queryable",
+  };
 }
 
 export async function runIntelligencePipeline(): Promise<{
   ok: boolean;
+  complete: boolean;
   steps: PipelineStepResult[];
 }> {
   const steps: PipelineStepResult[] = [];
 
   steps.push(await runStep("discovery", () => collectGoogleTrendsDemand()));
   steps.push(await runStep("normalize", () => normalizeProductIntelligence()));
+  steps.push(await runStep("identity", () => stampDemandCJIdentities()));
   steps.push(await runStep("match", () => matchDemandProductsByCategory()));
+  steps.push(await runStep("demand", () => inspectDemandObservations()));
   steps.push(await runStep("supply", () => researchLimitedSupply()));
-  steps.push(await runStep("intelligence", () => buildOpportunityIntelligence()));
+
+  const intelligence = await runStep("intelligence", () =>
+    buildOpportunityIntelligence(),
+  );
+  steps.push(intelligence);
   steps.push(await runStep("score", () => scoreProductIntelligence()));
+  steps.push(
+    await runStep("test_ready", async () => {
+      if (!intelligence.ok) {
+        return {
+          skipped: true,
+          reason: "intelligence_step_failed",
+          retryable: intelligence.retryable === true,
+        };
+      }
+
+      const result = intelligence.result as { testReady?: number } | undefined;
+      return {
+        testReady: result?.testReady ?? 0,
+        note: "TEST_READY is produced only after the data quality gate",
+      };
+    }),
+  );
+
+  const blockingFailed = steps.some((step) => !step.ok && !step.skipped);
 
   return {
-    ok: steps.every((step) => step.ok),
+    ok: !blockingFailed,
+    complete: steps.every((step) => step.ok),
     steps,
   };
 }

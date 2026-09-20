@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { OpportunityListItem } from "@/lib/intelligence/opportunity-store";
 import {
+  formatConfidenceLabel,
   formatMoney,
   formatScore,
 } from "@/lib/intelligence/format-display";
@@ -9,9 +10,13 @@ import { StartTestButton } from "@/components/start-test-button";
 function ScoreCell({
   label,
   value,
+  confidence,
+  evidence,
 }: {
   label: string;
   value: number | null;
+  confidence: string;
+  evidence?: string;
 }) {
   return (
     <div className="border border-white/5 px-3 py-2">
@@ -19,13 +24,47 @@ function ScoreCell({
         {label}
       </p>
       <p className="mt-1 text-xl text-zinc-100">{formatScore(value)}</p>
+      <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-400/80">
+        Confidence: {formatConfidenceLabel(confidence)}
+      </p>
       {value === null ? (
         <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-amber-400/80">
           unknown
         </p>
       ) : null}
+      {evidence ? (
+        <p className="mt-1 text-[11px] leading-5 text-zinc-500">{evidence}</p>
+      ) : null}
     </div>
   );
+}
+
+function evidenceLine(
+  evidence: unknown[],
+  id: string,
+): string | undefined {
+  const item = evidence.find((entry) => {
+    if (!entry || typeof entry !== "object") return false;
+    return (entry as { id?: string }).id === id;
+  }) as
+    | {
+        source?: string;
+        observedAt?: string | null;
+        value?: unknown;
+        metric?: string;
+      }
+    | undefined;
+
+  if (!item) return undefined;
+
+  const parts = [
+    item.source,
+    item.metric,
+    item.value === null || item.value === undefined ? null : String(item.value),
+    item.observedAt ? `Observed: ${item.observedAt.slice(0, 10)}` : null,
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(" / ") : undefined;
 }
 
 export function OpportunityCard({
@@ -33,14 +72,8 @@ export function OpportunityCard({
 }: {
   opportunity: OpportunityListItem;
 }) {
-  const metadata = opportunity.metadata;
-  const demandDetail = {
-    searchGrowth: metadata.search_growth,
-    socialSignal: metadata.social_signal,
-    reviewVelocity: metadata.review_velocity,
-    sourceCount: metadata.source_count,
-    freshness: metadata.observation_freshness_hours,
-  };
+  const demandEvidence = evidenceLine(opportunity.evidence, "demand");
+  const priceEvidence = evidenceLine(opportunity.evidence, "market_price");
 
   return (
     <article className="border border-cyan-500/15 bg-zinc-950/70 p-5">
@@ -59,7 +92,7 @@ export function OpportunityCard({
         )}
         <div className="min-w-0 flex-1">
           <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400/80">
-            {opportunity.sellabilityState}
+            TEST PRIORITY · {opportunity.lifecycleStatus} · {opportunity.sellabilityState}
           </p>
           <h2 className="mt-1 truncate text-lg text-zinc-50">
             <Link
@@ -70,15 +103,44 @@ export function OpportunityCard({
             </Link>
           </h2>
           <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.16em] text-zinc-500">
-            テスト優先度 / confidence {opportunity.overallConfidence === null ? "unknown" : `${Math.round(opportunity.overallConfidence * 100)}%`}
+            Opportunity score {formatScore(opportunity.opportunityScore)} · overall
+            confidence {formatConfidenceLabel(opportunity.confidenceLabels.overall)}
           </p>
+          {opportunity.judgment ? (
+            <p className="mt-2 text-sm text-zinc-300">{opportunity.judgment}</p>
+          ) : null}
         </div>
       </div>
 
+      {opportunity.missing.length > 0 ? (
+        <div className="mt-4 border border-amber-400/20 bg-amber-400/5 px-3 py-2">
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-amber-300">
+            NEEDS_DATA
+          </p>
+          <p className="mt-1 text-xs leading-5 text-amber-100/80">
+            {opportunity.missing.join(" · ")}
+          </p>
+        </div>
+      ) : null}
+
       <div className="mt-4 grid grid-cols-3 gap-2">
-        <ScoreCell label="Demand" value={opportunity.demandScore} />
-        <ScoreCell label="Profit" value={opportunity.profitScore} />
-        <ScoreCell label="Timing" value={opportunity.timingScore} />
+        <ScoreCell
+          label="Demand"
+          value={opportunity.demandScore}
+          confidence={opportunity.confidenceLabels.demand}
+          evidence={demandEvidence}
+        />
+        <ScoreCell
+          label="Profit"
+          value={opportunity.profitScore}
+          confidence={opportunity.confidenceLabels.price}
+          evidence={priceEvidence}
+        />
+        <ScoreCell
+          label="Timing"
+          value={opportunity.timingScore}
+          confidence={opportunity.confidenceLabels.overall}
+        />
       </div>
 
       <section className="mt-5">
@@ -88,7 +150,11 @@ export function OpportunityCard({
         {opportunity.whyNow.length > 0 ? (
           <ul className="mt-2 space-y-1 text-sm leading-6 text-zinc-300">
             {opportunity.whyNow.map((item) => (
-              <li key={`${item.field}-${item.statement}`}>・{item.statement}</li>
+              <li key={`${item.field}-${item.statement}`}>
+                ・{item.statement}
+                {item.source ? ` / ${item.source}` : ""}
+                {item.observedAt ? ` / ${item.observedAt.slice(0, 10)}` : ""}
+              </li>
             ))}
           </ul>
         ) : (
@@ -101,14 +167,33 @@ export function OpportunityCard({
       <section className="mt-5 grid gap-4 sm:grid-cols-2">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-500">
-            Profit
+            Estimated profit
           </p>
           {opportunity.profitCalculable ? (
             <ul className="mt-2 space-y-1 text-sm text-zinc-300">
-              <li>販売価格 {formatMoney(opportunity.marketPrice, opportunity.marketCurrency)}</li>
-              <li>仕入れ {formatMoney(opportunity.sourceCost, opportunity.sourceCurrency)}</li>
               <li>
-                想定粗利 {formatMoney(opportunity.contributionProfit, opportunity.marketCurrency)}
+                観測市場価格{" "}
+                {formatMoney(opportunity.marketPrice, opportunity.marketCurrency)}
+              </li>
+              <li>
+                仕入れ {formatMoney(opportunity.sourceCost, opportunity.sourceCurrency)}
+              </li>
+              <li>
+                推定粗利{" "}
+                {formatMoney(
+                  opportunity.estimatedContributionProfit ??
+                    opportunity.contributionProfit,
+                  opportunity.marketCurrency,
+                )}
+              </li>
+              <li>
+                実測粗利{" "}
+                {opportunity.actualContributionProfit === null
+                  ? "unknown"
+                  : formatMoney(
+                      opportunity.actualContributionProfit,
+                      opportunity.marketCurrency,
+                    )}
               </li>
             </ul>
           ) : (
@@ -117,7 +202,7 @@ export function OpportunityCard({
         </div>
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-500">
-            Risk
+            Risk / unknown
           </p>
           {opportunity.risks.length > 0 ? (
             <ul className="mt-2 space-y-1 text-sm text-zinc-400">
@@ -133,33 +218,14 @@ export function OpportunityCard({
 
       <details className="mt-5 border-t border-white/5 pt-4">
         <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-500">
-          Demand / Profit / Timing の根拠
+          Dimension confidence
         </summary>
-        <div className="mt-3 grid gap-3 text-xs leading-6 text-zinc-400 sm:grid-cols-3">
-          <div>
-            <p className="text-zinc-200">Demand</p>
-            <p>search growth: {String(demandDetail.searchGrowth ?? "unknown")}</p>
-            <p>social signal: {String(demandDetail.socialSignal ?? "unknown")}</p>
-            <p>review velocity: {String(demandDetail.reviewVelocity ?? "unknown")}</p>
-            <p>source count: {String(demandDetail.sourceCount ?? "unknown")}</p>
-            <p>freshness hours: {String(demandDetail.freshness ?? "unknown")}</p>
-          </div>
-          <div>
-            <p className="text-zinc-200">Profit</p>
-            <p>market price: {formatMoney(opportunity.marketPrice, opportunity.marketCurrency)}</p>
-            <p>source cost: {formatMoney(opportunity.sourceCost, opportunity.sourceCurrency)}</p>
-            <p>currency: {opportunity.currencyConfidence ?? "unknown"}</p>
-            <p>
-              contribution: {opportunity.profitCalculable
-                ? formatMoney(opportunity.contributionProfit, opportunity.marketCurrency)
-                : "計算不能"}
+        <div className="mt-3 grid gap-2 text-xs text-zinc-400 sm:grid-cols-4">
+          {Object.entries(opportunity.confidenceLabels).map(([key, value]) => (
+            <p key={key}>
+              {key}: {formatConfidenceLabel(value)}
             </p>
-          </div>
-          <div>
-            <p className="text-zinc-200">Timing</p>
-            <p>state: {opportunity.sellabilityState}</p>
-            <p>test status: {opportunity.latestTestStatus ?? "none"}</p>
-          </div>
+          ))}
         </div>
       </details>
 

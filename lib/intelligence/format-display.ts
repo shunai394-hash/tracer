@@ -24,6 +24,14 @@ export function formatMoney(
   }
 }
 
+export function formatConfidenceLabel(value: string | null | undefined): string {
+  if (value === "high" || value === "medium" || value === "low") {
+    return value;
+  }
+
+  return "unknown";
+}
+
 export function formatConfidence(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return "unknown";

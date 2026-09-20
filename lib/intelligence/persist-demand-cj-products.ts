@@ -139,13 +139,16 @@ export async function persistDemandCJProducts(
 
     identitiesStamped += 1;
 
-    if (relevance.status === "rejected_noise") {
+    if (
+      relevance.status === "rejected_noise" ||
+      relevance.status === "identity_unconfirmed"
+    ) {
       const stamp = await supabase
         .from("demand_cj_products")
         .update({
           product_id: null,
           identity_confidence: relevance.score,
-          identity_status: "rejected_noise",
+          identity_status: relevance.status,
           identity_rationale: relevance.rationale,
           identity_metadata: relevance.signals,
           updated_at: new Date().toISOString(),

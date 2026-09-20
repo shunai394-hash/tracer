@@ -83,7 +83,26 @@ export type SellabilityState =
   | "TEST_READY"
   | "REJECTED";
 
-export type ProvenanceKind = "observed" | "assumption" | "derived";
+export type OpportunityLifecycleStatus =
+  | "DISCOVERED"
+  | "VALIDATING"
+  | "TEST_READY"
+  | "TESTING"
+  | "MEASURED"
+  | "LEARNING"
+  | "PAUSED"
+  | "REJECTED"
+  | "ARCHIVED";
+
+export type ConfidenceLabel = "high" | "medium" | "low" | "unknown";
+
+export type ProvenanceKind =
+  | "observed"
+  | "assumption"
+  | "derived"
+  | "estimated"
+  | "imported"
+  | "manual";
 
 export type ProvenanceEntry = {
   field: string;
@@ -99,6 +118,7 @@ export type WhyNowItem = {
   field: string;
   source: string;
   observedAt?: string | null;
+  evidenceId?: string;
 };
 
 export type OpportunityRisk = {

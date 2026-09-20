@@ -38,7 +38,7 @@ export default async function IntelligencePage() {
       </p>
       <h1 className="mt-3 text-3xl text-zinc-50">商機と販売テスト優先度</h1>
       <p className="mt-4 max-w-2xl text-sm leading-6 text-zinc-400">
-        スコアは「勝ち商品」の断定ではありません。実データがある場合だけ、今テストする理由を示します。
+        スコアは「勝ち商品」の断定ではありません。並び順は TEST PRIORITY です。
         不足している値は 0 点ではなく unknown です。
       </p>
 

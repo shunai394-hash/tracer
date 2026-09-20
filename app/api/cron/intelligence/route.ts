@@ -25,7 +25,8 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       ok: true,
-      complete: result.ok,
+      complete: result.complete,
+      isolated: result.ok,
       steps: result.steps,
     });
   } catch (error) {

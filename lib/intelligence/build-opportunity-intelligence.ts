@@ -27,6 +27,9 @@ import {
   scoreFromKnown,
   verifySellabilityInvariants,
 } from "@/lib/intelligence/sellability";
+import { toConfidenceLabel, weakerLabel, confidenceJudgment } from "@/lib/intelligence/confidence-label";
+import { deriveLifecycleStatus } from "@/lib/intelligence/lifecycle";
+import { evidenceRecord } from "@/lib/intelligence/evidence";
 
 type JsonMap = Record<string, unknown>;
 
@@ -227,6 +230,7 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
     existingResult,
     testsResult,
     resultsResult,
+    failuresResult,
   ] = await Promise.all([
     supabase
       .from("product_offers")
@@ -249,7 +253,7 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
       .select("id, query, category"),
     supabase
       .from("opportunity_intelligence")
-      .select("id, product_id, first_test_ready_at, latest_test_status"),
+      .select("id, product_id, first_test_ready_at, latest_test_status, lifecycle_status, proposed_test_price, created_at, first_discovered_at"),
     supabase
       .from("sales_tests")
       .select("id, opportunity_id, status, started_at, completed_at"),
@@ -258,6 +262,7 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
       .select(
         "test_id, orders, revenue, contribution_profit, roas, measurement_kind",
       ),
+    supabase.from("opportunity_failures").select("opportunity_id"),
   ]);
 
   if (offersResult.error) throw new Error(offersResult.error.message);
@@ -268,6 +273,7 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
   if (existingResult.error) throw new Error(existingResult.error.message);
   if (testsResult.error) throw new Error(testsResult.error.message);
   if (resultsResult.error) throw new Error(resultsResult.error.message);
+  if (failuresResult.error) throw new Error(failuresResult.error.message);
 
   const offers = (offersResult.data ?? []) as OfferRow[];
   const matches = (matchesResult.data ?? []) as MatchRow[];
@@ -292,6 +298,9 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
     list.push(result);
     resultsByTest.set(result.test_id, list);
   }
+  const failureOpportunityIds = new Set(
+    (failuresResult.data ?? []).map((row) => row.opportunity_id as string),
+  );
 
   const offersByProduct = new Map<string, OfferRow[]>();
   for (const offer of offers) {
@@ -332,6 +341,8 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
     payload: Record<string, unknown>;
     imageUrl: string | null;
     state: SellabilityState;
+    lifecycle: string;
+    previousLifecycle: string | null;
   }> = [];
 
   for (const row of intelligenceRows) {
@@ -460,7 +471,10 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
     const identityRejected =
       productCj.some((item) => item.identity_status === "rejected_noise") &&
       productCj.every(
-        (item) => item.identity_status !== "linked" && item.identity_status !== null,
+        (item) =>
+          item.identity_status !== "linked" &&
+          item.identity_status !== "unlinked" &&
+          item.identity_status !== null,
       )
         ? true
         : metadata.identity_status === "rejected_noise";
@@ -478,11 +492,13 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
         : null;
 
     const rejectedByRelevance = relevance?.status === "rejected_noise";
+    const identityUnconfirmed = relevance?.status === "identity_unconfirmed";
     const identityConfidence =
       asNumber(row.identity_confidence) ?? relevance?.score ?? null;
     const identityConfirmed =
       !rejectedByRelevance &&
       !identityRejected &&
+      !identityUnconfirmed &&
       identityConfidence !== null &&
       identityConfidence >= 0.65;
 
@@ -741,6 +757,142 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
           new Date().toISOString()
         : (existingRow?.first_test_ready_at as string | null) ?? null;
 
+    const demandLabel = toConfidenceLabel(demand.confidence, demand.score !== null);
+    const identityLabel = rejectedByRelevance || identityRejected
+      ? "low"
+      : identityUnconfirmed
+        ? "low"
+        : toConfidenceLabel(identityConfidence, identityConfidence !== null);
+    const supplyLabel = toConfidenceLabel(
+      supplyScore === null ? null : 0.7,
+      sourceOffer !== null,
+    );
+    const priceLabel = weakerLabel(
+      marketOffer ? marketConfidence : "unknown",
+      sourceOffer ? sourceConfidence : "unknown",
+    );
+    const shippingLabel = profit.shippingUnknown ? "unknown" : "medium";
+    const competitionLabel = toConfidenceLabel(
+      competitionScore === null ? null : 0.65,
+      marketOffers.length > 0,
+    );
+    const creativeLabel = toConfidenceLabel(creative.confidence, Boolean(imageUrl));
+    const overallLabel = toConfidenceLabel(opportunity.confidence, opportunity.score !== null);
+
+    const reliableMarketPrices = marketOffers
+      .map((offer) => ({
+        price: asNumber(offer.price),
+        confidence: offerCurrencyConfidence(offer),
+      }))
+      .filter(
+        (item) =>
+          item.price !== null &&
+          (item.confidence === "high" || item.confidence === "medium"),
+      )
+      .map((item) => item.price as number);
+
+    const competitorCount = marketOffers.length > 0 ? marketOffers.length : null;
+    const competitorPriceMin =
+      reliableMarketPrices.length > 0 ? Math.min(...reliableMarketPrices) : null;
+    const competitorPriceMax =
+      reliableMarketPrices.length > 0 ? Math.max(...reliableMarketPrices) : null;
+
+    const retrievedAt = new Date().toISOString();
+    const evidence = [
+      evidenceRecord("demand", {
+        field: "demand",
+        metric: "search_volume",
+        value: demandValue,
+        source: demandSource ?? "none",
+        observedAt: latestSearch?.observed_at ?? null,
+        retrievedAt,
+        freshnessHours,
+        confidence: demandLabel,
+        kind: demandValue === null ? "unknown" : "observed",
+      }),
+      evidenceRecord("market_price", {
+        field: "price",
+        metric: "observed_market_price",
+        value: marketPrice,
+        source: marketOffer ? offerProvider(marketOffer) : "none",
+        sourceUrl: marketOffer?.image_url ? null : null,
+        observedAt: marketOffer?.observed_at ?? null,
+        retrievedAt,
+        freshnessHours: hoursSince(marketOffer?.observed_at ?? null),
+        confidence: marketOffer ? marketConfidence : "unknown",
+        kind: marketPrice === null ? "unknown" : "observed",
+      }),
+      evidenceRecord("source_cost", {
+        field: "supply",
+        metric: "source_cost",
+        value: sourceCost,
+        source: sourceOffer ? offerProvider(sourceOffer) : "none",
+        observedAt: sourceOffer?.observed_at ?? null,
+        retrievedAt,
+        freshnessHours: hoursSince(sourceOffer?.observed_at ?? null),
+        confidence: sourceOffer ? sourceConfidence : "unknown",
+        kind: sourceCost === null ? "unknown" : "observed",
+      }),
+      evidenceRecord("competition", {
+        field: "competition",
+        metric: "competitor_count",
+        value: competitorCount,
+        source: "product_offers",
+        retrievedAt,
+        confidence: competitionLabel,
+        kind: competitorCount === null ? "unknown" : "observed",
+      }),
+    ];
+
+    const calculations = [
+      {
+        field: "estimated_contribution_profit",
+        formula:
+          "selling_price - source_cost - shipping - platform_fee - payment_fee - ad_allowance - return_reserve - fx_reserve",
+        inputs: {
+          observed_market_price: marketPrice,
+          source_cost: sourceCost,
+          currency_confidence: weakerCurrency,
+        },
+        result: profit.contributionProfit,
+        kind: "estimated" as const,
+        calculable: profit.calculable,
+        reason: profit.incalculableReason,
+      },
+    ];
+
+    const hasActiveTest = relatedTests.some(
+      (test) => test.status === "started" || test.status === "measuring",
+    );
+    const lifecycle = deriveLifecycleStatus({
+      existingLifecycle: (existingRow?.lifecycle_status as string | null) ?? null,
+      sellabilityState: sellability.state,
+      hasActiveTest,
+      hasObservedResults: Boolean(latestObserved),
+      hasFailureLearning: existingRow?.id
+        ? failureOpportunityIds.has(existingRow.id as string)
+        : false,
+    });
+
+    const generatedExplanation = {
+      judgment: confidenceJudgment({ demand: demandLabel, price: priceLabel }),
+      why_now: whyNow.map((item) => ({
+        ...item,
+        evidenceId:
+          item.field === "demand"
+            ? "demand"
+            : item.field === "supply"
+              ? "source_cost"
+              : item.field === "competition"
+                ? "competition"
+                : item.field === "margin"
+                  ? "market_price"
+                  : undefined,
+      })),
+      cvr_assumption: false,
+      kind: "rule_based",
+    };
+
     const payload = {
       product_id: row.product_id,
       demand_score: clampScore(demand.score),
@@ -751,12 +903,23 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
       sellability_score: clampScore(sellability.score),
       creative_score: clampScore(creative.score),
       opportunity_score: clampScore(opportunity.score),
-      demand_confidence: clampUnit(demand.confidence),
-      timing_confidence: clampUnit(timing.confidence),
-      margin_confidence: clampUnit(profit.calculable ? 0.7 : 0),
-      supply_confidence: clampUnit(supplyScore === null ? 0 : 0.7),
-      overall_confidence: clampUnit(opportunity.confidence),
+      demand_confidence: clampUnit(demand.score === null ? null : demand.confidence),
+      timing_confidence: clampUnit(timing.score === null ? null : timing.confidence),
+      margin_confidence: clampUnit(profit.calculable ? 0.7 : null),
+      supply_confidence: clampUnit(supplyScore === null ? null : 0.7),
+      overall_confidence: clampUnit(
+        opportunity.score === null ? null : opportunity.confidence,
+      ),
+      demand_confidence_label: demandLabel,
+      identity_confidence_label: identityLabel,
+      supply_confidence_label: supplyLabel,
+      price_confidence_label: priceLabel,
+      shipping_confidence_label: shippingLabel,
+      competition_confidence_label: competitionLabel,
+      creative_confidence_label: creativeLabel,
+      overall_confidence_label: overallLabel,
       sellability_state: sellability.state,
+      lifecycle_status: lifecycle,
       ranking_priority: rankingPriority({
         state: sellability.state,
         opportunityScore: opportunity.score,
@@ -764,25 +927,49 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
         freshnessHours,
         supplyConfirmed: Boolean(sourceOffer),
       }),
-      why_now: whyNow,
+      why_now: generatedExplanation.why_now,
       risks,
       market_price: marketPrice,
       market_currency: marketCurrency,
       source_cost: sourceCost,
       source_currency: sourceCurrency,
       currency_confidence: weakerCurrency,
+      observed_market_price: marketPrice,
+      proposed_test_price: existingRow?.proposed_test_price ?? null,
+      actual_selling_price: asNumber(latestObserved?.revenue) === null ? null : null,
+      estimated_contribution_profit: profit.contributionProfit,
+      actual_contribution_profit: asNumber(latestObserved?.contribution_profit),
       contribution_profit: profit.contributionProfit,
       contribution_margin:
         profit.contributionMargin === null
           ? null
           : Number(Math.max(-9999.9999, Math.min(9999.9999, profit.contributionMargin)).toFixed(4)),
       profit_calculable: profit.calculable,
+      competitor_count: competitorCount,
+      competitor_price_min: competitorPriceMin,
+      competitor_price_max: competitorPriceMax,
+      marketplace_presence: marketOffers.length > 0,
+      social_presence: socialDemand.length > 0,
+      ad_presence: null,
+      review_count: asNumber(reviewDemand[0]?.value),
+      review_velocity: asNumber(reviewDemand[0]?.value),
+      evidence,
+      calculations,
+      generated_explanation: generatedExplanation,
+      data_quality: {
+        passed: sellability.state === "TEST_READY",
+        missing: sellability.missing,
+      },
+      first_discovered_at:
+        (existingRow?.first_discovered_at as string | null) ??
+        (existingRow?.created_at as string | null) ??
+        retrievedAt,
       image_url: imageUrl,
       product_name: row.normalized_title,
       first_test_ready_at: firstReady,
       latest_test_status: existingRow?.latest_test_status ?? null,
       metadata: {
-        scoring_version: "opportunity_v1",
+        scoring_version: "opportunity_v2",
         missing: sellability.missing,
         provenance,
         profit_lines: profit.lines,
@@ -799,6 +986,14 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
         source_offer_count: sourceOffers.length,
         identity_confidence: identityConfidence,
         identity_rejected: Boolean(identityRejected || rejectedByRelevance),
+        identity_unconfirmed: identityUnconfirmed,
+        price_kind: {
+          observed_market_price: marketPrice,
+          proposed_test_price: existingRow?.proposed_test_price ?? null,
+          actual_selling_price: null,
+          estimated_contribution_profit: profit.contributionProfit,
+          actual_contribution_profit: asNumber(latestObserved?.contribution_profit),
+        },
         measured: latestObserved
           ? {
               kind: "observed",
@@ -822,9 +1017,9 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
           video_fit: null,
           cvr_assumption: false,
         },
-        updated_at: new Date().toISOString(),
+        updated_at: retrievedAt,
       },
-      updated_at: new Date().toISOString(),
+      updated_at: retrievedAt,
     };
 
     computed.push({
@@ -832,6 +1027,8 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
       payload,
       imageUrl: imageUrl ?? null,
       state: sellability.state,
+      lifecycle,
+      previousLifecycle: (existingRow?.lifecycle_status as string | null) ?? null,
     });
   }
 
@@ -855,6 +1052,18 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
     upserted += 1;
     if (item.state === "TEST_READY") testReady += 1;
     if (item.state === "REJECTED") rejected += 1;
+
+    if (result.data?.id && item.lifecycle !== item.previousLifecycle) {
+      await supabase.from("opportunity_lifecycle_events").insert({
+        opportunity_id: result.data.id,
+        from_status: item.previousLifecycle,
+        to_status: item.lifecycle,
+        reason: "intelligence_rebuild",
+        evidence: {
+          sellability_state: item.state,
+        },
+      });
+    }
 
     if (item.imageUrl && result.data?.id) {
       await supabase.from("creative_variants").upsert(

@@ -103,9 +103,6 @@ export async function collectGoogleTrendsDemand() {
   const xml = new TextDecoder("utf-8").decode(bytes);
   const trends = extractItems(xml);
 
-  console.log("[TRACER TRENDS DEBUG] before DB title:", JSON.stringify(trends[0]?.title));
-  console.log("[TRACER TRENDS DEBUG] before DB chars:", Array.from(trends[0]?.title ?? "").map((c) => c.codePointAt(0)));
-
   if (trends.length === 0) {
     throw new Error("Google Trends returned no trend items");
   }
@@ -148,9 +145,6 @@ export async function collectGoogleTrendsDemand() {
 
     sourceId = insertResult.data.id;
   }
-
-  console.log("[TRACER TRENDS DEBUG] first title:", JSON.stringify(trends[0]?.title));
-  console.log("[TRACER TRENDS DEBUG] first title chars:", Array.from(trends[0]?.title ?? "").map((c) => c.codePointAt(0)));
 
   let inserted = 0;
 

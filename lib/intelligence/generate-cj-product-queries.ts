@@ -1,4 +1,4 @@
-﻿import { generateStructuredJson } from "@/lib/ai/gemini/client";
+﻿import { generateCachedStructuredJson } from "@/lib/ai/gemini/cache";
 
 type ProductQueryResponse = {
   product_queries?: string[];
@@ -8,7 +8,8 @@ export async function generateCJProductQueries(
   demandQuery: string,
   category: string | null,
 ): Promise<string[]> {
-  const result = await generateStructuredJson<ProductQueryResponse>({
+  const result = await generateCachedStructuredJson<ProductQueryResponse>({
+    cacheKey: `cj-queries:${demandQuery}:${category ?? ""}`,
     systemInstruction:
       "You convert consumer demand keywords into ecommerce product search keywords. Return ONLY valid JSON in exactly this format: {\"product_queries\":[\"keyword1\",\"keyword2\",\"keyword3\"]}. Generate up to 5 concrete physical-product search keywords suitable for CJdropshipping. Prefer English keywords because the marketplace catalog is primarily English. Do not return explanations.",
     prompt: JSON.stringify({

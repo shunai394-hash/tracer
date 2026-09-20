@@ -72,7 +72,7 @@ export function classifySellability(input: SellabilityInput): {
     return { state: "SELLABLE", score, missing };
   }
 
-  if (input.demandSufficient && !input.identityRejected) {
+  if (input.demandSufficient && input.identityConfirmed && !input.identityRejected) {
     return { state: "WATCH", score, missing };
   }
 
@@ -115,9 +115,30 @@ export function verifySellabilityInvariants(): {
     demandSufficient: true,
   });
 
+  const unconfirmed = classifySellability({
+    identityConfirmed: false,
+    identityRejected: false,
+    sourceOfferConfirmed: true,
+    priceCurrencyReliable: true,
+    supplyAvailable: true,
+    shippingKnownOrExplicitUnknown: true,
+    marketPriceAvailable: true,
+    imageAvailable: true,
+    marginCalculable: false,
+    productPagePossible: true,
+    creativePossible: true,
+    returnRiskAccounted: true,
+    demandSufficient: true,
+  });
+
   const cases = [
     { name: "complete_fixture_is_test_ready", expected: "TEST_READY" as const, actual: ready.state },
     { name: "noise_identity_rejected", expected: "REJECTED" as const, actual: noise.state },
+    {
+      name: "identity_unconfirmed_is_needs_data",
+      expected: "NEEDS_DATA" as const,
+      actual: unconfirmed.state,
+    },
   ];
 
   return {

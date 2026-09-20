@@ -5,7 +5,14 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { opportunityId?: string };
+    const body = (await request.json()) as {
+      opportunityId?: string;
+      hypothesis?: string;
+      channel?: string;
+      testPrice?: number;
+      budget?: number;
+      successCriteria?: Record<string, unknown>;
+    };
 
     if (!body.opportunityId) {
       return NextResponse.json(
@@ -14,7 +21,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const test = await startSalesTest(body.opportunityId);
+    const test = await startSalesTest(body.opportunityId, {
+      hypothesis: body.hypothesis,
+      channel: body.channel,
+      testPrice: body.testPrice,
+      budget: body.budget,
+      successCriteria: body.successCriteria,
+    });
 
     return NextResponse.json({
       ok: true,

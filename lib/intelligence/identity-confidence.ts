@@ -1,4 +1,8 @@
-export type IdentityStatus = "unlinked" | "linked" | "rejected_noise";
+export type IdentityStatus =
+  | "unlinked"
+  | "linked"
+  | "rejected_noise"
+  | "identity_unconfirmed";
 
 export type IdentityAssessment = {
   score: number;
@@ -212,7 +216,7 @@ export function assessDemandRelevance(args: {
   if (clamped < DEMAND_RELEVANCE_THRESHOLD) {
     return {
       score: clamped,
-      status: "rejected_noise",
+      status: "identity_unconfirmed",
       rationale: "Source product does not share enough identity with the demand query",
       signals,
     };
@@ -323,6 +327,15 @@ export function verifyIdentityInvariants(): {
         demandQuery: "toyota prius",
         demandCategory: "automobile",
         title: "Simple Car Carbon Fiber Key Cover",
+      }),
+    },
+    {
+      name: "weak_generic_accessory_unconfirmed",
+      expected: "identity_unconfirmed",
+      assessment: assessDemandRelevance({
+        demandQuery: "toyota prius",
+        demandCategory: "automobile",
+        title: "Generic Plastic Clip Set",
       }),
     },
     {
