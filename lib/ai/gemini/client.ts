@@ -1,4 +1,4 @@
-import "server-only";
+﻿import "server-only";
 
 import { getGeminiConfig } from "@/lib/config/env";
 import {
@@ -72,11 +72,16 @@ export async function generateStructuredJson<T>(
     const payload = (await response.json()) as GeminiGenerateContentResponse;
 
     if (!response.ok) {
-      throw new GeminiRequestError("Gemini request failed", response.status);
+      throw new GeminiRequestError(
+        `Gemini request failed: HTTP ${response.status} ${payload.error?.status ?? ""} ${payload.error?.message ?? ""}`.trim(),
+        response.status,
+      );
     }
 
     if (payload.error?.message) {
-      throw new GeminiRequestError("Gemini request failed");
+      throw new GeminiRequestError(
+        `Gemini request failed: ${payload.error.status ?? ""} ${payload.error.message}`.trim(),
+      );
     }
 
     const text = payload.candidates?.[0]?.content?.parts
@@ -105,3 +110,4 @@ export async function generateStructuredJson<T>(
     clearTimeout(timeout);
   }
 }
+

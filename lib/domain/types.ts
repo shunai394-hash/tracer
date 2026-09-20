@@ -73,3 +73,35 @@ export type Discovery = {
   createdAt: string;
   observationIds: string[];
 };
+
+export type CurrencyConfidence = "high" | "medium" | "low" | "unknown";
+
+export type SellabilityState =
+  | "NEEDS_DATA"
+  | "WATCH"
+  | "SELLABLE"
+  | "TEST_READY"
+  | "REJECTED";
+
+export type ProvenanceKind = "observed" | "assumption" | "derived";
+
+export type ProvenanceEntry = {
+  field: string;
+  kind: ProvenanceKind;
+  source?: string;
+  value?: unknown;
+  observedAt?: string | null;
+  note?: string;
+};
+
+export type WhyNowItem = {
+  statement: string;
+  field: string;
+  source: string;
+  observedAt?: string | null;
+};
+
+export type OpportunityRisk = {
+  code: string;
+  message: string;
+};

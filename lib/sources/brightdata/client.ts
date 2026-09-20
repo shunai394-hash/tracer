@@ -60,8 +60,10 @@ export function getBrightDataClient() {
   };
 }
 
-function decodeHtml(value: string): string {
-  const rupee = String.fromCharCode(0x20b9);
+function normalizeText(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
 
   return value
     .replace(/&amp;/gi, "&")
@@ -69,91 +71,160 @@ function decodeHtml(value: string): string {
     .replace(/&#39;/gi, "'")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&#8377;/gi, rupee)
-    .replace(/&#x20b9;/gi, rupee);
-}
-
-function normalizeText(value: string): string {
-  return decodeHtml(value)
-    .replace(/\u00c2/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function cleanPrice(value: string): string {
-  const rupee = String.fromCharCode(0x20b9);
+function normalizeUrl(value: unknown): string | null {
+  const text = normalizeText(value);
 
-  return normalizeText(value)
-    .replace(/\u00e2\u0082\u00b9/gi, rupee)
-    .replace(/\u00e2\u00b9/gi, rupee)
-    .replace(/^Current Price:\s*/i, "")
-    .replace(/\.\s*Was.*$/i, ".")
-    .trim();
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return new URL(text).toString();
+  } catch {
+    return null;
+  }
 }
 
-function extractProducts(html: string): BrightDataProductCandidate[] {
+function normalizePrice(value: unknown): string | null {
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const text = value.trim();
+
+  if (!text) {
+    return null;
+  }
+
+  return text;
+}
+
+function findFirstString(
+  record: Record<string, unknown>,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function extractShoppingProducts(
+  payload: unknown,
+): BrightDataProductCandidate[] {
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+
+  const root = payload as Record<string, unknown>;
+
+  let shopping: unknown = root.shopping;
+
+  if (!Array.isArray(shopping)) {
+    const body = root.body;
+
+    if (typeof body === "string") {
+      try {
+        const parsedBody = JSON.parse(body) as unknown;
+
+        if (
+          parsedBody &&
+          typeof parsedBody === "object" &&
+          Array.isArray(
+            (parsedBody as Record<string, unknown>).shopping,
+          )
+        ) {
+          shopping = (parsedBody as Record<string, unknown>).shopping;
+        }
+      } catch {
+        return [];
+      }
+    }
+  }
+
+  if (!Array.isArray(shopping)) {
+    return [];
+  }
+
   const products: BrightDataProductCandidate[] = [];
   const seen = new Set<string>();
 
-  const titlePattern =
-    /<div[^>]*\bgkQHve\b[^>]*>([\s\S]*?)<\/div>/gi;
+  for (const item of shopping) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
 
-  const matches = [...html.matchAll(titlePattern)];
-
-  console.log("[TRACER DEBUG] HTML length:", html.length);
-  console.log("[TRACER DEBUG] title matches:", matches.length);
-
-  for (let index = 0; index < matches.length; index++) {
-    const match = matches[index];
+    const record = item as Record<string, unknown>;
 
     const title = normalizeText(
-      (match[1] ?? "").replace(/<[^>]+>/g, " "),
+      findFirstString(record, [
+        "title",
+        "name",
+        "product_name",
+        "productName",
+      ]),
     );
 
     if (!title || seen.has(title)) {
       continue;
     }
 
-    const titleStart = match.index ?? 0;
-
-    const nextTitleStart =
-      index + 1 < matches.length
-        ? matches[index + 1].index ?? html.length
-        : html.length;
-
-    const contextStart = Math.max(0, titleStart - 1500);
-    const contextEnd = Math.min(
-      html.length,
-      nextTitleStart + 1500,
+    const price = normalizePrice(
+      record.price ??
+        record.current_price ??
+        record.currentPrice ??
+        record.price_text ??
+        record.priceText,
     );
 
-    const context = html.slice(contextStart, contextEnd);
-
-    const priceMatch = context.match(
-      /aria-label="[^"]*Current [Pp]rice:\s*([^"]+?)(?:\.\s*(?:And more prices|Was)|")/i,
+    const seller = normalizeText(
+      findFirstString(record, [
+        "seller",
+        "merchant",
+        "source",
+        "store",
+        "retailer",
+      ]),
     );
 
-    const sellerMatch = context.match(
-      /<span[^>]*class="[^"]*\bWJMUdc\b[^"]*"[^>]*>([^<]+)<\/span>/i,
+    const productUrl = normalizeUrl(
+      record.link ??
+        record.url ??
+        record.product_url ??
+        record.productUrl ??
+        record.href,
     );
 
-    const price = priceMatch
-      ? cleanPrice(priceMatch[1].trim())
-      : null;
-
-    const seller = sellerMatch
-      ? normalizeText(sellerMatch[1])
-      : null;
+    const imageUrl = normalizeUrl(
+      record.image ??
+        record.image_url ??
+        record.imageUrl ??
+        record.thumbnail ??
+        record.thumbnail_url ??
+        record.thumbnailUrl,
+    );
 
     seen.add(title);
 
     products.push({
       title,
       price,
-      seller,
-      productUrl: null,
-      imageUrl: null,
+      seller: seller || null,
+      productUrl,
+      imageUrl,
     });
 
     if (products.length >= 100) {
@@ -179,7 +250,9 @@ export async function searchGoogleProducts(
   }
 
   const url =
-    `https://www.google.com/search?q=${encodeURIComponent(normalizedQuery)}`;
+    `https://www.google.com/search?q=${encodeURIComponent(
+      normalizedQuery,
+    )}&tbm=shop&hl=ja&gl=jp&brd_json=1`;
 
   let response: Response;
 
@@ -195,8 +268,8 @@ export async function searchGoogleProducts(
         body: JSON.stringify({
           zone: client.zone,
           url,
-          format: "raw",
-          data_format: "html",
+          format: "json",
+          data_format: "json",
         }),
         cache: "no-store",
       },
@@ -219,40 +292,37 @@ export async function searchGoogleProducts(
 
   const rawBody = await response.text();
 
-  let html = rawBody;
+  let payload: unknown;
 
   try {
-    const parsed = JSON.parse(rawBody);
-
-    if (typeof parsed === "string") {
-      html = parsed;
-    } else if (
-      parsed &&
-      typeof parsed === "object"
-    ) {
-      const record = parsed as Record<string, unknown>;
-
-      if (typeof record.body === "string") {
-        html = record.body;
-      } else if (typeof record.content === "string") {
-        html = record.content;
-      } else if (typeof record.data === "string") {
-        html = record.data;
-      }
-    }
+    payload = JSON.parse(rawBody);
   } catch {
-    // Bright Data may return raw HTML directly.
+    throw new BrightDataRequestError(
+      "Bright Data returned invalid JSON",
+    );
   }
 
-  html = html
-    .replace(/\\u003c/gi, "<")
-    .replace(/\\u003e/gi, ">")
-    .replace(/\\u0026/gi, "&")
-    .replace(/\\u0022/gi, '"')
-    .replace(/\\u0027/gi, "'")
-    .replace(/\\"/g, '"')
-    .trim();
-  const products = extractProducts(html);
+  let innerPayload = payload;
+
+  if (
+    payload &&
+    typeof payload === "object" &&
+    typeof (payload as Record<string, unknown>).body === "string"
+  ) {
+    const bodyText = (
+      payload as Record<string, unknown>
+    ).body as string;
+
+    try {
+      innerPayload = JSON.parse(bodyText);
+    } catch {
+      // Bright Data may return the scraped response as plain text.
+      // Keep the original payload so downstream extraction can inspect it.
+      innerPayload = payload;
+    }
+  }
+
+  const products = extractShoppingProducts(innerPayload);
 
   return {
     query: normalizedQuery,

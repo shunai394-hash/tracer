@@ -16,8 +16,8 @@ export default function HomePage() {
           <span className="block text-cyan-200">AI Commerce Intelligence</span>
         </h1>
         <p className="mt-6 max-w-2xl text-base leading-7 text-zinc-400">
-          TRACER は商品発掘から、将来の無在庫販売自動化までをつなぐための観測基盤です。
-          いまは本番運用できる土台を優先しています。実データがない項目は、あるように見せません。
+          TRACER は、今この市場と商品をテストする理由があるかをデータで説明し、販売テストまでつなぐための観測基盤です。
+          実データがない項目は、あるように見せません。
         </p>
       </section>
 
@@ -30,10 +30,10 @@ export default function HomePage() {
           </p>
           <h2 className="mt-2 text-xl text-zinc-100">観測と実体を分ける</h2>
           <ol className="mt-4 space-y-3 text-sm leading-6 text-zinc-400">
-            <li>1. Product / Brand — 商品そのもの</li>
-            <li>2. Source / Observation — いつ、どこから見たか</li>
-            <li>3. Price / Demand / Supply — 観測から派生する市場面</li>
-            <li>4. Discovery — Gemini が提案する候補。まだ自動判定しない</li>
+            <li>1. World / Demand — 市場の動きを観測する</li>
+            <li>2. Product / Supply / Price — 売れる形に落とす</li>
+            <li>3. Profit / Sellability — 通貨と同一性が信頼できるものだけ計算する</li>
+            <li>4. Test / Learning — 実売を Opportunity に戻す</li>
           </ol>
         </section>
         <ConnectionPanel status={status} />

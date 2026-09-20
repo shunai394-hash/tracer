@@ -2,9 +2,12 @@
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const result = await searchCJProducts("wireless earbuds", {
+    const url = new URL(request.url);
+    const query = url.searchParams.get("q")?.trim() || "wireless earbuds";
+
+    const result = await searchCJProducts(query, {
       page: 1,
       size: 5,
     });

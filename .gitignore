@@ -41,3 +41,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local debug dumps
+tmp-*
+*.bak
+*.bak2
+supabase/.temp/
