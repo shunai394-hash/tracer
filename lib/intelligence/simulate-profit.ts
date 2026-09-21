@@ -36,6 +36,8 @@ export type ProfitSimulation = {
   fxReserve: number | null;
   contributionProfit: number | null;
   contributionMargin: number | null;
+  totalCost: number | null;
+  roi: number | null;
   shippingUnknown: boolean;
   lines: ProfitLine[];
   provenance: ProvenanceEntry[];
@@ -110,6 +112,8 @@ export function simulateContributionProfit(args: {
     fxReserve: null,
     contributionProfit: null,
     contributionMargin: null,
+    totalCost: null,
+    roi: null,
     shippingUnknown:
       args.internationalShipping == null && args.domesticShipping == null,
     lines: [],
@@ -179,6 +183,18 @@ export function simulateContributionProfit(args: {
   const contributionMargin = roundMoney(
     (contributionProfit / args.sellingPrice) * 100,
   );
+
+  const totalCost = roundMoney(
+    args.sourceCost +
+      internationalShipping +
+      domesticShipping +
+      platformFee +
+      paymentFee +
+      advertisingAllowance +
+      returnRefundReserve +
+      fxReserve,
+  );
+  const roi = totalCost > 0 ? Number((contributionProfit / totalCost).toFixed(4)) : null;
 
   const weaker =
     sellingConfidence === "medium" || sourceConfidence === "medium"
@@ -309,6 +325,13 @@ export function simulateContributionProfit(args: {
       note: "operating_assumption",
     },
     {
+      key: "total_cost",
+      label: "総コスト",
+      amount: totalCost,
+      currency: sellingCurrency,
+      kind: "assumption",
+    },
+    {
       key: "contribution_profit",
       label: "想定粗利",
       amount: contributionProfit,
@@ -317,6 +340,13 @@ export function simulateContributionProfit(args: {
       note: shippingUnknown
         ? "excludes_unknown_shipping"
         : "includes_assumed_fees",
+    },
+    {
+      key: "roi",
+      label: "ROI",
+      amount: roi,
+      currency: sellingCurrency,
+      kind: "assumption",
     },
   ];
 
@@ -335,6 +365,8 @@ export function simulateContributionProfit(args: {
     fxReserve,
     contributionProfit,
     contributionMargin,
+    totalCost,
+    roi,
     shippingUnknown,
     lines,
     provenance,
@@ -374,6 +406,19 @@ export function verifyProfitInvariants(): {
       name: "reliable_usd_calculated",
       expected: true,
       actual: healthy.calculable,
+    },
+    {
+      name: "roi_unknown_when_not_calculable",
+      expected: true,
+      actual: jpyLabeledUsd.roi === null && jpyLabeledUsd.totalCost === null,
+    },
+    {
+      name: "roi_computed_from_observed_costs",
+      expected: true,
+      actual:
+        healthy.roi !== null &&
+        healthy.totalCost !== null &&
+        healthy.totalCost > 0,
     },
   ];
 

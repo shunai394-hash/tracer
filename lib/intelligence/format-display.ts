@@ -32,6 +32,14 @@ export function formatConfidenceLabel(value: string | null | undefined): string 
   return "unknown";
 }
 
+export function formatUnits(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "unknown";
+  }
+
+  return `${Math.round(value)}個`;
+}
+
 export function formatConfidence(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return "unknown";

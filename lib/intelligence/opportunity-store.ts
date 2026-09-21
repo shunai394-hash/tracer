@@ -7,6 +7,12 @@ import type {
 } from "@/lib/domain/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { deriveFailureReasons } from "@/lib/intelligence/failure-learning";
+import { compareForecastToActual } from "@/lib/intelligence/forecast-learning";
+import { learnDemandVersusSales } from "@/lib/intelligence/demand-learning";
+import {
+  getLatestReorderForProduct,
+  type ReorderListItem,
+} from "@/lib/ordering/store";
 
 export type OpportunityListItem = {
   id: string;
@@ -53,6 +59,43 @@ export type OpportunityListItem = {
   currencyConfidence: string | null;
   latestTestStatus: string | null;
   opportunityScore: number | null;
+  selectionScore: number | null;
+  selectionEligible: boolean | null;
+  marketGapScore: number | null;
+  searchFitScore: number | null;
+  forecastUnits7d: number | null;
+  forecastUnits30d: number | null;
+  forecastUnits90d: number | null;
+  forecastUnits30dLow: number | null;
+  forecastUnits30dHigh: number | null;
+  forecastRevenue30d: number | null;
+  forecastProfit30d: number | null;
+  forecastMargin: number | null;
+  forecastConfidence: number | null;
+  forecastKind: string | null;
+  roi: number | null;
+  totalCost: number | null;
+  sellerCount: number | null;
+  sellerVelocity: number | null;
+  priceMedian: number | null;
+  stockoutRate: number | null;
+  supplyGap: boolean | null;
+  accountFitScore: number | null;
+  accountFitConfidence: number | null;
+  profitState: string | null;
+  filterState: string | null;
+  supplyScoreV3: number | null;
+  competitionScoreV3: number | null;
+  profitScoreV3: number | null;
+  forecastScoreV3: number | null;
+  forecastErrorUnits30d: number | null;
+  recommendationSummary: string | null;
+  recommendationReasons: Array<{
+    code: string;
+    statement: string;
+    field: string;
+    kind: string;
+  }>;
   metadata: Record<string, unknown>;
 };
 
@@ -167,11 +210,55 @@ function mapRow(row: Record<string, unknown>): OpportunityListItem {
     estimatedContributionProfit: asNumber(row.estimated_contribution_profit),
     actualContributionProfit: asNumber(row.actual_contribution_profit),
     competitorCount: asNumber(row.competitor_count),
+    selectionScore: asNumber(row.selection_score),
+    selectionEligible:
+      row.selection_eligible === true
+        ? true
+        : row.selection_eligible === false
+          ? false
+          : null,
+    marketGapScore: asNumber(row.market_gap_score),
+    searchFitScore: asNumber(row.search_fit_score),
+    forecastUnits7d: asNumber(row.forecast_units_7d),
+    forecastUnits30d: asNumber(row.forecast_units_30d),
+    forecastUnits90d: asNumber(row.forecast_units_90d),
+    roi: asNumber(row.roi),
+    totalCost: asNumber(row.total_cost),
+    sellerCount: asNumber(row.seller_count),
+    sellerVelocity: asNumber(row.seller_velocity),
+    priceMedian: asNumber(row.price_median),
+    stockoutRate: asNumber(row.stockout_rate),
+    supplyGap:
+      row.supply_gap === true ? true : row.supply_gap === false ? false : null,
+    accountFitScore: asNumber(row.account_fit_score),
+    accountFitConfidence: asNumber(row.account_fit_confidence),
+    profitState: typeof row.profit_state === "string" ? row.profit_state : null,
+    filterState: typeof row.filter_state === "string" ? row.filter_state : null,
+    supplyScoreV3: asNumber(row.supply_score_v3),
+    competitionScoreV3: asNumber(row.competition_score_v3),
+    profitScoreV3: asNumber(row.profit_score_v3),
+    forecastScoreV3: asNumber(row.forecast_score_v3),
+    forecastUnits30dLow: asNumber(row.forecast_units_30d_low),
+    forecastUnits30dHigh: asNumber(row.forecast_units_30d_high),
+    forecastRevenue30d: asNumber(row.forecast_revenue_30d),
+    forecastProfit30d: asNumber(row.forecast_profit_30d),
+    forecastMargin: asNumber(row.forecast_margin),
+    forecastConfidence: asNumber(row.forecast_confidence),
+    forecastKind: typeof row.forecast_kind === "string" ? row.forecast_kind : null,
+    forecastErrorUnits30d: asNumber(row.forecast_error_units_30d),
+    recommendationSummary:
+      typeof row.recommendation_summary === "string"
+        ? row.recommendation_summary
+        : null,
+    recommendationReasons: Array.isArray(row.recommendation_reasons)
+      ? (row.recommendation_reasons as OpportunityListItem["recommendationReasons"])
+      : [],
     metadata,
   };
 }
 
 export type OpportunityDetail = OpportunityListItem & {
+  reorder: ReorderListItem | null;
   calculations: unknown[];
   tests: Array<{
     id: string;
@@ -207,7 +294,7 @@ export async function listOpportunities(options?: {
   let query = supabase
     .from("opportunity_intelligence")
     .select(
-      "id, product_id, product_name, image_url, demand_score, margin_score, timing_score, opportunity_score, sellability_state, lifecycle_status, overall_confidence, demand_confidence_label, identity_confidence_label, supply_confidence_label, price_confidence_label, shipping_confidence_label, competition_confidence_label, creative_confidence_label, overall_confidence_label, why_now, risks, market_price, market_currency, source_cost, source_currency, contribution_profit, contribution_margin, profit_calculable, currency_confidence, latest_test_status, metadata, ranking_priority, generated_explanation, data_quality, evidence, estimated_contribution_profit, actual_contribution_profit, competitor_count",
+      "id, product_id, product_name, image_url, demand_score, margin_score, timing_score, opportunity_score, sellability_state, lifecycle_status, overall_confidence, demand_confidence_label, identity_confidence_label, supply_confidence_label, price_confidence_label, shipping_confidence_label, competition_confidence_label, creative_confidence_label, overall_confidence_label, why_now, risks, market_price, market_currency, source_cost, source_currency, contribution_profit, contribution_margin, profit_calculable, currency_confidence, latest_test_status, metadata, ranking_priority, generated_explanation, data_quality, evidence, estimated_contribution_profit, actual_contribution_profit, competitor_count, selection_score, selection_eligible, market_gap_score, search_fit_score, forecast_units_7d, forecast_units_30d, forecast_units_90d, forecast_units_30d_low, forecast_units_30d_high, forecast_revenue_30d, forecast_profit_30d, forecast_margin, forecast_confidence, forecast_kind, forecast_error_units_30d, recommendation_summary, recommendation_reasons, roi, total_cost, seller_count, seller_velocity, price_median, stockout_rate, supply_gap, account_fit_score, account_fit_confidence, profit_state, filter_state, supply_score_v3, competition_score_v3, profit_score_v3, forecast_score_v3",
     )
     .order("ranking_priority", { ascending: true })
     .limit(limit);
@@ -271,9 +358,11 @@ export async function getOpportunity(id: string): Promise<OpportunityDetail | nu
   if (eventsResult.error) throw new Error(eventsResult.error.message);
 
   const base = mapRow(data as Record<string, unknown>);
+  const reorder = await getLatestReorderForProduct(base.productId);
 
   return {
     ...base,
+    reorder,
     calculations: Array.isArray(data.calculations) ? data.calculations : [],
     tests: (testsResult.data ?? []).map((test) => ({
       id: String(test.id),
@@ -567,6 +656,7 @@ export async function recordSalesTestResult(
 
   const impressions = asNumber(payload.impressions);
   const clicks = asNumber(payload.clicks);
+  const productViews = asNumber(payload.product_views);
   const orders = asNumber(payload.orders);
   const revenue = asNumber(payload.revenue);
   const adSpend = asNumber(payload.ad_spend);
@@ -615,6 +705,7 @@ export async function recordSalesTestResult(
       impressions,
       clicks,
       ctr,
+      product_views: productViews,
       add_to_cart: addToCart,
       checkout,
       orders,
@@ -702,9 +793,106 @@ export async function recordSalesTestResult(
 
   const { data: current } = await supabase
     .from("opportunity_intelligence")
-    .select("lifecycle_status")
+    .select(
+      "lifecycle_status, product_id, forecast_units_30d, forecast_revenue_30d, forecast_profit_30d, demand_score, demand_trend, metadata",
+    )
     .eq("id", test.opportunity_id)
     .maybeSingle();
+
+  if (measurementKind === "observed") {
+    const { data: latestForecast } = await supabase
+      .from("product_sales_forecasts")
+      .select("id, units, revenue, contribution_profit, horizon_days")
+      .eq("opportunity_id", test.opportunity_id)
+      .eq("horizon_days", 30)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const predictedUnits =
+      asNumber(latestForecast?.units) ?? asNumber(current?.forecast_units_30d);
+    const predictedRevenue =
+      asNumber(latestForecast?.revenue) ?? asNumber(current?.forecast_revenue_30d);
+    const predictedProfit =
+      asNumber(latestForecast?.contribution_profit) ??
+      asNumber(current?.forecast_profit_30d);
+    const comparison = compareForecastToActual({
+      predictedUnits,
+      actualUnits: orders,
+      predictedRevenue,
+      actualRevenue: revenue,
+      predictedProfit,
+      actualProfit: contributionProfit,
+    });
+
+    if (comparison.comparable && current?.product_id) {
+      await supabase.from("product_forecast_errors").insert({
+        forecast_id: latestForecast?.id ?? null,
+        opportunity_id: test.opportunity_id,
+        product_id: current.product_id,
+        test_id: testId,
+        horizon_days: 30,
+        predicted_units: predictedUnits,
+        actual_units: orders,
+        error_units: comparison.errorUnits,
+        predicted_revenue: predictedRevenue,
+        actual_revenue: revenue,
+        error_revenue: comparison.errorRevenue,
+        predicted_profit: predictedProfit,
+        actual_profit: contributionProfit,
+        error_profit: comparison.errorProfit,
+        measurement_kind: measurementKind,
+        metadata: {
+          window_note: "compared_to_latest_30d_forecast",
+          error_pct: comparison.errorPct,
+        },
+      });
+
+      if (comparison.errorUnits !== null) {
+        opportunityUpdate.forecast_error_units_30d = comparison.errorUnits;
+      }
+    }
+
+    const metadata =
+      current?.metadata &&
+      typeof current.metadata === "object" &&
+      !Array.isArray(current.metadata)
+        ? (current.metadata as Record<string, unknown>)
+        : {};
+    const demandQuery =
+      typeof metadata.demand_query === "string" ? metadata.demand_query : null;
+    const learningNote = learnDemandVersusSales({
+      demandScore: asNumber(current?.demand_score),
+      demandTrend:
+        typeof current?.demand_trend === "string" ? current.demand_trend : null,
+      forecastUnits30d: predictedUnits,
+      actualUnits: orders,
+    });
+
+    await supabase.from("demand_sales_learning").insert({
+      opportunity_id: test.opportunity_id,
+      product_id: current?.product_id ?? null,
+      test_id: testId,
+      demand_query: demandQuery,
+      demand_score: asNumber(current?.demand_score),
+      demand_trend:
+        typeof current?.demand_trend === "string" ? current.demand_trend : null,
+      forecast_units_30d: predictedUnits,
+      actual_units: orders,
+      impressions,
+      clicks,
+      product_views: productViews,
+      add_to_cart: addToCart,
+      checkout,
+      orders,
+      revenue,
+      contribution_profit: contributionProfit,
+      learning_note: learningNote,
+      metadata: {
+        provenance: provenanceKind,
+      },
+    });
+  }
 
   await supabase
     .from("opportunity_intelligence")

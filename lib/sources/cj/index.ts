@@ -2,6 +2,7 @@
   CJConfigError,
   CJRequestError,
   searchCJProducts,
+  getCJProductDetail,
 } from "@/lib/sources/cj/client";
 
 export type {

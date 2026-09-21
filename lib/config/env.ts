@@ -53,3 +53,13 @@ export function getCJConfig() {
     apiKey: process.env.CJ_API_KEY?.trim() ?? "",
   };
 }
+
+export function getDropshipSupplierConfig() {
+  return {
+    cj: present(process.env.CJ_API_KEY),
+    hypersku: present(process.env.HYPERSKU_API_KEY),
+    dsers: present(process.env.DSERS_API_KEY),
+    zendrop: present(process.env.ZENDROP_API_KEY),
+    syncee: present(process.env.SYNCEE_API_KEY),
+  };
+}

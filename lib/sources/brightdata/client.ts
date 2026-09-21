@@ -329,3 +329,64 @@ export async function searchGoogleProducts(
     products,
   };
 }
+
+export async function fetchBrightDataPage(url: string): Promise<{
+  url: string;
+  html: string | null;
+  json: unknown;
+}> {
+  const client = getBrightDataClient();
+  const config = getBrightDataConfig();
+
+  let response: Response;
+  try {
+    response = await fetch("https://api.brightdata.com/request", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiToken}`,
+      },
+      body: JSON.stringify({
+        zone: client.zone,
+        url,
+        format: "raw",
+      }),
+      cache: "no-store",
+    });
+  } catch {
+    throw new BrightDataRequestError("Could not connect to Bright Data");
+  }
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => "");
+    throw new BrightDataRequestError(
+      `Bright Data returned HTTP ${response.status}${
+        message ? `: ${message.slice(0, 300)}` : ""
+      }`,
+    );
+  }
+
+  const rawBody = await response.text();
+  let json: unknown = null;
+  try {
+    json = JSON.parse(rawBody);
+  } catch {
+    json = null;
+  }
+
+  let html: string | null = null;
+  if (typeof rawBody === "string" && rawBody.includes("<")) {
+    html = rawBody;
+  }
+  if (json && typeof json === "object") {
+    const record = json as Record<string, unknown>;
+    if (typeof record.body === "string") {
+      html = record.body;
+    }
+    if (typeof record.html === "string") {
+      html = record.html;
+    }
+  }
+
+  return { url, html, json };
+}

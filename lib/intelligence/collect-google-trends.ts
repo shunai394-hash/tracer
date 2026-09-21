@@ -149,6 +149,7 @@ export async function collectGoogleTrendsDemand() {
   let inserted = 0;
 
   for (const trend of trends) {
+    console.log("[google-trends-title]", JSON.stringify(trend.title));
     const { error } = await supabase
       .from("demand_observations")
       .insert({
@@ -183,6 +184,8 @@ export async function collectGoogleTrendsDemand() {
     inserted,
   };
 }
+
+
 
 
 

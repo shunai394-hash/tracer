@@ -1,6 +1,7 @@
 ﻿import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { scoreFromKnown } from "@/lib/intelligence/sellability";
 
 type ScoreResult = {
   processed: number;
@@ -17,9 +18,18 @@ function round(value: number, digits = 4): number {
   return Math.round(value * factor) / factor;
 }
 
-function normalizePriceScore(price: number | null): number {
+function asNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function normalizePriceScore(price: number | null): number | null {
   if (price === null || !Number.isFinite(price) || price <= 0) {
-    return 0;
+    return null;
   }
 
   if (price <= 20) return 100;
@@ -30,54 +40,14 @@ function normalizePriceScore(price: number | null): number {
   return 25;
 }
 
-function normalizeSupplyScore(offerCount: number): number {
-  if (offerCount <= 0) return 0;
+function normalizeSupplyScore(offerCount: number): number | null {
+  if (offerCount <= 0) return null;
   if (offerCount === 1) return 100;
   if (offerCount === 2) return 85;
   if (offerCount === 3) return 70;
   if (offerCount <= 5) return 55;
   if (offerCount <= 10) return 40;
   return 25;
-}
-
-function calculateLegacyOpportunityScore(args: {
-  priceScore: number;
-  supplyScore: number;
-  identityConfidence: number;
-  priceConfidence: number;
-}): number {
-  const confidence =
-    ((args.identityConfidence + args.priceConfidence) / 2) * 100;
-
-  return round(
-    clamp(
-      args.priceScore * 0.35 +
-        args.supplyScore * 0.25 +
-        confidence * 0.4,
-    ) / 100,
-    4,
-  );
-}
-
-function calculateDemandOpportunityScore(args: {
-  demandScore: number;
-  priceScore: number;
-  supplyScore: number;
-  identityConfidence: number;
-  priceConfidence: number;
-}): number {
-  const confidence =
-    ((args.identityConfidence + args.priceConfidence) / 2) * 100;
-
-  return round(
-    clamp(
-      args.demandScore * 0.35 +
-        args.priceScore * 0.25 +
-        args.supplyScore * 0.15 +
-        confidence * 0.25,
-    ) / 100,
-    4,
-  );
 }
 
 export async function scoreProductIntelligence(): Promise<ScoreResult> {
@@ -122,48 +92,39 @@ export async function scoreProductIntelligence(): Promise<ScoreResult> {
       continue;
     }
 
-    const priceScore = normalizePriceScore(
-      typeof row.current_price === "number"
-        ? row.current_price
-        : row.current_price !== null
-          ? Number(row.current_price)
-          : null,
-    );
-
+    const priceScore = normalizePriceScore(asNumber(row.current_price));
     const supplyScore = normalizeSupplyScore(offerCount);
+    const identityConfidence = asNumber(row.identity_confidence);
+    const priceConfidence = asNumber(row.price_confidence);
+    const demandSignal = asNumber(row.demand_signal);
 
-    const identityConfidence =
-      typeof row.identity_confidence === "number"
-        ? row.identity_confidence
-        : Number(row.identity_confidence ?? 0);
-
-    const priceConfidence =
-      typeof row.price_confidence === "number"
-        ? row.price_confidence
-        : Number(row.price_confidence ?? 0);
-
-    const demandSignal =
-      typeof row.demand_signal === "number"
-        ? row.demand_signal
-        : row.demand_signal !== null
-          ? Number(row.demand_signal)
-          : null;
-
-    const opportunityScore =
-      demandSignal !== null && Number.isFinite(demandSignal)
-        ? calculateDemandOpportunityScore({
-            demandScore: clamp(demandSignal) * 100,
-            priceScore,
-            supplyScore,
-            identityConfidence: clamp(identityConfidence, 0, 1),
-            priceConfidence: clamp(priceConfidence, 0, 1),
-          })
-        : calculateLegacyOpportunityScore({
-            priceScore,
-            supplyScore,
-            identityConfidence: clamp(identityConfidence, 0, 1),
-            priceConfidence: clamp(priceConfidence, 0, 1),
-          });
+    const scored = scoreFromKnown([
+      {
+        score: demandSignal === null ? null : clamp(demandSignal) * 100,
+        weight: 0.28,
+        confidence: demandSignal === null ? 0 : 0.7,
+      },
+      {
+        score: identityConfidence === null ? null : clamp(identityConfidence, 0, 1) * 100,
+        weight: 0.18,
+        confidence: identityConfidence === null ? 0 : 0.75,
+      },
+      {
+        score: priceScore,
+        weight: 0.18,
+        confidence: priceScore === null ? 0 : priceConfidence ?? 0.5,
+      },
+      {
+        score: supplyScore,
+        weight: 0.16,
+        confidence: supplyScore === null ? 0 : 0.7,
+      },
+      {
+        score: priceConfidence === null ? null : clamp(priceConfidence, 0, 1) * 100,
+        weight: 0.2,
+        confidence: priceConfidence === null ? 0 : 0.6,
+      },
+    ]);
 
     const existingMetadata =
       row.metadata &&
@@ -175,21 +136,23 @@ export async function scoreProductIntelligence(): Promise<ScoreResult> {
     const { error: updateError } = await supabase
       .from("product_intelligence")
       .update({
-        supply_signal: round(supplyScore / 100),
-        opportunity_score: opportunityScore,
+        supply_signal:
+          supplyScore === null ? null : round(supplyScore / 100),
+        opportunity_score:
+          scored.score === null ? null : round(scored.score / 100),
         metadata: {
           ...existingMetadata,
           offer_count: offerCount,
-          price_score: round(priceScore / 100),
-          supply_score: round(supplyScore / 100),
+          price_score: priceScore === null ? null : round(priceScore / 100),
+          supply_score: supplyScore === null ? null : round(supplyScore / 100),
           demand_score:
-            demandSignal !== null && Number.isFinite(demandSignal)
-              ? round(clamp(demandSignal))
-              : existingMetadata.demand_score ?? null,
-          scoring_version:
-            demandSignal !== null && Number.isFinite(demandSignal)
-              ? "v2"
-              : "v1",
+            demandSignal === null ? null : round(clamp(demandSignal)),
+          identity_score:
+            identityConfidence === null
+              ? null
+              : round(clamp(identityConfidence, 0, 1)),
+          scoring_version: "v3_selection",
+          unknown_not_zero: true,
         },
         updated_at: new Date().toISOString(),
       })

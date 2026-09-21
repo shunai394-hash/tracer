@@ -19,6 +19,7 @@ export function RecordResultsForm({ testId }: { testId: string }) {
     for (const key of [
       "impressions",
       "clicks",
+      "product_views",
       "add_to_cart",
       "checkout",
       "orders",
@@ -59,6 +60,7 @@ export function RecordResultsForm({ testId }: { testId: string }) {
       {[
         ["impressions", "Impressions"],
         ["clicks", "Clicks"],
+        ["product_views", "Product views"],
         ["add_to_cart", "Add to cart"],
         ["checkout", "Checkout"],
         ["orders", "Orders"],

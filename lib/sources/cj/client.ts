@@ -41,6 +41,9 @@ type CJProduct = {
   listedNum?: number;
   productType?: string;
   saleStatus?: string;
+  barcode?: string;
+  productBarCode?: string;
+  shippingCost?: string;
 };
 
 type CJProductResponse = {
@@ -68,6 +71,8 @@ export type CJProductCandidate = {
   listedNum: number | null;
   productType: string | null;
   saleStatus: string | null;
+  barcode: string | null;
+  shippingCost: string | null;
 };
 
 export type CJSearchResult = {
@@ -157,6 +162,8 @@ function normalizeProduct(product: CJProduct): CJProductCandidate | null {
       typeof product.listedNum === "number" ? product.listedNum : null,
     productType: product.productType?.trim() || null,
     saleStatus: product.saleStatus?.trim() || null,
+    barcode: product.barcode?.trim() || product.productBarCode?.trim() || null,
+    shippingCost: product.shippingCost?.trim() || null,
   };
 }
 
@@ -225,4 +232,34 @@ export async function searchCJProducts(
     totalPages: payload.data?.totalPages ?? 1,
     products,
   };
+}
+
+export async function getCJProductDetail(
+  pid: string,
+): Promise<CJProductCandidate | null> {
+  const token = await getAccessToken();
+  const params = new URLSearchParams({ pid });
+  const response = await fetch(
+    `https://developers.cjdropshipping.com/api2.0/v1/product/query?${params.toString()}`,
+    {
+      method: "GET",
+      headers: { "CJ-Access-Token": token },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new CJRequestError(
+      `CJ product query failed with HTTP ${response.status}`,
+    );
+  }
+
+  const payload = (await response.json()) as {
+    result?: boolean;
+    data?: CJProduct & { productList?: CJProduct[] };
+  };
+  const product = payload.data?.id
+    ? payload.data
+    : payload.data?.productList?.[0];
+  return product ? normalizeProduct(product) : null;
 }

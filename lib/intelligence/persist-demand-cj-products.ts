@@ -3,10 +3,10 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   assessCanonicalIdentity,
-  assessDemandRelevance,
   CANONICAL_LINK_THRESHOLD,
 } from "@/lib/intelligence/identity-confidence";
 import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence";
+import { scoreDemandCJSelection } from "@/lib/intelligence/cj-selection";
 
 type PersistDemandCJResult = {
   candidateId: string;
@@ -36,6 +36,7 @@ function number(value: unknown): number | null {
   }
   return null;
 }
+
 
 export async function persistDemandCJProducts(
   candidateId: string,
@@ -74,9 +75,18 @@ export async function persistDemandCJProducts(
   const rawDemandValue =
     typeof demandObservation.value === "number"
       ? demandObservation.value
-      : Number(demandObservation.value ?? 0);
+      : demandObservation.value !== null && demandObservation.value !== undefined
+        ? Number(demandObservation.value)
+        : null;
+  const observedDemandValue =
+    rawDemandValue !== null && Number.isFinite(rawDemandValue)
+      ? rawDemandValue
+      : null;
 
-  const demandSignal = round(clamp(rawDemandValue / 1000));
+  const demandSignal =
+    observedDemandValue !== null
+      ? round(clamp(observedDemandValue / 1000))
+      : null;
 
   const { data: rows, error: rowsError } = await supabase
     .from("demand_cj_products")
@@ -120,22 +130,28 @@ export async function persistDemandCJProducts(
   let identitiesStamped = 0;
   let persisted = 0;
 
-  for (const row of rows ?? []) {
+  const rankedRows = (rows ?? [])
+    .map((row) => {
+      const scored = scoreDemandCJSelection({
+        demandQuery: candidate.query,
+        demandCategory: candidate.category,
+        row,
+      });
+
+      return {
+        row,
+        relevance: scored.relevance,
+        selectionScore: scored.selectionScore,
+      };
+    })
+    .sort((a, b) => b.selectionScore - a.selectionScore);
+
+  for (const { row, relevance, selectionScore } of rankedRows) {
     const title = String(row.title ?? "").replace(/\s+/g, " ").trim();
 
     if (!title) {
       continue;
     }
-
-    const relevance = assessDemandRelevance({
-      demandQuery: candidate.query,
-      demandCategory: candidate.category,
-      title,
-      category: row.product_type,
-      sku: row.sku,
-      imageUrl: row.image_url,
-      cjQuery: row.cj_query,
-    });
 
     identitiesStamped += 1;
 
@@ -150,7 +166,10 @@ export async function persistDemandCJProducts(
           identity_confidence: relevance.score,
           identity_status: relevance.status,
           identity_rationale: relevance.rationale,
-          identity_metadata: relevance.signals,
+          identity_metadata: {
+            ...relevance.signals,
+            selection_score: selectionScore,
+          },
           updated_at: new Date().toISOString(),
         })
         .eq("id", row.id);
@@ -172,7 +191,10 @@ export async function persistDemandCJProducts(
           identity_confidence: relevance.score,
           identity_status: "unlinked",
           identity_rationale: relevance.rationale,
-          identity_metadata: relevance.signals,
+          identity_metadata: {
+            ...relevance.signals,
+            selection_score: selectionScore,
+          },
           updated_at: new Date().toISOString(),
         })
         .eq("id", row.id);
@@ -255,7 +277,10 @@ export async function persistDemandCJProducts(
         identity_rationale: linkedExisting
           ? "Linked to an existing canonical product after identity check"
           : "Created or reused a CJ-native canonical product after demand relevance check",
-        identity_metadata: relevance.signals,
+        identity_metadata: {
+          ...relevance.signals,
+          selection_score: selectionScore,
+        },
         updated_at: new Date().toISOString(),
       })
       .eq("id", row.id);
@@ -299,7 +324,7 @@ export async function persistDemandCJProducts(
           product_type: row.product_type,
           sale_status: row.sale_status,
           demand_observation_id: candidate.demand_observation_id,
-          demand_value: rawDemandValue,
+          demand_value: observedDemandValue,
           demand_signal: demandSignal,
           currency_confidence: currencyAssessment.confidence,
           currency_confidence_reasons: currencyAssessment.reasons,
@@ -344,7 +369,7 @@ export async function persistDemandCJProducts(
             candidate_id: candidate.id,
             demand_query: candidate.query,
             demand_observation_id: candidate.demand_observation_id,
-            demand_value: rawDemandValue,
+            demand_value: observedDemandValue,
             demand_signal: demandSignal,
             cj_product_id: row.cj_product_id,
             sku: row.sku,
@@ -401,3 +426,6 @@ export async function persistDemandCJProducts(
     identitiesStamped,
   };
 }
+
+
+

@@ -310,6 +310,8 @@ export function rankingPriority(args: {
   overallConfidence: number;
   freshnessHours: number | null;
   supplyConfirmed: boolean;
+  selectionScore?: number | null;
+  selectionEligible?: boolean;
 }): number {
   const stateRank: Record<SellabilityState, number> = {
     TEST_READY: 1,
@@ -325,10 +327,13 @@ export function rankingPriority(args: {
       ? 0
       : Math.round(Math.max(0, 200 - Math.min(Math.max(hours, 0), 200)));
   const supplyBoost = args.supplyConfirmed ? 50 : 0;
+  const gatePenalty = args.selectionEligible === false ? 400_000 : 0;
+  const rankScore = args.selectionScore ?? args.opportunityScore ?? 0;
 
   return Math.round(
-    (stateRank[args.state] ?? 4) * 1_000_000 -
-      Math.round(args.opportunityScore ?? 0) * 1_000 -
+    (stateRank[args.state] ?? 4) * 1_000_000 +
+      gatePenalty -
+      Math.round(rankScore) * 1_000 -
       Math.round((args.overallConfidence || 0) * 100) * 10 -
       freshnessBoost -
       supplyBoost,

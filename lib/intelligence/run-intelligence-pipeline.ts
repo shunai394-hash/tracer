@@ -1,4 +1,4 @@
-import "server-only";
+﻿import "server-only";
 
 import { collectGoogleTrendsDemand } from "@/lib/intelligence/collect-google-trends";
 import { matchDemandProductsByCategory } from "@/lib/intelligence/match-demand-products";
@@ -7,6 +7,11 @@ import { persistDemandCJProducts } from "@/lib/intelligence/persist-demand-cj-pr
 import { researchDemandCandidateWithCJ } from "@/lib/intelligence/research-demand-cj";
 import { scoreProductIntelligence } from "@/lib/intelligence/score-products";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
+import { persistDemandIntelligence } from "@/lib/intelligence/persist-demand-intelligence";
+import { persistReorderRecommendations } from "@/lib/ordering/persist-reorder";
+import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
+import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
+import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
@@ -106,7 +111,8 @@ async function researchLimitedSupply(): Promise<unknown> {
 
   try {
     const researched = await researchDemandCandidateWithCJ(candidate.id);
-    const persisted = await persistDemandCJProducts(candidate.id, 1);
+    // Persist only after demand-relevance ranking. Never take CJ fetch order.
+    const persisted = await persistDemandCJProducts(candidate.id, 3);
     return { researched, persisted };
   } catch (error) {
     const classified = classifyFailure(error);
@@ -147,11 +153,21 @@ export async function runIntelligencePipeline(): Promise<{
 }> {
   const steps: PipelineStepResult[] = [];
 
-  steps.push(await runStep("discovery", () => collectGoogleTrendsDemand()));
+  steps.push(
+    await runStep("bestsellers", () => persistMarketplaceBestsellers()),
+  );
+  steps.push(
+    await runStep("dropship", () => investigateDropshipForBestsellers()),
+  );
+  steps.push(
+    await runStep("sales_test_select", () => selectAndPublishSalesTests(3)),
+  );
+  steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand()));
   steps.push(await runStep("normalize", () => normalizeProductIntelligence()));
   steps.push(await runStep("identity", () => stampDemandCJIdentities()));
   steps.push(await runStep("match", () => matchDemandProductsByCategory()));
   steps.push(await runStep("demand", () => inspectDemandObservations()));
+  steps.push(await runStep("demand_analyze", () => persistDemandIntelligence()));
   steps.push(await runStep("supply", () => researchLimitedSupply()));
 
   const intelligence = await runStep("intelligence", () =>
@@ -159,6 +175,7 @@ export async function runIntelligencePipeline(): Promise<{
   );
   steps.push(intelligence);
   steps.push(await runStep("score", () => scoreProductIntelligence()));
+  steps.push(await runStep("ordering", () => persistReorderRecommendations()));
   steps.push(
     await runStep("test_ready", async () => {
       if (!intelligence.ok) {
@@ -185,3 +202,5 @@ export async function runIntelligencePipeline(): Promise<{
     steps,
   };
 }
+
+

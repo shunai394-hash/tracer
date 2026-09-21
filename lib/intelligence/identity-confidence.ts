@@ -1,4 +1,4 @@
-export type IdentityStatus =
+﻿export type IdentityStatus =
   | "unlinked"
   | "linked"
   | "rejected_noise"
@@ -42,7 +42,34 @@ const TOKEN_ALIASES: Record<string, string[]> = {
 };
 
 const UNRELATED_ACCESSORY_TERMS = [
+  "steering wheel cover",
+  "steering wheel",
+  "seat cover",
+  "seat cushion",
+  "car cushion",
+  "car organizer",
+  "storage bag",
+  "dashboard cover",
+  "dashboard",
+  "sunshade",
+  "sun shade",
+  "car charger",
+  "charger",
+  "aux cable",
+  "aux",
+  "usb adapter",
+  "key cover",
+  "keychain",
+  "key ring",
+  "car interior",
+  "interior accessories",
+  "exterior accessories",
   "hair",
+  "hair clip",
+  "hair tie",
+  "hair ring",
+  "hair rubber",
+  "hair band",
   "wig",
   "scrunchie",
   "headband",
@@ -180,6 +207,20 @@ export function assessDemandRelevance(args: {
   );
   const accessoryNoise = includesUnrelatedAccessory(args.title);
 
+  const normalizedDemand = normalizeIdentityText(args.demandQuery);
+  const normalizedTitle = normalizeIdentityText(args.title);
+  const automobileModelTerms = normalizedDemand
+    .split(" ")
+    .filter(
+      (token) =>
+        token.length >= 2 &&
+        !["toyota", "トヨタ", "honda", "ホンダ", "nissan", "日産", "mazda", "マツダ", "car", "vehicle", "automobile"].includes(token),
+    );
+
+  const automobileModelDirectMatch =
+    automobileDemand &&
+    automobileModelTerms.some((token) => normalizedTitle.includes(token));
+
   let score = 0;
   const signals: Record<string, unknown> = {
     titleOverlap,
@@ -189,6 +230,7 @@ export function assessDemandRelevance(args: {
     categoryOverlap,
     automobileDemand,
     accessoryNoise,
+    automobileModelDirectMatch,
     hasSku: Boolean(args.sku),
     hasImage: Boolean(args.imageUrl),
   };
@@ -204,6 +246,10 @@ export function assessDemandRelevance(args: {
   }
 
   score += Math.min(0.55, titleJaccard * 0.9 + titleOverlap * 0.12);
+
+  if (automobileModelDirectMatch) {
+    score += 0.25;
+  }
   if (titleOverlap >= 2) score += 0.2;
   if (brandOverlap > 0) score += 0.08;
   if (categoryOverlap > 0) score += 0.05;
@@ -391,3 +437,9 @@ export function verifyIdentityInvariants(): {
     cases,
   };
 }
+
+
+
+
+
+

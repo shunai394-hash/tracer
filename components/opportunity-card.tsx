@@ -1,9 +1,11 @@
 import Link from "next/link";
 import type { OpportunityListItem } from "@/lib/intelligence/opportunity-store";
 import {
+  formatConfidence,
   formatConfidenceLabel,
   formatMoney,
   formatScore,
+  formatUnits,
 } from "@/lib/intelligence/format-display";
 import { StartTestButton } from "@/components/start-test-button";
 
@@ -103,7 +105,8 @@ export function OpportunityCard({
             </Link>
           </h2>
           <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.16em] text-zinc-500">
-            Opportunity score {formatScore(opportunity.opportunityScore)} · overall
+            Selection {formatScore(opportunity.selectionScore)} · Opportunity{" "}
+            {formatScore(opportunity.opportunityScore)} · overall
             confidence {formatConfidenceLabel(opportunity.confidenceLabels.overall)}
           </p>
           {opportunity.judgment ? (
@@ -137,16 +140,110 @@ export function OpportunityCard({
           evidence={priceEvidence}
         />
         <ScoreCell
+          label="Search fit"
+          value={opportunity.searchFitScore}
+          confidence={
+            opportunity.searchFitScore === null
+              ? "unknown"
+              : opportunity.confidenceLabels.overall
+          }
+        />
+      </div>
+
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        <ScoreCell
+          label="Market gap"
+          value={opportunity.marketGapScore}
+          confidence={
+            opportunity.marketGapScore === null
+              ? "unknown"
+              : opportunity.confidenceLabels.competition
+          }
+        />
+        <ScoreCell
           label="Timing"
           value={opportunity.timingScore}
           confidence={opportunity.confidenceLabels.overall}
+        />
+        <ScoreCell
+          label="Selection"
+          value={opportunity.selectionScore}
+          confidence={
+            opportunity.selectionEligible === false
+              ? "low"
+              : opportunity.confidenceLabels.overall
+          }
+          evidence={
+            opportunity.selectionEligible === false
+              ? "選定対象外"
+              : opportunity.selectionEligible === true
+                ? "選定対象"
+                : undefined
+          }
         />
       </div>
 
       <section className="mt-5">
         <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-500">
-          Why now
+          AI recommendation
         </p>
+        {opportunity.recommendationSummary ? (
+          <p className="mt-2 text-sm text-zinc-300">
+            {opportunity.recommendationSummary}
+          </p>
+        ) : null}
+        {opportunity.recommendationReasons.length > 0 ? (
+          <ul className="mt-2 space-y-1 text-sm leading-6 text-zinc-300">
+            {opportunity.recommendationReasons.map((reason) => (
+              <li key={reason.code}>・{reason.statement}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-sm text-zinc-500">
+            実データから言える推薦理由はまだありません。
+          </p>
+        )}
+      </section>
+
+      <section className="mt-5 grid gap-4 sm:grid-cols-2">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-500">
+            AI sales forecast
+          </p>
+          <ul className="mt-2 space-y-1 text-sm text-zinc-300">
+            <li>7日 {formatUnits(opportunity.forecastUnits7d)}</li>
+            <li>
+              30日 {formatUnits(opportunity.forecastUnits30d)}
+              {opportunity.forecastUnits30dLow !== null &&
+              opportunity.forecastUnits30dHigh !== null
+                ? `（${formatUnits(opportunity.forecastUnits30dLow)}-${formatUnits(opportunity.forecastUnits30dHigh)}）`
+                : ""}
+            </li>
+            <li>90日 {formatUnits(opportunity.forecastUnits90d)}</li>
+            <li>
+              予測売上{" "}
+              {formatMoney(opportunity.forecastRevenue30d, opportunity.marketCurrency)}
+            </li>
+            <li>
+              予測粗利{" "}
+              {formatMoney(opportunity.forecastProfit30d, opportunity.marketCurrency)}
+            </li>
+            <li>
+              信頼度 {formatConfidence(opportunity.forecastConfidence)}
+              {opportunity.forecastKind ? ` / ${opportunity.forecastKind}` : ""}
+            </li>
+            <li>
+              予測誤差{" "}
+              {opportunity.forecastErrorUnits30d === null
+                ? "unknown"
+                : `${opportunity.forecastErrorUnits30d}個`}
+            </li>
+          </ul>
+        </div>
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-500">
+            Why now
+          </p>
         {opportunity.whyNow.length > 0 ? (
           <ul className="mt-2 space-y-1 text-sm leading-6 text-zinc-300">
             {opportunity.whyNow.map((item) => (
@@ -162,6 +259,7 @@ export function OpportunityCard({
             実データから言える「今やる理由」はまだありません。
           </p>
         )}
+        </div>
       </section>
 
       <section className="mt-5 grid gap-4 sm:grid-cols-2">

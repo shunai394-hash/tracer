@@ -16,8 +16,8 @@ export default function HomePage() {
           <span className="block text-cyan-200">AI Commerce Intelligence</span>
         </h1>
         <p className="mt-6 max-w-2xl text-base leading-7 text-zinc-400">
-          TRACER は、今この市場と商品をテストする理由があるかをデータで説明し、販売テストまでつなぐための観測基盤です。
-          実データがない項目は、あるように見せません。
+          TRACER は、いま市場で売れている商品を先に観測し、同一商品を無在庫で仕入れられるか確認してから販売テストします。
+          売れそうという推測では商品を選びません。確認できない項目は unknown です。
         </p>
       </section>
 
@@ -30,10 +30,11 @@ export default function HomePage() {
           </p>
           <h2 className="mt-2 text-xl text-zinc-100">観測と実体を分ける</h2>
           <ol className="mt-4 space-y-3 text-sm leading-6 text-zinc-400">
-            <li>1. World / Demand — 市場の動きを観測する</li>
-            <li>2. Product / Supply / Price — 売れる形に落とす</li>
-            <li>3. Profit / Sellability — 通貨と同一性が信頼できるものだけ計算する</li>
-            <li>4. Test / Learning — 実売を Opportunity に戻す</li>
+            <li>1. Bestsellers — Amazon / 楽天 / Yahoo の売れ筋を観測する</li>
+            <li>2. Identity / Supply — 識別子で同一商品を確定し、無在庫仕入を調べる</li>
+            <li>3. Profit — 確認できた費用だけで利益を計算する。不明費用は 0 円にしない</li>
+            <li>4. Shop — 最大3商品を公開し、カートと注文を実測する</li>
+            <li>5. Auxiliary — Trends / SNS は補助。売れ筋の代替にはしない</li>
           </ol>
         </section>
         <ConnectionPanel status={status} />

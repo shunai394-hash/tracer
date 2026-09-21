@@ -2,12 +2,15 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { OpportunityCard } from "@/components/opportunity-card";
+import { OrderActions } from "@/components/order-actions";
 import { RecordResultsForm } from "@/components/record-results-form";
 import { getOpportunity } from "@/lib/intelligence/opportunity-store";
 import {
+  formatConfidence,
   formatConfidenceLabel,
   formatMoney,
   formatScore,
+  formatUnits,
 } from "@/lib/intelligence/format-display";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 
@@ -16,12 +19,14 @@ export const dynamic = "force-dynamic";
 function Panel({
   title,
   children,
+  id,
 }: {
   title: string;
   children: ReactNode;
+  id?: string;
 }) {
   return (
-    <article className="border border-cyan-500/15 p-5">
+    <article id={id} className="border border-cyan-500/15 p-5">
       <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400">
         {title}
       </h2>
@@ -117,6 +122,59 @@ export default async function OpportunityDetailPage({
               {formatConfidenceLabel(opportunity.confidenceLabels.identity)}
             </p>
           </Panel>
+          <Panel id="forecast" title="FORECAST">
+            <ul>
+              <li>7日: {formatUnits(opportunity.forecastUnits7d)}</li>
+              <li>30日: {formatUnits(opportunity.forecastUnits30d)}</li>
+              <li>90日: {formatUnits(opportunity.forecastUnits90d)}</li>
+              <li>
+                予測売上:{" "}
+                {formatMoney(
+                  opportunity.forecastRevenue30d,
+                  opportunity.marketCurrency,
+                )}
+              </li>
+              <li>
+                予測粗利:{" "}
+                {formatMoney(
+                  opportunity.forecastProfit30d,
+                  opportunity.marketCurrency,
+                )}
+              </li>
+              <li>
+                信頼度: {formatConfidence(opportunity.forecastConfidence)}
+              </li>
+              <li>kind: {opportunity.forecastKind ?? "unknown"}</li>
+              <li>
+                誤差:{" "}
+                {opportunity.forecastErrorUnits30d === null
+                  ? "unknown"
+                  : `${opportunity.forecastErrorUnits30d}個`}
+              </li>
+            </ul>
+          </Panel>
+          <Panel title="SELECTION V3">
+            <ul>
+              <li>Demand {formatScore(opportunity.demandScore)}</li>
+              <li>Supply {formatScore(opportunity.supplyScoreV3)}</li>
+              <li>Competition {formatScore(opportunity.competitionScoreV3)}</li>
+              <li>Profit {formatScore(opportunity.profitScoreV3)}</li>
+              <li>Forecast {formatScore(opportunity.forecastScoreV3)}</li>
+              <li>Account fit {formatScore(opportunity.accountFitScore)}</li>
+              <li>Search {formatScore(opportunity.searchFitScore)}</li>
+              <li>Selection {formatScore(opportunity.selectionScore)}</li>
+              <li>Profit state {opportunity.profitState ?? "unknown"}</li>
+              <li>Filter {opportunity.filterState ?? "unknown"}</li>
+              <li>Seller count {opportunity.sellerCount ?? "unknown"}</li>
+              <li>ROI {opportunity.roi ?? "unknown"}</li>
+              <li>
+                Supply gap{" "}
+                {opportunity.supplyGap === null
+                  ? "unknown"
+                  : String(opportunity.supplyGap)}
+              </li>
+            </ul>
+          </Panel>
           <Panel title="CAN WE PROFIT">
             {opportunity.profitCalculable ? (
               <ul>
@@ -152,7 +210,7 @@ export default async function OpportunityDetailPage({
               ad presence: unknown unless observed
             </p>
           </Panel>
-          <Panel title="WHAT SHOULD WE TEST">
+          <Panel id="test" title="WHAT SHOULD WE TEST">
             {latestTest ? (
               <ul>
                 <li>Test ID: {latestTest.id}</li>
@@ -169,7 +227,7 @@ export default async function OpportunityDetailPage({
               <p>TEST_READY ではないため、不足データを先に埋める必要があります。</p>
             )}
           </Panel>
-          <Panel title="WHAT HAPPENED">
+          <Panel id="funnel" title="WHAT HAPPENED">
             {measured ? (
               <ul>
                 <li>kind: {String(measured.kind ?? "observed")}</li>
@@ -183,6 +241,55 @@ export default async function OpportunityDetailPage({
               <p>実測結果はまだありません。</p>
             )}
           </Panel>
+        </section>
+
+        <section className="mt-8 border border-cyan-500/15 p-5">
+          <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400">
+            Ordering
+          </h2>
+          {opportunity.reorder ? (
+            <>
+              <ul className="mt-3 space-y-1 text-sm text-zinc-300">
+                <li>現在庫 {opportunity.reorder.onHand ?? "unknown"}</li>
+                <li>30日販売予測 {formatUnits(opportunity.reorder.forecastUnits30d)}</li>
+                <li>Reorder Point {opportunity.reorder.reorderPoint ?? "unknown"}</li>
+                <li>推奨発注数 {opportunity.reorder.recommendedQty ?? "unknown"}</li>
+                <li>
+                  発注金額{" "}
+                  {formatMoney(
+                    opportunity.reorder.estimatedCost,
+                    opportunity.reorder.currency,
+                  )}
+                </li>
+                <li>
+                  予測利益{" "}
+                  {formatMoney(
+                    opportunity.reorder.estimatedProfit,
+                    opportunity.reorder.currency,
+                  )}
+                </li>
+                <li>
+                  Confidence {formatConfidence(opportunity.reorder.confidence)}
+                </li>
+                <li>発注状態 {opportunity.reorder.orderState}</li>
+              </ul>
+              {opportunity.reorder.rationale ? (
+                <p className="mt-3 text-sm text-zinc-400">
+                  {opportunity.reorder.rationale}
+                </p>
+              ) : null}
+              <div className="mt-4">
+                <OrderActions
+                  recommendationId={opportunity.reorder.id}
+                  orderState={opportunity.reorder.orderState}
+                />
+              </div>
+            </>
+          ) : (
+            <p className="mt-3 text-sm text-zinc-500">
+              自社在庫または予測が不足しているため、発注案はありません。
+            </p>
+          )}
         </section>
 
         <section className="mt-8 grid gap-6 lg:grid-cols-2">

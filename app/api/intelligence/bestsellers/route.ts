@@ -1,0 +1,31 @@
+import { NextResponse } from "next/server";
+import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
+import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
+import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
+export async function POST() {
+  try {
+    const bestsellers = await persistMarketplaceBestsellers();
+    const suppliers = await investigateDropshipForBestsellers();
+    const selected = await selectAndPublishSalesTests(3);
+
+    return NextResponse.json({
+      ok: true,
+      bestsellers,
+      suppliers,
+      selected,
+    });
+  } catch (error) {
+    console.error("[TRACER BESTSELLERS ERROR]", error);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    );
+  }
+}

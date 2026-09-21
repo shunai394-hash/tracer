@@ -1,4 +1,6 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { formatConfidence, formatMoney, formatUnits } from "@/lib/intelligence/format-display";
+import { listReorderRecommendations } from "@/lib/ordering/store";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +13,7 @@ export default async function ProductsPage() {
     current_price: number | string | null;
     currency: string | null;
   }> = [];
+  let reorders: Awaited<ReturnType<typeof listReorderRecommendations>> = [];
   let error: string | null = null;
 
   try {
@@ -26,6 +29,11 @@ export default async function ProductsPage() {
     }
 
     products = result.data ?? [];
+    try {
+      reorders = await listReorderRecommendations(100);
+    } catch {
+      reorders = [];
+    }
   } catch (caught) {
     if (!(caught instanceof SupabaseConfigError)) {
       error = caught instanceof Error ? caught.message : "商品を読み込めませんでした。";
@@ -51,7 +59,11 @@ export default async function ProductsPage() {
         </div>
       ) : (
         <div className="mt-10 divide-y divide-white/5 border border-cyan-500/15">
-          {products.map((product) => (
+          {products.map((product) => {
+            const reorder = reorders.find(
+              (item) => item.productId === product.product_id,
+            );
+            return (
             <div key={product.product_id} className="px-5 py-4">
               <p className="text-sm text-zinc-100">{product.normalized_title}</p>
               <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.16em] text-zinc-500">
@@ -60,8 +72,23 @@ export default async function ProductsPage() {
                   ? ` / ${product.currency} ${product.current_price}`
                   : " / price unknown"}
               </p>
+              {reorder ? (
+                <p className="mt-2 text-xs text-zinc-400">
+                  現在庫 {reorder.onHand ?? "unknown"} · 30日予測{" "}
+                  {formatUnits(reorder.forecastUnits30d)} · ROP{" "}
+                  {reorder.reorderPoint ?? "unknown"} · 推奨{" "}
+                  {reorder.recommendedQty ?? "unknown"} ·{" "}
+                  {formatMoney(reorder.estimatedCost, reorder.currency)} ·{" "}
+                  {formatConfidence(reorder.confidence)} · {reorder.orderState}
+                </p>
+              ) : (
+                <p className="mt-2 text-xs text-zinc-600">
+                  自社在庫未記録のため発注指標は unknown
+                </p>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </main>

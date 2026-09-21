@@ -30,6 +30,44 @@ import {
 import { toConfidenceLabel, weakerLabel, confidenceJudgment } from "@/lib/intelligence/confidence-label";
 import { deriveLifecycleStatus } from "@/lib/intelligence/lifecycle";
 import { evidenceRecord } from "@/lib/intelligence/evidence";
+import { evaluateMarketGap, verifyMarketGapInvariants } from "@/lib/intelligence/market-gap";
+import { forecastSales, verifyForecastInvariants } from "@/lib/intelligence/sales-forecast";
+import {
+  evaluateSearchDiscoveryFit,
+  verifySearchFitInvariants,
+} from "@/lib/intelligence/search-discovery-fit";
+import {
+  evaluateSelection,
+  forecastToSelectionScore,
+  verifySelectionInvariants,
+} from "@/lib/intelligence/selection-score";
+import {
+  buildRecommendation,
+  verifyRecommendationInvariants,
+} from "@/lib/intelligence/recommend-products";
+import { verifyForecastLearningInvariants } from "@/lib/intelligence/forecast-learning";
+import { verifyCJSelectionInvariants } from "@/lib/intelligence/cj-selection";
+import { verifyDemandAnalysisInvariants } from "@/lib/intelligence/analyze-demand";
+import { verifyDemandLearningInvariants } from "@/lib/intelligence/demand-learning";
+import { evaluateRankingVelocity, verifyRankingVelocityInvariants } from "@/lib/intelligence/ranking-velocity";
+import { evaluateSellerCompetition, verifySellerCompetitionInvariants } from "@/lib/intelligence/seller-competition";
+import { evaluateStockoutGap, verifyStockoutGapInvariants } from "@/lib/intelligence/stockout-gap";
+import { evaluateAccountFit, verifyAccountFitInvariants } from "@/lib/intelligence/account-fit";
+import { evaluateAbsoluteFilter, verifyAbsoluteFilterInvariants } from "@/lib/intelligence/absolute-filter";
+import { recommendRelatedProducts, verifyRelatedProductInvariants } from "@/lib/intelligence/related-products";
+import { evaluateImageMatch, verifyImageMatchInvariants } from "@/lib/intelligence/image-matching";
+import { optimizePortfolio, verifyPortfolioInvariants } from "@/lib/intelligence/portfolio";
+import { classifyAnomaly, verifyAnomalyInvariants } from "@/lib/intelligence/anomaly";
+import { EMPTY_SELECTION_SETTINGS, parseSelectionSettings } from "@/lib/intelligence/selection-config";
+import { verifyInventoryForecastInvariants } from "@/lib/ordering/inventory-forecast";
+import { verifyReorderPointInvariants } from "@/lib/ordering/reorder-point";
+import { verifyOrderGateInvariants } from "@/lib/ordering/gates";
+import { verifyRecommendInvariants } from "@/lib/ordering/recommend";
+import { verifyIdentifierMatchInvariants } from "@/lib/market/identifiers";
+import { verifyBestsellerParseInvariants } from "@/lib/market/parse-rankings";
+import { verifySalesTestGateInvariants } from "@/lib/market/sales-test-gate";
+import { verifyHtmlEntityDecodingInvariants } from "@/lib/market/html-entities";
+import { verifyCharsetDecodingInvariants } from "@/lib/market/charset";
 
 type JsonMap = Record<string, unknown>;
 
@@ -231,6 +269,8 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
     testsResult,
     resultsResult,
     failuresResult,
+    demandIntelResult,
+    selectionSettingsResult,
   ] = await Promise.all([
     supabase
       .from("product_offers")
@@ -263,6 +303,12 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
         "test_id, orders, revenue, contribution_profit, roas, measurement_kind",
       ),
     supabase.from("opportunity_failures").select("opportunity_id"),
+    supabase
+      .from("demand_intelligence")
+      .select(
+        "query, volume, velocity_7d, velocity_14d, velocity_30d, trend, stability, spike, demand_score, demand_confidence, social_mentions, series",
+      ),
+    supabase.from("selection_settings").select("*").eq("id", "default").maybeSingle(),
   ]);
 
   if (offersResult.error) throw new Error(offersResult.error.message);
@@ -274,6 +320,18 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
   if (testsResult.error) throw new Error(testsResult.error.message);
   if (resultsResult.error) throw new Error(resultsResult.error.message);
   if (failuresResult.error) throw new Error(failuresResult.error.message);
+  if (demandIntelResult.error) throw new Error(demandIntelResult.error.message);
+  if (selectionSettingsResult.error) {
+    throw new Error(selectionSettingsResult.error.message);
+  }
+
+  const selectionSettings = parseSelectionSettings(
+    (selectionSettingsResult.data as Record<string, unknown> | null) ?? null,
+  );
+
+  const demandIntelByQuery = new Map(
+    (demandIntelResult.data ?? []).map((row) => [String(row.query), row]),
+  );
 
   const offers = (offersResult.data ?? []) as OfferRow[];
   const matches = (matchesResult.data ?? []) as MatchRow[];
@@ -301,6 +359,43 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
   const failureOpportunityIds = new Set(
     (failuresResult.data ?? []).map((row) => row.opportunity_id as string),
   );
+
+  const productCategory = new Map(
+    intelligenceRows.map((row) => [row.product_id, row.category]),
+  );
+  const existingByOpportunityId = new Map(
+    (existingResult.data ?? []).map((row) => [
+      row.id as string,
+      row.product_id as string,
+    ]),
+  );
+  const categoryHistory = new Map<
+    string,
+    { orders: number; revenue: number }
+  >();
+  for (const test of tests) {
+    const productId = existingByOpportunityId.get(test.opportunity_id);
+    if (!productId) continue;
+    const category = productCategory.get(productId);
+    if (!category) continue;
+    const observed = (resultsByTest.get(test.id) ?? []).filter(
+      (result) => result.measurement_kind === "observed",
+    );
+    const orders = observed.reduce(
+      (sum, result) => sum + (result.orders ?? 0),
+      0,
+    );
+    const revenue = observed.reduce(
+      (sum, result) => sum + (asNumber(result.revenue) ?? 0),
+      0,
+    );
+    if (orders <= 0) continue;
+    const current = categoryHistory.get(category) ?? { orders: 0, revenue: 0 };
+    categoryHistory.set(category, {
+      orders: current.orders + orders,
+      revenue: current.revenue + revenue,
+    });
+  }
 
   const offersByProduct = new Map<string, OfferRow[]>();
   for (const offer of offers) {
@@ -343,6 +438,7 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
     state: SellabilityState;
     lifecycle: string;
     previousLifecycle: string | null;
+    forecast: ReturnType<typeof forecastSales>;
   }> = [];
 
   for (const row of intelligenceRows) {
@@ -408,13 +504,28 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
           ? "demand_observations"
           : null;
 
+    const demandIntel = demandQuery
+      ? demandIntelByQuery.get(demandQuery) ?? null
+      : null;
+    const demandVelocity7d = asNumber(demandIntel?.velocity_7d);
+    const demandVelocity14d = asNumber(demandIntel?.velocity_14d);
+    const demandVelocity30d = asNumber(demandIntel?.velocity_30d);
+    const demandTrend =
+      typeof demandIntel?.trend === "string" ? demandIntel.trend : null;
+    const demandStability =
+      typeof demandIntel?.stability === "string" ? demandIntel.stability : null;
+    const demandSpike = demandIntel?.spike === true;
+    const demandVolume = asNumber(demandIntel?.volume) ?? demandValue;
+
     const searchGrowth =
-      latestSearch && searchDemand.length > 1
-        ? asNumber(latestSearch.value) !== null &&
-          asNumber(searchDemand[1]?.value) !== null
-          ? Number(asNumber(latestSearch.value)) -
-            Number(asNumber(searchDemand[1]?.value))
-          : null
+      demandVelocity7d !== null && demandValue !== null
+        ? demandValue * demandVelocity7d
+        : latestSearch && searchDemand.length > 1
+          ? asNumber(latestSearch.value) !== null &&
+            asNumber(searchDemand[1]?.value) !== null
+            ? Number(asNumber(latestSearch.value)) -
+              Number(asNumber(searchDemand[1]?.value))
+            : null
         : null;
 
     const demandFresh = freshnessScore(hoursSince(latestSearch?.observed_at ?? row.last_seen_at));
@@ -437,11 +548,14 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
       },
       {
         score:
-          searchGrowth === null
-            ? null
-            : Math.max(0, Math.min(100, 50 + searchGrowth / 200)),
+          demandVelocity7d !== null
+            ? Math.max(0, Math.min(100, 50 + demandVelocity7d * 50))
+            : searchGrowth === null
+              ? null
+              : Math.max(0, Math.min(100, 50 + searchGrowth / 200)),
         weight: 0.2,
-        confidence: searchGrowth === null ? 0 : 0.7,
+        confidence:
+          demandVelocity7d !== null ? 0.75 : searchGrowth === null ? 0 : 0.7,
       },
       {
         score:
@@ -797,6 +911,114 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
     const competitorPriceMax =
       reliableMarketPrices.length > 0 ? Math.max(...reliableMarketPrices) : null;
 
+    const rankPoints = [
+      ...productDemand
+        .filter((item) => item.signal_type === "sales_rank")
+        .map((item) => ({
+          rank: asNumber(item.value),
+          observedAt: item.observed_at,
+        })),
+      ...productOffers.map((offer) => ({
+        rank:
+          asNumber(asRecord(offer.metadata).sales_rank) ??
+          asNumber(asRecord(offer.metadata).rank),
+        observedAt: offer.observed_at,
+      })),
+    ].filter(
+      (point): point is { rank: number; observedAt: string } =>
+        point.rank !== null,
+    );
+    const rankingVelocity = evaluateRankingVelocity(rankPoints);
+    const sellerCompetition = evaluateSellerCompetition(
+      marketOffers.map((offer) => ({
+        sellerName: offer.seller_name,
+        price: asNumber(offer.price),
+        observedAt: offer.observed_at,
+      })),
+    );
+    const stockoutGap = evaluateStockoutGap({
+      demandRising: demandTrend === "rising",
+      stocks: [
+        ...marketOffers.map((offer) => ({
+          inventory: asNumber(asRecord(offer.metadata).inventory),
+          availability: offer.availability,
+        })),
+        ...productCj.map((item) => ({
+          inventory: item.inventory,
+          availability: item.sale_status,
+        })),
+      ],
+    });
+    const weightKg =
+      asNumber(metadata.weight_kg) ??
+      asNumber(metadata.weight) ??
+      asNumber(asRecord(sourceOffer?.metadata).weight_kg);
+    const hazardous =
+      metadata.hazardous === true ||
+      asRecord(sourceOffer?.metadata).hazardous === true
+        ? true
+        : metadata.hazardous === false
+          ? false
+          : null;
+    const restricted =
+      metadata.restricted === true || metadata.compliance_risk === true
+        ? true
+        : metadata.restricted === false
+          ? false
+          : null;
+    const shippable =
+      metadata.shippable === false
+        ? false
+        : metadata.shippable === true
+          ? true
+          : null;
+    const history = row.category
+      ? categoryHistory.get(row.category) ?? null
+      : null;
+    const accountFit = evaluateAccountFit({
+      category: row.category,
+      historicalCategoryOrders: history ? history.orders : null,
+      historicalCategoryRevenue: history ? history.revenue : null,
+      historicalCvr: null,
+      weightKg,
+      hazardous,
+      restricted,
+      shippable,
+    });
+    const imageMatch = evaluateImageMatch({
+      sourceImageUrl: row.image_url,
+      candidateImageUrl: sourceOffer?.image_url ?? null,
+    });
+    const related = recommendRelatedProducts({
+      category: row.category,
+      demandQuery,
+      purchasePairs: 0,
+      candidates: intelligenceRows
+        .filter((item) => item.product_id !== row.product_id)
+        .map((item) => ({
+          id: item.product_id,
+          productId: item.product_id,
+          name: item.normalized_title,
+          category: item.category,
+          demandQuery:
+            typeof asRecord(item.metadata).demand_query === "string"
+              ? String(asRecord(item.metadata).demand_query)
+              : null,
+        })),
+    });
+    const anomaly = classifyAnomaly({
+      demandSpike: demandSpike === true ? true : demandIntel ? false : null,
+      demandTrend,
+      rankingImproving: rankingVelocity.improving,
+      sellerIncreasing: sellerCompetition.competitionIncreasing,
+      stockoutGap: stockoutGap.supplyGap,
+      socialMentions: asNumber(socialDemand[0]?.value),
+    });
+    const portfolio = optimizePortfolio({
+      budget: null,
+      items: [],
+    });
+
     const retrievedAt = new Date().toISOString();
     const evidence = [
       evidenceRecord("demand", {
@@ -893,6 +1115,178 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
       kind: "rule_based",
     };
 
+    const previousDemandValue = asNumber(searchDemand[1]?.value);
+    const latestTest = relatedTests[0] ?? null;
+    const observedWindowDays = latestTest
+      ? (Date.now() - new Date(latestTest.started_at).getTime()) / 86_400_000
+      : null;
+
+    const marketGap = evaluateMarketGap({
+      demandScore: demand.score,
+      demandValue,
+      competitorCount,
+      competitorPriceMin,
+      competitorPriceMax,
+      identityConfirmed,
+      identityRejected: Boolean(identityRejected || rejectedByRelevance),
+      identityUnconfirmed,
+    });
+
+    const forecast = forecastSales({
+      demandValue: demandVolume,
+      searchGrowth,
+      previousDemandValue,
+      demandVelocity7d,
+      demandTrend,
+      demandStability,
+      demandSpike,
+      competitorCount,
+      inventory: sourceInventory ?? null,
+      sellingPrice: marketPrice,
+      contributionProfitPerUnit: profit.calculable
+        ? profit.contributionProfit
+        : null,
+      contributionMargin: profit.contributionMargin,
+      profitCalculable: profit.calculable,
+      identityRejected: Boolean(identityRejected || rejectedByRelevance),
+      observedOrders: latestObserved?.orders ?? null,
+      observedRevenue: asNumber(latestObserved?.revenue),
+      observedWindowDays,
+    });
+
+    const searchFit = evaluateSearchDiscoveryFit({
+      demandQuery,
+      demandValue,
+      searchGrowth,
+      productTitle: row.normalized_title,
+      category: row.category,
+      competitorCount,
+      reviewValue: asNumber(reviewDemand[0]?.value),
+      socialValue: asNumber(socialDemand[0]?.value),
+      intentIsProduct: demandQuery ? true : null,
+    });
+
+    const forecastSelection = forecastToSelectionScore(
+      forecast.horizon30d.units,
+      forecast.confidence,
+    );
+
+    const absoluteFilter = evaluateAbsoluteFilter({
+      identityRejected: Boolean(identityRejected || rejectedByRelevance),
+      identityUnconfirmed,
+      profitCalculable: profit.calculable,
+      contributionMargin: profit.contributionMargin,
+      forecastUnits30d: forecast.horizon30d.units,
+      forecastProfit30d: forecast.horizon30d.contributionProfit,
+      sellerCount: sellerCompetition.sellerCount,
+      weightKg,
+      category: row.category,
+      hazardous,
+      restricted,
+      shippable,
+      currencyMismatch:
+        profit.incalculableReason === "currency_mismatch_no_observed_fx",
+      demandScore: demand.score,
+      settings: selectionSettings ?? EMPTY_SELECTION_SETTINGS,
+    });
+
+    const selection = evaluateSelection({
+      identityRejected: Boolean(identityRejected || rejectedByRelevance),
+      identityUnconfirmed,
+      identityScore: identityConfidence,
+      demandScore: demand.score,
+      demandConfidence: demand.confidence,
+      marketGapScore: marketGap.score,
+      marketGapConfidence: marketGap.confidence,
+      profitScore: marginScore,
+      profitCalculable: profit.calculable,
+      profitIncalculableReason: profit.incalculableReason,
+      forecastScore: forecastSelection.score,
+      forecastConfidence: forecastSelection.confidence,
+      searchFitScore: searchFit.score,
+      searchFitConfidence: searchFit.confidence,
+      sellabilityScore: sellability.score,
+      sellabilityState: sellability.state,
+      sellingPrice: marketPrice,
+      sourceCost,
+      supplyScore: stockoutGap.score ?? supplyScore,
+      competitionScore: sellerCompetition.score ?? competitionScore,
+      accountFitScore: accountFit.score,
+      accountFitConfidence: accountFit.confidence,
+      filterExcluded: absoluteFilter.excluded,
+    });
+
+    const recommendation = buildRecommendation({
+      productName: row.normalized_title,
+      demandValue,
+      searchGrowth,
+      identityConfirmed,
+      identityRejected: Boolean(identityRejected || rejectedByRelevance),
+      identityUnconfirmed,
+      competitorCount,
+      competitorPriceMin,
+      competitorPriceMax,
+      inventory: sourceInventory ?? null,
+      supplyAvailable: Boolean(supplyAvailable && sourceOffer),
+      profitCalculable: profit.calculable,
+      sellingPrice: marketPrice,
+      sourceCost,
+      forecastUnits30d: forecast.horizon30d.units,
+      forecastKind: forecast.kind,
+      forecastConfidence: forecast.confidence,
+      searchFitReasons: searchFit.reasons,
+      marketGapStatus: marketGap.status,
+      marketGapReasons: marketGap.reasons,
+      selectionEligible: selection.eligible,
+      selectionGates: selection.gates,
+      sellabilityState: sellability.state,
+      demandQuery,
+    });
+
+    evidence.push(
+      evidenceRecord("forecast_30d", {
+        field: "forecast",
+        metric: "units_30d",
+        value: forecast.horizon30d.units,
+        source: forecast.kind,
+        retrievedAt,
+        confidence: toConfidenceLabel(
+          forecast.confidence,
+          forecast.kind !== "unknown",
+        ),
+        kind:
+          forecast.kind === "unknown"
+            ? "unknown"
+            : forecast.kind === "observed_run_rate"
+              ? "observed"
+              : "estimated",
+      }),
+      evidenceRecord("search_fit", {
+        field: "search_fit",
+        metric: "search_fit_score",
+        value: searchFit.score,
+        source: "demand_observations+product_identity",
+        retrievedAt,
+        confidence: toConfidenceLabel(
+          searchFit.confidence,
+          searchFit.score !== null,
+        ),
+        kind: searchFit.score === null ? "unknown" : "derived",
+      }),
+      evidenceRecord("market_gap", {
+        field: "market_gap",
+        metric: "market_gap_status",
+        value: marketGap.status,
+        source: "demand_observations+product_offers",
+        retrievedAt,
+        confidence: toConfidenceLabel(
+          marketGap.confidence,
+          marketGap.score !== null,
+        ),
+        kind: marketGap.score === null ? "unknown" : "derived",
+      }),
+    );
+
     const payload = {
       product_id: row.product_id,
       demand_score: clampScore(demand.score),
@@ -926,7 +1320,72 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
         overallConfidence: opportunity.confidence,
         freshnessHours,
         supplyConfirmed: Boolean(sourceOffer),
+        selectionScore: selection.score,
+        selectionEligible: selection.eligible,
       }),
+      selection_score: clampScore(selection.score),
+      selection_eligible: selection.eligible,
+      identity_score: clampScore(
+        identityConfidence === null ? null : identityConfidence * 100,
+      ),
+      market_gap_score: clampScore(marketGap.score),
+      market_gap_confidence: clampUnit(
+        marketGap.score === null ? null : marketGap.confidence,
+      ),
+      search_fit_score: clampScore(searchFit.score),
+      search_fit_confidence: clampUnit(
+        searchFit.score === null ? null : searchFit.confidence,
+      ),
+      forecast_units_7d: forecast.horizon7d.units,
+      forecast_units_30d: forecast.horizon30d.units,
+      forecast_units_7d_low: forecast.horizon7d.unitsLow,
+      forecast_units_7d_high: forecast.horizon7d.unitsHigh,
+      forecast_units_30d_low: forecast.horizon30d.unitsLow,
+      forecast_units_30d_high: forecast.horizon30d.unitsHigh,
+      forecast_revenue_7d: forecast.horizon7d.revenue,
+      forecast_revenue_30d: forecast.horizon30d.revenue,
+      forecast_profit_7d: forecast.horizon7d.contributionProfit,
+      forecast_profit_30d: forecast.horizon30d.contributionProfit,
+      forecast_units_90d: forecast.horizon90d.units,
+      forecast_revenue_90d: forecast.horizon90d.revenue,
+      forecast_profit_90d: forecast.horizon90d.contributionProfit,
+      forecast_margin: forecast.horizon30d.contributionMargin,
+      ranking_velocity: rankingVelocity.velocity,
+      ranking_velocity_confidence: clampUnit(
+        rankingVelocity.velocity === null ? null : rankingVelocity.confidence,
+      ),
+      seller_count: sellerCompetition.sellerCount,
+      seller_velocity: sellerCompetition.sellerVelocity,
+      price_median: sellerCompetition.priceMedian,
+      roi: profit.roi,
+      total_cost: profit.totalCost,
+      stockout_rate: stockoutGap.stockoutRate,
+      supply_gap: stockoutGap.supplyGap,
+      account_fit_score: clampScore(accountFit.score),
+      account_fit_confidence: clampUnit(
+        accountFit.score === null ? null : accountFit.confidence,
+      ),
+      profit_state: absoluteFilter.profitState,
+      filter_state: absoluteFilter.filterState,
+      supply_score_v3: clampScore(stockoutGap.score ?? supplyScore),
+      competition_score_v3: clampScore(
+        sellerCompetition.score ?? competitionScore,
+      ),
+      profit_score_v3: clampScore(profit.calculable ? marginScore : null),
+      forecast_score_v3: clampScore(forecastSelection.score),
+      forecast_confidence: clampUnit(
+        forecast.kind === "unknown" ? null : forecast.confidence,
+      ),
+      forecast_kind: forecast.kind,
+      forecast_model_id: forecast.modelId,
+      recommendation_summary: recommendation.summary,
+      recommendation_reasons: recommendation.reasons,
+      demand_volume: demandVolume,
+      demand_velocity_7d: demandVelocity7d,
+      demand_velocity_14d: demandVelocity14d,
+      demand_velocity_30d: demandVelocity30d,
+      demand_trend: demandTrend,
+      demand_stability: demandStability,
       why_now: generatedExplanation.why_now,
       risks,
       market_price: marketPrice,
@@ -969,14 +1428,61 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
       first_test_ready_at: firstReady,
       latest_test_status: existingRow?.latest_test_status ?? null,
       metadata: {
-        scoring_version: "opportunity_v2",
+        scoring_version: "opportunity_v3",
+        selection_gates: selection.gates,
+        selection_blocked: selection.blocked,
+        market_gap: marketGap,
+        search_fit: {
+          score: searchFit.score,
+          confidence: searchFit.confidence,
+          dimensions: searchFit.dimensions,
+          reasons: searchFit.reasons,
+        },
+        forecast: {
+          model_id: forecast.modelId,
+          kind: forecast.kind,
+          confidence: forecast.confidence,
+          evidence: forecast.evidence,
+          incalculable_reasons: forecast.incalculableReasons,
+          horizon_7d: forecast.horizon7d,
+          horizon_30d: forecast.horizon30d,
+          horizon_90d: forecast.horizon90d,
+        },
+        selection_v3: {
+          dimensions: selection.dimensions,
+          profit_state: absoluteFilter.profitState,
+          filter_state: absoluteFilter.filterState,
+          excluded: absoluteFilter.excluded,
+          data_missing: absoluteFilter.dataMissing,
+          condition_fail: absoluteFilter.conditionFail,
+        },
+        ranking_velocity: rankingVelocity,
+        seller_competition: sellerCompetition,
+        stockout_gap: stockoutGap,
+        account_fit: accountFit,
+        anomaly,
+        related_products: related,
+        image_match: imageMatch,
+        portfolio,
+        recommendation: recommendation,
         missing: sellability.missing,
         provenance,
         profit_lines: profit.lines,
         profit_incalculable_reason: profit.incalculableReason,
         shipping_unknown: profit.shippingUnknown,
+        category: row.category,
+        hazardous,
+        restricted,
+        shippable,
         demand_query: demandQuery,
         demand_value: demandValue,
+        demand_volume: demandVolume,
+        demand_velocity_7d: demandVelocity7d,
+        demand_velocity_14d: demandVelocity14d,
+        demand_velocity_30d: demandVelocity30d,
+        demand_trend: demandTrend,
+        demand_stability: demandStability,
+        demand_spike: demandSpike,
         search_growth: searchGrowth,
         social_signal: asNumber(socialDemand[0]?.value),
         review_velocity: asNumber(reviewDemand[0]?.value),
@@ -1029,6 +1535,7 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
       state: sellability.state,
       lifecycle,
       previousLifecycle: (existingRow?.lifecycle_status as string | null) ?? null,
+      forecast,
     });
   }
 
@@ -1063,6 +1570,37 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
           sellability_state: item.state,
         },
       });
+    }
+
+    if (result.data?.id) {
+      const horizons = [
+        item.forecast.horizon7d,
+        item.forecast.horizon30d,
+        item.forecast.horizon90d,
+      ];
+      for (const horizon of horizons) {
+        const forecastInsert = await supabase.from("product_sales_forecasts").insert({
+          opportunity_id: result.data.id,
+          product_id: item.productId,
+          model_id: item.forecast.modelId,
+          horizon_days: horizon.days,
+          units: horizon.units,
+          units_low: horizon.unitsLow,
+          units_high: horizon.unitsHigh,
+          revenue: horizon.revenue,
+          contribution_profit: horizon.contributionProfit,
+          contribution_margin: horizon.contributionMargin,
+          confidence: item.forecast.confidence,
+          kind: item.forecast.kind,
+          evidence: item.forecast.evidence,
+        });
+
+        if (forecastInsert.error) {
+          throw new Error(
+            `Failed to persist forecast for ${item.productId}: ${forecastInsert.error.message}`,
+          );
+        }
+      }
     }
 
     if (item.imageUrl && result.data?.id) {
@@ -1121,12 +1659,97 @@ export function verifyOpportunityLoopInvariants() {
   const identity = verifyIdentityInvariants();
   const profit = verifyProfitInvariants();
   const sellability = verifySellabilityInvariants();
+  const marketGap = verifyMarketGapInvariants();
+  const forecast = verifyForecastInvariants();
+  const searchFit = verifySearchFitInvariants();
+  const selection = verifySelectionInvariants();
+  const recommendation = verifyRecommendationInvariants();
+  const forecastLearning = verifyForecastLearningInvariants();
+  const cjSelection = verifyCJSelectionInvariants();
+  const demandAnalysis = verifyDemandAnalysisInvariants();
+  const demandLearning = verifyDemandLearningInvariants();
+  const ranking = verifyRankingVelocityInvariants();
+  const seller = verifySellerCompetitionInvariants();
+  const stockout = verifyStockoutGapInvariants();
+  const accountFit = verifyAccountFitInvariants();
+  const absoluteFilter = verifyAbsoluteFilterInvariants();
+  const related = verifyRelatedProductInvariants();
+  const imageMatch = verifyImageMatchInvariants();
+  const portfolio = verifyPortfolioInvariants();
+  const anomaly = verifyAnomalyInvariants();
+  const inventoryForecast = verifyInventoryForecastInvariants();
+  const reorderPoint = verifyReorderPointInvariants();
+  const orderGates = verifyOrderGateInvariants();
+  const recommendOrder = verifyRecommendInvariants();
+  const identifiers = verifyIdentifierMatchInvariants();
+  const bestsellerParse = verifyBestsellerParseInvariants();
+  const salesTestGate = verifySalesTestGateInvariants();
+  const htmlEntities = verifyHtmlEntityDecodingInvariants();
+  const charsetDecoding = verifyCharsetDecodingInvariants();
 
   return {
-    ok: currency.ok && identity.ok && profit.ok && sellability.ok,
+    ok:
+      currency.ok &&
+      identity.ok &&
+      profit.ok &&
+      sellability.ok &&
+      marketGap.ok &&
+      forecast.ok &&
+      searchFit.ok &&
+      selection.ok &&
+      recommendation.ok &&
+      forecastLearning.ok &&
+      cjSelection.ok &&
+      demandAnalysis.ok &&
+      demandLearning.ok &&
+      ranking.ok &&
+      seller.ok &&
+      stockout.ok &&
+      accountFit.ok &&
+      absoluteFilter.ok &&
+      related.ok &&
+      imageMatch.ok &&
+      portfolio.ok &&
+      anomaly.ok &&
+      inventoryForecast.ok &&
+      reorderPoint.ok &&
+      orderGates.ok &&
+      recommendOrder.ok &&
+      identifiers.ok &&
+      bestsellerParse.ok &&
+      salesTestGate.ok &&
+      htmlEntities.ok &&
+      charsetDecoding.ok,
     currency,
     identity,
     profit,
     sellability,
+    marketGap,
+    forecast,
+    searchFit,
+    selection,
+    recommendation,
+    forecastLearning,
+    cjSelection,
+    demandAnalysis,
+    demandLearning,
+    ranking,
+    seller,
+    stockout,
+    accountFit,
+    absoluteFilter,
+    related,
+    imageMatch,
+    portfolio,
+    anomaly,
+    inventoryForecast,
+    reorderPoint,
+    orderGates,
+    recommendOrder,
+    identifiers,
+    bestsellerParse,
+    salesTestGate,
+    htmlEntities,
+    charsetDecoding,
   };
 }
