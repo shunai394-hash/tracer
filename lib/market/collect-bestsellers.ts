@@ -34,6 +34,14 @@ export const MARKETPLACE_SOURCES = [
   },
 ] as const;
 
+/**
+ * How many collected items per marketplace get a detail-page fetch for
+ * identifier enrichment. Fetches run in parallel (Promise.all), so this is
+ * a fan-out safety bound, not a latency budget — raising it does not
+ * multiply wall-clock time the way the old sequential loop did.
+ */
+const DETAIL_ENRICHMENT_LIMIT = 20;
+
 export type CollectedMarketplace = {
   marketplace: string;
   source: string;
@@ -118,37 +126,51 @@ export async function collectMarketplaceBestsellers(): Promise<{
       // product page. Amazon and Yahoo!ショッピング both expose JAN on
       // their detail pages; Rakuten does not reliably expose one and is
       // left as-is rather than guessed at.
+      //
+      // Every collected item is enriched (not just the first few) —
+      // whichever items happen to carry a real identifier must not depend
+      // on where they landed in the ranking — fetched in parallel so
+      // covering more items does not multiply wall-clock time; capped at
+      // DETAIL_ENRICHMENT_LIMIT as a deliberate bound against an unbounded
+      // fetch fan-out if a source ever returns an unusually large page.
       if (source.marketplace === "amazon.co.jp") {
-        const details = items.slice(0, 8);
-        for (const item of details) {
-          if (!item.productUrl) continue;
-          try {
-            const detailHtml = await fetchHtml(item.productUrl);
-            if (!detailHtml) continue;
-            const detail = parseAmazonProductDetail(detailHtml);
-            item.brand = detail.brand;
-            item.model = detail.model;
-            item.jan = normalizeIdentifier("jan", detail.jan);
-            item.mpn = normalizeIdentifier("mpn", detail.model);
-          } catch {
-            // Detail pages stay unknown rather than blocking the listing.
-          }
-        }
+        const details = items.slice(0, DETAIL_ENRICHMENT_LIMIT);
+        await Promise.all(
+          details.map(async (item) => {
+            if (!item.productUrl) return;
+            try {
+              const detailHtml = await fetchHtml(item.productUrl);
+              if (!detailHtml) return;
+              const detail = parseAmazonProductDetail(detailHtml);
+              item.brand = detail.brand;
+              item.model = detail.model;
+              item.jan = normalizeIdentifier("jan", detail.jan);
+              item.mpn = normalizeIdentifier("mpn", detail.model);
+            } catch {
+              // Detail pages stay unknown rather than blocking the listing.
+            }
+          }),
+        );
       }
 
       if (source.marketplace === "yahoo_shopping") {
-        const details = items.slice(0, 8);
-        for (const item of details) {
-          if (!item.productUrl) continue;
-          try {
-            const detailHtml = await fetchHtml(item.productUrl);
-            if (!detailHtml) continue;
-            const detail = parseYahooProductDetail(detailHtml);
-            item.jan = normalizeIdentifier("jan", detail.jan);
-          } catch {
-            // Detail pages stay unknown rather than blocking the listing.
-          }
-        }
+        const details = items.slice(0, DETAIL_ENRICHMENT_LIMIT);
+        await Promise.all(
+          details.map(async (item) => {
+            if (!item.productUrl) return;
+            try {
+              const detailHtml = await fetchHtml(item.productUrl);
+              if (!detailHtml) return;
+              const detail = parseYahooProductDetail(detailHtml);
+              item.jan = normalizeIdentifier("jan", detail.jan);
+              item.gtin = normalizeIdentifier("gtin", detail.gtin);
+              item.mpn = normalizeIdentifier("mpn", detail.mpn);
+              item.brand = detail.brand;
+            } catch {
+              // Detail pages stay unknown rather than blocking the listing.
+            }
+          }),
+        );
       }
 
       marketplaces.push({

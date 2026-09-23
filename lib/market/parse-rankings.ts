@@ -274,21 +274,78 @@ export function parseAmazonProductDetail(html: string): {
 }
 
 /**
+ * Finds every `<script type="application/ld+json">` block and returns any
+ * node shaped like schema.org's Product type (including nested under
+ * `@graph`, which many storefront templates use). This is a real,
+ * widely-published web standard — GS1 itself documents `gtin`/`gtin13` as
+ * the recommended schema.org property for exactly this purpose — not a
+ * guess at Yahoo's internal markup. Malformed/unrelated JSON-LD blocks are
+ * skipped rather than throwing.
+ */
+function findJsonLdProducts(html: string): Array<Record<string, unknown>> {
+  const products: Array<Record<string, unknown>> = [];
+  const scriptPattern = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = scriptPattern.exec(html))) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(match[1]);
+    } catch {
+      continue;
+    }
+
+    const nodes: unknown[] = [];
+    const root = parsed as Record<string, unknown>;
+    if (Array.isArray(parsed)) nodes.push(...parsed);
+    else if (Array.isArray(root?.["@graph"])) nodes.push(...(root["@graph"] as unknown[]));
+    else nodes.push(parsed);
+
+    for (const node of nodes) {
+      if (!node || typeof node !== "object") continue;
+      const record = node as Record<string, unknown>;
+      const type = record["@type"];
+      const isProduct = type === "Product" || (Array.isArray(type) && type.includes("Product"));
+      if (isProduct) products.push(record);
+    }
+  }
+
+  return products;
+}
+
+function firstString(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  return null;
+}
+
+/**
  * Extracts identity fields from a Yahoo!ショッピング product detail page
  * (the page a ranking link points to, e.g.
  * `store.shopping.yahoo.co.jp/{shop}/{item}.html`). Mirrors
  * `parseAmazonProductDetail`'s contract: returns raw, unnormalized digits
- * (or null); the caller normalizes via `normalizeIdentifier("jan", ...)`
- * the same way it already does for Amazon, so normalization stays in one
- * place instead of being duplicated per marketplace.
+ * (or null); the caller normalizes via `normalizeIdentifier(...)` the same
+ * way it already does for Amazon, so normalization stays in one place
+ * instead of being duplicated per marketplace.
  *
- * The spec table uses a "JAN/ISBNコード" heading (not a bare "JAN"), and
- * React-rendered shop templates sometimes split text nodes with empty
- * `<!-- -->` comments, so both are handled explicitly rather than assumed
- * away by a naive Amazon-style regex.
+ * Two independent sources are checked, since either may be present or
+ * absent depending on the shop's template:
+ * 1. The spec table's "JAN/ISBNコード" heading (not a bare "JAN"); React-
+ *    rendered shop templates sometimes split text nodes with empty
+ *    `<!-- -->` comments, so both are handled explicitly rather than
+ *    assumed away by a naive Amazon-style regex.
+ * 2. schema.org Product JSON-LD (`gtin13`/`gtin`/`mpn`/`brand.name`), a
+ *    machine-readable format shops publish specifically so identifiers can
+ *    be extracted without guessing at page structure. Returned as `gtin`
+ *    (never `jan`), since JSON-LD's `gtin`/`gtin13` does not itself assert
+ *    Japan's specific JAN registration — the caller's cross-scheme
+ *    matching (lib/market/identifiers.ts) already treats JAN/GTIN as the
+ *    same GS1 numbering space, so this does not weaken matching.
  */
 export function parseYahooProductDetail(html: string): {
   jan: string | null;
+  gtin: string | null;
+  mpn: string | null;
+  brand: string | null;
 } {
   const cleaned = stripHtmlComments(html);
 
@@ -297,7 +354,33 @@ export function parseYahooProductDetail(html: string): {
     cleaned.match(/JAN(?:\/ISBN)?コード[^\d]{0,20}([0-9]{8,13})/i)?.[1] ??
     null;
 
-  return { jan };
+  let gtin: string | null = null;
+  let mpn: string | null = null;
+  let brand: string | null = null;
+
+  for (const product of findJsonLdProducts(html)) {
+    if (!gtin) {
+      const candidate =
+        firstString(product.gtin13) ??
+        firstString(product.gtin) ??
+        firstString(product.gtin12) ??
+        firstString(product.gtin8) ??
+        firstString(product.gtin14);
+      if (candidate) gtin = candidate;
+    }
+    if (!mpn) mpn = firstString(product.mpn);
+    if (!brand) {
+      const brandField = product.brand;
+      brand =
+        firstString(brandField) ??
+        (brandField && typeof brandField === "object"
+          ? firstString((brandField as Record<string, unknown>).name)
+          : null);
+    }
+    if (gtin && mpn && brand) break;
+  }
+
+  return { jan, gtin, mpn, brand };
 }
 
 export function verifyBestsellerParseInvariants(): {
@@ -342,6 +425,28 @@ export function verifyBestsellerParseInvariants(): {
       <tr class="styles_row__ANXSu"><th class="styles_heading__M3H48">JAN/ISBNコード</th><td class="styles_data__LgOoo">4573138107287</td></tr>
       <tr class="styles_row__ANXSu"><th class="styles_heading__M3H48">商品<!-- -->コード</th><td class="styles_data__LgOoo">teamoclear</td></tr>
     </tbody></table>
+  `);
+
+  const yahooDetailJsonLdOnly = parseYahooProductDetail(`
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"Product","name":"Example","mpn":"MPN-7788",
+       "brand":{"@type":"Brand","name":"TeAmo"},"gtin13":"4901234567894"}
+    </script>
+  `);
+
+  const yahooDetailJsonLdInGraph = parseYahooProductDetail(`
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@graph":[
+        {"@type":"BreadcrumbList","itemListElement":[]},
+        {"@type":"Product","name":"Example2","gtin":"4901234500009"}
+      ]}
+    </script>
+  `);
+
+  const yahooDetailIgnoresNonProductJsonLd = parseYahooProductDetail(`
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[]}
+    </script>
   `);
 
   const cases = [
@@ -395,6 +500,24 @@ export function verifyBestsellerParseInvariants(): {
       name: "yahoo_product_detail_extracts_jan_despite_react_comment_split",
       expected: true,
       actual: yahooDetail.jan === "4573138107287",
+    },
+    {
+      name: "yahoo_product_detail_extracts_gtin_mpn_brand_from_json_ld",
+      expected: true,
+      actual:
+        yahooDetailJsonLdOnly.gtin === "4901234567894" &&
+        yahooDetailJsonLdOnly.mpn === "MPN-7788" &&
+        yahooDetailJsonLdOnly.brand === "TeAmo",
+    },
+    {
+      name: "yahoo_product_detail_finds_json_ld_product_nested_in_graph",
+      expected: true,
+      actual: yahooDetailJsonLdInGraph.gtin === "4901234500009",
+    },
+    {
+      name: "yahoo_product_detail_ignores_non_product_json_ld",
+      expected: true,
+      actual: yahooDetailIgnoresNonProductJsonLd.gtin === null,
     },
   ];
 
