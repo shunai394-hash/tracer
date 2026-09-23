@@ -1,6 +1,14 @@
 ﻿import "server-only";
 
 import { getCJConfig } from "@/lib/config/env";
+import {
+  selectUnambiguousVariant,
+  verifyVariantSelectionInvariants,
+  type CJProductVariant,
+} from "@/lib/sources/cj/variant-select";
+
+export { selectUnambiguousVariant, verifyVariantSelectionInvariants };
+export type { CJProductVariant };
 
 export class CJConfigError extends Error {
   readonly code = "CJ_NOT_CONFIGURED" as const;
@@ -140,6 +148,25 @@ async function getAccessToken(): Promise<string> {
   return accessToken;
 }
 
+/**
+ * Temporary diagnostic: logs the raw CJ product object's field names and
+ * values (server console only, never the API response) so a human can
+ * confirm what CJ's live product list/detail payload actually contains —
+ * in particular whether `barcode`/`productBarCode` are ever populated at
+ * all. Never logs the API key or access token. Off by default; set
+ * CJ_DEBUG_LOG=1 to enable while diagnosing. Remove once the real CJ field
+ * mapping in normalizeProduct() below has been confirmed against live data.
+ */
+function logRawCjProductOnce(label: string, product: CJProduct, logged: { done: boolean }) {
+  if (process.env.CJ_DEBUG_LOG !== "1" || logged.done) return;
+  logged.done = true;
+  console.log(`[cj-diagnostic] ${label} raw product keys:`, Object.keys(product));
+  console.log(`[cj-diagnostic] ${label} raw product:`, JSON.stringify(product));
+}
+
+const searchLogState = { done: false };
+const detailLogState = { done: false };
+
 function normalizeProduct(product: CJProduct): CJProductCandidate | null {
   const id = product.id?.trim();
   const title = product.nameEn?.trim();
@@ -222,6 +249,8 @@ export async function searchCJProducts(
     (group) => group.productList ?? [],
   );
 
+  if (rawProducts[0]) logRawCjProductOnce("product/listV2", rawProducts[0], searchLogState);
+
   const products = rawProducts
     .map(normalizeProduct)
     .filter((product): product is CJProductCandidate => product !== null);
@@ -261,5 +290,85 @@ export async function getCJProductDetail(
   const product = payload.data?.id
     ? payload.data
     : payload.data?.productList?.[0];
+  if (product) logRawCjProductOnce("product/query", product, detailLogState);
   return product ? normalizeProduct(product) : null;
+}
+
+/**
+ * UNVERIFIED FIELD MAPPING — read this before trusting this function.
+ *
+ * developers.cjdropshipping.com and developers.cjdropshipping.cn are both
+ * blocked by this environment's network egress proxy (EGRESS_BLOCKED), so
+ * the primary "CJ Docs > API v2.0 > product.html" page could not be fetched
+ * and read directly. The endpoint path and field names below come from
+ * search-engine-indexed secondary sources only (an AI-summarized web search,
+ * not a page this code read itself) — they are a best-effort reconstruction,
+ * not a confirmed official contract. Field names that could not be
+ * corroborated at all (notably any per-variant inventory/stock field) are
+ * deliberately left unmapped below and surfaced as null, not guessed.
+ *
+ * Before CJ_LIVE_ORDERING is ever set to 1 against a real account, a human
+ * must open the live CJ developer docs, compare this against the real
+ * response shape, and correct anything that differs.
+ */
+type CJVariantQueryResponse = {
+  code?: number;
+  result?: boolean;
+  message?: string;
+  data?: Array<{
+    vid?: string;
+    variantId?: string;
+    pid?: string;
+    productId?: string;
+    variantSku?: string;
+    sku?: string;
+    variantNameEn?: string;
+    variantKey?: string;
+    variantSellPrice?: string | number;
+  }>;
+};
+
+export async function fetchCJProductVariants(pid: string): Promise<CJProductVariant[]> {
+  const token = await getAccessToken();
+  const params = new URLSearchParams({ pid });
+  const response = await fetch(
+    `https://developers.cjdropshipping.com/api2.0/v1/product/variant/query?${params.toString()}`,
+    {
+      method: "GET",
+      headers: { "CJ-Access-Token": token },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new CJRequestError(
+      `CJ variant query failed with HTTP ${response.status}`,
+    );
+  }
+
+  const payload = (await response.json()) as CJVariantQueryResponse;
+
+  if (payload.result === false) {
+    throw new CJRequestError(payload.message || "CJ variant query failed");
+  }
+
+  const rows = payload.data ?? [];
+
+  return rows
+    .map((row): CJProductVariant | null => {
+      const vid = row.vid?.trim() || row.variantId?.trim();
+      if (!vid) return null;
+      return {
+        vid,
+        productId: row.pid?.trim() || row.productId?.trim() || pid,
+        sku: row.variantSku?.trim() || row.sku?.trim() || null,
+        nameEn: row.variantNameEn?.trim() || row.variantKey?.trim() || null,
+        sellPrice:
+          row.variantSellPrice === undefined || row.variantSellPrice === null
+            ? null
+            : String(row.variantSellPrice),
+        inventory: null,
+      };
+    })
+    .filter((variant): variant is CJProductVariant => variant !== null);
 }

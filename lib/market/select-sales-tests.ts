@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
+import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -38,11 +39,16 @@ export async function selectAndPublishSalesTests(
   const supabase = createSupabaseAdminClient();
   const fetchedAt = new Date().toISOString();
 
+  // Must be the exact same candidate set investigate-dropship.ts just
+  // investigated (same ordering key and limit — see candidate-batch.ts),
+  // or the supplier_listings rows that stage just wrote will never be
+  // found here and every candidate falls through as identity_not_confirmed
+  // even when a linked listing genuinely exists for it.
   const { data: bestsellers, error } = await supabase
     .from("marketplace_bestsellers")
     .select("*")
-    .order("rank", { ascending: true, nullsFirst: false })
-    .limit(40);
+    .order("fetched_at", { ascending: false })
+    .limit(BESTSELLER_CANDIDATE_BATCH_SIZE);
 
   if (error) throw new Error(error.message);
 
@@ -118,6 +124,14 @@ export async function selectAndPublishSalesTests(
     });
   }
 
+  // Within the current batch, still prefer the best-ranked products —
+  // fetched_at only scopes the candidate set to "this run"; it says
+  // nothing about which of those products sell best.
+  eligible.sort((a, b) => {
+    const rankA = typeof a.bestseller.rank === "number" ? a.bestseller.rank : Number.POSITIVE_INFINITY;
+    const rankB = typeof b.bestseller.rank === "number" ? b.bestseller.rank : Number.POSITIVE_INFINITY;
+    return rankA - rankB;
+  });
   const chosen = eligible.slice(0, limit);
   let published = 0;
 

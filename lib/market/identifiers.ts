@@ -119,6 +119,25 @@ function eq(a: string | null, b: string | null): boolean {
 }
 
 /**
+ * JAN (Japan), EAN-13 and GTIN-13 are the identical GS1 numbering space;
+ * UPC-A (GTIN-12) is the same space zero-padded to 14 digits. This is a
+ * GS1 standards fact, not a guess: a 13-digit JAN and a 13-digit GTIN with
+ * the same digits are the same barcode, even though this codebase stores
+ * them under different column names depending on which side (marketplace
+ * vs. supplier) reported them and under which label. Only the raw digits
+ * are compared — no scheme is inferred from context, and non-digit input
+ * has already been rejected by normalizeIdentifier before this ever runs.
+ */
+function toGtin14(value: string): string {
+  return value.padStart(14, "0");
+}
+
+function barcodeFamilyValue(ids: ProductIdentifiers): string | null {
+  const raw = ids.jan ?? ids.gtin ?? ids.ean ?? ids.upc ?? null;
+  return raw ? toGtin14(raw) : null;
+}
+
+/**
  * Sales candidates require identifier-grade identity.
  * Title-only matches never become sales eligible.
  */
@@ -149,6 +168,18 @@ export function matchProductIdentity(args: {
         rationale: `${scheme.toUpperCase()} matches`,
       };
     }
+  }
+
+  const marketBarcode = barcodeFamilyValue(market);
+  const supplyBarcode = barcodeFamilyValue(supply);
+  if (marketBarcode && supplyBarcode && marketBarcode === supplyBarcode) {
+    return {
+      linked: true,
+      salesEligible: true,
+      method: "gtin",
+      confidence: 0.98,
+      rationale: "barcode matches across the JAN/EAN/UPC/GTIN family (GTIN-14 normalized)",
+    };
   }
 
   if (eq(market.mpn, supply.mpn)) {
@@ -219,6 +250,18 @@ export function verifyIdentifierMatchInvariants(): {
     market: { ...EMPTY_IDENTIFIERS, title: "A" },
     supply: { ...EMPTY_IDENTIFIERS, title: "B" },
   });
+  const janVsGtinSameDigits = matchProductIdentity({
+    market: { ...EMPTY_IDENTIFIERS, jan: "4573138107287" },
+    supply: { ...EMPTY_IDENTIFIERS, gtin: "4573138107287" },
+  });
+  const upcVsGtinZeroPadded = matchProductIdentity({
+    market: { ...EMPTY_IDENTIFIERS, upc: "012345678905" },
+    supply: { ...EMPTY_IDENTIFIERS, gtin: "00012345678905" },
+  });
+  const janVsGtinDifferentDigits = matchProductIdentity({
+    market: { ...EMPTY_IDENTIFIERS, jan: "4573138107287" },
+    supply: { ...EMPTY_IDENTIFIERS, gtin: "1111111111111" },
+  });
 
   const cases = [
     {
@@ -235,6 +278,21 @@ export function verifyIdentifierMatchInvariants(): {
       name: "no_overlap_is_not_guessed",
       expected: true,
       actual: missing.method === "none" && missing.linked === false,
+    },
+    {
+      name: "jan_and_gtin_with_identical_digits_are_the_same_barcode",
+      expected: true,
+      actual: janVsGtinSameDigits.salesEligible === true && janVsGtinSameDigits.method === "gtin",
+    },
+    {
+      name: "upc_and_gtin_match_via_gtin14_zero_padding",
+      expected: true,
+      actual: upcVsGtinZeroPadded.salesEligible === true && upcVsGtinZeroPadded.method === "gtin",
+    },
+    {
+      name: "different_barcode_digits_across_families_do_not_match",
+      expected: true,
+      actual: janVsGtinDifferentDigits.method === "none" && janVsGtinDifferentDigits.salesEligible === false,
     },
     {
       name: "pick_identifier_prefers_jan_over_asin",

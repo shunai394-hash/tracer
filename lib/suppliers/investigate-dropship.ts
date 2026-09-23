@@ -5,8 +5,10 @@ import { getDropshipSupplierConfig } from "@/lib/config/env";
 import { getCJConfig } from "@/lib/config/env";
 import {
   CJConfigError,
+  fetchCJProductVariants,
   getCJProductDetail,
   searchCJProducts,
+  selectUnambiguousVariant,
 } from "@/lib/sources/cj";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import {
@@ -14,6 +16,7 @@ import {
   matchProductIdentity,
   pickIdentifierQuery,
 } from "@/lib/market/identifiers";
+import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
 
 const UNCONFIGURED_SUPPLIERS = [
   "hypersku",
@@ -63,6 +66,12 @@ export async function investigateDropshipForBestsellers(): Promise<{
   matched: number;
   skippedNoIdentifier: number;
   unconfigured: number;
+  /** CJ candidates searched but with zero identifier overlap (identity_method="none"). */
+  noIdentifierOverlap: number;
+  /** Of those searched, how many CJ product details had no barcode at all. */
+  supplyBarcodeMissing: number;
+  /** Rows where CJ search/detail/insert failed for this row only; other rows still processed. */
+  rowErrors: number;
 }> {
   const supabase = createSupabaseAdminClient();
   const fetchedAt = new Date().toISOString();
@@ -72,7 +81,7 @@ export async function investigateDropshipForBestsellers(): Promise<{
     .from("marketplace_bestsellers")
     .select("*")
     .order("fetched_at", { ascending: false })
-    .limit(30);
+    .limit(BESTSELLER_CANDIDATE_BATCH_SIZE);
 
   if (error) throw new Error(error.message);
 
@@ -80,6 +89,9 @@ export async function investigateDropshipForBestsellers(): Promise<{
   let matched = 0;
   let skippedNoIdentifier = 0;
   let unconfigured = 0;
+  let noIdentifierOverlap = 0;
+  let supplyBarcodeMissing = 0;
+  let rowErrors = 0;
 
   for (const row of rows ?? []) {
     processed += 1;
@@ -139,13 +151,24 @@ export async function investigateDropshipForBestsellers(): Promise<{
           // Detail unknown does not invent shipping/barcode.
         }
 
+        // CJ's own SKU is CJ's internal catalog id, not an Amazon ASIN nor a
+        // manufacturer part number — copying it into either field would be
+        // fabricating an identifier CJ never claimed, so it is left out
+        // entirely. CJ's barcode/productBarCode field also never states
+        // which national retail-barcode standard it follows, so it is
+        // recorded as a generic GTIN (the GS1 umbrella standard) instead of
+        // being guessed to be specifically JAN/EAN/UPC and copied into all
+        // four at once. matchProductIdentity() compares GTIN against the
+        // marketplace side's JAN/EAN/UPC/GTIN as one barcode family (same
+        // digits, GS1 zero-padding), so a real match is still detected
+        // without asserting a national scheme CJ never disclosed.
         const supplyIds = identifiersFromRecord({
-          asin: detail.sku,
-          jan: detail.barcode,
+          asin: null,
+          jan: null,
           gtin: detail.barcode,
-          ean: detail.barcode,
-          upc: detail.barcode,
-          mpn: detail.sku,
+          ean: null,
+          upc: null,
+          mpn: null,
           title: detail.title,
           url: null,
         });
@@ -164,12 +187,32 @@ export async function investigateDropshipForBestsellers(): Promise<{
           },
         });
 
+        // Only auto-assign a variant when the product has exactly one — picking
+        // among several would be a guess (which unknown-value rules here forbid).
+        // See the UNVERIFIED FIELD MAPPING note on fetchCJProductVariants: the
+        // endpoint/field names come from secondary sources, not a page this
+        // code read directly (CJ's docs domain is blocked by network egress here).
+        let cjVariantId: string | null = null;
+        let variantSku: string | null = null;
+        try {
+          const variants = await fetchCJProductVariants(detail.id);
+          const unambiguous = selectUnambiguousVariant(variants);
+          if (unambiguous) {
+            cjVariantId = unambiguous.vid;
+            variantSku = unambiguous.sku;
+          }
+        } catch {
+          // Variant lookup failing does not block the listing; it just leaves
+          // cj_variant_id unknown, which the order gate already treats as a hard stop.
+        }
+
         const insert = await supabase
           .from("supplier_listings")
           .insert({
             supplier: "cj",
             external_id: detail.id,
-            sku: detail.sku,
+            sku: variantSku ?? detail.sku,
+            cj_variant_id: cjVariantId,
             title: detail.title,
             bestseller_id: record.id,
             product_id: record.product_id,
@@ -205,6 +248,8 @@ export async function investigateDropshipForBestsellers(): Promise<{
 
         if (insert.error) throw new Error(insert.error.message);
         if (identity.salesEligible) matched += 1;
+        if (identity.method === "none") noIdentifierOverlap += 1;
+        if (!detail.barcode) supplyBarcodeMissing += 1;
 
         await writeEvidence({
           productId: typeof record.product_id === "string" ? record.product_id : null,
@@ -229,9 +274,37 @@ export async function investigateDropshipForBestsellers(): Promise<{
         unconfigured += 1;
         continue;
       }
-      throw error;
+      // One product's CJ search/detail/insert failure must not stop the
+      // rest of the batch. It is never silently dropped: logged to the
+      // server console (a real DB integrity error is a bug worth seeing)
+      // and counted in rowErrors so the API response reports it.
+      rowErrors += 1;
+      console.error("[investigate-dropship] row failed, continuing batch", {
+        bestsellerId: String(record.id),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await writeEvidence({
+        productId: typeof record.product_id === "string" ? record.product_id : null,
+        bestsellerId: String(record.id),
+        source: "cj",
+        fetchedAt,
+        fieldName: "investigation_error",
+        fieldValue: error instanceof Error ? error.message : String(error),
+        evidenceClass: "unknown",
+        confidence: 0,
+        metadata: { note: "row_isolated_failure" },
+      });
+      continue;
     }
   }
 
-  return { processed, matched, skippedNoIdentifier, unconfigured };
+  return {
+    processed,
+    matched,
+    skippedNoIdentifier,
+    unconfigured,
+    noIdentifierOverlap,
+    supplyBarcodeMissing,
+    rowErrors,
+  };
 }
