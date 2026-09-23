@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getBrightDataConfig } from "@/lib/config/env";
+import { repairMojibakeText } from "@/lib/market/charset";
 
 export class BrightDataConfigError extends Error {
   readonly code = "BRIGHTDATA_NOT_CONFIGURED" as const;
@@ -65,7 +66,7 @@ function normalizeText(value: unknown): string {
     return "";
   }
 
-  return value
+  return repairMojibakeText(value)
     .replace(/&amp;/gi, "&")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
@@ -386,6 +387,18 @@ export async function fetchBrightDataPage(url: string): Promise<{
     if (typeof record.html === "string") {
       html = record.html;
     }
+  }
+
+  // Bright Data hands back the scraped page embedded as a JS string inside
+  // its own JSON response, not raw bytes — so decodeHtmlBytes (charset.ts)
+  // never runs on it and can't see the source page's real charset. When
+  // Bright Data's own pipeline decoded a non-UTF-8 source page (e.g.
+  // Shift_JIS Yahoo!ショッピング) one byte at a time as Latin-1 before
+  // JSON-encoding it, every Japanese character arrives pre-corrupted; this
+  // reverses that specific, detectable corruption and is a no-op on text
+  // that was already correct.
+  if (html) {
+    html = repairMojibakeText(html);
   }
 
   return { url, html, json };

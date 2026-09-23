@@ -83,6 +83,53 @@ export function decodeHtmlBytes(bytes: Uint8Array, contentType: string | null | 
   }
 }
 
+const CJK_OR_KANA_PATTERN = /[぀-ヿ㐀-䶿一-鿿豈-﫿]/;
+
+function containsCjkOrKana(text: string): boolean {
+  return CJK_OR_KANA_PATTERN.test(text);
+}
+
+/**
+ * Repairs a specific, well-known corruption pattern in text that already
+ * arrived as a JS string (not raw bytes) via a third-party JSON API —
+ * e.g. Bright Data's scrape response — where `decodeHtmlBytes` above never
+ * runs because there are no raw bytes to hand it, only whatever string the
+ * upstream service already produced. When that upstream service decodes a
+ * UTF-8-encoded source page one byte at a time as Latin-1 before handing it
+ * back as JSON text, every original multi-byte Japanese character becomes
+ * 2-3 separate Latin-1-range characters ("文字化け", e.g. "無" becomes
+ * "ç¡").
+ *
+ * This is reversible and self-verifying, not a guess: a JS string can only
+ * have come from that specific corruption if every UTF-16 code unit fits in
+ * a single byte (0x00-0xFF) — a real Japanese character's code unit is
+ * always above 0xFF, so genuine Unicode text is left untouched. The
+ * candidate repair (reinterpreting those code units as raw UTF-8 bytes) is
+ * only accepted when it decodes cleanly AND actually produces CJK/kana
+ * characters the original didn't have; otherwise the original string is
+ * returned unchanged, so plain ASCII/English text is never touched.
+ */
+export function repairMojibakeText(text: string): string {
+  if (!text) return text;
+
+  // Every UTF-16 code unit of a real CJK/kana character is above 0xFF, so
+  // this loop bailing out also means "text already contains real Japanese
+  // text" — there is nothing this function needs to touch either way.
+  for (let i = 0; i < text.length; i += 1) {
+    if (text.charCodeAt(i) > 0xff) return text;
+  }
+
+  const bytes = Uint8Array.from(text, (ch) => ch.charCodeAt(0));
+  let decoded: string;
+  try {
+    decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return text;
+  }
+
+  return containsCjkOrKana(decoded) ? decoded : text;
+}
+
 export function verifyCharsetDecodingInvariants(): {
   ok: boolean;
   cases: Array<{ name: string; expected: boolean; actual: boolean }>;
@@ -132,6 +179,37 @@ export function verifyCharsetDecodingInvariants(): {
       name: "utf8_bytes_still_decode_correctly",
       expected: true,
       actual: decodeHtmlBytes(utf8Bytes, "text/html; charset=utf-8").includes("\u30c6\u30b9\u30c8"),
+    },
+    {
+      // Simulates Bright Data (or any upstream JSON API) decoding a
+      // UTF-8-encoded page one byte at a time as Latin-1 before returning
+      // it as a JS string \u2014 the exact corruption reported in production
+      // ("\u7121" -> "\u00e7\u00a1"), with no raw bytes available to hand to
+      // decodeHtmlBytes.
+      name: "repairs_utf8_bytes_that_were_reinterpreted_as_latin1",
+      expected: true,
+      actual: (() => {
+        const original = "\u7121\u6599\u767a\u9001"; // \u7121\u6599\u767a\u9001
+        const utf8AsBytes = new TextEncoder().encode(original);
+        let asLatin1 = "";
+        for (const byte of utf8AsBytes) asLatin1 += String.fromCharCode(byte);
+        return repairMojibakeText(asLatin1) === original;
+      })(),
+    },
+    {
+      name: "already_correct_japanese_text_is_left_untouched",
+      expected: true,
+      actual: repairMojibakeText("\u30c6\u30b9\u30c8\u5546\u54c1") === "\u30c6\u30b9\u30c8\u5546\u54c1",
+    },
+    {
+      name: "plain_ascii_title_is_left_untouched",
+      expected: true,
+      actual: repairMojibakeText("iPhone 15 Pro Case") === "iPhone 15 Pro Case",
+    },
+    {
+      name: "empty_string_is_left_untouched",
+      expected: true,
+      actual: repairMojibakeText("") === "",
     },
   ];
 
