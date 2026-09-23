@@ -89,7 +89,12 @@ export async function placeShopOrder(args: {
   customerEmail: string;
   customerPhone: string;
   shippingAddress: string;
-  paymentMethod: "cash_on_delivery" | "bank_transfer";
+  shippingCountryCode?: string | null;
+  shippingProvince?: string | null;
+  shippingCity?: string | null;
+  shippingZip?: string | null;
+  shippingLine1?: string | null;
+  paymentMethod: "cash_on_delivery" | "bank_transfer" | "card";
   notes?: string;
 }): Promise<{ orderId: string }> {
   const supabase = createSupabaseAdminClient();
@@ -132,16 +137,29 @@ export async function placeShopOrder(args: {
     lines.push({ listing, qty: item.qty, unitPrice });
   }
 
+  const isCardPayment = args.paymentMethod === "card";
+
   const { data: order, error: orderError } = await supabase
     .from("shop_orders")
     .insert({
       listing_id: lines[0].listing.id,
       status: "placed",
       payment_method: args.paymentMethod,
+      // Card payment is not confirmed until Stripe's webhook says so; other
+      // payment methods have no gateway and keep this codebase's existing
+      // behavior of being treated as confirmed at order time.
+      payment_status: isCardPayment ? "pending" : "paid",
+      order_status: isCardPayment ? "pending_payment" : "fulfillment_pending",
+      paid_at: isCardPayment ? null : new Date().toISOString(),
       customer_name: args.customerName,
       customer_email: args.customerEmail,
       customer_phone: args.customerPhone,
       shipping_address: args.shippingAddress,
+      shipping_country_code: args.shippingCountryCode ?? null,
+      shipping_province: args.shippingProvince ?? null,
+      shipping_city: args.shippingCity ?? null,
+      shipping_zip: args.shippingZip ?? null,
+      shipping_line1: args.shippingLine1 ?? null,
       subtotal,
       shipping_cost: null,
       total: subtotal,
@@ -166,12 +184,29 @@ export async function placeShopOrder(args: {
     });
     if (itemInsert.error) throw new Error(itemInsert.error.message);
 
-    await recordShopFunnelEvent({
-      listingId: String(line.listing.id),
-      eventType: "purchase",
-      qty: line.qty,
-    });
+    // For card payment the purchase funnel event fires only once Stripe's
+    // webhook confirms the charge (see app/api/webhooks/stripe/route.ts) —
+    // recording "purchase" before payment is confirmed would overstate CVR.
+    if (!isCardPayment) {
+      await recordShopFunnelEvent({
+        listingId: String(line.listing.id),
+        eventType: "purchase",
+        qty: line.qty,
+      });
+    }
   }
 
   return { orderId: String(order.id) };
+}
+
+export async function attachStripeCheckoutSession(args: {
+  orderId: string;
+  stripeCheckoutSessionId: string;
+}): Promise<void> {
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase
+    .from("shop_orders")
+    .update({ stripe_checkout_session_id: args.stripeCheckoutSessionId })
+    .eq("id", args.orderId);
+  if (error) throw new Error(error.message);
 }
