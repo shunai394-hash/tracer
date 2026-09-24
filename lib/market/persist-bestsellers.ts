@@ -5,9 +5,20 @@ import { collectMarketplaceBestsellers } from "@/lib/market/collect-bestsellers"
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import { EMPTY_IDENTIFIERS, hasAnyIdentifier } from "@/lib/market/identifiers";
 
-function buildIdentityKey(title: string, asin: string | null, jan: string | null): string {
+// Priority mirrors pickIdentifierQuery (lib/market/identifiers.ts): a real
+// identifier of any scheme is always preferred over a title-text key, which
+// only ever matches by coincidental exact string equality.
+function buildIdentityKey(
+  title: string,
+  asin: string | null,
+  jan: string | null,
+  gtin: string | null,
+  mpn: string | null,
+): string {
   if (asin) return `asin::${asin}`;
   if (jan) return `jan::${jan}`;
+  if (gtin) return `gtin::${gtin}`;
+  if (mpn) return `mpn::${mpn}`;
   return `title::${title.toLowerCase().replace(/[^a-z0-9\u3040-\u30ff\u4e00-\u9faf]+/gi, " ").trim()}`;
 }
 
@@ -16,6 +27,8 @@ export async function persistMarketplaceBestsellers(): Promise<{
   inserted: number;
   productsCreated: number;
   skippedMarketplaces: string[];
+  /** Per-marketplace detail-page enrichment telemetry (see collect-bestsellers.ts). */
+  enrichment: Array<{ marketplace: string; attempted: number; htmlFetched: number; identifierFound: number }>;
 }> {
   const collected = await collectMarketplaceBestsellers();
   const supabase = createSupabaseAdminClient();
@@ -58,7 +71,7 @@ export async function persistMarketplaceBestsellers(): Promise<{
       if (error) throw new Error(error.message);
       inserted += 1;
 
-      const identityKey = buildIdentityKey(item.title, item.asin, item.jan);
+      const identityKey = buildIdentityKey(item.title, item.asin, item.jan, item.gtin, item.mpn);
       let productId: string | null = null;
 
       const existing = item.asin
@@ -168,5 +181,8 @@ export async function persistMarketplaceBestsellers(): Promise<{
     inserted,
     productsCreated,
     skippedMarketplaces,
+    enrichment: collected.marketplaces
+      .filter((marketplace) => marketplace.enrichment)
+      .map((marketplace) => ({ marketplace: marketplace.marketplace, ...marketplace.enrichment! })),
   };
 }

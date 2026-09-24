@@ -50,6 +50,17 @@ export type CollectedMarketplace = {
   items: ParsedBestseller[];
   skipped?: boolean;
   reason?: string;
+  /**
+   * Where identifier enrichment actually landed for this marketplace this
+   * run — without this, "0 identifiers found" cannot be distinguished from
+   * "detail pages never returned HTML at all" (network/blocking) vs.
+   * "HTML came back but had no JAN/JSON-LD" (real absence).
+   */
+  enrichment?: {
+    attempted: number;
+    htmlFetched: number;
+    identifierFound: number;
+  };
 };
 
 async function fetchHtml(url: string): Promise<string | null> {
@@ -133,44 +144,56 @@ export async function collectMarketplaceBestsellers(): Promise<{
       // covering more items does not multiply wall-clock time; capped at
       // DETAIL_ENRICHMENT_LIMIT as a deliberate bound against an unbounded
       // fetch fan-out if a source ever returns an unusually large page.
+      let enrichment: { attempted: number; htmlFetched: number; identifierFound: number } | undefined;
+
       if (source.marketplace === "amazon.co.jp") {
         const details = items.slice(0, DETAIL_ENRICHMENT_LIMIT);
+        let htmlFetched = 0;
+        let identifierFound = 0;
         await Promise.all(
           details.map(async (item) => {
             if (!item.productUrl) return;
             try {
               const detailHtml = await fetchHtml(item.productUrl);
               if (!detailHtml) return;
+              htmlFetched += 1;
               const detail = parseAmazonProductDetail(detailHtml);
               item.brand = detail.brand;
               item.model = detail.model;
               item.jan = normalizeIdentifier("jan", detail.jan);
               item.mpn = normalizeIdentifier("mpn", detail.model);
+              if (item.jan || item.mpn) identifierFound += 1;
             } catch {
               // Detail pages stay unknown rather than blocking the listing.
             }
           }),
         );
+        enrichment = { attempted: details.length, htmlFetched, identifierFound };
       }
 
       if (source.marketplace === "yahoo_shopping") {
         const details = items.slice(0, DETAIL_ENRICHMENT_LIMIT);
+        let htmlFetched = 0;
+        let identifierFound = 0;
         await Promise.all(
           details.map(async (item) => {
             if (!item.productUrl) return;
             try {
               const detailHtml = await fetchHtml(item.productUrl);
               if (!detailHtml) return;
+              htmlFetched += 1;
               const detail = parseYahooProductDetail(detailHtml);
               item.jan = normalizeIdentifier("jan", detail.jan);
               item.gtin = normalizeIdentifier("gtin", detail.gtin);
               item.mpn = normalizeIdentifier("mpn", detail.mpn);
               item.brand = detail.brand;
+              if (item.jan || item.gtin || item.mpn) identifierFound += 1;
             } catch {
               // Detail pages stay unknown rather than blocking the listing.
             }
           }),
         );
+        enrichment = { attempted: details.length, htmlFetched, identifierFound };
       }
 
       marketplaces.push({
@@ -179,6 +202,7 @@ export async function collectMarketplaceBestsellers(): Promise<{
         sourceUrl: source.url,
         fetchedAt,
         items,
+        enrichment,
       });
     } catch (error) {
       if (error instanceof BrightDataConfigError) {
