@@ -48,7 +48,7 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
     .select("*")
     .eq("published", true)
     .order("published_at", { ascending: false })
-    .limit(3);
+    ;
 
   if (error) throw new Error(error.message);
   return (data ?? []).map((row) => mapListing(row as Record<string, unknown>));

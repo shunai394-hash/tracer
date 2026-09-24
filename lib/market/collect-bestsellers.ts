@@ -1,4 +1,4 @@
-import "server-only";
+﻿import "server-only";
 
 import {
   BrightDataConfigError,
@@ -64,33 +64,47 @@ export type CollectedMarketplace = {
 };
 
 async function fetchHtml(url: string): Promise<string | null> {
+  const directFetch = async (): Promise<string | null> => {
+    try {
+      const response = await fetch(url, {
+        cache: "no-store",
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml",
+          "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+        },
+      });
+
+      if (!response.ok) return null;
+
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const html = decodeHtmlBytes(
+        bytes,
+        response.headers.get("content-type"),
+      );
+
+      return html.includes("<") ? html : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Product detail pages: direct first, Bright Data fallback.
+  const directHtml = await directFetch();
+  if (directHtml) return directHtml;
+
   if (isBrightDataConfigured()) {
-    const page = await fetchBrightDataPage(url);
-    return page.html;
+    try {
+      const page = await fetchBrightDataPage(url);
+      if (page.html) return page.html;
+    } catch {
+      // Fall through.
+    }
   }
 
-  try {
-    const response = await fetch(url, {
-      cache: "no-store",
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (compatible; TRACER-bestseller-collector/1.0)",
-        Accept: "text/html",
-      },
-    });
-    if (!response.ok) return null;
-    // `response.text()` decodes strictly by the Content-Type charset
-    // (defaulting to UTF-8 when absent). Some shop pages only declare
-    // their encoding via `<meta charset>`, so bytes are read raw and
-    // decoded with charset detection that also checks the document body.
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    const html = decodeHtmlBytes(bytes, response.headers.get("content-type"));
-    return html.includes("<") ? html : null;
-  } catch {
-    return null;
-  }
+  return null;
 }
-
 function enrichAmazon(item: ParsedBestseller): ParsedBestseller {
   return {
     ...item,
@@ -227,3 +241,6 @@ export async function collectMarketplaceBestsellers(): Promise<{
     itemCount: marketplaces.reduce((sum, item) => sum + item.items.length, 0),
   };
 }
+
+
+
