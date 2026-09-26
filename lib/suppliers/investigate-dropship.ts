@@ -210,66 +210,121 @@ export async function investigateDropshipForBestsellers(): Promise<{
           // Detail unknown does not invent shipping/barcode.
         }
 
-        // CJ's own SKU is CJ's internal catalog id, not an Amazon ASIN nor a
-        // manufacturer part number — copying it into either field would be
-        // fabricating an identifier CJ never claimed, so it is left out
-        // entirely. CJ's barcode/productBarCode field also never states
-        // which national retail-barcode standard it follows, so it is
-        // recorded as a generic GTIN (the GS1 umbrella standard) instead of
-        // being guessed to be specifically JAN/EAN/UPC and copied into all
-        // four at once. matchProductIdentity() compares GTIN against the
-        // marketplace side's JAN/EAN/UPC/GTIN as one barcode family (same
-        // digits, GS1 zero-padding), so a real match is still detected
-        // without asserting a national scheme CJ never disclosed.
-        // CJ sometimes returns the barcode on product/listV2 but omits it
-        // from product/query. Both values are direct CJ evidence, so prefer
-        // the richer detail response and fall back to the search candidate
-        // rather than discarding a verified supplier identifier.
-        const supplyBarcode = detail.barcode ?? product.barcode;
-        const supplyIds = identifiersFromRecord({
+        // CJ's own SKU is CJ's internal catalog id, not a marketplace
+        // identifier. The official CJ API documents the VARIANT barcode as a
+        // numeric identifier, so identity must be checked against variant
+        // barcodes before a supplier listing can become sales-eligible.
+        //
+        // This was the critical gap in the previous pipeline: we fetched
+        // /product/variant/query but only used it to choose a variant AFTER
+        // identity matching. Consequently a CJ product could contain the
+        // exact barcode needed to prove identity while the product-level
+        // payload appeared barcode-less, producing identity_not_confirmed.
+        let variants: Awaited<ReturnType<typeof fetchCJProductVariants>> = [];
+        cjStage = "variants";
+        try {
+          variants = await fetchCJProductVariants(detail.id);
+        } catch {
+          // Variant lookup failure leaves identity unconfirmed rather than
+          // inventing an identifier.
+        }
+
+        const variantIdentityMatches = variants
+          .map((variant) => {
+            const barcode = variant.barcode;
+            if (!barcode) return null;
+
+            const supplyIds = identifiersFromRecord({
+              asin: null,
+              jan: null,
+              gtin: barcode,
+              ean: null,
+              upc: null,
+              mpn: null,
+            });
+
+            const identity = matchProductIdentity({
+              market: {
+                ...marketIds,
+                brand: typeof record.brand === "string" ? record.brand : null,
+                title: String(record.title ?? ""),
+                imageUrl: typeof record.image_url === "string" ? record.image_url : null,
+              },
+              supply: {
+                ...supplyIds,
+                title: detail.title,
+                imageUrl: detail.imageUrl,
+              },
+            });
+
+            return { variant, supplyIds, identity };
+          })
+          .filter(
+            (
+              item,
+            ): item is {
+              variant: (typeof variants)[number];
+              supplyIds: ReturnType<typeof identifiersFromRecord>;
+              identity: ReturnType<typeof matchProductIdentity>;
+            } => item !== null,
+          );
+
+        // An exact marketplace/CJ barcode match identifies the variant even
+        // when the parent CJ product contains several variants. If there is
+        // no exact barcode match, retain the old strict identity rules.
+        const confirmedVariantMatches = variantIdentityMatches.filter(
+          (item) => item.identity.salesEligible,
+        );
+        const confirmedVariant =
+          confirmedVariantMatches.length === 1
+            ? confirmedVariantMatches[0]
+            : null;
+
+        const fallbackSupplyIds = identifiersFromRecord({
           asin: null,
           jan: null,
-          gtin: supplyBarcode,
+          gtin: detail.barcode ?? product.barcode,
           ean: null,
           upc: null,
           mpn: null,
-          title: detail.title,
-          url: null,
         });
 
-        const identity = matchProductIdentity({
-          market: {
-            ...marketIds,
-            brand: typeof record.brand === "string" ? record.brand : null,
-            title: String(record.title ?? ""),
-            imageUrl: typeof record.image_url === "string" ? record.image_url : null,
-          },
-          supply: {
-            ...supplyIds,
-            title: detail.title,
-            imageUrl: detail.imageUrl,
-          },
-        });
+        const identity = confirmedVariant
+          ? confirmedVariant.identity
+          : matchProductIdentity({
+              market: {
+                ...marketIds,
+                brand: typeof record.brand === "string" ? record.brand : null,
+                title: String(record.title ?? ""),
+                imageUrl: typeof record.image_url === "string" ? record.image_url : null,
+              },
+              supply: {
+                ...fallbackSupplyIds,
+                title: detail.title,
+                imageUrl: detail.imageUrl,
+              },
+            });
 
-        // Only auto-assign a variant when the product has exactly one — picking
-        // among several would be a guess (which unknown-value rules here forbid).
-        // See the UNVERIFIED FIELD MAPPING note on fetchCJProductVariants: the
-        // endpoint/field names come from secondary sources, not a page this
-        // code read directly (CJ's docs domain is blocked by network egress here).
-        let cjVariantId: string | null = null;
-        let variantSku: string | null = null;
-        cjStage = "variants";
-        try {
-          const variants = await fetchCJProductVariants(detail.id);
-          const unambiguous = selectUnambiguousVariant(variants);
-          if (unambiguous) {
-            cjVariantId = unambiguous.vid;
-            variantSku = unambiguous.sku;
-          }
-        } catch {
-          // Variant lookup failing does not block the listing; it just leaves
-          // cj_variant_id unknown, which the order gate already treats as a hard stop.
-        }
+        const selectedVariant =
+          confirmedVariant?.variant ??
+          (variants.length === 1 ? variants[0] : null);
+
+        const supplyIds = confirmedVariant?.supplyIds ?? fallbackSupplyIds;
+        const supplyBarcode =
+          confirmedVariant?.variant.barcode ??
+          detail.barcode ??
+          product.barcode ??
+          null;
+
+        // Only an exactly matched barcode may select one variant from a
+        // multi-variant product. Otherwise a single-variant product may still
+        // be used if identity was already confirmed at product level.
+        const cjVariantId = identity.salesEligible && selectedVariant
+          ? selectedVariant.vid
+          : null;
+        const variantSku = identity.salesEligible && selectedVariant
+          ? selectedVariant.sku
+          : null;
 
         cjStage = "supplier_listing_insert";
         const insert = await supabase
