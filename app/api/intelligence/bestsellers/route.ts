@@ -4,7 +4,7 @@ import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-d
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 export async function POST() {
   try {
