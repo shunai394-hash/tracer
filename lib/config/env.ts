@@ -70,7 +70,10 @@ export function getExtensionConfig() {
 }
 
 export function getDropshipSupplierConfig() {
+<<<<<<< HEAD
 
+=======
+>>>>>>> 442ad7e (fix: repair extension env config syntax)
   return {
     cj: present(process.env.CJ_API_KEY),
     hypersku: present(process.env.HYPERSKU_API_KEY),
@@ -200,4 +203,5 @@ export function getNewfindConfig() {
     apiKey: process.env.NEWFIND_API_KEY?.trim() ?? "",
   };
 }
+
 
