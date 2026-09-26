@@ -26,6 +26,12 @@ function validHttpUrl(value: unknown): string {
 
 export async function POST(request: Request) {
   try {
+    const expectedKey = process.env.TRACER_EXTENSION_INGEST_KEY?.trim() || "";
+    const suppliedKey = request.headers.get("x-tracer-extension-key")?.trim() || "";
+    if (process.env.NODE_ENV === "production" && (!expectedKey || suppliedKey !== expectedKey)) {
+      return NextResponse.json({ error: "Extension authentication failed." }, { status: 401 });
+    }
+
     const body = (await request.json()) as ExtensionProduct;
     const url = validHttpUrl(body.url);
 
