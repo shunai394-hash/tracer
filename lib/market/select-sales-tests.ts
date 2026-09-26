@@ -3,7 +3,6 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
-import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 
 function asNumber(value: unknown): number | null {
@@ -35,6 +34,7 @@ export type SalesTestSelection = {
  * Title-only identity never qualifies.
  */
 export async function selectAndPublishSalesTests(
+  bestsellerIds: string[],
   limit = 3,
 ): Promise<SalesTestSelection> {
   const supabase = createSupabaseAdminClient();
@@ -46,11 +46,12 @@ export async function selectAndPublishSalesTests(
   // or the supplier_listings rows that stage just wrote will never be
   // found here and every candidate falls through as identity_not_confirmed
   // even when a linked listing genuinely exists for it.
-  const { data: bestsellers, error } = await supabase
-    .from("marketplace_bestsellers")
-    .select("*")
-    .order("fetched_at", { ascending: false })
-    .limit(BESTSELLER_CANDIDATE_BATCH_SIZE);
+  const { data: bestsellers, error } = bestsellerIds.length === 0
+    ? { data: [], error: null }
+    : await supabase
+        .from("marketplace_bestsellers")
+        .select("*")
+        .in("id", bestsellerIds);
 
   if (error) throw new Error(error.message);
 
