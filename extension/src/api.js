@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE = "https://tracer.vercel.app";
+const DEFAULT_API_BASE = "";
 
 async function getSettings() {
   return chrome.storage.local.get({
