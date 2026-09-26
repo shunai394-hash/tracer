@@ -13,6 +13,17 @@ export async function POST() {
     const bestsellers = await persistMarketplaceBestsellers();
     const suppliers = await investigateDropshipForBestsellers(bestsellers.bestsellerIds);
     const selected = await selectAndPublishSalesTests(bestsellers.bestsellerIds, 3);
+    const newfind = await Promise.all(
+      selected.publishedListingIds.map((listingId) =>
+        promoteShopListingToNewfind(listingId).catch((error) => ({
+          configured: true,
+          sent: false,
+          eventId: `tracer-shop-listing:${listingId}`,
+          status: null,
+          detail: error instanceof Error ? error.message : String(error),
+        })),
+      ),
+    );
 
     return NextResponse.json({
       ok: true,
