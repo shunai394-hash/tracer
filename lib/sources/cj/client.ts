@@ -365,23 +365,35 @@ export async function getCJProductDetail(
  * must open the live CJ developer docs, compare this against the real
  * response shape, and correct anything that differs.
  */
+type CJVariantRow = {
+  vid?: string;
+  variantId?: string;
+  pid?: string;
+  productId?: string;
+  variantSku?: string;
+  sku?: string;
+  variantNameEn?: string;
+  variantKey?: string;
+  variantSellPrice?: string | number;
+  barcode?: string | number;
+};
+
 type CJVariantQueryResponse = {
   code?: number;
   result?: boolean;
   message?: string;
-  data?: Array<{
-    vid?: string;
-    variantId?: string;
-    pid?: string;
-    productId?: string;
-    variantSku?: string;
-    sku?: string;
-    variantNameEn?: string;
-    variantKey?: string;
-    variantSellPrice?: string | number;
-    barcode?: string | number;
-  }>;
+  data?: CJVariantRow[] | {
+    content?: CJVariantRow[];
+    variantList?: CJVariantRow[];
+    productList?: CJVariantRow[];
+  };
 };
+
+function extractCJVariantRows(data: CJVariantQueryResponse["data"]): CJVariantRow[] {
+  if (Array.isArray(data)) return data;
+  if (!data) return [];
+  return data.content ?? data.variantList ?? data.productList ?? [];
+}
 
 export async function fetchCJProductVariants(pid: string): Promise<CJProductVariant[]> {
   const token = await getAccessToken();
@@ -407,7 +419,11 @@ export async function fetchCJProductVariants(pid: string): Promise<CJProductVari
     throw new CJRequestError(payload.message || "CJ variant query failed");
   }
 
-  const rows = payload.data ?? [];
+  const rows = extractCJVariantRows(payload.data);
+
+  if (process.env.CJ_DEBUG_LOG === "1") {
+    console.log("[cj-diagnostic] product/variant/query response:", JSON.stringify(payload));
+  }
 
   return rows
     .map((row): CJProductVariant | null => {
