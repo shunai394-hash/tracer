@@ -4,19 +4,22 @@ import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-d
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST() {
   try {
+    const startedAt = Date.now();
     const bestsellers = await persistMarketplaceBestsellers();
     const suppliers = await investigateDropshipForBestsellers();
     const selected = await selectAndPublishSalesTests(3);
 
     return NextResponse.json({
       ok: true,
+      elapsedMs: Date.now() - startedAt,
       bestsellers,
       suppliers,
       selected,
+      salesReady: selected.published > 0,
     });
   } catch (error) {
     console.error("[TRACER BESTSELLERS ERROR]", error);
