@@ -11,7 +11,7 @@ export async function POST() {
   try {
     const startedAt = Date.now();
     const bestsellers = await persistMarketplaceBestsellers();
-    const suppliers = await investigateDropshipForBestsellers(bestsellers.bestsellerIds);
+    const suppliers = await investigateDropshipForBestsellers(bestsellers.supplierCandidateIds);
     const selected = await selectAndPublishSalesTests(bestsellers.bestsellerIds, 3);
     const newfind = await Promise.all(
       selected.publishedListingIds.map((listingId) =>
