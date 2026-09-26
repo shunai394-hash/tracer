@@ -425,7 +425,7 @@ export async function fetchCJProductVariants(pid: string): Promise<CJProductVari
         barcode:
           row.barcode === undefined || row.barcode === null
             ? null
-            : String(row.barcode).replace(/\\D/g, "") || null,
+            : String(row.barcode).replace(/\D/g, "") || null,
         inventory: null,
       };
     })
