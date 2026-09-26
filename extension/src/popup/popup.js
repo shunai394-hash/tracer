@@ -6,7 +6,7 @@ const save = document.getElementById("save");
 const apiBase = document.getElementById("apiBase");
 const extensionKey = document.getElementById("extensionKey");
 
-chrome.storage.local.get({ apiBase: "https://tracer.vercel.app", extensionKey: "" }).then((settings) => {
+chrome.storage.local.get({ apiBase: "", extensionKey: "" }).then((settings) => {
   apiBase.value = settings.apiBase;
   extensionKey.value = settings.extensionKey;
 });
