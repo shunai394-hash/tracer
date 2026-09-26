@@ -159,9 +159,20 @@ export async function investigateDropshipForBestsellers(): Promise<{
       let searches = [] as Awaited<ReturnType<typeof searchCJProducts>>[];
       for (const query of identifierQueries) {
         cjQuery = query;
-        const search = await searchCJProducts(query, { page: 1, size: 10 });
-        searches.push(search);
-        if (search.products.some((product) => product.barcode && product.barcode.trim())) break;
+        try {
+          const search = await searchCJProducts(query, { page: 1, size: 10 });
+          searches.push(search);
+          if (search.products.some((product) => product.barcode && product.barcode.trim())) break;
+        } catch (error) {
+          // One identifier can be rejected or temporarily fail at CJ.
+          // Continue with the next independently verified identifier instead
+          // of discarding the entire bestseller row.
+          console.error("[investigate-dropship] CJ search query failed, continuing", {
+            bestsellerId: String(record.id),
+            query,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
 
       const searchProducts = searches.flatMap((search) => search.products);
