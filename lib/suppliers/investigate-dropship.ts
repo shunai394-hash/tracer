@@ -92,6 +92,14 @@ export async function investigateDropshipForBestsellers(): Promise<{
   let noIdentifierOverlap = 0;
   let supplyBarcodeMissing = 0;
   let rowErrors = 0;
+  const rowErrorDetails: Array<{
+    bestsellerId: string;
+    title: string;
+    stage: string;
+    query: string | null;
+    cjProductId: string | null;
+    error: string;
+  }> = [];
 
   for (const row of rows ?? []) {
     processed += 1;
@@ -329,14 +337,16 @@ export async function investigateDropshipForBestsellers(): Promise<{
       // server console (a real DB integrity error is a bug worth seeing)
       // and counted in rowErrors so the API response reports it.
       rowErrors += 1;
-      console.error("[investigate-dropship] row failed, continuing batch", {
+      const rowErrorDetail = {
         bestsellerId: String(record.id),
         title: String(record.title ?? ""),
         stage: cjStage,
         query: cjQuery,
         cjProductId,
         error: error instanceof Error ? error.message : String(error),
-      });
+      };
+      rowErrorDetails.push(rowErrorDetail);
+      console.error("[investigate-dropship] row failed, continuing batch", rowErrorDetail);
       await writeEvidence({
         productId: typeof record.product_id === "string" ? record.product_id : null,
         bestsellerId: String(record.id),
@@ -360,5 +370,6 @@ export async function investigateDropshipForBestsellers(): Promise<{
     noIdentifierOverlap,
     supplyBarcodeMissing,
     rowErrors,
+    rowErrorDetails: rowErrorDetails.slice(0, 20),
   };
 }
