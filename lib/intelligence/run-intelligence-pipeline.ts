@@ -153,14 +153,22 @@ export async function runIntelligencePipeline(): Promise<{
 }> {
   const steps: PipelineStepResult[] = [];
 
+  const bestsellerStep = await runStep("bestsellers", () => persistMarketplaceBestsellers());
+  steps.push(bestsellerStep);
+
+  const bestsellerIds =
+    bestsellerStep.ok &&
+    bestsellerStep.result &&
+    typeof bestsellerStep.result === "object" &&
+    Array.isArray((bestsellerStep.result as { bestsellerIds?: unknown }).bestsellerIds)
+      ? ((bestsellerStep.result as { bestsellerIds: string[] }).bestsellerIds)
+      : [];
+
   steps.push(
-    await runStep("bestsellers", () => persistMarketplaceBestsellers()),
+    await runStep("dropship", () => investigateDropshipForBestsellers(bestsellerIds)),
   );
   steps.push(
-    await runStep("dropship", () => investigateDropshipForBestsellers()),
-  );
-  steps.push(
-    await runStep("sales_test_select", () => selectAndPublishSalesTests(3)),
+    await runStep("sales_test_select", () => selectAndPublishSalesTests(bestsellerIds, 3)),
   );
   steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand()));
   steps.push(await runStep("normalize", () => normalizeProductIntelligence()));
