@@ -107,6 +107,46 @@ export function parseAmazonBestsellersHtml(html: string): ParsedBestseller[] {
     });
   }
 
+  // Amazon periodically changes the ranking-card wrapper. If the normal
+  // card splitter missed items, recover product links from the whole page.
+  // The ASIN in a real product link is an authoritative marketplace
+  // identifier, so this fallback does not invent identity.
+  if (items.length < 30) {
+    const fallbackRe = /href=["']([^"']*\/(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})(?:[^"']*))["']/gi;
+    let fallback: RegExpExecArray | null;
+    while ((fallback = fallbackRe.exec(html)) && items.length < 50) {
+      const asin = normalizeIdentifier("asin", fallback[2]);
+      if (!asin || seen.has(asin)) continue;
+      const productUrl = absoluteUrl(fallback[1], "https://www.amazon.co.jp");
+      if (!productUrl) continue;
+      const nearby = html.slice(Math.max(0, fallback.index - 700), fallback.index + 1400);
+      const titleMatch =
+        nearby.match(/alt=["']([^"']{4,200})["']/i) ??
+        nearby.match(/(?:a-size-base-plus|p13n-sc-truncate|line-clamp)[^>]*>([^<]{4,200})</i);
+      const title = titleMatch ? decode(titleMatch[1]) : "Amazon ASIN " + asin;
+      const priceParsed = parseYen(nearby);
+      const imageMatch = nearby.match(/src=["'](https:\/\/[^"']+\.(?:jpg|jpeg|png|webp)[^"']*)["']/i);
+      seen.add(asin);
+      items.push({
+        rank: items.length + 1,
+        title,
+        brand: null,
+        model: null,
+        asin,
+        jan: null,
+        gtin: null,
+        ean: null,
+        upc: null,
+        mpn: null,
+        price: priceParsed?.amount ?? null,
+        currency: priceParsed?.currency ?? null,
+        reviewCount: null,
+        productUrl,
+        imageUrl: imageMatch?.[1] ?? null,
+      });
+    }
+  }
+
   return items.slice(0, 50);
 }
 
