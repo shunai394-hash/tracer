@@ -257,23 +257,33 @@ export function parseAmazonProductDetail(html: string): {
   const cleaned = stripHtmlComments(html);
 
   const jan =
-    cleaned.match(/<th[^>]*>\\s*JAN\\s*<\\/th>\\s*<td[^>]*>\\s*([0-9]{8,13})/i)?.[1] ??
-    cleaned.match(/JAN[^\\d]{0,12}([0-9]{8,13})/)?.[1] ??
+    cleaned.match(/<th[^>]*>\s*JAN\s*<\/th>\s*<td[^>]*>\s*([0-9]{8,13})/i)?.[1] ??
+    cleaned.match(/JAN[^\d]{0,12}([0-9]{8,13})/)?.[1] ??
     null;
 
   const brand =
-    cleaned.match(/id="bylineInfo"[^>]*>[\\s\\S]{0,80}>([^<]{2,80})/)?.[1] ??
-    cleaned.match(/ブランド[^\\n<]{0,8}([^<]{2,80})/)?.[1] ??
+    cleaned.match(/id="bylineInfo"[^>]*>[\s\S]{0,80}>([^<]{2,80})/)?.[1] ??
+    cleaned.match(/ブランド[^\n<]{0,8}([^<]{2,80})/)?.[1] ??
     null;
 
   let model =
-    cleaned.match(/<th[^>]*>\\s*(?:型番|メーカー型番)\\s*<\\/th>\\s*<td[^>]*>\\s*([^<]{2,80})/i)?.[1] ??
+    cleaned.match(/<th[^>]*>\s*(?:型番|メーカー型番)\s*<\/th>\s*<td[^>]*>\s*([^<]{2,80})/i)?.[1] ??
     null;
+
+  // Never store an ASIN as an MPN/model. Amazon exposes the ASIN in several
+  // metadata fields, and treating it as a manufacturer part number creates a
+  // false supplier-search key.
+  const normalizedModel = model ? decode(model) : null;
+  const asinCandidates = Array.from(cleaned.matchAll(/\bB[0-9A-Z]{9}\b/gi)).map((m) => m[0].toUpperCase());
+  const safeModel =
+    normalizedModel && !asinCandidates.includes(normalizedModel.toUpperCase())
+      ? normalizedModel
+      : null;
 
   // Amazon product pages frequently expose the same identity data through
   // schema.org JSON-LD. Use it as a second, machine-readable source rather
   // than guessing from the visible page layout.
-  const scriptPattern = /<script[^>]*type=["']application\\/ld\\+json["'][^>]*>([\\s\\S]*?)<\\/script>/gi;
+  const scriptPattern = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let match: RegExpExecArray | null;
   while ((match = scriptPattern.exec(cleaned))) {
     try {
@@ -306,9 +316,9 @@ export function parseAmazonProductDetail(html: string): {
           // number space; preserve only the digits and let the shared
           // identifier matcher handle cross-scheme equality.
           return {
-            brand: brand ? decode(brand).replace(/^ブランド:\\s*/u, "") : null,
+            brand: brand ? decode(brand).replace(/^ブランド:\s*/u, "") : null,
             jan: gtin,
-            model: model ? decode(model) : null,
+            model: safeModel,
           };
         }
       }
@@ -317,18 +327,8 @@ export function parseAmazonProductDetail(html: string): {
     }
   }
 
-  // Never store an ASIN as an MPN/model. Amazon exposes the ASIN in several
-  // metadata fields, and treating it as a manufacturer part number creates a
-  // false supplier-search key.
-  const normalizedModel = model ? decode(model) : null;
-  const asinCandidates = Array.from(cleaned.matchAll(/\\bB[0-9A-Z]{9}\\b/gi)).map((m) => m[0].toUpperCase());
-  const safeModel =
-    normalizedModel && !asinCandidates.includes(normalizedModel.toUpperCase())
-      ? normalizedModel
-      : null;
-
   return {
-    brand: brand ? decode(brand).replace(/^ブランド:\\s*/u, "") : null,
+    brand: brand ? decode(brand).replace(/^ブランド:\s*/u, "") : null,
     jan,
     model: safeModel,
   };
