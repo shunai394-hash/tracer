@@ -12,6 +12,7 @@ import { persistReorderRecommendations } from "@/lib/ordering/persist-reorder";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
+import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
@@ -167,8 +168,21 @@ export async function runIntelligencePipeline(): Promise<{
   steps.push(
     await runStep("dropship", () => investigateDropshipForBestsellers(bestsellerIds)),
   );
+  const salesTestStep = await runStep(
+    "sales_test_select",
+    () => selectAndPublishSalesTests(bestsellerIds, 3),
+  );
+  steps.push(salesTestStep);
   steps.push(
-    await runStep("sales_test_select", () => selectAndPublishSalesTests(bestsellerIds, 3)),
+    await runStep("newfind_promotion", async () => {
+      const result = salesTestStep.result as
+        | { publishedListingIds?: unknown }
+        | undefined;
+      const ids = Array.isArray(result?.publishedListingIds)
+        ? result.publishedListingIds.filter((id): id is string => typeof id === "string")
+        : [];
+      return Promise.all(ids.map((id) => promoteShopListingToNewfind(id)));
+    }),
   );
   steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand()));
   steps.push(await runStep("normalize", () => normalizeProductIntelligence()));
