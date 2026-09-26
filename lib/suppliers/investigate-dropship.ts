@@ -240,6 +240,7 @@ export async function investigateDropshipForBestsellers(
       // is the expensive operation; inspecting 20 unrelated search results
       // multiplied the CJ request volume without relaxing the identity gate.
       const searchProducts = searches.flatMap((search) => search.products);
+      const seenProductIds = new Set<string>();
       const prioritizedProducts = directMatches.length > 0
         ? directMatches
         : searchProducts.slice(0, 3);
