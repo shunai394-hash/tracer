@@ -15,7 +15,7 @@ type ProductCapture = {
 
 function textFrom(selector: string): string | null {
   const node = document.querySelector(selector);
-  const value = node?.textContent?.replace(/\\s+/g, " ").trim();
+  const value = node?.textContent?.replace(/\s+/g, " ").trim();
   return value || null;
 }
 
@@ -27,14 +27,14 @@ function numberFromText(value: string | null): number | null {
 }
 
 function extractAsin(url: string): string | null {
-  const match = url.match(/\\/(?:dp|gp\\/product|gp\\/aw\\/d)\\/([A-Z0-9]{10})(?:[/?]|$)/i);
+  const match = url.match(/\/(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})(?:[/?]|$)/i);
   return match?.[1]?.toUpperCase() ?? null;
 }
 
 function jsonLdObjects(): Record<string, unknown>[] {
   const result: Record<string, unknown>[] = [];
 
-  for (const node of document.querySelectorAll('script[type="application/ld+json"]')) {
+  for (const node of Array.from(document.querySelectorAll('script[type="application/ld+json"]'))) {
     try {
       const parsed = JSON.parse(node.textContent || "");
       const values = Array.isArray(parsed) ? parsed : [parsed];
@@ -117,17 +117,19 @@ function capture(): ProductCapture {
   };
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== "TRACER_CAPTURE_PRODUCT") return false;
+chrome.runtime.onMessage.addListener(
+  (message: any, _sender: any, sendResponse: (response: unknown) => void) => {
+    if (message?.type !== "TRACER_CAPTURE_PRODUCT") return false;
 
-  try {
-    sendResponse({ ok: true, product: capture() });
-  } catch (error) {
-    sendResponse({
-      ok: false,
-      error: error instanceof Error ? error.message : "Failed to capture product",
-    });
-  }
+    try {
+      sendResponse({ ok: true, product: capture() });
+    } catch (error) {
+      sendResponse({
+        ok: false,
+        error: error instanceof Error ? error.message : "Failed to capture product",
+      });
+    }
 
-  return true;
-});
+    return true;
+  },
+);
