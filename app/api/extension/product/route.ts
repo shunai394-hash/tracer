@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 
 import {
   EMPTY_IDENTIFIERS,
@@ -285,6 +285,7 @@ export async function POST(request: Request) {
     }
 
     const url = requireHttpUrl(rawUrl);
+
     const title = stringValue(body.title);
     if (!title) {
       return NextResponse.json(
@@ -393,3 +394,4 @@ export async function POST(request: Request) {
     );
   }
 }
+
