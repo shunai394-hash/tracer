@@ -379,6 +379,7 @@ type CJVariantQueryResponse = {
     variantNameEn?: string;
     variantKey?: string;
     variantSellPrice?: string | number;
+    barcode?: string | number;
   }>;
 };
 
@@ -421,6 +422,10 @@ export async function fetchCJProductVariants(pid: string): Promise<CJProductVari
           row.variantSellPrice === undefined || row.variantSellPrice === null
             ? null
             : String(row.variantSellPrice),
+        barcode:
+          row.barcode === undefined || row.barcode === null
+            ? null
+            : String(row.barcode).replace(/\\D/g, "") || null,
         inventory: null,
       };
     })
