@@ -95,6 +95,60 @@ let cachedToken: {
   expiresAt: number;
 } | null = null;
 
+let lastCJRequestAt = 0;
+let cjRequestChain: Promise<void> = Promise.resolve();
+
+async function waitForCJRateLimit(): Promise<void> {
+  let release!: () => void;
+  const previous = cjRequestChain;
+  cjRequestChain = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  await previous;
+
+  const minIntervalMs = 750;
+  const waitMs = Math.max(0, minIntervalMs - (Date.now() - lastCJRequestAt));
+  if (waitMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+
+  lastCJRequestAt = Date.now();
+  release();
+}
+
+async function fetchCJWithRateLimit(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const maxAttempts = 4;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    await waitForCJRateLimit();
+
+    const response = await fetchCJWithRateLimit(input, init);
+    if (response.status !== 429 || attempt === maxAttempts) {
+      return response;
+    }
+
+    const retryAfter = Number(response.headers.get("retry-after") ?? "");
+    const retryMs =
+      Number.isFinite(retryAfter) && retryAfter >= 0
+        ? Math.min(retryAfter * 1000, 15_000)
+        : Math.min(1000 * 2 ** (attempt - 1), 8_000);
+
+    console.warn("[cj] rate limited; retrying", {
+      attempt,
+      maxAttempts,
+      retryMs,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, retryMs));
+  }
+
+  throw new CJRequestError("CJ request retry loop exhausted");
+}
+
 function getConfig() {
   const config = getCJConfig();
 
