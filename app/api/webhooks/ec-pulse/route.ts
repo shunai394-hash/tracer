@@ -4,6 +4,7 @@ import {
   persistECPulsePriceChange,
   type ECPulsePriceChangedEvent,
 } from "@/lib/tracer/persist-ec-pulse";
+import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 
 export const runtime = "nodejs";
 
@@ -38,11 +39,13 @@ export async function POST(request: Request) {
     }
 
     const result = await persistECPulsePriceChange(body);
+    const intelligence = await buildOpportunityIntelligence();
 
     return NextResponse.json({
       ok: true,
       event: body.event,
       result,
+      intelligence,
     });
   } catch (error) {
     console.error("[TRACER EC-PULSE WEBHOOK ERROR]", error);
