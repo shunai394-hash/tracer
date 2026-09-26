@@ -201,10 +201,15 @@ export async function investigateDropshipForBestsellers(): Promise<{
         // marketplace side's JAN/EAN/UPC/GTIN as one barcode family (same
         // digits, GS1 zero-padding), so a real match is still detected
         // without asserting a national scheme CJ never disclosed.
+        // CJ sometimes returns the barcode on product/listV2 but omits it
+        // from product/query. Both values are direct CJ evidence, so prefer
+        // the richer detail response and fall back to the search candidate
+        // rather than discarding a verified supplier identifier.
+        const supplyBarcode = detail.barcode ?? product.barcode;
         const supplyIds = identifiersFromRecord({
           asin: null,
           jan: null,
-          gtin: detail.barcode,
+          gtin: supplyBarcode,
           ean: null,
           upc: null,
           mpn: null,
@@ -290,7 +295,7 @@ export async function investigateDropshipForBestsellers(): Promise<{
         if (insert.error) throw new Error(insert.error.message);
         if (identity.salesEligible) matched += 1;
         if (identity.method === "none") noIdentifierOverlap += 1;
-        if (!detail.barcode) supplyBarcodeMissing += 1;
+        if (!supplyBarcode) supplyBarcodeMissing += 1;
 
         await writeEvidence({
           productId: typeof record.product_id === "string" ? record.product_id : null,
