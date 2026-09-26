@@ -276,7 +276,15 @@ export async function POST(request: Request) {
 
     const body = (await request.json()) as ExtensionProductInput;
 
-    const url = requireHttpUrl(stringValue(body.url) ?? "");
+    const rawUrl = stringValue(body.url);
+    if (!rawUrl) {
+      return NextResponse.json(
+        { ok: false, error: "url is required" },
+        { status: 400 },
+      );
+    }
+
+    const url = requireHttpUrl(rawUrl);
     const title = stringValue(body.title);
     if (!title) {
       return NextResponse.json(
