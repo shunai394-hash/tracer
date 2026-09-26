@@ -47,7 +47,7 @@ async function settings() {
 export async function sendProduct(product: CapturedProduct): Promise<ProductResponse> {
   const config = await settings();
   const response = await fetch(
-    `${config.apiUrl.replace(/\/$/, "")}/api/extension/product`,
+    `${config.apiUrl.replace(/\\/$/, "")}/api/extension/product`,
     {
       method: "POST",
       headers: {
@@ -68,7 +68,7 @@ export async function sendProduct(product: CapturedProduct): Promise<ProductResp
 
 export async function saveSettings(apiUrl: string, apiKey: string) {
   await chrome.storage.local.set({
-    apiUrl: apiUrl.trim().replace(/\/$/, ""),
+    apiUrl: apiUrl.trim().replace(/\\/$/, ""),
     apiKey: apiKey.trim(),
   });
 }
