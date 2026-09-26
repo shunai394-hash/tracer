@@ -25,6 +25,7 @@ function slugify(title: string, id: string): string {
 
 export type SalesTestSelection = {
   published: number;
+  publishedListingIds: string[];
   considered: number;
   rejected: Array<{ id: string; reasons: string[] }>;
 };
@@ -56,6 +57,7 @@ export async function selectAndPublishSalesTests(
   if (error) throw new Error(error.message);
 
   const rejected: Array<{ id: string; reasons: string[] }> = [];
+  const publishedListingIds: string[] = [];
   const eligible: Array<{
     bestseller: Record<string, unknown>;
     listing: Record<string, unknown>;
