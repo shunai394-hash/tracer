@@ -362,6 +362,16 @@ export async function persistECPulsePriceChange(
   const currency = event.currency?.trim().toUpperCase() || null;
   const capturedAt = new Date(event.captured_at).toISOString();
 
+  const monitorResult = await supabase
+    .from("ec_pulse_monitors")
+    .select("product_id, source_url")
+    .eq("monitor_id", event.monitor_id)
+    .maybeSingle();
+
+  if (monitorResult.error) {
+    throw new Error(`Failed to find EC-Pulse monitor mapping: ${monitorResult.error.message}`);
+  }
+
   const offerResult = await supabase
     .from("product_offers")
     .select("id, product_id, price, currency, metadata")
@@ -374,7 +384,7 @@ export async function persistECPulsePriceChange(
     throw new Error(`Failed to find EC-Pulse offer: ${offerResult.error.message}`);
   }
 
-  let productId = offerResult.data?.product_id ?? null;
+  let productId = monitorResult.data?.product_id ?? offerResult.data?.product_id ?? null;
 
   if (!productId) {
     const productResult = await supabase
