@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "TRACER Product Capture",
+  "version": "0.1.0",
+  "description": "Capture Amazon product identity and send it to TRACER.",
+  "permissions": ["activeTab", "storage", "scripting"],
+  "host_permissions": ["http://localhost:3000/*", "https://*.tracer.app/*"],
+  "action": {
+    "default_title": "TRACERへ送信",
+    "default_popup": "src/popup/popup.html"
+  },
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.amazon.co.jp/*",
+        "https://amazon.co.jp/*",
+        "https://www.amazon.com/*",
+        "https://amazon.com/*"
+      ],
+      "js": ["dist/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
