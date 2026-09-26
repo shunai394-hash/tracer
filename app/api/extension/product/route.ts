@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as ExtensionProduct;
     const url = validHttpUrl(body.url);
 
-    if (!/^https?:\\/\\/(?:www\\.)?amazon\\./i.test(url)) {
+    if (!/^https?:\/\/(?:www\.)?amazon\./i.test(url)) {
       return NextResponse.json({ error: "Only Amazon product URLs are supported in this first version." }, { status: 400 });
     }
 
