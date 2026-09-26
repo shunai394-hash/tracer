@@ -126,7 +126,7 @@ async function fetchCJWithRateLimit(
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     await waitForCJRateLimit();
 
-    const response = await fetchCJWithRateLimit(input, init);
+    const response = await fetch(input, init);
     if (response.status !== 429 || attempt === maxAttempts) {
       return response;
     }
@@ -166,7 +166,7 @@ async function getAccessToken(): Promise<string> {
     return cachedToken.accessToken;
   }
 
-  const response = await fetch(
+  const response = await fetchCJWithRateLimit(
     "https://developers.cjdropshipping.com/api2.0/v1/authentication/getAccessToken",
     {
       method: "POST",
@@ -272,7 +272,7 @@ export async function searchCJProducts(
     keyWord: normalizedQuery,
   });
 
-  const response = await fetch(
+  const response = await fetchCJWithRateLimit(
     `https://developers.cjdropshipping.com/api2.0/v1/product/listV2?${params.toString()}`,
     {
       method: "GET",
@@ -322,7 +322,7 @@ export async function getCJProductDetail(
 ): Promise<CJProductCandidate | null> {
   const token = await getAccessToken();
   const params = new URLSearchParams({ pid });
-  const response = await fetch(
+  const response = await fetchCJWithRateLimit(
     `https://developers.cjdropshipping.com/api2.0/v1/product/query?${params.toString()}`,
     {
       method: "GET",
@@ -385,7 +385,7 @@ type CJVariantQueryResponse = {
 export async function fetchCJProductVariants(pid: string): Promise<CJProductVariant[]> {
   const token = await getAccessToken();
   const params = new URLSearchParams({ pid });
-  const response = await fetch(
+  const response = await fetchCJWithRateLimit(
     `https://developers.cjdropshipping.com/api2.0/v1/product/variant/query?${params.toString()}`,
     {
       method: "GET",
