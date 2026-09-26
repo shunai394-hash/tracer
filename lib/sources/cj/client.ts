@@ -134,7 +134,7 @@ async function fetchCJWithRateLimit(
     const retryAfter = Number(response.headers.get("retry-after") ?? "");
     const retryMs =
       Number.isFinite(retryAfter) && retryAfter >= 0
-        ? Math.min(retryAfter * 1000, 15_000)
+        ? Math.min(Math.max(retryAfter * 1000, 1_000), 15_000)
         : Math.min(1000 * 2 ** (attempt - 1), 8_000);
 
     console.warn("[cj] rate limited; retrying", {
