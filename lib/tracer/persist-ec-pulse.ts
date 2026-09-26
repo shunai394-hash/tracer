@@ -312,7 +312,7 @@ export async function persistECPulseProduct(
     offerId = createdOffer.data.id;
   }
 
-  await supabase.from("product_intelligence").upsert(
+  const intelligenceResult = await supabase.from("product_intelligence").upsert(
     {
       product_id: productId,
       normalized_title: title,
@@ -341,6 +341,10 @@ export async function persistECPulseProduct(
     },
     { onConflict: "product_id" },
   );
+
+  if (intelligenceResult.error) {
+    throw new Error(`Failed to upsert EC-Pulse product intelligence: ${intelligenceResult.error.message}`);
+  }
 
   return {
     sourceId,
