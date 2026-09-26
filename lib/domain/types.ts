@@ -9,6 +9,7 @@ export type SourceType =
   | "search"
   | "mcp"
   | "manual"
+  | "ec-pulse"
   | "unknown";
 
 export type Brand = {
