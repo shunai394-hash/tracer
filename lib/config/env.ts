@@ -83,7 +83,13 @@ export function getECPulseConfig() {
 }
 
 
-export function getExtensionConfig() {\n  return {\n    apiKey: process.env.TRACER_EXTENSION_API_KEY?.trim() ?? "",\n  };\n}\n\nexport function getDropshipSupplierConfig() {
+export function getExtensionConfig() {
+  return {
+    apiKey: process.env.TRACER_EXTENSION_API_KEY?.trim() ?? "",
+  };
+}
+
+export function getDropshipSupplierConfig() {
   return {
     cj: present(process.env.CJ_API_KEY),
     hypersku: present(process.env.HYPERSKU_API_KEY),
