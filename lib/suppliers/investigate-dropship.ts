@@ -140,6 +140,9 @@ export async function investigateDropshipForBestsellers(): Promise<{
       continue;
     }
 
+    let cjStage = "search";
+    let cjQuery: string | null = null;
+    let cjProductId: string | null = null;
     try {
       // Try every verified marketplace identifier, not just the first one.
       // This matters for Amazon rows where ASIN is present but the supplier
@@ -155,6 +158,7 @@ export async function investigateDropshipForBestsellers(): Promise<{
 
       let searches = [] as Awaited<ReturnType<typeof searchCJProducts>>[];
       for (const query of identifierQueries) {
+        cjQuery = query;
         const search = await searchCJProducts(query, { page: 1, size: 10 });
         searches.push(search);
         if (search.products.some((product) => product.barcode && product.barcode.trim())) break;
@@ -165,6 +169,8 @@ export async function investigateDropshipForBestsellers(): Promise<{
       for (const product of searchProducts.slice(0, 10)) {
         if (seenProductIds.has(product.id)) continue;
         seenProductIds.add(product.id);
+        cjProductId = product.id;
+        cjStage = "detail";
         let detail = product;
         try {
           const queried = await getCJProductDetail(product.id);
@@ -216,6 +222,7 @@ export async function investigateDropshipForBestsellers(): Promise<{
         // code read directly (CJ's docs domain is blocked by network egress here).
         let cjVariantId: string | null = null;
         let variantSku: string | null = null;
+        cjStage = "variants";
         try {
           const variants = await fetchCJProductVariants(detail.id);
           const unambiguous = selectUnambiguousVariant(variants);
@@ -228,6 +235,7 @@ export async function investigateDropshipForBestsellers(): Promise<{
           // cj_variant_id unknown, which the order gate already treats as a hard stop.
         }
 
+        cjStage = "supplier_listing_insert";
         const insert = await supabase
           .from("supplier_listings")
           .insert({
@@ -303,6 +311,10 @@ export async function investigateDropshipForBestsellers(): Promise<{
       rowErrors += 1;
       console.error("[investigate-dropship] row failed, continuing batch", {
         bestsellerId: String(record.id),
+        title: String(record.title ?? ""),
+        stage: cjStage,
+        query: cjQuery,
+        cjProductId,
         error: error instanceof Error ? error.message : String(error),
       });
       await writeEvidence({
