@@ -285,7 +285,10 @@ export async function POST(request: Request) {
     }
 
     const url = requireHttpUrl(rawUrl);
+<<<<<<< HEAD
 
+=======
+>>>>>>> db3c9a1 (fix(extension): validate product URL before parsing)
     const title = stringValue(body.title);
     if (!title) {
       return NextResponse.json(
@@ -394,4 +397,5 @@ export async function POST(request: Request) {
     );
   }
 }
+
 
