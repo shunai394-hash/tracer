@@ -52,7 +52,7 @@ async function recordUnconfiguredSupplier(args: {
   await writeEvidence({
     bestsellerId: args.bestsellerId,
     source: args.supplier,
-    fetchedAt: args.fetchedAt,
+    fetchedAt,
     fieldName: "api_available",
     fieldValue: null,
     evidenceClass: "unknown",
@@ -72,6 +72,14 @@ export async function investigateDropshipForBestsellers(): Promise<{
   supplyBarcodeMissing: number;
   /** Rows where CJ search/detail/insert failed for this row only; other rows still processed. */
   rowErrors: number;
+  rowErrorDetails: Array<{
+    bestsellerId: string;
+    title: string;
+    stage: string;
+    query: string | null;
+    cjProductId: string | null;
+    error: string;
+  }>;
 }> {
   const supabase = createSupabaseAdminClient();
   const fetchedAt = new Date().toISOString();
@@ -171,9 +179,6 @@ export async function investigateDropshipForBestsellers(): Promise<{
           const search = await searchCJProducts(query, { page: 1, size: 10 });
           searches.push(search);
         } catch (error) {
-          // One identifier can be rejected or temporarily fail at CJ.
-          // Continue with the next independently verified identifier instead
-          // of discarding the entire bestseller row.
           console.error("[investigate-dropship] CJ search query failed, continuing", {
             bestsellerId: String(record.id),
             query,
@@ -182,11 +187,6 @@ export async function investigateDropshipForBestsellers(): Promise<{
         }
       }
 
-      // Keep candidates from every verified identifier query. A barcode
-      // appearing in one CJ result is not evidence that the result is the
-      // same product, so it must never terminate the identifier search early.
-      // The shared identity matcher below is the authority on same-product
-      // linkage.
       const searchProducts = searches.flatMap((search) => search.products);
       const seenProductIds = new Set<string>();
       for (const product of searchProducts.slice(0, 20)) {
@@ -202,21 +202,6 @@ export async function investigateDropshipForBestsellers(): Promise<{
           // Detail unknown does not invent shipping/barcode.
         }
 
-        // CJ's own SKU is CJ's internal catalog id, not an Amazon ASIN nor a
-        // manufacturer part number — copying it into either field would be
-        // fabricating an identifier CJ never claimed, so it is left out
-        // entirely. CJ's barcode/productBarCode field also never states
-        // which national retail-barcode standard it follows, so it is
-        // recorded as a generic GTIN (the GS1 umbrella standard) instead of
-        // being guessed to be specifically JAN/EAN/UPC and copied into all
-        // four at once. matchProductIdentity() compares GTIN against the
-        // marketplace side's JAN/EAN/UPC/GTIN as one barcode family (same
-        // digits, GS1 zero-padding), so a real match is still detected
-        // without asserting a national scheme CJ never disclosed.
-        // CJ sometimes returns the barcode on product/listV2 but omits it
-        // from product/query. Both values are direct CJ evidence, so prefer
-        // the richer detail response and fall back to the search candidate
-        // rather than discarding a verified supplier identifier.
         const supplyBarcode = detail.barcode ?? product.barcode;
         const supplyIds = identifiersFromRecord({
           asin: null,
@@ -243,11 +228,6 @@ export async function investigateDropshipForBestsellers(): Promise<{
           },
         });
 
-        // Only auto-assign a variant when the product has exactly one — picking
-        // among several would be a guess (which unknown-value rules here forbid).
-        // See the UNVERIFIED FIELD MAPPING note on fetchCJProductVariants: the
-        // endpoint/field names come from secondary sources, not a page this
-        // code read directly (CJ's docs domain is blocked by network egress here).
         let cjVariantId: string | null = null;
         let variantSku: string | null = null;
         cjStage = "variants";
@@ -332,10 +312,6 @@ export async function investigateDropshipForBestsellers(): Promise<{
         unconfigured += 1;
         continue;
       }
-      // One product's CJ search/detail/insert failure must not stop the
-      // rest of the batch. It is never silently dropped: logged to the
-      // server console (a real DB integrity error is a bug worth seeing)
-      // and counted in rowErrors so the API response reports it.
       rowErrors += 1;
       const rowErrorDetail = {
         bestsellerId: String(record.id),
