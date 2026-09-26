@@ -3,8 +3,15 @@
   "name": "TRACER Product Capture",
   "version": "0.1.0",
   "description": "Capture Amazon product identity and send it to TRACER.",
-  "permissions": ["activeTab", "storage", "scripting"],
-  "host_permissions": ["http://localhost:3000/*", "https://*.tracer.app/*"],
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "https://tracer-self.vercel.app/*"
+  ],
   "action": {
     "default_title": "TRACERへ送信",
     "default_popup": "src/popup/popup.html"
@@ -21,7 +28,9 @@
         "https://www.amazon.com/*",
         "https://amazon.com/*"
       ],
-      "js": ["dist/content.js"],
+      "js": [
+        "dist/content.js"
+      ],
       "run_at": "document_idle"
     }
   ]
