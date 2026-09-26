@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>TRACER</title>
+  <style>
+    body { width: 360px; margin: 0; padding: 16px; font: 14px system-ui, sans-serif; }
+    h1 { font-size: 18px; margin: 0 0 12px; }
+    button { width: 100%; padding: 10px; margin-top: 10px; cursor: pointer; }
+    input { width: 100%; box-sizing: border-box; padding: 8px; margin-top: 6px; }
+    #status { margin-top: 12px; white-space: pre-wrap; }
+    .muted { color: #666; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>TRACER Product Capture</h1>
+  <div class="muted">Amazon product page → TRACER → EC-Pulse</div>
+  <button id="capture">Capture & Send</button>
+  <div id="status">Ready.</div>
+  <hr>
+  <label>TRACER API base
+    <input id="apiBase" placeholder="https://your-tracer.vercel.app">
+  </label>
+  <label>Extension key
+    <input id="extensionKey" type="password" placeholder="optional">
+  </label>
+  <button id="save">Save settings</button>
+  <script type="module" src="./popup.js"></script>
+</body>
+</html>
