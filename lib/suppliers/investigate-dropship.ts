@@ -174,12 +174,47 @@ export async function investigateDropshipForBestsellers(
         marketIds.asin,
       ].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index);
 
-      let searches = [] as Awaited<ReturnType<typeof searchCJProducts>>[];
+      // CJ is rate-limited, so searching every identifier for every row and
+      // then inspecting 20 products creates a large serial request fan-out.
+      // Search identifiers in verified-priority order and stop immediately
+      // when CJ itself returns a product carrying an exact marketplace
+      // identifier. This preserves the strict identity gate while avoiding
+      // needless requests after identity is already proven.
+      const searches: Awaited<ReturnType<typeof searchCJProducts>>[] = [];
+      let directMatches: Awaited<ReturnType<typeof searchCJProducts>>[number]["products"] = [];
+
       for (const query of identifierQueries) {
         cjQuery = query;
         try {
           const search = await searchCJProducts(query, { page: 1, size: 10 });
           searches.push(search);
+
+          const direct = search.products.filter((product) => {
+            if (!product.barcode) return false;
+            const supplyIds = identifiersFromRecord({
+              asin: null,
+              jan: null,
+              gtin: product.barcode,
+              ean: null,
+              upc: null,
+              mpn: null,
+            });
+            const identity = matchProductIdentity({
+              market: {
+                ...marketIds,
+                brand: typeof record.brand === "string" ? record.brand : null,
+                title: String(record.title ?? ""),
+                imageUrl: typeof record.image_url === "string" ? record.image_url : null,
+              },
+              supply: { ...supplyIds, title: product.title, imageUrl: product.imageUrl },
+            });
+            return identity.salesEligible;
+          });
+
+          if (direct.length > 0) {
+            directMatches = direct;
+            break;
+          }
         } catch (error) {
           // One identifier can be rejected or temporarily fail at CJ.
           // Continue with the next independently verified identifier instead
@@ -192,42 +227,15 @@ export async function investigateDropshipForBestsellers(
         }
       }
 
-      // Keep candidates from every verified identifier query. Never apply
-      // a global slice before deduplication: an irrelevant first query can
-      // otherwise consume all 20 slots and hide an exact match returned by a
-      // later JAN/GTIN/EAN/UPC/MPN query.
-      //
-      // Prefer candidates whose SEARCH payload already carries a verified
-      // barcode/identifier overlap. Only if there is no direct identifier
-      // match do we inspect a bounded set of fallback candidates.
+      // If search did not prove identity at the product level, inspect only a
+      // small fallback set for variant-level barcode evidence. Variant lookup
+      // is the expensive operation; inspecting 20 unrelated search results
+      // multiplied the CJ request volume without relaxing the identity gate.
       const searchProducts = searches.flatMap((search) => search.products);
-      const seenProductIds = new Set<string>();
-      const directMatches = searchProducts.filter((product) => {
-        const supplyIds = identifiersFromRecord({
-          asin: null,
-          jan: null,
-          gtin: product.barcode,
-          ean: null,
-          upc: null,
-          mpn: null,
-        });
-        if (!product.barcode) return false;
-        const identity = matchProductIdentity({
-          market: {
-            ...marketIds,
-            brand: typeof record.brand === "string" ? record.brand : null,
-            title: String(record.title ?? ""),
-            imageUrl: typeof record.image_url === "string" ? record.image_url : null,
-          },
-          supply: { ...supplyIds, title: product.title, imageUrl: product.imageUrl },
-        });
-        return identity.salesEligible;
-      });
-      const prioritizedProducts = [
-        ...directMatches,
-        ...searchProducts.filter((product) => !directMatches.includes(product)),
-      ];
-      for (const product of prioritizedProducts.slice(0, 20)) {
+      const prioritizedProducts = directMatches.length > 0
+        ? directMatches
+        : searchProducts.slice(0, 3);
+      for (const product of prioritizedProducts) {
         if (seenProductIds.has(product.id)) continue;
         seenProductIds.add(product.id);
         cjProductId = product.id;
