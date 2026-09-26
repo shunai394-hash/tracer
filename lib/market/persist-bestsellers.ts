@@ -31,12 +31,15 @@ export async function persistMarketplaceBestsellers(): Promise<{
   enrichment: Array<{ marketplace: string; attempted: number; htmlFetched: number; identifierFound: number }>;
   /** Exact bestseller row IDs inserted by this run; downstream stages must use these IDs. */
   bestsellerIds: string[];
+  /** Exact current-run rows carrying at least one verified marketplace identifier. */
+  supplierCandidateIds: string[];
 }> {
   const collected = await collectMarketplaceBestsellers();
   const supabase = createSupabaseAdminClient();
   let inserted = 0;
   let productsCreated = 0;
   const bestsellerIds: string[] = [];
+  const supplierCandidateIds: string[] = [];
   const skippedMarketplaces = collected.marketplaces
     .filter((item) => item.skipped)
     .map((item) => item.marketplace);
@@ -161,6 +164,10 @@ export async function persistMarketplaceBestsellers(): Promise<{
         upc: item.upc,
         mpn: item.mpn,
       };
+      if (hasAnyIdentifier(ids)) {
+        supplierCandidateIds.push(String(bestseller.id));
+      }
+
       if (productId && hasAnyIdentifier(ids)) {
         for (const [scheme, value] of Object.entries(ids)) {
           if (!value) continue;
@@ -189,5 +196,6 @@ export async function persistMarketplaceBestsellers(): Promise<{
       .filter((marketplace) => marketplace.enrichment)
       .map((marketplace) => ({ marketplace: marketplace.marketplace, ...marketplace.enrichment! })),
     bestsellerIds,
+    supplierCandidateIds,
   };
 }
