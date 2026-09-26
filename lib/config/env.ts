@@ -1,4 +1,4 @@
-import "server-only";
+﻿import "server-only";
 
 function present(value: string | undefined): boolean {
   return Boolean(value && value.trim().length > 0);
@@ -20,32 +20,7 @@ export type FoundationStatus = {
   ecPulse: boolean;
   extension: boolean;
   base: boolean;
-};
 
-export function getFoundationStatus(): FoundationStatus {
-  return {
-    supabasePublic: present(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
-      present(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
-    supabaseServiceRole: present(process.env.SUPABASE_SERVICE_ROLE_KEY),
-    gemini: present(process.env.GEMINI_API_KEY),
-    brightData: present(process.env.BRIGHTDATA_API_TOKEN),
-    brightDataMcp: present(process.env.BRIGHTDATA_MCP_URL),
-    shopify: present(process.env.SHOPIFY_STORE_DOMAIN) &&
-      present(process.env.SHOPIFY_ADMIN_ACCESS_TOKEN),
-    metaAds: present(process.env.META_ACCESS_TOKEN) &&
-      present(process.env.META_AD_ACCOUNT_ID),
-    newfindInbound: present(process.env.NEWFIND_WEBHOOK_SECRET),
-    // Outbound delivery signs requests with the shared secret, so all three
-    // values are required for a genuinely sendable configuration.
-    newfindOutbound: present(process.env.NEWFIND_API_URL) &&
-      present(process.env.NEWFIND_API_KEY) &&
-      present(process.env.NEWFIND_WEBHOOK_SECRET),
-    stripe: present(process.env.STRIPE_SECRET_KEY),
-    stripeWebhook: present(process.env.STRIPE_WEBHOOK_SECRET),
-    orosy: present(process.env.OROSY_API_KEY) || present(process.env.OROSY_DEMO_API_KEY),
-    ecPulse: present(process.env.EC_PULSE_API_URL) && present(process.env.EC_PULSE_API_KEY),
-    extension: present(process.env.TRACER_EXTENSION_API_KEY),
-    base: present(process.env.BASE_ACCESS_TOKEN),
   };
 }
 
@@ -95,6 +70,7 @@ export function getExtensionConfig() {
 }
 
 export function getDropshipSupplierConfig() {
+
   return {
     cj: present(process.env.CJ_API_KEY),
     hypersku: present(process.env.HYPERSKU_API_KEY),
@@ -126,7 +102,7 @@ export type OrosyEnvironment = "demo" | "live";
 /**
  * "demo"/"live" is an explicit TRACER-side setting, never inferred from the
  * key's own naming (a key's prefix is not a reliable contract). Defaults to
- * "demo" — the safer assumption — so a missing/misconfigured value never
+ * "demo" 窶・the safer assumption 窶・so a missing/misconfigured value never
  * silently unlocks live-mode behavior (e.g. it keeps /simulate reachable,
  * which orosy documents as demo-only).
  */
@@ -140,7 +116,7 @@ export function getOrosyConfig() {
   // explicit, independent decision per environment. Falling back to
   // OROSY_API_KEY while "demo" would mean a key later rotated to a genuine
   // production credential gets silently treated as safe-to-simulate-against
-  // the moment OROSY_DEMO_API_KEY is unset — exactly the ambiguity
+  // the moment OROSY_DEMO_API_KEY is unset 窶・exactly the ambiguity
   // OROSY_ENVIRONMENT exists to remove.
   const apiKey =
     environment === "live"
@@ -191,7 +167,7 @@ export function getStripeConfig() {
 }
 
 /**
- * The ship-to address for orosy wholesale/procurement orders — TRACER's own
+ * The ship-to address for orosy wholesale/procurement orders 窶・TRACER's own
  * warehouse, not a customer's address. Returns null (not a guessed/partial
  * address) unless every field is actually configured.
  */
@@ -224,3 +200,4 @@ export function getNewfindConfig() {
     apiKey: process.env.NEWFIND_API_KEY?.trim() ?? "",
   };
 }
+
