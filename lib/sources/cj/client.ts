@@ -105,31 +105,6 @@ function getConfig() {
   return config;
 }
 
-
-async function fetchCJWithRetry(
-  url: string,
-  init: RequestInit,
-  label: string,
-): Promise<Response> {
-  const delays = [0, 1500, 4000];
-  let last: Response | null = null;
-
-  for (let attempt = 0; attempt < delays.length; attempt += 1) {
-    if (delays[attempt] > 0) {
-      await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
-    }
-    const response = await fetch(url, init);
-    last = response;
-    if (response.status !== 429) return response;
-    console.warn("[cj] rate limited; retrying", {
-      label,
-      attempt: attempt + 1,
-      retryAfter: response.headers.get("retry-after"),
-    });
-  }
-  return last!;
-}
-
 async function getAccessToken(): Promise<string> {
   const { apiKey } = getConfig();
 
@@ -243,7 +218,7 @@ export async function searchCJProducts(
     keyWord: normalizedQuery,
   });
 
-  const response = await fetchCJWithRetry(
+  const response = await fetch(
     `https://developers.cjdropshipping.com/api2.0/v1/product/listV2?${params.toString()}`,
     {
       method: "GET",
@@ -293,7 +268,7 @@ export async function getCJProductDetail(
 ): Promise<CJProductCandidate | null> {
   const token = await getAccessToken();
   const params = new URLSearchParams({ pid });
-  const response = await fetchCJWithRetry(
+  const response = await fetch(
     `https://developers.cjdropshipping.com/api2.0/v1/product/query?${params.toString()}`,
     {
       method: "GET",
@@ -356,7 +331,7 @@ type CJVariantQueryResponse = {
 export async function fetchCJProductVariants(pid: string): Promise<CJProductVariant[]> {
   const token = await getAccessToken();
   const params = new URLSearchParams({ pid });
-  const response = await fetchCJWithRetry(
+  const response = await fetch(
     `https://developers.cjdropshipping.com/api2.0/v1/product/variant/query?${params.toString()}`,
     {
       method: "GET",
