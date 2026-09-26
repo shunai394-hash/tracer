@@ -162,7 +162,6 @@ export async function investigateDropshipForBestsellers(): Promise<{
         try {
           const search = await searchCJProducts(query, { page: 1, size: 10 });
           searches.push(search);
-          if (search.products.some((product) => product.barcode && product.barcode.trim())) break;
         } catch (error) {
           // One identifier can be rejected or temporarily fail at CJ.
           // Continue with the next independently verified identifier instead
@@ -175,9 +174,14 @@ export async function investigateDropshipForBestsellers(): Promise<{
         }
       }
 
+      // Keep candidates from every verified identifier query. A barcode
+      // appearing in one CJ result is not evidence that the result is the
+      // same product, so it must never terminate the identifier search early.
+      // The shared identity matcher below is the authority on same-product
+      // linkage.
       const searchProducts = searches.flatMap((search) => search.products);
       const seenProductIds = new Set<string>();
-      for (const product of searchProducts.slice(0, 10)) {
+      for (const product of searchProducts.slice(0, 20)) {
         if (seenProductIds.has(product.id)) continue;
         seenProductIds.add(product.id);
         cjProductId = product.id;
