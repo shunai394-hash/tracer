@@ -10,8 +10,8 @@ export async function POST() {
   try {
     const startedAt = Date.now();
     const bestsellers = await persistMarketplaceBestsellers();
-    const suppliers = await investigateDropshipForBestsellers();
-    const selected = await selectAndPublishSalesTests(3);
+    const suppliers = await investigateDropshipForBestsellers(bestsellers.bestsellerIds);
+    const selected = await selectAndPublishSalesTests(bestsellers.bestsellerIds, 3);
 
     return NextResponse.json({
       ok: true,
