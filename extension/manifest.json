@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Capture Amazon product data and send it to TRACER.",
   "permissions": ["activeTab", "storage", "scripting"],
-  "host_permissions": ["https://*.amazon.com/*", "https://*.amazon.co.jp/*"],
+  "host_permissions": ["https://*.amazon.com/*", "https://*.amazon.co.jp/*", "https://*.vercel.app/*"],
   "action": {
     "default_title": "Send product to TRACER",
     "default_popup": "src/popup/popup.html"
