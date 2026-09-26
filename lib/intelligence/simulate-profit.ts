@@ -60,6 +60,9 @@ export function simulateContributionProfit(args: {
   internationalShipping?: number | null;
   domesticShipping?: number | null;
   shippingCurrency?: string | null;
+  /** Observed multiplier from source currency into selling currency. */
+  sourceFxRateToSelling?: number | null;
+  sourceFxRateSource?: string | null;
 }): ProfitSimulation {
   const sellingAssessment = assessCurrencyConfidence({
     currency: args.sellingCurrency,
@@ -136,14 +139,36 @@ export function simulateContributionProfit(args: {
     return unknown("currency_missing");
   }
 
-  if (sellingCurrency !== sourceCurrency) {
+  const fxRate = args.sourceFxRateToSelling ?? null;
+  const currenciesMatch = sellingCurrency === sourceCurrency;
+  if (!currenciesMatch && (!fxRate || !Number.isFinite(fxRate) || fxRate <= 0)) {
     return unknown("currency_mismatch_no_observed_fx");
+  }
+
+  const convertedSourceCost =
+    currenciesMatch ? args.sourceCost : args.sourceCost * (fxRate as number);
+  const convertedInternationalShipping =
+    args.internationalShipping == null
+      ? null
+      : currenciesMatch
+        ? args.internationalShipping
+        : args.internationalShipping * (fxRate as number);
+  const convertedDomesticShipping = args.domesticShipping ?? 0;
+
+  if (fxRate && !currenciesMatch) {
+    provenance.push({
+      field: "source_fx_rate_to_selling",
+      kind: "observed",
+      source: args.sourceFxRateSource ?? "observed_fx_rate",
+      value: fxRate,
+      note: `${sourceCurrency}->${sellingCurrency}`,
+    });
   }
 
   const shippingUnknown =
     args.internationalShipping == null && args.domesticShipping == null;
-  const internationalShipping = args.internationalShipping ?? 0;
-  const domesticShipping = args.domesticShipping ?? 0;
+  const internationalShipping = convertedInternationalShipping ?? 0;
+  const domesticShipping = convertedDomesticShipping;
 
   if (!shippingUnknown && args.shippingCurrency) {
     const shippingCurrency = args.shippingCurrency.trim().toUpperCase();
@@ -170,7 +195,7 @@ export function simulateContributionProfit(args: {
 
   const contributionProfit = roundMoney(
     args.sellingPrice -
-      args.sourceCost -
+      convertedSourceCost -
       internationalShipping -
       domesticShipping -
       platformFee -
@@ -185,7 +210,7 @@ export function simulateContributionProfit(args: {
   );
 
   const totalCost = roundMoney(
-    args.sourceCost +
+    convertedSourceCost +
       internationalShipping +
       domesticShipping +
       platformFee +
@@ -266,8 +291,8 @@ export function simulateContributionProfit(args: {
     {
       key: "source_cost",
       label: "仕入れ",
-      amount: args.sourceCost,
-      currency: sourceCurrency,
+      amount: convertedSourceCost,
+      currency: sellingCurrency,
       kind: "observed",
     },
     {
@@ -339,7 +364,9 @@ export function simulateContributionProfit(args: {
       kind: "assumption",
       note: shippingUnknown
         ? "excludes_unknown_shipping"
-        : "includes_assumed_fees",
+        : fxRate && !currenciesMatch
+          ? `includes_observed_fx_${sourceCurrency}_to_${sellingCurrency}`
+          : "includes_assumed_fees",
     },
     {
       key: "roi",
@@ -355,7 +382,7 @@ export function simulateContributionProfit(args: {
     currency: sellingCurrency,
     currencyConfidence: weaker,
     sellingPrice: args.sellingPrice,
-    sourceCost: args.sourceCost,
+    sourceCost: convertedSourceCost,
     internationalShipping: shippingUnknown ? null : internationalShipping,
     domesticShipping: shippingUnknown ? null : domesticShipping,
     platformFee,
