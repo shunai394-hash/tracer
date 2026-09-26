@@ -8,7 +8,8 @@
   }
 
   function extractAsin(url) {
-    return url.match(/\//g(?:dp|gp\/product|gp\/aw\/d)\\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null;
+    const match = url.match(/\/(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})/i);
+    return match?.[1]?.toUpperCase() || null;
   }
 
   function extractPrice() {
