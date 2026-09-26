@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
+import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -38,6 +39,7 @@ export async function selectAndPublishSalesTests(
 ): Promise<SalesTestSelection> {
   const supabase = createSupabaseAdminClient();
   const fetchedAt = new Date().toISOString();
+  const fxQuote = await getObservedUsdToJpyRate();
 
   // Must be the exact same candidate set investigate-dropship.ts just
   // investigated (same ordering key and limit — see candidate-batch.ts),
@@ -99,6 +101,20 @@ export async function selectAndPublishSalesTests(
       internationalShipping: asNumber(listing.shipping_cost),
       domesticShipping: null,
       shippingCurrency: typeof listing.currency === "string" ? listing.currency : null,
+      sourceFxRateToSelling:
+        typeof bestseller.currency === "string" &&
+        typeof listing.currency === "string" &&
+        bestseller.currency.trim().toUpperCase() === "JPY" &&
+        listing.currency.trim().toUpperCase() === "USD"
+          ? fxQuote?.rate ?? null
+          : null,
+      sourceFxRateSource:
+        typeof bestseller.currency === "string" &&
+        typeof listing.currency === "string" &&
+        bestseller.currency.trim().toUpperCase() === "JPY" &&
+        listing.currency.trim().toUpperCase() === "USD"
+          ? fxQuote?.source ?? null
+          : null,
     });
 
     if (!profit.calculable) reasons.push(profit.incalculableReason ?? "profit_unknown");
