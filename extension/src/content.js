@@ -1,6 +1,6 @@
 (() => {
   function text(selector) {
-    return document.querySelector(selector)?.textContent?.replace(/\\s+/g, " ").trim() || null;
+    return document.querySelector(selector)?.textContent?.replace(/\s+/g, " ").trim() || null;
   }
 
   function meta(name) {
@@ -8,7 +8,7 @@
   }
 
   function extractAsin(url) {
-    return url.match(/\\/(?:dp|gp\\/product|gp\\/aw\\/d)\\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null;
+    return url.match(/\//g(?:dp|gp\/product|gp\/aw\/d)\\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null;
   }
 
   function extractPrice() {
