@@ -53,19 +53,10 @@ export async function POST() {
       }
     }
 
-    const published = results.filter((item) => item.ok).length;
-
     return NextResponse.json({
       ok: true,
       attempted: results.length,
-      published,
-      readyForBaseSale: published > 0,
-      message:
-        results.length === 0
-          ? "No published shop listings are ready for BASE yet."
-          : published > 0
-            ? "BASE publication completed for the eligible listings."
-            : "BASE publication did not complete for any listing.",
+      published: results.filter((item) => item.ok).length,
       results,
     });
   } catch (error) {
