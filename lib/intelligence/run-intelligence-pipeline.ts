@@ -165,8 +165,16 @@ export async function runIntelligencePipeline(): Promise<{
       ? ((bestsellerStep.result as { bestsellerIds: string[] }).bestsellerIds)
       : [];
 
+  const supplierCandidateIds =
+    bestsellerStep.ok &&
+    bestsellerStep.result &&
+    typeof bestsellerStep.result === "object" &&
+    Array.isArray((bestsellerStep.result as { supplierCandidateIds?: unknown }).supplierCandidateIds)
+      ? (bestsellerStep.result as { supplierCandidateIds: string[] }).supplierCandidateIds
+      : [];
+
   steps.push(
-    await runStep("dropship", () => investigateDropshipForBestsellers(bestsellerIds)),
+    await runStep("dropship", () => investigateDropshipForBestsellers(supplierCandidateIds)),
   );
   const salesTestStep = await runStep(
     "sales_test_select",
