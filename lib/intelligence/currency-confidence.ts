@@ -43,7 +43,11 @@ export function assessCurrencyConfidence(args: {
     typeof args.price === "number" && Number.isFinite(args.price)
       ? args.price
       : null;
-  const provider = args.provider?.trim().toLowerCase() ?? null;
+  const rawProvider = args.provider?.trim().toLowerCase() ?? null;
+  const provider =
+    rawProvider === "cjdropshipping" || rawProvider === "cj dropshipping"
+      ? "cj"
+      : rawProvider;
 
   if (price === null || price <= 0) {
     return {
