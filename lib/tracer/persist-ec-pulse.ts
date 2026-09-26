@@ -238,10 +238,58 @@ export async function persistECPulseProduct(
     provider: PROVIDER,
   });
 
-  const offer = await supabase
+  const offerMetadata = {
+    provider: PROVIDER,
+    source_id: sourceId,
+    observation_id: observation.data.id,
+    model: payload.product.model,
+    sku: payload.product.sku,
+    gtin,
+    rating_score: payload.rating.score,
+    rating_count: payload.rating.count,
+    source_site: payload.source.site,
+  };
+
+  const existingOffer = await supabase
     .from("product_offers")
-    .upsert(
-      {
+    .select("id")
+    .eq("product_id", productId)
+    .eq("offer_url", sourceUrl)
+    .maybeSingle();
+
+  if (existingOffer.error) {
+    throw new Error(`Failed to find EC-Pulse offer: ${existingOffer.error.message}`);
+  }
+
+  let offerId: string;
+
+  if (existingOffer.data) {
+    const updatedOffer = await supabase
+      .from("product_offers")
+      .update({
+        seller_name: payload.seller.name,
+        image_url: imageUrl,
+        currency,
+        price,
+        currency_confidence: currencyAssessment.confidence,
+        availability: payload.availability.status,
+        shipping_price: null,
+        observed_at: capturedAt,
+        metadata: offerMetadata,
+      })
+      .eq("id", existingOffer.data.id)
+      .select("id")
+      .single();
+
+    if (updatedOffer.error) {
+      throw new Error(`Failed to update EC-Pulse offer: ${updatedOffer.error.message}`);
+    }
+
+    offerId = updatedOffer.data.id;
+  } else {
+    const createdOffer = await supabase
+      .from("product_offers")
+      .insert({
         product_id: productId,
         seller_name: payload.seller.name,
         offer_url: sourceUrl,
@@ -252,25 +300,16 @@ export async function persistECPulseProduct(
         availability: payload.availability.status,
         shipping_price: null,
         observed_at: capturedAt,
-        metadata: {
-          provider: PROVIDER,
-          source_id: sourceId,
-          observation_id: observation.data.id,
-          model: payload.product.model,
-          sku: payload.product.sku,
-          gtin,
-          rating_score: payload.rating.score,
-          rating_count: payload.rating.count,
-          source_site: payload.source.site,
-        },
-      },
-      { onConflict: "product_id,offer_url" },
-    )
-    .select("id")
-    .single();
+        metadata: offerMetadata,
+      })
+      .select("id")
+      .single();
 
-  if (offer.error) {
-    throw new Error(`Failed to upsert EC-Pulse offer: ${offer.error.message}`);
+    if (createdOffer.error) {
+      throw new Error(`Failed to create EC-Pulse offer: ${createdOffer.error.message}`);
+    }
+
+    offerId = createdOffer.data.id;
   }
 
   await supabase.from("product_intelligence").upsert(
@@ -307,7 +346,7 @@ export async function persistECPulseProduct(
     sourceId,
     productId,
     observationId: observation.data.id,
-    offerId: offer.data.id,
+    offerId,
     gtin,
     price,
     currency,
@@ -435,4 +474,33 @@ export async function persistECPulsePriceChange(
     newPrice: event.new_price,
     currency,
   };
+}
+
+
+export async function persistECPulseMonitorMapping(args: {
+  monitorId: string;
+  productId: string;
+  sourceUrl: string;
+  intervalMinutes: number;
+  webhookUrl: string;
+}): Promise<void> {
+  const supabase = createSupabaseAdminClient();
+
+  const result = await supabase
+    .from("ec_pulse_monitors")
+    .upsert(
+      {
+        monitor_id: args.monitorId,
+        product_id: args.productId,
+        source_url: validHttpUrl(args.sourceUrl),
+        interval_minutes: args.intervalMinutes,
+        webhook_url: validHttpUrl(args.webhookUrl),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "monitor_id" },
+    );
+
+  if (result.error) {
+    throw new Error(`Failed to persist EC-Pulse monitor mapping: ${result.error.message}`);
+  }
 }
