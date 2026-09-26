@@ -4,7 +4,7 @@ import { createHmac } from "node:crypto";
 import { getNewfindConfig } from "@/lib/config/env";
 
 function buildUrl(base: string): string {
-  const trimmed = base.trim().replace(/\\/$/, "");
+  const trimmed = base.trim().replace(/\/$/, "");
   if (trimmed.endsWith("/api/integrations/tracer")) return trimmed;
   return `${trimmed}/api/integrations/tracer`;
 }
