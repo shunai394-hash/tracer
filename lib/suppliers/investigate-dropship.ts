@@ -119,9 +119,24 @@ export async function investigateDropshipForBestsellers(
     // `product_url` when the column itself is empty, instead of only
     // reading the `asin` column the way the old local helper did.
     const marketIds = identifiersFromRecord(record);
-    const identifierQuery = pickIdentifierQuery(marketIds);
+    // CJ product search does not return marketplace ASINs. ASIN is valid
+    // marketplace identity evidence, but not a CJ supplier-search key.
+    const supplierSearchQueries = [
+      marketIds.jan,
+      marketIds.gtin,
+      marketIds.ean,
+      marketIds.upc,
+      marketIds.mpn,
+    ].filter(
+      (value, index, values): value is string =>
+        Boolean(value) && values.indexOf(value) === index,
+    );
+    const identifierQuery = pickIdentifierQuery({
+      ...marketIds,
+      asin: null,
+    });
 
-    if (!identifierQuery) {
+    if (!identifierQuery || supplierSearchQueries.length === 0) {
       skippedNoIdentifier += 1;
       await writeEvidence({
         productId: typeof record.product_id === "string" ? record.product_id : null,
@@ -165,14 +180,7 @@ export async function investigateDropshipForBestsellers(
       // Try every verified marketplace identifier, not just the first one.
       // This matters for Amazon rows where ASIN is present but the supplier
       // catalog is searchable by the separately verified MPN/JAN.
-      const identifierQueries = [
-        marketIds.jan,
-        marketIds.gtin,
-        marketIds.ean,
-        marketIds.upc,
-        marketIds.mpn,
-        marketIds.asin,
-      ].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index);
+      const identifierQueries = supplierSearchQueries;
 
       // CJ is rate-limited, so searching every identifier for every row and
       // then inspecting 20 products creates a large serial request fan-out.
