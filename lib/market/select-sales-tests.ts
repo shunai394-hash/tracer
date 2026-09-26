@@ -190,6 +190,7 @@ export async function selectAndPublishSalesTests(
       .single();
 
     if (upsert.error) throw new Error(upsert.error.message);
+    if (upsert.data?.id) publishedListingIds.push(String(upsert.data.id));
     published += 1;
 
     await writeEvidence({
@@ -209,6 +210,7 @@ export async function selectAndPublishSalesTests(
 
   return {
     published,
+    publishedListingIds,
     considered: (bestsellers ?? []).length,
     rejected: rejected.slice(0, 20),
   };
