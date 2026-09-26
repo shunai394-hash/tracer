@@ -141,8 +141,30 @@ export async function investigateDropshipForBestsellers(): Promise<{
     }
 
     try {
-      const search = await searchCJProducts(identifierQuery, { page: 1, size: 10 });
-      for (const product of search.products.slice(0, 5)) {
+      // Try every verified marketplace identifier, not just the first one.
+      // This matters for Amazon rows where ASIN is present but the supplier
+      // catalog is searchable by the separately verified MPN/JAN.
+      const identifierQueries = [
+        marketIds.jan,
+        marketIds.gtin,
+        marketIds.ean,
+        marketIds.upc,
+        marketIds.mpn,
+        marketIds.asin,
+      ].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index);
+
+      let searches = [] as Awaited<ReturnType<typeof searchCJProducts>>[];
+      for (const query of identifierQueries) {
+        const search = await searchCJProducts(query, { page: 1, size: 10 });
+        searches.push(search);
+        if (search.products.some((product) => product.barcode && product.barcode.trim())) break;
+      }
+
+      const searchProducts = searches.flatMap((search) => search.products);
+      const seenProductIds = new Set<string>();
+      for (const product of searchProducts.slice(0, 10)) {
+        if (seenProductIds.has(product.id)) continue;
+        seenProductIds.add(product.id);
         let detail = product;
         try {
           const queried = await getCJProductDetail(product.id);
