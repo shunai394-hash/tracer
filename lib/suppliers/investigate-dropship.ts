@@ -235,15 +235,36 @@ export async function investigateDropshipForBestsellers(
         }
       }
 
-      // If search did not prove identity at the product level, inspect only a
-      // small fallback set for variant-level barcode evidence. Variant lookup
-      // is the expensive operation; inspecting 20 unrelated search results
-      // multiplied the CJ request volume without relaxing the identity gate.
+      // If search did not prove identity at the product level, inspect a
+      // relevance-ranked fallback set for variant-level barcode evidence.
+      // Variant lookup is the expensive operation, so do not inspect all 10
+      // results blindly. Relevance is used only to prioritize expensive
+      // verification; it is never accepted as identity evidence.
       const searchProducts = searches.flatMap((search) => search.products);
-      const seenProductIds = new Set<string>();
+      const marketTitle = String(record.title ?? "").toLowerCase();
+      const marketTokens = marketTitle
+        .split(/[^\\p{L}\\p{N}]+/u)
+        .map((token) => token.trim())
+        .filter((token) => token.length >= 2);
+      const marketMpn = marketIds.mpn?.toLowerCase() ?? null;
+      const scoredProducts = searchProducts.map((product, index) => {
+        const haystack = [product.title, product.sku]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        const tokenOverlap = marketTokens.reduce(
+          (score, token) => score + (haystack.includes(token) ? 1 : 0),
+          0,
+        );
+        const mpnMatch = marketMpn && haystack.includes(marketMpn) ? 100 : 0;
+        return { product, index, score: mpnMatch + tokenOverlap };
+      });
+      scoredProducts.sort((a, b) =>
+        b.score - a.score || a.index - b.index,
+      );
       const prioritizedProducts = directMatches.length > 0
         ? directMatches
-        : searchProducts.slice(0, 3);
+        : scoredProducts.slice(0, 5).map((item) => item.product);
       for (const product of prioritizedProducts) {
         if (seenProductIds.has(product.id)) continue;
         seenProductIds.add(product.id);
