@@ -360,7 +360,7 @@ export async function investigateDropshipForBestsellers(
         const insert = await supabase
           .from("supplier_listings")
           .insert({
-            supplier: "cj",
+            supplier: "CJdropshipping",
             external_id: detail.id,
             sku: variantSku ?? detail.sku,
             cj_variant_id: cjVariantId,
