@@ -192,14 +192,42 @@ export async function investigateDropshipForBestsellers(
         }
       }
 
-      // Keep candidates from every verified identifier query. A barcode
-      // appearing in one CJ result is not evidence that the result is the
-      // same product, so it must never terminate the identifier search early.
-      // The shared identity matcher below is the authority on same-product
-      // linkage.
+      // Keep candidates from every verified identifier query. Never apply
+      // a global slice before deduplication: an irrelevant first query can
+      // otherwise consume all 20 slots and hide an exact match returned by a
+      // later JAN/GTIN/EAN/UPC/MPN query.
+      //
+      // Prefer candidates whose SEARCH payload already carries a verified
+      // barcode/identifier overlap. Only if there is no direct identifier
+      // match do we inspect a bounded set of fallback candidates.
       const searchProducts = searches.flatMap((search) => search.products);
       const seenProductIds = new Set<string>();
-      for (const product of searchProducts.slice(0, 20)) {
+      const directMatches = searchProducts.filter((product) => {
+        const supplyIds = identifiersFromRecord({
+          asin: null,
+          jan: null,
+          gtin: product.barcode,
+          ean: null,
+          upc: null,
+          mpn: null,
+        });
+        if (!product.barcode) return false;
+        const identity = matchProductIdentity({
+          market: {
+            ...marketIds,
+            brand: typeof record.brand === "string" ? record.brand : null,
+            title: String(record.title ?? ""),
+            imageUrl: typeof record.image_url === "string" ? record.image_url : null,
+          },
+          supply: { ...supplyIds, title: product.title, imageUrl: product.imageUrl },
+        });
+        return identity.salesEligible;
+      });
+      const prioritizedProducts = [
+        ...directMatches,
+        ...searchProducts.filter((product) => !directMatches.includes(product)),
+      ];
+      for (const product of prioritizedProducts.slice(0, 20)) {
         if (seenProductIds.has(product.id)) continue;
         seenProductIds.add(product.id);
         cjProductId = product.id;
