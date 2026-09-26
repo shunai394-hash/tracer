@@ -254,22 +254,83 @@ export function parseAmazonProductDetail(html: string): {
   jan: string | null;
   model: string | null;
 } {
+  const cleaned = stripHtmlComments(html);
+
   const jan =
-    html.match(/<th[^>]*>\s*JAN\s*<\/th>\s*<td[^>]*>\s*([0-9]{8,13})/i)?.[1] ??
-    html.match(/JAN[^\d]{0,12}([0-9]{8,13})/)?.[1] ??
-    null;
-  const brand =
-    html.match(/id="bylineInfo"[^>]*>[\s\S]{0,80}>([^<]{2,80})/)?.[1] ??
-    html.match(/ブランド[^\n<]{0,8}([^<]{2,80})/)?.[1] ??
-    null;
-  const model =
-    html.match(/<th[^>]*>\s*(?:型番|メーカー型番)\s*<\/th>\s*<td[^>]*>\s*([^<]{2,80})/i)?.[1] ??
+    cleaned.match(/<th[^>]*>\\s*JAN\\s*<\\/th>\\s*<td[^>]*>\\s*([0-9]{8,13})/i)?.[1] ??
+    cleaned.match(/JAN[^\\d]{0,12}([0-9]{8,13})/)?.[1] ??
     null;
 
+  const brand =
+    cleaned.match(/id="bylineInfo"[^>]*>[\\s\\S]{0,80}>([^<]{2,80})/)?.[1] ??
+    cleaned.match(/ブランド[^\\n<]{0,8}([^<]{2,80})/)?.[1] ??
+    null;
+
+  let model =
+    cleaned.match(/<th[^>]*>\\s*(?:型番|メーカー型番)\\s*<\\/th>\\s*<td[^>]*>\\s*([^<]{2,80})/i)?.[1] ??
+    null;
+
+  // Amazon product pages frequently expose the same identity data through
+  // schema.org JSON-LD. Use it as a second, machine-readable source rather
+  // than guessing from the visible page layout.
+  const scriptPattern = /<script[^>]*type=["']application\\/ld\\+json["'][^>]*>([\\s\\S]*?)<\\/script>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = scriptPattern.exec(cleaned))) {
+    try {
+      const parsed = JSON.parse(match[1]) as unknown;
+      const nodes: unknown[] = [];
+      if (Array.isArray(parsed)) nodes.push(...parsed);
+      else if (parsed && typeof parsed === "object") {
+        const root = parsed as Record<string, unknown>;
+        if (Array.isArray(root["@graph"])) nodes.push(...(root["@graph"] as unknown[]));
+        else nodes.push(parsed);
+      }
+
+      for (const node of nodes) {
+        if (!node || typeof node !== "object") continue;
+        const record = node as Record<string, unknown>;
+        const type = record["@type"];
+        const isProduct = type === "Product" || (Array.isArray(type) && type.includes("Product"));
+        if (!isProduct) continue;
+
+        const gtin =
+          typeof record.gtin13 === "string" ? record.gtin13 :
+          typeof record.gtin === "string" ? record.gtin :
+          typeof record.gtin12 === "string" ? record.gtin12 :
+          typeof record.gtin8 === "string" ? record.gtin8 :
+          typeof record.gtin14 === "string" ? record.gtin14 : null;
+
+        if (!jan && gtin && /^[0-9]{8,14}$/.test(gtin)) {
+          // The caller normalizes this as JAN. Amazon's Japanese product
+          // pages use JAN/GTIN interchangeably for the same GS1 barcode
+          // number space; preserve only the digits and let the shared
+          // identifier matcher handle cross-scheme equality.
+          return {
+            brand: brand ? decode(brand).replace(/^ブランド:\\s*/u, "") : null,
+            jan: gtin,
+            model: model ? decode(model) : null,
+          };
+        }
+      }
+    } catch {
+      // Ignore malformed JSON-LD and continue to the normal page fields.
+    }
+  }
+
+  // Never store an ASIN as an MPN/model. Amazon exposes the ASIN in several
+  // metadata fields, and treating it as a manufacturer part number creates a
+  // false supplier-search key.
+  const normalizedModel = model ? decode(model) : null;
+  const asinCandidates = Array.from(cleaned.matchAll(/\\bB[0-9A-Z]{9}\\b/gi)).map((m) => m[0].toUpperCase());
+  const safeModel =
+    normalizedModel && !asinCandidates.includes(normalizedModel.toUpperCase())
+      ? normalizedModel
+      : null;
+
   return {
-    brand: brand ? decode(brand).replace(/^ブランド:\s*/u, "") : null,
+    brand: brand ? decode(brand).replace(/^ブランド:\\s*/u, "") : null,
     jan,
-    model: model ? decode(model) : null,
+    model: safeModel,
   };
 }
 
