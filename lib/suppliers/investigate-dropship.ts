@@ -16,7 +16,6 @@ import {
   matchProductIdentity,
   pickIdentifierQuery,
 } from "@/lib/market/identifiers";
-import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
 
 const UNCONFIGURED_SUPPLIERS = [
   "hypersku",
@@ -61,7 +60,9 @@ async function recordUnconfiguredSupplier(args: {
   });
 }
 
-export async function investigateDropshipForBestsellers(): Promise<{
+export async function investigateDropshipForBestsellers(
+  bestsellerIds: string[],
+): Promise<{
   processed: number;
   matched: number;
   skippedNoIdentifier: number;
@@ -85,11 +86,12 @@ export async function investigateDropshipForBestsellers(): Promise<{
   const fetchedAt = new Date().toISOString();
   const supplierConfig = getDropshipSupplierConfig();
 
-  const { data: rows, error } = await supabase
-    .from("marketplace_bestsellers")
-    .select("*")
-    .order("fetched_at", { ascending: false })
-    .limit(BESTSELLER_CANDIDATE_BATCH_SIZE);
+  const { data: rows, error } = bestsellerIds.length === 0
+    ? { data: [], error: null }
+    : await supabase
+        .from("marketplace_bestsellers")
+        .select("*")
+        .in("id", bestsellerIds);
 
   if (error) throw new Error(error.message);
 
