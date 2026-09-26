@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
+import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -19,6 +20,7 @@ export async function POST() {
       bestsellers,
       suppliers,
       selected,
+      newfind,
       salesReady: selected.published > 0,
     });
   } catch (error) {
