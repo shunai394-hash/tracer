@@ -29,11 +29,14 @@ export async function persistMarketplaceBestsellers(): Promise<{
   skippedMarketplaces: string[];
   /** Per-marketplace detail-page enrichment telemetry (see collect-bestsellers.ts). */
   enrichment: Array<{ marketplace: string; attempted: number; htmlFetched: number; identifierFound: number }>;
+  /** Exact bestseller row IDs inserted by this run; downstream stages must use these IDs. */
+  bestsellerIds: string[];
 }> {
   const collected = await collectMarketplaceBestsellers();
   const supabase = createSupabaseAdminClient();
   let inserted = 0;
   let productsCreated = 0;
+  const bestsellerIds: string[] = [];
   const skippedMarketplaces = collected.marketplaces
     .filter((item) => item.skipped)
     .map((item) => item.marketplace);
@@ -70,6 +73,7 @@ export async function persistMarketplaceBestsellers(): Promise<{
 
       if (error) throw new Error(error.message);
       inserted += 1;
+      bestsellerIds.push(String(bestseller.id));
 
       const identityKey = buildIdentityKey(item.title, item.asin, item.jan, item.gtin, item.mpn);
       let productId: string | null = null;
@@ -184,5 +188,6 @@ export async function persistMarketplaceBestsellers(): Promise<{
     enrichment: collected.marketplaces
       .filter((marketplace) => marketplace.enrichment)
       .map((marketplace) => ({ marketplace: marketplace.marketplace, ...marketplace.enrichment! })),
+    bestsellerIds,
   };
 }
