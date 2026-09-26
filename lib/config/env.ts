@@ -18,6 +18,7 @@ export type FoundationStatus = {
   stripeWebhook: boolean;
   orosy: boolean;
   ecPulse: boolean;
+  extension: boolean;
 };
 
 export function getFoundationStatus(): FoundationStatus {
@@ -39,6 +40,7 @@ export function getFoundationStatus(): FoundationStatus {
     stripeWebhook: present(process.env.STRIPE_WEBHOOK_SECRET),
     orosy: present(process.env.OROSY_API_KEY) || present(process.env.OROSY_DEMO_API_KEY),
     ecPulse: present(process.env.EC_PULSE_API_URL) && present(process.env.EC_PULSE_API_KEY),
+    extension: present(process.env.TRACER_EXTENSION_API_KEY),
   };
 }
 
@@ -81,7 +83,7 @@ export function getECPulseConfig() {
 }
 
 
-export function getDropshipSupplierConfig() {
+export function getExtensionConfig() {\n  return {\n    apiKey: process.env.TRACER_EXTENSION_API_KEY?.trim() ?? "",\n  };\n}\n\nexport function getDropshipSupplierConfig() {
   return {
     cj: present(process.env.CJ_API_KEY),
     hypersku: present(process.env.HYPERSKU_API_KEY),
