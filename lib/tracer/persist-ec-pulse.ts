@@ -1,9 +1,8 @@
-import "server-only";
+﻿import "server-only";
 
-import {
-  type ECPulsePriceChangedEvent,
-  type ECPulseProduct,
-} from "@/lib/sources/ec-pulse";
+import { type ECPulsePriceChangedEvent, type ECPulseProduct } from "@/lib/sources/ec-pulse";
+export type { ECPulsePriceChangedEvent } from "@/lib/sources/ec-pulse";
+
 import { normalizeIdentifier } from "@/lib/market/identifiers";
 import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -552,3 +551,8 @@ export async function persistECPulseMonitorMapping(args: {
     throw new Error(`Failed to persist EC-Pulse monitor mapping: ${result.error.message}`);
   }
 }
+
+
+
+
+

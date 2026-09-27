@@ -1,4 +1,5 @@
-﻿export {
+﻿export { calculateCJFreight } from "./client";
+export {
   CJConfigError,
   CJRequestError,
   searchCJProducts,
@@ -12,3 +13,4 @@ export type {
   CJSearchResult,
   CJProductVariant,
 } from "@/lib/sources/cj/client";
+

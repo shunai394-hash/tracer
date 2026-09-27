@@ -20,10 +20,31 @@ export type FoundationStatus = {
   ecPulse: boolean;
   extension: boolean;
   base: boolean;
+};
 
+export function getFoundationStatus(): FoundationStatus {
+  return {
+    supabasePublic: present(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
+      present(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY),
+    supabaseServiceRole: present(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    gemini: present(process.env.GEMINI_API_KEY),
+    brightData: present(process.env.BRIGHTDATA_API_KEY),
+    brightDataMcp: present(process.env.BRIGHTDATA_MCP_API_KEY),
+    shopify: present(process.env.SHOPIFY_ACCESS_TOKEN),
+    metaAds: present(process.env.META_ACCESS_TOKEN),
+    newfindInbound: present(process.env.NEWFind_INBOUND_URL) ||
+      present(process.env.NEWFind_INBOUND_API_URL),
+    newfindOutbound: present(process.env.NEWFind_OUTBOUND_URL) ||
+      present(process.env.NEWFind_OUTBOUND_API_URL),
+    stripe: present(process.env.STRIPE_SECRET_KEY),
+    stripeWebhook: present(process.env.STRIPE_WEBHOOK_SECRET),
+    orosy: present(process.env.OROSY_API_KEY),
+    ecPulse: present(process.env.EC_PULSE_API_KEY),
+    extension: present(process.env.TRACER_EXTENSION_API_KEY),
+    base: present(process.env.BASE_ACCESS_TOKEN) ||
+      present(process.env.BASE_REFRESH_TOKEN),
   };
 }
-
 export function getGeminiConfig() {
   const apiKey = process.env.GEMINI_API_KEY?.trim() ?? "";
   const model = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
@@ -70,10 +91,7 @@ export function getExtensionConfig() {
 }
 
 export function getDropshipSupplierConfig() {
-<<<<<<< HEAD
 
-=======
->>>>>>> 442ad7e (fix: repair extension env config syntax)
   return {
     cj: present(process.env.CJ_API_KEY),
     hypersku: present(process.env.HYPERSKU_API_KEY),
@@ -203,5 +221,9 @@ export function getNewfindConfig() {
     apiKey: process.env.NEWFIND_API_KEY?.trim() ?? "",
   };
 }
+
+
+
+
 
 

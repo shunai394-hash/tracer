@@ -65,7 +65,7 @@ async function findProductByIdentifiers(ids: ProductIdentifiers) {
 
     const result = await supabase
       .from("products")
-      .select("id, canonical_name, asin, jan, gtin, ean, upc, mpn, brand_id")
+      .select("id, canonical_name, identity_key, asin, jan, gtin, ean, upc, mpn, brand_id")
       .eq(scheme, value)
       .maybeSingle();
 
@@ -285,10 +285,6 @@ export async function POST(request: Request) {
     }
 
     const url = requireHttpUrl(rawUrl);
-<<<<<<< HEAD
-
-=======
->>>>>>> db3c9a1 (fix(extension): validate product URL before parsing)
     const title = stringValue(body.title);
     if (!title) {
       return NextResponse.json(
@@ -397,5 +393,8 @@ export async function POST(request: Request) {
     );
   }
 }
+
+
+
 
 

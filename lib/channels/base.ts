@@ -1,4 +1,4 @@
-import "server-only";
+﻿import "server-only";
 
 type BaseItemInput = {
   title: string;
@@ -129,6 +129,7 @@ export type BaseOrderSummary = {
 export type BaseOrderDetail = BaseOrderSummary & {
   payment?: string;
   total?: number;
+  shipping_fee?: number;
   first_name?: string;
   last_name?: string;
   country?: string;
@@ -191,3 +192,6 @@ export async function getBaseOrderDetail(uniqueKey: string): Promise<BaseOrderDe
   if (!data.order) throw new Error("BASE order detail missing order");
   return data.order;
 }
+
+
+

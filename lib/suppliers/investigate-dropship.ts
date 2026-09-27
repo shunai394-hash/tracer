@@ -1,10 +1,11 @@
-import "server-only";
+﻿import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getDropshipSupplierConfig } from "@/lib/config/env";
 import { getCJConfig } from "@/lib/config/env";
 import {
   CJConfigError,
+  calculateCJFreight,
   fetchCJProductVariants,
   getCJProductDetail,
   searchCJProducts,
@@ -189,7 +190,7 @@ export async function investigateDropshipForBestsellers(
       // identifier. This preserves the strict identity gate while avoiding
       // needless requests after identity is already proven.
       const searches: Awaited<ReturnType<typeof searchCJProducts>>[] = [];
-      let directMatches: Awaited<ReturnType<typeof searchCJProducts>>[number]["products"] = [];
+      let directMatches: Awaited<ReturnType<typeof searchCJProducts>>["products"] = [];
 
       for (const query of identifierQueries) {
         cjQuery = query;
@@ -532,3 +533,5 @@ export async function investigateDropshipForBestsellers(
     rowErrorDetails: rowErrorDetails.slice(0, 20),
   };
 }
+
+
