@@ -306,7 +306,7 @@ export function parseAmazonProductDetail(html: string): {
     cleaned.match(/ブランド[^\n<]{0,8}([^<]{2,80})/)?.[1] ??
     null;
 
-  let model =
+  const model =
     cleaned.match(/<th[^>]*>\s*(?:型番|メーカー型番)\s*<\/th>\s*<td[^>]*>\s*([^<]{2,80})/i)?.[1] ??
     null;
 
