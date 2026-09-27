@@ -45,7 +45,24 @@ export async function publishPublishedListingsToBase(
     const listingId = String(listing.id);
 
     if (listing.selling_price === null) {
+      await supabase.from("shop_listings").update({
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "blocked",
+        pipeline_reason: "selling_price_unknown",
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
       results.push({ listingId, ok: false, skipped: true, error: "selling_price_unknown" });
+      continue;
+    }
+
+    if (!listing.image_url) {
+      await supabase.from("shop_listings").update({
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "blocked",
+        pipeline_reason: "image_unknown",
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      results.push({ listingId, ok: false, skipped: true, error: "image_unknown" });
       continue;
     }
 
@@ -77,6 +94,11 @@ export async function publishPublishedListingsToBase(
           base_item_id: String(baseItemId),
           base_published_at: new Date().toISOString(),
           base_last_error: null,
+          pipeline_stage: "BASE_PUBLISHED",
+          pipeline_status: "published",
+          pipeline_reason: "base_item_created",
+          pipeline_error: null,
+          pipeline_updated_at: new Date().toISOString(),
         })
         .eq("id", listingId);
 
@@ -91,7 +113,14 @@ export async function publishPublishedListingsToBase(
       const message = error instanceof Error ? error.message : String(error);
       await supabase
         .from("shop_listings")
-        .update({ base_last_error: message })
+.update({
+          base_last_error: message,
+          pipeline_stage: "BASE_PUBLICATION",
+          pipeline_status: "failed",
+          pipeline_reason: "base_publication_failed",
+          pipeline_error: message,
+          pipeline_updated_at: new Date().toISOString(),
+        })
         .eq("id", listingId);
 
       results.push({ listingId, ok: false, error: message });
