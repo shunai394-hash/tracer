@@ -158,9 +158,17 @@ function capture(): ProductCapture {
   };
 }
 
+type TracerCaptureMessage = {
+  type?: string;
+};
+
+function isTracerCaptureMessage(value: unknown): value is TracerCaptureMessage {
+  return typeof value === "object" && value !== null;
+}
+
 chrome.runtime.onMessage.addListener(
-  (message: any, _sender: any, sendResponse: (response: unknown) => void) => {
-    if (message?.type !== "TRACER_CAPTURE_PRODUCT") return false;
+  (message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => {
+    if (!isTracerCaptureMessage(message) || message.type !== "TRACER_CAPTURE_PRODUCT") return false;
 
     try {
       sendResponse({ ok: true, product: capture() });
