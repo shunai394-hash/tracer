@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createBaseItem, addBaseItemImage } from "@/lib/channels/base";
+import { createBaseItem, addBaseItemImage, isBaseConfigured } from "@/lib/channels/base";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -20,6 +20,10 @@ export type BasePublicationResult = {
 export async function publishPublishedListingsToBase(
   limit = 10,
 ): Promise<BasePublicationResult> {
+  if (!isBaseConfigured()) {
+    return { attempted: 0, published: 0, skipped: 0, failed: 0, results: [] };
+  }
+
   const supabase = createSupabaseAdminClient();
 
   const { data: listings, error } = await supabase
