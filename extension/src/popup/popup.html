@@ -1,40 +1,34 @@
 <!doctype html>
-<html lang="en">
+<html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>TRACER Product Capture</title>
+  <title>TRACER</title>
   <style>
-    :root { color-scheme: dark; }
-    body { width: 360px; margin: 0; padding: 18px; box-sizing: border-box; background: #05070a; color: #e8eef4; font: 13px system-ui, sans-serif; }
-    .brand { display:flex; align-items:center; gap:10px; margin-bottom:5px; }
-    .mark { width:28px; height:28px; border:2px solid #22d3ee; border-radius:8px; display:grid; place-items:center; font-weight:800; color:#e8eef4; }
-    h1 { font-size: 16px; margin: 0; letter-spacing: .08em; }
-    .muted { color: #87919b; font-size: 11px; line-height: 1.5; }
-    button { width: 100%; border: 1px solid #22d3ee66; background: #0a151a; color: #e8eef4; border-radius: 7px; padding: 10px; margin-top: 12px; cursor: pointer; }
-    button:hover { background:#0d2027; border-color:#22d3ee; }
-    input { width: 100%; box-sizing: border-box; padding: 8px 9px; margin-top: 6px; border:1px solid #ffffff18; border-radius:6px; background:#0b0e12; color:#e8eef4; }
-    label { display:block; margin-top:12px; }
-    #status { margin-top: 12px; padding: 10px; min-height: 38px; border:1px solid #ffffff10; border-radius:7px; white-space:pre-wrap; line-height:1.5; }
-    hr { border:0; border-top:1px solid #ffffff10; margin:16px 0; }
-    .hint { margin-top: 8px; }
+    body { width: 360px; margin: 0; padding: 16px; font-family: system-ui, sans-serif; }
+    h1 { font-size: 18px; margin: 0 0 12px; }
+    button { width: 100%; padding: 10px; margin-top: 8px; cursor: pointer; }
+    input { box-sizing: border-box; width: 100%; padding: 8px; margin: 4px 0 8px; }
+    #status { white-space: pre-wrap; margin-top: 12px; font-size: 12px; }
+    .ok { color: #146c2e; }
+    .error { color: #a61b1b; }
+    details { margin-top: 12px; }
   </style>
 </head>
 <body>
-  <div class="brand"><div class="mark">T</div><h1>TRACER</h1></div>
-  <div class="muted">Amazon product page → TRACER → EC-Pulse</div>
-  <button id="capture">Capture & Send</button>
-  <div id="status">Ready.</div>
-  <hr>
-  <label>TRACER API base
-    <input id="apiBase" placeholder="https://your-tracer-deployment.vercel.app" autocomplete="off">
-  </label>
-  <div class="muted hint">Use your deployed TRACER URL. Do not enter an EC-Pulse API URL here.</div>
-  <label>Extension key
-    <input id="extensionKey" type="password" placeholder="optional" autocomplete="off">
-  </label>
-  <button id="save">Save settings</button>
-  <div class="muted hint">Privacy: TRACER sends only the captured product fields needed for this workflow. <a href="#" id="privacy" style="color:#67e8f9">Privacy Policy</a></div>
-  <script type="module" src="./popup.js"></script>
+  <h1>TRACER Product Capture</h1>
+  <button id="capture">Amazon商品をTRACERへ送信</button>
+  <div id="status">待機中</div>
+
+  <details>
+    <summary>接続設定</summary>
+    <label>TRACER URL</label>
+    <input id="apiUrl" placeholder="http://localhost:3000">
+    <label>Extension Key</label>
+    <input id="apiKey" type="password" placeholder="TRACER_EXTENSION_API_KEY">
+    <button id="save">保存</button>
+  </details>
+
+  <script type="module" src="../../dist/popup/popup.js"></script>
 </body>
 </html>
