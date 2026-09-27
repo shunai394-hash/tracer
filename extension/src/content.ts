@@ -59,6 +59,39 @@ function firstString(...values: unknown[]): string | null {
   return null;
 }
 
+function detailValue(labels: string[]): string | null {
+  const wanted = new Set(labels.map((label) => label.replace(/\s+/g, "").replace(/[：:]/g, "").toLowerCase()));
+
+  const candidates = Array.from(document.querySelectorAll(
+    "#productDetails_techSpec_section_1 tr, #productDetails_detailBullets_sections1 tr, #detailBullets_feature_div li, #prodDetails tr",
+  ));
+
+  for (const node of candidates) {
+    const text = node.textContent?.replace(/\s+/g, " ").trim() ?? "";
+    if (!text) continue;
+
+    const cells = Array.from(node.querySelectorAll("th, td")).map(
+      (cell) => cell.textContent?.replace(/\s+/g, " ").trim() ?? "",
+    ).filter(Boolean);
+
+    const label = cells[0] ?? text.split(/[:：]/, 1)[0]?.trim() ?? "";
+    const normalizedLabel = label.replace(/\s+/g, "").replace(/[：:]/g, "").toLowerCase();
+
+    if (!wanted.has(normalizedLabel)) continue;
+
+    if (cells.length >= 2) return cells.slice(1).join(" ").trim() || null;
+
+    const separator = text.match(/^(.+?)\s*[:：]\s*(.+)$/);
+    if (separator && wanted.has(
+      separator[1].replace(/\s+/g, "").replace(/[：:]/g, "").toLowerCase(),
+    )) {
+      return separator[2].trim() || null;
+    }
+  }
+
+  return null;
+}
+
 function capture(): ProductCapture {
   const jsonLd = jsonLdObjects();
   const product = jsonLd.find((value) => {
@@ -84,6 +117,14 @@ function capture(): ProductCapture {
     : product.image;
 
   const asin = extractAsin(location.href);
+  const manufacturer = detailValue(["メーカー", "Manufacturer"]);
+  const modelNumber = detailValue([
+    "商品モデル番号",
+    "Item model number",
+    "Model number",
+    "Manufacturer part number",
+    "MPN",
+  ]);
 
   const gtin = firstString(
     product.gtin13,
@@ -112,8 +153,8 @@ function capture(): ProductCapture {
     gtin,
     ean: null,
     upc: firstString(product.gtin12),
-    mpn: firstString(product.mpn),
-    brand: firstString(brandValue),
+    mpn: firstString(product.mpn) ?? modelNumber,
+    brand: firstString(brandValue) ?? manufacturer,
   };
 }
 
