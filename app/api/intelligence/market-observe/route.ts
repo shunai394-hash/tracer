@@ -8,8 +8,13 @@ export const maxDuration = 60;
  * Market observation only.
  * This endpoint never investigates suppliers and never publishes/unpublishes shop listings.
  */
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    const cronSecret = process.env.CRON_SECRET;
+    const authHeader = request.headers.get("authorization");
+    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
     const startedAt = Date.now();
     const observation = await persistMarketplaceBestsellers();
 
