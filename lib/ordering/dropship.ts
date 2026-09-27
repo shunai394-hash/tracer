@@ -516,6 +516,17 @@ export async function executeLivePurchaseOrder(
     .eq("idempotency_key", idempotencyKey)
     .maybeSingle();
 
+  if (existingAttempt?.succeeded && !existingAttempt.supplier_order_id) {
+    return {
+      purchaseOrderId,
+      attempted: false,
+      succeeded: false,
+      supplierOrderId: null,
+      reason: "supplier_attempt_succeeded_without_order_id_manual_reconciliation_required",
+      gate,
+    };
+  }
+
   if (existingAttempt?.succeeded && existingAttempt.supplier_order_id) {
     await supabase
       .from("purchase_orders")
@@ -650,19 +661,30 @@ export async function executeLivePurchaseOrder(
     raw: null,
   }));
 
-  await supabase
+  const attemptUpdate = await supabase
     .from("cj_order_attempts")
     .update({
       response_code: result.responseCode,
       response_message: result.responseMessage,
       supplier_order_id: result.supplierOrderId,
       succeeded: result.succeeded,
-      state: result.responseCode === "EXCEPTION" ? "unknown" : "completed",
+      state: result.responseCode === "EXCEPTION" || (result.succeeded && !result.supplierOrderId) ? "unknown" : "completed",
     })
     .eq("id", attemptId);
 
+  if (attemptUpdate.error) {
+    return {
+      purchaseOrderId,
+      attempted: true,
+      succeeded: false,
+      supplierOrderId: null,
+      reason: "supplier_attempt_record_update_failed_manual_reconciliation_required",
+      gate,
+    };
+  }
+
   if (result.succeeded && result.supplierOrderId) {
-    await supabase
+    const purchaseOrderUpdate = await supabase
       .from("purchase_orders")
       .update({
         supplier_order_id: result.supplierOrderId,
@@ -672,6 +694,17 @@ export async function executeLivePurchaseOrder(
         status: "placed",
       })
       .eq("id", purchaseOrderId);
+
+    if (purchaseOrderUpdate.error) {
+      return {
+        purchaseOrderId,
+        attempted: true,
+        succeeded: true,
+        supplierOrderId: result.supplierOrderId,
+        reason: "supplier_order_created_db_sync_failed",
+        gate,
+      };
+    }
 
     return {
       purchaseOrderId,
