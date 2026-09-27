@@ -248,6 +248,55 @@ function normalizeProduct(product: CJProduct): CJProductCandidate | null {
   };
 }
 
+export async function fetchCJVariantByVid(vid: string): Promise<CJProductVariant | null> {
+  const normalizedVid = vid.trim();
+  if (!normalizedVid) throw new CJRequestError("CJ variant id is empty");
+
+  const token = await getAccessToken();
+  const params = new URLSearchParams({ vid: normalizedVid });
+  const response = await fetchCJWithRateLimit(
+    `https://developers.cjdropshipping.com/api2.0/v1/product/variant/queryByVid?${params.toString()}`,
+    {
+      method: "GET",
+      headers: { "CJ-Access-Token": token },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new CJRequestError(
+      `CJ variant detail lookup failed with HTTP ${response.status}`,
+    );
+  }
+
+  const payload = (await response.json()) as CJVariantQueryResponse;
+  if (payload.result === false) {
+    throw new CJRequestError(payload.message || "CJ variant detail lookup failed");
+  }
+
+  const row = extractCJVariantRows(payload.data)[0];
+  if (!row) return null;
+
+  const id = row.vid?.trim() || row.variantId?.trim();
+  if (!id) return null;
+
+  return {
+    vid: id,
+    productId: row.pid?.trim() || row.productId?.trim() || "",
+    sku: row.variantSku?.trim() || row.sku?.trim() || null,
+    nameEn: row.variantNameEn?.trim() || row.variantKey?.trim() || null,
+    sellPrice:
+      row.variantSellPrice === undefined || row.variantSellPrice === null
+        ? null
+        : String(row.variantSellPrice),
+    barcode:
+      row.barcode === undefined || row.barcode === null
+        ? null
+        : String(row.barcode).replace(/\\D/g, "") || null,
+    inventory: null,
+  };
+}
+
 export async function fetchCJVariantStock(vid: string): Promise<number | null> {
   const normalizedVid = vid.trim();
   if (!normalizedVid) throw new CJRequestError("CJ variant id is empty");
