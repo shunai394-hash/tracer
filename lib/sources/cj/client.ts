@@ -248,6 +248,79 @@ function normalizeProduct(product: CJProduct): CJProductCandidate | null {
   };
 }
 
+export async function fetchCJVariantStock(vid: string): Promise<number | null> {
+  const normalizedVid = vid.trim();
+  if (!normalizedVid) throw new CJRequestError("CJ variant id is empty");
+
+  const token = await getAccessToken();
+  const params = new URLSearchParams({ vid: normalizedVid });
+  const response = await fetchCJWithRateLimit(
+    `https://developers.cjdropshipping.com/api2.0/v1/product/stock/queryByVid?${params.toString()}`,
+    {
+      method: "GET",
+      headers: { "CJ-Access-Token": token },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new CJRequestError(
+      `CJ variant stock lookup failed with HTTP ${response.status}`,
+    );
+  }
+
+  const payload = (await response.json()) as {
+    result?: boolean;
+    message?: string;
+    data?: unknown;
+  };
+
+  if (payload.result === false) {
+    throw new CJRequestError(payload.message || "CJ variant stock lookup failed");
+  }
+
+  const candidates: unknown[] = Array.isArray(payload.data)
+    ? payload.data
+    : payload.data && typeof payload.data === "object"
+      ? [
+          payload.data,
+          ...Object.values(payload.data as Record<string, unknown>).filter(
+            (value) => Array.isArray(value),
+          ).flat(),
+        ]
+      : [payload.data];
+
+  const stockKeys = [
+    "stock",
+    "inventory",
+    "inventoryNum",
+    "availableStock",
+    "warehouseInventoryNum",
+    "totalInventory",
+    "quantity",
+  ] as const;
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return candidate;
+    }
+    if (!candidate || typeof candidate !== "object") continue;
+    const record = candidate as Record<string, unknown>;
+    for (const key of stockKeys) {
+      const value = record[key];
+      const numeric =
+        typeof value === "number"
+          ? value
+          : typeof value === "string" && value.trim()
+            ? Number(value)
+            : NaN;
+      if (Number.isFinite(numeric)) return numeric;
+    }
+  }
+
+  return null;
+}
+
 export async function calculateCJFreight(
   vid: string,
   options?: {
