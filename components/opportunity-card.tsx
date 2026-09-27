@@ -327,14 +327,43 @@ export function OpportunityCard({
         </div>
       </details>
 
-      <div className="mt-5 flex items-center justify-between gap-4">
-        <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-500">
-          Next action
-        </p>
-        <StartTestButton
-          opportunityId={opportunity.id}
-          enabled={opportunity.sellabilityState === "TEST_READY"}
-        />
+      <div className="mt-5 border border-cyan-500/15 bg-black/30 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-500">
+              Sales test gate
+            </p>
+            <p className="mt-1 text-sm text-zinc-300">
+              {opportunity.sellabilityState === "TEST_READY"
+                ? "販売テストに進めるデータ品質ゲートを通過しています。"
+                : opportunity.missing.length > 0
+                  ? "販売テスト開始前に、下記の不足データを埋める必要があります。"
+                  : "販売テスト条件を満たしていません。詳細画面で状態を確認してください。"}
+            </p>
+          </div>
+          <Link
+            href={`/intelligence/${opportunity.id}`}
+            className="font-mono text-[10px] uppercase tracking-[0.18em] text-cyan-300 hover:text-cyan-100"
+          >
+            View evidence →
+          </Link>
+        </div>
+        {opportunity.sellabilityState !== "TEST_READY" && opportunity.missing.length > 0 ? (
+          <ul className="mt-3 grid gap-1 text-xs text-amber-200/80 sm:grid-cols-2">
+            {opportunity.missing.map((item) => (
+              <li key={item}>・{item}</li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="mt-4 flex items-center justify-between gap-4">
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-600">
+            {opportunity.sellabilityState}
+          </p>
+          <StartTestButton
+            opportunityId={opportunity.id}
+            enabled={opportunity.sellabilityState === "TEST_READY"}
+          />
+        </div>
       </div>
     </article>
   );
