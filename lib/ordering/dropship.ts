@@ -101,9 +101,11 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       continue;
     }
 
-    const supplierListingId = shopListing.supplier_listing_id
-      ? String(shopListing.supplier_listing_id)
-      : null;
+    const supplierListingId = row.supplier_listing_id
+      ? String(row.supplier_listing_id)
+      : shopListing.supplier_listing_id
+        ? String(shopListing.supplier_listing_id)
+        : null;
     if (!supplierListingId) {
       skipped.push({ itemId: String(row.id), reason: "supplier_listing_snapshot_missing" });
       continue;
@@ -123,6 +125,22 @@ export async function createDropshipPurchaseOrdersForShopOrder(
     }
 
     const listingRow = listing as Record<string, unknown>;
+    const expectedVariant =
+      typeof row.supplier_variant_id === "string"
+        ? row.supplier_variant_id
+        : typeof shopListing.supplier_variant_id === "string"
+          ? shopListing.supplier_variant_id
+          : null;
+    const actualVariant =
+      typeof listingRow.supplier_variant_id === "string"
+        ? listingRow.supplier_variant_id
+        : typeof listingRow.cj_variant_id === "string"
+          ? listingRow.cj_variant_id
+          : null;
+    if (expectedVariant && actualVariant && expectedVariant !== actualVariant) {
+      skipped.push({ itemId: String(row.id), reason: "supplier_variant_snapshot_mismatch" });
+      continue;
+    }
     const killSwitch = await checkKillSwitch({
       supplier: "CJdropshipping",
       productId,
