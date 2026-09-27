@@ -113,6 +113,14 @@ export function isCJLiveOrderingEnabled(): boolean {
   return process.env.CJ_LIVE_ORDERING?.trim() === "1";
 }
 
+/**
+ * Automatic supplier execution is a separate opt-in from the live-ordering
+ * switch. Both must be enabled before a fulfillment cron may call CJ.
+ */
+export function isCJAutoOrderingEnabled(): boolean {
+  return process.env.CJ_AUTO_ORDERING?.trim() === "1";
+}
+
 export type OrosyEnvironment = "demo" | "live";
 
 /**
