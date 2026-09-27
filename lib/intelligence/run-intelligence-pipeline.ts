@@ -12,7 +12,10 @@ import { persistReorderRecommendations } from "@/lib/ordering/persist-reorder";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
-import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
+import {
+  promoteShopListingToNewfind,
+  retryPendingNewfindPromotions,
+} from "@/lib/integration/newfind";
 import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
@@ -181,6 +184,9 @@ export async function runIntelligencePipeline(): Promise<{
     () => selectAndPublishSalesTests(bestsellerIds, 3),
   );
   steps.push(salesTestStep);
+  steps.push(
+    await runStep("newfind_retry", () => retryPendingNewfindPromotions(20)),
+  );
   steps.push(
     await runStep("newfind_promotion", async () => {
       const result = salesTestStep.result as

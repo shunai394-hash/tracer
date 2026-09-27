@@ -22,6 +22,36 @@ export type NewfindPromotionResult = {
   detail: string;
 };
 
+export async function retryPendingNewfindPromotions(limit = 20): Promise<{
+  attempted: number;
+  processed: number;
+  failed: number;
+}> {
+  const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("newfind_promotion_deliveries")
+    .select("listing_id")
+    .in("status", ["pending", "failed", "sent"])
+    .order("updated_at", { ascending: true })
+    .limit(Math.max(1, Math.min(limit, 100)));
+
+  if (error) throw new Error(error.message);
+
+  let processed = 0;
+  let failed = 0;
+  for (const row of data ?? []) {
+    const result = await promoteShopListingToNewfind(String(row.listing_id));
+    if (result.ackStatus === "processed") processed += 1;
+    else if (!result.sent) failed += 1;
+  }
+
+  return {
+    attempted: data?.length ?? 0,
+    processed,
+    failed,
+  };
+}
+
 export async function promoteShopListingToNewfind(
   listingId: string,
 ): Promise<NewfindPromotionResult> {
