@@ -40,12 +40,19 @@ export async function persistMarketplaceBestsellers(): Promise<{
   let productsCreated = 0;
   const bestsellerIds: string[] = [];
   const supplierCandidateIdsByMarketplace = new Map<string, string[]>();
+  const seenMarketplaceIdentityKeys = new Map<string, Set<string>>();
   const skippedMarketplaces = collected.marketplaces
     .filter((item) => item.skipped)
     .map((item) => item.marketplace);
 
   for (const marketplace of collected.marketplaces) {
     for (const item of marketplace.items) {
+      const identityKey = buildIdentityKey(item.title, item.asin, item.jan, item.gtin, item.mpn);
+      const seen = seenMarketplaceIdentityKeys.get(marketplace.marketplace) ?? new Set<string>();
+      if (seen.has(identityKey)) continue;
+      seen.add(identityKey);
+      seenMarketplaceIdentityKeys.set(marketplace.marketplace, seen);
+
       const { data: bestseller, error } = await supabase
         .from("marketplace_bestsellers")
         .insert({
@@ -83,7 +90,6 @@ export async function persistMarketplaceBestsellers(): Promise<{
       inserted += 1;
       bestsellerIds.push(String(bestseller.id));
 
-      const identityKey = buildIdentityKey(item.title, item.asin, item.jan, item.gtin, item.mpn);
       let productId: string | null = null;
 
       const existing = item.asin
