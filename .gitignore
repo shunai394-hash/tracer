@@ -47,3 +47,5 @@ tmp-*
 *.bak
 *.bak2
 supabase/.temp/
+
+.vercel
