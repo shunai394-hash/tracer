@@ -34,8 +34,11 @@ export function getFoundationStatus(): FoundationStatus {
     metaAds: present(process.env.META_ACCESS_TOKEN) &&
       present(process.env.META_AD_ACCOUNT_ID),
     newfindInbound: present(process.env.NEWFIND_WEBHOOK_SECRET),
+    // Outbound delivery signs requests with the shared secret, so all three
+    // values are required for a genuinely sendable configuration.
     newfindOutbound: present(process.env.NEWFIND_API_URL) &&
-      present(process.env.NEWFIND_API_KEY),
+      present(process.env.NEWFIND_API_KEY) &&
+      present(process.env.NEWFIND_WEBHOOK_SECRET),
     stripe: present(process.env.STRIPE_SECRET_KEY),
     stripeWebhook: present(process.env.STRIPE_WEBHOOK_SECRET),
     orosy: present(process.env.OROSY_API_KEY) || present(process.env.OROSY_DEMO_API_KEY),
