@@ -176,7 +176,7 @@ export async function listBaseOrders(options?: {
 }
 
 export async function getBaseOrderDetail(uniqueKey: string): Promise<BaseOrderDetail> {
-  const token = requireBaseToken();
+  const token = await getBaseAccessToken();
   const response = await fetch(
     `${BASE_API_URL}/orders/detail/${encodeURIComponent(uniqueKey)}`,
     {
