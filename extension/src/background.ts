@@ -11,7 +11,7 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.runtime.onMessage.addListener(
-  (message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => {
+  (message: unknown, _sender: TracerChromeRuntimeMessageSender, sendResponse: (response: unknown) => void) => {
     if (!isTracerMessage(message)) return false;
 
     if (message.type === "TRACER_PING") {
