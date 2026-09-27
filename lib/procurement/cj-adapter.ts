@@ -1,6 +1,7 @@
 ﻿import "server-only";
 
 import { createCJOrderV2, getCJOrderStatus } from "@/lib/sources/cj/create-order";
+import { calculateCJFreight, fetchCJVariantByVid, fetchCJVariantStock } from "@/lib/sources/cj/client";
 import type {
   SupplierInventory,
   SupplierOrder,
@@ -28,17 +29,19 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
   },
 
   async getVariant(
-    _supplierProductId: string,
+    supplierProductId: string,
     supplierVariantId: string,
   ): Promise<SupplierVariant | null> {
     if (!supplierVariantId) return null;
+    const variant = await fetchCJVariantByVid(supplierVariantId);
+    if (!variant) return null;
 
     return {
-      supplierVariantId,
-      supplierProductId: _supplierProductId,
-      sku: supplierVariantId,
-      title: null,
-      price: null,
+      supplierVariantId: variant.vid,
+      supplierProductId: variant.productId || supplierProductId,
+      sku: variant.sku,
+      title: variant.nameEn,
+      price: variant.sellPrice === null ? null : Number(variant.sellPrice),
       currency: "USD",
       inventory: null,
       orderable: null,
@@ -46,24 +49,52 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
   },
 
   async getInventory(
-    _supplierProductId: string,
-    _supplierVariantId?: string,
+    supplierProductId: string,
+    supplierVariantId?: string,
   ): Promise<SupplierInventory | null> {
-    return null;
+    if (!supplierVariantId) return null;
+    const inventory = await fetchCJVariantStock(supplierVariantId);
+    return {
+      supplierProductId,
+      supplierVariantId,
+      quantity: inventory,
+      available: inventory !== null ? inventory > 0 : null,
+    };
   },
 
   async getPrice(
-    _supplierProductId: string,
-    _supplierVariantId?: string,
+    supplierProductId: string,
+    supplierVariantId?: string,
   ): Promise<SupplierPrice | null> {
-    return null;
+    if (!supplierVariantId) return null;
+    const variant = await fetchCJVariantByVid(supplierVariantId);
+    if (!variant || variant.sellPrice === null) return null;
+    return {
+      supplierProductId,
+      supplierVariantId,
+      amount: Number(variant.sellPrice),
+      currency: "USD",
+    };
   },
 
   async getShipping(
-    _supplierProductId: string,
-    _supplierVariantId?: string,
+    supplierProductId: string,
+    supplierVariantId?: string,
   ): Promise<SupplierShipping | null> {
-    return null;
+    if (!supplierVariantId) return null;
+    const amount = await calculateCJFreight(supplierVariantId, {
+      startCountryCode: "CN",
+      endCountryCode: "JP",
+      quantity: 1,
+    });
+    if (amount === null) return null;
+    return {
+      supplierProductId,
+      supplierVariantId,
+      amount,
+      currency: "USD",
+      destinationCountryCode: "JP",
+    };
   },
 
   async createOrder(input: SupplierOrderInput): Promise<SupplierOrderResult> {
