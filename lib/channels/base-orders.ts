@@ -28,6 +28,55 @@ function paymentMethod(payment: string | undefined): "cash_on_delivery" | "bank_
   return "card";
 }
 
+
+async function repairBaseOrderItems(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  shopOrderId: string,
+  baseOrderKey: string,
+  order: Awaited<ReturnType<typeof getBaseOrderDetail>>,
+): Promise<void> {
+  const baseItems = (order.order_items ?? []).filter(
+    (item) => item.status !== "cancelled" && item.item_id !== undefined,
+  );
+  if (baseItems.length === 0) return;
+
+  const itemIds = baseItems.map((item) => String(item.item_id));
+  const { data: listings, error: listingError } = await supabase
+    .from("shop_listings")
+    .select("id,product_id,title,selling_price,currency,base_item_id,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id")
+    .in("base_item_id", itemIds);
+  if (listingError) throw new Error(listingError.message);
+
+  const listingByBaseItem = new Map(
+    (listings ?? []).map((listing) => [String(listing.base_item_id), listing]),
+  );
+
+  for (const baseItem of baseItems) {
+    const listing = listingByBaseItem.get(String(baseItem.item_id));
+    if (!listing) continue;
+
+    const baseOrderItemKey = `base:${baseOrderKey}:item:${String(baseItem.order_item_id ?? baseItem.item_id)}`;
+    const { error: itemError } = await supabase
+      .from("shop_order_items")
+      .upsert({
+        order_id: shopOrderId,
+        base_order_item_key: baseOrderItemKey,
+        listing_id: listing.id,
+        product_id: listing.product_id,
+        supplier_listing_id: listing.supplier_listing_id ?? null,
+        supplier_name: listing.supplier_name ?? null,
+        supplier_product_id: listing.supplier_product_id ?? null,
+        supplier_variant_id: listing.supplier_variant_id ?? null,
+        title: listing.title,
+        qty: Number(baseItem.amount ?? 1),
+        unit_price: Number(baseItem.price ?? listing.selling_price ?? 0),
+        currency: listing.currency ?? "JPY",
+      }, { onConflict: "base_order_item_key" });
+
+    if (itemError) throw new Error(itemError.message);
+  }
+}
+
 export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncResult> {
   if (!isBaseConfigured()) {
     return {
@@ -57,6 +106,7 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
       if (existing?.id) {
         const detail = await getBaseOrderDetail(baseOrderKey);
         const paid = detail.dispatch_status !== "unpaid";
+        await repairBaseOrderItems(supabase, String(existing.id), baseOrderKey, detail);
         const canceled =
           detail.dispatch_status === "cancelled" ||
           detail.dispatch_status === "unshippable";
@@ -195,8 +245,10 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
         const listing = listingByBaseItem.get(String(baseItem.item_id));
         if (!listing) throw new Error(`listing_not_found_for_base_item:${baseItem.item_id}`);
 
-        const { error: itemError } = await supabase.from("shop_order_items").insert({
+        const baseOrderItemKey = `base:${baseOrderKey}:item:${String(baseItem.order_item_id ?? baseItem.item_id)}`;
+        const { error: itemError } = await supabase.from("shop_order_items").upsert({
           order_id: shopOrder.id,
+          base_order_item_key: baseOrderItemKey,
           listing_id: listing.id,
           product_id: listing.product_id,
           supplier_listing_id: listing.supplier_listing_id ?? null,
@@ -207,7 +259,7 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
           qty: Number(baseItem.amount ?? 1),
           unit_price: Number(baseItem.price ?? listing.selling_price ?? 0),
           currency: listing.currency ?? "JPY",
-        });
+        }, { onConflict: "base_order_item_key" });
         if (itemError) throw new Error(itemError.message);
       }
 
