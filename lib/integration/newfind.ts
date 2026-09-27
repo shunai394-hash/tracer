@@ -71,11 +71,25 @@ export async function promoteShopListingToNewfind(
 
   const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
 
-  const { data: existingDelivery } = await supabase
+  await supabase
     .from("newfind_promotion_deliveries")
-    .select("status, ack_status, http_status, attempts")
+    .upsert(
+      {
+        listing_id: listingId,
+        event_id: id,
+        status: "pending",
+        attempts: 0,
+      },
+      { onConflict: "listing_id", ignoreDuplicates: true },
+    );
+
+  const { data: existingDelivery, error: deliveryReadError } = await supabase
+    .from("newfind_promotion_deliveries")
+    .select("status, ack_status, http_status, attempts, lease_until")
     .eq("listing_id", listingId)
     .maybeSingle();
+
+  if (deliveryReadError) throw new Error(deliveryReadError.message);
 
   if (existingDelivery?.status === "processed" && existingDelivery.ack_status === "processed") {
     return {
@@ -85,6 +99,58 @@ export async function promoteShopListingToNewfind(
       status: typeof existingDelivery.http_status === "number" ? existingDelivery.http_status : 200,
       ackStatus: "processed",
       detail: "already_processed",
+    };
+  }
+
+  const now = new Date();
+  const leaseUntil = new Date(now.getTime() + 2 * 60_000).toISOString();
+  const currentStatus = existingDelivery?.status ?? "pending";
+  const currentLease = existingDelivery?.lease_until
+    ? new Date(String(existingDelivery.lease_until))
+    : null;
+
+  if (currentStatus === "sending" && currentLease && currentLease.getTime() > now.getTime()) {
+    return {
+      configured: true,
+      sent: false,
+      eventId: id,
+      status: null,
+      ackStatus: "sending",
+      detail: "newfind_delivery_in_progress",
+    };
+  }
+
+  let claimQuery = supabase
+    .from("newfind_promotion_deliveries")
+    .update({
+      status: "sending",
+      lease_until: leaseUntil,
+      attempts: (typeof existingDelivery?.attempts === "number" ? existingDelivery.attempts : 0) + 1,
+      updated_at: now.toISOString(),
+    })
+    .eq("listing_id", listingId);
+
+  if (currentStatus === "sending") {
+    claimQuery = claimQuery
+      .eq("status", "sending")
+      .lt("lease_until", now.toISOString());
+  } else {
+    claimQuery = claimQuery.eq("status", currentStatus);
+  }
+
+  const { data: claimedDelivery, error: claimError } = await claimQuery
+    .select("status, attempts, lease_until")
+    .maybeSingle();
+
+  if (claimError) throw new Error(claimError.message);
+  if (!claimedDelivery) {
+    return {
+      configured: true,
+      sent: false,
+      eventId: id,
+      status: null,
+      ackStatus: "sending",
+      detail: "newfind_delivery_claim_lost",
     };
   }
 
@@ -131,14 +197,6 @@ export async function promoteShopListingToNewfind(
       detail: "product_url_missing_newfind_requires_url",
     };
   }
-
-  await supabase.from("newfind_promotion_deliveries").upsert({
-    listing_id: listingId,
-    event_id: id,
-    status: "pending",
-    attempts: (typeof existingDelivery?.attempts === "number" ? existingDelivery.attempts : 0) + 1,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: "listing_id" });
 
   const payload = {
     source: "tracer",
@@ -218,6 +276,7 @@ export async function promoteShopListingToNewfind(
       status: "failed",
       last_error: lastError instanceof Error ? lastError.message : "newfind_request_failed",
       last_attempt_at: new Date().toISOString(),
+      lease_until: null,
       updated_at: new Date().toISOString(),
     }).eq("listing_id", listingId);
 
