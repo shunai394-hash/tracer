@@ -265,6 +265,7 @@ export async function investigateDropshipForBestsellers(
       const prioritizedProducts = directMatches.length > 0
         ? directMatches
         : scoredProducts.slice(0, 5).map((item) => item.product);
+      const seenProductIds = new Set<string>();
       for (const product of prioritizedProducts) {
         if (seenProductIds.has(product.id)) continue;
         seenProductIds.add(product.id);
