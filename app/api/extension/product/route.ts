@@ -66,7 +66,7 @@ export async function POST(request: Request) {
     }
 
     const ecPulse = await fetchECPulseProduct(url);
-    const persisted = await persistECPulseProduct(ecPulse);
+    const persisted = await persistECPulseProduct(ecPulse, { asin: body.asin });
 
     return json({
       ok: true,
