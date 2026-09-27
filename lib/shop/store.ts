@@ -135,6 +135,12 @@ export async function placeShopOrder(args: {
       | Record<string, unknown>
       | undefined;
     if (!listing) throw new Error("listing is not published");
+    if (listing.orderable !== true) {
+      throw new Error("listing is not currently orderable");
+    }
+    if (!Number.isFinite(item.qty) || item.qty <= 0) {
+      throw new Error("quantity must be greater than zero");
+    }
     const unitPrice = asNumber(listing.selling_price);
     if (unitPrice === null) throw new Error("selling price unknown");
     if (currency && listing.currency && currency !== listing.currency) {
