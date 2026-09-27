@@ -94,6 +94,17 @@ export async function selectAndPublishSalesTests(
     if (listing.tracking_available !== true) reasons.push("tracking_unknown");
     if (listing.api_available !== true) reasons.push("supplier_api_unknown");
 
+    // CJ fulfillment requires a concrete variant ID. A product-level match
+    // without a variant cannot be safely published because a later refresh
+    // could otherwise cause fulfillment to select a different variant.
+    if (
+      String(listing.supplier ?? "").toLowerCase() === "cjdropshipping" &&
+      typeof listing.supplier_variant_id !== "string" &&
+      typeof listing.cj_variant_id !== "string"
+    ) {
+      reasons.push("supplier_variant_unknown");
+    }
+
     const profit = simulateContributionProfit({
       sellingPrice: asNumber(bestseller.price),
       sellingCurrency: typeof bestseller.currency === "string" ? bestseller.currency : null,
