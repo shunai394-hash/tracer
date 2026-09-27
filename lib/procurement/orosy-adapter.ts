@@ -168,7 +168,8 @@ export const orosySupplierAdapter: TracerSupplierAdapter = {
     };
   },
 
-  async createOrder(_input: SupplierOrderInput): Promise<SupplierOrderResult> {
+  async createOrder(input: SupplierOrderInput): Promise<SupplierOrderResult> {
+    void input;
     return {
       succeeded: false,
       supplierOrderId: null,
