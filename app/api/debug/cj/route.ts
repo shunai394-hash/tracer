@@ -4,10 +4,15 @@ import {
   searchCJProducts,
   fetchCJProductVariants,
 } from "@/lib/sources/cj";
+import { isCronAuthorized } from "@/lib/ops/cron-auth";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
+  if (!isCronAuthorized(request)) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
   const query = request.nextUrl.searchParams.get("q")?.trim();
 
   if (!query) {

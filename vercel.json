@@ -1,32 +1,11 @@
 {
   "crons": [
-    {
-      "path": "/api/cron/market-sourcing",
-      "schedule": "0 3 * * *"
-    },
-    {
-      "path": "/api/cron/inventory-refresh",
-      "schedule": "*/10 * * * *"
-    },
-    {
-      "path": "/api/cron/base-publish",
-      "schedule": "5-59/10 * * * *"
-    },
-    {
-      "path": "/api/cron/base-orders",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/dropship-execution",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/supplier-orders",
-      "schedule": "*/10 * * * *"
-    },
-    {
-      "path": "/api/cron/newfind-retry",
-      "schedule": "*/10 * * * *"
-    }
+    { "path": "/api/cron/market-sourcing", "schedule": "0 3 * * *" },
+    { "path": "/api/cron/inventory-refresh", "schedule": "10 3 * * *" },
+    { "path": "/api/cron/base-publish", "schedule": "20 3 * * *" },
+    { "path": "/api/cron/base-orders", "schedule": "30 3 * * *" },
+    { "path": "/api/cron/dropship-execution", "schedule": "40 3 * * *" },
+    { "path": "/api/cron/supplier-orders", "schedule": "50 3 * * *" },
+    { "path": "/api/cron/newfind-retry", "schedule": "55 3 * * *" }
   ]
 }

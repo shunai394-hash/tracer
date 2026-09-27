@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isCronAuthorized } from "@/lib/ops/cron-auth";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
+  if (!isCronAuthorized(request)) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
   const supabase = createSupabaseAdminClient();
 
   const { data, error } = await supabase

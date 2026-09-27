@@ -1,23 +1,13 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { collectGoogleTrendsDemand } from "@/lib/intelligence/collect-google-trends";
+import { isCronAuthorized } from "@/lib/ops/cron-auth";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (cronSecret) {
-      if (authHeader !== `Bearer ${cronSecret}`) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: "Unauthorized",
-          },
-          { status: 401 },
-        );
-      }
+    if (!isCronAuthorized(request)) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const result = await collectGoogleTrendsDemand();
