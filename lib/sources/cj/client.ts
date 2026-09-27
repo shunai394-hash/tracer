@@ -248,6 +248,68 @@ function normalizeProduct(product: CJProduct): CJProductCandidate | null {
   };
 }
 
+export async function calculateCJFreight(
+  vid: string,
+  options?: {
+    startCountryCode?: string;
+    endCountryCode?: string;
+    quantity?: number;
+  },
+): Promise<number | null> {
+  const token = await getAccessToken();
+  const response = await fetchCJWithRateLimit(
+    "https://developers.cjdropshipping.com/api2.0/v1/logistic/freightCalculate",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "CJ-Access-Token": token,
+      },
+      body: JSON.stringify({
+        startCountryCode: options?.startCountryCode ?? "CN",
+        endCountryCode: options?.endCountryCode ?? "JP",
+        products: [
+          {
+            quantity: options?.quantity ?? 1,
+            vid,
+          },
+        ],
+      }),
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new CJRequestError(
+      `CJ freight calculation failed with HTTP ${response.status}`,
+    );
+  }
+
+  const payload = (await response.json()) as {
+    result?: boolean;
+    message?: string;
+    data?: Array<{
+      logisticPrice?: number | string | null;
+      totalPostageFee?: number | string | null;
+    }>;
+  };
+
+  if (payload.result === false) {
+    throw new CJRequestError(payload.message || "CJ freight calculation failed");
+  }
+
+  const prices = (payload.data ?? [])
+    .map((row) => {
+      const total = Number(row.totalPostageFee);
+      const simple = Number(row.logisticPrice);
+      if (Number.isFinite(total) && total > 0) return total;
+      return Number.isFinite(simple) && simple > 0 ? simple : null;
+    })
+    .filter((value): value is number => value !== null);
+
+  return prices.length > 0 ? Math.min(...prices) : null;
+}
+
 export async function searchCJProducts(
   query: string,
   options?: {
