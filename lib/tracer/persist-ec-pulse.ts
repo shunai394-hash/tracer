@@ -216,7 +216,7 @@ export async function persistECPulseProduct(
   }
 
   await persistCapturedIdentifiers(productId, {
-    asin: payload.product.asin ?? null,
+    asin: null,
     gtin,
   });
 
