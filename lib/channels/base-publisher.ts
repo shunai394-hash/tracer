@@ -86,13 +86,15 @@ export async function publishPublishedListingsToBase(
         ? String(listing.base_item_id)
         : null;
 
+      const stock = Math.max(0, Math.floor(Number(listing.inventory)));
+
       if (baseItemId) {
         await editBaseItem({
           itemId: baseItemId,
           title: listing.title,
           detail: listing.description ?? listing.title,
           price: Number(listing.selling_price),
-          stock: Math.max(0, Math.floor(Number(listing.inventory ?? 0))),
+          stock,
           visible: true,
         });
       } else {
@@ -100,7 +102,7 @@ export async function publishPublishedListingsToBase(
           title: listing.title,
           detail: listing.description ?? listing.title,
           price: Number(listing.selling_price),
-          stock: 1,
+          stock,
           visible: true,
         });
 
@@ -142,7 +144,7 @@ export async function publishPublishedListingsToBase(
       const message = error instanceof Error ? error.message : String(error);
       await supabase
         .from("shop_listings")
-.update({
+        .update({
           base_last_error: message,
           pipeline_stage: "BASE_PUBLICATION",
           pipeline_status: "failed",
