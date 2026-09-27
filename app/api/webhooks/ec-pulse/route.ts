@@ -1,9 +1,7 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 
-import {
-  persistECPulsePriceChange,
-  type ECPulsePriceChangedEvent,
-} from "@/lib/tracer/persist-ec-pulse";
+import { persistECPulsePriceChange } from "@/lib/tracer/persist-ec-pulse";
+import type { ECPulsePriceChangedEvent } from "@/lib/sources/ec-pulse";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 
 export const runtime = "nodejs";
@@ -58,3 +56,6 @@ export async function POST(request: Request) {
     );
   }
 }
+
+
+

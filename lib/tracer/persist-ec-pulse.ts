@@ -1,5 +1,4 @@
 ﻿import "server-only";
-
 import { type ECPulsePriceChangedEvent, type ECPulseProduct } from "@/lib/sources/ec-pulse";
 export type { ECPulsePriceChangedEvent } from "@/lib/sources/ec-pulse";
 
@@ -551,6 +550,7 @@ export async function persistECPulseMonitorMapping(args: {
     throw new Error(`Failed to persist EC-Pulse monitor mapping: ${result.error.message}`);
   }
 }
+
 
 
 

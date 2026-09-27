@@ -221,9 +221,14 @@ export function getNewfindConfig() {
     apiKey: process.env.NEWFIND_API_KEY?.trim() ?? "",
   };
 }
-
-
-
-
+/**
+ * Generic supplier-order safety gate.
+ * Real supplier ordering stays in dry-run mode unless explicitly disabled.
+ * Supplier-specific live-order switches (for example CJ_LIVE_ORDERING)
+ * remain authoritative inside their respective adapters.
+ */
+export function isSupplierDryRunEnabled(): boolean {
+  return process.env.SUPPLIER_DRY_RUN?.trim() !== "0";
+}
 
 
