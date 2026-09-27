@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getCJConfig, isCJLiveOrderingEnabled, isCJAutoOrderingEnabled } from "@/lib/config/env";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { createCJOrderV2 } from "@/lib/sources/cj/create-order";
+import { fetchCJVariantStock } from "@/lib/sources/cj/client";
 import {
   evaluateDropshipOrderGate,
   type DropshipOrderGateResult,
@@ -146,7 +147,31 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       productId,
     });
 
-    const gate = evaluateDropshipOrderGate({
+    let liveInventory: number | null = listing?.inventory ?? null;
+  let inventoryLookupError: string | null = null;
+  if (exactSupplierVariantId && getCJConfig().apiKey) {
+    try {
+      liveInventory = await fetchCJVariantStock(exactSupplierVariantId);
+    } catch (error) {
+      inventoryLookupError = error instanceof Error ? error.message : String(error);
+      liveInventory = null;
+    }
+
+    if (listing?.id && liveInventory !== null) {
+      const { error: inventoryUpdateError } = await supabase
+        .from("supplier_listings")
+        .update({
+          inventory: liveInventory,
+          inventory_confirmed: true,
+          orderable: liveInventory > 0,
+          fetched_at: new Date().toISOString(),
+        })
+        .eq("id", listing.id);
+      if (inventoryUpdateError) throw new Error(inventoryUpdateError.message);
+    }
+  }
+
+  const gate = evaluateDropshipOrderGate({
       vid: typeof listingRow.supplier_variant_id === "string" ? listingRow.supplier_variant_id : (typeof listingRow.cj_variant_id === "string" ? listingRow.cj_variant_id : null),
       quantity: asNumber(row.qty),
       sourceCost: asNumber(listingRow.cost),
@@ -363,7 +388,7 @@ export async function executeLivePurchaseOrder(
     exactSupplierProductId && exactSupplierVariantId
       ? await supabase
           .from("supplier_listings")
-          .select("inventory, supplier_product_id, supplier_variant_id, cj_variant_id")
+          .select("id, inventory, supplier_product_id, supplier_variant_id, cj_variant_id")
           .eq("supplier", "CJdropshipping")
           .eq("supplier_product_id", exactSupplierProductId)
           .eq("supplier_variant_id", exactSupplierVariantId)
@@ -392,7 +417,7 @@ export async function executeLivePurchaseOrder(
     killSwitchBlocked: killSwitch.blocked,
     cjConfigured: Boolean(getCJConfig().apiKey),
     liveOrderingEnabled: isCJLiveOrderingEnabled(),
-    inventoryQty: typeof listing?.inventory === "number" ? listing.inventory : null,
+    inventoryQty: liveInventory,
     // Guarded above: this function already returns early when
     // po.supplier_order_id is set, so reaching here means no successful CJ
     // order exists yet for this purchase order.
@@ -412,7 +437,11 @@ export async function executeLivePurchaseOrder(
   if (!canExecuteLive) {
     const reason = gate.liveOrderingDisabled
       ? "cj_live_ordering_disabled"
-      : [...gate.blocked, ...executionMissing].join(",") || "not_ready";
+      : [
+          ...gate.blocked,
+          ...executionMissing,
+          ...(inventoryLookupError ? ["inventory_lookup_failed"] : []),
+        ].join(",") || "not_ready";
     return {
       purchaseOrderId,
       attempted: false,
