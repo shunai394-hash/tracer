@@ -4,6 +4,7 @@ import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-d
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
+import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -37,6 +38,8 @@ export async function GET(request: Request) {
       await investigateDropshipForBestsellers(candidateIds);
     const decision = await selectAndPublishSalesTests(candidateIds, 3);
 
+    const base = await publishPublishedListingsToBase(10);
+
     const newfind = await Promise.all(
       decision.publishedListingIds.map((listingId) =>
         promoteShopListingToNewfind(listingId).catch((error) => ({
@@ -63,6 +66,7 @@ export async function GET(request: Request) {
       supplierInvestigation,
       decision,
       newfind,
+      base,
       publication: {
         publishedNow: decision.published,
         existingPublishedListingsPreserved: true,
