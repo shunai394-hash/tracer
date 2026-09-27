@@ -147,29 +147,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       productId,
     });
 
-    let liveInventory: number | null = listing?.inventory ?? null;
-  let inventoryLookupError: string | null = null;
-  if (exactSupplierVariantId && getCJConfig().apiKey) {
-    try {
-      liveInventory = await fetchCJVariantStock(exactSupplierVariantId);
-    } catch (error) {
-      inventoryLookupError = error instanceof Error ? error.message : String(error);
-      liveInventory = null;
-    }
-
-    if (listing?.id && liveInventory !== null) {
-      const { error: inventoryUpdateError } = await supabase
-        .from("supplier_listings")
-        .update({
-          inventory: liveInventory,
-          inventory_confirmed: true,
-          orderable: liveInventory > 0,
-          fetched_at: new Date().toISOString(),
-        })
-        .eq("id", listing.id);
-      if (inventoryUpdateError) throw new Error(inventoryUpdateError.message);
-    }
-  }
+    const liveInventory = typeof listingRow.inventory === "number" ? listingRow.inventory : null;
 
   const gate = evaluateDropshipOrderGate({
       vid: typeof listingRow.supplier_variant_id === "string" ? listingRow.supplier_variant_id : (typeof listingRow.cj_variant_id === "string" ? listingRow.cj_variant_id : null),
@@ -404,6 +382,30 @@ export async function executeLivePurchaseOrder(
       reason: "supplier_identity_missing",
       gate: null,
     };
+  }
+
+  let liveInventory: number | null = listing?.inventory ?? null;
+  let inventoryLookupError: string | null = null;
+  if (exactSupplierVariantId && getCJConfig().apiKey) {
+    try {
+      liveInventory = await fetchCJVariantStock(exactSupplierVariantId);
+    } catch (error) {
+      inventoryLookupError = error instanceof Error ? error.message : String(error);
+      liveInventory = null;
+    }
+
+    if (listing?.id && liveInventory !== null) {
+      const { error: inventoryUpdateError } = await supabase
+        .from("supplier_listings")
+        .update({
+          inventory: liveInventory,
+          inventory_confirmed: true,
+          orderable: liveInventory > 0,
+          fetched_at: new Date().toISOString(),
+        })
+        .eq("id", listing.id);
+      if (inventoryUpdateError) throw new Error(inventoryUpdateError.message);
+    }
   }
 
   const gate = evaluateDropshipOrderGate({
