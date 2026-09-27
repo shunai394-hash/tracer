@@ -80,23 +80,56 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       continue;
     }
 
+    // Fulfillment must use the exact supplier listing selected at publication.
+    // Never substitute the newest supplier row for an existing shop listing:
+    // a refresh can point the same product at a different CJ variant.
+    const shopListingId = row.listing_id ? String(row.listing_id) : null;
+    const { data: shopListing } = shopListingId
+      ? await supabase
+          .from("shop_listings")
+          .select("id, product_id, supplier_name, supplier_listing_id, supplier_product_id, supplier_variant_id, source_cost, shipping_cost, currency, orderable, tracking_available")
+          .eq("id", shopListingId)
+          .maybeSingle()
+      : { data: null };
+
+    if (!shopListing) {
+      skipped.push({ itemId: String(row.id), reason: "shop_listing_not_found" });
+      continue;
+    }
+    if (String(shopListing.product_id) !== productId) {
+      skipped.push({ itemId: String(row.id), reason: "shop_listing_product_mismatch" });
+      continue;
+    }
+
+    const supplierListingId = shopListing.supplier_listing_id
+      ? String(shopListing.supplier_listing_id)
+      : null;
+    if (!supplierListingId) {
+      skipped.push({ itemId: String(row.id), reason: "supplier_listing_snapshot_missing" });
+      continue;
+    }
+
     const { data: listing } = await supabase
       .from("supplier_listings")
       .select("*")
+      .eq("id", supplierListingId)
       .eq("product_id", productId)
       .eq("supplier", "CJdropshipping")
-      .order("fetched_at", { ascending: false })
-      .limit(1)
       .maybeSingle();
 
-    const listingRow = (listing ?? {}) as Record<string, unknown>;
+    if (!listing) {
+      skipped.push({ itemId: String(row.id), reason: "supplier_listing_snapshot_not_found" });
+      continue;
+    }
+
+    const listingRow = listing as Record<string, unknown>;
     const killSwitch = await checkKillSwitch({
       supplier: "CJdropshipping",
       productId,
     });
 
     const gate = evaluateDropshipOrderGate({
-      vid: typeof listingRow.cj_variant_id === "string" ? listingRow.cj_variant_id : null,
+      vid: typeof listingRow.supplier_variant_id === "string" ? listingRow.supplier_variant_id : (typeof listingRow.cj_variant_id === "string" ? listingRow.cj_variant_id : null),
       quantity: asNumber(row.qty),
       sourceCost: asNumber(listingRow.cost),
       shippingCost: asNumber(listingRow.shipping_cost),
@@ -122,6 +155,20 @@ export async function createDropshipPurchaseOrdersForShopOrder(
         shop_order_id: shopOrderId,
         fulfillment_kind: "dropship_customer_order",
         supplier_name: "CJdropshipping",
+        supplier_product_id:
+          typeof listingRow.supplier_product_id === "string"
+            ? listingRow.supplier_product_id
+            : typeof shopListing.supplier_product_id === "string"
+              ? shopListing.supplier_product_id
+              : null,
+        supplier_variant_id:
+          typeof listingRow.supplier_variant_id === "string"
+            ? listingRow.supplier_variant_id
+            : typeof listingRow.cj_variant_id === "string"
+              ? listingRow.cj_variant_id
+              : typeof shopListing.supplier_variant_id === "string"
+                ? shopListing.supplier_variant_id
+                : null,
         qty: asNumber(row.qty) ?? 0,
         unit_cost: asNumber(listingRow.cost),
         shipping_cost: asNumber(listingRow.shipping_cost),
@@ -152,7 +199,14 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       product_id: productId,
       qty: asNumber(row.qty) ?? 0,
       unit_cost: asNumber(listingRow.cost),
-      cj_variant_id: typeof listingRow.cj_variant_id === "string" ? listingRow.cj_variant_id : null,
+      cj_variant_id:
+        typeof listingRow.supplier_variant_id === "string"
+          ? listingRow.supplier_variant_id
+          : typeof listingRow.cj_variant_id === "string"
+            ? listingRow.cj_variant_id
+            : typeof shopListing.supplier_variant_id === "string"
+              ? shopListing.supplier_variant_id
+              : null,
     });
 
     purchaseOrderIds.push(String(po.id));
