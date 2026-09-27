@@ -292,7 +292,7 @@ export async function investigateDropshipForBestsellers(
         let variants: Awaited<ReturnType<typeof fetchCJProductVariants>> = [];
         cjStage = "variants";
         try {
-          variants = await fetchCJProductVariants(detail.id);
+          variants = await fetchCJProductVariants(detail.id, { countryCode: "CN" });
         } catch {
           // Variant lookup failure leaves identity unconfirmed rather than
           // inventing an identifier.
@@ -414,6 +414,7 @@ export async function investigateDropshipForBestsellers(
               bestsellerId: String(record.id),
               cjProductId: detail.id,
               cjVariantId: selectedVariant.vid,
+              sourceCountryCode: "CN",
               error: error instanceof Error ? error.message : String(error),
             });
           }
@@ -455,6 +456,8 @@ export async function investigateDropshipForBestsellers(
             metadata: {
               search_query: identifierQuery,
               rationale: identity.rationale,
+              source_country_code: "CN",
+              freight_quote: observedShippingCost,
             },
           })
           .select("id")
