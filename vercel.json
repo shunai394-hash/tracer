@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/market-sourcing",
+      "schedule": "0 3 * * *"
+    }
+  ]
+}
