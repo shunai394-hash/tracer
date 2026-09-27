@@ -110,7 +110,7 @@ Publication recovery is intentionally separated from sourcing:
 - `/api/cron/supplier-orders` — polls supplier order status and tracking.
 - `/api/cron/newfind-retry` — retries pending, failed, and sent-but-unacknowledged NEWFIND deliveries.
 
-When `CRON_SECRET` is configured, the request must contain:
+All protected cron/admin automation routes require `CRON_SECRET`. Every request must contain:
 
 ```text
 Authorization: Bearer <CRON_SECRET>

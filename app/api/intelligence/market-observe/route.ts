@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
+import { requireCronAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -9,12 +10,10 @@ export const maxDuration = 60;
  * This endpoint never investigates suppliers and never publishes/unpublishes shop listings.
  */
 export async function POST(request: Request) {
+  const authError = requireCronAuth(request);
+  if (authError) return authError;
+
   try {
-    const cronSecret = process.env.CRON_SECRET;
-    const authHeader = request.headers.get("authorization");
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-    }
     const startedAt = Date.now();
     const observation = await persistMarketplaceBestsellers();
 
