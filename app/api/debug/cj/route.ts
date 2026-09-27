@@ -4,10 +4,14 @@ import {
   searchCJProducts,
   fetchCJProductVariants,
 } from "@/lib/sources/cj";
+import { requireCronAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
+  const authError = requireCronAuth(request);
+  if (authError) return authError;
+
   const query = request.nextUrl.searchParams.get("q")?.trim();
 
   if (!query) {
