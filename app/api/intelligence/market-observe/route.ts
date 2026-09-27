@@ -10,6 +10,9 @@ export const maxDuration = 60;
  * This endpoint never investigates suppliers and never publishes/unpublishes shop listings.
  */
 export async function POST(request: Request) {
+  const authError = requireCronAuth(request);
+  if (authError) return authError;
+
   try {
     const startedAt = Date.now();
     const observation = await persistMarketplaceBestsellers();
