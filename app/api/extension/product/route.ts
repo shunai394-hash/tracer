@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 
 import {
   EMPTY_IDENTIFIERS,
@@ -65,7 +65,7 @@ async function findProductByIdentifiers(ids: ProductIdentifiers) {
 
     const result = await supabase
       .from("products")
-      .select("id, canonical_name, asin, jan, gtin, ean, upc, mpn, brand_id")
+      .select("id, canonical_name, identity_key, asin, jan, gtin, ean, upc, mpn, brand_id")
       .eq(scheme, value)
       .maybeSingle();
 
@@ -393,3 +393,5 @@ export async function POST(request: Request) {
     );
   }
 }
+
+

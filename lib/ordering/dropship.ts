@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getCJConfig, isCJLiveOrderingEnabled, isCJAutoOrderingEnabled } from "@/lib/config/env";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { createCJOrderV2 } from "@/lib/sources/cj/create-order";
+import { fetchCJVariantStock } from "@/lib/sources/cj/client";
 import {
   evaluateDropshipOrderGate,
   type DropshipOrderGateResult,
@@ -80,23 +81,75 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       continue;
     }
 
+    // Fulfillment must use the exact supplier listing selected at publication.
+    // Never substitute the newest supplier row for an existing shop listing:
+    // a refresh can point the same product at a different CJ variant.
+    const shopListingId = row.listing_id ? String(row.listing_id) : null;
+    const { data: shopListing } = shopListingId
+      ? await supabase
+          .from("shop_listings")
+          .select("id, product_id, supplier_name, supplier_listing_id, supplier_product_id, supplier_variant_id, source_cost, shipping_cost, currency, orderable, tracking_available")
+          .eq("id", shopListingId)
+          .maybeSingle()
+      : { data: null };
+
+    if (!shopListing) {
+      skipped.push({ itemId: String(row.id), reason: "shop_listing_not_found" });
+      continue;
+    }
+    if (String(shopListing.product_id) !== productId) {
+      skipped.push({ itemId: String(row.id), reason: "shop_listing_product_mismatch" });
+      continue;
+    }
+
+    const supplierListingId = row.supplier_listing_id
+      ? String(row.supplier_listing_id)
+      : shopListing.supplier_listing_id
+        ? String(shopListing.supplier_listing_id)
+        : null;
+    if (!supplierListingId) {
+      skipped.push({ itemId: String(row.id), reason: "supplier_listing_snapshot_missing" });
+      continue;
+    }
+
     const { data: listing } = await supabase
       .from("supplier_listings")
       .select("*")
+      .eq("id", supplierListingId)
       .eq("product_id", productId)
       .eq("supplier", "CJdropshipping")
-      .order("fetched_at", { ascending: false })
-      .limit(1)
       .maybeSingle();
 
-    const listingRow = (listing ?? {}) as Record<string, unknown>;
+    if (!listing) {
+      skipped.push({ itemId: String(row.id), reason: "supplier_listing_snapshot_not_found" });
+      continue;
+    }
+
+    const listingRow = listing as Record<string, unknown>;
+    const expectedVariant =
+      typeof row.supplier_variant_id === "string"
+        ? row.supplier_variant_id
+        : typeof shopListing.supplier_variant_id === "string"
+          ? shopListing.supplier_variant_id
+          : null;
+    const actualVariant =
+      typeof listingRow.supplier_variant_id === "string"
+        ? listingRow.supplier_variant_id
+        : typeof listingRow.cj_variant_id === "string"
+          ? listingRow.cj_variant_id
+          : null;
+    if (expectedVariant && actualVariant && expectedVariant !== actualVariant) {
+      skipped.push({ itemId: String(row.id), reason: "supplier_variant_snapshot_mismatch" });
+      continue;
+    }
     const killSwitch = await checkKillSwitch({
       supplier: "CJdropshipping",
       productId,
     });
 
+
     const gate = evaluateDropshipOrderGate({
-      vid: typeof listingRow.cj_variant_id === "string" ? listingRow.cj_variant_id : null,
+      vid: typeof listingRow.supplier_variant_id === "string" ? listingRow.supplier_variant_id : (typeof listingRow.cj_variant_id === "string" ? listingRow.cj_variant_id : null),
       quantity: asNumber(row.qty),
       sourceCost: asNumber(listingRow.cost),
       shippingCost: asNumber(listingRow.shipping_cost),
@@ -122,6 +175,20 @@ export async function createDropshipPurchaseOrdersForShopOrder(
         shop_order_id: shopOrderId,
         fulfillment_kind: "dropship_customer_order",
         supplier_name: "CJdropshipping",
+        supplier_product_id:
+          typeof listingRow.supplier_product_id === "string"
+            ? listingRow.supplier_product_id
+            : typeof shopListing.supplier_product_id === "string"
+              ? shopListing.supplier_product_id
+              : null,
+        supplier_variant_id:
+          typeof listingRow.supplier_variant_id === "string"
+            ? listingRow.supplier_variant_id
+            : typeof listingRow.cj_variant_id === "string"
+              ? listingRow.cj_variant_id
+              : typeof shopListing.supplier_variant_id === "string"
+                ? shopListing.supplier_variant_id
+                : null,
         qty: asNumber(row.qty) ?? 0,
         unit_cost: asNumber(listingRow.cost),
         shipping_cost: asNumber(listingRow.shipping_cost),
@@ -152,7 +219,14 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       product_id: productId,
       qty: asNumber(row.qty) ?? 0,
       unit_cost: asNumber(listingRow.cost),
-      cj_variant_id: typeof listingRow.cj_variant_id === "string" ? listingRow.cj_variant_id : null,
+      cj_variant_id:
+        typeof listingRow.supplier_variant_id === "string"
+          ? listingRow.supplier_variant_id
+          : typeof listingRow.cj_variant_id === "string"
+            ? listingRow.cj_variant_id
+            : typeof shopListing.supplier_variant_id === "string"
+              ? shopListing.supplier_variant_id
+              : null,
     });
 
     purchaseOrderIds.push(String(po.id));
@@ -275,16 +349,63 @@ export async function executeLivePurchaseOrder(
     productId: po.product_id ? String(po.product_id) : null,
   });
 
-  const { data: listing } = po.product_id
-    ? await supabase
+  // Re-check inventory against the exact supplier identity captured when
+  // the sales-test listing was published. Never use the newest listing for
+  // fulfillment because it may represent another CJ variant.
+  const exactSupplierProductId =
+    typeof po.supplier_product_id === "string" ? po.supplier_product_id : null;
+  const exactSupplierVariantId =
+    typeof po.supplier_variant_id === "string"
+      ? po.supplier_variant_id
+      : typeof itemRow.cj_variant_id === "string"
+        ? itemRow.cj_variant_id
+        : null;
+
+  const { data: listing } =
+    exactSupplierProductId && exactSupplierVariantId
+      ? await supabase
+          .from("supplier_listings")
+          .select("id, inventory, supplier_product_id, supplier_variant_id, cj_variant_id")
+          .eq("supplier", "CJdropshipping")
+          .eq("supplier_product_id", exactSupplierProductId)
+          .eq("supplier_variant_id", exactSupplierVariantId)
+          .maybeSingle()
+      : { data: null };
+
+  if (!listing && (!exactSupplierProductId || !exactSupplierVariantId)) {
+    return {
+      purchaseOrderId,
+      attempted: false,
+      succeeded: false,
+      supplierOrderId: null,
+      reason: "supplier_identity_missing",
+      gate: null,
+    };
+  }
+
+  let liveInventory: number | null = listing?.inventory ?? null;
+  let inventoryLookupError: string | null = null;
+  if (exactSupplierVariantId && getCJConfig().apiKey) {
+    try {
+      liveInventory = await fetchCJVariantStock(exactSupplierVariantId);
+    } catch (error) {
+      inventoryLookupError = error instanceof Error ? error.message : String(error);
+      liveInventory = null;
+    }
+
+    if (listing?.id && liveInventory !== null) {
+      const { error: inventoryUpdateError } = await supabase
         .from("supplier_listings")
-        .select("inventory")
-        .eq("product_id", String(po.product_id))
-        .eq("supplier", "CJdropshipping")
-        .order("fetched_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-    : { data: null };
+        .update({
+          inventory: liveInventory,
+          inventory_confirmed: true,
+          orderable: liveInventory > 0,
+          fetched_at: new Date().toISOString(),
+        })
+        .eq("id", listing.id);
+      if (inventoryUpdateError) throw new Error(inventoryUpdateError.message);
+    }
+  }
 
   const gate = evaluateDropshipOrderGate({
     vid: typeof itemRow.cj_variant_id === "string" ? itemRow.cj_variant_id : null,
@@ -297,7 +418,7 @@ export async function executeLivePurchaseOrder(
     killSwitchBlocked: killSwitch.blocked,
     cjConfigured: Boolean(getCJConfig().apiKey),
     liveOrderingEnabled: isCJLiveOrderingEnabled(),
-    inventoryQty: typeof listing?.inventory === "number" ? listing.inventory : null,
+    inventoryQty: liveInventory,
     // Guarded above: this function already returns early when
     // po.supplier_order_id is set, so reaching here means no successful CJ
     // order exists yet for this purchase order.
@@ -317,7 +438,11 @@ export async function executeLivePurchaseOrder(
   if (!canExecuteLive) {
     const reason = gate.liveOrderingDisabled
       ? "cj_live_ordering_disabled"
-      : [...gate.blocked, ...executionMissing].join(",") || "not_ready";
+      : [
+          ...gate.blocked,
+          ...executionMissing,
+          ...(inventoryLookupError ? ["inventory_lookup_failed"] : []),
+        ].join(",") || "not_ready";
     return {
       purchaseOrderId,
       attempted: false,

@@ -70,6 +70,11 @@ export async function persistMarketplaceBestsellers(): Promise<{
           source: marketplace.source,
           source_url: marketplace.sourceUrl,
           raw: { parser: marketplace.source },
+          pipeline_stage: "DISCOVERED",
+          pipeline_status: "pending",
+          pipeline_reason: "market_observation_persisted",
+          pipeline_error: null,
+          pipeline_updated_at: new Date().toISOString(),
         })
         .select("id")
         .single();

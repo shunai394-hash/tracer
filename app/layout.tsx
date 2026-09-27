@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SiteHeader } from "@/components/site-header";
 import { TracerChat } from "@/components/tracer-chat";
@@ -20,7 +21,7 @@ export const metadata: Metadata = {
     "Track products, brands, prices, demand, and supply across world markets.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="ja"

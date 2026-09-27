@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
@@ -14,7 +14,7 @@ export async function POST() {
     const bestsellers = await persistMarketplaceBestsellers();
     const candidateIds = bestsellers.supplierCandidateIds.slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
     const suppliers = await investigateDropshipForBestsellers(candidateIds);
-    const selected = await selectAndPublishSalesTests(supplierCandidateIds, 3);
+    const selected = await selectAndPublishSalesTests(candidateIds, 3);
     const newfind = await Promise.all(
       selected.publishedListingIds.map((listingId) =>
         promoteShopListingToNewfind(listingId).catch((error) => ({
@@ -47,3 +47,4 @@ export async function POST() {
     );
   }
 }
+

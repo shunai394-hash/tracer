@@ -50,17 +50,60 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
     try {
       const { data: existing } = await supabase
         .from("shop_orders")
-        .select("id")
+        .select("id,order_status,payment_status")
         .eq("base_order_key", baseOrderKey)
         .maybeSingle();
 
       if (existing?.id) {
+        const detail = await getBaseOrderDetail(baseOrderKey);
+        const paid = detail.dispatch_status !== "unpaid";
+        const canceled =
+          detail.dispatch_status === "cancelled" ||
+          detail.dispatch_status === "unshippable";
+
+        const update: Record<string, unknown> = {
+          base_order_synced_at: new Date().toISOString(),
+          metadata: {
+            source: "base",
+            base_order_key: baseOrderKey,
+            base_dispatch_status: detail.dispatch_status ?? null,
+            base_payment: detail.payment ?? null,
+          },
+        };
+
+        if (canceled) {
+          update.payment_status = "canceled";
+          update.order_status = "canceled";
+        } else if (paid) {
+          update.payment_status = "paid";
+          if (
+            existing.order_status === "pending_payment" ||
+            existing.order_status === "fulfillment_pending"
+          ) {
+            update.order_status = "fulfillment_pending";
+          }
+        } else {
+          update.payment_status = "pending";
+          update.order_status = "pending_payment";
+        }
+
+        const { error: existingUpdateError } = await supabase
+          .from("shop_orders")
+          .update(update)
+          .eq("id", existing.id);
+        if (existingUpdateError) throw new Error(existingUpdateError.message);
+
+        let procurement = { purchaseOrderIds: [] as string[], skipped: [] as Array<{ itemId: string; reason: string }> };
+        if (paid && !canceled) {
+          procurement = await createDropshipPurchaseOrdersForShopOrder(String(existing.id));
+        }
+
         results.push({
           baseOrderKey,
           ok: true,
           imported: false,
           shopOrderId: String(existing.id),
-          skipped: true,
+          purchaseOrderIds: procurement.purchaseOrderIds,
         });
         continue;
       }
@@ -87,7 +130,7 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
       const itemIds = baseItems.map((item) => String(item.item_id));
       const { data: listings, error: listingError } = await supabase
         .from("shop_listings")
-        .select("id,product_id,title,selling_price,currency,base_item_id,published")
+        .select("id,product_id,title,selling_price,currency,base_item_id,published,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id")
         .in("base_item_id", itemIds);
 
       if (listingError) throw new Error(listingError.message);
@@ -156,6 +199,10 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
           order_id: shopOrder.id,
           listing_id: listing.id,
           product_id: listing.product_id,
+          supplier_listing_id: listing.supplier_listing_id ?? null,
+          supplier_name: listing.supplier_name ?? null,
+          supplier_product_id: listing.supplier_product_id ?? null,
+          supplier_variant_id: listing.supplier_variant_id ?? null,
           title: listing.title,
           qty: Number(baseItem.amount ?? 1),
           unit_price: Number(baseItem.price ?? listing.selling_price ?? 0),

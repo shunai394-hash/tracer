@@ -98,7 +98,28 @@ export async function createBaseItem(input: BaseItemInput) {
       title: input.title,
       detail: input.detail,
       price: String(Math.round(input.price)),
-      stock: String(Math.max(0, Math.floor(input.stock ?? 1))),
+      stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
+      visible: input.visible === false ? "0" : "1",
+    }),
+  );
+}
+
+export async function editBaseItem(input: {
+  itemId: string;
+  title: string;
+  detail: string;
+  price: number;
+  stock?: number;
+  visible?: boolean;
+}) {
+  return requestBase(
+    "/items/edit",
+    new URLSearchParams({
+      item_id: input.itemId,
+      title: input.title,
+      detail: input.detail,
+      price: String(Math.round(input.price)),
+      stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
       visible: input.visible === false ? "0" : "1",
     }),
   );
@@ -119,7 +140,6 @@ export async function addBaseItemImage(input: {
   );
 }
 
-
 export type BaseOrderSummary = {
   unique_key: string;
   dispatch_status?: string;
@@ -129,6 +149,7 @@ export type BaseOrderSummary = {
 export type BaseOrderDetail = BaseOrderSummary & {
   payment?: string;
   total?: number;
+  shipping_fee?: number;
   first_name?: string;
   last_name?: string;
   country?: string;

@@ -1,0 +1,446 @@
+﻿import "server-only";
+
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import {
+  assessCanonicalIdentity,
+  CANONICAL_LINK_THRESHOLD,
+} from "@/lib/intelligence/identity-confidence";
+import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence";
+import { scoreDemandSupplierSelection } from "@/lib/intelligence/supplier-selection";
+
+type PersistDemandSupplierResult = {
+  candidateId: string;
+  processed: number;
+  productsCreated: number;
+  productsReused: number;
+  offersCreated: number;
+  intelligenceUpserted: number;
+  skippedNoise: number;
+  identitiesStamped: number;
+};
+
+function clamp(value: number, min = 0, max = 1): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function round(value: number, digits = 4): number {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+function number(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+
+export async function persistDemandSupplierProducts(
+  candidateId: string,
+  limit = 1,
+): Promise<PersistDemandSupplierResult> {
+  const supabase = createSupabaseAdminClient();
+
+  const { data: candidate, error: candidateError } = await supabase
+    .from("demand_product_candidates")
+    .select("id, query, category, demand_observation_id")
+    .eq("id", candidateId)
+    .single();
+
+  if (candidateError || !candidate) {
+    throw new Error(
+      `Demand product candidate not found: ${
+        candidateError?.message ?? candidateId
+      }`,
+    );
+  }
+
+  const { data: demandObservation, error: demandError } = await supabase
+    .from("demand_observations")
+    .select("id, value, signal_type, observed_at, metadata")
+    .eq("id", candidate.demand_observation_id)
+    .single();
+
+  if (demandError || !demandObservation) {
+    throw new Error(
+      `Demand observation not found: ${
+        demandError?.message ?? candidate.demand_observation_id
+      }`,
+    );
+  }
+
+  const rawDemandValue =
+    typeof demandObservation.value === "number"
+      ? demandObservation.value
+      : demandObservation.value !== null && demandObservation.value !== undefined
+        ? Number(demandObservation.value)
+        : null;
+  const observedDemandValue =
+    rawDemandValue !== null && Number.isFinite(rawDemandValue)
+      ? rawDemandValue
+      : null;
+
+  const demandSignal =
+    observedDemandValue !== null
+      ? round(clamp(observedDemandValue / 1000))
+      : null;
+
+  const { data: rows, error: rowsError } = await supabase
+    .from("demand_supplier_products")
+    .select(
+      "id, demand_product_candidate_id, supplier_name, supplier_product_id, title, sku, identifier, price, currency, image_url, inventory, available, orderable, tracking_available, supplier_query, total_records, total_pages",
+    )
+    .eq("demand_product_candidate_id", candidateId)
+    .order("created_at", { ascending: true });
+
+  if (rowsError) {
+    throw new Error(`Failed to load supplier products: ${rowsError.message}`);
+  }
+
+  const { data: catalog, error: catalogError } = await supabase
+    .from("products")
+    .select("id, canonical_name, identity_key");
+
+  if (catalogError) {
+    throw new Error(`Failed to load products: ${catalogError.message}`);
+  }
+
+  const { data: intelligenceRows, error: intelligenceError } = await supabase
+    .from("product_intelligence")
+    .select("product_id, brand_name");
+
+  if (intelligenceError) {
+    throw new Error(
+      `Failed to load product intelligence: ${intelligenceError.message}`,
+    );
+  }
+
+  const brandByProduct = new Map(
+    (intelligenceRows ?? []).map((row) => [row.product_id, row.brand_name]),
+  );
+
+  let productsCreated = 0;
+  let productsReused = 0;
+  let offersCreated = 0;
+  let intelligenceUpserted = 0;
+  let skippedNoise = 0;
+  let identitiesStamped = 0;
+  let persisted = 0;
+
+  const rankedRows = (rows ?? [])
+    .map((row) => {
+      const scored = scoreDemandSupplierSelection({
+        demandQuery: candidate.query,
+        demandCategory: candidate.category,
+        row,
+      });
+
+      return {
+        row,
+        relevance: scored.relevance,
+        selectionScore: scored.selectionScore,
+      };
+    })
+    .sort((a, b) => b.selectionScore - a.selectionScore);
+
+  for (const { row, relevance, selectionScore } of rankedRows) {
+    const title = String(row.title ?? "").replace(/\s+/g, " ").trim();
+
+    if (!title) {
+      continue;
+    }
+
+    identitiesStamped += 1;
+
+    if (
+      relevance.status === "rejected_noise" ||
+      relevance.status === "identity_unconfirmed"
+    ) {
+      const stamp = await supabase
+        .from("demand_supplier_products")
+        .update({
+          product_id: null,
+          identity_confidence: relevance.score,
+          identity_status: relevance.status,
+          identity_rationale: relevance.rationale,
+          identity_metadata: {
+            ...relevance.signals,
+            selection_score: selectionScore,
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", row.id);
+
+      if (stamp.error) {
+        throw new Error(
+          `Failed to stamp supplier identity for "${title}": ${stamp.error.message}`,
+        );
+      }
+
+      skippedNoise += 1;
+      continue;
+    }
+
+    if (persisted >= Math.max(1, limit)) {
+      const stampOnly = await supabase
+        .from("demand_supplier_products")
+        .update({
+          identity_confidence: relevance.score,
+          identity_status: "unlinked",
+          identity_rationale: relevance.rationale,
+          identity_metadata: {
+            ...relevance.signals,
+            selection_score: selectionScore,
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", row.id);
+
+      if (stampOnly.error) {
+        throw new Error(
+          `Failed to stamp supplier identity for "${title}": ${stampOnly.error.message}`,
+        );
+      }
+
+      continue;
+    }
+
+    let productId: string | null = null;
+    let linkedExisting = false;
+
+    for (const product of catalog ?? []) {
+      const canonical = assessCanonicalIdentity({
+        sourceTitle: title,
+        sourceSku: row.sku,
+        canonicalName: product.canonical_name,
+        canonicalBrand: brandByProduct.get(product.id) ?? null,
+      });
+
+      if (canonical.score >= CANONICAL_LINK_THRESHOLD) {
+        productId = product.id;
+        linkedExisting = true;
+        break;
+      }
+    }
+
+    const identityKey = `${row.supplier_name}::${row.supplier_product_id}`;
+
+    if (!productId) {
+      const existingProduct = await supabase
+        .from("products")
+        .select("id")
+        .eq("identity_key", identityKey)
+        .maybeSingle();
+
+      if (existingProduct.error) {
+        throw new Error(
+          `Failed to find supplier product "${row.supplier_product_id}": ${existingProduct.error.message}`,
+        );
+      }
+
+      if (existingProduct.data) {
+        productId = existingProduct.data.id;
+        productsReused += 1;
+      } else {
+        const productResult = await supabase
+          .from("products")
+          .insert({
+            brand_id: null,
+            canonical_name: title,
+            identity_key: identityKey,
+          })
+          .select("id")
+          .single();
+
+        if (productResult.error) {
+          throw new Error(
+            `Failed to insert supplier product "${title}": ${productResult.error.message}`,
+          );
+        }
+
+        productId = productResult.data.id;
+        productsCreated += 1;
+      }
+    } else if (linkedExisting) {
+      productsReused += 1;
+    }
+
+    const stampLinked = await supabase
+      .from("demand_supplier_products")
+      .update({
+        product_id: productId,
+        identity_confidence: relevance.score,
+        identity_status: "linked",
+        identity_rationale: linkedExisting
+          ? "Linked to an existing canonical product after identity check"
+          : "Created or reused a supplier-native canonical product after demand relevance check",
+        identity_metadata: {
+          ...relevance.signals,
+          selection_score: selectionScore,
+        },
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id);
+
+    if (stampLinked.error) {
+      throw new Error(
+        `Failed to link supplier product "${title}": ${stampLinked.error.message}`,
+      );
+    }
+
+    const price = number(row.price);
+    const currency = typeof row.currency === "string" && row.currency.trim()
+      ? row.currency.trim().toUpperCase()
+      : null;
+    const currencyAssessment = assessCurrencyConfidence({
+      currency,
+      price,
+      provider: "supplier",
+    });
+
+    const offerResult = await supabase
+      .from("product_offers")
+      .insert({
+        product_id: productId,
+        seller_name: row.supplier_name,
+        offer_url: null,
+        image_url: row.image_url,
+        currency,
+        price,
+        currency_confidence: currencyAssessment.confidence,
+        availability: row.available ? "available" : "unavailable",
+        shipping_price: null,
+        observed_at: new Date().toISOString(),
+        metadata: {
+          provider: "supplier",
+          candidate_id: candidate.id,
+          demand_query: candidate.query,
+          category: candidate.category,
+          supplier_name: row.supplier_name,
+          supplier_product_id: row.supplier_product_id,
+          supplier_query: row.supplier_query,
+          sku: row.sku,
+          inventory: row.inventory,
+          identifier: row.identifier,
+          available: row.available,
+          orderable: row.orderable,
+          tracking_available: row.tracking_available,
+          total_records: row.total_records,
+          total_pages: row.total_pages,
+          demand_observation_id: candidate.demand_observation_id,
+          demand_value: observedDemandValue,
+          demand_signal: demandSignal,
+          currency_confidence: currencyAssessment.confidence,
+          currency_confidence_reasons: currencyAssessment.reasons,
+          identity_confidence: relevance.score,
+          identity_status: "linked",
+        },
+      })
+      .select("id")
+      .single();
+
+    if (offerResult.error) {
+      throw new Error(
+        `Failed to insert supplier offer for "${title}": ${offerResult.error.message}`,
+      );
+    }
+
+    offersCreated += 1;
+
+    const intelligenceResult = await supabase
+      .from("product_intelligence")
+      .upsert(
+        {
+          product_id: productId,
+          normalized_title: title,
+          brand_name: null,
+          category: candidate.category,
+          seller_name: row.supplier_name,
+          source_url: null,
+          image_url: row.image_url,
+          currency,
+          current_price: price,
+          price_confidence:
+            currencyAssessment.confidence === "high"
+              ? 0.9
+              : currencyAssessment.confidence === "medium"
+                ? 0.6
+                : 0.2,
+          identity_confidence: relevance.score,
+          demand_signal: demandSignal,
+          metadata: {
+            provider: "supplier",
+            candidate_id: candidate.id,
+            demand_query: candidate.query,
+            demand_observation_id: candidate.demand_observation_id,
+            demand_value: observedDemandValue,
+            demand_signal: demandSignal,
+            supplier_name: row.supplier_name,
+          supplier_product_id: row.supplier_product_id,
+            sku: row.sku,
+            inventory: row.inventory,
+            identifier: row.identifier,
+            available: row.available,
+            orderable: row.orderable,
+            tracking_available: row.tracking_available,
+            total_records: row.total_records,
+            total_pages: row.total_pages,
+            intelligence_source: "demand_supplier_products",
+            currency_confidence: currencyAssessment.confidence,
+            identity_status: "linked",
+            identity_rationale: relevance.rationale,
+          },
+          last_seen_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "product_id" },
+      );
+
+    if (intelligenceResult.error) {
+      throw new Error(
+        `Failed to upsert product intelligence for "${title}": ${intelligenceResult.error.message}`,
+      );
+    }
+
+    intelligenceUpserted += 1;
+    persisted += 1;
+  }
+
+  if (offersCreated > 0) {
+    const statusUpdate = await supabase
+      .from("demand_product_candidates")
+      .update({
+        status: "offer_found",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", candidate.id)
+      .in("status", ["new", "researching", "product_found"]);
+
+    if (statusUpdate.error) {
+      throw new Error(
+        `Failed to update candidate status: ${statusUpdate.error.message}`,
+      );
+    }
+  }
+
+  return {
+    candidateId,
+    processed: rows?.length ?? 0,
+    productsCreated,
+    productsReused,
+    offersCreated,
+    intelligenceUpserted,
+    skippedNoise,
+    identitiesStamped,
+  };
+}
+
+
+
+
+
+
+

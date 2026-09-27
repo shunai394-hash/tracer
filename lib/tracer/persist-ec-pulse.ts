@@ -1,9 +1,7 @@
-import "server-only";
+﻿import "server-only";
+import { type ECPulsePriceChangedEvent, type ECPulseProduct } from "@/lib/sources/ec-pulse";
+export type { ECPulsePriceChangedEvent } from "@/lib/sources/ec-pulse";
 
-import {
-  type ECPulsePriceChangedEvent,
-  type ECPulseProduct,
-} from "@/lib/sources/ec-pulse";
 import { normalizeIdentifier } from "@/lib/market/identifiers";
 import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -216,6 +214,11 @@ export async function persistECPulseProduct(
   if (!productId) {
     throw new Error("Failed to resolve EC-Pulse product id");
   }
+
+  await persistCapturedIdentifiers(productId, {
+    asin: null,
+    gtin,
+  });
 
   const capturedAt = new Date(payload.captured_at).toISOString();
 
@@ -552,3 +555,9 @@ export async function persistECPulseMonitorMapping(args: {
     throw new Error(`Failed to persist EC-Pulse monitor mapping: ${result.error.message}`);
   }
 }
+
+
+
+
+
+

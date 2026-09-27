@@ -22,6 +22,10 @@ export type ShopListing = {
   selectionReasons: string[];
   productId: string;
   bestsellerId: string | null;
+  supplierListingId: string | null;
+  supplierName: string | null;
+  supplierProductId: string | null;
+  supplierVariantId: string | null;
 };
 
 function mapListing(row: Record<string, unknown>): ShopListing {
@@ -38,6 +42,10 @@ function mapListing(row: Record<string, unknown>): ShopListing {
       : [],
     productId: String(row.product_id),
     bestsellerId: row.bestseller_id ? String(row.bestseller_id) : null,
+    supplierListingId: row.supplier_listing_id ? String(row.supplier_listing_id) : null,
+    supplierName: typeof row.supplier_name === "string" ? row.supplier_name : null,
+    supplierProductId: row.supplier_product_id ? String(row.supplier_product_id) : null,
+    supplierVariantId: row.supplier_variant_id ? String(row.supplier_variant_id) : null,
   };
 }
 
@@ -127,6 +135,12 @@ export async function placeShopOrder(args: {
       | Record<string, unknown>
       | undefined;
     if (!listing) throw new Error("listing is not published");
+    if (listing.orderable !== true) {
+      throw new Error("listing is not currently orderable");
+    }
+    if (!Number.isFinite(item.qty) || item.qty <= 0) {
+      throw new Error("quantity must be greater than zero");
+    }
     const unitPrice = asNumber(listing.selling_price);
     if (unitPrice === null) throw new Error("selling price unknown");
     if (currency && listing.currency && currency !== listing.currency) {
@@ -177,6 +191,10 @@ export async function placeShopOrder(args: {
       order_id: order.id,
       listing_id: line.listing.id,
       product_id: line.listing.product_id,
+      supplier_listing_id: line.listing.supplier_listing_id ?? null,
+      supplier_name: line.listing.supplier_name ?? null,
+      supplier_product_id: line.listing.supplier_product_id ?? null,
+      supplier_variant_id: line.listing.supplier_variant_id ?? null,
       title: String(line.listing.title),
       qty: line.qty,
       unit_price: line.unitPrice,

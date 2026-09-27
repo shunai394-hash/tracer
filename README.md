@@ -73,7 +73,9 @@ CJ supplier search
         ↓
 exact identity / variant confirmation
         ↓
-CN-stocked variant
+exact CJ variant
+        ↓
+variant-level stock verification
         ↓
 CJ CN → JP freight quote
         ↓
@@ -100,6 +102,14 @@ The production batch endpoint is:
 GET /api/cron/market-sourcing
 ```
 
+Publication recovery is intentionally separated from sourcing:
+
+- `/api/cron/inventory-refresh` — refreshes exact published CJ variant stock.
+- `/api/cron/base-publish` — creates or reconciles BASE items after inventory verification.
+- `/api/cron/base-orders` — imports and re-syncs BASE orders.
+- `/api/cron/supplier-orders` — polls supplier order status and tracking.
+- `/api/cron/newfind-retry` — retries pending, failed, and sent-but-unacknowledged NEWFIND deliveries.
+
 When `CRON_SECRET` is configured, the request must contain:
 
 ```text
@@ -120,7 +130,7 @@ A product is not published unless the current sourcing evidence supports:
 - tracking/API capability required by the current sales-test gate
 - positive contribution profit
 
-A failed sourcing run **does not unpublish existing products**.
+A failed sourcing run **does not unpublish existing products**. A current exact-variant stockout instead makes the listing non-orderable and BASE stock zero; checkout is blocked until a later inventory refresh observes stock again.
 
 ### Important environment variables
 

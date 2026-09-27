@@ -57,6 +57,26 @@ export async function selectAndPublishSalesTests(
   if (error) throw new Error(error.message);
 
   const rejected: Array<{ id: string; reasons: string[] }> = [];
+
+  async function markPipeline(
+    bestsellerId: string,
+    stage: string,
+    status: string,
+    reason: string | null,
+    error: string | null = null,
+  ): Promise<void> {
+    const { error: updateError } = await supabase
+      .from("marketplace_bestsellers")
+      .update({
+        pipeline_stage: stage,
+        pipeline_status: status,
+        pipeline_reason: reason,
+        pipeline_error: error,
+        pipeline_updated_at: new Date().toISOString(),
+      })
+      .eq("id", bestsellerId);
+    if (updateError) throw new Error(updateError.message);
+  }
   const publishedListingIds: string[] = [];
   const eligible: Array<{
     bestseller: Record<string, unknown>;
@@ -72,6 +92,7 @@ export async function selectAndPublishSalesTests(
     if (bestseller.rank === null) reasons.push("rank_unknown");
     if (!bestseller.title) reasons.push("title_unknown");
     if (bestseller.price === null) reasons.push("selling_price_unknown");
+    if (!bestseller.image_url) reasons.push("image_unknown");
 
     const { data: listings, error: listingError } = await supabase
       .from("supplier_listings")
@@ -86,6 +107,7 @@ export async function selectAndPublishSalesTests(
 
     if (!listing) {
       reasons.push("identity_not_confirmed");
+      await markPipeline(String(bestseller.id), "SUPPLIER_INVESTIGATION", "blocked", "identity_not_confirmed");
       rejected.push({ id: String(bestseller.id), reasons });
       continue;
     }
@@ -93,6 +115,21 @@ export async function selectAndPublishSalesTests(
     if (listing.shipping_cost === null) reasons.push("shipping_unknown");
     if (listing.tracking_available !== true) reasons.push("tracking_unknown");
     if (listing.api_available !== true) reasons.push("supplier_api_unknown");
+    if (listing.inventory_confirmed !== true) reasons.push("inventory_unknown");
+    if (listing.inventory_confirmed === true && asNumber(listing.inventory) !== null && (asNumber(listing.inventory) ?? 0) <= 0) {
+      reasons.push("inventory_zero");
+    }
+
+    // CJ fulfillment requires a concrete variant ID. A product-level match
+    // without a variant cannot be safely published because a later refresh
+    // could otherwise cause fulfillment to select a different variant.
+    if (
+      String(listing.supplier ?? "").toLowerCase() === "cjdropshipping" &&
+      typeof listing.supplier_variant_id !== "string" &&
+      typeof listing.cj_variant_id !== "string"
+    ) {
+      reasons.push("supplier_variant_unknown");
+    }
 
     const profit = simulateContributionProfit({
       sellingPrice: asNumber(bestseller.price),
@@ -127,6 +164,12 @@ export async function selectAndPublishSalesTests(
     }
 
     if (reasons.length > 0) {
+      await markPipeline(
+        String(bestseller.id),
+        "SALES_TEST",
+        "blocked",
+        reasons.join(","),
+      );
       rejected.push({ id: String(bestseller.id), reasons });
       continue;
     }
@@ -152,6 +195,13 @@ export async function selectAndPublishSalesTests(
     return rankA - rankB;
   });
   const chosen = eligible.slice(0, limit);
+  const chosenIds = new Set(chosen.map((item) => String(item.bestseller.id)));
+  for (const item of eligible) {
+    const id = String(item.bestseller.id);
+    if (!chosenIds.has(id)) {
+      await markPipeline(id, "SALES_TEST", "blocked", "sales_test_limit");
+    }
+  }
   let published = 0;
 
   // Publishing a new sales-test candidate must not unpublish the existing
@@ -162,6 +212,8 @@ export async function selectAndPublishSalesTests(
     const productId = String(item.bestseller.product_id ?? "");
     if (!productId) continue;
     const slug = slugify(String(item.bestseller.title), String(item.bestseller.id));
+
+    await markPipeline(String(item.bestseller.id), "SELECTED", "selected", "sales_test_selected");
 
     const upsert = await supabase
       .from("shop_listings")
@@ -177,6 +229,18 @@ export async function selectAndPublishSalesTests(
           image_url: item.bestseller.image_url,
           selling_price: item.bestseller.price,
           currency: item.bestseller.currency,
+          supplier_name: item.listing.supplier,
+          supplier_product_id: item.listing.supplier_product_id ?? item.listing.external_id,
+          supplier_variant_id: item.listing.supplier_variant_id ?? item.listing.cj_variant_id,
+          source_cost: item.profit.sourceCost,
+          shipping_cost: item.profit.internationalShipping,
+          inventory: asNumber(item.listing.inventory),
+          orderable: item.listing.orderable ?? false,
+          tracking_available: item.listing.tracking_available,
+          identity_method: item.listing.identity_method,
+          identity_confidence: item.listing.identity_confidence,
+          contribution_profit: item.profit.contributionProfit,
+          contribution_margin: item.profit.contributionMargin,
           published: true,
           selection_reasons: item.reasons,
           missing: [],
@@ -188,9 +252,39 @@ export async function selectAndPublishSalesTests(
       .select("id")
       .single();
 
-    if (upsert.error) throw new Error(upsert.error.message);
+    if (upsert.error) {
+      await markPipeline(
+        String(item.bestseller.id),
+        "PRODUCT_CREATED",
+        "failed",
+        "shop_listing_upsert_failed",
+        upsert.error.message,
+      );
+      throw new Error(upsert.error.message);
+    }
     if (upsert.data?.id) publishedListingIds.push(String(upsert.data.id));
     published += 1;
+
+    const listingId = String(upsert.data?.id ?? "");
+    if (listingId) {
+      const { error: listingStateError } = await supabase
+        .from("shop_listings")
+        .update({
+          pipeline_stage: "PUBLISHED",
+          pipeline_status: "published",
+          pipeline_reason: "sales_test_gate_passed",
+          pipeline_error: null,
+          pipeline_updated_at: new Date().toISOString(),
+        })
+        .eq("id", listingId);
+      if (listingStateError) throw new Error(listingStateError.message);
+    }
+    await markPipeline(
+      String(item.bestseller.id),
+      "PUBLISHED",
+      "published",
+      "shop_listing_created",
+    );
 
     await writeEvidence({
       productId,

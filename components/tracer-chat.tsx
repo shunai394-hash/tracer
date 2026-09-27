@@ -29,12 +29,13 @@ export function TracerChat({ embedded = false }: { embedded?: boolean }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(embedded);
 
-  if (!embedded && (pathname === "/chat" || pathname.startsWith("/shop"))) {
-    return null;
-  }
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+
+  if (!embedded && (pathname === "/chat" || pathname.startsWith("/shop"))) {
+    return null;
+  }
 
   async function send(text: string) {
     const message = text.trim();

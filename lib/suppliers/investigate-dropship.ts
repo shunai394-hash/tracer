@@ -1,14 +1,15 @@
-import "server-only";
+﻿import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getDropshipSupplierConfig } from "@/lib/config/env";
 import { getCJConfig } from "@/lib/config/env";
 import {
   CJConfigError,
+  calculateCJFreight,
   fetchCJProductVariants,
+  fetchCJVariantStock,
   getCJProductDetail,
   searchCJProducts,
-  selectUnambiguousVariant,
 } from "@/lib/sources/cj";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import {
@@ -31,6 +32,27 @@ function asNumber(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+async function markPipelineState(args: {
+  bestsellerId: string;
+  stage: string;
+  status: string;
+  reason: string | null;
+  error?: string | null;
+}): Promise<void> {
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase
+    .from("marketplace_bestsellers")
+    .update({
+      pipeline_stage: args.stage,
+      pipeline_status: args.status,
+      pipeline_reason: args.reason,
+      pipeline_error: args.error ?? null,
+      pipeline_updated_at: new Date().toISOString(),
+    })
+    .eq("id", args.bestsellerId);
+  if (error) throw new Error(error.message);
 }
 
 async function recordUnconfiguredSupplier(args: {
@@ -138,6 +160,12 @@ export async function investigateDropshipForBestsellers(
 
     if (!identifierQuery || supplierSearchQueries.length === 0) {
       skippedNoIdentifier += 1;
+      await markPipelineState({
+        bestsellerId: String(record.id),
+        stage: "SUPPLIER_INVESTIGATION",
+        status: "blocked",
+        reason: "supplier_search_identifier_missing",
+      });
       await writeEvidence({
         productId: typeof record.product_id === "string" ? record.product_id : null,
         bestsellerId: String(record.id),
@@ -170,6 +198,12 @@ export async function investigateDropshipForBestsellers(
         fetchedAt,
       });
       unconfigured += 1;
+      await markPipelineState({
+        bestsellerId: String(record.id),
+        stage: "SUPPLIER_INVESTIGATION",
+        status: "blocked",
+        reason: "cj_not_configured",
+      });
       continue;
     }
 
@@ -189,7 +223,7 @@ export async function investigateDropshipForBestsellers(
       // identifier. This preserves the strict identity gate while avoiding
       // needless requests after identity is already proven.
       const searches: Awaited<ReturnType<typeof searchCJProducts>>[] = [];
-      let directMatches: Awaited<ReturnType<typeof searchCJProducts>>[number]["products"] = [];
+      let directMatches: Awaited<ReturnType<typeof searchCJProducts>>["products"] = [];
 
       for (const query of identifierQueries) {
         cjQuery = query;
@@ -401,6 +435,21 @@ export async function investigateDropshipForBestsellers(
         // turn a failed quote into zero; the publication gate must continue
         // to treat shipping as unknown when CJ cannot quote it.
         let observedShippingCost = asNumber(detail.shippingCost);
+        let verifiedInventory: number | null = null;
+        let inventoryConfirmed = false;
+        if (identity.salesEligible && selectedVariant) {
+          try {
+            verifiedInventory = await fetchCJVariantStock(selectedVariant.vid);
+            inventoryConfirmed = verifiedInventory !== null;
+          } catch (error) {
+            console.warn("[investigate-dropship] CJ variant stock lookup failed; inventory remains unknown", {
+              bestsellerId: String(record.id),
+              cjProductId: detail.id,
+              cjVariantId: selectedVariant.vid,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
         if (identity.salesEligible && selectedVariant) {
           try {
             const freight = await calculateCJFreight(selectedVariant.vid, {
@@ -437,10 +486,15 @@ export async function investigateDropshipForBestsellers(
             ean: supplyIds.ean,
             upc: supplyIds.upc,
             mpn: supplyIds.mpn,
-            cost: asNumber(detail.price),
+            // Use the exact confirmed variant price when one was selected.
+            // Falling back to the parent product price is only safe when the
+            // supplier exposes no variant-specific price.
+            cost: asNumber(selectedVariant?.sellPrice ?? detail.price),
             shipping_cost: observedShippingCost,
             currency: "USD",
-            inventory: detail.inventory,
+            supplier_product_id: detail.id,
+            supplier_variant_id: cjVariantId,
+            inventory: verifiedInventory,
             tracking_available: true,
             order_method: "cj_api",
             api_available: true,
@@ -452,6 +506,9 @@ export async function investigateDropshipForBestsellers(
                 : identity.method,
             identity_confidence: identity.confidence,
             configured: true,
+            orderable: Boolean(cjVariantId) && inventoryConfirmed && (verifiedInventory ?? 0) > 0,
+            price_confirmed: Boolean(selectedVariant?.sellPrice ?? detail.price),
+            inventory_confirmed: inventoryConfirmed,
             fetched_at: fetchedAt,
             metadata: {
               search_query: identifierQuery,
@@ -464,6 +521,29 @@ export async function investigateDropshipForBestsellers(
           .single();
 
         if (insert.error) throw new Error(insert.error.message);
+
+        const pipelineReason = !identity.salesEligible
+          ? "identity_not_confirmed"
+          : !cjVariantId
+            ? "supplier_variant_unknown"
+            : !inventoryConfirmed
+              ? "inventory_unverified"
+              : (verifiedInventory ?? 0) <= 0
+                ? "inventory_zero"
+                : "supplier_variant_verified";
+        await markPipelineState({
+          bestsellerId: String(record.id),
+          stage:
+            identity.salesEligible && cjVariantId && inventoryConfirmed && (verifiedInventory ?? 0) > 0
+              ? "VARIANT_VERIFIED"
+              : "SUPPLIER_INVESTIGATION",
+          status:
+            identity.salesEligible && cjVariantId && inventoryConfirmed && (verifiedInventory ?? 0) > 0
+              ? "ready"
+              : "blocked",
+          reason: pipelineReason,
+        });
+
         if (identity.salesEligible) matched += 1;
         if (identity.method === "none") noIdentifierOverlap += 1;
         if (!supplyBarcode) supplyBarcodeMissing += 1;
@@ -505,6 +585,13 @@ export async function investigateDropshipForBestsellers(
         error: error instanceof Error ? error.message : String(error),
       };
       rowErrorDetails.push(rowErrorDetail);
+      await markPipelineState({
+        bestsellerId: String(record.id),
+        stage: "SUPPLIER_INVESTIGATION",
+        status: "failed",
+        reason: "supplier_investigation_failed",
+        error: rowErrorDetail.error,
+      });
       console.error("[investigate-dropship] row failed, continuing batch", rowErrorDetail);
       await writeEvidence({
         productId: typeof record.product_id === "string" ? record.product_id : null,
@@ -532,3 +619,5 @@ export async function investigateDropshipForBestsellers(
     rowErrorDetails: rowErrorDetails.slice(0, 20),
   };
 }
+
+
