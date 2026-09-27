@@ -238,7 +238,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
     const { data: existingPoItem } = await supabase
       .from("purchase_order_items")
       .select("id")
-      .eq("purchase_order_id", purchaseOrderId)
+      .eq("idempotency_key", `dropship-item:${row.id}`)
       .maybeSingle();
 
     if (!existingPoItem) {
@@ -247,6 +247,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
         .upsert(
           {
             purchase_order_id: purchaseOrderId,
+            idempotency_key: `dropship-item:${row.id}`,
             product_id: productId,
             qty: asNumber(row.qty) ?? 0,
             unit_cost: asNumber(listingRow.cost),
@@ -259,7 +260,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
                     ? shopListing.supplier_variant_id
                     : null,
           },
-          { onConflict: "purchase_order_id" },
+          { onConflict: "idempotency_key" },
         );
 
       if (itemError) {
