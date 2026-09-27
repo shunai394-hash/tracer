@@ -18,14 +18,43 @@ type BaseItemResponse = {
 
 const BASE_API_URL = process.env.BASE_API_URL?.trim() || "https://api.thebase.in/1";
 const BASE_ACCESS_TOKEN = process.env.BASE_ACCESS_TOKEN?.trim() || "";
+const BASE_CLIENT_ID = process.env.BASE_CLIENT_ID?.trim() || "";
+const BASE_CLIENT_SECRET = process.env.BASE_CLIENT_SECRET?.trim() || "";
+const BASE_REFRESH_TOKEN = process.env.BASE_REFRESH_TOKEN?.trim() || "";
 
 export function isBaseConfigured() {
-  return Boolean(BASE_ACCESS_TOKEN);
+  return Boolean(BASE_ACCESS_TOKEN || (
+    BASE_CLIENT_ID && BASE_CLIENT_SECRET && BASE_REFRESH_TOKEN
+  ));
 }
 
-function requireBaseToken() {
+async function getBaseAccessToken() {
+  if (BASE_CLIENT_ID && BASE_CLIENT_SECRET && BASE_REFRESH_TOKEN) {
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: BASE_CLIENT_ID,
+      client_secret: BASE_CLIENT_SECRET,
+      refresh_token: BASE_REFRESH_TOKEN,
+      redirect_uri: process.env.BASE_REDIRECT_URI?.trim() || "",
+    });
+
+    const response = await fetch(`${BASE_API_URL}/oauth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body,
+      cache: "no-store",
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`BASE OAuth refresh HTTP ${response.status}: ${text.slice(0, 500)}`);
+    }
+    const data = JSON.parse(text) as { access_token?: string };
+    if (!data.access_token) throw new Error("BASE OAuth refresh did not return access_token");
+    return data.access_token;
+  }
+
   if (!BASE_ACCESS_TOKEN) {
-    throw new Error("BASE_ACCESS_TOKEN is not configured");
+    throw new Error("BASE API credentials are not configured");
   }
   return BASE_ACCESS_TOKEN;
 }
@@ -34,7 +63,7 @@ async function requestBase(
   path: string,
   body: URLSearchParams,
 ): Promise<BaseItemResponse> {
-  const token = requireBaseToken();
+  const token = await getBaseAccessToken();
   const response = await fetch(`${BASE_API_URL}${path}`, {
     method: "POST",
     headers: {
@@ -128,14 +157,13 @@ export async function listBaseOrders(options?: {
   limit?: number;
   offset?: number;
 }): Promise<BaseOrderSummary[]> {
-  requireBaseToken();
+  const token = await getBaseAccessToken();
   const params = new URLSearchParams();
   if (options?.startOrdered) params.set("start_ordered", options.startOrdered);
   if (options?.endOrdered) params.set("end_ordered", options.endOrdered);
   params.set("limit", String(Math.min(100, Math.max(1, options?.limit ?? 100))));
   params.set("offset", String(Math.max(0, options?.offset ?? 0)));
 
-  const token = requireBaseToken();
   const response = await fetch(`${BASE_API_URL}/orders?${params.toString()}`, {
     method: "GET",
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
