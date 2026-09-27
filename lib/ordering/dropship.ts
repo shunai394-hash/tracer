@@ -34,6 +34,7 @@ function addressComplete(order: Record<string, unknown>): boolean | null {
  * Customer placed a shop order -> create one purchase order per line item
  * (fulfillment_kind = dropship_customer_order). This only records intent; it
  * never calls the supplier. Execution is a separate, explicit step.
+ * Concurrent callers are serialized by the idempotency key and item claim.
  */
 export async function createDropshipPurchaseOrdersForShopOrder(
   shopOrderId: string,
@@ -70,10 +71,6 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       .select("id")
       .eq("idempotency_key", idempotencyKey)
       .maybeSingle();
-    if (existingPo) {
-      purchaseOrderIds.push(String(existingPo.id));
-      continue;
-    }
 
     const productId = row.product_id ? String(row.product_id) : null;
     if (!productId) {
@@ -168,68 +165,111 @@ export async function createDropshipPurchaseOrdersForShopOrder(
         ? "auto_blocked"
         : "pending_approval";
 
-    const { data: po, error: poError } = await supabase
-      .from("purchase_orders")
-      .insert({
-        product_id: productId,
-        shop_order_id: shopOrderId,
-        fulfillment_kind: "dropship_customer_order",
-        supplier_name: "CJdropshipping",
-        supplier_product_id:
-          typeof listingRow.supplier_product_id === "string"
-            ? listingRow.supplier_product_id
-            : typeof shopListing.supplier_product_id === "string"
-              ? shopListing.supplier_product_id
-              : null,
-        supplier_variant_id:
-          typeof listingRow.supplier_variant_id === "string"
-            ? listingRow.supplier_variant_id
-            : typeof listingRow.cj_variant_id === "string"
-              ? listingRow.cj_variant_id
-              : typeof shopListing.supplier_variant_id === "string"
-                ? shopListing.supplier_variant_id
-                : null,
-        qty: asNumber(row.qty) ?? 0,
-        unit_cost: asNumber(listingRow.cost),
-        shipping_cost: asNumber(listingRow.shipping_cost),
-        total_cost:
-          asNumber(listingRow.cost) !== null && asNumber(listingRow.shipping_cost) !== null
-            ? (asNumber(listingRow.cost)! + asNumber(listingRow.shipping_cost)!) * (asNumber(row.qty) ?? 0)
-            : null,
-        currency: typeof listingRow.currency === "string" ? listingRow.currency : row.currency,
-        forecast_units: null,
-        forecast_profit: gate.estimatedProfit,
-        forecast_confidence: null,
-        rationale: "customer_order",
-        status,
-        mode: "APPROVAL",
-        idempotency_key: idempotencyKey,
-        metadata: { gate, note: gate.canExecuteLive ? "ready_for_live_execution" : "blocked_or_incomplete" },
-      })
-      .select("id")
-      .single();
+    let purchaseOrderId = existingPo ? String(existingPo.id) : null;
 
-    if (poError) {
-      skipped.push({ itemId: String(row.id), reason: poError.message });
+    if (!purchaseOrderId) {
+      const { data: po, error: poError } = await supabase
+        .from("purchase_orders")
+        .insert({
+          product_id: productId,
+          shop_order_id: shopOrderId,
+          fulfillment_kind: "dropship_customer_order",
+          supplier_name: "CJdropshipping",
+          supplier_product_id:
+            typeof listingRow.supplier_product_id === "string"
+              ? listingRow.supplier_product_id
+              : typeof shopListing.supplier_product_id === "string"
+                ? shopListing.supplier_product_id
+                : null,
+          supplier_variant_id:
+            typeof listingRow.supplier_variant_id === "string"
+              ? listingRow.supplier_variant_id
+              : typeof listingRow.cj_variant_id === "string"
+                ? listingRow.cj_variant_id
+                : typeof shopListing.supplier_variant_id === "string"
+                  ? shopListing.supplier_variant_id
+                  : null,
+          qty: asNumber(row.qty) ?? 0,
+          unit_cost: asNumber(listingRow.cost),
+          shipping_cost: asNumber(listingRow.shipping_cost),
+          total_cost:
+            asNumber(listingRow.cost) !== null && asNumber(listingRow.shipping_cost) !== null
+              ? (asNumber(listingRow.cost)! + asNumber(listingRow.shipping_cost)!) * (asNumber(row.qty) ?? 0)
+              : null,
+          currency: typeof listingRow.currency === "string" ? listingRow.currency : row.currency,
+          forecast_units: null,
+          forecast_profit: gate.estimatedProfit,
+          forecast_confidence: null,
+          rationale: "customer_order",
+          status,
+          mode: "APPROVAL",
+          idempotency_key: idempotencyKey,
+          metadata: {
+            gate,
+            note: gate.canExecuteLive ? "ready_for_live_execution" : "blocked_or_incomplete",
+          },
+        })
+        .select("id")
+        .single();
+
+      if (poError) {
+        if (poError.code === "23505") {
+          const { data: racedPo } = await supabase
+            .from("purchase_orders")
+            .select("id")
+            .eq("idempotency_key", idempotencyKey)
+            .maybeSingle();
+          purchaseOrderId = racedPo?.id ? String(racedPo.id) : null;
+        }
+        if (!purchaseOrderId) {
+          skipped.push({ itemId: String(row.id), reason: poError.message });
+          continue;
+        }
+      } else {
+        purchaseOrderId = po?.id ? String(po.id) : null;
+      }
+    }
+
+    if (!purchaseOrderId) {
+      skipped.push({ itemId: String(row.id), reason: "purchase_order_id_missing" });
       continue;
     }
 
-    await supabase.from("purchase_order_items").insert({
-      purchase_order_id: po.id,
-      product_id: productId,
-      qty: asNumber(row.qty) ?? 0,
-      unit_cost: asNumber(listingRow.cost),
-      cj_variant_id:
-        typeof listingRow.supplier_variant_id === "string"
-          ? listingRow.supplier_variant_id
-          : typeof listingRow.cj_variant_id === "string"
-            ? listingRow.cj_variant_id
-            : typeof shopListing.supplier_variant_id === "string"
-              ? shopListing.supplier_variant_id
-              : null,
-    });
+    const { data: existingPoItem } = await supabase
+      .from("purchase_order_items")
+      .select("id")
+      .eq("idempotency_key", `dropship-item:${row.id}`)
+      .maybeSingle();
 
-    purchaseOrderIds.push(String(po.id));
+    if (!existingPoItem) {
+      const { error: itemError } = await supabase
+        .from("purchase_order_items")
+        .upsert(
+          {
+            purchase_order_id: purchaseOrderId,
+            idempotency_key: `dropship-item:${row.id}`,
+            product_id: productId,
+            qty: asNumber(row.qty) ?? 0,
+            unit_cost: asNumber(listingRow.cost),
+            cj_variant_id:
+              typeof listingRow.supplier_variant_id === "string"
+                ? listingRow.supplier_variant_id
+                : typeof listingRow.cj_variant_id === "string"
+                  ? listingRow.cj_variant_id
+                  : typeof shopListing.supplier_variant_id === "string"
+                    ? shopListing.supplier_variant_id
+                    : null,
+          },
+          { onConflict: "idempotency_key" },
+        );
+
+      if (itemError) {
+        skipped.push({ itemId: String(row.id), reason: itemError.message });
+        continue;
+      }
+    }
+
+    purchaseOrderIds.push(purchaseOrderId);
   }
 
   return { purchaseOrderIds, skipped };
@@ -497,6 +537,96 @@ export async function executeLivePurchaseOrder(
     };
   }
 
+  if (existingAttempt?.state === "unknown") {
+    return {
+      purchaseOrderId,
+      attempted: false,
+      succeeded: false,
+      supplierOrderId: null,
+      reason: "supplier_attempt_outcome_unknown_manual_reconciliation_required",
+      gate,
+    };
+  }
+
+  let attemptId: string | null = existingAttempt?.id ? String(existingAttempt.id) : null;
+
+  if (existingAttempt?.state === "in_progress") {
+    return {
+      purchaseOrderId,
+      attempted: false,
+      succeeded: false,
+      supplierOrderId: null,
+      reason: "supplier_order_attempt_in_progress",
+      gate,
+    };
+  }
+
+  if (existingAttempt) {
+    const { data: claimedAttempt } = await supabase
+      .from("cj_order_attempts")
+      .update({
+        state: "in_progress",
+        response_code: "IN_PROGRESS",
+        response_message: null,
+      })
+      .eq("id", existingAttempt.id)
+      .eq("state", "completed")
+      .select("id")
+      .maybeSingle();
+
+    if (!claimedAttempt) {
+      return {
+        purchaseOrderId,
+        attempted: false,
+        succeeded: false,
+        supplierOrderId: null,
+        reason: "supplier_order_attempt_claim_lost",
+        gate,
+      };
+    }
+    attemptId = String(claimedAttempt.id);
+  } else {
+    const { data: claimedAttempt, error: claimError } = await supabase
+      .from("cj_order_attempts")
+      .insert({
+        purchase_order_id: purchaseOrderId,
+        idempotency_key: idempotencyKey,
+        request_summary: { productId: po.product_id, qty: po.qty },
+        response_code: "IN_PROGRESS",
+        response_message: null,
+        supplier_order_id: null,
+        succeeded: false,
+        state: "in_progress",
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (claimError) {
+      if (claimError.code === "23505") {
+        return {
+          purchaseOrderId,
+          attempted: false,
+          succeeded: false,
+          supplierOrderId: null,
+          reason: "supplier_order_attempt_in_progress",
+          gate,
+        };
+      }
+      throw new Error(claimError.message);
+    }
+    if (!claimedAttempt) {
+      return {
+        purchaseOrderId,
+        attempted: false,
+        succeeded: false,
+        supplierOrderId: null,
+        reason: "supplier_order_attempt_claim_failed",
+        gate,
+      };
+    }
+    attemptId = String(claimedAttempt.id);
+  }
+
   const result = await createCJOrderV2({
     orderNumber: idempotencyKey,
     shippingCountryCode: String(shopOrderRow.shipping_country_code ?? ""),
@@ -520,15 +650,16 @@ export async function executeLivePurchaseOrder(
     raw: null,
   }));
 
-  await supabase.from("cj_order_attempts").insert({
-    purchase_order_id: purchaseOrderId,
-    idempotency_key: idempotencyKey,
-    request_summary: { productId: po.product_id, qty: po.qty },
-    response_code: result.responseCode,
-    response_message: result.responseMessage,
-    supplier_order_id: result.supplierOrderId,
-    succeeded: result.succeeded,
-  });
+  await supabase
+    .from("cj_order_attempts")
+    .update({
+      response_code: result.responseCode,
+      response_message: result.responseMessage,
+      supplier_order_id: result.supplierOrderId,
+      succeeded: result.succeeded,
+      state: result.responseCode === "EXCEPTION" ? "unknown" : "completed",
+    })
+    .eq("id", attemptId);
 
   if (result.succeeded && result.supplierOrderId) {
     await supabase
