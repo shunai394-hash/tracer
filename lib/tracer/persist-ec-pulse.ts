@@ -215,6 +215,11 @@ export async function persistECPulseProduct(
     throw new Error("Failed to resolve EC-Pulse product id");
   }
 
+  await persistCapturedIdentifiers(productId, {
+    asin: payload.product.asin ?? null,
+    gtin,
+  });
+
   const capturedAt = new Date(payload.captured_at).toISOString();
 
   const observation = await supabase
