@@ -59,6 +59,7 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
       supplierVariantId,
       quantity: inventory,
       available: inventory !== null ? inventory > 0 : null,
+      observedAt: new Date().toISOString(),
     };
   },
 
@@ -74,6 +75,7 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
       supplierVariantId,
       amount: Number(variant.sellPrice),
       currency: "USD",
+      observedAt: new Date().toISOString(),
     };
   },
 
@@ -93,7 +95,8 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
       supplierVariantId,
       amount,
       currency: "USD",
-      destinationCountryCode: "JP",
+      available: true,
+      observedAt: new Date().toISOString(),
     };
   },
 
