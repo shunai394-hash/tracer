@@ -29,7 +29,7 @@ export async function publishPublishedListingsToBase(
   const { data: listings, error } = await supabase
     .from("shop_listings")
     .select(
-      "id,title,description,selling_price,image_url,published,base_item_id",
+      "id,title,description,selling_price,image_url,published,base_item_id,inventory,orderable",
     )
     .eq("published", true)
     .not("selling_price", "is", null)
@@ -76,7 +76,7 @@ export async function publishPublishedListingsToBase(
           title: listing.title,
           detail: listing.description ?? listing.title,
           price: Number(listing.selling_price),
-          stock: 1,
+          stock: Math.max(0, Math.floor(Number(listing.inventory ?? 0))),
           visible: true,
         });
       } else {
