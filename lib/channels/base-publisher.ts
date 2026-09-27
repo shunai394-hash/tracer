@@ -65,6 +65,22 @@ export async function publishPublishedListingsToBase(
       continue;
     }
 
+    if (listing.inventory === null || listing.orderable !== true) {
+      await supabase.from("shop_listings").update({
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "blocked",
+        pipeline_reason: listing.inventory === null ? "inventory_unknown" : "inventory_zero",
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      results.push({
+        listingId,
+        ok: false,
+        skipped: true,
+        error: listing.inventory === null ? "inventory_unknown" : "inventory_zero",
+      });
+      continue;
+    }
+
     try {
       let baseItemId: string | null = listing.base_item_id
         ? String(listing.base_item_id)
