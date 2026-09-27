@@ -14,8 +14,12 @@ chrome.storage.local.get({ apiBase: "", extensionKey: "" }).then((settings) => {
 capture.addEventListener("click", async () => {
   status.textContent = "Capturing…";
   try {
+    const settings = await chrome.storage.local.get({ apiBase: "", extensionKey: "" });
+    if (!settings.apiBase) {
+      throw new Error("Open Settings below and save your TRACER deployment URL first.");
+    }
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id || !tab.url?.includes("amazon.")) {
+    if (!tab?.id || !/^https:\/\/(?:[^/]+\.)?amazon\.(com|co\.jp)(?:\/|$)/i.test(tab.url || "")) {
       throw new Error("Open an Amazon product page first.");
     }
 
