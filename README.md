@@ -54,3 +54,70 @@ npm run lint
 npx tsc --noEmit
 npm run build
 ```
+
+
+## Production market-to-publication pipeline
+
+TRACER separates **market observation** from **sourcing decisions**:
+
+```text
+Amazon / Rakuten / Yahoo
+        ↓
+market observation
+        ↓
+verified marketplace identifiers
+        ↓
+CJ supplier search
+        ↓
+exact identity / variant confirmation
+        ↓
+CN-stocked variant
+        ↓
+CJ CN → JP freight quote
+        ↓
+contribution-profit gate
+        ↓
+shop_listings.published = true
+        ↓
+/shop
+        ↓
+NEWFIND product_candidate
+```
+
+The production batch endpoint is:
+
+```text
+GET /api/cron/market-sourcing
+```
+
+When `CRON_SECRET` is configured, the request must contain:
+
+```text
+Authorization: Bearer <CRON_SECRET>
+```
+
+Vercel Cron is configured in `vercel.json` and runs the bounded sourcing batch once per day. The batch is intentionally bounded because CJ product search, detail, variant, and freight APIs are rate-limited and consume API points.
+
+### Publication gates
+
+A product is not published unless the current sourcing evidence supports:
+
+- marketplace rank/title/selling price
+- supplier identity confirmation
+- concrete CJ variant
+- supplier cost
+- current CN → JP freight quote when available
+- tracking/API capability required by the current sales-test gate
+- positive contribution profit
+
+A failed sourcing run **does not unpublish existing products**.
+
+### Important environment variables
+
+Production must have the server-side Supabase variables, `CJ_API_KEY`, `CRON_SECRET`, and the NEWFIND bridge variables configured before the full pipeline can operate.
+
+Real CJ supplier ordering remains separately guarded by `CJ_LIVE_ORDERING=0` and human approval. Publishing a sales-test listing does not place a supplier order.
+
+### Manual investigation
+
+For a specific batch, use the sourcing decision endpoint with authenticated access. The endpoint supports a candidate offset so later verified candidates can be investigated without changing the observation layer.
