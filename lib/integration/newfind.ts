@@ -113,7 +113,7 @@ export async function promoteShopListingToNewfind(
     .update(`${timestamp}.${id}.${rawBody}`, "utf8")
     .digest("hex");
 
-  const response = await fetch(buildUrl(cfg.apiUrl), {
+  const request = {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -123,8 +123,47 @@ export async function promoteShopListingToNewfind(
       "X-Integration-Signature": signature,
     },
     body: rawBody,
-    cache: "no-store",
-  });
+    cache: "no-store" as const,
+  };
+
+  let response: Response | null = null;
+  let lastError: unknown = null;
+
+  // NEWFIND deduplicates by event_id, so retrying the same signed event is safe.
+  // Keep the retry budget small enough for the 60s bestsellers request.
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      response = await fetch(buildUrl(cfg.apiUrl), {
+        ...request,
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      if (response.ok || ![408, 429, 500, 502, 503, 504].includes(response.status)) {
+        break;
+      }
+
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, 300 * attempt));
+      }
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, 300 * attempt));
+      }
+    }
+  }
+
+  if (!response) {
+    return {
+      configured: true,
+      sent: false,
+      eventId: id,
+      status: null,
+      detail: lastError instanceof Error
+        ? `newfind_request_failed: ${lastError.message}`
+        : "newfind_request_failed",
+    };
+  }
 
   const text = await response.text();
   let detail = text.slice(0, 500);
