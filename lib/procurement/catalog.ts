@@ -15,9 +15,9 @@ export type ProcurementProduct = {
   currency: string | null;
   unitCost: number | null;
   shippingCost: number | null;
-  available: boolean;
-  orderable: boolean;
-  trackingAvailable: boolean;
+  available: boolean | null;
+  orderable: boolean | null;
+  trackingAvailable: boolean | null;
   sourceUrl: string | null;
 };
 
