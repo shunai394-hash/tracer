@@ -7,7 +7,6 @@ export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {
-    const cronSecret = process.env.CRON_SECRET;
     const authError = requireCronAuth(request);
     if (authError) return authError;
 
