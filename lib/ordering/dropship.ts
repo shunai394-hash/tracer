@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getCJConfig, isCJLiveOrderingEnabled } from "@/lib/config/env";
+import { getCJConfig, isCJLiveOrderingEnabled, isCJAutoOrderingEnabled } from "@/lib/config/env";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { createCJOrderV2 } from "@/lib/sources/cj/create-order";
 import {
@@ -332,7 +332,7 @@ export async function executeLivePurchaseOrder(
   // field mapping is unverified against CJ's live docs (see module header on
   // lib/sources/cj/create-order.ts), so a human must also confirm this
   // specific order before the real supplier call fires.
-  if (!po.human_confirmed_at) {
+  if (!po.human_confirmed_at && !isCJAutoOrderingEnabled()) {
     return {
       purchaseOrderId,
       attempted: false,
