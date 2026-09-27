@@ -23,6 +23,31 @@ export const MARKETPLACE_SOURCES = [
     source: "amazon_bestsellers",
   },
   {
+    marketplace: "amazon.co.jp",
+    url: "https://www.amazon.co.jp/gp/bestsellers/electronics/",
+    source: "amazon_bestsellers_electronics",
+  },
+  {
+    marketplace: "amazon.co.jp",
+    url: "https://www.amazon.co.jp/gp/bestsellers/beauty/",
+    source: "amazon_bestsellers_beauty",
+  },
+  {
+    marketplace: "amazon.co.jp",
+    url: "https://www.amazon.co.jp/gp/bestsellers/kitchen/",
+    source: "amazon_bestsellers_kitchen",
+  },
+  {
+    marketplace: "amazon.co.jp",
+    url: "https://www.amazon.co.jp/gp/bestsellers/home/",
+    source: "amazon_bestsellers_home",
+  },
+  {
+    marketplace: "amazon.co.jp",
+    url: "https://www.amazon.co.jp/gp/bestsellers/sports/",
+    source: "amazon_bestsellers_sports",
+  },
+  {
     marketplace: "rakuten",
     url: "https://ranking.rakuten.co.jp/",
     source: "rakuten_ranking",
@@ -40,7 +65,7 @@ export const MARKETPLACE_SOURCES = [
  * a fan-out safety bound, not a latency budget — raising it does not
  * multiply wall-clock time the way the old sequential loop did.
  */
-const DETAIL_ENRICHMENT_LIMIT = 30;
+const DETAIL_ENRICHMENT_LIMIT = 40;
 
 export type CollectedMarketplace = {
   marketplace: string;

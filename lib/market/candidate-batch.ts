@@ -14,4 +14,4 @@
  * `fetched_at desc` and use this same limit.
  */
 // Keep supplier investigation inside the 60s serverless budget. CJ product/detail/variant calls are serialized locally to respect the account rate limit, so a large batch can time out before the sourcing decision runs.
-export const BESTSELLER_CANDIDATE_BATCH_SIZE = 8;
+export const BESTSELLER_CANDIDATE_BATCH_SIZE = 12;

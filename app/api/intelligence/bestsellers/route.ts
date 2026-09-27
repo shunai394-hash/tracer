@@ -14,7 +14,7 @@ export async function POST() {
     const bestsellers = await persistMarketplaceBestsellers();
     const candidateIds = bestsellers.supplierCandidateIds.slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
     const suppliers = await investigateDropshipForBestsellers(candidateIds);
-    const selected = await selectAndPublishSalesTests(candidateIds, 3);
+    const selected = await selectAndPublishSalesTests(candidateIds, 5);
     const newfind = await Promise.all(
       selected.publishedListingIds.map((listingId) =>
         promoteShopListingToNewfind(listingId).catch((error) => ({
