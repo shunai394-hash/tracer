@@ -33,3 +33,5 @@ alter table public.purchase_order_items
 create unique index if not exists purchase_order_items_idempotency_key_idx
   on public.purchase_order_items(idempotency_key)
   where idempotency_key is not null;
+
+-- Dropship item idempotency is scoped to each shop order line.
