@@ -104,6 +104,27 @@ export async function createBaseItem(input: BaseItemInput) {
   );
 }
 
+export async function editBaseItem(input: {
+  itemId: string;
+  title: string;
+  detail: string;
+  price: number;
+  stock?: number;
+  visible?: boolean;
+}) {
+  return requestBase(
+    "/items/edit",
+    new URLSearchParams({
+      item_id: input.itemId,
+      title: input.title,
+      detail: input.detail,
+      price: String(Math.round(input.price)),
+      stock: String(Math.max(0, Math.floor(input.stock ?? 1))),
+      visible: input.visible === false ? "0" : "1",
+    }),
+  );
+}
+
 export async function addBaseItemImage(input: {
   itemId: string;
   imageNo: number;
