@@ -5,10 +5,12 @@ const capture = document.getElementById("capture");
 const save = document.getElementById("save");
 const apiBase = document.getElementById("apiBase");
 const extensionKey = document.getElementById("extensionKey");
+const privacy = document.getElementById("privacy");
 
 chrome.storage.local.get({ apiBase: "", extensionKey: "" }).then((settings) => {
   apiBase.value = settings.apiBase;
   extensionKey.value = settings.extensionKey;
+  if (privacy && settings.apiBase) privacy.href = `${settings.apiBase.replace(/\/$/, "")}/privacy`;
 });
 
 capture.addEventListener("click", async () => {
@@ -45,5 +47,6 @@ capture.addEventListener("click", async () => {
 
 save.addEventListener("click", async () => {
   await saveSettings(apiBase.value, extensionKey.value);
+  if (privacy && apiBase.value) privacy.href = `${apiBase.value.replace(/\/$/, "")}/privacy`;
   status.textContent = "Settings saved.";
 });
