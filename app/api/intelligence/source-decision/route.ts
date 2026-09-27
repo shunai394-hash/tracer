@@ -37,7 +37,8 @@ export async function POST(request: NextRequest) {
     const candidatePool = Array.isArray(body?.supplierCandidateIds)
       ? body.supplierCandidateIds.filter((value: unknown): value is string => typeof value === "string" && value.length > 0)
       : bestsellerIds;
-    const candidateIds = candidatePool.slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
+    const offset = Number.isInteger(body?.offset) && body.offset >= 0 ? body.offset : 0;
+    const candidateIds = candidatePool.slice(offset, offset + BESTSELLER_CANDIDATE_BATCH_SIZE);
     const suppliers = await investigateDropshipForBestsellers(candidateIds);
     const selected = await selectAndPublishSalesTests(candidateIds, 3);
 
@@ -68,6 +69,11 @@ export async function POST(request: NextRequest) {
         candidateBatchLimited: candidatePool.length > candidateIds.length,
         observedBestsellerCount: bestsellerIds.length,
         supplierCandidateCount: candidatePool.length,
+        candidateOffset: offset,
+        nextCandidateOffset:
+          offset + candidateIds.length < candidatePool.length
+            ? offset + candidateIds.length
+            : null,
       },
     });
   } catch (error) {
