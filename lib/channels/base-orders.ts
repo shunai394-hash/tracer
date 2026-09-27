@@ -50,17 +50,60 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
     try {
       const { data: existing } = await supabase
         .from("shop_orders")
-        .select("id")
+        .select("id,order_status,payment_status")
         .eq("base_order_key", baseOrderKey)
         .maybeSingle();
 
       if (existing?.id) {
+        const detail = await getBaseOrderDetail(baseOrderKey);
+        const paid = detail.dispatch_status !== "unpaid";
+        const canceled =
+          detail.dispatch_status === "cancelled" ||
+          detail.dispatch_status === "unshippable";
+
+        const update: Record<string, unknown> = {
+          base_order_synced_at: new Date().toISOString(),
+          metadata: {
+            source: "base",
+            base_order_key: baseOrderKey,
+            base_dispatch_status: detail.dispatch_status ?? null,
+            base_payment: detail.payment ?? null,
+          },
+        };
+
+        if (canceled) {
+          update.payment_status = "canceled";
+          update.order_status = "canceled";
+        } else if (paid) {
+          update.payment_status = "paid";
+          if (
+            existing.order_status === "pending_payment" ||
+            existing.order_status === "fulfillment_pending"
+          ) {
+            update.order_status = "fulfillment_pending";
+          }
+        } else {
+          update.payment_status = "pending";
+          update.order_status = "pending_payment";
+        }
+
+        const { error: existingUpdateError } = await supabase
+          .from("shop_orders")
+          .update(update)
+          .eq("id", existing.id);
+        if (existingUpdateError) throw new Error(existingUpdateError.message);
+
+        let procurement = { purchaseOrderIds: [] as string[], skipped: [] as Array<{ itemId: string; reason: string }> };
+        if (paid && !canceled) {
+          procurement = await createDropshipPurchaseOrdersForShopOrder(String(existing.id));
+        }
+
         results.push({
           baseOrderKey,
           ok: true,
           imported: false,
           shopOrderId: String(existing.id),
-          skipped: true,
+          purchaseOrderIds: procurement.purchaseOrderIds,
         });
         continue;
       }
