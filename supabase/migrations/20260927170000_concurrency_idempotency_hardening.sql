@@ -27,5 +27,9 @@ alter table public.cj_order_attempts
   add column if not exists state text not null default 'completed'
     check (state in ('in_progress','completed','unknown'));
 
-create unique index if not exists purchase_order_items_po_unique_idx
-  on public.purchase_order_items(purchase_order_id);
+alter table public.purchase_order_items
+  add column if not exists idempotency_key text;
+
+create unique index if not exists purchase_order_items_idempotency_key_idx
+  on public.purchase_order_items(idempotency_key)
+  where idempotency_key is not null;
