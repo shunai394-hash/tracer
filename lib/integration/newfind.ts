@@ -43,7 +43,7 @@ export async function promoteShopListingToNewfind(
 
   const { data: existingDelivery } = await supabase
     .from("newfind_promotion_deliveries")
-    .select("status, ack_status, http_status")
+    .select("status, ack_status, http_status, attempts")
     .eq("listing_id", listingId)
     .maybeSingle();
 
@@ -106,7 +106,7 @@ export async function promoteShopListingToNewfind(
     listing_id: listingId,
     event_id: id,
     status: "pending",
-    attempts: (existingDelivery ? 1 : 0),
+    attempts: (typeof existingDelivery?.attempts === "number" ? existingDelivery.attempts : 0) + 1,
     updated_at: new Date().toISOString(),
   }, { onConflict: "listing_id" });
 
