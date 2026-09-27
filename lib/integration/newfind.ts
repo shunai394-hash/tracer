@@ -18,6 +18,7 @@ export type NewfindPromotionResult = {
   sent: boolean;
   eventId: string;
   status: number | null;
+  ackStatus: string | null;
   detail: string;
 };
 
@@ -33,6 +34,7 @@ export async function promoteShopListingToNewfind(
       sent: false,
       eventId: id,
       status: null,
+      ackStatus: null,
       detail: "newfind_bridge_not_configured",
     };
   }
@@ -52,6 +54,7 @@ export async function promoteShopListingToNewfind(
       sent: false,
       eventId: id,
       status: null,
+      ackStatus: null,
       detail: "published_listing_not_found",
     };
   }
@@ -76,6 +79,7 @@ export async function promoteShopListingToNewfind(
       sent: false,
       eventId: id,
       status: null,
+      ackStatus: null,
       detail: "product_url_missing_newfind_requires_url",
     };
   }
@@ -159,6 +163,7 @@ export async function promoteShopListingToNewfind(
       sent: false,
       eventId: id,
       status: null,
+      ackStatus: null,
       detail: lastError instanceof Error
         ? `newfind_request_failed: ${lastError.message}`
         : "newfind_request_failed",
@@ -167,8 +172,10 @@ export async function promoteShopListingToNewfind(
 
   const text = await response.text();
   let detail = text.slice(0, 500);
+  let ackStatus: string | null = null;
   try {
     const json = JSON.parse(text) as Record<string, unknown>;
+    ackStatus = typeof json.status === "string" ? json.status : null;
     detail = typeof json.detail === "string"
       ? json.detail
       : typeof json.error === "string"
@@ -181,6 +188,7 @@ export async function promoteShopListingToNewfind(
     sent: response.ok,
     eventId: id,
     status: response.status,
+    ackStatus,
     detail,
   };
 }
