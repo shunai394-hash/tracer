@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
-import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
+import { promoteShopListingToNewfind } from "@/lib/integration/newfind";\nimport { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -31,8 +31,11 @@ export async function POST(request: NextRequest) {
     }
 
     const startedAt = Date.now();
-    const suppliers = await investigateDropshipForBestsellers(bestsellerIds);
-    const selected = await selectAndPublishSalesTests(bestsellerIds, 3);
+    // Bound the supplier investigation so serialized CJ calls cannot consume
+    // the entire serverless execution window before publication runs.
+    const candidateIds = bestsellerIds.slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
+    const suppliers = await investigateDropshipForBestsellers(candidateIds);
+    const selected = await selectAndPublishSalesTests(candidateIds, 3);
 
     const newfind = await Promise.all(
       selected.publishedListingIds.map((listingId) =>
@@ -57,6 +60,8 @@ export async function POST(request: NextRequest) {
       publication: {
         publishedNow: selected.published,
         existingPublishedListingsPreserved: true,
+        candidateBatchSize: candidateIds.length,
+        candidateBatchLimited: bestsellerIds.length > candidateIds.length,
       },
     });
   } catch (error) {
