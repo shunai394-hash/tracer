@@ -15,6 +15,7 @@ const intelLinks = [
   { href: "/orders", label: "Orders" },
   { href: "/sources", label: "Sources" },
   { href: "/settings", label: "Settings" },
+  { href: "/extension", label: "Extension" },
 ] as const;
 
 const shopLinks = [
