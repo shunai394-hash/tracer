@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   const oauthError = url.searchParams.get("error");
   const oauthErrorDescription = url.searchParams.get("error_description");
   const cookie = request.headers.get("cookie") || "";
-  const stateMatch = cookie.match(/(?:^|;\\s*)tracer_base_oauth_state=([^;]+)/);
+  const stateMatch = cookie.match(/(?:^|;\s*)tracer_base_oauth_state=([^;]+)/);
   const expectedState = stateMatch?.[1];
 
   if (oauthError) {
