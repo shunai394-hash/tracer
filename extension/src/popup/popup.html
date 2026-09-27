@@ -3,27 +3,35 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>TRACER</title>
+  <title>TRACER Product Capture</title>
   <style>
-    body { width: 360px; margin: 0; padding: 16px; font: 14px system-ui, sans-serif; }
-    h1 { font-size: 18px; margin: 0 0 12px; }
-    button { width: 100%; padding: 10px; margin-top: 10px; cursor: pointer; }
-    input { width: 100%; box-sizing: border-box; padding: 8px; margin-top: 6px; }
-    #status { margin-top: 12px; white-space: pre-wrap; }
-    .muted { color: #666; font-size: 12px; }
+    :root { color-scheme: dark; }
+    body { width: 360px; margin: 0; padding: 18px; box-sizing: border-box; background: #05070a; color: #e8eef4; font: 13px system-ui, sans-serif; }
+    .brand { display:flex; align-items:center; gap:10px; margin-bottom:5px; }
+    .mark { width:28px; height:28px; border:2px solid #22d3ee; border-radius:8px; display:grid; place-items:center; font-weight:800; color:#e8eef4; }
+    h1 { font-size: 16px; margin: 0; letter-spacing: .08em; }
+    .muted { color: #87919b; font-size: 11px; line-height: 1.5; }
+    button { width: 100%; border: 1px solid #22d3ee66; background: #0a151a; color: #e8eef4; border-radius: 7px; padding: 10px; margin-top: 12px; cursor: pointer; }
+    button:hover { background:#0d2027; border-color:#22d3ee; }
+    input { width: 100%; box-sizing: border-box; padding: 8px 9px; margin-top: 6px; border:1px solid #ffffff18; border-radius:6px; background:#0b0e12; color:#e8eef4; }
+    label { display:block; margin-top:12px; }
+    #status { margin-top: 12px; padding: 10px; min-height: 38px; border:1px solid #ffffff10; border-radius:7px; white-space:pre-wrap; line-height:1.5; }
+    hr { border:0; border-top:1px solid #ffffff10; margin:16px 0; }
+    .hint { margin-top: 8px; }
   </style>
 </head>
 <body>
-  <h1>TRACER Product Capture</h1>
+  <div class="brand"><div class="mark">T</div><h1>TRACER</h1></div>
   <div class="muted">Amazon product page → TRACER → EC-Pulse</div>
   <button id="capture">Capture & Send</button>
   <div id="status">Ready.</div>
   <hr>
   <label>TRACER API base
-    <input id="apiBase" placeholder="https://your-tracer-deployment.vercel.app">
+    <input id="apiBase" placeholder="https://your-tracer-deployment.vercel.app" autocomplete="off">
   </label>
+  <div class="muted hint">Use your deployed TRACER URL. Do not enter an EC-Pulse API URL here.</div>
   <label>Extension key
-    <input id="extensionKey" type="password" placeholder="optional">
+    <input id="extensionKey" type="password" placeholder="optional" autocomplete="off">
   </label>
   <button id="save">Save settings</button>
   <script type="module" src="./popup.js"></script>
