@@ -318,6 +318,7 @@ export async function promoteShopListingToNewfind(
     last_error: response.ok ? null : detail,
     last_attempt_at: new Date().toISOString(),
     processed_at: ackStatus === "processed" ? new Date().toISOString() : null,
+    lease_until: null,
     updated_at: new Date().toISOString(),
   }).eq("listing_id", listingId);
 
