@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "TRACER Product Capture",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "version_name": "0.1.1 — Amazon Capture",
   "description": "Capture Amazon product data and send it to TRACER for product research.",
   "permissions": ["activeTab", "storage"],
   "host_permissions": [
