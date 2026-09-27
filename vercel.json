@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/base-publish",
-      "schedule": "*/10 * * * *"
+      "schedule": "5-59/10 * * * *"
     },
     {
       "path": "/api/cron/base-orders",
