@@ -164,7 +164,13 @@ export async function persistMarketplaceBestsellers(): Promise<{
         upc: item.upc,
         mpn: item.mpn,
       };
-      if (hasAnyIdentifier(ids)) {
+      // ASIN is useful marketplace identity, but CJ catalog search is
+      // identifier-based on JAN/GTIN/EAN/UPC/MPN here. Do not spend a
+      // supplier-investigation slot on an ASIN-only row.
+      const hasSupplierSearchIdentifier = Boolean(
+        ids.jan || ids.gtin || ids.ean || ids.upc || ids.mpn,
+      );
+      if (hasSupplierSearchIdentifier) {
         supplierCandidateIds.push(String(bestseller.id));
       }
 
