@@ -723,7 +723,6 @@ export async function investigateDropshipForBestsellers(
           fetchedAt,
         });
         unconfigured += 1;
-        continue;
       }
       // One product's CJ search/detail/insert failure must not stop the
       // rest of the batch. It is never silently dropped: logged to the
@@ -765,12 +764,13 @@ export async function investigateDropshipForBestsellers(
     // Orosy catalog using the same verified marketplace identifiers. Orosy
     // is discovery-only here until its stateful order flow is verified.
     try {
-      await investigateOrosyFallback({
+      const alternative = await investigateOrosyFallback({
         record,
         marketIds,
         fetchedAt,
         supabase,
       });
+      if (alternative.found) matched += 1;
     } catch (error) {
       console.warn("[investigate-dropship] alternative supplier fallback failed", {
         bestsellerId: String(record.id),
