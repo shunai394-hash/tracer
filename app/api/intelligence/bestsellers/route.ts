@@ -12,9 +12,8 @@ export async function POST() {
   try {
     const startedAt = Date.now();
     const bestsellers = await persistMarketplaceBestsellers();
-    const candidateIds = bestsellers.bestsellerIds.slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
-    const supplierCandidateIds = bestsellers.supplierCandidateIds.filter((id) => candidateIds.includes(id));
-    const suppliers = await investigateDropshipForBestsellers(supplierCandidateIds);
+    const candidateIds = bestsellers.supplierCandidateIds.slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
+    const suppliers = await investigateDropshipForBestsellers(candidateIds);
     const selected = await selectAndPublishSalesTests(supplierCandidateIds, 3);
     const newfind = await Promise.all(
       selected.publishedListingIds.map((listingId) =>
