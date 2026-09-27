@@ -195,8 +195,10 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
         const listing = listingByBaseItem.get(String(baseItem.item_id));
         if (!listing) throw new Error(`listing_not_found_for_base_item:${baseItem.item_id}`);
 
-        const { error: itemError } = await supabase.from("shop_order_items").insert({
+        const baseOrderItemKey = \`base:\${baseOrderKey}:item:\${String(baseItem.order_item_id ?? baseItem.item_id)}\`;
+        const { error: itemError } = await supabase.from("shop_order_items").upsert({
           order_id: shopOrder.id,
+          base_order_item_key: baseOrderItemKey,
           listing_id: listing.id,
           product_id: listing.product_id,
           supplier_listing_id: listing.supplier_listing_id ?? null,
@@ -207,7 +209,7 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
           qty: Number(baseItem.amount ?? 1),
           unit_price: Number(baseItem.price ?? listing.selling_price ?? 0),
           currency: listing.currency ?? "JPY",
-        });
+        }, { onConflict: "base_order_item_key" });
         if (itemError) throw new Error(itemError.message);
       }
 
