@@ -5,6 +5,8 @@ export {
   searchCJProducts,
   getCJProductDetail,
   fetchCJProductVariants,
+  fetchCJVariantByVid,
+  fetchCJVariantStock,
   selectUnambiguousVariant,
 } from "@/lib/sources/cj/client";
 
