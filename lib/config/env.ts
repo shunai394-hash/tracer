@@ -19,6 +19,7 @@ export type FoundationStatus = {
   orosy: boolean;
   ecPulse: boolean;
   extension: boolean;
+  base: boolean;
 };
 
 export function getFoundationStatus(): FoundationStatus {
@@ -44,6 +45,7 @@ export function getFoundationStatus(): FoundationStatus {
     orosy: present(process.env.OROSY_API_KEY) || present(process.env.OROSY_DEMO_API_KEY),
     ecPulse: present(process.env.EC_PULSE_API_URL) && present(process.env.EC_PULSE_API_KEY),
     extension: present(process.env.TRACER_EXTENSION_API_KEY),
+    base: present(process.env.BASE_ACCESS_TOKEN),
   };
 }
 
