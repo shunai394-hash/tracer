@@ -329,16 +329,39 @@ export async function executeLivePurchaseOrder(
     productId: po.product_id ? String(po.product_id) : null,
   });
 
-  const { data: listing } = po.product_id
-    ? await supabase
-        .from("supplier_listings")
-        .select("inventory")
-        .eq("product_id", String(po.product_id))
-        .eq("supplier", "CJdropshipping")
-        .order("fetched_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-    : { data: null };
+  // Re-check inventory against the exact supplier identity captured when
+  // the sales-test listing was published. Never use the newest listing for
+  // fulfillment because it may represent another CJ variant.
+  const exactSupplierProductId =
+    typeof po.supplier_product_id === "string" ? po.supplier_product_id : null;
+  const exactSupplierVariantId =
+    typeof po.supplier_variant_id === "string"
+      ? po.supplier_variant_id
+      : typeof itemRow.cj_variant_id === "string"
+        ? itemRow.cj_variant_id
+        : null;
+
+  const { data: listing } =
+    exactSupplierProductId && exactSupplierVariantId
+      ? await supabase
+          .from("supplier_listings")
+          .select("inventory, supplier_product_id, supplier_variant_id, cj_variant_id")
+          .eq("supplier", "CJdropshipping")
+          .eq("supplier_product_id", exactSupplierProductId)
+          .eq("supplier_variant_id", exactSupplierVariantId)
+          .maybeSingle()
+      : { data: null };
+
+  if (!listing && (!exactSupplierProductId || !exactSupplierVariantId)) {
+    return {
+      purchaseOrderId,
+      attempted: false,
+      succeeded: false,
+      supplierOrderId: null,
+      reason: "supplier_identity_missing",
+      gate: null,
+    };
+  }
 
   const gate = evaluateDropshipOrderGate({
     vid: typeof itemRow.cj_variant_id === "string" ? itemRow.cj_variant_id : null,
