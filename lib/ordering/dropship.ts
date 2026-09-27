@@ -457,7 +457,10 @@ export async function executeLivePurchaseOrder(
   // field mapping is unverified against CJ's live docs (see module header on
   // lib/sources/cj/create-order.ts), so a human must also confirm this
   // specific order before the real supplier call fires.
-  if (!po.human_confirmed_at && !isCJAutoOrderingEnabled()) {
+  // Live supplier execution always requires explicit per-order human
+  // confirmation. Auto-ordering may enable the cron path, but it must never
+  // bypass the per-order safety gate.
+  if (!po.human_confirmed_at) {
     return {
       purchaseOrderId,
       attempted: false,
@@ -476,25 +479,75 @@ export async function executeLivePurchaseOrder(
     .eq("idempotency_key", idempotencyKey)
     .maybeSingle();
 
-  if (existingAttempt?.succeeded && existingAttempt.supplier_order_id) {
-    await supabase
-      .from("purchase_orders")
-      .update({
-        supplier_order_id: existingAttempt.supplier_order_id,
-        live_order: true,
-        supplier_status: "created",
-        supplier_synced_at: new Date().toISOString(),
-        status: "placed",
-      })
-      .eq("id", purchaseOrderId);
+  if (existingAttempt) {
+    if (existingAttempt.succeeded && existingAttempt.supplier_order_id) {
+      await supabase
+        .from("purchase_orders")
+        .update({
+          supplier_order_id: existingAttempt.supplier_order_id,
+          live_order: true,
+          supplier_status: "created",
+          supplier_synced_at: new Date().toISOString(),
+          status: "placed",
+        })
+        .eq("id", purchaseOrderId);
+      return {
+        purchaseOrderId,
+        attempted: false,
+        succeeded: true,
+        supplierOrderId: String(existingAttempt.supplier_order_id),
+        reason: "deduped_existing_attempt",
+        gate,
+      };
+    }
+
     return {
       purchaseOrderId,
       attempted: false,
-      succeeded: true,
-      supplierOrderId: String(existingAttempt.supplier_order_id),
-      reason: "deduped_existing_attempt",
+      succeeded: false,
+      supplierOrderId: null,
+      reason: "supplier_order_attempt_requires_reconciliation",
       gate,
     };
+  }
+
+  // Claim the idempotency key BEFORE the external call. The unique constraint
+  // makes concurrent cron invocations converge on one owner. If this process
+  // dies after claiming but before receiving CJ's response, the order is
+  // intentionally blocked for manual reconciliation rather than risking a
+  // duplicate supplier order.
+  const { data: attempt, error: attemptClaimError } = await supabase
+    .from("cj_order_attempts")
+    .insert({
+      purchase_order_id: purchaseOrderId,
+      idempotency_key: idempotencyKey,
+      request_summary: { productId: po.product_id, qty: po.qty },
+      succeeded: null,
+    })
+    .select("id")
+    .single();
+
+  if (attemptClaimError || !attempt) {
+    const { data: claimedAttempt } = await supabase
+      .from("cj_order_attempts")
+      .select("*")
+      .eq("idempotency_key", idempotencyKey)
+      .maybeSingle();
+
+    if (claimedAttempt) {
+      return {
+        purchaseOrderId,
+        attempted: false,
+        succeeded: false,
+        supplierOrderId: null,
+        reason: claimedAttempt.succeeded && claimedAttempt.supplier_order_id
+          ? "deduped_existing_attempt"
+          : "supplier_order_attempt_requires_reconciliation",
+        gate,
+      };
+    }
+
+    throw new Error(attemptClaimError?.message ?? "failed to claim supplier order attempt");
   }
 
   const result = await createCJOrderV2({
@@ -520,15 +573,27 @@ export async function executeLivePurchaseOrder(
     raw: null,
   }));
 
-  await supabase.from("cj_order_attempts").insert({
-    purchase_order_id: purchaseOrderId,
-    idempotency_key: idempotencyKey,
-    request_summary: { productId: po.product_id, qty: po.qty },
-    response_code: result.responseCode,
-    response_message: result.responseMessage,
-    supplier_order_id: result.supplierOrderId,
-    succeeded: result.succeeded,
-  });
+  const { error: attemptUpdateError } = await supabase
+    .from("cj_order_attempts")
+    .update({
+      response_code: result.responseCode,
+      response_message: result.responseMessage,
+      supplier_order_id: result.supplierOrderId,
+      succeeded: result.succeeded,
+    })
+    .eq("id", attempt.id);
+
+  if (attemptUpdateError) {
+    console.error("[TRACER CJ ATTEMPT PERSIST ERROR]", attemptUpdateError);
+    return {
+      purchaseOrderId,
+      attempted: true,
+      succeeded: false,
+      supplierOrderId: result.supplierOrderId,
+      reason: "supplier_response_persist_failed_reconciliation_required",
+      gate,
+    };
+  }
 
   if (result.succeeded && result.supplierOrderId) {
     await supabase
