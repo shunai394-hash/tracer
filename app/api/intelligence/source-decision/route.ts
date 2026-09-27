@@ -14,6 +14,9 @@ export const maxDuration = 60;
  * explicit boundary where TRACER asks: "Can we actually source and sell it?"
  */
 export async function POST(request: NextRequest) {
+  const authError = requireCronAuth(request);
+  if (authError) return authError;
+
   try {
     const body = await request.json().catch(() => ({}));
     const bestsellerIds = Array.isArray(body?.bestsellerIds)
