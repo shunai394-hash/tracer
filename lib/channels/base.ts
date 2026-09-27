@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 type BaseItemInput = {
   title: string;
@@ -98,7 +98,7 @@ export async function createBaseItem(input: BaseItemInput) {
       title: input.title,
       detail: input.detail,
       price: String(Math.round(input.price)),
-      stock: String(Math.max(0, Math.floor(input.stock ?? 1))),
+      stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
       visible: input.visible === false ? "0" : "1",
     }),
   );
@@ -119,7 +119,7 @@ export async function editBaseItem(input: {
       title: input.title,
       detail: input.detail,
       price: String(Math.round(input.price)),
-      stock: String(Math.max(0, Math.floor(input.stock ?? 1))),
+      stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
       visible: input.visible === false ? "0" : "1",
     }),
   );
@@ -139,7 +139,6 @@ export async function addBaseItemImage(input: {
     }),
   );
 }
-
 
 export type BaseOrderSummary = {
   unique_key: string;
@@ -213,6 +212,3 @@ export async function getBaseOrderDetail(uniqueKey: string): Promise<BaseOrderDe
   if (!data.order) throw new Error("BASE order detail missing order");
   return data.order;
 }
-
-
-
