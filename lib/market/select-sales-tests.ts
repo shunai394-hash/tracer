@@ -154,11 +154,10 @@ export async function selectAndPublishSalesTests(
   const chosen = eligible.slice(0, limit);
   let published = 0;
 
-  await supabase
-    .from("shop_listings")
-    .update({ published: false, updated_at: fetchedAt })
-    .eq("published", true);
-
+  // Publishing a new sales-test candidate must not unpublish the existing
+  // catalog. Market observation and sourcing decisions are independent:
+  // a sourcing run that finds zero eligible candidates is not permission to
+  // erase products that were already public.
   for (const item of chosen) {
     const productId = String(item.bestseller.product_id ?? "");
     if (!productId) continue;
