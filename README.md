@@ -38,6 +38,8 @@ npm run dev
 | `BRIGHTDATA_API_TOKEN` | server only | Bright Data API |
 | `BRIGHTDATA_ZONE` | server only | optional zone |
 | `BRIGHTDATA_MCP_URL` | server only | external MCP endpoint |
+| `BASE_ACCESS_TOKEN` | server only | BASE API OAuth access token |
+| `BASE_API_URL` | server only | optional, defaults to `https://api.thebase.in/1` |
 
 外部 API はブラウザから直接呼びません。Route Handler と server module からのみ呼びます。
 
@@ -81,6 +83,8 @@ shop_listings.published = true
         ↓
 /shop
         ↓
+BASE publication
+        ↓
 NEWFIND product_candidate
 ```
 
@@ -114,7 +118,9 @@ A failed sourcing run **does not unpublish existing products**.
 
 ### Important environment variables
 
-Production must have the server-side Supabase variables, `CJ_API_KEY`, `CRON_SECRET`, and the NEWFIND bridge variables configured before the full pipeline can operate.
+Production must have the server-side Supabase variables, `CJ_API_KEY`, `CRON_SECRET`, the BASE API access token, and the NEWFIND bridge variables configured before the full pipeline can operate.
+
+Published sales-test listings are also sent to BASE when `BASE_ACCESS_TOKEN` is configured. The BASE item ID is stored on the TRACER listing so repeated cron runs do not create duplicates. The BASE API supports product creation and image registration through its `write_items` scope. citeturn1search1turn2search0
 
 Real CJ supplier ordering remains separately guarded by `CJ_LIVE_ORDERING=0` and human approval. Publishing a sales-test listing does not place a supplier order.
 
