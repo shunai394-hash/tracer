@@ -268,6 +268,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
     }
 
     purchaseOrderIds.push(purchaseOrderId);
+  }
 
   return { purchaseOrderIds, skipped };
 }
