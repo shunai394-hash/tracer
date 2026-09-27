@@ -1,7 +1,7 @@
 ﻿import "server-only";
 
 import { createCJOrderV2, getCJOrderStatus } from "@/lib/sources/cj/create-order";
-import { calculateCJFreight, fetchCJVariantByVid, fetchCJVariantStock } from "@/lib/sources/cj/client";
+import { calculateCJFreight, fetchCJVariantByVid, fetchCJVariantStock, getCJProductDetail, searchCJProducts } from "@/lib/sources/cj/client";
 import type {
   SupplierInventory,
   SupplierOrder,
@@ -20,12 +20,36 @@ const SUPPLIER_NAME = "cj";
 export const cjSupplierAdapter: TracerSupplierAdapter = {
   name: SUPPLIER_NAME,
 
-  async search(_query: string): Promise<SupplierProduct[]> {
-    return [];
+  async search(query: string): Promise<SupplierProduct[]> {
+    const result = await searchCJProducts(query, { page: 1, size: 20 });
+    return result.products.map((product) => ({
+      supplierProductId: product.id,
+      supplierName: SUPPLIER_NAME,
+      title: product.title,
+      currency: "USD",
+      unitCost: product.price === null ? null : Number(product.price),
+      shippingCost: product.shippingCost === null ? null : Number(product.shippingCost),
+      available: product.inventory !== null ? product.inventory > 0 : null,
+      orderable: product.inventory !== null ? product.inventory > 0 : null,
+      trackingAvailable: true,
+    }));
   },
 
-  async getProduct(_supplierProductId: string): Promise<SupplierProduct | null> {
-    return null;
+  async getProduct(supplierProductId: string): Promise<SupplierProduct | null> {
+    const product = await getCJProductDetail(supplierProductId);
+    if (!product) return null;
+
+    return {
+      supplierProductId: product.id,
+      supplierName: SUPPLIER_NAME,
+      title: product.title,
+      currency: "USD",
+      unitCost: product.price === null ? null : Number(product.price),
+      shippingCost: product.shippingCost === null ? null : Number(product.shippingCost),
+      available: product.inventory !== null ? product.inventory > 0 : null,
+      orderable: product.inventory !== null ? product.inventory > 0 : null,
+      trackingAvailable: true,
+    };
   },
 
   async getVariant(
