@@ -35,19 +35,41 @@ function Panel({
   );
 }
 
+async function loadOpportunity(id: string) {
+  try {
+    return {
+      opportunity: await getOpportunity(id),
+      configError: false,
+    } as const;
+  } catch (error) {
+    if (error instanceof SupabaseConfigError) {
+      return { opportunity: null, configError: true } as const;
+    }
+    throw error;
+  }
+}
+
 export default async function OpportunityDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const { opportunity, configError } = await loadOpportunity(id);
 
-  try {
-    const opportunity = await getOpportunity(id);
+  if (configError) {
+    return (
+      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-16">
+        <p className="text-sm text-amber-300">
+          Supabase が未設定のため Opportunity を読めません。
+        </p>
+      </main>
+    );
+  }
 
-    if (!opportunity) {
-      notFound();
-    }
+  if (!opportunity) {
+    notFound();
+  }
 
     const provenance = Array.isArray(opportunity.metadata.provenance)
       ? opportunity.metadata.provenance
@@ -362,17 +384,4 @@ export default async function OpportunityDetailPage({
         </section>
       </main>
     );
-  } catch (error) {
-    if (error instanceof SupabaseConfigError) {
-      return (
-        <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-16">
-          <p className="text-sm text-amber-300">
-            Supabase が未設定のため Opportunity を読めません。
-          </p>
-        </main>
-      );
-    }
-
-    throw error;
-  }
 }
