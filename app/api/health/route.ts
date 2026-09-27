@@ -12,6 +12,10 @@ export async function GET() {
       supabase: status.supabasePublic,
       gemini: status.gemini,
       brightData: status.brightData,
+      ecPulse: status.ecPulse,
+      newfindInbound: status.newfindInbound,
+      newfindOutbound: status.newfindOutbound,
+      extension: status.extension,
     },
   });
 }
