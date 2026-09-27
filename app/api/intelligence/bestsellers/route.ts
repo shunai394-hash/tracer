@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
-import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
+import { promoteShopListingToNewfind } from "@/lib/integration/newfind";\nimport { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -11,8 +11,10 @@ export async function POST() {
   try {
     const startedAt = Date.now();
     const bestsellers = await persistMarketplaceBestsellers();
-    const suppliers = await investigateDropshipForBestsellers(bestsellers.supplierCandidateIds);
-    const selected = await selectAndPublishSalesTests(bestsellers.bestsellerIds, 3);
+    const candidateIds = bestsellers.bestsellerIds.slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
+    const supplierCandidateIds = bestsellers.supplierCandidateIds.filter((id) => candidateIds.includes(id));
+    const suppliers = await investigateDropshipForBestsellers(supplierCandidateIds);
+    const selected = await selectAndPublishSalesTests(supplierCandidateIds, 3);
     const newfind = await Promise.all(
       selected.publishedListingIds.map((listingId) =>
         promoteShopListingToNewfind(listingId).catch((error) => ({
