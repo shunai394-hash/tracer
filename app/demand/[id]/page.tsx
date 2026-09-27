@@ -29,18 +29,38 @@ function seriesForDays(
   );
 }
 
+async function loadDemand(id: string) {
+  try {
+    return { demand: await getDemandIntelligence(id), configError: false } as const;
+  } catch (error) {
+    if (error instanceof SupabaseConfigError) {
+      return { demand: null, configError: true } as const;
+    }
+    throw error;
+  }
+}
+
 export default async function DemandDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const { demand, configError } = await loadDemand(id);
 
-  try {
-    const demand = await getDemandIntelligence(id);
-    if (!demand) notFound();
-
+  if (configError) {
     return (
+      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-16">
+        <p className="text-sm text-amber-300">
+          Supabase が未設定のため Demand を読めません。
+        </p>
+      </main>
+    );
+  }
+
+  if (!demand) notFound();
+
+  return (
       <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-16">
         <Link
           href="/demand"
@@ -124,16 +144,4 @@ export default async function DemandDetailPage({
         </div>
       </main>
     );
-  } catch (error) {
-    if (error instanceof SupabaseConfigError) {
-      return (
-        <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-16">
-          <p className="text-sm text-amber-300">
-            Supabase が未設定のため Demand を読めません。
-          </p>
-        </main>
-      );
-    }
-    throw error;
-  }
 }
