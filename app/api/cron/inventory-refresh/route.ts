@@ -42,8 +42,38 @@ export async function GET(request: Request) {
       const variantId = String(listing.supplier_variant_id);
       try {
         const inventory = await fetchCJVariantStock(variantId);
+        const now = new Date().toISOString();
+
         if (inventory === null) {
-          results.push({ listingId, ok: false, reason: "inventory_unknown" });
+          const { error: listingError } = await supabase
+            .from("shop_listings")
+            .update({
+              inventory: null,
+              orderable: false,
+              pipeline_stage: "INVENTORY_REFRESH",
+              pipeline_status: "blocked",
+              pipeline_reason: "inventory_unknown",
+              pipeline_error: "CJ variant stock could not be verified",
+              pipeline_updated_at: now,
+              updated_at: now,
+            })
+            .eq("id", listingId);
+          if (listingError) throw new Error(listingError.message);
+
+          if (listing.supplier_listing_id) {
+            const { error: supplierError } = await supabase
+              .from("supplier_listings")
+              .update({
+                inventory: null,
+                inventory_confirmed: false,
+                orderable: false,
+                fetched_at: now,
+              })
+              .eq("id", String(listing.supplier_listing_id));
+            if (supplierError) throw new Error(supplierError.message);
+          }
+
+          results.push({ listingId, ok: false, blocked: true, reason: "inventory_unknown" });
           continue;
         }
 
@@ -57,8 +87,8 @@ export async function GET(request: Request) {
             pipeline_status: orderable ? "published" : "blocked",
             pipeline_reason: orderable ? "inventory_verified" : "inventory_zero",
             pipeline_error: null,
-            pipeline_updated_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            pipeline_updated_at: now,
+            updated_at: now,
           })
           .eq("id", listingId);
         if (listingError) throw new Error(listingError.message);
@@ -70,7 +100,7 @@ export async function GET(request: Request) {
               inventory,
               inventory_confirmed: true,
               orderable,
-              fetched_at: new Date().toISOString(),
+              fetched_at: now,
             })
             .eq("id", String(listing.supplier_listing_id));
           if (supplierError) throw new Error(supplierError.message);
@@ -91,8 +121,8 @@ export async function GET(request: Request) {
       configured: true,
       inspected: results.length,
       updated: results.filter((item) => item.ok).length,
-      blocked: results.filter((item) => item.ok && item.orderable === false).length,
-      errors: results.filter((item) => !item.ok).length,
+      blocked: results.filter((item) => item.blocked).length,
+      errors: results.filter((item) => !item.ok && !item.blocked).length,
       results,
     });
   } catch (error) {
