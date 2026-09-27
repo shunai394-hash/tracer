@@ -2,12 +2,26 @@
   "manifest_version": 3,
   "name": "TRACER Product Capture",
   "version": "0.1.0",
-  "description": "Capture Amazon product data and send it to TRACER.",
-  "permissions": ["activeTab", "storage", "scripting"],
-  "host_permissions": ["https://*.amazon.com/*", "https://*.amazon.co.jp/*", "https://*.vercel.app/*"],
+  "description": "Capture Amazon product data and send it to TRACER for product research.",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": [
+    "https://*.amazon.com/*",
+    "https://*.amazon.co.jp/*",
+    "https://*.vercel.app/*"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
     "default_title": "Send product to TRACER",
-    "default_popup": "src/popup/popup.html"
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "background": {
     "service_worker": "src/background.js"
