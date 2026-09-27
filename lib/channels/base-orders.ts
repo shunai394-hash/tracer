@@ -87,7 +87,7 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
       const itemIds = baseItems.map((item) => String(item.item_id));
       const { data: listings, error: listingError } = await supabase
         .from("shop_listings")
-        .select("id,product_id,title,selling_price,currency,base_item_id,published")
+        .select("id,product_id,title,selling_price,currency,base_item_id,published,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id")
         .in("base_item_id", itemIds);
 
       if (listingError) throw new Error(listingError.message);
@@ -156,6 +156,10 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
           order_id: shopOrder.id,
           listing_id: listing.id,
           product_id: listing.product_id,
+          supplier_listing_id: listing.supplier_listing_id ?? null,
+          supplier_name: listing.supplier_name ?? null,
+          supplier_product_id: listing.supplier_product_id ?? null,
+          supplier_variant_id: listing.supplier_variant_id ?? null,
           title: listing.title,
           qty: Number(baseItem.amount ?? 1),
           unit_price: Number(baseItem.price ?? listing.selling_price ?? 0),
