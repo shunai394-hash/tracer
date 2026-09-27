@@ -34,6 +34,7 @@ function addressComplete(order: Record<string, unknown>): boolean | null {
  * Customer placed a shop order -> create one purchase order per line item
  * (fulfillment_kind = dropship_customer_order). This only records intent; it
  * never calls the supplier. Execution is a separate, explicit step.
+ * Concurrent callers are serialized by the idempotency key and item claim.
  */
 export async function createDropshipPurchaseOrdersForShopOrder(
   shopOrderId: string,
