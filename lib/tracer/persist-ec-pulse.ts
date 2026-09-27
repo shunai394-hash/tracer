@@ -101,6 +101,36 @@ async function getOrCreateSource() {
   return created.data.id;
 }
 
+async function persistCapturedIdentifiers(productId: string, identifiers: { asin?: string | null; gtin?: string | null }): Promise<void> {
+  const supabase = createSupabaseAdminClient();
+  const asin = normalizeIdentifier("asin", identifiers.asin ?? null);
+  const gtin = normalizeIdentifier("gtin", identifiers.gtin ?? null);
+
+  if (asin) {
+    const product = await supabase.from("products").update({ asin }).eq("id", productId);
+    if (product.error) throw new Error(`Failed to attach ASIN to product: ${product.error.message}`);
+    const identifier = await supabase.from("product_identifiers").upsert({
+      product_id: productId,
+      scheme: "asin",
+      value: asin,
+      source: "tracer-extension",
+      fetched_at: new Date().toISOString(),
+    }, { onConflict: "scheme,value" });
+    if (identifier.error) throw new Error(`Failed to persist ASIN identifier: ${identifier.error.message}`);
+  }
+
+  if (gtin) {
+    const identifier = await supabase.from("product_identifiers").upsert({
+      product_id: productId,
+      scheme: "gtin",
+      value: gtin,
+      source: "ec-pulse",
+      fetched_at: new Date().toISOString(),
+    }, { onConflict: "scheme,value" });
+    if (identifier.error) throw new Error(`Failed to persist GTIN identifier: ${identifier.error.message}`);
+  }
+}
+
 async function getOrCreateBrand(name: string | null): Promise<string | null> {
   if (!name?.trim()) return null;
 
