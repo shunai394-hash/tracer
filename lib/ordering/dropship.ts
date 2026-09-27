@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getCJConfig, isCJLiveOrderingEnabled, isCJAutoOrderingEnabled } from "@/lib/config/env";
+import { getCJConfig, isCJLiveOrderingEnabled } from "@/lib/config/env";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { createCJOrderV2 } from "@/lib/sources/cj/create-order";
 import { fetchCJVariantStock } from "@/lib/sources/cj/client";
