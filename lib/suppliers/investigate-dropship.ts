@@ -10,7 +10,6 @@ import {
   fetchCJVariantStock,
   getCJProductDetail,
   searchCJProducts,
-  selectUnambiguousVariant,
 } from "@/lib/sources/cj";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import {
