@@ -186,13 +186,20 @@ export async function selectAndPublishSalesTests(
     });
   }
 
-  // Within the current batch, still prefer the best-ranked products —
+  // Within the current batch, prefer the best-ranked products. When ranks
+  // tie (common across category ranking pages), use review count as a
+  // secondary popularity signal so the first category in the source list
+  // does not win every slot.
+
   // fetched_at only scopes the candidate set to "this run"; it says
   // nothing about which of those products sell best.
   eligible.sort((a, b) => {
     const rankA = typeof a.bestseller.rank === "number" ? a.bestseller.rank : Number.POSITIVE_INFINITY;
     const rankB = typeof b.bestseller.rank === "number" ? b.bestseller.rank : Number.POSITIVE_INFINITY;
-    return rankA - rankB;
+    if (rankA !== rankB) return rankA - rankB;
+    const reviewsA = asNumber(a.bestseller.review_count) ?? -1;
+    const reviewsB = asNumber(b.bestseller.review_count) ?? -1;
+    return reviewsB - reviewsA;
   });
   const chosen = eligible.slice(0, limit);
   const chosenIds = new Set(chosen.map((item) => String(item.bestseller.id)));
