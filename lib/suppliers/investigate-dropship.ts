@@ -35,6 +35,27 @@ function asNumber(value: unknown): number | null {
   return null;
 }
 
+async function markPipelineState(args: {
+  bestsellerId: string;
+  stage: string;
+  status: string;
+  reason: string | null;
+  error?: string | null;
+}): Promise<void> {
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase
+    .from("marketplace_bestsellers")
+    .update({
+      pipeline_stage: args.stage,
+      pipeline_status: args.status,
+      pipeline_reason: args.reason,
+      pipeline_error: args.error ?? null,
+      pipeline_updated_at: new Date().toISOString(),
+    })
+    .eq("id", args.bestsellerId);
+  if (error) throw new Error(error.message);
+}
+
 async function recordUnconfiguredSupplier(args: {
   supplier: string;
   bestsellerId: string;
@@ -140,6 +161,12 @@ export async function investigateDropshipForBestsellers(
 
     if (!identifierQuery || supplierSearchQueries.length === 0) {
       skippedNoIdentifier += 1;
+      await markPipelineState({
+        bestsellerId: String(record.id),
+        stage: "SUPPLIER_INVESTIGATION",
+        status: "blocked",
+        reason: "supplier_search_identifier_missing",
+      });
       await writeEvidence({
         productId: typeof record.product_id === "string" ? record.product_id : null,
         bestsellerId: String(record.id),
@@ -172,6 +199,12 @@ export async function investigateDropshipForBestsellers(
         fetchedAt,
       });
       unconfigured += 1;
+      await markPipelineState({
+        bestsellerId: String(record.id),
+        stage: "SUPPLIER_INVESTIGATION",
+        status: "blocked",
+        reason: "cj_not_configured",
+      });
       continue;
     }
 
@@ -489,6 +522,29 @@ export async function investigateDropshipForBestsellers(
           .single();
 
         if (insert.error) throw new Error(insert.error.message);
+
+        const pipelineReason = !identity.salesEligible
+          ? "identity_not_confirmed"
+          : !cjVariantId
+            ? "supplier_variant_unknown"
+            : !inventoryConfirmed
+              ? "inventory_unverified"
+              : (verifiedInventory ?? 0) <= 0
+                ? "inventory_zero"
+                : "supplier_variant_verified";
+        await markPipelineState({
+          bestsellerId: String(record.id),
+          stage:
+            identity.salesEligible && cjVariantId && inventoryConfirmed && (verifiedInventory ?? 0) > 0
+              ? "VARIANT_VERIFIED"
+              : "SUPPLIER_INVESTIGATION",
+          status:
+            identity.salesEligible && cjVariantId && inventoryConfirmed && (verifiedInventory ?? 0) > 0
+              ? "ready"
+              : "blocked",
+          reason: pipelineReason,
+        });
+
         if (identity.salesEligible) matched += 1;
         if (identity.method === "none") noIdentifierOverlap += 1;
         if (!supplyBarcode) supplyBarcodeMissing += 1;
@@ -530,6 +586,13 @@ export async function investigateDropshipForBestsellers(
         error: error instanceof Error ? error.message : String(error),
       };
       rowErrorDetails.push(rowErrorDetail);
+      await markPipelineState({
+        bestsellerId: String(record.id),
+        stage: "SUPPLIER_INVESTIGATION",
+        status: "failed",
+        reason: "supplier_investigation_failed",
+        error: rowErrorDetail.error,
+      });
       console.error("[investigate-dropship] row failed, continuing batch", rowErrorDetail);
       await writeEvidence({
         productId: typeof record.product_id === "string" ? record.product_id : null,
