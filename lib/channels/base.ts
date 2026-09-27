@@ -19,6 +19,10 @@ type BaseItemResponse = {
 const BASE_API_URL = process.env.BASE_API_URL?.trim() || "https://api.thebase.in/1";
 const BASE_ACCESS_TOKEN = process.env.BASE_ACCESS_TOKEN?.trim() || "";
 
+export function isBaseConfigured() {
+  return Boolean(BASE_ACCESS_TOKEN);
+}
+
 function requireBaseToken() {
   if (!BASE_ACCESS_TOKEN) {
     throw new Error("BASE_ACCESS_TOKEN is not configured");
