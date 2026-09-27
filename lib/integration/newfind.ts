@@ -40,6 +40,24 @@ export async function promoteShopListingToNewfind(
   }
 
   const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
+
+  const { data: existingDelivery } = await supabase
+    .from("newfind_promotion_deliveries")
+    .select("status, ack_status, http_status, attempts")
+    .eq("listing_id", listingId)
+    .maybeSingle();
+
+  if (existingDelivery?.status === "processed" && existingDelivery.ack_status === "processed") {
+    return {
+      configured: true,
+      sent: true,
+      eventId: id,
+      status: typeof existingDelivery.http_status === "number" ? existingDelivery.http_status : 200,
+      ackStatus: "processed",
+      detail: "already_processed",
+    };
+  }
+
   const { data: listing, error } = await supabase
     .from("shop_listings")
     .select("id, title, description, image_url, selling_price, currency, bestseller_id, product_id")
@@ -83,6 +101,14 @@ export async function promoteShopListingToNewfind(
       detail: "product_url_missing_newfind_requires_url",
     };
   }
+
+  await supabase.from("newfind_promotion_deliveries").upsert({
+    listing_id: listingId,
+    event_id: id,
+    status: "pending",
+    attempts: (typeof existingDelivery?.attempts === "number" ? existingDelivery.attempts : 0) + 1,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "listing_id" });
 
   const payload = {
     source: "tracer",
@@ -158,6 +184,13 @@ export async function promoteShopListingToNewfind(
   }
 
   if (!response) {
+    await supabase.from("newfind_promotion_deliveries").update({
+      status: "failed",
+      last_error: lastError instanceof Error ? lastError.message : "newfind_request_failed",
+      last_attempt_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("listing_id", listingId);
+
     return {
       configured: true,
       sent: false,
@@ -182,6 +215,22 @@ export async function promoteShopListingToNewfind(
         ? json.error
         : detail;
   } catch {}
+
+  const deliveryStatus = ackStatus === "processed"
+    ? "processed"
+    : response.ok
+      ? "sent"
+      : "failed";
+
+  await supabase.from("newfind_promotion_deliveries").update({
+    status: deliveryStatus,
+    http_status: response.status,
+    ack_status: ackStatus,
+    last_error: response.ok ? null : detail,
+    last_attempt_at: new Date().toISOString(),
+    processed_at: ackStatus === "processed" ? new Date().toISOString() : null,
+    updated_at: new Date().toISOString(),
+  }).eq("listing_id", listingId);
 
   return {
     configured: true,
