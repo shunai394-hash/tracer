@@ -29,7 +29,7 @@ export async function publishPublishedListingsToBase(
   const { data: listings, error } = await supabase
     .from("shop_listings")
     .select(
-      "id,title,description,selling_price,image_url,published,base_item_id,inventory,orderable",
+      "id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable",
     )
     .eq("published", true)
     .not("selling_price", "is", null)
@@ -88,6 +88,50 @@ export async function publishPublishedListingsToBase(
 
       const stock = Math.max(0, Math.floor(Number(listing.inventory)));
 
+      // Claim the external BASE creation slot atomically before calling BASE.
+      // Two concurrent cron invocations can both read base_item_id=NULL, but
+      // only one can transition this row to "creating".
+      if (!baseItemId) {
+        const now = new Date();
+        const leaseUntil = new Date(now.getTime() + 5 * 60_000).toISOString();
+        const status = typeof listing.base_publication_status === "string"
+          ? listing.base_publication_status
+          : null;
+        const lease = listing.base_publication_lease_until
+          ? new Date(String(listing.base_publication_lease_until))
+          : null;
+
+        if (status === "creating" && lease && lease.getTime() > now.getTime()) {
+          results.push({ listingId, ok: false, skipped: true, error: "base_publication_in_progress" });
+          continue;
+        }
+
+        let claimQuery = supabase
+          .from("shop_listings")
+          .update({
+            base_publication_status: "creating",
+            base_publication_lease_until: leaseUntil,
+          })
+          .eq("id", listingId);
+
+        if (status === null) {
+          claimQuery = claimQuery.is("base_publication_status", null);
+        } else if (status === "creating") {
+          claimQuery = claimQuery
+            .eq("base_publication_status", "creating")
+            .lt("base_publication_lease_until", now.toISOString());
+        } else {
+          claimQuery = claimQuery.eq("base_publication_status", status);
+        }
+
+        const { data: claimed, error: claimError } = await claimQuery.select("id").maybeSingle();
+        if (claimError) throw new Error(claimError.message);
+        if (!claimed) {
+          results.push({ listingId, ok: false, skipped: true, error: "base_publication_claim_lost" });
+          continue;
+        }
+      }
+
       if (baseItemId) {
         await editBaseItem({
           itemId: baseItemId,
@@ -124,6 +168,8 @@ export async function publishPublishedListingsToBase(
         .update({
           base_item_id: String(baseItemId),
           base_published_at: new Date().toISOString(),
+          base_publication_status: "published",
+          base_publication_lease_until: null,
           base_last_error: null,
           pipeline_stage: "BASE_PUBLISHED",
           pipeline_status: "published",
@@ -146,6 +192,8 @@ export async function publishPublishedListingsToBase(
         .from("shop_listings")
         .update({
           base_last_error: message,
+          base_publication_status: "failed",
+          base_publication_lease_until: null,
           pipeline_stage: "BASE_PUBLICATION",
           pipeline_status: "failed",
           pipeline_reason: "base_publication_failed",
