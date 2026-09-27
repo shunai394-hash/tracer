@@ -9,9 +9,6 @@ export async function GET(request: Request) {
   const authError = requireCronAuth(request);
   if (authError) return authError;
 
-  if (!authorized(request)) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
 
   try {
     const result = await syncSupplierOrders();
