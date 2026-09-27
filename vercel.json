@@ -3,6 +3,14 @@
     {
       "path": "/api/cron/market-sourcing",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/base-orders",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/dropship-execution",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
