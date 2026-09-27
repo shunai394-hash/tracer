@@ -4,6 +4,7 @@ import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-d
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
+import { isCronAuthorized } from "@/lib/ops/cron-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -24,9 +25,7 @@ export const maxDuration = 60;
  */
 export async function GET(request: Request) {
   try {
-    const cronSecret = process.env.CRON_SECRET;
-    const authHeader = request.headers.get("authorization");
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    if (!isCronAuthorized(request)) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
