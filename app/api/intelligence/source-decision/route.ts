@@ -34,7 +34,10 @@ export async function POST(request: NextRequest) {
     const startedAt = Date.now();
     // Bound the supplier investigation so serialized CJ calls cannot consume
     // the entire serverless execution window before publication runs.
-    const candidateIds = bestsellerIds.slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
+    const candidatePool = Array.isArray(body?.supplierCandidateIds)
+      ? body.supplierCandidateIds.filter((value: unknown): value is string => typeof value === "string" && value.length > 0)
+      : bestsellerIds;
+    const candidateIds = candidatePool.slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
     const suppliers = await investigateDropshipForBestsellers(candidateIds);
     const selected = await selectAndPublishSalesTests(candidateIds, 3);
 
@@ -62,7 +65,9 @@ export async function POST(request: NextRequest) {
         publishedNow: selected.published,
         existingPublishedListingsPreserved: true,
         candidateBatchSize: candidateIds.length,
-        candidateBatchLimited: bestsellerIds.length > candidateIds.length,
+        candidateBatchLimited: candidatePool.length > candidateIds.length,
+        observedBestsellerCount: bestsellerIds.length,
+        supplierCandidateCount: candidatePool.length,
       },
     });
   } catch (error) {
