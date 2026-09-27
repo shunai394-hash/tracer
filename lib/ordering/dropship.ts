@@ -147,9 +147,8 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       productId,
     });
 
-    const liveInventory = typeof listingRow.inventory === "number" ? listingRow.inventory : null;
 
-  const gate = evaluateDropshipOrderGate({
+    const gate = evaluateDropshipOrderGate({
       vid: typeof listingRow.supplier_variant_id === "string" ? listingRow.supplier_variant_id : (typeof listingRow.cj_variant_id === "string" ? listingRow.cj_variant_id : null),
       quantity: asNumber(row.qty),
       sourceCost: asNumber(listingRow.cost),
