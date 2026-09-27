@@ -757,7 +757,6 @@ export async function investigateDropshipForBestsellers(
         confidence: 0,
         metadata: { note: "row_isolated_failure" },
       });
-      continue;
     }
 
     // If CJ could not establish a linked supplier, try the configured
