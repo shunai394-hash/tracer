@@ -22,6 +22,10 @@ export type ShopListing = {
   selectionReasons: string[];
   productId: string;
   bestsellerId: string | null;
+  supplierListingId: string | null;
+  supplierName: string | null;
+  supplierProductId: string | null;
+  supplierVariantId: string | null;
 };
 
 function mapListing(row: Record<string, unknown>): ShopListing {
@@ -38,6 +42,10 @@ function mapListing(row: Record<string, unknown>): ShopListing {
       : [],
     productId: String(row.product_id),
     bestsellerId: row.bestseller_id ? String(row.bestseller_id) : null,
+    supplierListingId: row.supplier_listing_id ? String(row.supplier_listing_id) : null,
+    supplierName: typeof row.supplier_name === "string" ? row.supplier_name : null,
+    supplierProductId: row.supplier_product_id ? String(row.supplier_product_id) : null,
+    supplierVariantId: row.supplier_variant_id ? String(row.supplier_variant_id) : null,
   };
 }
 
