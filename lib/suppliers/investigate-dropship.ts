@@ -7,6 +7,7 @@ import {
   CJConfigError,
   calculateCJFreight,
   fetchCJProductVariants,
+  fetchCJVariantStock,
   getCJProductDetail,
   searchCJProducts,
   selectUnambiguousVariant,
@@ -402,6 +403,21 @@ export async function investigateDropshipForBestsellers(
         // turn a failed quote into zero; the publication gate must continue
         // to treat shipping as unknown when CJ cannot quote it.
         let observedShippingCost = asNumber(detail.shippingCost);
+        let verifiedInventory: number | null = null;
+        let inventoryConfirmed = false;
+        if (identity.salesEligible && selectedVariant) {
+          try {
+            verifiedInventory = await fetchCJVariantStock(selectedVariant.vid);
+            inventoryConfirmed = verifiedInventory !== null;
+          } catch (error) {
+            console.warn("[investigate-dropship] CJ variant stock lookup failed; inventory remains unknown", {
+              bestsellerId: String(record.id),
+              cjProductId: detail.id,
+              cjVariantId: selectedVariant.vid,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
         if (identity.salesEligible && selectedVariant) {
           try {
             const freight = await calculateCJFreight(selectedVariant.vid, {
@@ -446,7 +462,7 @@ export async function investigateDropshipForBestsellers(
             currency: "USD",
             supplier_product_id: detail.id,
             supplier_variant_id: cjVariantId,
-            inventory: detail.inventory,
+            inventory: verifiedInventory,
             tracking_available: true,
             order_method: "cj_api",
             api_available: true,
@@ -458,9 +474,9 @@ export async function investigateDropshipForBestsellers(
                 : identity.method,
             identity_confidence: identity.confidence,
             configured: true,
-            orderable: Boolean(cjVariantId),
+            orderable: Boolean(cjVariantId) && inventoryConfirmed && (verifiedInventory ?? 0) > 0,
             price_confirmed: Boolean(selectedVariant?.sellPrice ?? detail.price),
-            inventory_confirmed: false,
+            inventory_confirmed: inventoryConfirmed,
             fetched_at: fetchedAt,
             metadata: {
               search_query: identifierQuery,
