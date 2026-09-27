@@ -70,10 +70,6 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       .select("id")
       .eq("idempotency_key", idempotencyKey)
       .maybeSingle();
-    if (existingPo) {
-      purchaseOrderIds.push(String(existingPo.id));
-      continue;
-    }
 
     const productId = row.product_id ? String(row.product_id) : null;
     if (!productId) {
@@ -168,7 +164,10 @@ export async function createDropshipPurchaseOrdersForShopOrder(
         ? "auto_blocked"
         : "pending_approval";
 
-    const { data: po, error: poError } = await supabase
+    let purchaseOrderId = existingPo ? String(existingPo.id) : null;
+
+    if (!purchaseOrderId) {
+      const { data: po, error: poError } = await supabase
       .from("purchase_orders")
       .insert({
         product_id: productId,
@@ -215,6 +214,58 @@ export async function createDropshipPurchaseOrdersForShopOrder(
     }
 
     await supabase.from("purchase_order_items").insert({
+      if (poError) {
+        if (poError.code === "23505") {
+          const { data: racedPo } = await supabase
+            .from("purchase_orders")
+            .select("id")
+            .eq("idempotency_key", idempotencyKey)
+            .maybeSingle();
+          purchaseOrderId = racedPo?.id ? String(racedPo.id) : null;
+        }
+        if (!purchaseOrderId) {
+          skipped.push({ itemId: String(row.id), reason: poError.message });
+          continue;
+        }
+      } else {
+        purchaseOrderId = po?.id ? String(po.id) : null;
+      }
+    }
+
+    if (!purchaseOrderId) {
+      skipped.push({ itemId: String(row.id), reason: "purchase_order_id_missing" });
+      continue;
+    }
+
+    const { data: existingPoItem } = await supabase
+      .from("purchase_order_items")
+      .select("id")
+      .eq("purchase_order_id", purchaseOrderId)
+      .maybeSingle();
+
+    if (!existingPoItem) {
+      const { error: itemError } = await supabase.from("purchase_order_items").upsert({
+        purchase_order_id: purchaseOrderId,
+        product_id: productId,
+        qty: asNumber(row.qty) ?? 0,
+        unit_cost: asNumber(listingRow.cost),
+        cj_variant_id:
+          typeof listingRow.supplier_variant_id === "string"
+            ? listingRow.supplier_variant_id
+            : typeof listingRow.cj_variant_id === "string"
+              ? listingRow.cj_variant_id
+              : typeof shopListing.supplier_variant_id === "string"
+                ? shopListing.supplier_variant_id
+                : null,
+      }, { onConflict: "purchase_order_id" });
+
+      if (itemError) {
+        skipped.push({ itemId: String(row.id), reason: itemError.message });
+        continue;
+      }
+    }
+
+    purchaseOrderIds.push(purchaseOrderId);
       purchase_order_id: po.id,
       product_id: productId,
       qty: asNumber(row.qty) ?? 0,
