@@ -5,12 +5,24 @@
       "schedule": "0 3 * * *"
     },
     {
+      "path": "/api/cron/base-publish",
+      "schedule": "*/10 * * * *"
+    },
+    {
       "path": "/api/cron/base-orders",
       "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/dropship-execution",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/supplier-orders",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/newfind-retry",
+      "schedule": "*/10 * * * *"
     }
   ]
 }
