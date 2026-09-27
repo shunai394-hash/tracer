@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 import { syncSupplierOrders } from "@/lib/procurement/sync-orders";
+import { requireCronAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-function authorized(request: Request): boolean {
-  const cronSecret = process.env.CRON_SECRET;
-  return !cronSecret || request.headers.get("authorization") === `Bearer ${cronSecret}`;
-}
-
 export async function GET(request: Request) {
+  const authError = requireCronAuth(request);
+  if (authError) return authError;
+
   if (!authorized(request)) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
