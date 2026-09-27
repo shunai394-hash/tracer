@@ -89,3 +89,77 @@ export async function addBaseItemImage(input: {
     }),
   );
 }
+
+
+export type BaseOrderSummary = {
+  unique_key: string;
+  dispatch_status?: string;
+  ordered?: number;
+};
+
+export type BaseOrderDetail = BaseOrderSummary & {
+  payment?: string;
+  total?: number;
+  first_name?: string;
+  last_name?: string;
+  country?: string;
+  country_code?: string;
+  zip_code?: string;
+  prefecture?: string;
+  address?: string;
+  address2?: string;
+  mail_address?: string;
+  tel?: string;
+  remark?: string;
+  order_items?: Array<{
+    order_item_id?: string | number;
+    item_id?: string | number;
+    title?: string;
+    price?: number;
+    amount?: number;
+    total?: number;
+    status?: string;
+  }>;
+};
+
+export async function listBaseOrders(options?: {
+  startOrdered?: string;
+  endOrdered?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<BaseOrderSummary[]> {
+  requireBaseToken();
+  const params = new URLSearchParams();
+  if (options?.startOrdered) params.set("start_ordered", options.startOrdered);
+  if (options?.endOrdered) params.set("end_ordered", options.endOrdered);
+  params.set("limit", String(Math.min(100, Math.max(1, options?.limit ?? 100))));
+  params.set("offset", String(Math.max(0, options?.offset ?? 0)));
+
+  const token = requireBaseToken();
+  const response = await fetch(`${BASE_API_URL}/orders?${params.toString()}`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    cache: "no-store",
+  });
+  const text = await response.text();
+  if (!response.ok) throw new Error(`BASE orders HTTP ${response.status}: ${text.slice(0, 500)}`);
+  const data = JSON.parse(text) as { orders?: BaseOrderSummary[] };
+  return data.orders ?? [];
+}
+
+export async function getBaseOrderDetail(uniqueKey: string): Promise<BaseOrderDetail> {
+  const token = requireBaseToken();
+  const response = await fetch(
+    `${BASE_API_URL}/orders/detail/${encodeURIComponent(uniqueKey)}`,
+    {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      cache: "no-store",
+    },
+  );
+  const text = await response.text();
+  if (!response.ok) throw new Error(`BASE order detail HTTP ${response.status}: ${text.slice(0, 500)}`);
+  const data = JSON.parse(text) as { order?: BaseOrderDetail };
+  if (!data.order) throw new Error("BASE order detail missing order");
+  return data.order;
+}
