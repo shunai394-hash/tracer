@@ -39,7 +39,7 @@ export async function persistMarketplaceBestsellers(): Promise<{
   let inserted = 0;
   let productsCreated = 0;
   const bestsellerIds: string[] = [];
-  const supplierCandidateIds: string[] = [];
+  const supplierCandidateIdsByMarketplace = new Map<string, string[]>();
   const skippedMarketplaces = collected.marketplaces
     .filter((item) => item.skipped)
     .map((item) => item.marketplace);
@@ -176,7 +176,10 @@ export async function persistMarketplaceBestsellers(): Promise<{
         ids.jan || ids.gtin || ids.ean || ids.upc || ids.mpn,
       );
       if (hasSupplierSearchIdentifier) {
-        supplierCandidateIds.push(String(bestseller.id));
+        const key = marketplace.marketplace;
+        const bucket = supplierCandidateIdsByMarketplace.get(key) ?? [];
+        bucket.push(String(bestseller.id));
+        supplierCandidateIdsByMarketplace.set(key, bucket);
       }
 
       if (productId && hasAnyIdentifier(ids)) {
@@ -195,6 +198,19 @@ export async function persistMarketplaceBestsellers(): Promise<{
           );
         }
       }
+    }
+  }
+
+  // Do not let one marketplace consume the entire supplier-investigation
+  // batch. Interleave sources so a single blocked/poorly-enriched catalog
+  // cannot make the whole run look like "zero products".
+  const supplierCandidateIds: string[] = [];
+  const candidateBuckets = Array.from(supplierCandidateIdsByMarketplace.values());
+  const maxBucketSize = Math.max(0, ...candidateBuckets.map((bucket) => bucket.length));
+  for (let index = 0; index < maxBucketSize; index += 1) {
+    for (const bucket of candidateBuckets) {
+      const id = bucket[index];
+      if (id) supplierCandidateIds.push(id);
     }
   }
 
