@@ -292,7 +292,7 @@ export async function fetchCJVariantByVid(vid: string): Promise<CJProductVariant
     barcode:
       row.barcode === undefined || row.barcode === null
         ? null
-        : String(row.barcode).replace(/\\D/g, "") || null,
+        : String(row.barcode).replace(/\D/g, "") || null,
     inventory: null,
   };
 }
