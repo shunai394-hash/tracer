@@ -438,9 +438,14 @@ export async function investigateDropshipForBestsellers(
             ean: supplyIds.ean,
             upc: supplyIds.upc,
             mpn: supplyIds.mpn,
-            cost: asNumber(detail.price),
+            // Use the exact confirmed variant price when one was selected.
+            // Falling back to the parent product price is only safe when the
+            // supplier exposes no variant-specific price.
+            cost: asNumber(selectedVariant?.sellPrice ?? detail.price),
             shipping_cost: observedShippingCost,
             currency: "USD",
+            supplier_product_id: detail.id,
+            supplier_variant_id: cjVariantId,
             inventory: detail.inventory,
             tracking_available: true,
             order_method: "cj_api",
@@ -453,6 +458,9 @@ export async function investigateDropshipForBestsellers(
                 : identity.method,
             identity_confidence: identity.confidence,
             configured: true,
+            orderable: Boolean(cjVariantId),
+            price_confirmed: Boolean(selectedVariant?.sellPrice ?? detail.price),
+            inventory_confirmed: false,
             fetched_at: fetchedAt,
             metadata: {
               search_query: identifierQuery,
