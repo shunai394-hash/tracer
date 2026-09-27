@@ -1,36 +1,36 @@
 {
   "manifest_version": 3,
   "name": "TRACER Product Capture",
-  "version": "0.1.1",
-  "version_name": "0.1.1 — Amazon Capture",
-  "description": "Capture Amazon product data and send it to TRACER for product research.",
-  "permissions": ["activeTab", "storage"],
-  "host_permissions": [
-    "https://*.amazon.com/*",
-    "https://*.amazon.co.jp/*",
-    "https://*.vercel.app/*"
+  "version": "0.1.0",
+  "description": "Capture Amazon product identity and send it to TRACER.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
   ],
-  "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
-  },
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "https://tracer-self.vercel.app/*"
+  ],
   "action": {
-    "default_title": "Send product to TRACER",
-    "default_popup": "src/popup/popup.html",
-    "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
-    }
+    "default_title": "TRACERへ送信",
+    "default_popup": "src/popup/popup.html"
   },
   "background": {
-    "service_worker": "src/background.js"
+    "service_worker": "dist/background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["https://*.amazon.com/*", "https://*.amazon.co.jp/*"],
-      "js": ["src/content.js"],
+      "matches": [
+        "https://www.amazon.co.jp/*",
+        "https://amazon.co.jp/*",
+        "https://www.amazon.com/*",
+        "https://amazon.com/*"
+      ],
+      "js": [
+        "dist/content.js"
+      ],
       "run_at": "document_idle"
     }
   ]
