@@ -395,6 +395,30 @@ export async function investigateDropshipForBestsellers(
           ? selectedVariant.sku
           : null;
 
+        // A product-level shipping field is often absent or stale. Once a
+        // concrete, sales-eligible CJ variant is known, ask CJ's official
+        // freight calculator for the current CN -> JP trial quote. Never
+        // turn a failed quote into zero; the publication gate must continue
+        // to treat shipping as unknown when CJ cannot quote it.
+        let observedShippingCost = asNumber(detail.shippingCost);
+        if (identity.salesEligible && selectedVariant) {
+          try {
+            const freight = await calculateCJFreight(selectedVariant.vid, {
+              startCountryCode: "CN",
+              endCountryCode: "JP",
+              quantity: 1,
+            });
+            if (freight !== null) observedShippingCost = freight;
+          } catch (error) {
+            console.warn("[investigate-dropship] CJ freight calculation failed; preserving existing shipping value", {
+              bestsellerId: String(record.id),
+              cjProductId: detail.id,
+              cjVariantId: selectedVariant.vid,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+
         cjStage = "supplier_listing_insert";
         const insert = await supabase
           .from("supplier_listings")
@@ -413,7 +437,7 @@ export async function investigateDropshipForBestsellers(
             upc: supplyIds.upc,
             mpn: supplyIds.mpn,
             cost: asNumber(detail.price),
-            shipping_cost: asNumber(detail.shippingCost),
+            shipping_cost: observedShippingCost,
             currency: "USD",
             inventory: detail.inventory,
             tracking_available: true,
