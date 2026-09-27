@@ -5,6 +5,10 @@
       "schedule": "0 3 * * *"
     },
     {
+      "path": "/api/cron/inventory-refresh",
+      "schedule": "*/10 * * * *"
+    },
+    {
       "path": "/api/cron/base-publish",
       "schedule": "*/10 * * * *"
     },
