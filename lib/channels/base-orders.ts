@@ -55,7 +55,7 @@ async function repairBaseOrderItems(
     const listing = listingByBaseItem.get(String(baseItem.item_id));
     if (!listing) continue;
 
-    const baseOrderItemKey = \`base:\${baseOrderKey}:item:\${String(baseItem.order_item_id ?? baseItem.item_id)}\`;
+    const baseOrderItemKey = `base:${baseOrderKey}:item:${String(baseItem.order_item_id ?? baseItem.item_id)}`;
     const { error: itemError } = await supabase
       .from("shop_order_items")
       .upsert({
@@ -245,7 +245,7 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
         const listing = listingByBaseItem.get(String(baseItem.item_id));
         if (!listing) throw new Error(`listing_not_found_for_base_item:${baseItem.item_id}`);
 
-        const baseOrderItemKey = \`base:\${baseOrderKey}:item:\${String(baseItem.order_item_id ?? baseItem.item_id)}\`;
+        const baseOrderItemKey = `base:${baseOrderKey}:item:${String(baseItem.order_item_id ?? baseItem.item_id)}`;
         const { error: itemError } = await supabase.from("shop_order_items").upsert({
           order_id: shopOrder.id,
           base_order_item_key: baseOrderItemKey,
