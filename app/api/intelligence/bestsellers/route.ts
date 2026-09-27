@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
-import { promoteShopListingToNewfind } from "@/lib/integration/newfind";\nimport { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
+import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
+import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
