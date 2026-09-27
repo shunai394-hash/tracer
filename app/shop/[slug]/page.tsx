@@ -8,16 +8,12 @@ import { SupabaseConfigError } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export default async function ShopProductPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = await params;
-
+async function loadShopProduct(slug: string) {
   try {
     const listing = await getShopListingBySlug(slug);
-    if (!listing) notFound();
+    if (!listing) {
+      return { listing: null, evidence: [], bestseller: null, configError: false } as const;
+    }
 
     await recordShopFunnelEvent({
       listingId: listing.id,
@@ -35,6 +31,33 @@ export default async function ShopProductPage({
           .eq("id", listing.bestsellerId)
           .maybeSingle()
       : { data: null };
+
+    return { listing, evidence, bestseller, configError: false } as const;
+  } catch (error) {
+    if (error instanceof SupabaseConfigError) {
+      return { listing: null, evidence: [], bestseller: null, configError: true } as const;
+    }
+    throw error;
+  }
+}
+
+export default async function ShopProductPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const { listing, evidence, bestseller, configError } = await loadShopProduct(slug);
+
+  if (configError) {
+    return (
+      <main className="mx-auto max-w-6xl px-6 py-16">
+        <p className="text-sm text-amber-300">店舗データを読めません。</p>
+      </main>
+    );
+  }
+
+  if (!listing) notFound();
 
     return (
       <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-16">
@@ -96,14 +119,4 @@ export default async function ShopProductPage({
         </section>
       </main>
     );
-  } catch (error) {
-    if (error instanceof SupabaseConfigError) {
-      return (
-        <main className="mx-auto max-w-6xl px-6 py-16">
-          <p className="text-sm text-amber-300">店舗データを読めません。</p>
-        </main>
-      );
-    }
-    throw error;
-  }
 }
