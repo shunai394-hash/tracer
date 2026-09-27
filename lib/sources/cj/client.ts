@@ -457,9 +457,13 @@ function extractCJVariantRows(data: CJVariantQueryResponse["data"]): CJVariantRo
   return data.content ?? data.variantList ?? data.productList ?? [];
 }
 
-export async function fetchCJProductVariants(pid: string): Promise<CJProductVariant[]> {
+export async function fetchCJProductVariants(
+  pid: string,
+  options?: { countryCode?: string },
+): Promise<CJProductVariant[]> {
   const token = await getAccessToken();
   const params = new URLSearchParams({ pid });
+  if (options?.countryCode) params.set("countryCode", options.countryCode);
   const response = await fetchCJWithRateLimit(
     `https://developers.cjdropshipping.com/api2.0/v1/product/variant/query?${params.toString()}`,
     {
