@@ -167,7 +167,7 @@ function isTracerCaptureMessage(value: unknown): value is TracerCaptureMessage {
 }
 
 chrome.runtime.onMessage.addListener(
-  (message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => {
+  (message: unknown, _sender: TracerChromeRuntimeMessageSender, sendResponse: (response: unknown) => void) => {
     if (!isTracerCaptureMessage(message) || message.type !== "TRACER_CAPTURE_PRODUCT") return false;
 
     try {
