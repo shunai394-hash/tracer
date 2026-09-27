@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createBaseItem, addBaseItemImage, isBaseConfigured } from "@/lib/channels/base";
+import { createBaseItem, editBaseItem, addBaseItemImage, isBaseConfigured } from "@/lib/channels/base";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -32,7 +32,6 @@ export async function publishPublishedListingsToBase(
       "id,title,description,selling_price,image_url,published,base_item_id",
     )
     .eq("published", true)
-    .is("base_item_id", null)
     .not("selling_price", "is", null)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -67,22 +66,36 @@ export async function publishPublishedListingsToBase(
     }
 
     try {
-      const base = await createBaseItem({
-        title: listing.title,
-        detail: listing.description ?? listing.title,
-        price: Number(listing.selling_price),
-        stock: 1,
-        visible: true,
-      });
+      let baseItemId: string | null = listing.base_item_id
+        ? String(listing.base_item_id)
+        : null;
 
-      const baseItemId = base.item_id ?? base.item?.item_id;
-      if (baseItemId === undefined || baseItemId === null) {
-        throw new Error("BASE item_id was not returned");
-      }
+      if (baseItemId) {
+        await editBaseItem({
+          itemId: baseItemId,
+          title: listing.title,
+          detail: listing.description ?? listing.title,
+          price: Number(listing.selling_price),
+          stock: 1,
+          visible: true,
+        });
+      } else {
+        const base = await createBaseItem({
+          title: listing.title,
+          detail: listing.description ?? listing.title,
+          price: Number(listing.selling_price),
+          stock: 1,
+          visible: true,
+        });
 
-      if (listing.image_url) {
+        const createdBaseItemId = base.item_id ?? base.item?.item_id;
+        if (createdBaseItemId === undefined || createdBaseItemId === null) {
+          throw new Error("BASE item_id was not returned");
+        }
+        baseItemId = String(createdBaseItemId);
+
         await addBaseItemImage({
-          itemId: String(baseItemId),
+          itemId: baseItemId,
           imageNo: 1,
           imageUrl: listing.image_url,
         });
