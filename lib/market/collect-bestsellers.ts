@@ -201,6 +201,10 @@ export async function collectMarketplaceBestsellers(): Promise<{
               item.model = detail.model;
               item.jan = normalizeIdentifier("jan", detail.jan);
               item.mpn = normalizeIdentifier("mpn", detail.model);
+              if (item.price === null && detail.price !== null) {
+                item.price = detail.price;
+                item.currency = detail.currency ?? "JPY";
+              }
               if (item.jan || item.mpn) identifierFound += 1;
             } catch {
               // Detail pages stay unknown rather than blocking the listing.
@@ -226,6 +230,10 @@ export async function collectMarketplaceBestsellers(): Promise<{
               item.gtin = normalizeIdentifier("gtin", detail.gtin);
               item.mpn = normalizeIdentifier("mpn", detail.mpn);
               item.brand = detail.brand;
+              if (item.price === null && detail.price !== null) {
+                item.price = detail.price;
+                item.currency = detail.currency ?? "JPY";
+              }
               if (item.jan || item.gtin || item.mpn) identifierFound += 1;
             } catch {
               // Detail pages stay unknown rather than blocking the listing.
