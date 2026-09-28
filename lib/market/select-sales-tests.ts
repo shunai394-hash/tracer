@@ -121,8 +121,26 @@ export async function selectAndPublishSalesTests(
       reasons.push("inventory_zero");
     }
 
-    if (listing.identity_method === "title") {
+    // Defense in depth: historical supplier rows may predate the current
+    // identity implementation. Publication is allowed only for an
+    // identifier-grade method, even if an old row was incorrectly marked
+    // linked. Title/image/none are never sales identity evidence.
+    const identityMethod = String(listing.identity_method ?? "");
+    const identifierGradeMethods = new Set([
+      "asin",
+      "jan",
+      "gtin",
+      "ean",
+      "upc",
+      "mpn",
+      "brand_mpn",
+    ]);
+    if (!identifierGradeMethods.has(identityMethod)) {
       reasons.push("identity_not_confirmed");
+    }
+    const identityConfidence = asNumber(listing.identity_confidence);
+    if (identityConfidence === null || identityConfidence < 0.88) {
+      reasons.push("identity_confidence_low");
     }
 
     // CJ fulfillment requires a concrete variant ID. A product-level match
