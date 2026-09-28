@@ -210,7 +210,7 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
         order.address2,
       ].filter(Boolean).join(" ");
 
-      const { data: shopOrder, error: orderError } = await supabase
+      let { data: shopOrder, error: orderError } = await supabase
         .from("shop_orders")
         .insert({
           listing_id: firstListing.id,
@@ -239,7 +239,24 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
         .select("id")
         .single();
 
+      if (orderError?.code === "23505") {
+        // Two concurrent BASE sync workers can race after both observe no
+        // existing shop_order. The unique base_order_key index makes the
+        // second insert lose; merge that worker into the already-created
+        // order instead of reporting a false import failure.
+        const { data: racedOrder, error: racedOrderError } = await supabase
+          .from("shop_orders")
+          .select("id")
+          .eq("base_order_key", baseOrderKey)
+          .maybeSingle();
+        if (racedOrderError) throw new Error(racedOrderError.message);
+        if (!racedOrder) throw new Error(orderError.message);
+        shopOrder = racedOrder;
+        orderError = null;
+      }
+
       if (orderError) throw new Error(orderError.message);
+      if (!shopOrder?.id) throw new Error("shop order id missing after BASE import");
 
       for (const baseItem of baseItems) {
         const listing = listingByBaseItem.get(String(baseItem.item_id));
