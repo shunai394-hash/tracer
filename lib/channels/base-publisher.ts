@@ -110,7 +110,21 @@ export async function publishPublishedListingsToBase(
       continue;
     }
 
-    if (listing.inventory === null || listing.orderable !== true) {
+    const availableInventory =
+      typeof listing.inventory === "number"
+        ? Math.floor(listing.inventory)
+        : typeof listing.inventory === "string" && listing.inventory.trim() !== ""
+          ? Math.floor(Number(listing.inventory))
+          : null;
+
+    // Never expose a BASE item when inventory is unknown, zero, negative, or
+    // the supplier has not confirmed the listing as orderable.
+    if (
+      availableInventory === null ||
+      !Number.isFinite(availableInventory) ||
+      availableInventory <= 0 ||
+      listing.orderable !== true
+    ) {
       if (listing.base_item_id && listing.selling_price !== null) {
         try {
           await editBaseItem({
@@ -138,14 +152,24 @@ export async function publishPublishedListingsToBase(
       await supabase.from("shop_listings").update({
         pipeline_stage: "BASE_PUBLICATION",
         pipeline_status: "blocked",
-        pipeline_reason: listing.inventory === null ? "inventory_unknown" : "inventory_zero",
+        pipeline_reason:
+          availableInventory === null || !Number.isFinite(availableInventory)
+            ? "inventory_unknown"
+            : availableInventory <= 0
+              ? "inventory_zero"
+              : "supplier_not_orderable",
         pipeline_updated_at: new Date().toISOString(),
       }).eq("id", listingId);
       results.push({
         listingId,
         ok: false,
         skipped: true,
-        error: listing.inventory === null ? "inventory_unknown" : "inventory_zero",
+        error:
+          availableInventory === null || !Number.isFinite(availableInventory)
+            ? "inventory_unknown"
+            : availableInventory <= 0
+              ? "inventory_zero"
+              : "supplier_not_orderable",
       });
       continue;
     }
@@ -156,7 +180,7 @@ export async function publishPublishedListingsToBase(
         : null;
       const wasBasePublished = listing.base_publication_status === "published";
 
-      const stock = Math.max(0, Math.floor(Number(listing.inventory)));
+      const stock = availableInventory as number;
 
       // Claim the external BASE creation slot atomically before calling BASE.
       // Two concurrent cron invocations can both read base_item_id=NULL, but
