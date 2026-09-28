@@ -92,6 +92,17 @@ export async function publishPublishedListingsToBase(
       await supabase.from("shop_listings").update({
         pipeline_stage: "BASE_PUBLICATION",
         pipeline_status: "blocked",
+        pipeline_reason: "selling_price_unknown",
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      results.push({ listingId, ok: false, skipped: true, error: "selling_price_unknown" });
+      continue;
+    }
+
+    if (!listing.image_url) {
+      await supabase.from("shop_listings").update({
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "blocked",
         pipeline_reason: "image_unknown",
         pipeline_updated_at: new Date().toISOString(),
       }).eq("id", listingId);
