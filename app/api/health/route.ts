@@ -12,6 +12,7 @@ export async function GET() {
       supabase: status.supabasePublic,
       gemini: status.gemini,
       brightData: status.brightData,
+      cj: status.cj,
       ecPulse: status.ecPulse,
       newfindInbound: status.newfindInbound,
       newfindOutbound: status.newfindOutbound,
