@@ -161,8 +161,24 @@ export async function promoteShopListingToNewfind(
     .eq("published", true)
     .maybeSingle();
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    await supabase.from("newfind_promotion_deliveries").update({
+      status: "failed",
+      last_error: error.message,
+      last_attempt_at: new Date().toISOString(),
+      lease_until: null,
+      updated_at: new Date().toISOString(),
+    }).eq("listing_id", listingId);
+    throw new Error(error.message);
+  }
   if (!listing) {
+    await supabase.from("newfind_promotion_deliveries").update({
+      status: "failed",
+      last_error: "published_listing_not_found",
+      last_attempt_at: new Date().toISOString(),
+      lease_until: null,
+      updated_at: new Date().toISOString(),
+    }).eq("listing_id", listingId);
     return {
       configured: true,
       sent: false,
@@ -188,6 +204,13 @@ export async function promoteShopListingToNewfind(
   }
 
   if (!productUrl) {
+    await supabase.from("newfind_promotion_deliveries").update({
+      status: "failed",
+      last_error: "product_url_missing_newfind_requires_url",
+      last_attempt_at: new Date().toISOString(),
+      lease_until: null,
+      updated_at: new Date().toISOString(),
+    }).eq("listing_id", listingId);
     return {
       configured: true,
       sent: false,
