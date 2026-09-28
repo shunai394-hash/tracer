@@ -30,10 +30,26 @@ export async function GET(request: Request) {
   try {
     const startedAt = Date.now();
     const observation = await persistMarketplaceBestsellers();
-    const candidateIds = observation.supplierCandidateIds.slice(
-      0,
-      BESTSELLER_CANDIDATE_BATCH_SIZE,
-    );
+
+    // The marketplace scrape is only the intake. Existing DB candidates must
+    // also be drained; otherwise a catalog such as the existing 4,555-row
+    // backlog can remain permanently untouched between fresh scrapes.
+    const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
+    const { data: backlogRows, error: backlogError } = await supabase
+      .from("marketplace_bestsellers")
+      .select("id")
+      .in("pipeline_status", ["pending", "failed"])
+      .or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null,mpn.not.is.null")
+      .order("fetched_at", { ascending: true })
+      .limit(BESTSELLER_CANDIDATE_BATCH_SIZE);
+
+    if (backlogError) throw new Error(backlogError.message);
+
+    const backlogIds = (backlogRows ?? []).map((row) => String(row.id));
+    const freshIds = observation.supplierCandidateIds;
+    const candidateIds = [...backlogIds, ...freshIds]
+      .filter((id, index, ids) => ids.indexOf(id) === index)
+      .slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
 
     const supplierInvestigation =
       await investigateDropshipForBestsellers(candidateIds);
@@ -61,6 +77,7 @@ export async function GET(request: Request) {
         itemCount: observation.itemCount,
         inserted: observation.inserted,
         supplierCandidateCount: observation.supplierCandidateIds.length,
+        backlogCandidateCount: backlogIds.length,
         enrichment: observation.enrichment,
       },
       supplierInvestigation,
@@ -70,6 +87,7 @@ export async function GET(request: Request) {
         publishedNow: decision.published,
         existingPublishedListingsPreserved: true,
         candidateBatchSize: candidateIds.length,
+        backlogDraining: backlogIds.length > 0,
         candidateBatchLimited:
           observation.supplierCandidateIds.length > candidateIds.length,
       },

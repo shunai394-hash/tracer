@@ -349,16 +349,40 @@ export function parseAmazonProductDetail(html: string): {
           typeof record.gtin12 === "string" ? record.gtin12 :
           typeof record.gtin8 === "string" ? record.gtin8 :
           typeof record.gtin14 === "string" ? record.gtin14 : null;
+        const jsonLdMpn =
+          typeof record.mpn === "string" && record.mpn.trim()
+            ? record.mpn.trim()
+            : null;
+        const jsonLdBrand =
+          typeof record.brand === "string"
+            ? record.brand
+            : record.brand && typeof record.brand === "object"
+              ? typeof (record.brand as Record<string, unknown>).name === "string"
+                ? String((record.brand as Record<string, unknown>).name)
+                : null
+              : null;
+        const safeJsonLdMpn =
+          jsonLdMpn && !asinCandidates.includes(jsonLdMpn.toUpperCase())
+            ? jsonLdMpn
+            : null;
+        const resolvedBrand =
+          (brand ? decode(brand).replace(/^ブランド:\s*/u, "") : null) ??
+          (jsonLdBrand ? decode(jsonLdBrand) : null);
+        const resolvedModel = safeModel ?? safeJsonLdMpn;
 
-        if (!jan && gtin && /^[0-9]{8,14}$/.test(gtin)) {
-          // The caller normalizes this as JAN. Amazon's Japanese product
-          // pages use JAN/GTIN interchangeably for the same GS1 barcode
-          // number space; preserve only the digits and let the shared
-          // identifier matcher handle cross-scheme equality.
+        if (gtin && /^[0-9]{8,14}$/.test(gtin)) {
           return {
-            brand: brand ? decode(brand).replace(/^ブランド:\s*/u, "") : null,
+            brand: resolvedBrand,
             jan: gtin,
-            model: safeModel,
+            model: resolvedModel,
+          };
+        }
+
+        if (resolvedModel || resolvedBrand) {
+          return {
+            brand: resolvedBrand,
+            jan: null,
+            model: resolvedModel,
           };
         }
       }
@@ -497,6 +521,25 @@ export function verifyBestsellerParseInvariants(): {
       <span class="p13n-sc-price">￥3,980</span>
     </div>
   `);
+
+  const amazonJsonLdMpn = parseAmazonProductDetail(`
+    <html>
+      <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "brand": {"@type": "Brand", "name": "TestBrand"},
+          "mpn": "MODEL-123",
+          "name": "Test Product"
+        }
+      </script>
+    </html>
+  `);
+  if (amazonJsonLdMpn.model !== "MODEL-123" || amazonJsonLdMpn.brand !== "TestBrand") {
+    return {
+      ok: false,
+      cases: [{ name: "amazon_jsonld_mpn_and_brand_are_recovered", expected: true, actual: false }],
+    };
+  }
 
   const empty = parseAmazonBestsellersHtml("<html></html>");
 
