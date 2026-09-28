@@ -204,7 +204,7 @@ export async function selectAndPublishSalesTests(
     const margin = profit.contributionMargin ?? 0;
     const rankScore = rank !== null && rank > 0 ? Math.max(0, Math.min(100, 100 - Math.log10(rank) * 20)) : 0;
     const reviewScore = Math.min(100, Math.log10(Math.max(1, reviews) + 1) * 25);
-    const marginScore = Math.max(0, Math.min(100, margin * 100));
+    const marginScore = Math.max(0, Math.min(100, margin));
     const inventoryScore = Math.min(100, Math.log10(Math.max(1, inventory) + 1) * 30);
     const identityScore = Math.max(0, Math.min(100, identityConfidence * 100));
     const trackingScore = listing.tracking_available === true ? 100 : 0;
