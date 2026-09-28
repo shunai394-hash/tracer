@@ -164,7 +164,7 @@ export async function publishPublishedListingsToBase(
           .update({
             base_item_id: baseItemId,
             base_publication_status: "creating",
-            base_publication_lease_until: leaseUntil,
+            base_publication_lease_until: new Date(Date.now() + 5 * 60_000).toISOString(),
             base_last_error: null,
           })
           .eq("id", listingId)
