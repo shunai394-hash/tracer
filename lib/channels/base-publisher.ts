@@ -156,6 +156,21 @@ export async function publishPublishedListingsToBase(
         }
         baseItemId = String(createdBaseItemId);
 
+        // Persist the external BASE item ID immediately after creation.
+        // If image registration or a later DB update fails, a retry must edit
+        // the existing BASE item instead of creating a duplicate item.
+        const { error: createdItemPersistError } = await supabase
+          .from("shop_listings")
+          .update({
+            base_item_id: baseItemId,
+            base_publication_status: "creating",
+            base_publication_lease_until: leaseUntil,
+            base_last_error: null,
+          })
+          .eq("id", listingId)
+          .is("base_item_id", null);
+        if (createdItemPersistError) throw new Error(createdItemPersistError.message);
+
         await addBaseItemImage({
           itemId: baseItemId,
           imageNo: 1,
