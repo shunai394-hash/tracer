@@ -201,7 +201,6 @@ export async function selectAndPublishSalesTests(
     const rank = asNumber(bestseller.rank);
     const reviews = asNumber(bestseller.review_count) ?? 0;
     const inventory = asNumber(listing.inventory) ?? 0;
-    const identityConfidence = asNumber(listing.identity_confidence) ?? 0;
     const margin = profit.contributionMargin ?? 0;
     const rankScore = rank !== null && rank > 0 ? Math.max(0, Math.min(100, 100 - Math.log10(rank) * 20)) : 0;
     const reviewScore = Math.min(100, Math.log10(Math.max(1, reviews) + 1) * 25);
