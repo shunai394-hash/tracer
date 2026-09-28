@@ -92,16 +92,31 @@ export async function persistMarketplaceBestsellers(): Promise<{
 
       let productId: string | null = null;
 
-      const existing = item.asin
-        ? await supabase.from("products").select("id").eq("asin", item.asin).maybeSingle()
-        : item.jan
-          ? await supabase.from("products").select("id").eq("jan", item.jan).maybeSingle()
-          : { data: null, error: null };
+      // Reuse an existing canonical product by any verified identifier.
+      // Previously only ASIN/JAN could find an existing row, so a GTIN/MPN-only
+      // bestseller could create a duplicate product even when the catalog
+      // already contained the same item.
+      const lookupIdentifiers: Array<[string, string | null]> = [
+        ["asin", item.asin],
+        ["jan", item.jan],
+        ["gtin", item.gtin],
+        ["ean", item.ean],
+        ["upc", item.upc],
+        ["mpn", item.mpn],
+      ];
+      for (const [scheme, value] of lookupIdentifiers) {
+        if (!value || productId) continue;
+        const existing = await supabase
+          .from("products")
+          .select("id")
+          .eq(scheme, value)
+          .maybeSingle();
+        if (existing.error) throw new Error(existing.error.message);
+        if (existing.data?.id) productId = existing.data.id;
+      }
 
-      if (existing.error) throw new Error(existing.error.message);
-
-      if (existing.data?.id) {
-        productId = existing.data.id;
+      if (productId) {
+        // Existing canonical product found; do not create a duplicate.
       } else {
         const created = await supabase
           .from("products")
