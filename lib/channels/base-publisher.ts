@@ -59,6 +59,20 @@ export async function publishPublishedListingsToBase(
     }
 
     if (!listing.image_url) {
+      // If this listing already exists on BASE, do not leave a stale visible
+      // item online with an incomplete image set. Reconcile visibility before
+      // blocking the TRACER listing.
+      if (listing.base_item_id && listing.selling_price !== null) {
+        await editBaseItem({
+          itemId: String(listing.base_item_id),
+          title: listing.title,
+          detail: listing.description ?? listing.title,
+          price: Number(listing.selling_price),
+          stock: 0,
+          visible: false,
+        });
+      }
+
       await supabase.from("shop_listings").update({
         pipeline_stage: "BASE_PUBLICATION",
         pipeline_status: "blocked",
@@ -70,17 +84,32 @@ export async function publishPublishedListingsToBase(
     }
 
     if (listing.inventory === null || listing.orderable !== true) {
+      // Critical safety invariant: once CJ inventory becomes zero/unknown,
+      // an already-created BASE item must also be hidden. Updating only the
+      // TRACER row would leave BASE selling stale stock.
+      if (listing.base_item_id && listing.selling_price !== null) {
+        await editBaseItem({
+          itemId: String(listing.base_item_id),
+          title: listing.title,
+          detail: listing.description ?? listing.title,
+          price: Number(listing.selling_price),
+          stock: 0,
+          visible: false,
+        });
+      }
+
+      const reason = listing.inventory === null ? "inventory_unknown" : "inventory_zero";
       await supabase.from("shop_listings").update({
         pipeline_stage: "BASE_PUBLICATION",
         pipeline_status: "blocked",
-        pipeline_reason: listing.inventory === null ? "inventory_unknown" : "inventory_zero",
+        pipeline_reason: reason,
         pipeline_updated_at: new Date().toISOString(),
       }).eq("id", listingId);
       results.push({
         listingId,
         ok: false,
         skipped: true,
-        error: listing.inventory === null ? "inventory_unknown" : "inventory_zero",
+        error: reason,
       });
       continue;
     }
