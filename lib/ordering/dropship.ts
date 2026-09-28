@@ -493,11 +493,13 @@ export async function executeLivePurchaseOrder(
     };
   }
 
-  // CJ_LIVE_ORDERING=1 is necessary but not sufficient: the createOrderV2
-  // field mapping is unverified against CJ's live docs (see module header on
-  // lib/sources/cj/create-order.ts), so a human must also confirm this
-  // specific order before the real supplier call fires.
-  if (!po.human_confirmed_at) {
+  // Explicit auto-order mode may bypass per-order human confirmation,
+  // but only when CJ live ordering is enabled AND CJ_AUTO_ORDERING=1.
+  // The route-level gate and the exact variant/inventory/profit checks above
+  // still apply. Without this explicit production flag, keep the existing
+  // human-confirmation safety gate.
+  const autoOrdering = isCJAutoOrderingEnabled();
+  if (!po.human_confirmed_at && !autoOrdering) {
     return {
       purchaseOrderId,
       attempted: false,
@@ -506,6 +508,20 @@ export async function executeLivePurchaseOrder(
       reason: "human_confirmation_required",
       gate,
     };
+  }
+
+  if (!po.human_confirmed_at && autoOrdering) {
+    await supabase
+      .from("purchase_orders")
+      .update({
+        metadata: {
+          ...(po.metadata as Record<string, unknown>),
+          auto_order_authorized: true,
+          auto_order_authorized_at: new Date().toISOString(),
+          auto_order_authorized_by: "CJ_AUTO_ORDERING",
+        },
+      })
+      .eq("id", purchaseOrderId);
   }
 
   const idempotencyKey = typeof po.idempotency_key === "string" ? po.idempotency_key : `dropship:${purchaseOrderId}`;
