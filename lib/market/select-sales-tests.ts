@@ -115,9 +115,14 @@ export async function selectAndPublishSalesTests(
     if (listing.shipping_cost === null) reasons.push("shipping_unknown");
     if (listing.tracking_available !== true) reasons.push("tracking_unknown");
     if (listing.api_available !== true) reasons.push("supplier_api_unknown");
+    if (listing.orderable !== true) reasons.push("supplier_not_orderable");
     if (listing.inventory_confirmed !== true) reasons.push("inventory_unknown");
     if (listing.inventory_confirmed === true && asNumber(listing.inventory) !== null && (asNumber(listing.inventory) ?? 0) <= 0) {
       reasons.push("inventory_zero");
+    }
+
+    if (listing.identity_method === "title") {
+      reasons.push("identity_not_confirmed");
     }
 
     // CJ fulfillment requires a concrete variant ID. A product-level match
