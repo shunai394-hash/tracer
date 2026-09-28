@@ -225,8 +225,8 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
           total: Number(order.total ?? 0),
           currency: firstListing.currency ?? "JPY",
           notes: order.remark ?? null,
-          payment_status: summary.dispatch_status === "unpaid" ? "pending" : "paid",
-          order_status: summary.dispatch_status === "unpaid" ? "pending_payment" : "fulfillment_pending",
+          payment_status: order.dispatch_status === "unpaid" ? "pending" : "paid",
+          order_status: order.dispatch_status === "unpaid" ? "pending_payment" : "fulfillment_pending",
           base_order_key: baseOrderKey,
           base_order_synced_at: new Date().toISOString(),
           metadata: {
@@ -281,7 +281,7 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
       }
 
       let procurement = { purchaseOrderIds: [] as string[], skipped: [] as Array<{ itemId: string; reason: string }> };
-      if (summary.dispatch_status !== "unpaid") {
+      if (order.dispatch_status !== "unpaid") {
         procurement = await createDropshipPurchaseOrdersForShopOrder(String(shopOrder.id));
       }
 
