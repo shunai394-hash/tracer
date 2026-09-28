@@ -89,6 +89,7 @@ export async function publishPublishedListingsToBase(
       let baseItemId: string | null = listing.base_item_id
         ? String(listing.base_item_id)
         : null;
+      const wasBasePublished = listing.base_publication_status === "published";
 
       const stock = Math.max(0, Math.floor(Number(listing.inventory)));
 
@@ -145,6 +146,17 @@ export async function publishPublishedListingsToBase(
           stock,
           visible: true,
         });
+
+        // A previous run may have created the BASE item but failed while
+        // registering its image. Repair that incomplete publication on the
+        // next retry instead of leaving a permanently image-less item.
+        if (!wasBasePublished) {
+          await addBaseItemImage({
+            itemId: baseItemId,
+            imageNo: 1,
+            imageUrl: listing.image_url,
+          });
+        }
       } else {
         const base = await createBaseItem({
           title: listing.title,
