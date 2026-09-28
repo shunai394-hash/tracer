@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchCJVariantStock } from "@/lib/sources/cj/client";
+import { editBaseItem, isBaseConfigured } from "@/lib/channels/base";
 import { getCJConfig } from "@/lib/config/env";
 import { requireCronAuth } from "@/lib/security/cron-auth";
 
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
     const supabase = createSupabaseAdminClient();
     const { data: listings, error } = await supabase
       .from("shop_listings")
-      .select("id, supplier_listing_id, supplier_name, supplier_variant_id, base_item_id")
+      .select("id, supplier_listing_id, supplier_name, supplier_variant_id, base_item_id, title, description, selling_price")
       .eq("published", true)
       .eq("supplier_name", "CJdropshipping")
       .not("supplier_variant_id", "is", null)
@@ -36,6 +37,8 @@ export async function GET(request: Request) {
     if (error) throw new Error(error.message);
 
     const results = [];
+    let baseUpdated = 0;
+    let baseErrors = 0;
     for (const listing of listings ?? []) {
       const listingId = String(listing.id);
       const variantId = String(listing.supplier_variant_id);
@@ -72,7 +75,31 @@ export async function GET(request: Request) {
             if (supplierError) throw new Error(supplierError.message);
           }
 
-          results.push({ listingId, ok: false, blocked: true, reason: "inventory_unknown" });
+          let baseSyncError: string | null = null;
+          if (listing.base_item_id && listing.selling_price !== null && isBaseConfigured()) {
+            try {
+              await editBaseItem({
+                itemId: String(listing.base_item_id),
+                title: String(listing.title ?? ""),
+                detail: String(listing.description ?? listing.title ?? ""),
+                price: Number(listing.selling_price),
+                stock: 0,
+                visible: false,
+              });
+              baseUpdated++;
+              await supabase.from("shop_listings").update({
+                base_last_error: null,
+              }).eq("id", listingId);
+            } catch (error) {
+              baseSyncError = error instanceof Error ? error.message : String(error);
+              baseErrors++;
+              await supabase.from("shop_listings").update({
+                base_last_error: baseSyncError,
+              }).eq("id", listingId);
+            }
+          }
+
+          results.push({ listingId, ok: false, blocked: true, reason: "inventory_unknown", baseSyncError });
           continue;
         }
 
@@ -105,7 +132,31 @@ export async function GET(request: Request) {
           if (supplierError) throw new Error(supplierError.message);
         }
 
-        results.push({ listingId, ok: true, inventory, orderable });
+        let baseSyncError: string | null = null;
+        if (listing.base_item_id && listing.selling_price !== null && isBaseConfigured()) {
+          try {
+            await editBaseItem({
+              itemId: String(listing.base_item_id),
+              title: String(listing.title ?? ""),
+              detail: String(listing.description ?? listing.title ?? ""),
+              price: Number(listing.selling_price),
+              stock: orderable ? Math.max(0, Math.floor(inventory)) : 0,
+              visible: orderable,
+            });
+            baseUpdated++;
+            await supabase.from("shop_listings").update({
+              base_last_error: null,
+            }).eq("id", listingId);
+          } catch (error) {
+            baseSyncError = error instanceof Error ? error.message : String(error);
+            baseErrors++;
+            await supabase.from("shop_listings").update({
+              base_last_error: baseSyncError,
+            }).eq("id", listingId);
+          }
+        }
+
+        results.push({ listingId, ok: true, inventory, orderable, baseSyncError });
       } catch (error) {
         results.push({
           listingId,
@@ -122,6 +173,8 @@ export async function GET(request: Request) {
       updated: results.filter((item) => item.ok).length,
       blocked: results.filter((item) => item.blocked).length,
       errors: results.filter((item) => !item.ok && !item.blocked).length,
+      baseUpdated,
+      baseErrors,
       results,
     });
   } catch (error) {
