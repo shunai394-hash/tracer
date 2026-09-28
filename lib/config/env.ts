@@ -13,6 +13,7 @@ export type FoundationStatus = {
   supabaseServiceRole: boolean;
   gemini: boolean;
   brightData: boolean;
+  cj: boolean;
   brightDataMcp: boolean;
   shopify: boolean;
   metaAds: boolean;
@@ -33,6 +34,7 @@ export function getFoundationStatus(): FoundationStatus {
     supabaseServiceRole: present(readEnv("SUPABASE_SERVICE_ROLE_KEY")),
     gemini: present(readEnv("GEMINI_API_KEY")),
     brightData: present(readEnv("BRIGHTDATA_API_KEY")),
+    cj: present(readEnv("CJ_API_KEY")),
     brightDataMcp: present(readEnv("BRIGHTDATA_MCP_API_KEY")),
     shopify: present(readEnv("SHOPIFY_ACCESS_TOKEN")),
     metaAds: present(readEnv("META_ACCESS_TOKEN")),
