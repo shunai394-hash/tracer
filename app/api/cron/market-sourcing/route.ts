@@ -45,7 +45,30 @@ export async function GET(request: Request) {
 
     if (backlogError) throw new Error(backlogError.message);
 
-    const backlogIds = (backlogRows ?? []).map((row) => String(row.id));
+    let backlogIds = (backlogRows ?? []).map((row) => String(row.id));
+
+    // Supplier mismatches can be transient. Once the pending/failed queue is
+    // exhausted, re-check blocked identifier-bearing candidates after a
+    // cooldown instead of leaving them permanently stranded.
+    if (backlogIds.length < BESTSELLER_CANDIDATE_BATCH_SIZE) {
+      const retrySlots = BESTSELLER_CANDIDATE_BATCH_SIZE - backlogIds.length;
+      const retryBefore = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: retryRows, error: retryError } = await supabase
+        .from("marketplace_bestsellers")
+        .select("id")
+        .eq("pipeline_status", "blocked")
+        .lt("pipeline_updated_at", retryBefore)
+        .or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null,mpn.not.is.null")
+        .order("pipeline_updated_at", { ascending: true })
+        .limit(retrySlots);
+
+      if (retryError) throw new Error(retryError.message);
+
+      backlogIds = [
+        ...backlogIds,
+        ...(retryRows ?? []).map((row) => String(row.id)),
+      ];
+    }
     const freshIds = observation.supplierCandidateIds;
     const candidateIds = [...backlogIds, ...freshIds]
       .filter((id, index, ids) => ids.indexOf(id) === index)
