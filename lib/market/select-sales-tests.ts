@@ -83,6 +83,7 @@ export async function selectAndPublishSalesTests(
     listing: Record<string, unknown>;
     profit: ReturnType<typeof simulateContributionProfit>;
     reasons: string[];
+    qualityScore: number;
   }> = [];
 
   for (const row of bestsellers ?? []) {
@@ -197,32 +198,50 @@ export async function selectAndPublishSalesTests(
       continue;
     }
 
+    const rank = asNumber(bestseller.rank);
+    const reviews = asNumber(bestseller.review_count) ?? 0;
+    const inventory = asNumber(listing.inventory) ?? 0;
+    const margin = profit.contributionMargin ?? 0;
+    const rankScore =
+      rank !== null && rank > 0
+        ? Math.max(0, Math.min(100, 100 - Math.log10(rank) * 20))
+        : 0;
+    const reviewScore = Math.min(100, Math.log10(Math.max(1, reviews) + 1) * 25);
+    const marginScore = Math.max(0, Math.min(100, margin));
+    const inventoryScore = Math.min(100, Math.log10(Math.max(1, inventory) + 1) * 30);
+    const identityScore = Math.max(0, Math.min(100, (identityConfidence ?? 0) * 100));
+    const trackingScore = listing.tracking_available === true ? 100 : 0;
+    const qualityScore =
+      rankScore * 0.25 +
+      reviewScore * 0.10 +
+      marginScore * 0.25 +
+      inventoryScore * 0.10 +
+      identityScore * 0.15 +
+      trackingScore * 0.15;
+
     eligible.push({
       bestseller,
       listing,
       profit,
+      qualityScore,
       reasons: [
+        `quality_score_${qualityScore.toFixed(1)}`,
         `marketplace_rank_${String(bestseller.rank)}`,
         `identity_${String(listing.identity_method)}`,
+        `margin_${margin.toFixed(1)}pct`,
+        `inventory_${String(inventory)}`,
         `supplier_${String(listing.supplier)}`,
       ],
     });
   }
 
-  // Within the current batch, prefer the best-ranked products. When ranks
-  // tie (common across category ranking pages), use review count as a
-  // secondary popularity signal so the first category in the source list
-  // does not win every slot.
-
-  // fetched_at only scopes the candidate set to "this run"; it says
-  // nothing about which of those products sell best.
+  // Rank is useful, but it is not sufficient for a high-quality sourcing
+  // decision. Use only observed fields that already passed the hard gates.
   eligible.sort((a, b) => {
-    const rankA = typeof a.bestseller.rank === "number" ? a.bestseller.rank : Number.POSITIVE_INFINITY;
-    const rankB = typeof b.bestseller.rank === "number" ? b.bestseller.rank : Number.POSITIVE_INFINITY;
-    if (rankA !== rankB) return rankA - rankB;
-    const reviewsA = asNumber(a.bestseller.review_count) ?? -1;
-    const reviewsB = asNumber(b.bestseller.review_count) ?? -1;
-    return reviewsB - reviewsA;
+    if (b.qualityScore !== a.qualityScore) return b.qualityScore - a.qualityScore;
+    const rankA = asNumber(a.bestseller.rank) ?? Number.POSITIVE_INFINITY;
+    const rankB = asNumber(b.bestseller.rank) ?? Number.POSITIVE_INFINITY;
+    return rankA - rankB;
   });
   const chosen = eligible.slice(0, limit);
   const chosenIds = new Set(chosen.map((item) => String(item.bestseller.id)));
