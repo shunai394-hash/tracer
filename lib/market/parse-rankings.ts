@@ -293,6 +293,8 @@ export function parseAmazonProductDetail(html: string): {
   brand: string | null;
   jan: string | null;
   model: string | null;
+  price: number | null;
+  currency: string | null;
 } {
   const cleaned = stripHtmlComments(html);
 
@@ -343,6 +345,19 @@ export function parseAmazonProductDetail(html: string): {
         const isProduct = type === "Product" || (Array.isArray(type) && type.includes("Product"));
         if (!isProduct) continue;
 
+        const offersRaw = record.offers;
+        const offer = Array.isArray(offersRaw)
+          ? offersRaw.find((value) => value && typeof value === "object")
+          : offersRaw && typeof offersRaw === "object"
+            ? offersRaw
+            : null;
+        const offerRecord = offer as Record<string, unknown> | null;
+        const jsonLdPrice =
+          offerRecord && (typeof offerRecord.price === "number" || typeof offerRecord.price === "string")
+            ? Number(offerRecord.price)
+            : null;
+        const jsonLdCurrency = offerRecord ? firstString(offerRecord.priceCurrency) : null;
+
         const gtin =
           typeof record.gtin13 === "string" ? record.gtin13 :
           typeof record.gtin === "string" ? record.gtin :
@@ -375,6 +390,8 @@ export function parseAmazonProductDetail(html: string): {
             brand: resolvedBrand,
             jan: gtin,
             model: resolvedModel,
+            price: Number.isFinite(jsonLdPrice) ? jsonLdPrice : null,
+            currency: jsonLdCurrency,
           };
         }
 
@@ -383,6 +400,8 @@ export function parseAmazonProductDetail(html: string): {
             brand: resolvedBrand,
             jan: null,
             model: resolvedModel,
+            price: Number.isFinite(jsonLdPrice) ? jsonLdPrice : null,
+            currency: jsonLdCurrency,
           };
         }
       }
@@ -391,10 +410,13 @@ export function parseAmazonProductDetail(html: string): {
     }
   }
 
+  const fallbackPrice = parseYen(cleaned);
   return {
     brand: brand ? decode(brand).replace(/^ブランド:\s*/u, "") : null,
     jan,
     model: safeModel,
+    price: fallbackPrice?.amount ?? null,
+    currency: fallbackPrice?.currency ?? null,
   };
 }
 
@@ -471,6 +493,8 @@ export function parseYahooProductDetail(html: string): {
   gtin: string | null;
   mpn: string | null;
   brand: string | null;
+  price: number | null;
+  currency: string | null;
 } {
   const cleaned = stripHtmlComments(html);
 
@@ -482,6 +506,8 @@ export function parseYahooProductDetail(html: string): {
   let gtin: string | null = null;
   let mpn: string | null = null;
   let brand: string | null = null;
+  let price: number | null = null;
+  let currency: string | null = null;
 
   for (const product of findJsonLdProducts(html)) {
     if (!gtin) {
@@ -494,6 +520,21 @@ export function parseYahooProductDetail(html: string): {
       if (candidate) gtin = candidate;
     }
     if (!mpn) mpn = firstString(product.mpn);
+    if (price === null) {
+      const offersRaw = product.offers;
+      const offer = Array.isArray(offersRaw)
+        ? offersRaw.find((value) => value && typeof value === "object")
+        : offersRaw && typeof offersRaw === "object"
+          ? offersRaw
+          : null;
+      const offerRecord = offer as Record<string, unknown> | null;
+      const candidatePrice =
+        offerRecord && (typeof offerRecord.price === "number" || typeof offerRecord.price === "string")
+          ? Number(offerRecord.price)
+          : null;
+      if (Number.isFinite(candidatePrice)) price = candidatePrice;
+      currency = offerRecord ? firstString(offerRecord.priceCurrency) : null;
+    }
     if (!brand) {
       const brandField = product.brand;
       brand =
@@ -505,7 +546,15 @@ export function parseYahooProductDetail(html: string): {
     if (gtin && mpn && brand) break;
   }
 
-  return { jan, gtin, mpn, brand };
+  const fallbackPrice = parseYen(cleaned);
+  return {
+    jan,
+    gtin,
+    mpn,
+    brand,
+    price: price ?? fallbackPrice?.amount ?? null,
+    currency: currency ?? fallbackPrice?.currency ?? null,
+  };
 }
 
 export function verifyBestsellerParseInvariants(): {
