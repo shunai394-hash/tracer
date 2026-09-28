@@ -30,10 +30,11 @@ export type FoundationStatus = {
 export function getFoundationStatus(): FoundationStatus {
   return {
     supabasePublic: present(readEnv("NEXT_PUBLIC_SUPABASE_URL")) &&
-      present(readEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY")),
+      (present(readEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY")) ||
+        present(readEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"))),
     supabaseServiceRole: present(readEnv("SUPABASE_SERVICE_ROLE_KEY")),
     gemini: present(readEnv("GEMINI_API_KEY")),
-    brightData: present(readEnv("BRIGHTDATA_API_KEY")),
+    brightData: present(readEnv("BRIGHTDATA_API_TOKEN")),
     cj: present(readEnv("CJ_API_KEY")),
     brightDataMcp: present(readEnv("BRIGHTDATA_MCP_API_KEY")),
     shopify: present(readEnv("SHOPIFY_ACCESS_TOKEN")),
