@@ -31,8 +31,7 @@ export async function publishPublishedListingsToBase(
     .select(
       "id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable",
     )
-    .eq("published", true)
-    .not("selling_price", "is", null)
+    .or("published.eq.true,base_item_id.not.is.null")
     // Prioritize listings that have not reached BASE yet. Otherwise a cron
     // limit can be consumed entirely by already-published listings and leave
     // new/failed listings waiting indefinitely.
@@ -47,18 +46,49 @@ export async function publishPublishedListingsToBase(
   for (const listing of listings ?? []) {
     const listingId = String(listing.id);
 
-    if (listing.selling_price === null) {
-      await supabase.from("shop_listings").update({
-        pipeline_stage: "BASE_PUBLICATION",
-        pipeline_status: "blocked",
-        pipeline_reason: "selling_price_unknown",
-        pipeline_updated_at: new Date().toISOString(),
-      }).eq("id", listingId);
-      results.push({ listingId, ok: false, skipped: true, error: "selling_price_unknown" });
+    // Existing BASE items must be actively reconciled even when TRACER has
+    // since unpublished or blocked the listing. Otherwise an old BASE item
+    // can remain publicly sellable with stale stock.
+    if (listing.base_item_id && listing.published !== true) {
+      if (listing.selling_price === null) {
+        results.push({ listingId, ok: false, skipped: true, error: "base_hide_price_unknown" });
+        continue;
+      }
+      try {
+        await editBaseItem({
+          itemId: String(listing.base_item_id),
+          title: listing.title,
+          detail: listing.description ?? listing.title,
+          price: Number(listing.selling_price),
+          stock: 0,
+          visible: false,
+        });
+        await supabase.from("shop_listings").update({
+          base_publication_status: "published",
+          base_publication_lease_until: null,
+          base_last_error: null,
+          pipeline_stage: "BASE_RECONCILED",
+          pipeline_status: "blocked",
+          pipeline_reason: "tracer_unpublished",
+          pipeline_updated_at: new Date().toISOString(),
+        }).eq("id", listingId);
+        results.push({ listingId, ok: true, baseItemId: String(listing.base_item_id) });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await supabase.from("shop_listings").update({
+          base_last_error: message,
+          pipeline_stage: "BASE_RECONCILIATION",
+          pipeline_status: "failed",
+          pipeline_reason: "base_hide_failed",
+          pipeline_error: message,
+          pipeline_updated_at: new Date().toISOString(),
+        }).eq("id", listingId);
+        results.push({ listingId, ok: false, error: message });
+      }
       continue;
     }
 
-    if (!listing.image_url) {
+    if (listing.selling_price === null) {
       await supabase.from("shop_listings").update({
         pipeline_stage: "BASE_PUBLICATION",
         pipeline_status: "blocked",
@@ -70,6 +100,30 @@ export async function publishPublishedListingsToBase(
     }
 
     if (listing.inventory === null || listing.orderable !== true) {
+      if (listing.base_item_id && listing.selling_price !== null) {
+        try {
+          await editBaseItem({
+            itemId: String(listing.base_item_id),
+            title: listing.title,
+            detail: listing.description ?? listing.title,
+            price: Number(listing.selling_price),
+            stock: 0,
+            visible: false,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          await supabase.from("shop_listings").update({
+            base_last_error: message,
+            pipeline_stage: "BASE_RECONCILIATION",
+            pipeline_status: "failed",
+            pipeline_reason: "base_hide_failed",
+            pipeline_error: message,
+            pipeline_updated_at: new Date().toISOString(),
+          }).eq("id", listingId);
+          results.push({ listingId, ok: false, error: message });
+          continue;
+        }
+      }
       await supabase.from("shop_listings").update({
         pipeline_stage: "BASE_PUBLICATION",
         pipeline_status: "blocked",
