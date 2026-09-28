@@ -1,7 +1,11 @@
-﻿import "server-only";
+import "server-only";
 
 function present(value: string | undefined): boolean {
   return Boolean(value && value.trim().length > 0);
+}
+
+function readEnv(name: string): string {
+  return process.env[name]?.trim() ?? "";
 }
 
 export type FoundationStatus = {
@@ -24,174 +28,143 @@ export type FoundationStatus = {
 
 export function getFoundationStatus(): FoundationStatus {
   return {
-    supabasePublic: present(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
-      present(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY),
-    supabaseServiceRole: present(process.env.SUPABASE_SERVICE_ROLE_KEY),
-    gemini: present(process.env.GEMINI_API_KEY),
-    brightData: present(process.env.BRIGHTDATA_API_KEY),
-    brightDataMcp: present(process.env.BRIGHTDATA_MCP_API_KEY),
-    shopify: present(process.env.SHOPIFY_ACCESS_TOKEN),
-    metaAds: present(process.env.META_ACCESS_TOKEN),
-    newfindInbound: present(process.env.NEWFind_INBOUND_URL) ||
-      present(process.env.NEWFind_INBOUND_API_URL),
-    newfindOutbound: present(process.env.NEWFind_OUTBOUND_URL) ||
-      present(process.env.NEWFind_OUTBOUND_API_URL),
-    stripe: present(process.env.STRIPE_SECRET_KEY),
-    stripeWebhook: present(process.env.STRIPE_WEBHOOK_SECRET),
-    orosy: present(process.env.OROSY_API_KEY),
-    ecPulse: present(process.env.EC_PULSE_API_KEY),
-    extension: present(process.env.TRACER_EXTENSION_API_KEY),
-    base: present(process.env.BASE_ACCESS_TOKEN) ||
-      present(process.env.BASE_REFRESH_TOKEN),
+    supabasePublic: present(readEnv("NEXT_PUBLIC_SUPABASE_URL")) &&
+      present(readEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY")),
+    supabaseServiceRole: present(readEnv("SUPABASE_SERVICE_ROLE_KEY")),
+    gemini: present(readEnv("GEMINI_API_KEY")),
+    brightData: present(readEnv("BRIGHTDATA_API_KEY")),
+    brightDataMcp: present(readEnv("BRIGHTDATA_MCP_API_KEY")),
+    shopify: present(readEnv("SHOPIFY_ACCESS_TOKEN")),
+    metaAds: present(readEnv("META_ACCESS_TOKEN")),
+    newfindInbound: present(readEnv("NEWFind_INBOUND_URL")) ||
+      present(readEnv("NEWFind_INBOUND_API_URL")),
+    newfindOutbound: present(readEnv("NEWFind_OUTBOUND_URL")) ||
+      present(readEnv("NEWFind_OUTBOUND_API_URL")),
+    stripe: present(readEnv("STRIPE_SECRET_KEY")),
+    stripeWebhook: present(readEnv("STRIPE_WEBHOOK_SECRET")),
+    orosy: present(readEnv("OROSY_API_KEY")),
+    ecPulse: present(readEnv("EC_PULSE_API_KEY")),
+    extension: present(readEnv("TRACER_EXTENSION_API_KEY")),
+    base: present(readEnv("BASE_ACCESS_TOKEN")) ||
+      present(readEnv("BASE_REFRESH_TOKEN")),
   };
 }
+
 export function getGeminiConfig() {
-  const apiKey = process.env.GEMINI_API_KEY?.trim() ?? "";
-  const model = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+  const apiKey = readEnv("GEMINI_API_KEY");
+  const model = readEnv("GEMINI_MODEL") || "gemini-2.5-flash";
   return { apiKey, model };
 }
 
 export function getBrightDataConfig() {
   return {
-    apiToken: process.env.BRIGHTDATA_API_TOKEN?.trim() ?? "",
-    zone: process.env.BRIGHTDATA_ZONE?.trim() ?? "",
-    mcpUrl: process.env.BRIGHTDATA_MCP_URL?.trim() ?? "",
+    apiToken: readEnv("BRIGHTDATA_API_TOKEN"),
+    zone: readEnv("BRIGHTDATA_ZONE"),
+    mcpUrl: readEnv("BRIGHTDATA_MCP_URL"),
   };
 }
 
 export function getSupabasePublicConfig() {
   return {
-    url: process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? "",
-    anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ?? "",
+    url: readEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    anonKey: readEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
   };
 }
 
 export function getSupabaseServiceRoleKey() {
-  return process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? "";
+  return readEnv("SUPABASE_SERVICE_ROLE_KEY");
 }
 
 export function getCJConfig() {
   return {
-    apiKey: process.env.CJ_API_KEY?.trim() ?? "",
+    apiKey: readEnv("CJ_API_KEY"),
   };
 }
 
 export function getECPulseConfig() {
   return {
-    apiUrl: process.env.EC_PULSE_API_URL?.trim() ?? "",
-    apiKey: process.env.EC_PULSE_API_KEY?.trim() ?? "",
+    apiUrl: readEnv("EC_PULSE_API_URL"),
+    apiKey: readEnv("EC_PULSE_API_KEY"),
   };
 }
 
-
 export function getExtensionConfig() {
   return {
-    apiKey: process.env.TRACER_EXTENSION_API_KEY?.trim() ?? "",
+    apiKey: readEnv("TRACER_EXTENSION_API_KEY"),
   };
 }
 
 export function getDropshipSupplierConfig() {
-
   return {
-    cj: present(process.env.CJ_API_KEY),
-    hypersku: present(process.env.HYPERSKU_API_KEY),
-    dsers: present(process.env.DSERS_API_KEY),
-    zendrop: present(process.env.ZENDROP_API_KEY),
-    syncee: present(process.env.SYNCEE_API_KEY),
-    orosy: present(process.env.OROSY_API_KEY) || present(process.env.OROSY_DEMO_API_KEY),
+    cj: present(readEnv("CJ_API_KEY")),
+    hypersku: present(readEnv("HYPERSKU_API_KEY")),
+    dsers: present(readEnv("DSERS_API_KEY")),
+    zendrop: present(readEnv("ZENDROP_API_KEY")),
+    syncee: present(readEnv("SYNCEE_API_KEY")),
+    orosy: present(readEnv("OROSY_API_KEY")) || present(readEnv("OROSY_DEMO_API_KEY")),
   };
 }
 
-/**
- * CJ real order execution is off unless explicitly turned on. This is the single
- * switch that separates "recorded purchase order" from "actual supplier.createOrderV2 call".
- */
 export function isCJLiveOrderingEnabled(): boolean {
-  return process.env.CJ_LIVE_ORDERING?.trim() === "1";
+  return readEnv("CJ_LIVE_ORDERING") === "1";
 }
 
-/**
- * Automatic supplier execution is a separate opt-in from the live-ordering
- * switch. Both must be enabled before a fulfillment cron may call CJ.
- */
 export function isCJAutoOrderingEnabled(): boolean {
-  return process.env.CJ_AUTO_ORDERING?.trim() === "1";
+  return readEnv("CJ_AUTO_ORDERING") === "1";
 }
 
 export type OrosyEnvironment = "demo" | "live";
 
-/**
- * "demo"/"live" is an explicit TRACER-side setting, never inferred from the
- * key's own naming (a key's prefix is not a reliable contract). Defaults to
- * "demo" 窶・the safer assumption 窶・so a missing/misconfigured value never
- * silently unlocks live-mode behavior (e.g. it keeps /simulate reachable,
- * which orosy documents as demo-only).
- */
 export function getOrosyEnvironment(): OrosyEnvironment {
-  return process.env.OROSY_ENVIRONMENT?.trim() === "live" ? "live" : "demo";
+  return readEnv("OROSY_ENVIRONMENT") === "live" ? "live" : "demo";
 }
 
 export function getOrosyConfig() {
   const environment = getOrosyEnvironment();
-  // No cross-fallback between the two keys: which key gets used must be an
-  // explicit, independent decision per environment. Falling back to
-  // OROSY_API_KEY while "demo" would mean a key later rotated to a genuine
-  // production credential gets silently treated as safe-to-simulate-against
-  // the moment OROSY_DEMO_API_KEY is unset 窶・exactly the ambiguity
-  // OROSY_ENVIRONMENT exists to remove.
   const apiKey =
     environment === "live"
-      ? process.env.OROSY_API_KEY?.trim() ?? ""
-      : process.env.OROSY_DEMO_API_KEY?.trim() ?? "";
+      ? readEnv("OROSY_API_KEY")
+      : readEnv("OROSY_DEMO_API_KEY");
 
   return {
     apiKey,
     environment,
-    baseUrl: process.env.OROSY_API_BASE_URL?.trim() || "https://wholesale-api.orosy.com/v1",
+    baseUrl: readEnv("OROSY_API_BASE_URL") || "https://wholesale-api.orosy.com/v1",
   };
 }
 
-/**
- * Mirrors CJ_LIVE_ORDERING: real order execution (POST /v1/orders actually
- * firing) is off unless explicitly turned on, regardless of OROSY_ENVIRONMENT.
- */
 export function isOrosyLiveOrderingEnabled(): boolean {
-  return process.env.OROSY_LIVE_ORDERING?.trim() === "1";
+  return readEnv("OROSY_LIVE_ORDERING") === "1";
 }
 
 export function isTeacherWeightApplyEnabled(): boolean {
-  return process.env.TEACHER_APPLY_WEIGHTS?.trim() === "1";
+  return readEnv("TEACHER_APPLY_WEIGHTS") === "1";
 }
 
 export function getShopifyConfig() {
   return {
-    storeDomain: process.env.SHOPIFY_STORE_DOMAIN?.trim() ?? "",
-    adminAccessToken: process.env.SHOPIFY_ADMIN_ACCESS_TOKEN?.trim() ?? "",
-    apiVersion: process.env.SHOPIFY_API_VERSION?.trim() || "2024-10",
+    storeDomain: readEnv("SHOPIFY_STORE_DOMAIN"),
+    adminAccessToken: readEnv("SHOPIFY_ADMIN_ACCESS_TOKEN"),
+    apiVersion: readEnv("SHOPIFY_API_VERSION") || "2024-10",
   };
 }
 
 export function getMetaAdsConfig() {
   return {
-    accessToken: process.env.META_ACCESS_TOKEN?.trim() ?? "",
-    adAccountId: process.env.META_AD_ACCOUNT_ID?.trim() ?? "",
-    apiVersion: process.env.META_API_VERSION?.trim() || "v21.0",
+    accessToken: readEnv("META_ACCESS_TOKEN"),
+    adAccountId: readEnv("META_AD_ACCOUNT_ID"),
+    apiVersion: readEnv("META_API_VERSION") || "v21.0",
   };
 }
 
 export function getStripeConfig() {
   return {
-    secretKey: process.env.STRIPE_SECRET_KEY?.trim() ?? "",
-    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET?.trim() ?? "",
-    siteUrl: process.env.NEXT_PUBLIC_SITE_URL?.trim() ?? "",
+    secretKey: readEnv("STRIPE_SECRET_KEY"),
+    webhookSecret: readEnv("STRIPE_WEBHOOK_SECRET"),
+    siteUrl: readEnv("NEXT_PUBLIC_SITE_URL"),
   };
 }
 
-/**
- * The ship-to address for orosy wholesale/procurement orders 窶・TRACER's own
- * warehouse, not a customer's address. Returns null (not a guessed/partial
- * address) unless every field is actually configured.
- */
 export function getOrosyWarehouseShipTo(): {
   name: string;
   postal_code: string;
@@ -200,12 +173,12 @@ export function getOrosyWarehouseShipTo(): {
   address_line1: string;
   phone: string;
 } | null {
-  const name = process.env.OROSY_WAREHOUSE_NAME?.trim();
-  const postalCode = process.env.OROSY_WAREHOUSE_POSTAL_CODE?.trim();
-  const prefecture = process.env.OROSY_WAREHOUSE_PREFECTURE?.trim();
-  const city = process.env.OROSY_WAREHOUSE_CITY?.trim();
-  const addressLine1 = process.env.OROSY_WAREHOUSE_ADDRESS_LINE1?.trim();
-  const phone = process.env.OROSY_WAREHOUSE_PHONE?.trim();
+  const name = readEnv("OROSY_WAREHOUSE_NAME");
+  const postalCode = readEnv("OROSY_WAREHOUSE_POSTAL_CODE");
+  const prefecture = readEnv("OROSY_WAREHOUSE_PREFECTURE");
+  const city = readEnv("OROSY_WAREHOUSE_CITY");
+  const addressLine1 = readEnv("OROSY_WAREHOUSE_ADDRESS_LINE1");
+  const phone = readEnv("OROSY_WAREHOUSE_PHONE");
 
   if (!name || !postalCode || !prefecture || !city || !addressLine1 || !phone) {
     return null;
@@ -216,19 +189,12 @@ export function getOrosyWarehouseShipTo(): {
 
 export function getNewfindConfig() {
   return {
-    webhookSecret: process.env.NEWFIND_WEBHOOK_SECRET?.trim() ?? "",
-    apiUrl: process.env.NEWFIND_API_URL?.trim() ?? "",
-    apiKey: process.env.NEWFIND_API_KEY?.trim() ?? "",
+    webhookSecret: readEnv("NEWFIND_WEBHOOK_SECRET"),
+    apiUrl: readEnv("NEWFIND_API_URL"),
+    apiKey: readEnv("NEWFIND_API_KEY"),
   };
 }
-/**
- * Generic supplier-order safety gate.
- * Real supplier ordering stays in dry-run mode unless explicitly disabled.
- * Supplier-specific live-order switches (for example CJ_LIVE_ORDERING)
- * remain authoritative inside their respective adapters.
- */
+
 export function isSupplierDryRunEnabled(): boolean {
-  return process.env.SUPPLIER_DRY_RUN?.trim() !== "0";
+  return readEnv("SUPPLIER_DRY_RUN") !== "0";
 }
-
-
