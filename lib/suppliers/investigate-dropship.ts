@@ -431,7 +431,7 @@ export async function investigateDropshipForBestsellers(
       const searchProducts = searches.flatMap((search) => search.products);
       const marketTitle = String(record.title ?? "").toLowerCase();
       const marketTokens = marketTitle
-        .split(/[^\\p{L}\\p{N}]+/u)
+        .split(/[^\p{L}\p{N}]+/u)
         .map((token) => token.trim())
         .filter((token) => token.length >= 2);
       const marketMpn = marketIds.mpn?.toLowerCase() ?? null;
