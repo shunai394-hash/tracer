@@ -522,6 +522,25 @@ export function verifyBestsellerParseInvariants(): {
     </div>
   `);
 
+  const amazonJsonLdMpn = parseAmazonProductDetail(`
+    <html>
+      <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "brand": {"@type": "Brand", "name": "TestBrand"},
+          "mpn": "MODEL-123",
+          "name": "Test Product"
+        }
+      </script>
+    </html>
+  `);
+  if (amazonJsonLdMpn.model !== "MODEL-123" || amazonJsonLdMpn.brand !== "TestBrand") {
+    return {
+      ok: false,
+      cases: [{ name: "amazon_jsonld_mpn_and_brand_are_recovered", expected: true, actual: false }],
+    };
+  }
+
   const empty = parseAmazonBestsellersHtml("<html></html>");
 
   // ASIN only survives on the outbound link, not on a `data-asin`
