@@ -57,20 +57,11 @@ export async function promoteShopListingToNewfind(
 ): Promise<NewfindPromotionResult> {
   const cfg = getNewfindConfig();
   const id = eventId(listingId);
-
-  if (!cfg.apiUrl || !cfg.webhookSecret) {
-    return {
-      configured: false,
-      sent: false,
-      eventId: id,
-      status: null,
-      ackStatus: null,
-      detail: "newfind_bridge_not_configured",
-    };
-  }
-
   const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
 
+  // Persist the delivery even when NEWFIND is temporarily unconfigured.
+  // Once configuration is restored, the retry cron can drain this pending
+  // row without requiring the source listing to be republished.
   await supabase
     .from("newfind_promotion_deliveries")
     .upsert(
@@ -82,6 +73,17 @@ export async function promoteShopListingToNewfind(
       },
       { onConflict: "listing_id", ignoreDuplicates: true },
     );
+
+  if (!cfg.apiUrl || !cfg.webhookSecret) {
+    return {
+      configured: false,
+      sent: false,
+      eventId: id,
+      status: null,
+      ackStatus: null,
+      detail: "newfind_bridge_not_configured",
+    };
+  }
 
   const { data: existingDelivery, error: deliveryReadError } = await supabase
     .from("newfind_promotion_deliveries")
