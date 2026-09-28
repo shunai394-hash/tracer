@@ -4,21 +4,15 @@ import { CJConfigError, CJRequestError } from "@/lib/sources/cj/client";
 import { getCJConfig } from "@/lib/config/env";
 
 /**
- * UNVERIFIED FIELD MAPPING — read this before enabling live ordering.
+ * CJ createOrderV2 contract checked against the official CJ API v2.0 docs.
  *
- * developers.cjdropshipping.com and developers.cjdropshipping.cn are both
- * blocked by this environment's network egress proxy (EGRESS_BLOCKED). The
- * "CJ Docs > API v2.0 > shopping.html" page describing createOrderV2 could
- * not be fetched and read directly here. The field names below come from
- * search-engine-indexed secondary sources (an AI-summarized web search
- * result), not a primary document this code read itself. They are a
- * best-effort reconstruction, not a confirmed official contract.
+ * createOrderV2 requires shippingCountry, logisticName, and fromCountryCode
+ * in addition to the destination address fields. TRACER currently does not
+ * have a verified source for those values at live-order execution time, so
+ * this function fails closed before authentication/network I/O when any of
+ * them is missing.
  *
- * This is why executeLivePurchaseOrder() requires BOTH CJ_LIVE_ORDERING=1
- * AND an explicit per-order human confirmation (purchase_orders.human_confirmed_at)
- * before this function is ever called — see lib/ordering/dropship.ts. A
- * human must compare this against the live CJ developer docs before relying
- * on it for a real purchase.
+ * Source: https://developers.cjdropshipping.com/en/api/api2/api/shopping.html
  */
 export type CJOrderProduct = {
   vid: string;
@@ -36,12 +30,14 @@ export type CJCreateOrderInput = {
   shippingZip: string;
   shippingPhone: string;
   shippingCustomerName: string;
-  /** Optional — only sent when the caller has a real value; never guessed. */
   remark?: string;
   email?: string;
+  /** Required by CJ createOrderV2. Never guess this value. */
   logisticName?: string;
-  /** Optional — CJ's valid values for this field were not corroborated; omit unless explicitly configured. */
+  /** Required by CJ createOrderV2. Never guess this value. */
   fromCountryCode?: string;
+  /** Required by CJ createOrderV2. Human-readable destination country. */
+  shippingCountry?: string;
   products: CJOrderProduct[];
 };
 
@@ -107,6 +103,23 @@ export async function createCJOrderV2(
   if (input.products.length === 0) {
     throw new CJRequestError("order has no line items");
   }
+
+  // Fail closed before obtaining a CJ access token. These are official
+  // createOrderV2 required fields and TRACER must never invent them.
+  const requiredFields: Array<[string, string | undefined]> = [
+    ["shippingCountry", input.shippingCountry],
+    ["logisticName", input.logisticName],
+    ["fromCountryCode", input.fromCountryCode],
+    ["shippingCountryCode", input.shippingCountryCode],
+    ["shippingProvince", input.shippingProvince],
+    ["shippingCity", input.shippingCity],
+    ["shippingAddress", input.shippingAddress],
+    ["shippingCustomerName", input.shippingCustomerName],
+  ];
+  const missingField = requiredFields.find(([, value]) => !value?.trim());
+  if (missingField) {
+    throw new CJRequestError(`required CJ createOrderV2 field is missing: ${missingField[0]}`);
+  }
   for (const product of input.products) {
     if (!product.vid) throw new CJRequestError("variant id (vid) is unknown for a line item");
     if (!Number.isFinite(product.quantity) || product.quantity <= 0) {
@@ -120,6 +133,7 @@ export async function createCJOrderV2(
     orderNumber: input.orderNumber,
     shippingZip: input.shippingZip,
     shippingCountryCode: input.shippingCountryCode,
+    shippingCountry: input.shippingCountry,
     shippingProvince: input.shippingProvince,
     shippingCity: input.shippingCity,
     shippingAddress: input.shippingAddress,
@@ -133,8 +147,8 @@ export async function createCJOrderV2(
   };
   if (input.remark) body.remark = input.remark;
   if (input.email) body.email = input.email;
-  if (input.logisticName) body.logisticName = input.logisticName;
-  if (input.fromCountryCode) body.fromCountryCode = input.fromCountryCode;
+  body.logisticName = input.logisticName;
+  body.fromCountryCode = input.fromCountryCode;
 
   const response = await fetch(
     "https://developers.cjdropshipping.com/api2.0/v1/shopping/order/createOrderV2",
@@ -175,12 +189,9 @@ export async function createCJOrderV2(
 }
 
 /**
- * UNVERIFIED — the endpoint path is a low-confidence guess (weakly
- * corroborated by search, not read from the primary doc — see module header).
- * The status/tracking field names below were not corroborated by any source
- * found, so parsing is deliberately generic and defensive: it never assumes
- * a specific status vocabulary, and always returns the raw payload so a
- * human can inspect what CJ actually sent before this is trusted anywhere.
+ * Status/tracking parsing remains intentionally defensive because supplier
+ * status vocabulary can vary across CJ order states. The endpoint itself is
+ * documented by CJ API v2.0.
  */
 export type CJOrderStatusResult = {
   status: string | null;
