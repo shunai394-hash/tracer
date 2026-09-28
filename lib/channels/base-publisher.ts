@@ -33,6 +33,10 @@ export async function publishPublishedListingsToBase(
     )
     .eq("published", true)
     .not("selling_price", "is", null)
+    // Prioritize listings that have not reached BASE yet. Otherwise a cron
+    // limit can be consumed entirely by already-published listings and leave
+    // new/failed listings waiting indefinitely.
+    .order("base_item_id", { ascending: true, nullsFirst: true })
     .order("created_at", { ascending: false })
     .limit(limit);
 
