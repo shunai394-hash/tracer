@@ -51,7 +51,7 @@ export function getFoundationStatus(): FoundationStatus {
     })(),
     stripe: present(readEnv("STRIPE_SECRET_KEY")),
     stripeWebhook: present(readEnv("STRIPE_WEBHOOK_SECRET")),
-    orosy: present(readEnv("OROSY_API_KEY")),
+    orosy: present(getOrosyConfig().apiKey),
     faire: present(readEnv("FAIRE_ACCESS_TOKEN")),
     dsersMcp: present(readEnv("DSERS_MCP_URL")) && present(readEnv("DSERS_MCP_ACCESS_TOKEN")),
     ecPulse: present(readEnv("EC_PULSE_API_KEY")),
