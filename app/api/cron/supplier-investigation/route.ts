@@ -45,6 +45,11 @@ export async function GET(request: Request) {
       .select("id")
       .in("pipeline_status", ["pending", "failed"])
       .or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null,mpn.not.is.null,asin.not.is.null")
+      .order("jan", { ascending: false, nullsFirst: false })
+      .order("gtin", { ascending: false, nullsFirst: false })
+      .order("ean", { ascending: false, nullsFirst: false })
+      .order("upc", { ascending: false, nullsFirst: false })
+      .order("mpn", { ascending: false, nullsFirst: false })
       .order("fetched_at", { ascending: false })
       .limit(BESTSELLER_CANDIDATE_BATCH_SIZE);
 
