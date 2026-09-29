@@ -85,7 +85,6 @@ export async function selectAndPublishSalesTests(
     reasons: string[];
     qualityScore: number;
     demandScore: number;
-    painScore: number;
   }> = [];
 
   // Use the intelligence pipeline's persisted, multi-source scores rather than
