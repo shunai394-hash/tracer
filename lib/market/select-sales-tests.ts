@@ -84,7 +84,49 @@ export async function selectAndPublishSalesTests(
     profit: ReturnType<typeof simulateContributionProfit>;
     reasons: string[];
     qualityScore: number;
+    demandScore: number;
+    painScore: number;
   }> = [];
+
+  // Demand and customer-problem evidence is a first-class quality signal.
+  // Reuse the existing market_signals evidence layer instead of inventing a
+  // second scoring database.
+  const productIds = (bestsellers ?? [])
+    .map((row) => String((row as Record<string, unknown>).product_id ?? ""))
+    .filter(Boolean);
+  const { data: marketSignals, error: signalError } = productIds.length === 0
+    ? { data: [], error: null }
+    : await supabase
+        .from("market_signals")
+        .select("product_id,kind,summary,confidence,observed_at")
+        .in("product_id", productIds)
+        .order("observed_at", { ascending: false })
+        .limit(Math.min(1000, productIds.length * 50));
+  if (signalError) throw new Error(signalError.message);
+
+  const evidenceByProduct = new Map<string, { demand: number; pain: number; count: number }>();
+  for (const signal of marketSignals ?? []) {
+    const productId = String(signal.product_id ?? "");
+    if (!productId) continue;
+    const kind = String(signal.kind ?? "").toLowerCase();
+    const summary = String(signal.summary ?? "").toLowerCase();
+    const confidence = Math.max(0, Math.min(1, asNumber(signal.confidence) ?? 0.5));
+    const bucket = evidenceByProduct.get(productId) ?? { demand: 0, pain: 0, count: 0 };
+    bucket.count += 1;
+
+    const demandKind = /(trend|demand|search|rising|intent|purchase|sales|market)/.test(kind);
+    const painKind = /(pain|problem|emotion|complaint|review|need|friction)/.test(kind);
+    const demandText = /(需要|検索|トレンド|急上昇|人気|購入|売れ|demand|search|trend|rising|buy|purchase|popular)/.test(summary);
+    const painText = /(悩み|困る|不便|面倒|痛い|不満|問題|解決|欲しい|ストレス|不安|恥ずか|疲れ|pain|problem|frustrat|annoy|difficult|need|want|stress|embarrass|tired)/.test(summary);
+
+    if (demandKind || demandText) bucket.demand += 18 * confidence;
+    if (painKind || painText) bucket.pain += 22 * confidence;
+    if (demandText && painText) {
+      bucket.demand += 8 * confidence;
+      bucket.pain += 8 * confidence;
+    }
+    evidenceByProduct.set(productId, bucket);
+  }
 
   for (const row of bestsellers ?? []) {
     const bestseller = row as Record<string, unknown>;
@@ -213,21 +255,34 @@ export async function selectAndPublishSalesTests(
     const inventoryScore = Math.min(100, Math.log10(Math.max(1, inventory) + 1) * 30);
     const identityScore = Math.max(0, Math.min(100, (identityConfidence ?? 0) * 100));
     const trackingScore = listing.tracking_available === true ? 100 : 0;
+    const evidence = evidenceByProduct.get(String(bestseller.product_id ?? "")) ?? { demand: 0, pain: 0, count: 0 };
+    const demandScore = Math.max(0, Math.min(100, evidence.demand + Math.min(25, evidence.count * 3)));
+    const painScore = Math.max(0, Math.min(100, evidence.pain));
+
+    // Precision-first weighting: demand and customer pain are now first-class
+    // signals, so marketplace rank alone cannot dominate the decision.
     const qualityScore =
-      rankScore * 0.25 +
-      reviewScore * 0.10 +
-      marginScore * 0.25 +
-      inventoryScore * 0.10 +
-      identityScore * 0.15 +
-      trackingScore * 0.15;
+      rankScore * 0.15 +
+      reviewScore * 0.05 +
+      marginScore * 0.20 +
+      inventoryScore * 0.05 +
+      identityScore * 0.10 +
+      trackingScore * 0.10 +
+      demandScore * 0.20 +
+      painScore * 0.15;
 
     eligible.push({
       bestseller,
       listing,
       profit,
       qualityScore,
+      demandScore,
+      painScore,
       reasons: [
         `quality_score_${qualityScore.toFixed(1)}`,
+        `demand_score_${demandScore.toFixed(1)}`,
+        `pain_score_${painScore.toFixed(1)}`,
+        `demand_evidence_${String(evidence.count)}`,
         `marketplace_rank_${String(bestseller.rank)}`,
         `identity_${String(listing.identity_method)}`,
         `margin_${margin.toFixed(1)}pct`,
@@ -238,7 +293,8 @@ export async function selectAndPublishSalesTests(
   }
 
   // Rank is useful, but it is not sufficient for a high-quality sourcing
-  // decision. Use only observed fields that already passed the hard gates.
+  // decision. Demand and customer-problem evidence now materially affect the
+  // score while the existing hard supplier/identity/profit gates remain intact.
   eligible.sort((a, b) => {
     if (b.qualityScore !== a.qualityScore) return b.qualityScore - a.qualityScore;
     const rankA = asNumber(a.bestseller.rank) ?? Number.POSITIVE_INFINITY;
