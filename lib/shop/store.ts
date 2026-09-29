@@ -151,20 +151,18 @@ export async function placeShopOrder(args: {
     lines.push({ listing, qty: item.qty, unitPrice });
   }
 
-  const isCardPayment = args.paymentMethod === "card";
-
+  // Every payment method starts unconfirmed. Stripe card payments are
+  // promoted to paid by the webhook; COD/bank transfer require a separate
+  // confirmed-payment workflow before procurement is authorized.
   const { data: order, error: orderError } = await supabase
     .from("shop_orders")
     .insert({
       listing_id: lines[0].listing.id,
       status: "placed",
       payment_method: args.paymentMethod,
-      // Card payment is not confirmed until Stripe's webhook says so; other
-      // payment methods have no gateway and keep this codebase's existing
-      // behavior of being treated as confirmed at order time.
-      payment_status: isCardPayment ? "pending" : "paid",
-      order_status: isCardPayment ? "pending_payment" : "fulfillment_pending",
-      paid_at: isCardPayment ? null : new Date().toISOString(),
+      payment_status: "pending",
+      order_status: "pending_payment",
+      paid_at: null,
       customer_name: args.customerName,
       customer_email: args.customerEmail,
       customer_phone: args.customerPhone,
