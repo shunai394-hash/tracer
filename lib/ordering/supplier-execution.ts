@@ -7,7 +7,7 @@ import {
   isSupplierConfigured,
   isSupplierDryRunEnabled,
 } from "@/lib/config/env";
-import { getSupplierAdapter } from "@/lib/procurement/registry";
+import { getSupplierAdapter, getSupplierCapabilities } from "@/lib/procurement/registry";
 import { initializeProcurement } from "@/lib/procurement/init";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { getObservedFxRate } from "@/lib/intelligence/fx";
@@ -120,6 +120,30 @@ export async function executeSupplierPurchaseOrder(
       succeeded: false,
       supplierOrderId: null,
       reason: "supplier_adapter_not_registered",
+      gate: null,
+    };
+  }
+
+  const capabilities = getSupplierCapabilities(supplierName);
+  const requiredCapabilities = [
+    ["variant", capabilities.variant],
+    ["inventory", capabilities.inventory],
+    ["price", capabilities.price],
+    ["shipping", capabilities.shipping],
+    ["orderCreation", capabilities.orderCreation],
+    ["liveOrdering", capabilities.liveOrdering],
+  ] as const;
+  const missingCapabilities = requiredCapabilities
+    .filter(([, supported]) => !supported)
+    .map(([name]) => name);
+  if (missingCapabilities.length > 0) {
+    return {
+      purchaseOrderId,
+      supplierName,
+      attempted: false,
+      succeeded: false,
+      supplierOrderId: null,
+      reason: `supplier_capability_missing:${missingCapabilities.join(",")}`,
       gate: null,
     };
   }
