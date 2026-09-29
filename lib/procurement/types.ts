@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 export type SupplierProduct = {
   supplierProductId: string;
@@ -70,6 +70,19 @@ export type SupplierOrderInput = {
   shippingPhone: string;
   shippingCustomerName: string;
   email?: string;
+  /**
+   * Supplier-specific, non-financial order material.
+   * Generic execution never interprets this field. Suppliers that require
+   * additional artifacts (for example Printful design files) must validate
+   * the exact schema in validateOrderInput before createOrder is reachable.
+   */
+  supplierPayload?: unknown;
+};
+
+export type SupplierOrderValidation = {
+  valid: boolean;
+  responseCode: string;
+  responseMessage: string | null;
 };
 
 export type SupplierOrderResult = {
@@ -127,6 +140,15 @@ export interface TracerSupplierAdapter {
     context?: SupplierShippingContext,
   ): Promise<SupplierShipping | null>;
 
+  /**
+   * Optional supplier-specific preflight. If implemented, it must pass before
+   * an attempt row is claimed and before createOrder can cause an external side
+   * effect. Existing suppliers remain unchanged until they opt into it.
+   */
+  validateOrderInput?(
+    input: SupplierOrderInput,
+  ): Promise<SupplierOrderValidation>;
+
   createOrder(
     input: SupplierOrderInput,
   ): Promise<SupplierOrderResult>;
@@ -135,4 +157,3 @@ export interface TracerSupplierAdapter {
 
   getTracking(supplierOrderId: string): Promise<SupplierTracking | null>;
 }
-
