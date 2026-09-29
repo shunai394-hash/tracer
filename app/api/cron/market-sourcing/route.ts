@@ -107,7 +107,7 @@ export async function GET(request: Request) {
 
     if (cronRunId) {
       await supabase.from("cron_runs").update({
-        status: "completed",
+        status: "succeeded",
         finished_at: new Date().toISOString(),
         duration_ms: Date.now() - startedAt,
         processed: candidateIds.length,
