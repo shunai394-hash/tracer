@@ -70,7 +70,7 @@ export function getBrightDataConfig() {
 export function getSupabasePublicConfig() {
   return {
     url: readEnv("NEXT_PUBLIC_SUPABASE_URL"),
-    anonKey: readEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    anonKey:\n      readEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY") ||\n      readEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
   };
 }
 
