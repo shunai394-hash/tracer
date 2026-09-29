@@ -5,6 +5,7 @@ import {
   isSupplierAutoOrderingEnabled,
   isSupplierLiveOrderingEnabled,
   isSupplierConfigured,
+  isSupplierDryRunEnabled,
 } from "@/lib/config/env";
 import { getSupplierAdapter } from "@/lib/procurement/registry";
 import { initializeProcurement } from "@/lib/procurement/init";
@@ -304,6 +305,18 @@ export async function executeSupplierPurchaseOrder(
           ...gate.blocked,
           ...executionMissing,
         ].join(",") || "not_ready",
+      gate,
+    };
+  }
+
+  if (isSupplierDryRunEnabled()) {
+    return {
+      purchaseOrderId,
+      supplierName,
+      attempted: false,
+      succeeded: false,
+      supplierOrderId: null,
+      reason: "supplier_dry_run_enabled",
       gate,
     };
   }
