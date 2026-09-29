@@ -179,6 +179,7 @@ export function getMcpToolConsumer() {
     async listTools(): Promise<string[]> {
       await ensureInitialized();
       const response = await rpc("tools/list");
+      if (!response) throw new McpRequestError("MCP tools/list returned no response");
       return (response.result?.tools ?? []).map((tool) => tool.name);
     },
     async callTool(call: McpToolCall): Promise<unknown> {
@@ -187,6 +188,8 @@ export function getMcpToolConsumer() {
         name: call.name,
         arguments: call.arguments,
       });
+
+      if (!response) throw new McpRequestError(`MCP tool "${call.name}" returned no response`);
 
       if (response.result?.isError) {
         throw new McpRequestError(`MCP tool "${call.name}" returned an error`);
