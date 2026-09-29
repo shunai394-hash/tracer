@@ -154,6 +154,7 @@ function productMatchesQuery(
 
   if (!normalizedQuery || !normalizedProduct) return false;
 
+  // Exact containment remains the strongest deterministic match.
   if (
     normalizedQuery === normalizedProduct ||
     normalizedQuery.includes(normalizedProduct) ||
@@ -162,30 +163,34 @@ function productMatchesQuery(
     return true;
   }
 
-  const aliases: Record<string, string[]> = {
-    "Apple AirPods Pro 3": [
-      "airpods",
-      "airpods pro",
-      "驛｢・ｧ繝ｻ・ｨ驛｢・ｧ繝ｻ・｢驛｢譎・ｺ｢郢晢ｽ｣驛｢・ｧ繝ｻ・ｺ",
-      "airpods pro 3",
-    ],
-    "Samsung Galaxy Buds4": [
-      "galaxy buds",
-      "galaxy buds4",
-      "驛｢・ｧ繝ｻ・ｮ驛｢譎｢・ｽ・｣驛｢譎｢・ｽ・ｩ驛｢・ｧ繝ｻ・ｯ驛｢・ｧ繝ｻ・ｷ驛｢譎｢・ｽ・ｼ驛｢譎√・郢晢ｽ｣驛｢・ｧ繝ｻ・ｺ",
-    ],
-    "Google Pixel Buds 2a True Wireless Earbuds": [
-      "pixel buds",
-      "pixel buds 2a",
-      "驛｢譎・ｱ堤ｸｺ驢搾ｽｹ・ｧ繝ｻ・ｻ驛｢譎｢・ｽ・ｫ驛｢譎√・郢晢ｽ｣驛｢・ｧ繝ｻ・ｺ",
-    ],
-  };
+  // Match meaningful query tokens against the canonical product name. The
+  // previous implementation only handled a few hard-coded products, which
+  // left most Google Trends demand observations permanently unmatched.
+  const queryTokens = normalizedQuery
+    .split(/[^\p{L}\p{N}]+/gu)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2);
 
-  const productAliases = aliases[productName] ?? [];
+  if (queryTokens.length === 0) return false;
 
-  return productAliases.some((alias) =>
-    normalizedQuery.includes(normalize(alias)),
+  const matchedTokens = queryTokens.filter((token) =>
+    normalizedProduct.includes(token),
   );
+
+  // For multi-token queries require every meaningful token. For a single
+  // token, require a sufficiently distinctive token so generic words do not
+  // fan out to the whole catalog.
+  if (queryTokens.length >= 2) {
+    return matchedTokens.length === queryTokens.length;
+  }
+
+  const token = queryTokens[0];
+  const categoryKeywords = Object.values(PRODUCT_CATEGORY_KEYWORDS).flat();
+  const isKnownProductTerm = categoryKeywords.some(
+    (keyword) => normalize(keyword) === token || normalize(keyword).includes(token),
+  );
+
+  return isKnownProductTerm && matchedTokens.length === 1;
 }
 
 export async function matchDemandProductsByCategory(): Promise<DemandProductMatchResult> {
