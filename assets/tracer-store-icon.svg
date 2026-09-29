@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07152f"/>
+      <stop offset=".55" stop-color="#02040b"/>
+      <stop offset="1" stop-color="#0b0a1f"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset=".45" stop-color="#2563eb"/>
+      <stop offset=".72" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#ec4899"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="210" fill="url(#bg)"/>
+  <path d="M180 265H820L775 335H225Z" fill="url(#mark)"/>
+  <path d="M492 330C416 356 360 416 348 487C338 545 360 605 396 653L448 721V779C448 801 470 812 490 802L562 766C580 757 592 739 592 718V430C592 382 618 347 668 330Z" fill="url(#mark)"/>
+  <path d="M654 452L796 536C816 548 816 574 796 586L654 670C634 682 610 668 610 644V478C610 454 634 440 654 452Z" fill="url(#mark)"/>
+  <text x="512" y="875" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="91" font-weight="700" letter-spacing="20" fill="#fff">TRACER</text>
+</svg>
