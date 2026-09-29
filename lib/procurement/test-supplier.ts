@@ -13,6 +13,19 @@ import type {
 
 export const tracerTestSupplier: TracerSupplierAdapter = {
   name: "TRACER_TEST",
+  capabilities: {
+    catalog: false,
+    variant: false,
+    inventory: false,
+    price: false,
+    shipping: false,
+    shippingRequiresDestination: false,
+    orderPreflight: false,
+    orderCreation: false,
+    orderStatus: false,
+    tracking: false,
+    liveOrdering: false,
+  },
 
   async search(): Promise<SupplierProduct[]> {
     return [];
