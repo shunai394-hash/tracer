@@ -19,6 +19,19 @@ const SUPPLIER_NAME = "cj";
 
 export const cjSupplierAdapter: TracerSupplierAdapter = {
   name: SUPPLIER_NAME,
+  capabilities: {
+    catalog: true,
+    variant: true,
+    inventory: true,
+    price: true,
+    shipping: true,
+    shippingRequiresDestination: true,
+    orderPreflight: false,
+    orderCreation: true,
+    orderStatus: true,
+    tracking: true,
+    liveOrdering: true,
+  },
 
   async search(query: string): Promise<SupplierProduct[]> {
     const result = await searchCJProducts(query, { page: 1, size: 20 });
