@@ -26,6 +26,7 @@ function addressComplete(order: Record<string, unknown>): boolean | null {
     order.shipping_province,
     order.shipping_city,
     order.shipping_line1,
+    order.shipping_zip,
   ];
   if (fields.every((value) => value === null || value === undefined)) return null;
   return fields.every((value) => typeof value === "string" && value.trim().length > 0);
