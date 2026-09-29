@@ -3,7 +3,7 @@ import { existsSync, writeFileSync } from "node:fs";
 
 const appId = process.env.TRACER_MOBILE_APP_ID?.trim();
 const appName = process.env.TRACER_MOBILE_APP_NAME?.trim() || "TRACER";
-const webUrl = process.env.TRACER_MOBILE_WEB_URL?.trim() || "https://tracer-3w9iajzai-shunai394-9704s-projects.vercel.app";
+const webUrl = process.env.TRACER_MOBILE_WEB_URL?.trim();
 
 if (!appId) {
   console.error("TRACER_MOBILE_APP_ID is required.");
