@@ -99,6 +99,7 @@ async function fetchHtml(url: string): Promise<string | null> {
           Accept: "text/html,application/xhtml+xml",
           "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
         },
+        signal: AbortSignal.timeout(8_000),
       });
 
       if (!response.ok) return null;
