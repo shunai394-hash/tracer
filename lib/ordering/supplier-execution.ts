@@ -513,6 +513,31 @@ export async function executeSupplierPurchaseOrder(
     };
   }
 
+  // Re-read immediately before the external side effect. A customer cancellation
+  // can arrive while live supplier validation is running; cancellation must win.
+  if (po.shop_order_id) {
+    const { data: latestShopOrder } = await supabase
+      .from("shop_orders")
+      .select("order_status")
+      .eq("id", po.shop_order_id)
+      .maybeSingle();
+    if (latestShopOrder && ["cancellation_requested", "refund_pending", "cancelled", "refunded"].includes(String(latestShopOrder.order_status))) {
+      await supabase
+        .from("supplier_order_attempts")
+        .update({ state: "unknown", response_code: "CUSTOMER_CANCELLATION_REQUESTED", response_message: "Customer cancellation arrived before supplier execution." })
+        .eq("id", attemptId);
+      return {
+        purchaseOrderId,
+        supplierName,
+        attempted: false,
+        succeeded: false,
+        supplierOrderId: null,
+        reason: "customer_cancellation_requested_before_supplier_execution",
+        gate,
+      };
+    }
+  }
+
   let result;
   try {
     result = await adapter.createOrder(orderInput);
