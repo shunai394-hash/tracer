@@ -603,7 +603,7 @@ export async function executeLivePurchaseOrder(
   const idempotencyKey = typeof po.idempotency_key === "string" ? po.idempotency_key : `dropship:${purchaseOrderId}`;
 
   const { data: existingAttempt } = await supabase
-    .from("cj_order_attempts")
+    .from("supplier_order_attempts")
     .select("*")
     .eq("idempotency_key", idempotencyKey)
     .maybeSingle();
@@ -666,7 +666,7 @@ export async function executeLivePurchaseOrder(
 
   if (existingAttempt) {
     const { data: claimedAttempt } = await supabase
-      .from("cj_order_attempts")
+      .from("supplier_order_attempts")
       .update({
         state: "in_progress",
         response_code: "IN_PROGRESS",
@@ -690,7 +690,7 @@ export async function executeLivePurchaseOrder(
     attemptId = String(claimedAttempt.id);
   } else {
     const { data: claimedAttempt, error: claimError } = await supabase
-      .from("cj_order_attempts")
+      .from("supplier_order_attempts")
       .insert({
         purchase_order_id: purchaseOrderId,
         idempotency_key: idempotencyKey,
@@ -758,7 +758,7 @@ export async function executeLivePurchaseOrder(
   }));
 
   const attemptUpdate = await supabase
-    .from("cj_order_attempts")
+    .from("supplier_order_attempts")
     .update({
       response_code: result.responseCode,
       response_message: result.responseMessage,
