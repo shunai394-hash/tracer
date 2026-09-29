@@ -57,8 +57,7 @@ export async function persistMarketplaceBestsellers(): Promise<{
         marketplace.source,
         item.asin || item.productUrl || [
           marketplace.marketplace,
-          item.title,
-          `rank:${item.rank ?? ""}`,
+          item.title.toLowerCase().replace(/\s+/g, " ").trim(),
         ].join("::"),
       ].join("::");
 
