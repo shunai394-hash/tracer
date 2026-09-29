@@ -94,6 +94,7 @@ export const dsersSupplierAdapter: TracerSupplierAdapter = {
     shippingRequiresDestination: true,
     orderPreflight: false,
     orderCreation: false,
+    payment: false,
     orderStatus: true,
     tracking: true,
     liveOrdering: false,
