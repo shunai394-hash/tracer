@@ -86,6 +86,7 @@ export async function selectAndPublishSalesTests(
     qualityScore: number;
   }> = [];
 
+  // Publication gate fields are loaded together with the scores so the persisted gate is authoritative.
   // Use the intelligence pipeline's persisted, multi-source scores rather than
   // keyword guessing against free text. This keeps sales selection aligned with
   // demand, search-fit, market-gap, competition and creative intelligence that
