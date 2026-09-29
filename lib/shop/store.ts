@@ -200,16 +200,10 @@ export async function placeShopOrder(args: {
     });
     if (itemInsert.error) throw new Error(itemInsert.error.message);
 
-    // For card payment the purchase funnel event fires only once Stripe's
-    // webhook confirms the charge (see app/api/webhooks/stripe/route.ts) —
-    // recording "purchase" before payment is confirmed would overstate CVR.
-    if (!isCardPayment) {
-      await recordShopFunnelEvent({
-        listingId: String(line.listing.id),
-        eventType: "purchase",
-        qty: line.qty,
-      });
-    }
+    // "purchase" means payment-confirmed purchase, so it must never fire
+    // at order creation time for an unconfirmed payment method. The Stripe
+    // webhook records it after confirmed payment; non-card payment methods
+    // need their own confirmed-payment workflow before this event is emitted.
   }
 
   return { orderId: String(order.id) };
