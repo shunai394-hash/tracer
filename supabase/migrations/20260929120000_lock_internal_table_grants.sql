@@ -8,7 +8,7 @@ begin
   foreach t in array array[
     'purchase_orders','purchase_order_items','shop_orders','shop_order_items',
     'supplier_listings','shop_listings','marketplace_bestsellers',
-    'cj_order_attempts','cron_runs','newfind_promotion_deliveries'
+    'cj_order_attempts','supplier_order_attempts','cron_runs','newfind_promotion_deliveries'
   ] loop
     execute format('revoke all on table public.%I from anon', t);
     execute format('revoke all on table public.%I from authenticated', t);
