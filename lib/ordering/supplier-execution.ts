@@ -99,7 +99,7 @@ export async function executeSupplierPurchaseOrder(
     };
   }
 
-  if (po.status !== "pending_approval" && po.status !== "placed") {
+  if (po.status !== "pending_approval" && po.status !== "auto_blocked" && po.status !== "placed") {
     return {
       purchaseOrderId,
       supplierName,
