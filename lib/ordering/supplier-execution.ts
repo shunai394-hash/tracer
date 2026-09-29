@@ -249,7 +249,7 @@ export async function executeSupplierPurchaseOrder(
     gate.blocked.length === 0 &&
     !gate.liveOrderingDisabled;
 
-  await supabase
+  const { error: refreshPersistError } = await supabase
     .from("purchase_orders")
     .update({
       unit_cost: sourceCost,
@@ -271,6 +271,21 @@ export async function executeSupplierPurchaseOrder(
       },
     })
     .eq("id", purchaseOrderId);
+
+  // Do not create an external supplier order if the authoritative live
+  // refresh could not be persisted. Otherwise the external side effect could
+  // succeed while TRACER loses the evidence needed to reconcile it safely.
+  if (refreshPersistError) {
+    return {
+      purchaseOrderId,
+      supplierName,
+      attempted: false,
+      succeeded: false,
+      supplierOrderId: null,
+      reason: "supplier_refresh_persist_failed",
+      gate,
+    };
+  }
 
   if (!canExecuteLive) {
     return {
