@@ -331,7 +331,7 @@ export async function executeSupplierPurchaseOrder(
     };
   }
 
-  if (existingAttempt?.state === "unknown") {
+  if (existingAttempt?.state === "unknown" || (existingAttempt?.state === "completed" && !existingAttempt?.supplier_order_id)) {
     return {
       purchaseOrderId,
       supplierName,
