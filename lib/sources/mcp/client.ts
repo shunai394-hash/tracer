@@ -113,7 +113,7 @@ export function getMcpToolConsumer() {
     method: string,
     params: Record<string, unknown> = {},
     notification = false,
-  ): Promise<JsonRpcResponse | null> {
+  ): Promise<JsonRpcResponse> {
     const body: Record<string, unknown> = {
       jsonrpc: "2.0",
       method,
@@ -144,7 +144,7 @@ export function getMcpToolConsumer() {
     sessionId ??= response.headers.get("Mcp-Session-Id") ?? undefined;
 
     if (notification && (response.status === 202 || response.status === 204)) {
-      return null;
+      return {};
     }
 
     const payload = await readRpcResponse(response);
@@ -179,7 +179,6 @@ export function getMcpToolConsumer() {
     async listTools(): Promise<string[]> {
       await ensureInitialized();
       const response = await rpc("tools/list");
-      if (!response) throw new McpRequestError("MCP tools/list returned no response");
       return (response.result?.tools ?? []).map((tool) => tool.name);
     },
     async callTool(call: McpToolCall): Promise<unknown> {
@@ -189,7 +188,6 @@ export function getMcpToolConsumer() {
         arguments: call.arguments,
       });
 
-      if (!response) throw new McpRequestError(`MCP tool "${call.name}" returned no response`);
 
       if (response.result?.isError) {
         throw new McpRequestError(`MCP tool "${call.name}" returned an error`);
