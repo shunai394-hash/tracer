@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getCJConfig, isCJAutoOrderingEnabled, isCJLiveOrderingEnabled } from "@/lib/config/env";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { createCJOrderV2 } from "@/lib/sources/cj/create-order";
-import { fetchCJVariantStock } from "@/lib/sources/cj/client";
+import { fetchCJVariantStock, getCJFreightOptions } from "@/lib/sources/cj/client";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import {
   evaluateDropshipOrderGate,
@@ -26,6 +26,7 @@ function addressComplete(order: Record<string, unknown>): boolean | null {
     order.shipping_province,
     order.shipping_city,
     order.shipping_line1,
+    order.shipping_zip,
   ];
   if (fields.every((value) => value === null || value === undefined)) return null;
   return fields.every((value) => typeof value === "string" && value.trim().length > 0);
@@ -543,6 +544,50 @@ export async function executeLivePurchaseOrder(
       .eq("id", purchaseOrderId);
   }
 
+  const shippingCountryCode = String(shopOrderRow.shipping_country_code ?? "").trim().toUpperCase();
+  const shippingCountry =
+    shippingCountryCode === "JP"
+      ? "Japan"
+      : shippingCountryCode === "US"
+        ? "United States"
+        : shippingCountryCode === "GB"
+          ? "United Kingdom"
+          : shippingCountryCode;
+  const shippingZip = String(shopOrderRow.shipping_zip ?? "").trim();
+
+  let selectedLogisticName: string | null = null;
+  try {
+    const freightOptions = await getCJFreightOptions(
+      String(itemRow.cj_variant_id ?? ""),
+      {
+        startCountryCode: "CN",
+        endCountryCode: shippingCountryCode || "JP",
+        zip: shippingZip || undefined,
+        quantity: asNumber(po.qty) ?? 1,
+      },
+    );
+    selectedLogisticName = freightOptions[0]?.logisticName ?? null;
+    if (!selectedLogisticName) {
+      return {
+        purchaseOrderId,
+        attempted: false,
+        succeeded: false,
+        supplierOrderId: null,
+        reason: "cj_logistics_unavailable",
+        gate,
+      };
+    }
+  } catch (error) {
+    return {
+      purchaseOrderId,
+      attempted: false,
+      succeeded: false,
+      supplierOrderId: null,
+      reason: `cj_logistics_lookup_failed:${error instanceof Error ? error.message : String(error)}`,
+      gate,
+    };
+  }
+
   const idempotencyKey = typeof po.idempotency_key === "string" ? po.idempotency_key : `dropship:${purchaseOrderId}`;
 
   const { data: existingAttempt } = await supabase
@@ -675,13 +720,17 @@ export async function executeLivePurchaseOrder(
 
   const result = await createCJOrderV2({
     orderNumber: idempotencyKey,
-    shippingCountryCode: String(shopOrderRow.shipping_country_code ?? ""),
+    shippingCountryCode: shippingCountryCode || "JP",
+    shippingCountry,
     shippingProvince: String(shopOrderRow.shipping_province ?? ""),
     shippingCity: String(shopOrderRow.shipping_city ?? ""),
     shippingAddress: String(shopOrderRow.shipping_line1 ?? shopOrderRow.shipping_address ?? ""),
-    shippingZip: String(shopOrderRow.shipping_zip ?? ""),
+    shippingAddress2: String(shopOrderRow.shipping_line2 ?? ""),
+    shippingZip,
     shippingPhone: String(shopOrderRow.customer_phone ?? ""),
     shippingCustomerName: String(shopOrderRow.customer_name ?? ""),
+    logisticName: selectedLogisticName,
+    fromCountryCode: "CN",
     products: [
       {
         vid: String(itemRow.cj_variant_id ?? ""),
