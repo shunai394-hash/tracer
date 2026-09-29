@@ -62,3 +62,20 @@ TRACER web application
 ```
 
 Do not put supplier secrets, Stripe secrets, Supabase service-role keys, or other server credentials into the native application.
+
+
+## Store icon generation
+
+The canonical store-icon artwork is `assets/tracer-store-icon.svg`.
+
+After generating `ios/` and `android/`, install the Capacitor asset generator and generate native icon resources:
+
+```bash
+npm install --save-dev @capacitor/assets
+npx capacitor-assets generate --ios
+npx capacitor-assets generate --android
+```
+
+The Capacitor asset generator supports a 1024px-or-larger icon source and writes the platform-specific icon sizes into the native projects. The SVG source can be used as the logo source; if the generator version in use requires raster input, use the supplied 1024×1024 PNG store master from the conversation instead.
+
+The generated native assets should be committed after verifying them in Xcode and Android Studio.
