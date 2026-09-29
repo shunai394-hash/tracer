@@ -15,8 +15,23 @@ export async function GET(request: Request) {
   const supabase = createSupabaseAdminClient();
   let cronRunId: string | null = null;
   const startedAt = Date.now();
+  // Vercel terminates this function at maxDuration. If that happens before
+  // the finally/update path runs, the singleton row would otherwise block the
+  // next scheduled run forever. A run cannot legitimately exceed this TTL.
+  const staleBefore = new Date(Date.now() - 120_000).toISOString();
 
   try {
+    await supabase
+      .from("cron_runs")
+      .update({
+        status: "failed",
+        finished_at: new Date().toISOString(),
+        error: "Recovered stale running record after Vercel function timeout",
+      })
+      .eq("job_name", "market-sourcing")
+      .eq("status", "running")
+      .lt("started_at", staleBefore);
+
     const { data: cronRun, error: cronClaimError } = await supabase
       .from("cron_runs")
       .insert({
