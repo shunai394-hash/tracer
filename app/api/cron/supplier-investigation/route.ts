@@ -40,22 +40,26 @@ export async function GET(request: Request) {
 
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
+    // Prefer rows with machine-verifiable numeric identifiers first.
+    // MPN-only rows can be useful, but marketplace MPN values are frequently
+    // free-form and caused the supplier stage to spend its whole runtime on
+    // title discovery without producing a sales-eligible identity.
     const { data: freshRows, error: freshError } = await supabase
       .from("marketplace_bestsellers")
       .select("id")
       .in("pipeline_status", ["pending", "failed"])
-      .or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null,mpn.not.is.null,asin.not.is.null")
-      .order("jan", { ascending: false, nullsFirst: false })
-      .order("gtin", { ascending: false, nullsFirst: false })
-      .order("ean", { ascending: false, nullsFirst: false })
-      .order("upc", { ascending: false, nullsFirst: false })
-      .order("mpn", { ascending: false, nullsFirst: false })
+      .or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null")
       .order("fetched_at", { ascending: false })
       .limit(BESTSELLER_CANDIDATE_BATCH_SIZE);
 
     if (freshError) throw new Error(freshError.message);
 
     let candidateIds = (freshRows ?? []).map((row) => String(row.id));
+
+    // Only fall back to MPN/ASIN discovery when there is no barcode-grade
+    // candidate available. This keeps the one-item batch focused on a
+    // verifiable product and avoids burning the CJ rate-limit window on weak
+    // candidates. The downstream identity gate remains unchanged.
 
     if (candidateIds.length < BESTSELLER_CANDIDATE_BATCH_SIZE) {
       const retrySlots = BESTSELLER_CANDIDATE_BATCH_SIZE - candidateIds.length;
