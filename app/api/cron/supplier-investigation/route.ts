@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
+import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
+import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { requireCronAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
@@ -38,8 +40,6 @@ export async function GET(request: Request) {
 
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
-    // Current/recent pending rows get the first claim. This prevents the
-    // historical backlog from starving newly observed products.
     const { data: freshRows, error: freshError } = await supabase
       .from("marketplace_bestsellers")
       .select("id")
@@ -79,6 +79,20 @@ export async function GET(request: Request) {
 
     const result = await investigateDropshipForBestsellers(candidateIds);
 
+    // Do not wait for a later cron window once a real supplier match is
+    // verified. One successful candidate is immediately passed through the
+    // sales-test gate and then BASE publication in the same invocation.
+    // The existing dedicated sales-test/base crons remain as safe retries.
+    let salesTest: Awaited<ReturnType<typeof selectAndPublishSalesTests>> | null = null;
+    let basePublication: Awaited<ReturnType<typeof publishPublishedListingsToBase>> | null = null;
+
+    if (result.matched > 0 && candidateIds.length > 0) {
+      salesTest = await selectAndPublishSalesTests(candidateIds, 1);
+      if (salesTest.publishedListingIds.length > 0) {
+        basePublication = await publishPublishedListingsToBase(20);
+      }
+    }
+
     if (cronRunId) {
       await supabase.from("cron_runs").update({
         status: "succeeded",
@@ -94,6 +108,8 @@ export async function GET(request: Request) {
           unconfigured: result.unconfigured,
           noIdentifierOverlap: result.noIdentifierOverlap,
           supplyBarcodeMissing: result.supplyBarcodeMissing,
+          chainedSalesTestPublished: salesTest?.published ?? 0,
+          chainedBasePublished: basePublication?.published ?? 0,
         },
       }).eq("id", cronRunId);
     }
@@ -104,6 +120,8 @@ export async function GET(request: Request) {
       elapsedMs: Date.now() - startedAt,
       candidateIds,
       ...result,
+      salesTest,
+      basePublication,
       nextPhase: "sales_test_publication",
     });
   } catch (error) {
