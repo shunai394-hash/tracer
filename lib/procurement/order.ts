@@ -72,6 +72,23 @@ export async function createProcurementOrder(
 
   initializeProcurement();
 
-  return executeProcurementOrder(input.supplierName ?? "", input);
+  // Live supplier orders must go through the purchase-order execution gate.
+  // This low-level helper is intentionally dry-run only to prevent bypassing
+  // kill-switch, inventory, profitability, address, idempotency, and approval checks.
+  return {
+    succeeded: false,
+    dryRun: true,
+    supplierOrderId: null,
+    responseCode: "PURCHASE_ORDER_GATE_REQUIRED",
+    responseMessage: "Live supplier execution must use executeSupplierPurchaseOrder.",
+    trackingNumber: null,
+    raw: {
+      supplierName: input.supplierName ?? null,
+      orderNumber: input.orderNumber,
+      supplierProductId: input.supplierProductId,
+      supplierVariantId: input.supplierVariantId,
+      quantity: input.quantity,
+    },
+  };
 }
 
