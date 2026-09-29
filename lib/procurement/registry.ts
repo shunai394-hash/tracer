@@ -1,6 +1,6 @@
 ﻿import "server-only";
 
-import type { TracerSupplierAdapter } from "@/lib/procurement/types";
+import { FAIL_CLOSED_SUPPLIER_CAPABILITIES, type SupplierCapabilities, type TracerSupplierAdapter } from "@/lib/procurement/types";
 
 const adapters = new Map<string, TracerSupplierAdapter>();
 
@@ -24,4 +24,10 @@ export function getSupplierAdapter(
 
 export function listSupplierAdapters(): string[] {
   return Array.from(adapters.keys());
+}
+
+export function getSupplierCapabilities(
+  supplierName: string,
+): SupplierCapabilities {
+  return getSupplierAdapter(supplierName)?.capabilities ?? FAIL_CLOSED_SUPPLIER_CAPABILITIES;
 }
