@@ -22,6 +22,7 @@ import {
   matchProductIdentity,
   pickIdentifierQuery,
 } from "@/lib/market/identifiers";
+import { linkInternalSupplyForBestseller } from "@/lib/suppliers/internal-catalog";
 
 const UNCONFIGURED_SUPPLIERS = [
   "hypersku",
@@ -353,6 +354,24 @@ export async function investigateDropshipForBestsellers(
     // `product_url` when the column itself is empty, instead of only
     // reading the `asin` column the way the old local helper did.
     const marketIds = identifiersFromRecord(record);
+
+    // TRACER-owned supply is the primary source. External supplier APIs are
+    // fallback discovery channels only; they must never be required for the
+    // core publication path.
+    const internalSupply = await linkInternalSupplyForBestseller({
+      bestseller: record,
+      fetchedAt,
+    });
+    if (internalSupply.matched) {
+      matched += 1;
+      await markPipelineState({
+        bestsellerId: String(record.id),
+        stage: "VARIANT_VERIFIED",
+        status: "ready",
+        reason: "tracer_internal_supply_verified",
+      });
+      continue;
+    }
     // CJ product search does not return marketplace ASINs. ASIN is valid
     // marketplace identity evidence, but not a CJ supplier-search key.
     const supplierSearchQueries = [
