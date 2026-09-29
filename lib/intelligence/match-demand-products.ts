@@ -200,7 +200,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     .from("demand_observations")
     .select("id, metadata, value, observed_at")
     .is("product_id", null)
-    .eq("signal_type", "search_volume")
+    .in("signal_type", ["search_volume", "search_result_count"])
     .order("observed_at", { ascending: false });
 
   if (demandError) {
