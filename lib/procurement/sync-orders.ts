@@ -122,16 +122,33 @@ export async function syncSupplierOrders(): Promise<SupplierOrderSyncResult> {
       if (updateError) throw new Error(updateError.message);
 
       if (purchaseOrder.shop_order_id) {
+        const { data: currentShopOrder } = await supabase
+          .from("shop_orders")
+          .select("order_status")
+          .eq("id", purchaseOrder.shop_order_id)
+          .maybeSingle();
+
+        // Customer cancellation/refund state is authoritative. Supplier
+        // tracking must never resurrect a cancelled/refund-pending order.
+        const customerTerminalState = [
+          "cancellation_requested",
+          "refund_pending",
+          "refunded",
+          "cancelled",
+        ].includes(String(currentShopOrder?.order_status));
+
         const shopUpdate: Record<string, unknown> = {};
-        if (tracking?.trackingNumber) {
+        if (!customerTerminalState && tracking?.trackingNumber) {
           shopUpdate.tracking_number = tracking.trackingNumber;
           shopUpdate.tracking_carrier = tracking.carrier;
           shopUpdate.tracking_url = tracking.trackingUrl;
           shopUpdate.shipped_at = tracking.shippedAt ?? now;
         }
-        if (supplierStatus === "SHIPPED" || tracking?.trackingNumber) shopUpdate.order_status = "shipping";
-        if (supplierStatus === "DELIVERED") shopUpdate.order_status = "delivered";
-        if (supplierStatus === "CANCELLED") shopUpdate.order_status = "cancelled";
+        if (!customerTerminalState) {
+          if (supplierStatus === "SHIPPED" || tracking?.trackingNumber) shopUpdate.order_status = "shipping";
+          if (supplierStatus === "DELIVERED") shopUpdate.order_status = "delivered";
+          if (supplierStatus === "CANCELLED") shopUpdate.order_status = "cancelled";
+        }
         if (Object.keys(shopUpdate).length > 0) {
           const { error: shopOrderError } = await supabase
             .from("shop_orders")
