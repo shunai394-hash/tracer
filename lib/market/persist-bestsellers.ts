@@ -86,11 +86,10 @@ export async function persistMarketplaceBestsellers(): Promise<{
           source: marketplace.source,
           source_url: marketplace.sourceUrl,
           raw: { parser: marketplace.source },
-          pipeline_stage: "DISCOVERED",
-          pipeline_status: "pending",
-          pipeline_reason: "market_observation_persisted",
-          pipeline_error: null,
-          pipeline_updated_at: new Date().toISOString(),
+          // Do not write pipeline state during an observation upsert.
+          // Re-observing an existing bestseller must never regress a row from
+          // ready/blocked/published back to pending. New rows receive the
+          // database defaults (DISCOVERED/pending).
         }, { onConflict: "source_item_key" })
         .select("id")
         .single();
