@@ -199,15 +199,6 @@ export async function collectMarketplaceBestsellers(): Promise<{
       // covering more items does not multiply wall-clock time; capped at
       // DETAIL_ENRICHMENT_LIMIT as a deliberate bound against an unbounded
       // fetch fan-out if a source ever returns an unusually large page.
-      let enrichment: { attempted: number; htmlFetched: number; identifierFound: number } | undefined;
-
-      marketplaces.push({
-        marketplace: source.marketplace,
-        source: source.source,
-        sourceUrl: source.url,
-        fetchedAt,
-        items,
-      });
       marketplaces.push({
         marketplace: source.marketplace,
         source: source.source,
