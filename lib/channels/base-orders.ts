@@ -28,6 +28,39 @@ function paymentMethod(payment: string | undefined): "cash_on_delivery" | "bank_
   return "card";
 }
 
+function isBaseOrderPaid(order: Awaited<ReturnType<typeof getBaseOrderDetail>>): boolean {
+  if (order.dispatch_status === "unpaid") return false;
+  if (order.dispatch_status === "cancelled" || order.dispatch_status === "unshippable") return false;
+
+  switch (order.payment) {
+    case "cvs":
+      return order.cvs_payment_transaction?.status === "paid";
+    case "base_bt":
+      return order.bt_payment_transaction?.status === "paid";
+    case "creditcard":
+      return ["captured", "creditable"].includes(order.c_c_payment_transaction?.status ?? "");
+    case "carrier_01":
+    case "carrier_02":
+    case "carrier_03":
+      return ["authorized", "captured"].includes(order.carrier_payment_transaction?.status ?? "");
+    case "paypal":
+      return ["creditable", "captured"].includes(order.paypal_payment_transaction?.status ?? "");
+    case "amazon_pay":
+      return ["creditable", "captured"].includes(order.amazon_payment_transaction?.status ?? "");
+    case "paypay":
+      return ["creditable", "captured"].includes(order.paypay_payment_transaction?.status ?? "");
+    case "bnpl":
+    case "bnpl_installment":
+      return ["creditable", "captured"].includes(order.bnpl_payment_transaction?.status ?? "");
+    case "atobarai":
+      return ["ordered", "shipping", "arrived"].includes(order.atobarai_payment_transaction?.status ?? "");
+    case "cod":
+      return true;
+    default:
+      return order.dispatch_status === "ordered" || order.dispatch_status === "shipping" || order.dispatch_status === "dispatched";
+  }
+}
+
 
 async function repairBaseOrderItems(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
@@ -105,7 +138,7 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
 
       if (existing?.id) {
         const detail = await getBaseOrderDetail(baseOrderKey);
-        const paid = detail.dispatch_status !== "unpaid";
+        const paid = isBaseOrderPaid(detail);
         await repairBaseOrderItems(supabase, String(existing.id), baseOrderKey, detail);
         const canceled =
           detail.dispatch_status === "cancelled" ||
@@ -202,12 +235,13 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
       const firstListing = listingByBaseItem.get(itemIds[0]);
       if (!firstListing) throw new Error("base listing mapping missing");
 
-      const firstName = String(order.first_name ?? "");
-      const lastName = String(order.last_name ?? "");
+      const receiver = order.order_receiver ?? order;
+      const firstName = String(receiver.first_name ?? order.first_name ?? "");
+      const lastName = String(receiver.last_name ?? order.last_name ?? "");
       const shippingAddress = [
-        order.prefecture,
-        order.address,
-        order.address2,
+        receiver.prefecture,
+        receiver.address,
+        receiver.address2,
       ].filter(Boolean).join(" ");
 
       let { data: shopOrder, error: orderError } = await supabase
@@ -218,21 +252,21 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
           payment_method: paymentMethod(order.payment),
           customer_name: [firstName, lastName].filter(Boolean).join(" ") || "BASE customer",
           customer_email: String(order.mail_address ?? ""),
-          customer_phone: String(order.tel ?? ""),
+          customer_phone: String(receiver.tel ?? order.tel ?? ""),
           shipping_address: shippingAddress,
-          shipping_country_code: String(order.country_code ?? "JP"),
-          shipping_province: String(order.prefecture ?? ""),
-          shipping_city: String(order.address ?? ""),
-          shipping_line1: String(order.address ?? ""),
-          shipping_line2: String(order.address2 ?? ""),
-          shipping_zip: String(order.zip_code ?? ""),
+          shipping_country_code: String(receiver.country_code ?? order.country_code ?? "JP"),
+          shipping_province: String(receiver.prefecture ?? order.prefecture ?? ""),
+          shipping_city: String(receiver.address ?? order.address ?? ""),
+          shipping_line1: String(receiver.address ?? order.address ?? ""),
+          shipping_line2: String(receiver.address2 ?? order.address2 ?? ""),
+          shipping_zip: String(receiver.zip_code ?? order.zip_code ?? ""),
           subtotal: Number(order.total ?? 0),
           shipping_cost: Number(order.shipping_fee ?? 0),
           total: Number(order.total ?? 0),
           currency: firstListing.currency ?? "JPY",
           notes: order.remark ?? null,
-          payment_status: order.dispatch_status === "unpaid" ? "pending" : "paid",
-          order_status: order.dispatch_status === "unpaid" ? "pending_payment" : "fulfillment_pending",
+          payment_status: isBaseOrderPaid(order) ? "paid" : "pending",
+          order_status: isBaseOrderPaid(order) ? "fulfillment_pending" : "pending_payment",
           base_order_key: baseOrderKey,
           base_order_synced_at: new Date().toISOString(),
           metadata: {
@@ -287,7 +321,7 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
       }
 
       let procurement = { purchaseOrderIds: [] as string[], skipped: [] as Array<{ itemId: string; reason: string }> };
-      if (order.dispatch_status !== "unpaid") {
+      if (isBaseOrderPaid(order)) {
         procurement = await createDropshipPurchaseOrdersForShopOrder(String(shopOrder.id));
       }
 
