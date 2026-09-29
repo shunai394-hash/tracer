@@ -8,41 +8,50 @@ type FxQuote = {
   source: string;
 };
 
-let cached: FxQuote | null = null;
+const cached = new Map<string, FxQuote>();
 
-const FX_URL = "https://api.frankfurter.app/latest?from=USD&to=JPY";
 const CACHE_MS = 60 * 60 * 1000;
 
-export async function getObservedUsdToJpyRate(): Promise<FxQuote | null> {
-  const now = Date.now();
-  if (cached && now - new Date(cached.fetchedAt).getTime() < CACHE_MS) {
-    return cached;
+export async function getObservedFxRate(baseCurrency: string, quoteCurrency: string): Promise<FxQuote | null> {
+  const base = baseCurrency.trim().toUpperCase();
+  const quote = quoteCurrency.trim().toUpperCase();
+  if (!base || !quote) return null;
+  if (base === quote) {
+    return { base, quote, rate: 1, fetchedAt: new Date().toISOString(), source: "identity" };
   }
 
+  const key = base + "->" + quote;
+  const now = Date.now();
+  const previous = cached.get(key);
+  if (previous && now - new Date(previous.fetchedAt).getTime() < CACHE_MS) return previous;
+
   try {
-    const response = await fetch(FX_URL, {
+    const url = "https://api.frankfurter.app/latest?from=" +
+      encodeURIComponent(base) + "&to=" + encodeURIComponent(quote);
+    const response = await fetch(url, {
       headers: { "User-Agent": "TRACER/1.0 FX Intelligence" },
       cache: "no-store",
     });
     if (!response.ok) return null;
 
-    const body = (await response.json()) as {
-      base?: unknown;
-      date?: unknown;
-      rates?: Record<string, unknown>;
-    };
-    const rate = typeof body.rates?.JPY === "number" ? body.rates.JPY : null;
+    const data = (await response.json()) as { rates?: Record<string, unknown> };
+    const rate = typeof data.rates?.[quote] === "number" ? data.rates[quote] : null;
     if (!rate || !Number.isFinite(rate) || rate <= 0) return null;
 
-    cached = {
-      base: "USD",
-      quote: "JPY",
+    const result: FxQuote = {
+      base,
+      quote,
       rate,
       fetchedAt: new Date().toISOString(),
       source: "Frankfurter/ECB reference rates",
     };
-    return cached;
+    cached.set(key, result);
+    return result;
   } catch {
     return null;
   }
+}
+
+export async function getObservedUsdToJpyRate(): Promise<FxQuote | null> {
+  return getObservedFxRate("USD", "JPY");
 }
