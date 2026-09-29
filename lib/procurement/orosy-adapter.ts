@@ -85,6 +85,19 @@ function variantFrom(
 
 export const orosySupplierAdapter: TracerSupplierAdapter = {
   name: SUPPLIER_NAME,
+  capabilities: {
+    catalog: true,
+    variant: true,
+    inventory: true,
+    price: true,
+    shipping: true,
+    shippingRequiresDestination: true,
+    orderPreflight: false,
+    orderCreation: false,
+    orderStatus: true,
+    tracking: true,
+    liveOrdering: false,
+  },
 
   async search(query: string): Promise<SupplierProduct[]> {
     const products = await searchOrosyProducts(query);
