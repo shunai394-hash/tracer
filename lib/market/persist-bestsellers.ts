@@ -22,7 +22,7 @@ function buildIdentityKey(
   return `title::${title.toLowerCase().replace(/[^a-z0-9\u3040-\u30ff\u4e00-\u9faf]+/gi, " ").trim()}`;
 }
 
-export async function persistMarketplaceBestsellers(options: { startIndex?: number; batchSize?: number } = {}): Promise<{
+export async function persistMarketplaceBestsellers(options: { startIndex?: number; batchSize?: number; sourceIndex?: number } = {}): Promise<{
   itemCount: number;
   inserted: number;
   productsCreated: number;
@@ -35,10 +35,12 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
   supplierCandidateIds: string[];
   startIndex: number;
   processedCount: number;
+  sourceIndex: number;
   nextIndex: number;
   hasMore: boolean;
 }> {
-  const collected = await collectMarketplaceBestsellers();
+  const sourceIndex = Math.max(0, options.sourceIndex ?? 0);
+  const collected = await collectMarketplaceBestsellers({ sourceIndex });
   const startIndex = Math.max(0, options.startIndex ?? 0);
   const batchSize = Math.max(1, options.batchSize ?? 50);
   const endIndex = startIndex + batchSize;
@@ -272,6 +274,7 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
     supplierCandidateIds,
     startIndex,
     processedCount,
+    sourceIndex,
     nextIndex: startIndex + processedCount,
     hasMore: startIndex + processedCount < collected.itemCount,
   };
