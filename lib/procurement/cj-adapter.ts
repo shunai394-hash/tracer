@@ -28,6 +28,7 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
     shippingRequiresDestination: true,
     orderPreflight: false,
     orderCreation: true,
+    payment: false,
     orderStatus: true,
     tracking: true,
     liveOrdering: true,
