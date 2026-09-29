@@ -214,19 +214,21 @@ export async function persistMarketplaceBestsellers(): Promise<{
       }
 
       if (productId && hasAnyIdentifier(ids)) {
-        for (const [scheme, value] of Object.entries(ids)) {
-          if (!value) continue;
-          await supabase.from("product_identifiers").upsert(
-            {
-              product_id: productId,
-              bestseller_id: bestseller.id,
-              scheme,
-              value,
-              source: marketplace.source,
-              fetched_at: marketplace.fetchedAt,
-            },
-            { onConflict: "scheme,value" },
-          );
+        const identifierRows = Object.entries(ids)
+          .filter((entry): entry is [string, string] => Boolean(entry[1]))
+          .map(([scheme, value]) => ({
+            product_id: productId,
+            bestseller_id: bestseller.id,
+            scheme,
+            value,
+            source: marketplace.source,
+            fetched_at: marketplace.fetchedAt,
+          }));
+        if (identifierRows.length > 0) {
+          const { error: identifierError } = await supabase
+            .from("product_identifiers")
+            .upsert(identifierRows, { onConflict: "scheme,value" });
+          if (identifierError) throw new Error(identifierError.message);
         }
       }
     }
