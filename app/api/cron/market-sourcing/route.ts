@@ -27,14 +27,46 @@ export async function GET(request: Request) {
   const authError = requireCronAuth(request);
   if (authError) return authError;
 
+  let cronRunId: string | null = null;
   try {
     const startedAt = Date.now();
+
+    // Vercel can retry or overlap cron invocations. Reclaim a stale lock from
+    // a crashed invocation, then atomically claim this job via the partial
+    // unique index on cron_runs(job_name) where status = 'running'.
+    await supabase
+      .from("cron_runs")
+      .update({
+        status: "failed",
+        finished_at: new Date().toISOString(),
+        error: "stale_run_reclaimed",
+      })
+      .eq("job_name", "market-sourcing")
+      .eq("status", "running")
+      .lt("started_at", new Date(Date.now() - 10 * 60 * 1000).toISOString());
+
+    const { data: cronRun, error: cronClaimError } = await supabase
+      .from("cron_runs")
+      .insert({ job_name: "market-sourcing", status: "running", metadata: {} })
+      .select("id")
+      .single();
+
+    if (cronClaimError) {
+      if (cronClaimError.code === "23505") {
+        return NextResponse.json(
+          { ok: true, skipped: true, reason: "cron_already_running", job: "market-sourcing" },
+          { status: 409 },
+        );
+      }
+      throw new Error(cronClaimError.message);
+    }
+    cronRunId = cronRun?.id ? String(cronRun.id) : null;
+
     const observation = await persistMarketplaceBestsellers();
 
     // The marketplace scrape is only the intake. Existing DB candidates must
     // also be drained; otherwise a catalog such as the existing 4,555-row
     // backlog can remain permanently untouched between fresh scrapes.
-    const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
     const { data: backlogRows, error: backlogError } = await supabase
       .from("marketplace_bestsellers")
       .select("id")
@@ -92,6 +124,17 @@ export async function GET(request: Request) {
       ),
     );
 
+    if (cronRunId) {
+      await supabase.from("cron_runs").update({
+        status: "completed",
+        finished_at: new Date().toISOString(),
+        duration_ms: Date.now() - startedAt,
+        processed: candidateIds.length,
+        failed: 0,
+        metadata: { published: decision.published, newfind: newfind.length },
+      }).eq("id", cronRunId);
+    }
+
     return NextResponse.json({
       ok: true,
       phase: "market_to_publication",
@@ -116,6 +159,18 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    if (cronRunId) {
+      try {
+        const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
+        await supabase.from("cron_runs").update({
+          status: "failed",
+          finished_at: new Date().toISOString(),
+          error: error instanceof Error ? error.message : String(error),
+        }).eq("id", cronRunId);
+      } catch (recordError) {
+        console.error("[TRACER CRON RUN RECORD ERROR]", recordError);
+      }
+    }
     console.error("[TRACER MARKET SOURCING CRON ERROR]", error);
     return NextResponse.json(
       {
