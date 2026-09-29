@@ -128,13 +128,30 @@ export async function selectAndPublishSalesTests(
 
     let listing: Record<string, unknown> | undefined;
     let isInternalSupply = false;
+    let internalCatalogVariant: Record<string, unknown> | null = null;
     if (internalCatalog) {
+      const { data: catalogVariant, error: catalogVariantError } = await supabase
+        .from("tracer_supply_variants")
+        .select("*")
+        .eq("catalog_id", internalCatalog.id)
+        .eq("orderable", true)
+        .gt("inventory", 0)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (catalogVariantError) throw new Error(catalogVariantError.message);
+      internalCatalogVariant = (catalogVariant ?? null) as Record<string, unknown> | null;
       isInternalSupply = true;
       listing = {
         id: internalCatalog.id,
         supplier: "TRACER_INTERNAL",
-        supplier_product_id: internalCatalog.tracer_sku,
-        supplier_variant_id: null,
+        supplier_product_id:
+          internalCatalogVariant?.internal_supply_product_id ??
+          (internalCatalog.evidence as Record<string, unknown> | null)?.supply_product_id ??
+          internalCatalog.tracer_sku,
+        supplier_variant_id:
+          internalCatalogVariant?.internal_supply_variant_id ??
+          (internalCatalogVariant?.id ?? (internalCatalog.evidence as Record<string, unknown> | null)?.supply_variant_id),
         cost: internalCatalog.cost,
         shipping_cost: internalCatalog.shipping_cost ?? 0,
         handling_cost: internalCatalog.handling_cost ?? 0,
