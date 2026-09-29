@@ -23,6 +23,7 @@ export type FoundationStatus = {
   stripeWebhook: boolean;
   orosy: boolean;
   faire: boolean;
+  dsersMcp: boolean;
   ecPulse: boolean;
   extension: boolean;
   base: boolean;
@@ -52,6 +53,7 @@ export function getFoundationStatus(): FoundationStatus {
     stripeWebhook: present(readEnv("STRIPE_WEBHOOK_SECRET")),
     orosy: present(readEnv("OROSY_API_KEY")),
     faire: present(readEnv("FAIRE_ACCESS_TOKEN")),
+    dsersMcp: present(readEnv("DSERS_MCP_URL")) && present(readEnv("DSERS_MCP_ACCESS_TOKEN")),
     ecPulse: present(readEnv("EC_PULSE_API_KEY")),
     extension: present(readEnv("TRACER_EXTENSION_API_KEY")),
     base: present(readEnv("BASE_ACCESS_TOKEN")) ||
@@ -86,6 +88,13 @@ export function getSupabasePublicConfig() {
 
 export function getSupabaseServiceRoleKey() {
   return readEnv("SUPABASE_SERVICE_ROLE_KEY");
+}
+
+export function getDsersMcpConfig() {
+  return {
+    endpoint: readEnv("DSERS_MCP_URL") || "https://ai.dsers.com/mcp",
+    accessToken: readEnv("DSERS_MCP_ACCESS_TOKEN"),
+  };
 }
 
 export function getFaireConfig() {
