@@ -5,35 +5,21 @@ import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
 import { requireCronAuth } from "@/lib/security/cron-auth";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-/**
- * Production sourcing cycle:
- * 1) observe the current marketplace
- * 2) investigate only verified supplier-search candidates
- * 3) publish only candidates that pass the sourcing/profit gates
- * 4) promote newly published listings to NEWFIND
- *
- * BASE publication is intentionally a separate idempotent cron so a slow
- * sourcing run cannot prevent already-published TRACER listings from reaching
- * BASE.
- *
- * One bounded supplier batch is intentional: CJ requests are serialized and
- * the Vercel function has a finite execution window.
- */
 export async function GET(request: Request) {
   const authError = requireCronAuth(request);
   if (authError) return authError;
 
+  const supabase = createSupabaseAdminClient();
   let cronRunId: string | null = null;
+
   try {
     const startedAt = Date.now();
 
-    // Vercel can retry or overlap cron invocations. Reclaim a stale lock from
-    // a crashed invocation, then atomically claim this job via the partial
-    // unique index on cron_runs(job_name) where status = 'running'.
     await supabase
       .from("cron_runs")
       .update({
@@ -60,13 +46,11 @@ export async function GET(request: Request) {
       }
       throw new Error(cronClaimError.message);
     }
+
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
     const observation = await persistMarketplaceBestsellers();
 
-    // The marketplace scrape is only the intake. Existing DB candidates must
-    // also be drained; otherwise a catalog such as the existing 4,555-row
-    // backlog can remain permanently untouched between fresh scrapes.
     const { data: backlogRows, error: backlogError } = await supabase
       .from("marketplace_bestsellers")
       .select("id")
@@ -79,9 +63,6 @@ export async function GET(request: Request) {
 
     let backlogIds = (backlogRows ?? []).map((row) => String(row.id));
 
-    // Supplier mismatches can be transient. Once the pending/failed queue is
-    // exhausted, re-check blocked identifier-bearing candidates after a
-    // cooldown instead of leaving them permanently stranded.
     if (backlogIds.length < BESTSELLER_CANDIDATE_BATCH_SIZE) {
       const retrySlots = BESTSELLER_CANDIDATE_BATCH_SIZE - backlogIds.length;
       const retryBefore = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -101,6 +82,7 @@ export async function GET(request: Request) {
         ...(retryRows ?? []).map((row) => String(row.id)),
       ];
     }
+
     const freshIds = observation.supplierCandidateIds;
     const candidateIds = [...backlogIds, ...freshIds]
       .filter((id, index, ids) => ids.indexOf(id) === index)
@@ -109,7 +91,6 @@ export async function GET(request: Request) {
     const supplierInvestigation =
       await investigateDropshipForBestsellers(candidateIds);
     const decision = await selectAndPublishSalesTests(candidateIds, 3);
-
 
     const newfind = await Promise.all(
       decision.publishedListingIds.map((listingId) =>
@@ -161,7 +142,6 @@ export async function GET(request: Request) {
   } catch (error) {
     if (cronRunId) {
       try {
-        const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
         await supabase.from("cron_runs").update({
           status: "failed",
           finished_at: new Date().toISOString(),
