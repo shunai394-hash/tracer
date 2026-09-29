@@ -169,7 +169,19 @@ export type BaseOrderDetail = BaseOrderSummary & {
   paypal_payment_transaction?: { status?: string };
   amazon_payment_transaction?: { status?: string };
   paypay_payment_transaction?: { status?: string };
-  bnpl_payment_transaction?: { status?: string };\n  coin_payment_transaction?: { status?: string };\n  order_receiver?: {\n    first_name?: string;\n    last_name?: string;\n    zip_code?: string;\n    prefecture?: string;\n    address?: string;\n    address2?: string;\n    tel?: string;\n    country?: string;\n    country_code?: string;\n  };
+  bnpl_payment_transaction?: { status?: string };
+  coin_payment_transaction?: { status?: string };
+  order_receiver?: {
+    first_name?: string;
+    last_name?: string;
+    zip_code?: string;
+    prefecture?: string;
+    address?: string;
+    address2?: string;
+    tel?: string;
+    country?: string;
+    country_code?: string;
+  };
   order_items?: Array<{
     order_item_id?: string | number;
     item_id?: string | number;
