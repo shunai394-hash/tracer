@@ -200,6 +200,53 @@ export async function createCJOrderV2(
   };
 }
 
+export type CJTrackingResult = {
+  trackingNumber: string | null;
+  carrier: string | null;
+  trackingUrl: string | null;
+  shippedAt: string | null;
+  status: string | null;
+  raw: unknown;
+};
+
+export async function getCJTrackingInfo(trackNumber: string): Promise<CJTrackingResult | null> {
+  const normalized = trackNumber.trim();
+  if (!normalized) return null;
+  const token = await getAccessTokenForOrder();
+  const params = new URLSearchParams({ trackNumber: normalized });
+  const response = await fetch(
+    `https://developers.cjdropshipping.com/api2.0/v1/logistic/trackInfo?${params.toString()}`,
+    {
+      method: "GET",
+      headers: { "CJ-Access-Token": token },
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) {
+    throw new CJRequestError(`CJ tracking lookup failed with HTTP ${response.status}`);
+  }
+  const payload = (await response.json()) as {
+    data?: Array<{
+      trackingNumber?: string;
+      logisticName?: string;
+      trackingStatus?: string;
+      deliveryTime?: string;
+      lastMileCarrier?: string;
+      lastTrackNumber?: string;
+    }>;
+  };
+  const item = payload.data?.[0];
+  if (!item) return null;
+  return {
+    trackingNumber: item.trackingNumber ?? normalized,
+    carrier: item.lastMileCarrier ?? item.logisticName ?? null,
+    trackingUrl: null,
+    shippedAt: item.deliveryTime ?? null,
+    status: item.trackingStatus ?? null,
+    raw: payload,
+  };
+}
+
 /**
  * Status/tracking parsing remains intentionally defensive because supplier
  * status vocabulary can vary across CJ order states. The endpoint itself is
