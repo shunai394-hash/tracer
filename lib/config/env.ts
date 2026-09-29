@@ -46,6 +46,7 @@ export function getFoundationStatus(): FoundationStatus {
     stripe: present(readEnv("STRIPE_SECRET_KEY")),
     stripeWebhook: present(readEnv("STRIPE_WEBHOOK_SECRET")),
     orosy: present(readEnv("OROSY_API_KEY")),
+    faire: present(readEnv("FAIRE_ACCESS_TOKEN")),
     ecPulse: present(readEnv("EC_PULSE_API_KEY")),
     extension: present(readEnv("TRACER_EXTENSION_API_KEY")),
     base: present(readEnv("BASE_ACCESS_TOKEN")) ||
@@ -86,6 +87,13 @@ export function getCJConfig() {
   };
 }
 
+export function getFaireConfig() {
+  return {
+    accessToken: readEnv("FAIRE_ACCESS_TOKEN"),
+    baseUrl: readEnv("FAIRE_API_BASE") || "https://www.faire.com/external-api/v2",
+  };
+}
+
 export function getCJOrderConfig() {
   return {
     logisticName: readEnv("CJ_LOGISTIC_NAME"),
@@ -115,6 +123,7 @@ export function getDropshipSupplierConfig() {
     zendrop: present(readEnv("ZENDROP_API_KEY")),
     syncee: present(readEnv("SYNCEE_API_KEY")),
     orosy: present(readEnv("OROSY_API_KEY")) || present(readEnv("OROSY_DEMO_API_KEY")),
+    faire: present(readEnv("FAIRE_ACCESS_TOKEN")),
   };
 }
 
