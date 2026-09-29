@@ -39,6 +39,34 @@ export type SupplierPrice = {
   observedAt: string;
 };
 
+export type SupplierCapabilities = {
+  catalog: boolean;
+  variant: boolean;
+  inventory: boolean;
+  price: boolean;
+  shipping: boolean;
+  shippingRequiresDestination: boolean;
+  orderPreflight: boolean;
+  orderCreation: boolean;
+  orderStatus: boolean;
+  tracking: boolean;
+  liveOrdering: boolean;
+};
+
+export const FAIL_CLOSED_SUPPLIER_CAPABILITIES: SupplierCapabilities = {
+  catalog: false,
+  variant: false,
+  inventory: false,
+  price: false,
+  shipping: false,
+  shippingRequiresDestination: false,
+  orderPreflight: false,
+  orderCreation: false,
+  orderStatus: false,
+  tracking: false,
+  liveOrdering: false,
+};
+
 export type SupplierShippingContext = {
   destinationCountryCode?: string;
   destinationPostalCode?: string;
