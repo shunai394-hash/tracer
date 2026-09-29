@@ -150,14 +150,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
     });
 
 
-    const cjOrderConfig = getCJOrderConfig();
-  const missingExecutionConfig = [
-    !cjOrderConfig.logisticName ? "cj_logistic_name_unknown" : null,
-    !cjOrderConfig.fromCountryCode ? "cj_from_country_unknown" : null,
-    !cjOrderConfig.shippingCountry ? "cj_shipping_country_unknown" : null,
-  ].filter((value): value is string => value !== null);
-
-  const gate = evaluateDropshipOrderGate({
+    const gate = evaluateDropshipOrderGate({
       vid: typeof listingRow.supplier_variant_id === "string" ? listingRow.supplier_variant_id : (typeof listingRow.cj_variant_id === "string" ? listingRow.cj_variant_id : null),
       quantity: asNumber(row.qty),
       sourceCost: asNumber(listingRow.cost),
@@ -400,6 +393,13 @@ export async function executeLivePurchaseOrder(
     supplier: "CJdropshipping",
     productId: po.product_id ? String(po.product_id) : null,
   });
+
+  const cjOrderConfig = getCJOrderConfig();
+  const missingExecutionConfig = [
+    !cjOrderConfig.logisticName ? "cj_logistic_name_unknown" : null,
+    !cjOrderConfig.fromCountryCode ? "cj_from_country_unknown" : null,
+    !cjOrderConfig.shippingCountry ? "cj_shipping_country_unknown" : null,
+  ].filter((value): value is string => value !== null);
 
   // Re-check inventory against the exact supplier identity captured when
   // the sales-test listing was published. Never use the newest listing for
