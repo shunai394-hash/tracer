@@ -94,9 +94,16 @@ export async function linkInternalSupplyForBestseller(args: {
     const inventory = Number(variant.inventory ?? product.inventory ?? 0);
     if (!Number.isFinite(inventory) || inventory <= 0) continue;
 
-    const { data: listing, error: listingError } = await supabase
+    const { data: existingListing } = await supabase
       .from("supplier_listings")
-      .upsert({
+      .select("id")
+      .eq("supplier", "tracer_internal")
+      .eq("bestseller_id", args.bestseller.id)
+      .eq("external_id", String(product.source_ref ?? product.id))
+      .limit(1)
+      .maybeSingle();
+
+    const listingPayload = {
         supplier: "tracer_internal",
         external_id: String(product.source_ref ?? product.id),
         sku: typeof variant.variant_sku === "string" ? variant.variant_sku : product.sku,
@@ -133,11 +140,14 @@ export async function linkInternalSupplyForBestseller(args: {
           rationale: selected.identity.rationale,
           source_name: product.source_name,
         },
-      }, { onConflict: "supplier,bestseller_id,external_id" })
-      .select("id")
-      .single();
+      };
 
-    if (listingError) throw new Error(listingError.message);
+    const listingResult = existingListing?.id
+      ? await supabase.from("supplier_listings").update(listingPayload).eq("id", existingListing.id).select("id").single()
+      : await supabase.from("supplier_listings").insert(listingPayload).select("id").single();
+
+    if (listingResult.error) throw new Error(listingResult.error.message);
+    const listing = listingResult.data;
 
     await supabase.from("internal_supply_links").upsert({
       bestseller_id: args.bestseller.id,
