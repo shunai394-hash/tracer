@@ -89,7 +89,41 @@ export async function GET(request: Request) {
       if (upsertError) throw new Error(upsertError.message);
     }
 
-    const qualified = candidates.filter((c) => c.state === "QUALIFIED").length;
+    // Turn every qualified market candidate into a TRACER-owned product draft.
+    // This creates the SKU and product shell without fabricating cost, stock,
+    // or orderability. A real supply feed can later fill those fields and the
+    // publication gate will automatically re-evaluate the same SKU.
+    const qualifiedCandidates = candidates.filter((candidate) => candidate.state === "QUALIFIED");
+    if (qualifiedCandidates.length) {
+      const supplyDrafts = qualifiedCandidates.map((candidate) => ({
+        tracer_sku: `TRC-${String(candidate.bestseller_id).replace(/-/g, "").slice(0, 16).toUpperCase()}`,
+        bestseller_id: candidate.bestseller_id,
+        title: candidate.title,
+        brand: candidate.brand,
+        description: `TRACER candidate: ${candidate.title}`,
+        image_url: candidate.image_url,
+        status: "draft",
+        cost: null,
+        shipping_cost: null,
+        handling_cost: null,
+        sale_price: null,
+        currency: "JPY",
+        inventory: 0,
+        tracking_available: false,
+        orderable: false,
+        source_type: "internal",
+        source_ref: candidate.canonical_key,
+        evidence: candidate.evidence,
+        metadata: { candidateId: candidate.bestseller_id, generatedBy: "core-engine" },
+        updated_at: new Date().toISOString(),
+      }));
+      const { error: supplyError } = await supabase
+        .from("tracer_supply_catalog")
+        .upsert(supplyDrafts, { onConflict: "tracer_sku" });
+      if (supplyError) throw new Error(supplyError.message);
+    }
+
+    const qualified = qualifiedCandidates.length;
     const { error: finishError } = await supabase
       .from("tracer_core_runs")
       .update({
