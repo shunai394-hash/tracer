@@ -312,7 +312,15 @@ export async function investigateDropshipForBestsellers(
       asin: null,
     });
 
-    if (!identifierQuery || supplierSearchQueries.length === 0) {
+    // ASIN is a valid marketplace identity anchor, but CJ does not expose
+    // ASIN as a supplier search key. ASIN-only candidates therefore continue
+    // into the bounded title/brand discovery path below; identity is still
+    // accepted only after exact supplier evidence/variant-barcode matching.
+    const hasMarketplaceIdentifier = Boolean(
+      identifierQuery || marketIds.asin || supplierSearchQueries.length > 0,
+    );
+
+    if (!hasMarketplaceIdentifier) {
       skippedNoIdentifier += 1;
       await markPipelineState({
         bestsellerId: String(record.id),
@@ -735,7 +743,7 @@ export async function investigateDropshipForBestsellers(
             inventory_confirmed: inventoryConfirmed,
             fetched_at: fetchedAt,
             metadata: {
-              search_query: identifierQuery,
+              search_query: identifierQuery ?? (marketIds.asin ? `asin:${marketIds.asin}` : null),
               rationale: identity.rationale,
               source_country_code: "CN",
               freight_quote: observedShippingCost,
