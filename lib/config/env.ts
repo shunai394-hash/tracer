@@ -86,6 +86,14 @@ export function getCJConfig() {
   };
 }
 
+export function getCJOrderConfig() {
+  return {
+    logisticName: readEnv("CJ_LOGISTIC_NAME"),
+    fromCountryCode: readEnv("CJ_FROM_COUNTRY_CODE"),
+    shippingCountry: readEnv("CJ_SHIPPING_COUNTRY"),
+  };
+}
+
 export function getECPulseConfig() {
   return {
     apiUrl: readEnv("EC_PULSE_API_URL"),
