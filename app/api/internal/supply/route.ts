@@ -181,12 +181,29 @@ export async function POST(request: Request) {
     fetched_at: new Date().toISOString(),
   }));
 
-  const { error: variantError } = await supabase
-    .from("internal_supply_variants")
-    .upsert(rows, { onConflict: "supply_product_id,variant_id" });
+  for (const row of rows) {
+    const existing = await supabase
+      .from("internal_supply_variants")
+      .select("id")
+      .eq("supply_product_id", row.supply_product_id)
+      .eq("variant_id", row.variant_id)
+      .maybeSingle();
+    if (existing.error) {
+      return NextResponse.json({ ok: false, error: existing.error.message }, { status: 400 });
+    }
 
-  if (variantError) {
-    return NextResponse.json({ ok: false, error: variantError.message }, { status: 400 });
+    const result = existing.data?.id
+      ? await supabase
+          .from("internal_supply_variants")
+          .update(row)
+          .eq("id", existing.data.id)
+      : await supabase
+          .from("internal_supply_variants")
+          .insert(row);
+
+    if (result.error) {
+      return NextResponse.json({ ok: false, error: result.error.message }, { status: 400 });
+    }
   }
 
   return NextResponse.json({
