@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getCJConfig, isCJAutoOrderingEnabled, isCJLiveOrderingEnabled } from "@/lib/config/env";
+import { getCJConfig, isCJAutoOrderingEnabled, isCJLiveOrderingEnabled, isSupplierConfigured, isSupplierLiveOrderingEnabled } from "@/lib/config/env";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { createCJOrderV2 } from "@/lib/sources/cj/create-order";
 import { fetchCJVariantStock, getCJFreightOptions } from "@/lib/sources/cj/client";
@@ -116,7 +116,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       .select("*")
       .eq("id", supplierListingId)
       .eq("product_id", productId)
-      .eq("supplier", "CJdropshipping")
+      .eq("supplier", String(shopListing.supplier_name ?? "CJdropshipping"))
       .maybeSingle();
 
     if (!listing) {
@@ -142,7 +142,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       continue;
     }
     const killSwitch = await checkKillSwitch({
-      supplier: "CJdropshipping",
+      supplier: String(shopListing.supplier_name ?? "CJdropshipping"),
       productId,
     });
 
@@ -165,8 +165,9 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       sourceFxRateToSelling: fxQuote,
       addressComplete: addrComplete,
       killSwitchBlocked: killSwitch.blocked,
+      supplierConfigured: isSupplierConfigured(String(shopListing.supplier_name ?? "CJdropshipping")),
       cjConfigured: Boolean(getCJConfig().apiKey),
-      liveOrderingEnabled: isCJLiveOrderingEnabled(),
+      liveOrderingEnabled: isSupplierLiveOrderingEnabled(String(shopListing.supplier_name ?? "CJdropshipping")),
       inventoryQty: typeof listingRow.inventory === "number" ? listingRow.inventory : null,
       duplicateOrderExists: false,
     });
@@ -185,7 +186,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
           product_id: productId,
           shop_order_id: shopOrderId,
           fulfillment_kind: "dropship_customer_order",
-          supplier_name: "CJdropshipping",
+          supplier_name: String(shopListing.supplier_name ?? listingRow.supplier ?? "CJdropshipping"),
           supplier_product_id:
             typeof listingRow.supplier_product_id === "string"
               ? listingRow.supplier_product_id
@@ -263,6 +264,14 @@ export async function createDropshipPurchaseOrdersForShopOrder(
             qty: asNumber(row.qty) ?? 0,
             unit_cost: asNumber(listingRow.cost),
             cj_variant_id:
+              typeof listingRow.supplier_variant_id === "string"
+                ? listingRow.supplier_variant_id
+                : typeof listingRow.cj_variant_id === "string"
+                  ? listingRow.cj_variant_id
+                  : typeof shopListing.supplier_variant_id === "string"
+                    ? shopListing.supplier_variant_id
+                    : null,
+            supplier_variant_id:
               typeof listingRow.supplier_variant_id === "string"
                 ? listingRow.supplier_variant_id
                 : typeof listingRow.cj_variant_id === "string"
