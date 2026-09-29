@@ -4,6 +4,7 @@ import { executeSupplierPurchaseOrder } from "@/lib/ordering/supplier-execution"
 import { initializeProcurement } from "@/lib/procurement/init";
 import { listSupplierAdapters } from "@/lib/procurement/registry";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
+import { syncBaseOrdersToTracer } from "@/lib/channels/base-orders";
 import { requireCronAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
@@ -15,6 +16,11 @@ export async function GET(request: Request) {
 
   try {
     initializeProcurement();
+
+    // One automated commerce chain: BASE order sync first, then supplier execution.
+    // BASE payment confirmation and all existing supplier safety gates remain authoritative.
+    const baseSync = await syncBaseOrdersToTracer(50);
+
     const supabase = createSupabaseAdminClient();
     const supportedSuppliers = listSupplierAdapters();
 
@@ -66,6 +72,7 @@ export async function GET(request: Request) {
       ok: true,
       enabled: true,
       suppliers: supportedSuppliers,
+      baseSync,
       attempted: results.filter((item) => item.attempted).length,
       succeeded: results.filter((item) => item.succeeded).length,
       results,
