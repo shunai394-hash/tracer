@@ -110,11 +110,23 @@ export async function GET(request: Request) {
       nextPhase: "sales_test_publication",
     });
   } catch (error) {
-    if (cronRunId) await supabase.from("cron_runs").update({
-      status: "failed", finished_at: new Date().toISOString(), duration_ms: Date.now() - startedAt,
-      error: error instanceof Error ? error.message : String(error),
-    }).eq("id", cronRunId).catch(() => undefined);
+    if (cronRunId) {
+      try {
+        await supabase.from("cron_runs").update({
+          status: "failed",
+          finished_at: new Date().toISOString(),
+          duration_ms: Date.now() - startedAt,
+          error: error instanceof Error ? error.message : String(error),
+        }).eq("id", cronRunId);
+      } catch (recordError) {
+        console.error("[TRACER CRON RUN RECORD ERROR]", recordError);
+      }
+    }
     console.error("[TRACER SUPPLIER INVESTIGATION CRON ERROR]", error);
-    return NextResponse.json({ ok: false, phase: "supplier_investigation", error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    return NextResponse.json({
+      ok: false,
+      phase: "supplier_investigation",
+      error: error instanceof Error ? error.message : "Unknown error",
+    }, { status: 500 });
   }
 }
