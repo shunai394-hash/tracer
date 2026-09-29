@@ -273,6 +273,7 @@ export async function searchGoogleProducts(
           data_format: "json",
         }),
         cache: "no-store",
+        signal: AbortSignal.timeout(15_000),
       },
     );
   } catch {
@@ -353,6 +354,7 @@ export async function fetchBrightDataPage(url: string): Promise<{
         format: "raw",
       }),
       cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
     });
   } catch {
     throw new BrightDataRequestError("Could not connect to Bright Data");
