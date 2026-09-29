@@ -461,7 +461,7 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
     }) ?? sourceOffers[0] ?? null;
 
     const searchDemand = productDemand.filter(
-      (item) => item.signal_type === "search_volume" || item.signal_type === "search_growth",
+      (item) => (item.signal_type === "search_volume" || item.signal_type === "search_result_count" || item.signal_type === "search_growth"),
     );
     const socialDemand = productDemand.filter(
       (item) => item.signal_type === "social_mentions",
