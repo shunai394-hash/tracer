@@ -140,6 +140,7 @@ export type SupplierTracking = {
 
 export interface TracerSupplierAdapter {
   readonly name: string;
+  readonly capabilities: SupplierCapabilities;
 
   getProduct(
     supplierProductId: string,
