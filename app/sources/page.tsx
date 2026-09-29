@@ -22,7 +22,7 @@ export default function SourcesPage() {
             {brightData ? "Token present" : "Unset"}
           </p>
           <p className="mt-3 text-sm leading-6 text-zinc-400">
-            API 呼び出しは `lib/sources/brightdata` に抽象化しています。この段階では取得を実行しません。
+            API 呼び出しは `lib/sources/brightdata` に抽象化しています。キー未設定時は実行せず、未接続として扱います。
           </p>
         </article>
         <article className="border border-cyan-500/15 p-6">
@@ -31,7 +31,7 @@ export default function SourcesPage() {
             {mcp ? "Endpoint present" : "Unset"}
           </p>
           <p className="mt-3 text-sm leading-6 text-zinc-400">
-            `lib/sources/mcp` から外部 MCP を利用できる設計です。ツール実行は未実装です。
+            `lib/sources/mcp` から外部 MCP を利用します。Streamable HTTP の tools/list と tools/call に対応しています。
           </p>
         </article>
       </div>
