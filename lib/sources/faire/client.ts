@@ -57,7 +57,7 @@ function moneyValue(money: Money | null | undefined): number | null {
 
 async function request<T>(path: string): Promise<T> {
   const { accessToken, baseUrl } = config();
-  const response = await fetch(`${baseUrl.replace(/\\/$/, "")}/${path.replace(/^\\//, "")}`, {
+  const response = await fetch(\`\${baseUrl.replace(/\/$/, "")}/\${path.replace(/^\//, "")}\`, {
     headers: {
       Accept: "application/json",
       "X-FAIRE-ACCESS-TOKEN": accessToken,
