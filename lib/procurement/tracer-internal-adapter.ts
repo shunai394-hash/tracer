@@ -218,52 +218,34 @@ export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
       };
     }
 
-    // Reserve inventory before creating the internal fulfillment record.
-    // The conditional update makes concurrent executions fail closed.
-    const remainingInventory = inventory - input.quantity;
-    const updated = await supabase
-      .from("internal_supply_variants")
-      .update({
-        inventory: remainingInventory,
-        orderable: remainingInventory > 0,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", input.supplierVariantId)
-      .gte("inventory", input.quantity)
-      .eq("active", true)
-      .eq("orderable", true)
-      .select("id")
-      .maybeSingle();
-
-    if (updated.error) throw new Error(updated.error.message);
-    if (!updated.data) {
-      return {
-        succeeded: false,
-        supplierOrderId: null,
-        responseCode: "INVENTORY_RACE",
-        responseMessage: "TRACER internal inventory changed during reservation; retry safely.",
-        trackingNumber: null,
-        raw: null,
-      };
-    }
-
     const purchaseOrderId = input.orderNumber.startsWith("dropship:")
       ? input.orderNumber.slice("dropship:".length)
       : null;
     if (!purchaseOrderId) {
-      await supabase
-        .from("internal_supply_variants")
-        .update({
-          inventory: input.quantity + (remainingInventory),
-          orderable: true,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", input.supplierVariantId);
       return {
         succeeded: false,
         supplierOrderId: null,
         responseCode: "PURCHASE_ORDER_ID_MISSING",
         responseMessage: "TRACER internal fulfillment requires the purchase-order id in the idempotency key.",
+        trackingNumber: null,
+        raw: null,
+      };
+    }
+
+    // Reserve inventory atomically in Postgres. Concurrent executions cannot
+    // reserve the same units.
+    const reserved = await supabase.rpc("reserve_internal_supply_variant", {
+      p_variant_id: input.supplierVariantId,
+      p_quantity: input.quantity,
+    });
+
+    if (reserved.error) throw new Error(reserved.error.message);
+    if (!reserved.data || reserved.data.length === 0) {
+      return {
+        succeeded: false,
+        supplierOrderId: null,
+        responseCode: "INVENTORY_RACE",
+        responseMessage: "TRACER internal inventory changed during reservation; retry safely.",
         trackingNumber: null,
         raw: null,
       };
@@ -293,10 +275,10 @@ export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
       .single();
 
     if (inserted.error) {
-      await supabase
-        .from("internal_supply_variants")
-        .update({ inventory: inventory, updated_at: new Date().toISOString() })
-        .eq("id", input.supplierVariantId);
+      await supabase.rpc("release_internal_supply_variant", {
+        p_variant_id: input.supplierVariantId,
+        p_quantity: input.quantity,
+      });
       if (inserted.error.code === "23505") {
         const retry = await supabase
           .from("internal_fulfillment_orders")
