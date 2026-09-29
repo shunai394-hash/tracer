@@ -22,6 +22,18 @@ function digits(value: string): string {
   return value.replace(/\D/g, "");
 }
 
+function hasValidGs1CheckDigit(value: string): boolean {
+  if (!/^\d{8,14}$/.test(value)) return false;
+  const body = value.slice(0, -1);
+  const check = Number(value[value.length - 1]);
+  let sum = 0;
+  for (let i = body.length - 1, position = 0; i >= 0; i -= 1, position += 1) {
+    const digit = Number(body[i]);
+    sum += digit * (position % 2 === 0 ? 3 : 1);
+  }
+  return (10 - (sum % 10)) % 10 === check;
+}
+
 export function normalizeIdentifier(
   scheme: IdentifierScheme,
   value: string | null | undefined,
@@ -43,10 +55,18 @@ export function normalizeIdentifier(
   }
 
   const num = digits(trimmed);
-  if (scheme === "jan" && (num.length === 8 || num.length === 13)) return num;
-  if (scheme === "ean" && (num.length === 8 || num.length === 13)) return num;
-  if (scheme === "upc" && num.length === 12) return num;
-  if (scheme === "gtin" && num.length >= 8 && num.length <= 14) return num;
+  if (scheme === "jan" && (num.length === 8 || num.length === 13)) {
+    return hasValidGs1CheckDigit(num) ? num : null;
+  }
+  if (scheme === "ean" && (num.length === 8 || num.length === 13)) {
+    return hasValidGs1CheckDigit(num) ? num : null;
+  }
+  if (scheme === "upc" && num.length === 12) {
+    return hasValidGs1CheckDigit(num) ? num : null;
+  }
+  if (scheme === "gtin" && num.length >= 8 && num.length <= 14) {
+    return hasValidGs1CheckDigit(num) ? num : null;
+  }
   return null;
 }
 
