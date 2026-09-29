@@ -161,6 +161,15 @@ export type BaseOrderDetail = BaseOrderSummary & {
   mail_address?: string;
   tel?: string;
   remark?: string;
+  c_c_payment_transaction?: { status?: string };
+  cvs_payment_transaction?: { status?: string };
+  bt_payment_transaction?: { status?: string };
+  atobarai_payment_transaction?: { status?: string };
+  carrier_payment_transaction?: { status?: string };
+  paypal_payment_transaction?: { status?: string };
+  amazon_payment_transaction?: { status?: string };
+  paypay_payment_transaction?: { status?: string };
+  bnpl_payment_transaction?: { status?: string };
   order_items?: Array<{
     order_item_id?: string | number;
     item_id?: string | number;
