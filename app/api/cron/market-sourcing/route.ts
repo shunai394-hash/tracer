@@ -84,7 +84,10 @@ export async function GET(request: Request) {
     }
 
     const freshIds = observation.supplierCandidateIds;
-    const candidateIds = [...backlogIds, ...freshIds]
+    // Always give the current market observation first claim on the batch.
+    // Otherwise an old pending backlog can permanently starve newly discovered
+    // products because the backlog is larger than the per-run investigation cap.
+    const candidateIds = [...freshIds, ...backlogIds]
       .filter((id, index, ids) => ids.indexOf(id) === index)
       .slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
 
