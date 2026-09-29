@@ -220,9 +220,14 @@ export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
 
     // Reserve inventory before creating the internal fulfillment record.
     // The conditional update makes concurrent executions fail closed.
+    const remainingInventory = inventory - input.quantity;
     const updated = await supabase
       .from("internal_supply_variants")
-      .update({ inventory: inventory - input.quantity, updated_at: new Date().toISOString() })
+      .update({
+        inventory: remainingInventory,
+        orderable: remainingInventory > 0,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", input.supplierVariantId)
       .gte("inventory", input.quantity)
       .eq("active", true)
@@ -248,7 +253,11 @@ export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
     if (!purchaseOrderId) {
       await supabase
         .from("internal_supply_variants")
-        .update({ inventory, updated_at: new Date().toISOString() })
+        .update({
+          inventory: input.quantity + (remainingInventory),
+          orderable: true,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", input.supplierVariantId);
       return {
         succeeded: false,
