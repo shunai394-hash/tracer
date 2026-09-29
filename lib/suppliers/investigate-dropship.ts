@@ -530,7 +530,7 @@ export async function investigateDropshipForBestsellers(
         let variants: Awaited<ReturnType<typeof fetchCJProductVariants>> = [];
         cjStage = "variants";
         try {
-          variants = await fetchCJProductVariants(detail.id, { countryCode: "CN" });
+          variants = await fetchCJProductVariants(detail.id, { countryCode: "JP" });
         } catch {
           // Variant lookup failure leaves identity unconfirmed rather than
           // inventing an identifier.
