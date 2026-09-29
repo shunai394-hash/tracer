@@ -179,25 +179,6 @@ export async function runIntelligencePipeline(): Promise<{
   steps.push(
     await runStep("dropship", () => investigateDropshipForBestsellers(supplierCandidateIds)),
   );
-  // Build the evidence stack BEFORE selecting sales tests. The previous order
-  // selected products first and only refreshed demand/intelligence afterwards,
-  // so sales selection could run on stale or missing demand evidence.
-  steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand()));
-  steps.push(await runStep("normalize", () => normalizeProductIntelligence()));
-  steps.push(await runStep("identity", () => stampDemandCJIdentities()));
-  steps.push(await runStep("match", () => matchDemandProductsByCategory()));
-  steps.push(await runStep("demand", () => inspectDemandObservations()));
-  steps.push(await runStep("demand_analyze", () => persistDemandIntelligence()));
-  steps.push(await runStep("supply", () => researchLimitedSupply()));
-
-  const intelligence = await runStep("intelligence", () =>
-    buildOpportunityIntelligence(),
-  );
-  steps.push(intelligence);
-  steps.push(await runStep("score", () => scoreProductIntelligence()));
-
-  // Only now can a product enter a sales test. This guarantees the selector
-  // sees the freshly rebuilt opportunity intelligence and its hard gates.
   const salesTestStep = await runStep(
     "sales_test_select",
     () => selectAndPublishSalesTests(bestsellerIds, 3),
@@ -217,6 +198,19 @@ export async function runIntelligencePipeline(): Promise<{
       return Promise.all(ids.map((id) => promoteShopListingToNewfind(id)));
     }),
   );
+  steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand()));
+  steps.push(await runStep("normalize", () => normalizeProductIntelligence()));
+  steps.push(await runStep("identity", () => stampDemandCJIdentities()));
+  steps.push(await runStep("match", () => matchDemandProductsByCategory()));
+  steps.push(await runStep("demand", () => inspectDemandObservations()));
+  steps.push(await runStep("demand_analyze", () => persistDemandIntelligence()));
+  steps.push(await runStep("supply", () => researchLimitedSupply()));
+
+  const intelligence = await runStep("intelligence", () =>
+    buildOpportunityIntelligence(),
+  );
+  steps.push(intelligence);
+  steps.push(await runStep("score", () => scoreProductIntelligence()));
   steps.push(await runStep("ordering", () => persistReorderRecommendations()));
   steps.push(
     await runStep("test_ready", async () => {
