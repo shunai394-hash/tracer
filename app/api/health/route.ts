@@ -1,4 +1,9 @@
-import { getFoundationStatus, isCJAutoOrderingEnabled, isCJLiveOrderingEnabled } from "@/lib/config/env";
+import {
+  getFoundationStatus,
+  isCJAutoOrderingEnabled,
+  isCJLiveOrderingEnabled,
+  isSupplierDryRunEnabled,
+} from "@/lib/config/env";
 
 export const runtime = "nodejs";
 
@@ -27,6 +32,7 @@ export async function GET() {
       baseConfigured: status.base,
       cjLiveOrdering: isCJLiveOrderingEnabled(),
       cjAutoOrdering: isCJAutoOrderingEnabled(),
+      supplierDryRun: isSupplierDryRunEnabled(),
     },
   });
 }
