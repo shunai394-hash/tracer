@@ -49,6 +49,16 @@ export async function createDropshipPurchaseOrdersForShopOrder(
     .maybeSingle();
   if (orderError) throw new Error(orderError.message);
   if (!order) throw new Error("shop order not found");
+
+  // Supplier procurement is only authorized after confirmed customer payment.
+  // Never create a supplier PO from an unpaid/pending order.
+  if (String(order.payment_status) !== "paid") {
+    return {
+      purchaseOrderIds: [],
+      skipped: [{ itemId: "*", reason: "shop_order_payment_not_confirmed" }],
+    };
+  }
+
   if (["cancellation_requested", "refund_pending", "cancelled", "refunded"].includes(String(order.order_status))) {
     return { purchaseOrderIds: [], skipped: [{ itemId: "*", reason: `shop_order_${String(order.order_status)}` }] };
   }
