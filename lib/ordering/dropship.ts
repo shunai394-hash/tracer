@@ -349,6 +349,18 @@ export async function executeLivePurchaseOrder(
   if (poError) throw new Error(poError.message);
   if (!po) throw new Error("purchase order not found");
 
+  const supplierName = String(po.supplier_name ?? "").trim().toLowerCase();
+  if (supplierName !== "cj" && supplierName !== "cjdropshipping") {
+    return {
+      purchaseOrderId,
+      attempted: false,
+      succeeded: false,
+      supplierOrderId: null,
+      reason: "supplier_executor_not_supported",
+      gate: null,
+    };
+  }
+
   if (po.fulfillment_kind !== "dropship_customer_order") {
     return {
       purchaseOrderId,
