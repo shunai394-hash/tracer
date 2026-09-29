@@ -9,6 +9,8 @@ export type DropshipOrderGateInput = {
   sourceFxRateToSelling: number | null;
   addressComplete: boolean | null;
   killSwitchBlocked: boolean;
+  /** Supplier-agnostic configuration flag. cjConfigured is retained for compatibility. */
+  supplierConfigured?: boolean;
   cjConfigured: boolean;
   liveOrderingEnabled: boolean;
   /** null = inventory level unknown (unknown is never treated as "in stock"). */
@@ -41,7 +43,8 @@ export function evaluateDropshipOrderGate(
   if (input.addressComplete === null) missing.push("address_unknown");
   if (input.addressComplete === false) blocked.push("address_incomplete");
   if (input.killSwitchBlocked) blocked.push("kill_switch_active");
-  if (!input.cjConfigured) blocked.push("cj_not_configured");
+  const supplierConfigured = input.supplierConfigured ?? input.cjConfigured;
+  if (!supplierConfigured) blocked.push("supplier_not_configured");
   if (input.inventoryQty === null) {
     missing.push("inventory_unknown");
   } else if (input.quantity !== null && input.inventoryQty < input.quantity) {
@@ -88,6 +91,7 @@ export function verifyDropshipOrderGateInvariants(): {
     sourceFxRateToSelling: 1,
     addressComplete: true,
     killSwitchBlocked: false,
+    supplierConfigured: true,
     cjConfigured: true,
     liveOrderingEnabled: true,
     inventoryQty: 10,
