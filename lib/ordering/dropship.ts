@@ -150,7 +150,14 @@ export async function createDropshipPurchaseOrdersForShopOrder(
     });
 
 
-    const gate = evaluateDropshipOrderGate({
+    const cjOrderConfig = getCJOrderConfig();
+  const missingExecutionConfig = [
+    !cjOrderConfig.logisticName ? "cj_logistic_name_unknown" : null,
+    !cjOrderConfig.fromCountryCode ? "cj_from_country_unknown" : null,
+    !cjOrderConfig.shippingCountry ? "cj_shipping_country_unknown" : null,
+  ].filter((value): value is string => value !== null);
+
+  const gate = evaluateDropshipOrderGate({
       vid: typeof listingRow.supplier_variant_id === "string" ? listingRow.supplier_variant_id : (typeof listingRow.cj_variant_id === "string" ? listingRow.cj_variant_id : null),
       quantity: asNumber(row.qty),
       sourceCost: asNumber(listingRow.cost),
@@ -472,8 +479,14 @@ export async function executeLivePurchaseOrder(
 
   // Selling price is not required to place the supplier order (only to compute
   // profit), so drop that one requirement here rather than reusing the create-time gate as-is.
-  const executionMissing = gate.missing.filter((code) => code !== "selling_price_unknown");
-  const canExecuteLive = executionMissing.length === 0 && gate.blocked.length === 0 && !gate.liveOrderingDisabled;
+  const executionMissing = [
+    ...gate.missing.filter((code) => code !== "selling_price_unknown"),
+    ...missingExecutionConfig,
+  ];
+  const canExecuteLive =
+    executionMissing.length === 0 &&
+    gate.blocked.length === 0 &&
+    !gate.liveOrderingDisabled;
 
   await supabase
     .from("purchase_orders")
@@ -668,6 +681,9 @@ export async function executeLivePurchaseOrder(
     shippingZip: String(shopOrderRow.shipping_zip ?? ""),
     shippingPhone: String(shopOrderRow.customer_phone ?? ""),
     shippingCustomerName: String(shopOrderRow.customer_name ?? ""),
+    logisticName: cjOrderConfig.logisticName,
+    fromCountryCode: cjOrderConfig.fromCountryCode,
+    shippingCountry: cjOrderConfig.shippingCountry,
     products: [
       {
         vid: String(itemRow.cj_variant_id ?? ""),
