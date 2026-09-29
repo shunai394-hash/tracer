@@ -378,6 +378,43 @@ export async function executeSupplierPurchaseOrder(
     };
   }
 
+  const orderInput = {
+    supplierName,
+    orderNumber: idempotencyKey,
+    supplierProductId,
+    supplierVariantId,
+    quantity: asNumber(po.qty) ?? 1,
+    shippingCountryCode: asString(shopOrderRow.shipping_country_code) ?? "",
+    shippingProvince: asString(shopOrderRow.shipping_province) ?? "",
+    shippingCity: asString(shopOrderRow.shipping_city) ?? "",
+    shippingAddress: asString(shopOrderRow.shipping_line1 ?? shopOrderRow.shipping_address) ?? "",
+    shippingAddress2: asString(shopOrderRow.shipping_line2),
+    shippingZip: asString(shopOrderRow.shipping_zip) ?? "",
+    shippingPhone: asString(shopOrderRow.customer_phone) ?? "",
+    shippingCustomerName: asString(shopOrderRow.customer_name) ?? "",
+    shippingCountry:
+      asString(shopOrderRow.shipping_country) ??
+      asString(shopOrderRow.shipping_country_code) ??
+      "",
+    email: asString(shopOrderRow.customer_email),
+    supplierPayload: (po.metadata as Record<string, unknown> | null)?.supplier_order_payload,
+  };
+
+  if (adapter.validateOrderInput) {
+    const validation = await adapter.validateOrderInput(orderInput);
+    if (!validation.valid) {
+      return {
+        purchaseOrderId,
+        supplierName,
+        attempted: false,
+        succeeded: false,
+        supplierOrderId: null,
+        reason: validation.responseMessage ?? validation.responseCode,
+        gate,
+      };
+    }
+  }
+
   let attemptId: string | null = existingAttempt?.id ? String(existingAttempt.id) : null;
 
   if (existingAttempt?.state === "in_progress") {
@@ -438,27 +475,6 @@ export async function executeSupplierPurchaseOrder(
       gate,
     };
   }
-
-  const orderInput = {
-    supplierName,
-    orderNumber: idempotencyKey,
-    supplierProductId,
-    supplierVariantId,
-    quantity: asNumber(po.qty) ?? 1,
-    shippingCountryCode: asString(shopOrderRow.shipping_country_code) ?? "",
-    shippingProvince: asString(shopOrderRow.shipping_province) ?? "",
-    shippingCity: asString(shopOrderRow.shipping_city) ?? "",
-    shippingAddress: asString(shopOrderRow.shipping_line1 ?? shopOrderRow.shipping_address) ?? "",
-    shippingAddress2: asString(shopOrderRow.shipping_line2),
-    shippingZip: asString(shopOrderRow.shipping_zip) ?? "",
-    shippingPhone: asString(shopOrderRow.customer_phone) ?? "",
-    shippingCustomerName: asString(shopOrderRow.customer_name) ?? "",
-    shippingCountry:
-      asString(shopOrderRow.shipping_country) ??
-      asString(shopOrderRow.shipping_country_code) ??
-      "",
-    email: asString(shopOrderRow.customer_email),
-  };
 
   let result;
   try {
