@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { executeLivePurchaseOrder } from "@/lib/ordering/dropship";
-import { isCJAutoOrderingEnabled, isCJLiveOrderingEnabled } from "@/lib/config/env";
+import { executeSupplierPurchaseOrder } from "@/lib/ordering/supplier-execution";
+import { initializeProcurement } from "@/lib/procurement/init";
+import { listSupplierAdapters } from "@/lib/procurement/registry";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { requireCronAuth } from "@/lib/security/cron-auth";
 
@@ -13,37 +14,44 @@ export async function GET(request: Request) {
   if (authError) return authError;
 
   try {
-    if (!isCJLiveOrderingEnabled() || !isCJAutoOrderingEnabled()) {
-      return NextResponse.json({
-        ok: true,
-        enabled: false,
-        reason: "CJ_LIVE_ORDERING and CJ_AUTO_ORDERING must both be 1",
-        attempted: 0,
-      });
-    }
-
+    initializeProcurement();
     const supabase = createSupabaseAdminClient();
+    const supportedSuppliers = listSupplierAdapters();
+
     const { data: orders, error } = await supabase
       .from("purchase_orders")
       .select("id,product_id,status,supplier_name")
       .in("status", ["pending_approval", "placed"])
-.eq("fulfillment_kind", "dropship_customer_order")
-      .eq("supplier_name", "CJdropshipping")
+      .eq("fulfillment_kind", "dropship_customer_order")
       .is("supplier_order_id", null)
       .order("created_at", { ascending: true })
-      .limit(10);
+      .limit(20);
 
     if (error) throw new Error(error.message);
 
     const results = [];
     for (const order of orders ?? []) {
+      const supplierName = String(order.supplier_name ?? "").trim();
+      if (!supportedSuppliers.some((name) => name.toLowerCase() === supplierName.toLowerCase() ||
+          (name === "cj" && supplierName.toLowerCase() === "cjdropshipping"))) {
+        results.push({
+          purchaseOrderId: String(order.id),
+          supplierName,
+          attempted: false,
+          succeeded: false,
+          reason: "supplier_adapter_not_registered",
+        });
+        continue;
+      }
+
       const killSwitch = await checkKillSwitch({
-        supplier: "CJdropshipping",
+        supplier: supplierName,
         productId: order.product_id ? String(order.product_id) : null,
       });
       if (killSwitch.blocked) {
         results.push({
           purchaseOrderId: String(order.id),
+          supplierName,
           attempted: false,
           succeeded: false,
           reason: "kill_switch_blocked",
@@ -51,12 +59,13 @@ export async function GET(request: Request) {
         continue;
       }
 
-      results.push(await executeLivePurchaseOrder(String(order.id)));
+      results.push(await executeSupplierPurchaseOrder(String(order.id)));
     }
 
     return NextResponse.json({
       ok: true,
       enabled: true,
+      suppliers: supportedSuppliers,
       attempted: results.filter((item) => item.attempted).length,
       succeeded: results.filter((item) => item.succeeded).length,
       results,
