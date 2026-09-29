@@ -179,6 +179,7 @@ export function isSupplierConfigured(supplierName: string): boolean {
   if (name === "faire") return present(readEnv("FAIRE_ACCESS_TOKEN"));
   if (name === "dsers") return present(readEnv("DSERS_MCP_ACCESS_TOKEN"));
   if (name === "printful") return present(readEnv("PRINTFUL_ACCESS_TOKEN"));
+  if (name === "tracer_internal") return true;
   return false;
 }
 
@@ -193,12 +194,14 @@ export function isCJAutoOrderingEnabled(): boolean {
 export function isSupplierLiveOrderingEnabled(supplierName: string): boolean {
   const key = supplierName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").toUpperCase();
   if (key === "CJ" || key === "CJDROPSHIPPING") return isCJLiveOrderingEnabled();
+  if (key === "TRACER_INTERNAL") return readEnv("TRACER_INTERNAL_LIVE_ORDERING") === "1";
   return readEnv(`${key}_LIVE_ORDERING`) === "1";
 }
 
 export function isSupplierAutoOrderingEnabled(supplierName: string): boolean {
   const key = supplierName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").toUpperCase();
   if (key === "CJ" || key === "CJDROPSHIPPING") return isCJAutoOrderingEnabled();
+  if (key === "TRACER_INTERNAL") return readEnv("TRACER_INTERNAL_AUTO_ORDERING") === "1";
   return readEnv(`${key}_AUTO_ORDERING`) === "1";
 }
 
