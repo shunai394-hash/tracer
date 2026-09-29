@@ -51,6 +51,8 @@ type CJCreateOrderResponse = {
     orderId?: string;
     cjOrderId?: string;
     orderNum?: string;
+    payId?: string;
+    cjPayUrl?: string;
   };
 };
 
@@ -96,7 +98,11 @@ export type CJCreateOrderResult = {
  * (do not call twice for the same orderNumber), kill-switch checks, gate
  * evaluation, and the human-confirmation requirement — this function performs
  * the network call only, and always fires it if called. Do not call this
- * directly; go through lib/ordering/dropship.ts#executeLivePurchaseOrder.
+ * directly; go through the supplier execution gate. The caller owns idempotency,
+ * kill-switch, inventory/profitability checks, and live-order enablement.
+ *
+ * CJ payType=2 is used by default so the order proceeds through CJ's balance
+ * payment path instead of returning a deprecated payment-page URL.
  */
 export async function createCJOrderV2(
   input: CJCreateOrderInput,
@@ -152,6 +158,9 @@ export async function createCJOrderV2(
   if (input.email) body.email = input.email;
   body.logisticName = input.logisticName;
   body.fromCountryCode = input.fromCountryCode;
+  // CJ defaults to deprecated page payment when payType is omitted.
+  // Use balance payment so a live TRACER order does not stop at a payment page.
+  body.payType = input.payType ?? 2;
 
   const response = await fetch(
     "https://developers.cjdropshipping.com/api2.0/v1/shopping/order/createOrderV2",
