@@ -339,10 +339,9 @@ export type ExecuteLiveOrderResult = {
 };
 
 /**
- * The only place in TRACER that actually calls CJ createOrderV2. Requires an
- * approved, non-blocked purchase order, CJ_LIVE_ORDERING=1, and no active kill
- * switch. Idempotent: re-running for a purchase order that already has a
- * supplier_order_id is a no-op.
+ * The single supplier-agnostic live-order entry point. It delegates to the
+ * registered Supplier Adapter after all common gates pass. Idempotent:
+ * re-running a purchase order that already has a supplier_order_id is a no-op.
  */
 export async function executeLivePurchaseOrder(
   purchaseOrderId: string,
