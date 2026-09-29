@@ -662,6 +662,37 @@ export async function investigateDropshipForBestsellers(
           }
         }
 
+        // A discovered CJ product is not a supplier offer until identity is
+        // proven. Never persist a title-only/semantic candidate as a
+        // supplier_listing: doing so attaches unrelated CJ inventory to a
+        // marketplace bestseller and can contaminate downstream sales tests.
+        if (!identity.salesEligible) {
+          noIdentifierOverlap += 1;
+          if (!supplyBarcode) supplyBarcodeMissing += 1;
+          await markPipelineState({
+            bestsellerId: String(record.id),
+            stage: "SUPPLIER_INVESTIGATION",
+            status: "blocked",
+            reason: "identity_not_confirmed",
+          });
+          await writeEvidence({
+            productId: typeof record.product_id === "string" ? record.product_id : null,
+            bestsellerId: String(record.id),
+            source: "cj",
+            fetchedAt,
+            fieldName: "identity_status",
+            fieldValue: identity.method,
+            evidenceClass: "unknown",
+            confidence: identity.confidence,
+            metadata: {
+              rationale: identity.rationale,
+              discovered_supplier_product_id: detail.id,
+              supplier_barcode: supplyBarcode,
+            },
+          });
+          continue;
+        }
+
         cjStage = "supplier_listing_insert";
         const insert = await supabase
           .from("supplier_listings")
