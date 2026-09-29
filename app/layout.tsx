@@ -20,8 +20,8 @@ export const metadata: Metadata = {
   description:
     "Track products, brands, prices, demand, and supply across world markets.",
   icons: {
-    icon: "/icon",
-    apple: "/apple-icon",
+    icon: "/icon.svg",
+    apple: "/icon.svg",
   },
   manifest: "/manifest.webmanifest",
 };
