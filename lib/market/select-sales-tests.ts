@@ -113,7 +113,6 @@ export async function selectAndPublishSalesTests(
 
     if (bestseller.rank === null) reasons.push("rank_unknown");
     if (!bestseller.title) reasons.push("title_unknown");
-    if (bestseller.price === null) reasons.push("selling_price_unknown");
     if (!bestseller.image_url) reasons.push("image_unknown");
 
     const { data: internalCatalog, error: internalError } = await supabase
@@ -164,12 +163,15 @@ export async function selectAndPublishSalesTests(
     }
 
     if (!listing) {
+      if (bestseller.price === null) reasons.push("selling_price_unknown");
       reasons.push("identity_not_confirmed");
       await markPipeline(String(bestseller.id), "SUPPLIER_INVESTIGATION", "blocked", "identity_not_confirmed");
       rejected.push({ id: String(bestseller.id), reasons });
       continue;
     }
     if (listing.cost === null) reasons.push("source_cost_unknown");
+    if (isInternalSupply && asNumber(listing.catalog_sale_price) === null) reasons.push("selling_price_unknown");
+    if (!isInternalSupply && bestseller.price === null) reasons.push("selling_price_unknown");
     if (listing.shipping_cost === null) reasons.push("shipping_unknown");
     if (listing.tracking_available !== true) reasons.push("tracking_unknown");
     if (listing.api_available !== true) reasons.push("supplier_api_unknown");
@@ -219,7 +221,9 @@ export async function selectAndPublishSalesTests(
       sellingPrice: isInternalSupply
         ? asNumber(listing.catalog_sale_price)
         : asNumber(bestseller.price),
-      sellingCurrency: typeof bestseller.currency === "string" ? bestseller.currency : null,
+      sellingCurrency: isInternalSupply
+        ? (typeof listing.currency === "string" ? listing.currency : null)
+        : (typeof bestseller.currency === "string" ? bestseller.currency : null),
       sellingProvider: isInternalSupply ? "tracer_internal" : String(bestseller.source ?? "marketplace"),
       sourceCost: asNumber(listing.cost),
       sourceCurrency: typeof listing.currency === "string" ? listing.currency : null,
