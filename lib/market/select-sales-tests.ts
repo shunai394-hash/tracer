@@ -84,6 +84,7 @@ export async function selectAndPublishSalesTests(
     profit: ReturnType<typeof simulateContributionProfit>;
     reasons: string[];
     qualityScore: number;
+    isInternalSupply: boolean;
   }> = [];
 
   // Publication gate fields are loaded together with the scores so the persisted gate is authoritative in production.
@@ -335,6 +336,7 @@ export async function selectAndPublishSalesTests(
       listing,
       profit,
       qualityScore,
+      isInternalSupply,
       reasons: [
         `quality_score_${qualityScore.toFixed(1)}`,
         `demand_score_${demandScore.toFixed(1)}`,
@@ -388,17 +390,17 @@ export async function selectAndPublishSalesTests(
         {
           product_id: productId,
           bestseller_id: item.bestseller.id,
-          supplier_listing_id: isInternalSupply ? null : item.listing.id,
+          supplier_listing_id: item.isInternalSupply ? null : item.listing.id,
           slug,
           title: item.bestseller.title,
-          description: isInternalSupply
+          description: item.isInternalSupply
             ? "TRACER独自供給カタログの商品です。需要・価格・在庫・注文可否をTRACER側で管理しています。"
             : "市場ランキングで確認された売れ筋商品です。仕入は識別子で同一商品と確認できた無在庫仕入先のみを使います。",
           image_url: item.bestseller.image_url,
-          selling_price: isInternalSupply
+          selling_price: item.isInternalSupply
             ? item.listing.catalog_sale_price
             : item.bestseller.price,
-          currency: isInternalSupply ? item.listing.currency : item.bestseller.currency,
+          currency: item.isInternalSupply ? item.listing.currency : item.bestseller.currency,
           supplier_name: item.listing.supplier,
           supplier_product_id: item.listing.supplier_product_id ?? item.listing.external_id,
           supplier_variant_id: item.listing.supplier_variant_id ?? item.listing.cj_variant_id,
