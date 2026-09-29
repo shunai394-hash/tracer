@@ -115,16 +115,52 @@ export async function selectAndPublishSalesTests(
     if (bestseller.price === null) reasons.push("selling_price_unknown");
     if (!bestseller.image_url) reasons.push("image_unknown");
 
-    const { data: listings, error: listingError } = await supabase
-      .from("supplier_listings")
+    const { data: internalCatalog, error: internalError } = await supabase
+      .from("tracer_supply_catalog")
       .select("*")
       .eq("bestseller_id", bestseller.id)
-      .eq("identity_status", "linked")
-      .order("created_at", { ascending: false })
-      .limit(5);
+      .eq("orderable", true)
+      .eq("status", "ready")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (internalError) throw new Error(internalError.message);
 
-    if (listingError) throw new Error(listingError.message);
-    const listing = (listings ?? [])[0] as Record<string, unknown> | undefined;
+    let listing: Record<string, unknown> | undefined;
+    let isInternalSupply = false;
+    if (internalCatalog) {
+      isInternalSupply = true;
+      listing = {
+        id: internalCatalog.id,
+        supplier: "TRACER_INTERNAL",
+        supplier_product_id: internalCatalog.tracer_sku,
+        supplier_variant_id: null,
+        cost: internalCatalog.cost,
+        shipping_cost: internalCatalog.shipping_cost ?? 0,
+        handling_cost: internalCatalog.handling_cost ?? 0,
+        inventory: internalCatalog.inventory,
+        inventory_confirmed: true,
+        tracking_available: internalCatalog.tracking_available === true,
+        api_available: true,
+        orderable: internalCatalog.orderable === true,
+        identity_method: "tracer_catalog",
+        identity_confidence: 1,
+        currency: internalCatalog.currency ?? "JPY",
+        catalog_sale_price: internalCatalog.sale_price,
+        identity_status: "linked",
+        external_id: internalCatalog.tracer_sku,
+      };
+    } else {
+      const { data: listings, error: listingError } = await supabase
+        .from("supplier_listings")
+        .select("*")
+        .eq("bestseller_id", bestseller.id)
+        .eq("identity_status", "linked")
+        .order("created_at", { ascending: false })
+        .limit(5);
+      if (listingError) throw new Error(listingError.message);
+      listing = (listings ?? [])[0] as Record<string, unknown> | undefined;
+    }
 
     if (!listing) {
       reasons.push("identity_not_confirmed");
@@ -148,6 +184,7 @@ export async function selectAndPublishSalesTests(
     // linked. Title/image/none are never sales identity evidence.
     const identityMethod = String(listing.identity_method ?? "");
     const identifierGradeMethods = new Set([
+      "tracer_catalog",
       "asin",
       "jan",
       "gtin",
@@ -167,7 +204,7 @@ export async function selectAndPublishSalesTests(
     // Every supplier requires a concrete variant identity before publication.
     // Legacy CJ rows may still carry cj_variant_id, so retain that fallback only
     // for backward compatibility; new suppliers use supplier_variant_id.
-    if (
+    if (!isInternalSupply &&
       typeof listing.supplier_variant_id !== "string" &&
       !(
         String(listing.supplier ?? "").toLowerCase() === "cjdropshipping" &&
@@ -178,9 +215,11 @@ export async function selectAndPublishSalesTests(
     }
 
     const profit = simulateContributionProfit({
-      sellingPrice: asNumber(bestseller.price),
+      sellingPrice: isInternalSupply
+        ? asNumber(listing.catalog_sale_price)
+        : asNumber(bestseller.price),
       sellingCurrency: typeof bestseller.currency === "string" ? bestseller.currency : null,
-      sellingProvider: String(bestseller.source ?? "marketplace"),
+      sellingProvider: isInternalSupply ? "tracer_internal" : String(bestseller.source ?? "marketplace"),
       sourceCost: asNumber(listing.cost),
       sourceCurrency: typeof listing.currency === "string" ? listing.currency : null,
       sourceProvider: String(listing.supplier ?? "cj"),
@@ -349,14 +388,17 @@ export async function selectAndPublishSalesTests(
         {
           product_id: productId,
           bestseller_id: item.bestseller.id,
-          supplier_listing_id: item.listing.id,
+          supplier_listing_id: isInternalSupply ? null : item.listing.id,
           slug,
           title: item.bestseller.title,
-          description:
-            "市場ランキングで確認された売れ筋商品です。仕入は識別子で同一商品と確認できた無在庫仕入先のみを使います。",
+          description: isInternalSupply
+            ? "TRACER独自供給カタログの商品です。需要・価格・在庫・注文可否をTRACER側で管理しています。"
+            : "市場ランキングで確認された売れ筋商品です。仕入は識別子で同一商品と確認できた無在庫仕入先のみを使います。",
           image_url: item.bestseller.image_url,
-          selling_price: item.bestseller.price,
-          currency: item.bestseller.currency,
+          selling_price: isInternalSupply
+            ? item.listing.catalog_sale_price
+            : item.bestseller.price,
+          currency: isInternalSupply ? item.listing.currency : item.bestseller.currency,
           supplier_name: item.listing.supplier,
           supplier_product_id: item.listing.supplier_product_id ?? item.listing.external_id,
           supplier_variant_id: item.listing.supplier_variant_id ?? item.listing.cj_variant_id,
