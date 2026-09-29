@@ -84,8 +84,6 @@ export async function executeSupplierPurchaseOrder(
   if (!po) throw new Error("purchase order not found");
 
   const supplierName = String(po.supplier_name ?? "").trim();
-  const normalizedSupplier = supplierName.toLowerCase();
-
   if (po.supplier_order_id) {
     return {
       purchaseOrderId,
@@ -145,6 +143,15 @@ export async function executeSupplierPurchaseOrder(
     .limit(1)
     .maybeSingle();
 
+  const { data: duplicateAttempts } = await supabase
+    .from("supplier_order_attempts")
+    .select("id,purchase_order_id,supplier_order_id,state")
+    .eq("purchase_order_id", purchaseOrderId)
+    .neq("idempotency_key", asString(po.idempotency_key) ?? `dropship:${purchaseOrderId}`)
+    .limit(1);
+
+  const duplicateOrderExists = Boolean(duplicateAttempts?.length);
+
   const shopOrderRow = (shopOrder ?? {}) as Record<string, unknown>;
   const itemRow = (item ?? {}) as Record<string, unknown>;
   const productId = asString(po.product_id);
@@ -177,7 +184,11 @@ export async function executeSupplierPurchaseOrder(
     variant = await adapter.getVariant(supplierProductId, supplierVariantId);
     inventory = await adapter.getInventory(supplierProductId, supplierVariantId);
     price = await adapter.getPrice(supplierProductId, supplierVariantId);
-    shipping = await adapter.getShipping(supplierProductId, supplierVariantId);
+    shipping = await adapter.getShipping(supplierProductId, supplierVariantId, {
+      destinationCountryCode: asString(shopOrderRow.shipping_country_code) ?? undefined,
+      destinationPostalCode: asString(shopOrderRow.shipping_zip) ?? undefined,
+      quantity: asNumber(po.qty) ?? 1,
+    });
   } catch (error) {
     return {
       purchaseOrderId,
@@ -225,7 +236,7 @@ export async function executeSupplierPurchaseOrder(
     cjConfigured: configured,
     liveOrderingEnabled,
     inventoryQty,
-    duplicateOrderExists: false,
+    duplicateOrderExists,
   });
 
   const executionMissing = gate.missing.filter((code) => code !== "selling_price_unknown");
