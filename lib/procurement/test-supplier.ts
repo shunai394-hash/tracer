@@ -22,6 +22,7 @@ export const tracerTestSupplier: TracerSupplierAdapter = {
     shippingRequiresDestination: false,
     orderPreflight: false,
     orderCreation: false,
+    payment: false,
     orderStatus: false,
     tracking: false,
     liveOrdering: false,
