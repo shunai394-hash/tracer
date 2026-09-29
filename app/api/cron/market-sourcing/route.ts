@@ -6,7 +6,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const MARKET_SOURCING_BATCH_SIZE = 50;
+const MARKET_SOURCING_BATCH_SIZE = 10;
 
 export async function GET(request: Request) {
   const authError = requireCronAuth(request);
@@ -70,13 +70,22 @@ export async function GET(request: Request) {
     if (previousRunError) throw new Error(previousRunError.message);
 
     const previousMetadata = previousRun?.metadata;
+    const metadataObject =
+      previousMetadata && typeof previousMetadata === "object" && !Array.isArray(previousMetadata)
+        ? (previousMetadata as Record<string, unknown>)
+        : null;
+    const sourceIndex =
+      metadataObject && typeof metadataObject.sourceIndex === "number"
+        ? Math.max(0, Number(metadataObject.sourceIndex))
+        : 0;
     const startIndex =
-      previousMetadata && typeof previousMetadata === "object" && !Array.isArray(previousMetadata) &&
-      typeof (previousMetadata as Record<string, unknown>).nextIndex === "number"
-        ? Math.max(0, Number((previousMetadata as Record<string, unknown>).nextIndex))
+      metadataObject && typeof metadataObject.sourceIndex === "number" &&
+      typeof metadataObject.nextIndex === "number"
+        ? Math.max(0, Number(metadataObject.nextIndex))
         : 0;
 
     const observation = await persistMarketplaceBestsellers({
+      sourceIndex,
       startIndex,
       batchSize: MARKET_SOURCING_BATCH_SIZE,
     });
@@ -94,6 +103,9 @@ export async function GET(request: Request) {
           inserted: observation.inserted,
           supplierCandidateCount: observation.supplierCandidateIds.length,
           batchSize: MARKET_SOURCING_BATCH_SIZE,
+          sourceIndex: observation.hasMore
+            ? observation.sourceIndex
+            : (observation.sourceIndex + 1) % 8,
           startIndex: observation.startIndex,
           processedCount: observation.processedCount,
           nextIndex: observation.hasMore ? observation.nextIndex : 0,
@@ -112,6 +124,9 @@ export async function GET(request: Request) {
         productsCreated: observation.productsCreated,
         supplierCandidateCount: observation.supplierCandidateIds.length,
         enrichment: observation.enrichment,
+        sourceIndex: observation.hasMore
+          ? observation.sourceIndex
+          : (observation.sourceIndex + 1) % 8,
         startIndex: observation.startIndex,
         processedCount: observation.processedCount,
         nextIndex: observation.hasMore ? observation.nextIndex : 0,
