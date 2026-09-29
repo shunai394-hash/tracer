@@ -447,13 +447,16 @@ export async function investigateDropshipForBestsellers(
         const uniqueTokens = [...new Set(asciiTokens)].filter(
           (token) => !["with", "for", "and", "the", "new", "type", "size"].includes(token),
         );
+        const fullTitle = title.replace(/\\s+/g, " ").trim().slice(0, 120);
         const discoveryQueries = [
           [brand, ...uniqueTokens.slice(0, 4)].filter(Boolean).join(" ").trim(),
           uniqueTokens.slice(0, 3).join(" ").trim(),
+          [brand, fullTitle].filter(Boolean).join(" ").trim(),
+          fullTitle,
         ].filter(
           (query, index, values): query is string =>
             query.length >= 3 && values.indexOf(query) === index,
-        ).slice(0, 2);
+        ).slice(0, 3);
 
         for (const query of discoveryQueries) {
           cjQuery = query;
