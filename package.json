@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "mobile:bootstrap": "node scripts/bootstrap-mobile.mjs",
+    "mobile:icons": "npx capacitor-assets generate --ios --android"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
