@@ -131,7 +131,6 @@ export async function syncTracerCatalogFromInternalSupply(args: {
       title: String(bestseller.title ?? product.title),
       brand: str(bestseller.brand) ?? str(product.brand),
       category: str(bestseller.category),
-      description: str(bestseller.description),
       image_url: str(bestseller.image_url),
       status: orderable ? "ready" : "draft",
       cost,
