@@ -1,11 +1,10 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getCJConfig, isCJAutoOrderingEnabled, isCJLiveOrderingEnabled, isSupplierConfigured, isSupplierLiveOrderingEnabled } from "@/lib/config/env";
+import { getCJConfig, isSupplierConfigured, isSupplierLiveOrderingEnabled } from "@/lib/config/env";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
-import { createCJOrderV2 } from "@/lib/sources/cj/create-order";
-import { fetchCJVariantStock, getCJFreightOptions } from "@/lib/sources/cj/client";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
+import { executeSupplierPurchaseOrder } from "@/lib/ordering/supplier-execution";
 import {
   evaluateDropshipOrderGate,
   type DropshipOrderGateResult,
