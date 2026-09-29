@@ -115,7 +115,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       .select("*")
       .eq("id", supplierListingId)
       .eq("product_id", productId)
-      .eq("supplier", String(shopListing.supplier_name ?? "CJdropshipping"))
+      .eq("supplier", String(shopListing.supplier_name ?? "").trim())
       .maybeSingle();
 
     if (!listing) {
