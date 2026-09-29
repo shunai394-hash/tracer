@@ -283,7 +283,8 @@ export async function createPurchaseOrderFromRecommendation(args: {
     {
       identityConfirmed: metadata.identity_rejected !== true && metadata.identity_unconfirmed !== true,
       identityUnknown: metadata.identity_unconfirmed === true,
-      supplierConfirmed: true,
+      supplierConfirmed:
+        typeof metadata.supplier_name === "string" && metadata.supplier_name.trim().length > 0,
       sourceCost: unitCost,
       currency,
       currencyReliable:
@@ -301,7 +302,10 @@ export async function createPurchaseOrderFromRecommendation(args: {
       onHand: asNumber(rec.on_hand),
       recommendedQty: qty,
       estimatedCost: totalCost,
-      supplierApiAvailable: null,
+      supplierApiAvailable:
+        typeof metadata.supplier_api_available === "boolean"
+          ? metadata.supplier_api_available
+          : null,
       settings,
       spentToday: 0,
       spentMonth: 0,
@@ -358,7 +362,10 @@ export async function createPurchaseOrderFromRecommendation(args: {
       product_id: rec.product_id,
       opportunity_id: rec.opportunity_id,
       recommendation_id: rec.id,
-      supplier_name: "CJdropshipping",
+      supplier_name:
+        typeof metadata.supplier_name === "string" && metadata.supplier_name.trim()
+          ? metadata.supplier_name.trim()
+          : null,
       qty,
       unit_cost: unitCost,
       shipping_cost: null,

@@ -1471,6 +1471,8 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
         profit_incalculable_reason: profit.incalculableReason,
         shipping_unknown: profit.shippingUnknown,
         category: row.category,
+        supplier_name: sourceOffer ? offerProvider(sourceOffer) : null,
+        supplier_api_available: sourceOffer ? true : null,
         hazardous,
         restricted,
         shippable,

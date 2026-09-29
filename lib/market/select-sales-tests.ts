@@ -144,13 +144,15 @@ export async function selectAndPublishSalesTests(
       reasons.push("identity_confidence_low");
     }
 
-    // CJ fulfillment requires a concrete variant ID. A product-level match
-    // without a variant cannot be safely published because a later refresh
-    // could otherwise cause fulfillment to select a different variant.
+    // Every supplier requires a concrete variant identity before publication.
+    // Legacy CJ rows may still carry cj_variant_id, so retain that fallback only
+    // for backward compatibility; new suppliers use supplier_variant_id.
     if (
-      String(listing.supplier ?? "").toLowerCase() === "cjdropshipping" &&
       typeof listing.supplier_variant_id !== "string" &&
-      typeof listing.cj_variant_id !== "string"
+      !(
+        String(listing.supplier ?? "").toLowerCase() === "cjdropshipping" &&
+        typeof listing.cj_variant_id === "string"
+      )
     ) {
       reasons.push("supplier_variant_unknown");
     }

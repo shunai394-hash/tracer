@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { fetchCJVariantStock } from "@/lib/sources/cj/client";
 import { editBaseItem, isBaseConfigured } from "@/lib/channels/base";
-import { getCJConfig } from "@/lib/config/env";
+import { isSupplierConfigured } from "@/lib/config/env";
+import { initializeProcurement } from "@/lib/procurement/init";
+import { getSupplierAdapter } from "@/lib/procurement/registry";
 import { requireCronAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
@@ -13,23 +14,13 @@ export async function GET(request: Request) {
   if (authError) return authError;
 
   try {
-    if (!getCJConfig().apiKey) {
-      return NextResponse.json({
-        ok: true,
-        configured: false,
-        inspected: 0,
-        updated: 0,
-        blocked: 0,
-        errors: 0,
-      });
-    }
-
+    initializeProcurement();
     const supabase = createSupabaseAdminClient();
     const { data: listings, error } = await supabase
       .from("shop_listings")
-      .select("id, supplier_listing_id, supplier_name, supplier_variant_id, base_item_id, title, description, selling_price")
+      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price")
       .eq("published", true)
-      .eq("supplier_name", "CJdropshipping")
+      .not("supplier_name", "is", null)
       .not("supplier_variant_id", "is", null)
       .order("updated_at", { ascending: true })
       .limit(20);
@@ -41,9 +32,27 @@ export async function GET(request: Request) {
     let baseErrors = 0;
     for (const listing of listings ?? []) {
       const listingId = String(listing.id);
+      const supplierName = String(listing.supplier_name ?? "").trim();
       const variantId = String(listing.supplier_variant_id);
+      const adapter = getSupplierAdapter(supplierName);
       try {
-        const inventory = await fetchCJVariantStock(variantId);
+        if (!supplierName || !adapter) {
+          results.push({ listingId, ok: false, blocked: true, reason: "supplier_adapter_not_registered" });
+          continue;
+        }
+        if (!isSupplierConfigured(supplierName)) {
+          results.push({ listingId, ok: false, blocked: true, reason: "supplier_not_configured", supplier: supplierName });
+          continue;
+        }
+        if (supplierName.toLowerCase() === "dsers") {
+          results.push({ listingId, ok: false, blocked: true, reason: "supplier_inventory_contract_unverified", supplier: supplierName });
+          continue;
+        }
+        const inventoryResult = await adapter.getInventory(
+          String(listing.supplier_product_id ?? ""),
+          variantId,
+        );
+        const inventory = inventoryResult?.quantity ?? null;
         const now = new Date().toISOString();
 
         if (inventory === null) {
@@ -55,7 +64,7 @@ export async function GET(request: Request) {
               pipeline_stage: "INVENTORY_REFRESH",
               pipeline_status: "blocked",
               pipeline_reason: "inventory_unknown",
-              pipeline_error: "CJ variant stock could not be verified",
+              pipeline_error: "Supplier variant stock could not be verified",
               pipeline_updated_at: now,
               updated_at: now,
             })
@@ -168,7 +177,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       ok: true,
-      configured: true,
+      configured: (listings ?? []).length > 0,
       inspected: results.length,
       updated: results.filter((item) => item.ok).length,
       blocked: results.filter((item) => item.blocked).length,

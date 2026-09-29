@@ -111,9 +111,16 @@ export async function persistReorderRecommendations(): Promise<{
         asNumber(metadata.identity_confidence) !== null &&
         Number(asNumber(metadata.identity_confidence)) >= 0.65,
       identityUnknown: metadata.identity_unconfirmed === true,
-      supplierConfirmed: true,
-      supplierName: "CJdropshipping",
-      supplierApiAvailable: null,
+      supplierConfirmed:
+        typeof metadata.supplier_name === "string" && metadata.supplier_name.trim().length > 0,
+      supplierName:
+        typeof metadata.supplier_name === "string" && metadata.supplier_name.trim()
+          ? metadata.supplier_name.trim()
+          : null,
+      supplierApiAvailable:
+        typeof metadata.supplier_api_available === "boolean"
+          ? metadata.supplier_api_available
+          : null,
       shippable:
         metadata.shippable === false
           ? false
