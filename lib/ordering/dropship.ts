@@ -49,6 +49,9 @@ export async function createDropshipPurchaseOrdersForShopOrder(
     .maybeSingle();
   if (orderError) throw new Error(orderError.message);
   if (!order) throw new Error("shop order not found");
+  if (["cancellation_requested", "refund_pending", "cancelled", "refunded"].includes(String(order.order_status))) {
+    return { purchaseOrderIds: [], skipped: [{ itemId: "*", reason: `shop_order_${String(order.order_status)}` }] };
+  }
 
   const { data: items, error: itemsError } = await supabase
     .from("shop_order_items")
