@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     const supabase = createSupabaseAdminClient();
     const { data: listings, error } = await supabase
       .from("shop_listings")
-      .select("id, supplier_listing_id, supplier_name, supplier_variant_id, base_item_id, title, description, selling_price")
+      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price")
       .eq("published", true)
       .not("supplier_name", "is", null)
       .not("supplier_variant_id", "is", null)
@@ -42,6 +42,10 @@ export async function GET(request: Request) {
         }
         if (!isSupplierConfigured(supplierName)) {
           results.push({ listingId, ok: false, blocked: true, reason: "supplier_not_configured", supplier: supplierName });
+          continue;
+        }
+        if (supplierName.toLowerCase() === "dsers") {
+          results.push({ listingId, ok: false, blocked: true, reason: "supplier_inventory_contract_unverified", supplier: supplierName });
           continue;
         }
         const inventoryResult = await adapter.getInventory(
