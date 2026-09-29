@@ -112,13 +112,17 @@ export function getMcpToolConsumer() {
   async function rpc(
     method: string,
     params: Record<string, unknown> = {},
-  ): Promise<JsonRpcResponse> {
-    const body = {
+    notification = false,
+  ): Promise<JsonRpcResponse | null> {
+    const body: Record<string, unknown> = {
       jsonrpc: "2.0",
-      id: ++requestId,
       method,
       params,
     };
+
+    if (!notification) {
+      body.id = ++requestId;
+    }
 
     const headers: Record<string, string> = {
       Accept: "application/json, text/event-stream",
@@ -138,6 +142,10 @@ export function getMcpToolConsumer() {
     });
 
     sessionId ??= response.headers.get("Mcp-Session-Id") ?? undefined;
+
+    if (notification && (response.status === 202 || response.status === 204)) {
+      return null;
+    }
 
     const payload = await readRpcResponse(response);
     if (payload.error) {
@@ -162,7 +170,7 @@ export function getMcpToolConsumer() {
     });
 
     // MCP requires the client to announce that initialization is complete.
-    await rpc("notifications/initialized");
+    await rpc("notifications/initialized", {}, true);
     initialized = true;
   }
 
