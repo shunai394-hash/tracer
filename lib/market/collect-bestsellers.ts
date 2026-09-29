@@ -205,7 +205,6 @@ export async function collectMarketplaceBestsellers(): Promise<{
         sourceUrl: source.url,
         fetchedAt,
         items,
-        enrichment,
       });
     } catch (error) {
       if (error instanceof BrightDataConfigError) {
