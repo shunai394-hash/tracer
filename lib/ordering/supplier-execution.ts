@@ -213,9 +213,11 @@ export async function executeSupplierPurchaseOrder(
     };
   }
 
-  const sourceCost = price?.amount ?? asNumber(po.unit_cost);
-  const shippingCost = shipping?.amount ?? asNumber(po.shipping_cost);
-  const sourceCurrency = (price?.currency ?? shipping?.currency ?? po.currency ?? "").toString().toUpperCase() || null;
+  // Live execution must use freshly verified supplier pricing/shipping.
+  // Never fall back to stale PO economics after a live refresh fails to return a value.
+  const sourceCost = price?.amount ?? null;
+  const shippingCost = shipping?.amount ?? null;
+  const sourceCurrency = (price?.currency ?? shipping?.currency ?? "").toString().toUpperCase() || null;
   const sellingCurrency = asString(shopOrderRow.currency)?.toUpperCase() ?? null;
   const fxQuote = await resolveFxRate(sourceCurrency, sellingCurrency);
   const inventoryQty = inventory?.quantity ?? null;
