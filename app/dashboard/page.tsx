@@ -1,6 +1,9 @@
+import { BaseOperationsPanel } from "@/components/base-operations-panel";
 import { ConnectionPanel } from "@/components/connection-panel";
 import { OpportunityKpis } from "@/components/opportunity-kpis";
 import { getFoundationStatus } from "@/lib/config/env";
+import { isBaseConfigured } from "@/lib/channels/base";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getOpportunityKpis } from "@/lib/intelligence/opportunity-store";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 
@@ -11,6 +14,22 @@ export default async function DashboardPage() {
 
   let kpis = null;
   let error: string | null = null;
+  let baseListings = [];
+  let baseLoadError: string | null = null;
+
+  try {
+    const supabase = createSupabaseAdminClient();
+    const { data, error: listingsError } = await supabase
+      .from("shop_listings")
+      .select("id,title,published,base_item_id,base_publication_status,base_last_error,inventory,orderable,selling_price,image_url")
+      .or("published.eq.true,base_item_id.not.is.null")
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (listingsError) throw new Error(listingsError.message);
+    baseListings = data ?? [];
+  } catch (caught) {
+    baseLoadError = caught instanceof Error ? caught.message : "BASE公開状態を読み込めませんでした。";
+  }
 
   try {
     kpis = await getOpportunityKpis();
@@ -38,6 +57,11 @@ export default async function DashboardPage() {
           <OpportunityKpis kpis={kpis} />
         </div>
       ) : null}
+      <BaseOperationsPanel
+        configured={isBaseConfigured()}
+        listings={baseListings}
+        loadError={baseLoadError}
+      />
       <div className="mt-10 max-w-xl">
         <ConnectionPanel status={status} />
       </div>
