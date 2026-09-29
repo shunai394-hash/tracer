@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     const { data: orders, error } = await supabase
       .from("purchase_orders")
       .select("id,product_id,status,supplier_name")
-      .in("status", ["pending_approval", "placed"])
+      .in("status", ["pending_approval", "auto_blocked", "placed"])
       .eq("fulfillment_kind", "dropship_customer_order")
       .is("supplier_order_id", null)
       .order("created_at", { ascending: true })
