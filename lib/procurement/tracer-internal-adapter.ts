@@ -25,6 +25,54 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+async function syncInternalInventoryProjection(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  internalVariantId: string,
+  inventory: number,
+): Promise<void> {
+  const { data: catalogVariants, error: variantError } = await supabase
+    .from("tracer_supply_variants")
+    .update({
+      inventory,
+      orderable: inventory > 0,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("internal_supply_variant_id", internalVariantId)
+    .select("catalog_id");
+
+  if (variantError) throw new Error(variantError.message);
+
+  const catalogIds = Array.from(
+    new Set((catalogVariants ?? []).map((row) => String(row.catalog_id))),
+  );
+
+  if (catalogIds.length > 0) {
+    const { error: catalogError } = await supabase
+      .from("tracer_supply_catalog")
+      .update({
+        inventory,
+        orderable: inventory > 0,
+        status: inventory > 0 ? "ready" : "draft",
+        updated_at: new Date().toISOString(),
+      })
+      .in("id", catalogIds);
+
+    if (catalogError) throw new Error(catalogError.message);
+  }
+
+  const { error: listingError } = await supabase
+    .from("shop_listings")
+    .update({
+      inventory,
+      orderable: inventory > 0,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("supplier_name", "TRACER_INTERNAL")
+    .eq("supplier_variant_id", internalVariantId);
+
+  if (listingError) throw new Error(listingError.message);
+}
+
 async function loadVariant(productId: string, variantId: string) {
   const supabase = createSupabaseAdminClient();
   const { data: variant, error } = await supabase
@@ -251,6 +299,45 @@ export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
       };
     }
 
+    }
+
+    const reservedInventory = asNumber(reserved.data[0]?.remaining_inventory);
+    if (reservedInventory === null) {
+      await supabase.rpc("release_internal_supply_variant", {
+        p_variant_id: input.supplierVariantId,
+        p_quantity: input.quantity,
+      });
+      return {
+        succeeded: false,
+        supplierOrderId: null,
+        responseCode: "INVENTORY_PROJECTION_FAILED",
+        responseMessage: "TRACER inventory reservation returned no remaining quantity.",
+        trackingNumber: null,
+        raw: reserved.data,
+      };
+    }
+
+    try {
+      await syncInternalInventoryProjection(
+        supabase,
+        input.supplierVariantId,
+        reservedInventory,
+      );
+    } catch (error) {
+      const released = await supabase.rpc("release_internal_supply_variant", {
+        p_variant_id: input.supplierVariantId,
+        p_quantity: input.quantity,
+      });
+      if (!released.error && released.data?.[0]?.restored_inventory !== undefined) {
+        await syncInternalInventoryProjection(
+          supabase,
+          input.supplierVariantId,
+          Number(released.data[0].restored_inventory),
+        );
+      }
+      throw error;
+    }
+
     const inserted = await supabase
       .from("internal_fulfillment_orders")
       .insert({
@@ -275,10 +362,17 @@ export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
       .single();
 
     if (inserted.error) {
-      await supabase.rpc("release_internal_supply_variant", {
+      const released = await supabase.rpc("release_internal_supply_variant", {
         p_variant_id: input.supplierVariantId,
         p_quantity: input.quantity,
       });
+      if (!released.error && released.data?.[0]?.restored_inventory !== undefined) {
+        await syncInternalInventoryProjection(
+          supabase,
+          input.supplierVariantId,
+          Number(released.data[0].restored_inventory),
+        );
+      }
       if (inserted.error.code === "23505") {
         const retry = await supabase
           .from("internal_fulfillment_orders")
