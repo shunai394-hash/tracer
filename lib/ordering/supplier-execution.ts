@@ -412,7 +412,7 @@ export async function executeSupplierPurchaseOrder(
     shippingProvince: asString(shopOrderRow.shipping_province) ?? "",
     shippingCity: asString(shopOrderRow.shipping_city) ?? "",
     shippingAddress: asString(shopOrderRow.shipping_line1 ?? shopOrderRow.shipping_address) ?? "",
-    shippingAddress2: asString(shopOrderRow.shipping_line2),
+    shippingAddress2: asString(shopOrderRow.shipping_line2) ?? undefined,
     shippingZip: asString(shopOrderRow.shipping_zip) ?? "",
     shippingPhone: asString(shopOrderRow.customer_phone) ?? "",
     shippingCustomerName: asString(shopOrderRow.customer_name) ?? "",
