@@ -21,12 +21,22 @@ async function claimEvent(
     return { alreadyProcessed: existing.processed === true };
   }
 
-  await supabase.from("stripe_webhook_events").insert({
+  const { error: insertError } = await supabase.from("stripe_webhook_events").insert({
     stripe_event_id: event.id,
     event_type: event.type,
     payload: event as unknown as Record<string, unknown>,
     processed: false,
   });
+
+  // Two identical Stripe deliveries can arrive concurrently. The unique
+  // stripe_event_id constraint makes the loser a duplicate; it must not
+  // execute the event handler a second time.
+  if (insertError) {
+    if (insertError.code === "23505") {
+      return { alreadyProcessed: true };
+    }
+    throw new Error(insertError.message);
+  }
 
   return { alreadyProcessed: false };
 }
@@ -75,7 +85,7 @@ async function handleCheckoutCompleted(
   const paymentIntentId =
     typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
 
-  await supabase
+  const { error: paymentUpdateError } = await supabase
     .from("shop_orders")
     .update({
       payment_status: "paid",
@@ -84,6 +94,10 @@ async function handleCheckoutCompleted(
       stripe_payment_intent_id: paymentIntentId,
     })
     .eq("id", shopOrderId);
+
+  if (paymentUpdateError) {
+    throw new Error(paymentUpdateError.message);
+  }
 
   const { data: items } = await supabase
     .from("shop_order_items")
@@ -100,10 +114,15 @@ async function handleCheckoutCompleted(
 
   try {
     await createDropshipPurchaseOrdersForShopOrder(shopOrderId);
-    await supabase
+    const { error: fulfillmentStateError } = await supabase
       .from("shop_orders")
       .update({ order_status: "fulfillment_pending" })
-      .eq("id", shopOrderId);
+      .eq("id", shopOrderId)
+      .eq("order_status", "paid");
+
+    if (fulfillmentStateError) {
+      throw new Error(fulfillmentStateError.message);
+    }
   } catch (error) {
     console.error("[TRACER POST-PAYMENT FULFILLMENT ERROR]", error);
     // Payment is still confirmed and recorded; fulfillment can be retried
