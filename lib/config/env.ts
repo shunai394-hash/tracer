@@ -49,6 +49,14 @@ export function getOrosyConfig() {
   };
 }
 
+export function getNewfindConfig() {
+  return {
+    webhookSecret: readEnv("NEWFIND_WEBHOOK_SECRET"),
+    apiUrl: readEnv("NEWFIND_API_URL"),
+    apiKey: readEnv("NEWFIND_API_KEY"),
+  };
+}
+
 export function getFoundationStatus(): FoundationStatus {
   const supabase = getSupabasePublicConfig();
 
@@ -237,14 +245,6 @@ export function getOrosyWarehouseShipTo(): {
   }
 
   return { name, postal_code: postalCode, prefecture, city, address_line1: addressLine1, phone };
-}
-
-export function getNewfindConfig() {
-  return {
-    webhookSecret: readEnv("NEWFIND_WEBHOOK_SECRET"),
-    apiUrl: readEnv("NEWFIND_API_URL"),
-    apiKey: readEnv("NEWFIND_API_KEY"),
-  };
 }
 
 export function isSupplierDryRunEnabled(): boolean {
