@@ -55,12 +55,18 @@ async function enrichAsinOnlyRows(rows: Record<string, unknown>[]): Promise<void
       if (!page.html) return;
       const detail = parseAmazonProductDetail(page.html);
       const jan = normalizeIdentifier("jan", detail.jan);
+      const gtin = normalizeIdentifier("gtin", detail.gtin);
+      const ean = normalizeIdentifier("ean", detail.ean);
+      const upc = normalizeIdentifier("upc", detail.upc);
       const mpn = normalizeIdentifier("mpn", detail.model);
       const brand = detail.brand?.trim() || null;
-      if (!jan && !mpn && !brand) return;
+      if (!jan && !gtin && !ean && !upc && !mpn && !brand) return;
 
       const update = {
         jan,
+        gtin,
+        ean,
+        upc,
         mpn,
         brand,
         model: detail.model ?? null,
