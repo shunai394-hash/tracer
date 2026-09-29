@@ -370,6 +370,91 @@ export async function fetchCJVariantStock(vid: string): Promise<number | null> {
   return null;
 }
 
+export type CJFreightOption = {
+  logisticName: string;
+  shippingCost: number;
+  arrivalTime: string | null;
+};
+
+export async function getCJFreightOptions(
+  vid: string,
+  options?: {
+    startCountryCode?: string;
+    endCountryCode?: string;
+    zip?: string;
+    quantity?: number;
+  },
+): Promise<CJFreightOption[]> {
+  const token = await getAccessToken();
+  const response = await fetchCJWithRateLimit(
+    "https://developers.cjdropshipping.com/api2.0/v1/logistic/freightCalculate",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "CJ-Access-Token": token,
+      },
+      body: JSON.stringify({
+        startCountryCode: options?.startCountryCode ?? "CN",
+        endCountryCode: options?.endCountryCode ?? "JP",
+        ...(options?.zip ? { zip: options.zip } : {}),
+        products: [
+          {
+            quantity: options?.quantity ?? 1,
+            vid,
+          },
+        ],
+      }),
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new CJRequestError(
+      `CJ freight options lookup failed with HTTP ${response.status}`,
+    );
+  }
+
+  const payload = (await response.json()) as {
+    result?: boolean;
+    message?: string;
+    data?: Array<{
+      logisticName?: string;
+      logisticPrice?: number | string | null;
+      totalPostageFee?: number | string | null;
+      logisticAging?: string | null;
+    }>;
+  };
+
+  if (payload.result === false) {
+    throw new CJRequestError(payload.message || "CJ freight options lookup failed");
+  }
+
+  return (payload.data ?? [])
+    .map((row) => {
+      const name = typeof row.logisticName === "string" ? row.logisticName.trim() : "";
+      const total = Number(row.totalPostageFee);
+      const simple = Number(row.logisticPrice);
+      const shippingCost =
+        Number.isFinite(total) && total > 0
+          ? total
+          : Number.isFinite(simple) && simple > 0
+            ? simple
+            : null;
+      if (!name || shippingCost === null) return null;
+      return {
+        logisticName: name,
+        shippingCost,
+        arrivalTime:
+          typeof row.logisticAging === "string" && row.logisticAging.trim()
+            ? row.logisticAging.trim()
+            : null,
+      };
+    })
+    .filter((row): row is CJFreightOption => row !== null)
+    .sort((a, b) => a.shippingCost - b.shippingCost);
+}
+
 export async function calculateCJFreight(
   vid: string,
   options?: {
