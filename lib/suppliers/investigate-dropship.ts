@@ -447,7 +447,7 @@ export async function investigateDropshipForBestsellers(
         const uniqueTokens = [...new Set(asciiTokens)].filter(
           (token) => !["with", "for", "and", "the", "new", "type", "size"].includes(token),
         );
-        const fullTitle = title.replace(/\\s+/g, " ").trim().slice(0, 120);
+        const fullTitle = title.replace(/\s+/g, " ").trim().slice(0, 120);
         const discoveryQueries = [
           [brand, ...uniqueTokens.slice(0, 4)].filter(Boolean).join(" ").trim(),
           uniqueTokens.slice(0, 3).join(" ").trim(),
