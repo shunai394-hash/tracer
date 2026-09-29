@@ -67,9 +67,11 @@ export function getBrightDataConfig() {
   };
 }
 
+const DEFAULT_SUPABASE_URL = "https://lysavahpadzrhpounjgi.supabase.co";
+
 export function getSupabasePublicConfig() {
   return {
-    url: readEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    url: readEnv("NEXT_PUBLIC_SUPABASE_URL") || DEFAULT_SUPABASE_URL,
     anonKey:
       readEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY") ||
       readEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
