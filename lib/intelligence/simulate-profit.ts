@@ -147,13 +147,6 @@ export function simulateContributionProfit(args: {
 
   const convertedSourceCost =
     currenciesMatch ? args.sourceCost : args.sourceCost * (fxRate as number);
-  const convertedInternationalShipping =
-    args.internationalShipping == null
-      ? null
-      : currenciesMatch
-        ? args.internationalShipping
-        : args.internationalShipping * (fxRate as number);
-  const convertedDomesticShipping = args.domesticShipping ?? 0;
 
   if (fxRate && !currenciesMatch) {
     provenance.push({
@@ -167,15 +160,47 @@ export function simulateContributionProfit(args: {
 
   const shippingUnknown =
     args.internationalShipping == null && args.domesticShipping == null;
+  const shippingCurrency = args.shippingCurrency?.trim().toUpperCase() ?? null;
+
+  if (!shippingUnknown && !shippingCurrency) {
+    return unknown("shipping_currency_missing");
+  }
+
+  const shippingCurrenciesMatchSelling =
+    shippingCurrency === sellingCurrency;
+  const shippingCurrenciesMatchSource =
+    shippingCurrency === sourceCurrency;
+  const shippingFxRate =
+    shippingCurrenciesMatchSelling
+      ? 1
+      : shippingCurrenciesMatchSource
+        ? currenciesMatch
+          ? 1
+          : fxRate
+        : null;
+
+  if (!shippingUnknown && shippingFxRate === null) {
+    return unknown("shipping_currency_mismatch_no_observed_fx");
+  }
+
+  const convertedInternationalShipping =
+    args.internationalShipping == null
+      ? null
+      : args.internationalShipping * (shippingFxRate as number);
+  const convertedDomesticShipping = args.domesticShipping ?? 0;
+
+  if (shippingFxRate && !shippingCurrenciesMatchSelling) {
+    provenance.push({
+      field: "shipping_fx_rate_to_selling",
+      kind: "observed",
+      source: args.sourceFxRateSource ?? "observed_fx_rate",
+      value: shippingFxRate,
+      note: `${shippingCurrency}->${sellingCurrency}`,
+    });
+  }
+
   const internationalShipping = convertedInternationalShipping ?? 0;
   const domesticShipping = convertedDomesticShipping;
-
-  if (!shippingUnknown && args.shippingCurrency) {
-    const shippingCurrency = args.shippingCurrency.trim().toUpperCase();
-    if (shippingCurrency !== sellingCurrency) {
-      return unknown("shipping_currency_mismatch");
-    }
-  }
 
   const platformFee = roundMoney(
     args.sellingPrice * PROFIT_ASSUMPTIONS.platform_fee_rate,
@@ -423,6 +448,19 @@ export function verifyProfitInvariants(): {
     sourceProvider: "cj",
   });
 
+  const crossCurrencyShipping = simulateContributionProfit({
+    sellingPrice: 12800,
+    sellingCurrency: "JPY",
+    sellingProvider: "marketplace",
+    sourceCost: 3.38,
+    sourceCurrency: "USD",
+    sourceProvider: "cj",
+    internationalShipping: 4.2,
+    shippingCurrency: "USD",
+    sourceFxRateToSelling: 150,
+    sourceFxRateSource: "test",
+  });
+
   const cases = [
     {
       name: "mislabeled_jpy_not_calculated",
@@ -446,6 +484,13 @@ export function verifyProfitInvariants(): {
         healthy.roi !== null &&
         healthy.totalCost !== null &&
         healthy.totalCost > 0,
+    },
+    {
+      name: "cross_currency_shipping_uses_source_fx",
+      expected: true,
+      actual:
+        crossCurrencyShipping.calculable &&
+        crossCurrencyShipping.internationalShipping === 630,
     },
   ];
 
