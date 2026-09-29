@@ -6,6 +6,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+const MARKET_SOURCING_BATCH_SIZE = 50;
+
 export async function GET(request: Request) {
   const authError = requireCronAuth(request);
   if (authError) return authError;
@@ -37,11 +39,32 @@ export async function GET(request: Request) {
 
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
-    // Keep this stage limited to market observation/persistence.
-    // Supplier investigation, sales-test selection and NEWFIND delivery
-    // run in separate cron stages so one request cannot consume the whole
-    // 60-second serverless budget.
-    const observation = await persistMarketplaceBestsellers();
+    // Keep this stage bounded. One full bestseller collection can contain
+    // thousands of rows, while each row requires several Supabase writes.
+    // Persist a deterministic batch per invocation and carry the cursor in
+    // cron_runs metadata so a timeout never advances the cursor prematurely.
+    const { data: previousRun, error: previousRunError } = await supabase
+      .from("cron_runs")
+      .select("metadata")
+      .eq("job_name", "market-sourcing")
+      .eq("status", "succeeded")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (previousRunError) throw new Error(previousRunError.message);
+
+    const previousMetadata = previousRun?.metadata;
+    const startIndex =
+      previousMetadata && typeof previousMetadata === "object" && !Array.isArray(previousMetadata) &&
+      typeof (previousMetadata as Record<string, unknown>).nextIndex === "number"
+        ? Math.max(0, Number((previousMetadata as Record<string, unknown>).nextIndex))
+        : 0;
+
+    const observation = await persistMarketplaceBestsellers({
+      startIndex,
+      batchSize: MARKET_SOURCING_BATCH_SIZE,
+    });
 
     if (cronRunId) {
       await supabase.from("cron_runs").update({
@@ -55,6 +78,11 @@ export async function GET(request: Request) {
           itemCount: observation.itemCount,
           inserted: observation.inserted,
           supplierCandidateCount: observation.supplierCandidateIds.length,
+          batchSize: MARKET_SOURCING_BATCH_SIZE,
+          startIndex: observation.startIndex,
+          processedCount: observation.processedCount,
+          nextIndex: observation.hasMore ? observation.nextIndex : 0,
+          hasMore: observation.hasMore,
         },
       }).eq("id", cronRunId);
     }
@@ -69,6 +97,10 @@ export async function GET(request: Request) {
         productsCreated: observation.productsCreated,
         supplierCandidateCount: observation.supplierCandidateIds.length,
         enrichment: observation.enrichment,
+        startIndex: observation.startIndex,
+        processedCount: observation.processedCount,
+        nextIndex: observation.hasMore ? observation.nextIndex : 0,
+        hasMore: observation.hasMore,
       },
       nextPhase: "supplier_investigation",
     });

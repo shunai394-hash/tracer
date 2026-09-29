@@ -22,7 +22,7 @@ function buildIdentityKey(
   return `title::${title.toLowerCase().replace(/[^a-z0-9\u3040-\u30ff\u4e00-\u9faf]+/gi, " ").trim()}`;
 }
 
-export async function persistMarketplaceBestsellers(): Promise<{
+export async function persistMarketplaceBestsellers(options: { startIndex?: number; batchSize?: number } = {}): Promise<{
   itemCount: number;
   inserted: number;
   productsCreated: number;
@@ -33,8 +33,17 @@ export async function persistMarketplaceBestsellers(): Promise<{
   bestsellerIds: string[];
   /** Exact current-run rows carrying at least one verified marketplace identifier. */
   supplierCandidateIds: string[];
+  startIndex: number;
+  processedCount: number;
+  nextIndex: number;
+  hasMore: boolean;
 }> {
   const collected = await collectMarketplaceBestsellers();
+  const startIndex = Math.max(0, options.startIndex ?? 0);
+  const batchSize = Math.max(1, options.batchSize ?? 50);
+  const endIndex = startIndex + batchSize;
+  let collectionIndex = 0;
+  let processedCount = 0;
   const supabase = createSupabaseAdminClient();
   let inserted = 0;
   let productsCreated = 0;
@@ -47,6 +56,11 @@ export async function persistMarketplaceBestsellers(): Promise<{
 
   for (const marketplace of collected.marketplaces) {
     for (const item of marketplace.items) {
+      const currentIndex = collectionIndex;
+      collectionIndex += 1;
+      if (currentIndex < startIndex) continue;
+      if (currentIndex >= endIndex) break;
+      processedCount += 1;
       const identityKey = buildIdentityKey(item.title, item.asin, item.jan, item.gtin, item.mpn);
       const seen = seenMarketplaceIdentityKeys.get(marketplace.marketplace) ?? new Set<string>();
       if (seen.has(identityKey)) continue;
@@ -230,6 +244,7 @@ export async function persistMarketplaceBestsellers(): Promise<{
         }
       }
     }
+    if (collectionIndex >= endIndex) break;
   }
 
   // Do not let one marketplace consume the entire supplier-investigation
@@ -255,5 +270,9 @@ export async function persistMarketplaceBestsellers(): Promise<{
       .map((marketplace) => ({ marketplace: marketplace.marketplace, ...marketplace.enrichment! })),
     bestsellerIds,
     supplierCandidateIds,
+    startIndex,
+    processedCount,
+    nextIndex: startIndex + processedCount,
+    hasMore: startIndex + processedCount < collected.itemCount,
   };
 }
