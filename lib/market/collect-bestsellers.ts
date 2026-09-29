@@ -17,46 +17,14 @@ import { extractAsinFromUrl, normalizeIdentifier } from "@/lib/market/identifier
 import { decodeHtmlBytes } from "@/lib/market/charset";
 
 export const MARKETPLACE_SOURCES = [
-  {
-    marketplace: "amazon.co.jp",
-    url: "https://www.amazon.co.jp/gp/bestsellers/",
-    source: "amazon_bestsellers",
-  },
-  {
-    marketplace: "amazon.co.jp",
-    url: "https://www.amazon.co.jp/gp/bestsellers/electronics/",
-    source: "amazon_bestsellers_electronics",
-  },
-  {
-    marketplace: "amazon.co.jp",
-    url: "https://www.amazon.co.jp/gp/bestsellers/beauty/",
-    source: "amazon_bestsellers_beauty",
-  },
-  {
-    marketplace: "amazon.co.jp",
-    url: "https://www.amazon.co.jp/gp/bestsellers/kitchen/",
-    source: "amazon_bestsellers_kitchen",
-  },
-  {
-    marketplace: "amazon.co.jp",
-    url: "https://www.amazon.co.jp/gp/bestsellers/home/",
-    source: "amazon_bestsellers_home",
-  },
-  {
-    marketplace: "amazon.co.jp",
-    url: "https://www.amazon.co.jp/gp/bestsellers/sports/",
-    source: "amazon_bestsellers_sports",
-  },
-  {
-    marketplace: "rakuten",
-    url: "https://ranking.rakuten.co.jp/",
-    source: "rakuten_ranking",
-  },
-  {
-    marketplace: "yahoo_shopping",
-    url: "https://shopping.yahoo.co.jp/ranking/",
-    source: "yahoo_shopping_ranking",
-  },
+  { marketplace: "yahoo_shopping", url: "https://shopping.yahoo.co.jp/ranking/", source: "yahoo_shopping_ranking" },
+  { marketplace: "rakuten", url: "https://ranking.rakuten.co.jp/", source: "rakuten_ranking" },
+  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/", source: "amazon_bestsellers" },
+  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/electronics/", source: "amazon_bestsellers_electronics" },
+  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/beauty/", source: "amazon_bestsellers_beauty" },
+  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/kitchen/", source: "amazon_bestsellers_kitchen" },
+  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/home/", source: "amazon_bestsellers_home" },
+  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/sports/", source: "amazon_bestsellers_sports" },
 ] as const;
 
 /**
