@@ -97,7 +97,7 @@ export async function selectAndPublishSalesTests(
     ? { data: [], error: null }
     : await supabase
         .from("opportunity_intelligence")
-        .select("product_id,demand_score,search_fit_score,market_gap_score,competition_score,creative_score,selection_score,overall_confidence,recommendation_summary,why_now")
+        .select("product_id,demand_score,search_fit_score,market_gap_score,competition_score,creative_score,selection_score,overall_confidence,selection_eligible,sellability_state,filter_state,profit_state,recommendation_summary,why_now")
         .in("product_id", productIds);
   if (intelligenceError) throw new Error(intelligenceError.message);
 
