@@ -3,6 +3,9 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getDropshipSupplierConfig } from "@/lib/config/env";
 import { getOrosyProductDetail, getOrosyShippingQuote, searchOrosyProducts } from "@/lib/sources/orosy";
+import { fetchBrightDataPage } from "@/lib/sources/brightdata/client";
+import { parseAmazonProductDetail } from "@/lib/market/parse-rankings";
+import { normalizeIdentifier } from "@/lib/market/identifiers";
 import { getCJConfig } from "@/lib/config/env";
 import {
   CJConfigError,
@@ -33,6 +36,52 @@ function asNumber(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+async function enrichAsinOnlyRows(rows: Record<string, unknown>[]): Promise<void> {
+  const targets = rows.filter((record) => {
+    const ids = identifiersFromRecord(record);
+    return Boolean(ids.asin) && !ids.jan && !ids.gtin && !ids.ean && !ids.upc && !ids.mpn;
+  });
+
+  await Promise.all(targets.map(async (record) => {
+    const asin = identifiersFromRecord(record).asin;
+    if (!asin) return;
+    try {
+      const url = typeof record.product_url === "string" && record.product_url
+        ? record.product_url
+        : `https://www.amazon.co.jp/dp/${asin}`;
+      const page = await fetchBrightDataPage(url);
+      if (!page.html) return;
+      const detail = parseAmazonProductDetail(page.html);
+      const jan = normalizeIdentifier("jan", detail.jan);
+      const mpn = normalizeIdentifier("mpn", detail.model);
+      const brand = detail.brand?.trim() || null;
+      if (!jan && !mpn && !brand) return;
+
+      const update = {
+        jan,
+        mpn,
+        brand,
+        model: detail.model ?? null,
+        pipeline_updated_at: new Date().toISOString(),
+      };
+      const supabase = createSupabaseAdminClient();
+      const { error } = await supabase
+        .from("marketplace_bestsellers")
+        .update(update)
+        .eq("id", String(record.id));
+      if (error) throw new Error(error.message);
+
+      Object.assign(record, update);
+    } catch (error) {
+      console.warn("[investigate-dropship] ASIN detail enrichment failed", {
+        bestsellerId: String(record.id),
+        asin,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }));
 }
 
 async function investigateOrosyFallback(args: {
@@ -270,6 +319,8 @@ export async function investigateDropshipForBestsellers(
         .in("id", bestsellerIds);
 
   if (error) throw new Error(error.message);
+
+  await enrichAsinOnlyRows((rows ?? []) as Record<string, unknown>[]);
 
   let processed = 0;
   let matched = 0;
