@@ -39,10 +39,14 @@ export function getFoundationStatus(): FoundationStatus {
     brightDataMcp: present(readEnv("BRIGHTDATA_MCP_API_KEY")),
     shopify: present(readEnv("SHOPIFY_ACCESS_TOKEN")),
     metaAds: present(readEnv("META_ACCESS_TOKEN")),
-    newfindInbound: present(readEnv("NEWFind_INBOUND_URL")) ||
-      present(readEnv("NEWFind_INBOUND_API_URL")),
-    newfindOutbound: present(readEnv("NEWFind_OUTBOUND_URL")) ||
-      present(readEnv("NEWFind_OUTBOUND_API_URL")),
+    newfindInbound: (() => {
+      const config = getNewfindConfig();
+      return present(config.apiUrl) && present(config.webhookSecret);
+    })(),
+    newfindOutbound: (() => {
+      const config = getNewfindConfig();
+      return present(config.apiUrl) && present(config.apiKey);
+    })(),
     stripe: present(readEnv("STRIPE_SECRET_KEY")),
     stripeWebhook: present(readEnv("STRIPE_WEBHOOK_SECRET")),
     orosy: present(readEnv("OROSY_API_KEY")),
