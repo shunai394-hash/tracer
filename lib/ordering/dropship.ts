@@ -113,27 +113,85 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       continue;
     }
 
-    const supplierListingId = row.supplier_listing_id
-      ? String(row.supplier_listing_id)
-      : shopListing.supplier_listing_id
-        ? String(shopListing.supplier_listing_id)
-        : null;
-    if (!supplierListingId) {
-      skipped.push({ itemId: String(row.id), reason: "supplier_listing_snapshot_missing" });
-      continue;
-    }
+    const supplierName = String(shopListing.supplier_name ?? "").trim();
+    const isTracerInternal = supplierName.toLowerCase() === "tracer_internal";
 
-    const { data: listing } = await supabase
-      .from("supplier_listings")
-      .select("*")
-      .eq("id", supplierListingId)
-      .eq("product_id", productId)
-      .eq("supplier", String(shopListing.supplier_name ?? "").trim())
-      .maybeSingle();
+    let listing: Record<string, unknown> | null = null;
+    if (isTracerInternal) {
+      const internalProductId =
+        typeof row.supplier_product_id === "string"
+          ? row.supplier_product_id
+          : typeof shopListing.supplier_product_id === "string"
+            ? shopListing.supplier_product_id
+            : null;
+      const internalVariantId =
+        typeof row.supplier_variant_id === "string"
+          ? row.supplier_variant_id
+          : typeof shopListing.supplier_variant_id === "string"
+            ? shopListing.supplier_variant_id
+            : null;
 
-    if (!listing) {
-      skipped.push({ itemId: String(row.id), reason: "supplier_listing_snapshot_not_found" });
-      continue;
+      if (!internalProductId || !internalVariantId) {
+        skipped.push({ itemId: String(row.id), reason: "internal_supply_variant_snapshot_missing" });
+        continue;
+      }
+
+      const { data: internalVariant, error: internalVariantError } = await supabase
+        .from("internal_supply_variants")
+        .select("*,internal_supply_products(*)")
+        .eq("id", internalVariantId)
+        .eq("supply_product_id", internalProductId)
+        .eq("active", true)
+        .maybeSingle();
+
+      if (internalVariantError) {
+        skipped.push({ itemId: String(row.id), reason: internalVariantError.message });
+        continue;
+      }
+      if (!internalVariant) {
+        skipped.push({ itemId: String(row.id), reason: "internal_supply_variant_not_found" });
+        continue;
+      }
+
+      listing = {
+        id: null,
+        supplier: "tracer_internal",
+        supplier_product_id: internalProductId,
+        supplier_variant_id: internalVariantId,
+        cost: internalVariant.cost ?? (internalVariant.internal_supply_products as Record<string, unknown> | null)?.cost ?? null,
+        shipping_cost: internalVariant.shipping_cost ?? (internalVariant.internal_supply_products as Record<string, unknown> | null)?.shipping_cost ?? 0,
+        currency: internalVariant.currency ?? (internalVariant.internal_supply_products as Record<string, unknown> | null)?.currency ?? "JPY",
+        inventory: internalVariant.inventory,
+        inventory_confirmed: true,
+        tracking_available: internalVariant.tracking_available === true || (internalVariant.internal_supply_products as Record<string, unknown> | null)?.tracking_available === true,
+        api_available: true,
+        orderable: internalVariant.orderable === true && internalVariant.active === true,
+        supplier_variant_id: internalVariantId,
+      };
+    } else {
+      const supplierListingId = row.supplier_listing_id
+        ? String(row.supplier_listing_id)
+        : shopListing.supplier_listing_id
+          ? String(shopListing.supplier_listing_id)
+          : null;
+      if (!supplierListingId) {
+        skipped.push({ itemId: String(row.id), reason: "supplier_listing_snapshot_missing" });
+        continue;
+      }
+
+      const { data: externalListing } = await supabase
+        .from("supplier_listings")
+        .select("*")
+        .eq("id", supplierListingId)
+        .eq("product_id", productId)
+        .eq("supplier", supplierName)
+        .maybeSingle();
+
+      if (!externalListing) {
+        skipped.push({ itemId: String(row.id), reason: "supplier_listing_snapshot_not_found" });
+        continue;
+      }
+      listing = externalListing as Record<string, unknown>;
     }
 
     const listingRow = listing as Record<string, unknown>;
