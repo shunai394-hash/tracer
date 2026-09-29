@@ -27,6 +27,7 @@ export type CJCreateOrderInput = {
   shippingProvince: string;
   shippingCity: string;
   shippingAddress: string;
+  shippingAddress2?: string;
   shippingZip: string;
   shippingPhone: string;
   shippingCustomerName: string;
@@ -137,6 +138,7 @@ export async function createCJOrderV2(
     shippingProvince: input.shippingProvince,
     shippingCity: input.shippingCity,
     shippingAddress: input.shippingAddress,
+    ...(input.shippingAddress2 ? { shippingAddress2: input.shippingAddress2 } : {}),
     shippingCustomerName: input.shippingCustomerName,
     shippingPhone: input.shippingPhone,
     products: input.products.map((product) => ({
