@@ -141,7 +141,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       continue;
     }
     const killSwitch = await checkKillSwitch({
-      supplier: String(shopListing.supplier_name ?? "CJdropshipping"),
+      supplier: String(shopListing.supplier_name ?? "").trim(),
       productId,
     });
 
