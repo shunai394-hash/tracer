@@ -106,12 +106,16 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
   async getShipping(
     supplierProductId: string,
     supplierVariantId?: string,
+    context?: { destinationCountryCode?: string; destinationPostalCode?: string; quantity?: number },
   ): Promise<SupplierShipping | null> {
     if (!supplierVariantId) return null;
+    const destinationCountryCode = context?.destinationCountryCode?.trim().toUpperCase();
+    const quantity = context?.quantity ?? 1;
+    if (!destinationCountryCode || quantity <= 0) return null;
     const amount = await calculateCJFreight(supplierVariantId, {
       startCountryCode: "CN",
-      endCountryCode: "JP",
-      quantity: 1,
+      endCountryCode: destinationCountryCode,
+      quantity,
     });
     if (amount === null) return null;
     return {
