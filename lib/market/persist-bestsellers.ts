@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { collectMarketplaceBestsellers } from "@/lib/market/collect-bestsellers";
-import { writeEvidence } from "@/lib/market/evidence-ledger";
+import { writeEvidenceBatch } from "@/lib/market/evidence-ledger";
 import { EMPTY_IDENTIFIERS, hasAnyIdentifier } from "@/lib/market/identifiers";
 
 // Priority mirrors pickIdentifierQuery (lib/market/identifiers.ts): a real
@@ -176,19 +176,18 @@ export async function persistMarketplaceBestsellers(): Promise<{
         ["image_url", item.imageUrl],
       ];
 
-      for (const [field, value] of fields) {
-        await writeEvidence({
-          productId,
-          bestsellerId: bestseller.id,
-          source: marketplace.source,
-          url: item.productUrl ?? marketplace.sourceUrl,
-          fetchedAt: marketplace.fetchedAt,
-          fieldName: field,
-          fieldValue: value === null ? null : String(value),
-          evidenceClass: value === null ? "unknown" : "actual",
-          confidence: value === null ? 0 : 0.85,
-        });
-      }
+      const evidenceRows = fields.map(([field, value]) => ({
+        productId,
+        bestsellerId: bestseller.id,
+        source: marketplace.source,
+        url: item.productUrl ?? marketplace.sourceUrl,
+        fetchedAt: marketplace.fetchedAt,
+        fieldName: field,
+        fieldValue: value === null ? null : String(value),
+        evidenceClass: (value === null ? "unknown" : "actual") as "unknown" | "actual",
+        confidence: value === null ? 0 : 0.85,
+      }));
+      await writeEvidenceBatch(evidenceRows);
 
       const ids = {
         ...EMPTY_IDENTIFIERS,
