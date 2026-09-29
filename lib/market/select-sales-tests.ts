@@ -235,6 +235,36 @@ export async function selectAndPublishSalesTests(
     const identityScore = Math.max(0, Math.min(100, (identityConfidence ?? 0) * 100));
     const trackingScore = listing.tracking_available === true ? 100 : 0;
     const intelligence = intelligenceByProduct.get(String(bestseller.product_id ?? ""));
+    if (!intelligence) {
+      reasons.push("opportunity_intelligence_missing");
+    } else {
+      if (intelligence.selection_eligible !== true) {
+        reasons.push("intelligence_selection_ineligible");
+      }
+      const sellabilityState = String(intelligence.sellability_state ?? "");
+      if (!["TEST_READY", "SELLABLE"].includes(sellabilityState)) {
+        reasons.push("sellability_not_ready");
+      }
+      if (String(intelligence.filter_state ?? "") !== "PASS") {
+        reasons.push("intelligence_filter_not_pass");
+      }
+      if (String(intelligence.profit_state ?? "") !== "PROFIT_OK") {
+        reasons.push("intelligence_profit_not_ok");
+      }
+      if (asNumber(intelligence.demand_score) === null) {
+        reasons.push("demand_evidence_missing");
+      }
+      if (asNumber(intelligence.search_fit_score) === null) {
+        reasons.push("search_fit_evidence_missing");
+      }
+      if (asNumber(intelligence.market_gap_score) === null) {
+        reasons.push("market_gap_evidence_missing");
+      }
+      const intelligenceConfidence = asNumber(intelligence.overall_confidence);
+      if (intelligenceConfidence === null || intelligenceConfidence < 0.6) {
+        reasons.push("intelligence_confidence_low");
+      }
+    }
     const demandScore = asNumber(intelligence?.demand_score) ?? 0;
     const searchFitScore = asNumber(intelligence?.search_fit_score) ?? 0;
     const marketGapScore = asNumber(intelligence?.market_gap_score) ?? 0;
