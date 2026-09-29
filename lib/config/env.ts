@@ -24,6 +24,7 @@ export type FoundationStatus = {
   orosy: boolean;
   faire: boolean;
   dsersMcp: boolean;
+  printful: boolean;
   ecPulse: boolean;
   extension: boolean;
   base: boolean;
@@ -82,6 +83,7 @@ export function getFoundationStatus(): FoundationStatus {
     orosy: present(getOrosyConfig().apiKey),
     faire: present(readEnv("FAIRE_ACCESS_TOKEN")),
     dsersMcp: present(readEnv("DSERS_MCP_URL")) && present(readEnv("DSERS_MCP_ACCESS_TOKEN")),
+    printful: present(readEnv("PRINTFUL_ACCESS_TOKEN")),
     ecPulse: present(readEnv("EC_PULSE_API_KEY")),
     extension: present(readEnv("TRACER_EXTENSION_API_KEY")),
     base: present(readEnv("BASE_ACCESS_TOKEN")) ||
@@ -132,6 +134,13 @@ export function getFaireConfig() {
   };
 }
 
+export function getPrintfulConfig() {
+  return {
+    accessToken: readEnv("PRINTFUL_ACCESS_TOKEN"),
+    storeId: readEnv("PRINTFUL_STORE_ID"),
+  };
+}
+
 export function getCJConfig() {
   return {
     apiKey: readEnv("CJ_API_KEY"),
@@ -169,6 +178,7 @@ export function isSupplierConfigured(supplierName: string): boolean {
   if (name === "orosy") return present(getOrosyConfig().apiKey);
   if (name === "faire") return present(readEnv("FAIRE_ACCESS_TOKEN"));
   if (name === "dsers") return present(readEnv("DSERS_MCP_ACCESS_TOKEN"));
+  if (name === "printful") return present(readEnv("PRINTFUL_ACCESS_TOKEN"));
   return false;
 }
 
