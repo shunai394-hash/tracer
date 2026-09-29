@@ -55,12 +55,15 @@ export type SupplierOrderInput = {
   supplierVariantId: string;
   quantity: number;
   shippingCountryCode: string;
+  shippingCountry?: string;
   shippingProvince: string;
   shippingCity: string;
   shippingAddress: string;
+  shippingAddress2?: string;
   shippingZip: string;
   shippingPhone: string;
   shippingCustomerName: string;
+  email?: string;
 };
 
 export type SupplierOrderResult = {
