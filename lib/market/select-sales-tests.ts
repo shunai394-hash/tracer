@@ -84,7 +84,6 @@ export async function selectAndPublishSalesTests(
     profit: ReturnType<typeof simulateContributionProfit>;
     reasons: string[];
     qualityScore: number;
-    demandScore: number;
   }> = [];
 
   // Use the intelligence pipeline's persisted, multi-source scores rather than
