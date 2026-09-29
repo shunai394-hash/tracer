@@ -5,6 +5,7 @@ import { getCJConfig, isCJAutoOrderingEnabled, isCJLiveOrderingEnabled } from "@
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { createCJOrderV2 } from "@/lib/sources/cj/create-order";
 import { fetchCJVariantStock } from "@/lib/sources/cj/client";
+import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import {
   evaluateDropshipOrderGate,
   type DropshipOrderGateResult,
@@ -145,13 +146,22 @@ export async function createDropshipPurchaseOrdersForShopOrder(
     });
 
 
+    const sourceCurrency = typeof listingRow.currency === "string" ? listingRow.currency.toUpperCase() : null;
+    const sellingCurrency = typeof row.currency === "string" ? row.currency.toUpperCase() : null;
+    const fxQuote = sourceCurrency === sellingCurrency
+      ? 1
+      : sourceCurrency === "USD" && sellingCurrency === "JPY"
+        ? (await getObservedUsdToJpyRate())?.rate ?? null
+        : null;
+
     const gate = evaluateDropshipOrderGate({
       vid: typeof listingRow.supplier_variant_id === "string" ? listingRow.supplier_variant_id : (typeof listingRow.cj_variant_id === "string" ? listingRow.cj_variant_id : null),
       quantity: asNumber(row.qty),
       sourceCost: asNumber(listingRow.cost),
       shippingCost: asNumber(listingRow.shipping_cost),
-      currency: typeof listingRow.currency === "string" ? listingRow.currency : (typeof row.currency === "string" ? row.currency : null),
+      currency: sourceCurrency,
       sellingPrice: asNumber(row.unit_price),
+      sourceFxRateToSelling: fxQuote,
       addressComplete: addrComplete,
       killSwitchBlocked: killSwitch.blocked,
       cjConfigured: Boolean(getCJConfig().apiKey),
@@ -447,13 +457,22 @@ export async function executeLivePurchaseOrder(
     }
   }
 
+  const sourceCurrency = typeof po.currency === "string" ? po.currency.toUpperCase() : null;
+  const sellingCurrency = typeof shopOrderRow.currency === "string" ? shopOrderRow.currency.toUpperCase() : null;
+  const fxQuote = sourceCurrency === sellingCurrency
+    ? 1
+    : sourceCurrency === "USD" && sellingCurrency === "JPY"
+      ? (await getObservedUsdToJpyRate())?.rate ?? null
+      : null;
+
   const gate = evaluateDropshipOrderGate({
     vid: typeof itemRow.cj_variant_id === "string" ? itemRow.cj_variant_id : null,
     quantity: asNumber(po.qty),
     sourceCost: asNumber(po.unit_cost),
     shippingCost: asNumber(po.shipping_cost),
-    currency: typeof po.currency === "string" ? po.currency : null,
+    currency: sourceCurrency,
     sellingPrice: null,
+    sourceFxRateToSelling: fxQuote,
     addressComplete: addressComplete(shopOrderRow),
     killSwitchBlocked: killSwitch.blocked,
     cjConfigured: Boolean(getCJConfig().apiKey),
