@@ -242,10 +242,28 @@ export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
       };
     }
 
+    const purchaseOrderId = input.orderNumber.startsWith("dropship:")
+      ? input.orderNumber.slice("dropship:".length)
+      : null;
+    if (!purchaseOrderId) {
+      await supabase
+        .from("internal_supply_variants")
+        .update({ inventory, updated_at: new Date().toISOString() })
+        .eq("id", input.supplierVariantId);
+      return {
+        succeeded: false,
+        supplierOrderId: null,
+        responseCode: "PURCHASE_ORDER_ID_MISSING",
+        responseMessage: "TRACER internal fulfillment requires the purchase-order id in the idempotency key.",
+        trackingNumber: null,
+        raw: null,
+      };
+    }
+
     const inserted = await supabase
       .from("internal_fulfillment_orders")
       .insert({
-        purchase_order_id: input.orderNumber.replace(/^dropship:/, ""),
+        purchase_order_id: purchaseOrderId,
         supply_product_id: input.supplierProductId,
         supply_variant_id: input.supplierVariantId,
         quantity: input.quantity,
