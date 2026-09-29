@@ -239,7 +239,9 @@ export async function executeSupplierPurchaseOrder(
     duplicateOrderExists,
   });
 
-  const executionMissing = gate.missing.filter((code) => code !== "selling_price_unknown");
+  // Never place a live supplier order without a known selling price.
+  // The order gate must remain fail-closed for profitability and FX checks.
+  const executionMissing = gate.missing;
   const canExecuteLive =
     executionMissing.length === 0 &&
     gate.blocked.length === 0 &&
@@ -263,7 +265,7 @@ export async function executeSupplierPurchaseOrder(
           shipping: shippingCost,
           currency: sourceCurrency,
         },
-        gate: { ...gate, missing: executionMissing },
+        gate,
       },
     })
     .eq("id", purchaseOrderId);
