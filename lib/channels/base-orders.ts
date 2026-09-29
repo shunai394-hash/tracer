@@ -55,7 +55,9 @@ function isBaseOrderPaid(order: Awaited<ReturnType<typeof getBaseOrderDetail>>):
     case "atobarai":
       return false;
     case "cod":
-      return true;
+      // Cash on delivery is not a confirmed payment at BASE order-import time.
+      // Do not create procurement from an unpaid COD order.
+      return false;
     default:
       return false;
   }
