@@ -206,6 +206,7 @@ export type CJTrackingResult = {
   trackingUrl: string | null;
   shippedAt: string | null;
   status: string | null;
+  lastMileTrackingNumber: string | null;
   raw: unknown;
 };
 
@@ -243,6 +244,7 @@ export async function getCJTrackingInfo(trackNumber: string): Promise<CJTracking
     trackingUrl: null,
     shippedAt: item.deliveryTime ?? null,
     status: item.trackingStatus ?? null,
+    lastMileTrackingNumber: item.lastTrackNumber ?? null,
     raw: payload,
   };
 }
