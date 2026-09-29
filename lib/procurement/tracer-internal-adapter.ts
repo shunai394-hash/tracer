@@ -299,8 +299,6 @@ export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
       };
     }
 
-    }
-
     const reservedInventory = asNumber(reserved.data[0]?.remaining_inventory);
     if (reservedInventory === null) {
       await supabase.rpc("release_internal_supply_variant", {
