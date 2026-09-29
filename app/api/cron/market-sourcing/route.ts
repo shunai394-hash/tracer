@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
 import { requireCronAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
+import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
+import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -90,6 +93,17 @@ export async function GET(request: Request) {
       batchSize: MARKET_SOURCING_BATCH_SIZE,
     });
 
+    // Single-chain orchestration: observation immediately feeds supplier
+    // investigation, sales-test selection, and BASE publication.
+    const supplier = await investigateDropshipForBestsellers(
+      observation.supplierCandidateIds,
+    );
+    const salesTest = await selectAndPublishSalesTests(
+      observation.supplierCandidateIds,
+      3,
+    );
+    const basePublication = await publishPublishedListingsToBase(20);
+
     if (cronRunId) {
       await supabase.from("cron_runs").update({
         status: "succeeded",
@@ -98,7 +112,7 @@ export async function GET(request: Request) {
         processed: observation.inserted,
         failed: 0,
         metadata: {
-          phase: "market_observation",
+          phase: "commerce_one_chain",
           itemCount: observation.itemCount,
           inserted: observation.inserted,
           supplierCandidateCount: observation.supplierCandidateIds.length,
@@ -110,13 +124,16 @@ export async function GET(request: Request) {
           processedCount: observation.processedCount,
           nextIndex: observation.hasMore ? observation.nextIndex : 0,
           hasMore: observation.hasMore,
+          supplier: { processed: supplier.processed, matched: supplier.matched, failed: supplier.rowErrors },
+          salesTest: { considered: salesTest.considered, published: salesTest.published },
+          basePublication: { attempted: basePublication.attempted, published: basePublication.published, skipped: basePublication.skipped, failed: basePublication.failed },
         },
       }).eq("id", cronRunId);
     }
 
     return NextResponse.json({
       ok: true,
-      phase: "market_observation",
+      phase: "commerce_one_chain",
       elapsedMs: Date.now() - startedAt,
       observation: {
         itemCount: observation.itemCount,
@@ -132,7 +149,10 @@ export async function GET(request: Request) {
         nextIndex: observation.hasMore ? observation.nextIndex : 0,
         hasMore: observation.hasMore,
       },
-      nextPhase: "supplier_investigation",
+      supplier: { processed: supplier.processed, matched: supplier.matched, failed: supplier.rowErrors },
+      salesTest: { considered: salesTest.considered, published: salesTest.published, rejected: salesTest.rejected },
+      basePublication,
+      nextPhase: "base_publication",
     });
   } catch (error) {
     if (cronRunId) {
