@@ -133,6 +133,78 @@ async function researchLimitedSupply(): Promise<unknown> {
   }
 }
 
+async function syncShoppingDemandObservations(): Promise<unknown> {
+  const supabase = createSupabaseAdminClient();
+  const { data: rows, error } = await supabase
+    .from("observations")
+    .select("id, source_id, product_id, observed_at, raw_data")
+    .eq("source_type", "search")
+    .order("observed_at", { ascending: true })
+    .limit(5000);
+  if (error) throw new Error(error.message);
+
+  const grouped = new Map<string, {
+    sourceId: string;
+    productId: string | null;
+    observedAt: string;
+    count: number;
+    query: string;
+  }>();
+
+  for (const row of rows ?? []) {
+    const raw = row.raw_data && typeof row.raw_data === "object" && !Array.isArray(row.raw_data)
+      ? row.raw_data as Record<string, unknown>
+      : {};
+    const query = typeof raw.query === "string" ? raw.query.normalize("NFKC").trim() : "";
+    if (!query || /[�]/.test(query)) continue;
+    const day = String(row.observed_at).slice(0, 10);
+    const key = `${query}|${day}`;
+    const current = grouped.get(key);
+    if (current) {
+      current.count += 1;
+      if (!current.productId && typeof row.product_id === "string") current.productId = row.product_id;
+      continue;
+    }
+    grouped.set(key, {
+      sourceId: String(row.source_id),
+      productId: typeof row.product_id === "string" ? row.product_id : null,
+      observedAt: String(row.observed_at),
+      count: 1,
+      query,
+    });
+  }
+
+  let upserted = 0;
+  for (const item of grouped.values()) {
+    const { error: insertError } = await supabase
+      .from("demand_observations")
+      .insert({
+        product_id: item.productId,
+        source_id: item.sourceId,
+        signal_type: "search_result_count",
+        value: item.count,
+        unit: "google_shopping_results_observed",
+        observed_at: item.observedAt,
+        metadata: {
+          query: item.query,
+          provider: "google_shopping",
+          source: "observations",
+          proxy: "count_of_observed_product_results",
+        },
+      });
+    if (insertError && insertError.code !== "23505") {
+      throw new Error(insertError.message);
+    }
+    if (!insertError) upserted += 1;
+  }
+
+  return {
+    source: "google_shopping_observations",
+    grouped: grouped.size,
+    upserted,
+  };
+}
+
 async function inspectDemandObservations(): Promise<unknown> {
   const supabase = createSupabaseAdminClient();
   const { count, error } = await supabase
@@ -201,6 +273,7 @@ export async function runIntelligencePipeline(): Promise<{
   steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand()));
   steps.push(await runStep("normalize", () => normalizeProductIntelligence()));
   steps.push(await runStep("identity", () => stampDemandCJIdentities()));
+  steps.push(await runStep("shopping_demand_sync", () => syncShoppingDemandObservations()));
   steps.push(await runStep("match", () => matchDemandProductsByCategory()));
   steps.push(await runStep("demand", () => inspectDemandObservations()));
   steps.push(await runStep("demand_analyze", () => persistDemandIntelligence()));
