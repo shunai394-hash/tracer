@@ -11,6 +11,7 @@ import {
   CJConfigError,
   calculateCJFreight,
   fetchCJProductVariants,
+  fetchCJVariantByVid,
   fetchCJVariantStock,
   getCJProductDetail,
   searchCJProducts,
@@ -591,6 +592,26 @@ export async function investigateDropshipForBestsellers(
         } catch {
           // Variant lookup failure leaves identity unconfirmed rather than
           // inventing an identifier.
+        }
+
+        // CJ's variant list can omit the barcode even when queryByVid exposes
+        // it. Recover the authoritative per-variant barcode before applying
+        // the strict identity gate. Never infer a barcode from SKU/title.
+        if (variants.some((variant) => !variant.barcode)) {
+          const enriched = await Promise.all(
+            variants.slice(0, 8).map(async (variant) => {
+              if (variant.barcode) return variant;
+              try {
+                const detailVariant = await fetchCJVariantByVid(variant.vid);
+                return detailVariant?.barcode
+                  ? { ...variant, barcode: detailVariant.barcode, sellPrice: detailVariant.sellPrice ?? variant.sellPrice }
+                  : variant;
+              } catch {
+                return variant;
+              }
+            }),
+          );
+          variants = enriched;
         }
 
         const variantIdentityMatches = variants
