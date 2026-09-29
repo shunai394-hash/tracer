@@ -145,9 +145,23 @@ export async function collectMarketplaceBestsellers(): Promise<{
   const fetchedAt = new Date().toISOString();
   const marketplaces: CollectedMarketplace[] = [];
 
-  for (const source of MARKETPLACE_SOURCES) {
+  // Fetch independent marketplace ranking pages concurrently. The previous
+  // sequential fan-out made the eight sources share one 60-second serverless
+  // budget and allowed one slow marketplace to starve the whole observation run.
+  const collectedSources = await Promise.all(
+    MARKETPLACE_SOURCES.map(async (source) => {
+      try {
+        const html = await fetchHtml(source.url);
+        return { source, html, error: null as unknown };
+      } catch (error) {
+        return { source, html: null, error };
+      }
+    }),
+  );
+
+  for (const { source, html, error: sourceError } of collectedSources) {
     try {
-      const html = await fetchHtml(source.url);
+      if (sourceError) throw sourceError;
       if (!html) {
         marketplaces.push({
           marketplace: source.marketplace,
