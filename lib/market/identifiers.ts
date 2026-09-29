@@ -37,6 +37,8 @@ export function normalizeIdentifier(
 
   if (scheme === "mpn") {
     const mpn = trimmed.replace(/\s+/g, "").toUpperCase();
+    // Barcode-shaped numeric values must not be misclassified as MPNs.
+    if (/^\d{8,14}$/.test(mpn)) return null;
     return mpn.length >= 3 ? mpn : null;
   }
 
@@ -194,12 +196,21 @@ export function matchProductIdentity(args: {
         rationale: "brand and model match",
       };
     }
+    if (!brandMarket || !brandSupply) {
+      return {
+        linked: false,
+        salesEligible: false,
+        method: "mpn",
+        confidence: 0.55,
+        rationale: "MPN matches but brand evidence is incomplete",
+      };
+    }
     return {
-      linked: true,
-      salesEligible: true,
+      linked: false,
+      salesEligible: false,
       method: "mpn",
-      confidence: 0.88,
-      rationale: "model/MPN matches",
+      confidence: 0.55,
+      rationale: "MPN matches but brand evidence conflicts",
     };
   }
 
@@ -262,6 +273,11 @@ export function verifyIdentifierMatchInvariants(): {
     market: { ...EMPTY_IDENTIFIERS, jan: "4573138107287" },
     supply: { ...EMPTY_IDENTIFIERS, gtin: "1111111111111" },
   });
+  const numericBarcodeShapedMpn = normalizeIdentifier("mpn", "4901301446190");
+  const mpnWithoutBrand = matchProductIdentity({
+    market: { ...EMPTY_IDENTIFIERS, mpn: "ABC-123", title: "A" },
+    supply: { ...EMPTY_IDENTIFIERS, mpn: "ABC-123", title: "A" },
+  });
 
   const cases = [
     {
@@ -293,6 +309,16 @@ export function verifyIdentifierMatchInvariants(): {
       name: "different_barcode_digits_across_families_do_not_match",
       expected: true,
       actual: janVsGtinDifferentDigits.method === "none" && janVsGtinDifferentDigits.salesEligible === false,
+    },
+    {
+      name: "barcode_shaped_numeric_mpn_is_rejected",
+      expected: true,
+      actual: numericBarcodeShapedMpn === null,
+    },
+    {
+      name: "mpn_without_brand_is_not_sales_eligible",
+      expected: true,
+      actual: mpnWithoutBrand.salesEligible === false && mpnWithoutBrand.linked === false,
     },
     {
       name: "pick_identifier_prefers_jan_over_asin",
