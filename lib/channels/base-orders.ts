@@ -38,26 +38,26 @@ function isBaseOrderPaid(order: Awaited<ReturnType<typeof getBaseOrderDetail>>):
     case "base_bt":
       return order.bt_payment_transaction?.status === "paid";
     case "creditcard":
-      return ["captured", "creditable"].includes(order.c_c_payment_transaction?.status ?? "");
+      return order.c_c_payment_transaction?.status === "captured";
     case "carrier_01":
     case "carrier_02":
     case "carrier_03":
-      return ["authorized", "captured"].includes(order.carrier_payment_transaction?.status ?? "");
+      return order.carrier_payment_transaction?.status === "captured";
     case "paypal":
-      return ["creditable", "captured"].includes(order.paypal_payment_transaction?.status ?? "");
+      return order.paypal_payment_transaction?.status === "captured";
     case "amazon_pay":
-      return ["creditable", "captured"].includes(order.amazon_payment_transaction?.status ?? "");
+      return order.amazon_payment_transaction?.status === "captured";
     case "paypay":
-      return ["creditable", "captured"].includes(order.paypay_payment_transaction?.status ?? "");
+      return order.paypay_payment_transaction?.status === "captured";
     case "bnpl":
     case "bnpl_installment":
-      return ["creditable", "captured"].includes(order.bnpl_payment_transaction?.status ?? "");
+      return order.bnpl_payment_transaction?.status === "captured";
     case "atobarai":
-      return ["ordered", "shipping", "arrived"].includes(order.atobarai_payment_transaction?.status ?? "");
+      return false;
     case "cod":
       return true;
     default:
-      return order.dispatch_status === "ordered" || order.dispatch_status === "shipping" || order.dispatch_status === "dispatched";
+      return false;
   }
 }
 
