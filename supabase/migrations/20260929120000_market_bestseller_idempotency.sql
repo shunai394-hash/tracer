@@ -21,6 +21,9 @@ set source_item_key = concat(
 )
 where source_item_key is null;
 
+alter table public.marketplace_bestsellers
+  alter column source_item_key set not null;
+
 with ranked as (
   select
     id,
@@ -37,5 +40,4 @@ where m.id = r.id
   and r.rn > 1;
 
 create unique index if not exists marketplace_bestsellers_source_item_key_uidx
-  on public.marketplace_bestsellers(source_item_key)
-  where source_item_key is not null;
+  on public.marketplace_bestsellers(source_item_key);
