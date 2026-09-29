@@ -97,13 +97,6 @@ export function getDsersMcpConfig() {
   };
 }
 
-export function getDsersMcpConfig() {
-  return {
-    endpoint: readEnv("DSERS_MCP_URL") || "https://ai.dsers.com/mcp",
-    accessToken: readEnv("DSERS_MCP_ACCESS_TOKEN"),
-  };
-}
-
 export function getFaireConfig() {
   return {
     accessToken: readEnv("FAIRE_ACCESS_TOKEN"),
