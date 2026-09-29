@@ -19,13 +19,18 @@ export const metadata: Metadata = {
   title: "TRACER — AI Commerce Intelligence",
   description:
     "Track products, brands, prices, demand, and supply across world markets.",
+  icons: {
+    icon: "/icon",
+    apple: "/apple-icon",
+  },
+  manifest: "/manifest.webmanifest",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="ja"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={geistSans.variable + " " + geistMono.variable + " h-full antialiased"}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <SiteHeader />
