@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { executeSupplierPurchaseOrder } from "@/lib/ordering/supplier-execution";
+import { runAutonomousOrderControl } from "@/lib/ordering/autonomous-control";
 import { initializeProcurement } from "@/lib/procurement/init";
 import { listSupplierAdapters } from "@/lib/procurement/registry";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
@@ -35,47 +35,20 @@ export async function GET(request: Request) {
 
     if (error) throw new Error(error.message);
 
-    const results = [];
-    for (const order of orders ?? []) {
-      const supplierName = String(order.supplier_name ?? "").trim();
-      if (!supportedSuppliers.some((name) => name.toLowerCase() === supplierName.toLowerCase() ||
-          (name === "cj" && supplierName.toLowerCase() === "cjdropshipping"))) {
-        results.push({
-          purchaseOrderId: String(order.id),
-          supplierName,
-          attempted: false,
-          succeeded: false,
-          reason: "supplier_adapter_not_registered",
-        });
-        continue;
-      }
-
-      const killSwitch = await checkKillSwitch({
-        supplier: supplierName,
-        productId: order.product_id ? String(order.product_id) : null,
-      });
-      if (killSwitch.blocked) {
-        results.push({
-          purchaseOrderId: String(order.id),
-          supplierName,
-          attempted: false,
-          succeeded: false,
-          reason: "kill_switch_blocked",
-        });
-        continue;
-      }
-
-      results.push(await executeSupplierPurchaseOrder(String(order.id)));
-    }
+    const automation = await runAutonomousOrderControl(
+      `dropship-cron:${new Date().toISOString().slice(0, 13)}`,
+    );
 
     return NextResponse.json({
       ok: true,
       enabled: true,
       suppliers: supportedSuppliers,
       baseSync,
-      attempted: results.filter((item) => item.attempted).length,
-      succeeded: results.filter((item) => item.succeeded).length,
-      results,
+      attempted: automation.processed,
+      succeeded: automation.succeeded,
+      failed: automation.failed,
+      automationRunId: automation.runId,
+      purchaseOrderIds: automation.purchaseOrderIds,
     });
   } catch (error) {
     console.error("[TRACER DROPSHIP EXECUTION CRON ERROR]", error);
