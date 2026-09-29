@@ -90,6 +90,14 @@ export async function POST(request: Request) {
           .single();
         supplyProduct = updated.data ? { id: String(updated.data.id) } : null;
         if (updated.error) productError = { message: updated.error.message };
+      } else {
+        const inserted = await db
+          .from("internal_supply_products")
+          .insert(productPayload)
+          .select("id")
+          .single();
+        supplyProduct = inserted.data ? { id: String(inserted.data.id) } : null;
+        if (inserted.error) productError = { message: inserted.error.message };
       }
     } else {
       const inserted = await db
