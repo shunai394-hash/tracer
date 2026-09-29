@@ -152,6 +152,19 @@ export function isCJAutoOrderingEnabled(): boolean {
   return readEnv("CJ_AUTO_ORDERING") === "1";
 }
 
+export function isSupplierLiveOrderingEnabled(supplierName: string): boolean {
+  const key = supplierName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").toUpperCase();
+  if (key === "CJ" || key === "CJDROPSHIPPING") return isCJLiveOrderingEnabled();
+  return readEnv(`${key}_LIVE_ORDERING`) === "1";
+}
+
+export function isSupplierAutoOrderingEnabled(supplierName: string): boolean {
+  const key = supplierName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").toUpperCase();
+  if (key === "CJ" || key === "CJDROPSHIPPING") return isCJAutoOrderingEnabled();
+  return readEnv(`${key}_AUTO_ORDERING`) === "1";
+}
+
+
 export type OrosyEnvironment = "demo" | "live";
 
 export function getOrosyEnvironment(): OrosyEnvironment {
