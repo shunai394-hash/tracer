@@ -60,7 +60,7 @@ export async function GET(request: Request) {
         .select("id")
         .eq("pipeline_status", "blocked")
         .lt("pipeline_updated_at", retryBefore)
-        .or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null,mpn.not.is.null")
+        .or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null,mpn.not.is.null,asin.not.is.null")
         .order("pipeline_updated_at", { ascending: true })
         .limit(retrySlots);
 
