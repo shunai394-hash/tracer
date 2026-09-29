@@ -132,6 +132,7 @@ export async function executeSupplierPurchaseOrder(
     ["price", capabilities.price],
     ["shipping", capabilities.shipping],
     ["orderCreation", capabilities.orderCreation],
+    ["payment", capabilities.payment],
     ["liveOrdering", capabilities.liveOrdering],
   ] as const;
   const missingCapabilities = requiredCapabilities
