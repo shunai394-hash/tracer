@@ -208,8 +208,8 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   }
 
   const { data: products, error: productError } = await supabase
-    .from("products")
-    .select("id, canonical_name");
+    .from("product_intelligence")
+    .select("product_id, normalized_title");
 
   if (productError) {
     throw new Error(productError.message);
@@ -288,7 +288,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     let rowMatched = false;
 
     for (const product of products ?? []) {
-      if (!productMatchesQuery(query, product.canonical_name)) {
+      if (!productMatchesQuery(query, product.normalized_title)) {
         continue;
       }
 
@@ -297,10 +297,10 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
         .upsert(
           {
             demand_observation_id: demand.id,
-            product_id: product.id,
+            product_id: product.product_id,
             match_method: "keyword",
             match_score: 0.9,
-            rationale: `Product intent query "${query}" matched "${product.canonical_name}" (${intent.reason})`,
+            rationale: `Product intent query "${query}" matched "${product.normalized_title}" (${intent.reason})`,
           },
           {
             onConflict: "demand_observation_id,product_id",
