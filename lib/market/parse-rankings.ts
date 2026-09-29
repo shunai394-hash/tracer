@@ -292,16 +292,32 @@ export function parseYahooRankingHtml(html: string): ParsedBestseller[] {
 export function parseAmazonProductDetail(html: string): {
   brand: string | null;
   jan: string | null;
+  gtin: string | null;
+  ean: string | null;
+  upc: string | null;
   model: string | null;
   price: number | null;
   currency: string | null;
 } {
   const cleaned = stripHtmlComments(html);
 
-  const jan =
+  const janRaw =
     cleaned.match(/<th[^>]*>\s*JAN\s*<\/th>\s*<td[^>]*>\s*([0-9]{8,13})/i)?.[1] ??
     cleaned.match(/JAN[^\d]{0,12}([0-9]{8,13})/)?.[1] ??
     null;
+  const eanRaw =
+    cleaned.match(/(?:EAN|EAN-13)[^\d]{0,20}([0-9]{13})/i)?.[1] ??
+    null;
+  const upcRaw =
+    cleaned.match(/(?:UPC|UPC-A)[^\d]{0,20}([0-9]{12})/i)?.[1] ??
+    null;
+  const gtinRaw =
+    cleaned.match(/(?:GTIN|GTIN-13|GTIN-14)[^\d]{0,20}([0-9]{8,14})/i)?.[1] ??
+    null;
+  const jan = normalizeIdentifier("jan", janRaw);
+  const ean = normalizeIdentifier("ean", eanRaw);
+  const upc = normalizeIdentifier("upc", upcRaw);
+  const gtin = normalizeIdentifier("gtin", gtinRaw);
 
   const brand =
     cleaned.match(/id="bylineInfo"[^>]*>[\s\S]{0,80}>([^<]{2,80})/)?.[1] ??
@@ -358,12 +374,27 @@ export function parseAmazonProductDetail(html: string): {
             : null;
         const jsonLdCurrency = offerRecord ? firstString(offerRecord.priceCurrency) : null;
 
-        const gtin =
+        const jsonLdGtinRaw =
           typeof record.gtin13 === "string" ? record.gtin13 :
           typeof record.gtin === "string" ? record.gtin :
           typeof record.gtin12 === "string" ? record.gtin12 :
           typeof record.gtin8 === "string" ? record.gtin8 :
           typeof record.gtin14 === "string" ? record.gtin14 : null;
+        const jsonLdGtin = jsonLdGtinRaw
+          ? normalizeIdentifier("gtin", jsonLdGtinRaw)
+          : null;
+        const resolvedJan =
+          jsonLdGtin && (jsonLdGtin.length === 8 || jsonLdGtin.length === 13)
+            ? normalizeIdentifier("jan", jsonLdGtin)
+            : jan;
+        const resolvedEan =
+          jsonLdGtin && (jsonLdGtin.length === 8 || jsonLdGtin.length === 13)
+            ? normalizeIdentifier("ean", jsonLdGtin)
+            : ean;
+        const resolvedUpc =
+          jsonLdGtin && jsonLdGtin.length === 12
+            ? normalizeIdentifier("upc", jsonLdGtin)
+            : upc;
         const jsonLdMpn =
           typeof record.mpn === "string" && record.mpn.trim()
             ? record.mpn.trim()
@@ -388,7 +419,10 @@ export function parseAmazonProductDetail(html: string): {
         if (gtin && /^[0-9]{8,14}$/.test(gtin)) {
           return {
             brand: resolvedBrand,
-            jan: gtin,
+            jan: resolvedJan,
+            gtin: jsonLdGtin,
+            ean: resolvedEan,
+            upc: resolvedUpc,
             model: resolvedModel,
             price: Number.isFinite(jsonLdPrice) ? jsonLdPrice : null,
             currency: jsonLdCurrency,
@@ -398,7 +432,10 @@ export function parseAmazonProductDetail(html: string): {
         if (resolvedModel || resolvedBrand) {
           return {
             brand: resolvedBrand,
-            jan: null,
+            jan: resolvedJan,
+            gtin: jsonLdGtin,
+            ean: resolvedEan,
+            upc: resolvedUpc,
             model: resolvedModel,
             price: Number.isFinite(jsonLdPrice) ? jsonLdPrice : null,
             currency: jsonLdCurrency,
@@ -414,6 +451,9 @@ export function parseAmazonProductDetail(html: string): {
   return {
     brand: brand ? decode(brand).replace(/^ブランド:\s*/u, "") : null,
     jan,
+    gtin,
+    ean,
+    upc,
     model: safeModel,
     price: fallbackPrice?.amount ?? null,
     currency: fallbackPrice?.currency ?? null,
