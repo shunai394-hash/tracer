@@ -26,5 +26,18 @@ export async function executeProcurementOrder(
     };
   }
 
-  return adapter.createOrder(input);
+  // Never execute a live supplier order from this low-level helper.
+  // All live supplier side effects must pass through executeSupplierPurchaseOrder,
+  // which performs live refresh, kill-switch, inventory, profitability, idempotency,
+  // approval/auto-ordering, and outcome reconciliation before calling the adapter.
+  void input;
+  return {
+    succeeded: false,
+    dryRun: true,
+    supplierOrderId: null,
+    responseCode: "PURCHASE_ORDER_GATE_REQUIRED",
+    responseMessage: "Live supplier execution must use executeSupplierPurchaseOrder.",
+    trackingNumber: null,
+    raw: null,
+  };
 }
