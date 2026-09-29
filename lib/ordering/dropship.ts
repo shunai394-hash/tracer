@@ -166,7 +166,6 @@ export async function createDropshipPurchaseOrdersForShopOrder(
         tracking_available: internalVariant.tracking_available === true || (internalVariant.internal_supply_products as Record<string, unknown> | null)?.tracking_available === true,
         api_available: true,
         orderable: internalVariant.orderable === true && internalVariant.active === true,
-        supplier_variant_id: internalVariantId,
       };
     } else {
       const supplierListingId = row.supplier_listing_id
