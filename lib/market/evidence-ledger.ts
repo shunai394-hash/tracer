@@ -82,27 +82,3 @@ export async function listEvidenceForProduct(productId: string) {
   if (error) throw new Error(error.message);
   return data ?? [];
 }
-
-
-export async function writeEvidenceBatch(
-  rows: Array<Parameters<typeof writeEvidence>[0]>,
-): Promise<void> {
-  if (rows.length === 0) return;
-  const supabase = createSupabaseAdminClient();
-  const { error } = await supabase.from("evidence_ledger").insert(
-    rows.map((args) => ({
-      product_id: args.productId ?? null,
-      bestseller_id: args.bestsellerId ?? null,
-      supplier_listing_id: args.supplierListingId ?? null,
-      source: args.source,
-      url: args.url ?? null,
-      fetched_at: args.fetchedAt,
-      field_name: args.fieldName,
-      field_value: args.fieldValue,
-      evidence_class: args.evidenceClass,
-      confidence: args.confidence,
-      metadata: args.metadata ?? {},
-    })),
-  );
-  if (error) throw new Error(error.message);
-}
