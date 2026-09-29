@@ -1,3 +1,4 @@
+import { CancelOrderForm } from "@/components/cancel-order-form";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 
@@ -78,6 +79,7 @@ export default async function ThanksPage({
       ) : (
         <p className="mt-6 text-sm text-zinc-500">この注文は販売テストの実測として記録されます。</p>
       )}
+      {order && status && !["cancelled", "refunded"].includes(status.orderStatus) ? <CancelOrderForm orderId={order} /> : null}
     </main>
   );
 }
