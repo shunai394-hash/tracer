@@ -107,7 +107,7 @@ async function waitForCJRateLimit(): Promise<void> {
 
   await previous;
 
-  const minIntervalMs = 750;
+  const minIntervalMs = 1_100;
   const waitMs = Math.max(0, minIntervalMs - (Date.now() - lastCJRequestAt));
   if (waitMs > 0) {
     await new Promise((resolve) => setTimeout(resolve, waitMs));
