@@ -1,7 +1,6 @@
 ﻿import "server-only";
 
 import { isSupplierDryRunEnabled } from "@/lib/config/env";
-import { executeProcurementOrder } from "@/lib/procurement/engine";
 import { initializeProcurement } from "@/lib/procurement/init";
 
 import type {
