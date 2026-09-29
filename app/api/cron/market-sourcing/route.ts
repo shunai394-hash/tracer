@@ -6,7 +6,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const MARKET_SOURCING_BATCH_SIZE = 10;
+const MARKET_SOURCING_BATCH_SIZE = 5;
 
 export async function GET(request: Request) {
   const authError = requireCronAuth(request);
