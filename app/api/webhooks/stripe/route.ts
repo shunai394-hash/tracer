@@ -73,14 +73,18 @@ async function handleCheckoutCompleted(
 
   const { data: order } = await supabase
     .from("shop_orders")
-    .select("id, payment_status")
+    .select("id, payment_status, order_status")
     .eq("id", shopOrderId)
     .maybeSingle();
   if (!order) return shopOrderId;
 
-  // Idempotent: if this order is already paid (a retried/duplicate webhook
-  // delivery), do not re-fire funnel events or re-create purchase orders.
-  if (order.payment_status === "paid") return shopOrderId;
+  // Idempotent payment confirmation, but do not skip fulfillment recovery.
+  // A previous webhook can have recorded payment successfully and then failed
+  // while creating supplier POs. If the order is still exactly "paid", retry
+  // the fulfillment stage instead of treating the event as fully complete.
+  if (order.payment_status === "paid" && order.order_status !== "paid") {
+    return shopOrderId;
+  }
 
   const paymentIntentId =
     typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
