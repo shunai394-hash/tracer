@@ -53,9 +53,18 @@ export async function persistMarketplaceBestsellers(): Promise<{
       seen.add(identityKey);
       seenMarketplaceIdentityKeys.set(marketplace.marketplace, seen);
 
+      const sourceItemKey = [
+        marketplace.source,
+        item.asin || item.productUrl || [
+          marketplace.marketplace,
+          item.title,
+          `rank:${item.rank ?? ""}`,
+        ].join("::"),
+      ].join("::");
+
       const { data: bestseller, error } = await supabase
         .from("marketplace_bestsellers")
-        .insert({
+        .upsert({ source_item_key: sourceItemKey,
           marketplace: marketplace.marketplace,
           rank: item.rank,
           category: null,
@@ -82,7 +91,7 @@ export async function persistMarketplaceBestsellers(): Promise<{
           pipeline_reason: "market_observation_persisted",
           pipeline_error: null,
           pipeline_updated_at: new Date().toISOString(),
-        })
+        }, { onConflict: "source_item_key" })
         .select("id")
         .single();
 
