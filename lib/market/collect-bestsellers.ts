@@ -139,19 +139,24 @@ function enrichAmazon(item: ParsedBestseller): ParsedBestseller {
   };
 }
 
-export async function collectMarketplaceBestsellers(): Promise<{
+export async function collectMarketplaceBestsellers(options: { sourceIndex?: number } = {}): Promise<{
   fetchedAt: string;
   marketplaces: CollectedMarketplace[];
   itemCount: number;
 }> {
   const fetchedAt = new Date().toISOString();
   const marketplaces: CollectedMarketplace[] = [];
+  const sourceIndex = Math.max(0, options.sourceIndex ?? 0);
+  const selectedSource = MARKETPLACE_SOURCES[sourceIndex];
+  if (!selectedSource) {
+    return { fetchedAt, marketplaces: [], itemCount: 0 };
+  }
 
   // Fetch independent marketplace ranking pages concurrently. The previous
   // sequential fan-out made the eight sources share one 60-second serverless
   // budget and allowed one slow marketplace to starve the whole observation run.
   const collectedSources = await Promise.all(
-    MARKETPLACE_SOURCES.map(async (source) => {
+    [selectedSource].map(async (source) => {
       try {
         const html = await fetchHtml(source.url);
         return { source, html, error: null as unknown };
