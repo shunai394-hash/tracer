@@ -174,8 +174,27 @@ async function syncShoppingDemandObservations(): Promise<unknown> {
     });
   }
 
+  const { data: existingDemand, error: existingDemandError } = await supabase
+    .from("demand_observations")
+    .select("metadata, observed_at")
+    .eq("signal_type", "search_result_count")
+    .gte("observed_at", new Date(Date.now() - 90 * 86_400_000).toISOString());
+  if (existingDemandError) throw new Error(existingDemandError.message);
+
+  const existingKeys = new Set(
+    (existingDemand ?? []).map((row) => {
+      const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+        ? row.metadata as Record<string, unknown>
+        : {};
+      return `${typeof metadata.query === "string" ? metadata.query : ""}|${String(row.observed_at).slice(0, 10)}`;
+    }),
+  );
+
   let upserted = 0;
   for (const item of grouped.values()) {
+    const key = `${item.query}|${item.observedAt.slice(0, 10)}`;
+    if (existingKeys.has(key)) continue;
+
     const { error: insertError } = await supabase
       .from("demand_observations")
       .insert({
