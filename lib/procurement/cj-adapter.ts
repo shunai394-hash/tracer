@@ -1,6 +1,6 @@
 ﻿import "server-only";
 
-import { createCJOrderV2, getCJOrderStatus } from "@/lib/sources/cj/create-order";
+import { createCJOrderV2, getCJOrderStatus, getCJTrackingInfo } from "@/lib/sources/cj/create-order";
 import { calculateCJFreight, fetchCJVariantByVid, fetchCJVariantStock, getCJProductDetail, searchCJProducts, getCJFreightOptions } from "@/lib/sources/cj/client";
 import type {
   SupplierInventory,
@@ -205,18 +205,18 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
   },
 
   async getTracking(supplierOrderId: string): Promise<SupplierTracking | null> {
-    const result = await getCJOrderStatus(supplierOrderId);
+    const order = await getCJOrderStatus(supplierOrderId);
+    if (!order.trackingNumber) return null;
 
-    if (!result.trackingNumber) {
-      return null;
-    }
+    const tracking = await getCJTrackingInfo(order.trackingNumber);
+    if (!tracking?.trackingNumber) return null;
 
     return {
       supplierOrderId,
-      trackingNumber: result.trackingNumber,
-      carrier: null,
-      trackingUrl: null,
-      shippedAt: null,
+      trackingNumber: tracking.lastMileTrackingNumber ?? tracking.trackingNumber,
+      carrier: tracking.carrier,
+      trackingUrl: tracking.trackingUrl,
+      shippedAt: tracking.shippedAt,
     };
   },
 };
