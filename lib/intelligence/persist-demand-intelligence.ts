@@ -120,7 +120,7 @@ export async function persistDemandIntelligence(): Promise<{
   let skipped = 0;
 
   for (const [query, rows] of grouped) {
-    const searchRows = rows.filter((row) => row.signal_type === "search_volume");
+    const searchRows = rows.filter((row) => (row.signal_type === "search_volume" || row.signal_type === "search_result_count"));
     const socialRows = rows.filter((row) => row.signal_type === "social_mentions");
     const points = searchRows
       .map((row) => ({
