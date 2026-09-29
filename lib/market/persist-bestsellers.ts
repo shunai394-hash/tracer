@@ -224,7 +224,16 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
       if (hasSupplierSearchIdentifier) {
         const key = marketplace.marketplace;
         const bucket = supplierCandidateIdsByMarketplace.get(key) ?? [];
-        bucket.push(String(bestseller.id));
+        const bestsellerId = String(bestseller.id);
+        // Concrete supplier-search identifiers (JAN/GTIN/EAN/UPC/MPN)
+        // must outrank ASIN-only rows. ASIN is useful for enrichment, but
+        // it is not a CJ search key and otherwise starves the bounded
+        // supplier batch with rows that cannot be matched directly.
+        const hasConcreteSupplierIdentifier = Boolean(
+          ids.jan || ids.gtin || ids.ean || ids.upc || ids.mpn,
+        );
+        if (hasConcreteSupplierIdentifier) bucket.unshift(bestsellerId);
+        else bucket.push(bestsellerId);
         supplierCandidateIdsByMarketplace.set(key, bucket);
       }
 
