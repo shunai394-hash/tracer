@@ -9,7 +9,7 @@ import {
 import { getSupplierAdapter } from "@/lib/procurement/registry";
 import { initializeProcurement } from "@/lib/procurement/init";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
-import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
+import { getObservedFxRate } from "@/lib/intelligence/fx";
 import {
   evaluateDropshipOrderGate,
   type DropshipOrderGateResult,
@@ -40,23 +40,13 @@ function addressComplete(order: Record<string, unknown>): boolean | null {
   return fields.every((value) => typeof value === "string" && value.trim().length > 0);
 }
 
-function sourceFxRate(sourceCurrency: string | null, sellingCurrency: string | null): number | null {
-  if (!sourceCurrency || !sellingCurrency) return null;
-  if (sourceCurrency === sellingCurrency) return 1;
-  if (sourceCurrency === "USD" && sellingCurrency === "JPY") return null;
-  return null;
-}
-
 async function resolveFxRate(
   sourceCurrency: string | null,
   sellingCurrency: string | null,
 ): Promise<number | null> {
-  const direct = sourceFxRate(sourceCurrency, sellingCurrency);
-  if (direct !== null) return direct;
-  if (sourceCurrency === "USD" && sellingCurrency === "JPY") {
-    return (await getObservedUsdToJpyRate())?.rate ?? null;
-  }
-  return null;
+  if (!sourceCurrency || !sellingCurrency) return null;
+  if (sourceCurrency === sellingCurrency) return 1;
+  return (await getObservedFxRate(sourceCurrency, sellingCurrency))?.rate ?? null;
 }
 
 export type ExecuteSupplierPurchaseOrderResult = {
