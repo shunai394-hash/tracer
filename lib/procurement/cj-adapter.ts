@@ -1,7 +1,7 @@
 ﻿import "server-only";
 
 import { createCJOrderV2, getCJOrderStatus } from "@/lib/sources/cj/create-order";
-import { calculateCJFreight, fetchCJVariantByVid, fetchCJVariantStock, getCJProductDetail, searchCJProducts } from "@/lib/sources/cj/client";
+import { calculateCJFreight, fetchCJVariantByVid, fetchCJVariantStock, getCJProductDetail, searchCJProducts, getCJFreightOptions } from "@/lib/sources/cj/client";
 import type {
   SupplierInventory,
   SupplierOrder,
@@ -125,15 +125,38 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
   },
 
   async createOrder(input: SupplierOrderInput): Promise<SupplierOrderResult> {
+    const freightOptions = await getCJFreightOptions(input.supplierVariantId, {
+      startCountryCode: "CN",
+      endCountryCode: input.shippingCountryCode,
+      zip: input.shippingZip,
+      quantity: input.quantity,
+    });
+    const selectedLogistic = freightOptions[0]?.logisticName;
+    if (!selectedLogistic) {
+      return {
+        succeeded: false,
+        supplierOrderId: null,
+        responseCode: "CJ_LOGISTICS_UNAVAILABLE",
+        responseMessage: "No verified CJ logistics option is available for this destination and variant",
+        trackingNumber: null,
+        raw: { freightOptions },
+      };
+    }
+
     const result = await createCJOrderV2({
       orderNumber: input.orderNumber,
       shippingCountryCode: input.shippingCountryCode,
+      shippingCountry: input.shippingCountry ?? input.shippingCountryCode,
       shippingProvince: input.shippingProvince,
       shippingCity: input.shippingCity,
       shippingAddress: input.shippingAddress,
+      shippingAddress2: input.shippingAddress2,
       shippingZip: input.shippingZip,
       shippingPhone: input.shippingPhone,
       shippingCustomerName: input.shippingCustomerName,
+      email: input.email,
+      logisticName: selectedLogistic,
+      fromCountryCode: "CN",
       products: [
         {
           vid: input.supplierVariantId,
