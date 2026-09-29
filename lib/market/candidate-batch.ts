@@ -1,17 +1,13 @@
 /**
  * Single shared "current batch" size for the bestseller pipeline.
  *
- * investigate-dropship.ts (supplier investigation) and
- * select-sales-tests.ts (sales-candidate selection) must operate over the
- * exact same set of marketplace_bestsellers rows within one
- * /api/intelligence/bestsellers run, or supplier_listings rows the first
- * stage just wrote will never be found by the second.
+ * Supplier investigation is intentionally one row at a time because CJ
+ * product/detail/JP-variant/stock/freight verification is serialized by the
+ * supplier API rate limit. The goal of this batch is to get a real,
+ * sales-eligible product through the full chain, not to create a large
+ * unverified backlog.
  *
- * `rank` resets to 1..N on every scrape and carries no run/batch id, so it
- * cannot be used to scope a query to "the rows this run just touched" —
- * only `fetched_at` (set once per marketplace per collection run, see
- * lib/market/collect-bestsellers.ts) can. Both stages must order by
- * `fetched_at desc` and use this same limit.
+ * The later sales-test and BASE cron stages run automatically from vercel.json
+ * after supplier investigation.
  */
-// Keep supplier investigation inside the 60s serverless budget. CJ product/detail/variant calls are serialized locally to respect the account rate limit, so a large batch can time out before the sourcing decision runs.
-export const BESTSELLER_CANDIDATE_BATCH_SIZE = 2;
+export const BESTSELLER_CANDIDATE_BATCH_SIZE = 1;
