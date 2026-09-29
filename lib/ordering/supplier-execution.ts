@@ -206,8 +206,23 @@ export async function executeSupplierPurchaseOrder(
   // Live execution must use freshly verified supplier pricing/shipping.
   // Never fall back to stale PO economics after a live refresh fails to return a value.
   const sourceCost = price?.amount ?? null;
-  const shippingCost = shipping?.amount ?? null;
   const sourceCurrency = (price?.currency ?? shipping?.currency ?? "").toString().toUpperCase() || null;
+  const shippingCurrency = shipping?.currency?.toString().toUpperCase() || null;
+  let shippingCost = shipping?.amount ?? null;
+
+  // The gate accepts one supplier-currency bucket for cost + shipping.
+  // Normalize shipping into the supplier price currency instead of ever
+  // adding unlike currencies.
+  if (
+    shippingCost !== null &&
+    shippingCurrency &&
+    sourceCurrency &&
+    shippingCurrency !== sourceCurrency
+  ) {
+    const shippingFx = await resolveFxRate(shippingCurrency, sourceCurrency);
+    shippingCost = shippingFx === null ? null : shippingCost * shippingFx;
+  }
+
   const sellingCurrency = asString(shopOrderRow.currency)?.toUpperCase() ?? null;
   const fxQuote = await resolveFxRate(sourceCurrency, sellingCurrency);
   const inventoryQty = inventory?.quantity ?? null;
