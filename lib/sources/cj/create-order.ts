@@ -39,6 +39,8 @@ export type CJCreateOrderInput = {
   fromCountryCode?: string;
   /** Required by CJ createOrderV2. Human-readable destination country. */
   shippingCountry?: string;
+  /** CJ payment mode: 2 = automatic balance payment, 3 = create-only. */
+  payType?: 2 | 3;
   products: CJOrderProduct[];
 };
 
