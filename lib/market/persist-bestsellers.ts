@@ -115,24 +115,25 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
 
       let productId: string | null = null;
 
-      // Reuse an existing canonical product by any verified identifier.
-      // Previously only ASIN/JAN could find an existing row, so a GTIN/MPN-only
-      // bestseller could create a duplicate product even when the catalog
-      // already contained the same item.
-      const lookupIdentifiers: Array<[string, string | null]> = [
-        ["asin", item.asin],
-        ["jan", item.jan],
-        ["gtin", item.gtin],
-        ["ean", item.ean],
-        ["upc", item.upc],
-        ["mpn", item.mpn],
-      ];
-      for (const [scheme, value] of lookupIdentifiers) {
-        if (!value || productId) continue;
+      // Reuse an existing canonical product with a single indexed lookup.
+      // The previous implementation performed up to six sequential queries
+      // (ASIN/JAN/GTIN/EAN/UPC/MPN) for every bestseller. That made a small
+      // cron batch surprisingly expensive under Vercel's hard timeout.
+      const lookupFilters = [
+        item.asin ? `asin.eq.${item.asin}` : null,
+        item.jan ? `jan.eq.${item.jan}` : null,
+        item.gtin ? `gtin.eq.${item.gtin}` : null,
+        item.ean ? `ean.eq.${item.ean}` : null,
+        item.upc ? `upc.eq.${item.upc}` : null,
+        item.mpn ? `mpn.eq.${item.mpn}` : null,
+      ].filter((value): value is string => Boolean(value));
+
+      if (lookupFilters.length > 0) {
         const existing = await supabase
           .from("products")
-          .select("id")
-          .eq(scheme, value)
+          .select("id,asin,jan,gtin,ean,upc,mpn")
+          .or(lookupFilters.join(","))
+          .limit(1)
           .maybeSingle();
         if (existing.error) throw new Error(existing.error.message);
         if (existing.data?.id) productId = existing.data.id;
