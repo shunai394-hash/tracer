@@ -8,6 +8,7 @@ import {
   isSupplierDryRunEnabled,
 } from "@/lib/config/env";
 import { getSupplierAdapter, getSupplierCapabilities } from "@/lib/procurement/registry";
+import type { SupplierOrderInput } from "@/lib/procurement/types";
 import { initializeProcurement } from "@/lib/procurement/init";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { getObservedFxRate } from "@/lib/intelligence/fx";
@@ -402,7 +403,7 @@ export async function executeSupplierPurchaseOrder(
     };
   }
 
-  const orderInput = {
+  const orderInput: SupplierOrderInput = {
     supplierName,
     orderNumber: idempotencyKey,
     supplierProductId,
@@ -420,7 +421,7 @@ export async function executeSupplierPurchaseOrder(
       asString(shopOrderRow.shipping_country) ??
       asString(shopOrderRow.shipping_country_code) ??
       "",
-    email: asString(shopOrderRow.customer_email),
+    email: asString(shopOrderRow.customer_email) ?? undefined,
     supplierPayload: (po.metadata as Record<string, unknown> | null)?.supplier_order_payload,
   };
 
