@@ -155,8 +155,8 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
         };
 
         if (canceled) {
-          update.payment_status = "canceled";
-          update.order_status = "canceled";
+          update.payment_status = "failed";
+          update.order_status = "cancelled";
         } else if (paid) {
           update.payment_status = "paid";
           if (
