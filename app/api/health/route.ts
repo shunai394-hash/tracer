@@ -1,4 +1,4 @@
-import { getFoundationStatus, isBaseConfigured, isCJAutoOrderingEnabled, isCJLiveOrderingEnabled } from "@/lib/config/env";
+import { getFoundationStatus, isCJAutoOrderingEnabled, isCJLiveOrderingEnabled } from "@/lib/config/env";
 
 export const runtime = "nodejs";
 
@@ -24,7 +24,7 @@ export async function GET() {
     },
     automation: {
       cronAuthConfigured: Boolean(process.env.CRON_SECRET),
-      baseConfigured: isBaseConfigured(),
+      baseConfigured: status.base,
       cjLiveOrdering: isCJLiveOrderingEnabled(),
       cjAutoOrdering: isCJAutoOrderingEnabled(),
     },
