@@ -2,9 +2,6 @@ import { NextResponse } from "next/server";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
 import { requireCronAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
-import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
-import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -18,9 +15,6 @@ export async function GET(request: Request) {
   const supabase = createSupabaseAdminClient();
   let cronRunId: string | null = null;
   const startedAt = Date.now();
-  // Vercel terminates this function at maxDuration. If that happens before
-  // the finally/update path runs, the singleton row would otherwise block the
-  // next scheduled run forever. A run cannot legitimately exceed this TTL.
   const staleBefore = new Date(Date.now() - 120_000).toISOString();
 
   try {
@@ -57,10 +51,6 @@ export async function GET(request: Request) {
 
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
-    // Keep this stage bounded. One full bestseller collection can contain
-    // thousands of rows, while each row requires several Supabase writes.
-    // Persist a deterministic batch per invocation and carry the cursor in
-    // cron_runs metadata so a timeout never advances the cursor prematurely.
     const { data: previousRun, error: previousRunError } = await supabase
       .from("cron_runs")
       .select("metadata")
@@ -82,58 +72,59 @@ export async function GET(request: Request) {
         ? Math.max(0, Number(metadataObject.sourceIndex))
         : 0;
     const startIndex =
-      metadataObject && typeof metadataObject.sourceIndex === "number" &&
+      metadataObject &&
+      typeof metadataObject.sourceIndex === "number" &&
       typeof metadataObject.nextIndex === "number"
         ? Math.max(0, Number(metadataObject.nextIndex))
         : 0;
 
+    // This cron is observation-only. Supplier investigation, sales-test
+    // publication, NEWFIND promotion, and BASE publication each have their
+    // own scheduled stage. Keeping those stages separate prevents one slow
+    // supplier/API call from consuming the market-observation 60s budget and
+    // starving the next cron stage.
     const observation = await persistMarketplaceBestsellers({
       sourceIndex,
       startIndex,
       batchSize: MARKET_SOURCING_BATCH_SIZE,
     });
 
-    // Single-chain orchestration: observation immediately feeds supplier
-    // investigation, sales-test selection, and BASE publication.
-    const supplier = await investigateDropshipForBestsellers(
-      observation.supplierCandidateIds,
-    );
-    const salesTest = await selectAndPublishSalesTests(
-      observation.supplierCandidateIds,
-      3,
-    );
-    const basePublication = await publishPublishedListingsToBase(20);
+    const nextSourceIndex = observation.hasMore
+      ? observation.sourceIndex
+      : (observation.sourceIndex + 1) % 8;
+    const nextStartIndex = observation.hasMore ? observation.nextIndex : 0;
+
+    const metadata = {
+      phase: "market_observation",
+      itemCount: observation.itemCount,
+      inserted: observation.inserted,
+      batchSize: MARKET_SOURCING_BATCH_SIZE,
+      sourceIndex: nextSourceIndex,
+      startIndex: observation.startIndex,
+      processedCount: observation.processedCount,
+      nextIndex: nextStartIndex,
+      hasMore: observation.hasMore,
+      enrichment: observation.enrichment,
+      supplierCandidateCount: observation.supplierCandidateIds.length,
+    };
 
     if (cronRunId) {
-      await supabase.from("cron_runs").update({
-        status: "succeeded",
-        finished_at: new Date().toISOString(),
-        duration_ms: Date.now() - startedAt,
-        processed: observation.inserted,
-        failed: 0,
-        metadata: {
-          phase: "commerce_one_chain",
-          itemCount: observation.itemCount,
-          inserted: observation.inserted,
-          supplierCandidateCount: observation.supplierCandidateIds.length,
-          batchSize: MARKET_SOURCING_BATCH_SIZE,
-          sourceIndex: observation.hasMore
-            ? observation.sourceIndex
-            : (observation.sourceIndex + 1) % 8,
-          startIndex: observation.startIndex,
-          processedCount: observation.processedCount,
-          nextIndex: observation.hasMore ? observation.nextIndex : 0,
-          hasMore: observation.hasMore,
-          supplier: { processed: supplier.processed, matched: supplier.matched, failed: supplier.rowErrors },
-          salesTest: { considered: salesTest.considered, published: salesTest.published },
-          basePublication: { attempted: basePublication.attempted, published: basePublication.published, skipped: basePublication.skipped, failed: basePublication.failed },
-        },
-      }).eq("id", cronRunId);
+      await supabase
+        .from("cron_runs")
+        .update({
+          status: "succeeded",
+          finished_at: new Date().toISOString(),
+          duration_ms: Date.now() - startedAt,
+          processed: observation.inserted,
+          failed: 0,
+          metadata,
+        })
+        .eq("id", cronRunId);
     }
 
     return NextResponse.json({
       ok: true,
-      phase: "commerce_one_chain",
+      phase: "market_observation",
       elapsedMs: Date.now() - startedAt,
       observation: {
         itemCount: observation.itemCount,
@@ -141,28 +132,26 @@ export async function GET(request: Request) {
         productsCreated: observation.productsCreated,
         supplierCandidateCount: observation.supplierCandidateIds.length,
         enrichment: observation.enrichment,
-        sourceIndex: observation.hasMore
-          ? observation.sourceIndex
-          : (observation.sourceIndex + 1) % 8,
+        sourceIndex: nextSourceIndex,
         startIndex: observation.startIndex,
         processedCount: observation.processedCount,
-        nextIndex: observation.hasMore ? observation.nextIndex : 0,
+        nextIndex: nextStartIndex,
         hasMore: observation.hasMore,
       },
-      supplier: { processed: supplier.processed, matched: supplier.matched, failed: supplier.rowErrors },
-      salesTest: { considered: salesTest.considered, published: salesTest.published, rejected: salesTest.rejected },
-      basePublication,
-      nextPhase: "base_publication",
+      nextPhase: "supplier_investigation",
     });
   } catch (error) {
     if (cronRunId) {
       try {
-        await supabase.from("cron_runs").update({
-          status: "failed",
-          finished_at: new Date().toISOString(),
-          duration_ms: Date.now() - startedAt,
-          error: error instanceof Error ? error.message : String(error),
-        }).eq("id", cronRunId);
+        await supabase
+          .from("cron_runs")
+          .update({
+            status: "failed",
+            finished_at: new Date().toISOString(),
+            duration_ms: Date.now() - startedAt,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          .eq("id", cronRunId);
       } catch (recordError) {
         console.error("[TRACER CRON RUN RECORD ERROR]", recordError);
       }
