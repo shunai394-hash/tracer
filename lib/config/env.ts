@@ -235,3 +235,17 @@ export function getNewfindConfig() {
 export function isSupplierDryRunEnabled(): boolean {
   return readEnv("SUPPLIER_DRY_RUN") !== "0";
 }
+
+
+export function isSupplierLiveOrderingEnabled(supplierName: string): boolean {
+  const name = supplierName.trim().toLowerCase();
+  if (name === "cj" || name === "cjdropshipping") return isCJLiveOrderingEnabled();
+  if (name === "orosy") return isOrosyLiveOrderingEnabled();
+  return false;
+}
+
+export function isSupplierAutoOrderingEnabled(supplierName: string): boolean {
+  const name = supplierName.trim().toLowerCase();
+  if (name === "cj" || name === "cjdropshipping") return isCJAutoOrderingEnabled();
+  return false;
+}
