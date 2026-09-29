@@ -65,7 +65,8 @@ export const MARKETPLACE_SOURCES = [
  * a fan-out safety bound, not a latency budget — raising it does not
  * multiply wall-clock time the way the old sequential loop did.
  */
-const DETAIL_ENRICHMENT_LIMIT = 8;
+const DETAIL_ENRICHMENT_LIMIT = 2;
+const YAHOO_DETAIL_ENRICHMENT_LIMIT = 4;
 
 export type CollectedMarketplace = {
   marketplace: string;
@@ -200,64 +201,13 @@ export async function collectMarketplaceBestsellers(): Promise<{
       // fetch fan-out if a source ever returns an unusually large page.
       let enrichment: { attempted: number; htmlFetched: number; identifierFound: number } | undefined;
 
-      if (source.marketplace === "amazon.co.jp") {
-        const details = items.slice(0, DETAIL_ENRICHMENT_LIMIT);
-        let htmlFetched = 0;
-        let identifierFound = 0;
-        await Promise.all(
-          details.map(async (item) => {
-            if (!item.productUrl) return;
-            try {
-              const detailHtml = await fetchHtml(item.productUrl);
-              if (!detailHtml) return;
-              htmlFetched += 1;
-              const detail = parseAmazonProductDetail(detailHtml);
-              item.brand = detail.brand;
-              item.model = detail.model;
-              item.jan = normalizeIdentifier("jan", detail.jan);
-              item.mpn = normalizeIdentifier("mpn", detail.model);
-              if (item.price === null && detail.price !== null) {
-                item.price = detail.price;
-                item.currency = detail.currency ?? "JPY";
-              }
-              if (item.jan || item.mpn) identifierFound += 1;
-            } catch {
-              // Detail pages stay unknown rather than blocking the listing.
-            }
-          }),
-        );
-        enrichment = { attempted: details.length, htmlFetched, identifierFound };
-      }
-
-      if (source.marketplace === "yahoo_shopping") {
-        const details = items.slice(0, DETAIL_ENRICHMENT_LIMIT);
-        let htmlFetched = 0;
-        let identifierFound = 0;
-        await Promise.all(
-          details.map(async (item) => {
-            if (!item.productUrl) return;
-            try {
-              const detailHtml = await fetchHtml(item.productUrl);
-              if (!detailHtml) return;
-              htmlFetched += 1;
-              const detail = parseYahooProductDetail(detailHtml);
-              item.jan = normalizeIdentifier("jan", detail.jan);
-              item.gtin = normalizeIdentifier("gtin", detail.gtin);
-              item.mpn = normalizeIdentifier("mpn", detail.mpn);
-              item.brand = detail.brand;
-              if (item.price === null && detail.price !== null) {
-                item.price = detail.price;
-                item.currency = detail.currency ?? "JPY";
-              }
-              if (item.jan || item.gtin || item.mpn) identifierFound += 1;
-            } catch {
-              // Detail pages stay unknown rather than blocking the listing.
-            }
-          }),
-        );
-        enrichment = { attempted: details.length, htmlFetched, identifierFound };
-      }
-
+      marketplaces.push({
+        marketplace: source.marketplace,
+        source: source.source,
+        sourceUrl: source.url,
+        fetchedAt,
+        items,
+      });
       marketplaces.push({
         marketplace: source.marketplace,
         source: source.source,
@@ -283,10 +233,74 @@ export async function collectMarketplaceBestsellers(): Promise<{
     }
   }
 
+async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Promise<CollectedMarketplace> {
+  if (marketplace.items.length === 0) return marketplace;
+
+  const limit = marketplace.marketplace === "yahoo_shopping"
+    ? YAHOO_DETAIL_ENRICHMENT_LIMIT
+    : marketplace.marketplace === "amazon.co.jp"
+      ? DETAIL_ENRICHMENT_LIMIT
+      : 0;
+
+  if (limit === 0) return marketplace;
+
+  const details = marketplace.items.slice(0, limit);
+  let htmlFetched = 0;
+  let identifierFound = 0;
+
+  await Promise.all(details.map(async (item) => {
+    if (!item.productUrl) return;
+    try {
+      const detailHtml = await fetchHtml(item.productUrl);
+      if (!detailHtml) return;
+      htmlFetched += 1;
+
+      if (marketplace.marketplace === "amazon.co.jp") {
+        const detail = parseAmazonProductDetail(detailHtml);
+        item.brand = detail.brand;
+        item.model = detail.model;
+        item.jan = normalizeIdentifier("jan", detail.jan);
+        item.mpn = normalizeIdentifier("mpn", detail.model);
+        if (item.price === null && detail.price !== null) {
+          item.price = detail.price;
+          item.currency = detail.currency ?? "JPY";
+        }
+        if (item.jan || item.mpn) identifierFound += 1;
+      } else {
+        const detail = parseYahooProductDetail(detailHtml);
+        item.jan = normalizeIdentifier("jan", detail.jan);
+        item.gtin = normalizeIdentifier("gtin", detail.gtin);
+        item.mpn = normalizeIdentifier("mpn", detail.mpn);
+        item.brand = detail.brand;
+        if (item.price === null && detail.price !== null) {
+          item.price = detail.price;
+          item.currency = detail.currency ?? "JPY";
+        }
+        if (item.jan || item.gtin || item.mpn) identifierFound += 1;
+      }
+    } catch {
+      // Detail pages stay unknown rather than blocking the listing.
+    }
+  }));
+
+  return {
+    ...marketplace,
+    enrichment: { attempted: details.length, htmlFetched, identifierFound },
+  };
+}
+
+  // Enrich detail pages concurrently across marketplace sources. The previous
+  // implementation enriched each source inside the sequential parse loop,
+  // so six Amazon categories could consume six separate network waits inside
+  // the same 60-second function. Keep a small per-source cap and fan them out.
+  const enrichedMarketplaces = await Promise.all(
+    marketplaces.map((marketplace) => enrichMarketplaceDetails(marketplace)),
+  );
+
   return {
     fetchedAt,
-    marketplaces,
-    itemCount: marketplaces.reduce((sum, item) => sum + item.items.length, 0),
+    marketplaces: enrichedMarketplaces,
+    itemCount: enrichedMarketplaces.reduce((sum, item) => sum + item.items.length, 0),
   };
 }
 
