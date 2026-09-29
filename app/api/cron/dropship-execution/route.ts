@@ -25,9 +25,10 @@ export async function GET(request: Request) {
     const supabase = createSupabaseAdminClient();
     const { data: orders, error } = await supabase
       .from("purchase_orders")
-      .select("id,product_id,status")
+      .select("id,product_id,status,supplier_name")
       .in("status", ["pending_approval", "placed"])
-      .eq("fulfillment_kind", "dropship_customer_order")
+.eq("fulfillment_kind", "dropship_customer_order")
+      .eq("supplier_name", "CJdropshipping")
       .is("supplier_order_id", null)
       .order("created_at", { ascending: true })
       .limit(10);
