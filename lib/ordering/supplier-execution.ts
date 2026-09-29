@@ -438,7 +438,10 @@ export async function executeSupplierPurchaseOrder(
     };
   }
 
-  // A response without a supplier order ID is ambiguous: the supplier may have\n  // accepted the order even if its response was incomplete. Never mark that\n  // outcome as safely retryable, because a second createOrder call could\n  // create a duplicate shipment.\n  const state = result.succeeded && result.supplierOrderId ? "completed" : "unknown";
+  // A response without a supplier order ID is ambiguous: the supplier may have
+  // accepted the order even if its response was incomplete. Never mark that
+  // outcome as safely retryable, because a second createOrder call could
+  // create a duplicate shipment.\n  const state = result.succeeded && result.supplierOrderId ? "completed" : "unknown";
   const { error: attemptUpdateError } = await supabase
     .from("supplier_order_attempts")
     .update({
