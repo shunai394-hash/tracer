@@ -48,6 +48,8 @@ export type SupplierCapabilities = {
   shippingRequiresDestination: boolean;
   orderPreflight: boolean;
   orderCreation: boolean;
+  /** Supplier-side payment/fulfillment initiation is verified end-to-end. */
+  payment: boolean;
   orderStatus: boolean;
   tracking: boolean;
   liveOrdering: boolean;
@@ -62,6 +64,7 @@ export const FAIL_CLOSED_SUPPLIER_CAPABILITIES: SupplierCapabilities = {
   shippingRequiresDestination: false,
   orderPreflight: false,
   orderCreation: false,
+  payment: false,
   orderStatus: false,
   tracking: false,
   liveOrdering: false,
