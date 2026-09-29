@@ -14,7 +14,18 @@ export default async function DashboardPage() {
 
   let kpis = null;
   let error: string | null = null;
-  let baseListings = [];
+  let baseListings: Array<{
+    id: string;
+    title: string | null;
+    published: boolean | null;
+    base_item_id: string | null;
+    base_publication_status: string | null;
+    base_last_error: string | null;
+    inventory: number | string | null;
+    orderable: boolean | null;
+    selling_price: number | null;
+    image_url: string | null;
+  }> = [];
   let baseLoadError: string | null = null;
 
   try {
