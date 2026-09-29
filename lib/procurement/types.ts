@@ -39,6 +39,12 @@ export type SupplierPrice = {
   observedAt: string;
 };
 
+export type SupplierShippingContext = {
+  destinationCountryCode?: string;
+  destinationPostalCode?: string;
+  quantity?: number;
+};
+
 export type SupplierShipping = {
   supplierProductId: string;
   supplierVariantId: string | null;
@@ -118,6 +124,7 @@ export interface TracerSupplierAdapter {
   getShipping(
     supplierProductId: string,
     supplierVariantId?: string,
+    context?: SupplierShippingContext,
   ): Promise<SupplierShipping | null>;
 
   createOrder(
