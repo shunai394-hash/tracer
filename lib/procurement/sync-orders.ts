@@ -58,18 +58,34 @@ export async function syncSupplierOrders(): Promise<SupplierOrderSyncResult> {
       const status = await adapter.getOrderStatus(supplierOrderId);
       const tracking = await adapter.getTracking(supplierOrderId);
       const now = new Date().toISOString();
+      const supplierStatus = String(status?.status ?? "").trim().toUpperCase();
       const update: Record<string, unknown> = {
         supplier_status: status?.status ?? null,
         supplier_synced_at: now,
         updated_at: now,
       };
 
+      // Keep TRACER's fulfillment state aligned with CJ's documented lifecycle.
+      // CREATED/IN_CART/UNPAID/PENDING/PROCESSING/UNSHIPPED are still supplier-side
+      // processing; SHIPPED/DELIVERED/CANCELLED are terminal or shipping states.
+      if (["CREATED", "IN_CART", "UNPAID", "PENDING", "PROCESSING", "UNSHIPPED"].includes(supplierStatus)) {
+        update.status = "supplier_processing";
+      } else if (supplierStatus === "SHIPPED") {
+        update.status = "shipping";
+      } else if (supplierStatus === "DELIVERED") {
+        update.status = "delivered";
+      } else if (supplierStatus === "CANCELLED") {
+        update.status = "cancelled";
+      }
+
       if (tracking?.trackingNumber) {
         update.tracking_number = tracking.trackingNumber;
         update.tracking_carrier = tracking.carrier;
         update.tracking_url = tracking.trackingUrl;
         update.shipped_at = tracking.shippedAt ?? now;
-        update.status = "shipping";
+        if (supplierStatus !== "DELIVERED" && supplierStatus !== "CANCELLED") {
+          update.status = "shipping";
+        }
         result.trackingUpdated += 1;
       }
 
@@ -79,18 +95,24 @@ export async function syncSupplierOrders(): Promise<SupplierOrderSyncResult> {
         .eq("id", purchaseOrder.id);
       if (updateError) throw new Error(updateError.message);
 
-      if (tracking?.trackingNumber && purchaseOrder.shop_order_id) {
-        const { error: shopOrderError } = await supabase
-          .from("shop_orders")
-          .update({
-            tracking_number: tracking.trackingNumber,
-            tracking_carrier: tracking.carrier,
-            tracking_url: tracking.trackingUrl,
-            shipped_at: tracking.shippedAt ?? now,
-            order_status: "shipping",
-          })
-          .eq("id", purchaseOrder.shop_order_id);
-        if (shopOrderError) throw new Error(shopOrderError.message);
+      if (purchaseOrder.shop_order_id) {
+        const shopUpdate: Record<string, unknown> = {};
+        if (tracking?.trackingNumber) {
+          shopUpdate.tracking_number = tracking.trackingNumber;
+          shopUpdate.tracking_carrier = tracking.carrier;
+          shopUpdate.tracking_url = tracking.trackingUrl;
+          shopUpdate.shipped_at = tracking.shippedAt ?? now;
+        }
+        if (supplierStatus === "SHIPPED" || tracking?.trackingNumber) shopUpdate.order_status = "shipping";
+        if (supplierStatus === "DELIVERED") shopUpdate.order_status = "delivered";
+        if (supplierStatus === "CANCELLED") shopUpdate.order_status = "cancelled";
+        if (Object.keys(shopUpdate).length > 0) {
+          const { error: shopOrderError } = await supabase
+            .from("shop_orders")
+            .update(shopUpdate)
+            .eq("id", purchaseOrder.shop_order_id);
+          if (shopOrderError) throw new Error(shopOrderError.message);
+        }
       }
 
       result.updated += 1;
