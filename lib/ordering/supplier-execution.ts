@@ -153,6 +153,17 @@ export async function executeSupplierPurchaseOrder(
   const { data: shopOrder } = po.shop_order_id
     ? await supabase.from("shop_orders").select("*").eq("id", po.shop_order_id).maybeSingle()
     : { data: null };
+  if (shopOrder && ["cancellation_requested", "refund_pending", "cancelled", "refunded"].includes(String(shopOrder.order_status))) {
+    return {
+      purchaseOrderId,
+      supplierName,
+      attempted: false,
+      succeeded: false,
+      supplierOrderId: null,
+      reason: `shop_order_${String(shopOrder.order_status)}`,
+      gate: null,
+    };
+  }
   const { data: item } = await supabase
     .from("purchase_order_items")
     .select("*")
