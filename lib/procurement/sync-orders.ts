@@ -12,6 +12,32 @@ export type SupplierOrderSyncResult = {
   errors: number;
 };
 
+function normalizeSupplierOrderStatus(supplier: string, rawStatus: string | null): string | null {
+  if (!rawStatus) return null;
+  const status = rawStatus.trim().toUpperCase();
+  if (supplier.toLowerCase() === "cj") {
+    switch (status) {
+      case "CREATED":
+      case "IN_CART":
+      case "UNPAID":
+      case "PENDING":
+      case "PROCESSING":
+      case "UNSHIPPED":
+        return "supplier_processing";
+      case "SHIPPED":
+        return "shipping";
+      case "DELIVERED":
+        return "delivered";
+      case "CANCELLED":
+      case "CANCELED":
+        return "canceled";
+      default:
+        return null;
+    }
+  }
+  return null;
+}
+
 export async function syncSupplierOrders(): Promise<SupplierOrderSyncResult> {
   initializeProcurement();
   const supabase = createSupabaseAdminClient();
