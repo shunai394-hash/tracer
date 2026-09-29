@@ -180,6 +180,8 @@ export async function syncTracerCatalogFromInternalSupply(args: {
         cost,
         inventory,
         orderable,
+        internal_supply_product_id: product.id,
+        internal_supply_variant_id: variant.id,
         updated_at: new Date().toISOString(),
       }, { onConflict: "variant_sku" })
       .select("id")
