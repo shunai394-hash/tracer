@@ -9,7 +9,9 @@ export async function GET() {
     ok: true,
     service: "tracer",
     connections: {
-      supabase: status.supabasePublic,
+      supabase: status.supabasePublic && status.supabaseServiceRole,
+      supabasePublic: status.supabasePublic,
+      supabaseServiceRole: status.supabaseServiceRole,
       gemini: status.gemini,
       brightData: status.brightData,
       cj: status.cj,
