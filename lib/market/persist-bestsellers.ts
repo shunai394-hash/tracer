@@ -190,11 +190,13 @@ export async function persistMarketplaceBestsellers(): Promise<{
         upc: item.upc,
         mpn: item.mpn,
       };
-      // ASIN is useful marketplace identity, but CJ catalog search is
-      // identifier-based on JAN/GTIN/EAN/UPC/MPN here. Do not spend a
-      // supplier-investigation slot on an ASIN-only row.
+      // ASIN is an Amazon identity anchor, not a supplier identifier.
+      // ASIN-only rows still enter supplier investigation so title/brand
+      // discovery can find an exact supplier product/variant.
+      // Final sales eligibility remains fail-closed: ASIN alone never
+      // links a supplier or makes a product sales-eligible.
       const hasSupplierSearchIdentifier = Boolean(
-        ids.jan || ids.gtin || ids.ean || ids.upc || ids.mpn,
+        ids.jan || ids.gtin || ids.ean || ids.upc || ids.mpn || ids.asin,
       );
       if (hasSupplierSearchIdentifier) {
         const key = marketplace.marketplace;
