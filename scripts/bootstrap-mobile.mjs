@@ -11,7 +11,21 @@ if (!appId) {
   process.exit(1);
 }
 
-if (!webUrl) {\n  console.error("TRACER_MOBILE_WEB_URL is required.");\n  console.error("Use the stable HTTPS production URL for TRACER.");\n  process.exit(1);\n}\n\ntry {\n  const parsed = new URL(webUrl);\n  if (parsed.protocol !== "https:") throw new Error("HTTPS is required.");\n} catch {\n  console.error("TRACER_MOBILE_WEB_URL must be a valid HTTPS URL.");\n  process.exit(1);\n}\n\nif (!/^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)+$/.test(appId)) {
+if (!webUrl) {
+  console.error("TRACER_MOBILE_WEB_URL is required.");
+  console.error("Use the stable HTTPS production URL for TRACER.");
+  process.exit(1);
+}
+
+try {
+  const parsed = new URL(webUrl);
+  if (parsed.protocol !== "https:") throw new Error("HTTPS is required.");
+} catch {
+  console.error("TRACER_MOBILE_WEB_URL must be a valid HTTPS URL.");
+  process.exit(1);
+}
+
+if (!/^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)+$/.test(appId)) {
   console.error("TRACER_MOBILE_APP_ID must be a reverse-DNS style application ID.");
   process.exit(1);
 }
