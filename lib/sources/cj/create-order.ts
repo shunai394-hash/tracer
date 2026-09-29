@@ -115,6 +115,7 @@ export async function createCJOrderV2(
     ["shippingProvince", input.shippingProvince],
     ["shippingCity", input.shippingCity],
     ["shippingAddress", input.shippingAddress],
+    ["shippingZip", input.shippingZip],
     ["shippingCustomerName", input.shippingCustomerName],
   ];
   const missingField = requiredFields.find(([, value]) => !value?.trim());
