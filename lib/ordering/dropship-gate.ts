@@ -5,6 +5,8 @@ export type DropshipOrderGateInput = {
   shippingCost: number | null;
   currency: string | null;
   sellingPrice: number | null;
+  /** Multiplier from supplier currency to selling currency. Required when currencies differ. */
+  sourceFxRateToSelling: number | null;
   addressComplete: boolean | null;
   killSwitchBlocked: boolean;
   cjConfigured: boolean;
@@ -35,6 +37,7 @@ export function evaluateDropshipOrderGate(
   if (input.shippingCost === null) missing.push("shipping_cost_unknown");
   if (!input.currency) missing.push("currency_unknown");
   if (input.sellingPrice === null) missing.push("selling_price_unknown");
+  if (input.currency && input.sellingPrice !== null && input.sourceFxRateToSelling === null) missing.push("fx_rate_unknown");
   if (input.addressComplete === null) missing.push("address_unknown");
   if (input.addressComplete === false) blocked.push("address_incomplete");
   if (input.killSwitchBlocked) blocked.push("kill_switch_active");
@@ -51,7 +54,7 @@ export function evaluateDropshipOrderGate(
 
   const estimatedProfit =
     profitCalculable && input.quantity !== null
-      ? (input.sellingPrice! - input.sourceCost! - input.shippingCost!) * input.quantity
+      ? (input.sellingPrice! - (input.sourceCost! + input.shippingCost!) * (input.sourceFxRateToSelling ?? 1)) * input.quantity
       : null;
 
   const liveOrderingDisabled = !input.liveOrderingEnabled;
@@ -82,6 +85,7 @@ export function verifyDropshipOrderGateInvariants(): {
     shippingCost: 3,
     currency: "USD",
     sellingPrice: 30,
+    sourceFxRateToSelling: 1,
     addressComplete: true,
     killSwitchBlocked: false,
     cjConfigured: true,
@@ -95,6 +99,7 @@ export function verifyDropshipOrderGateInvariants(): {
   const liveOff = evaluateDropshipOrderGate({ ...base, liveOrderingEnabled: false });
   const killed = evaluateDropshipOrderGate({ ...base, killSwitchBlocked: true });
   const unknownAddress = evaluateDropshipOrderGate({ ...base, addressComplete: null });
+  const unknownFx = evaluateDropshipOrderGate({ ...base, sourceFxRateToSelling: null });
   const unknownInventory = evaluateDropshipOrderGate({ ...base, inventoryQty: null });
   const insufficientInventory = evaluateDropshipOrderGate({ ...base, inventoryQty: 1, quantity: 2 });
   const duplicate = evaluateDropshipOrderGate({ ...base, duplicateOrderExists: true });
@@ -123,6 +128,11 @@ export function verifyDropshipOrderGateInvariants(): {
       name: "kill_switch_blocks_execution",
       expected: true,
       actual: killed.canExecuteLive === false && killed.blocked.includes("kill_switch_active"),
+    },
+    {
+      name: "unknown_fx_is_missing",
+      expected: true,
+      actual: unknownFx.canExecuteLive === false && unknownFx.missing.includes("fx_rate_unknown"),
     },
     {
       name: "unknown_address_is_missing_not_blocked",
