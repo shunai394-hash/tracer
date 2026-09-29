@@ -423,6 +423,45 @@ export async function investigateDropshipForBestsellers(
         }
       }
 
+      // CJ listV2 can return zero results for marketplace JAN/GTIN values
+      // even when the catalog contains the product. Identifiers remain the
+      // only acceptable identity evidence, but they are not always useful
+      // as discovery keys. When identifier searches fail to prove identity,
+      // add a bounded title/brand discovery pass. Discovery may find a
+      // supplier candidate; it must still pass the exact variant-barcode
+      // identity gate below before it can become sellable.
+      if (directMatches.length === 0) {
+        const title = String(record.title ?? "").trim();
+        const brand = typeof record.brand === "string" ? record.brand.trim() : "";
+        const asciiTokens = title
+          .match(/[A-Za-z0-9][A-Za-z0-9+._-]{2,}/g)
+          ?.map((token) => token.toLowerCase()) ?? [];
+        const uniqueTokens = [...new Set(asciiTokens)].filter(
+          (token) => !["with", "for", "and", "the", "new", "type", "size"].includes(token),
+        );
+        const discoveryQueries = [
+          [brand, ...uniqueTokens.slice(0, 4)].filter(Boolean).join(" ").trim(),
+          uniqueTokens.slice(0, 3).join(" ").trim(),
+        ].filter(
+          (query, index, values): query is string =>
+            query.length >= 3 && values.indexOf(query) === index,
+        ).slice(0, 2);
+
+        for (const query of discoveryQueries) {
+          cjQuery = query;
+          try {
+            const search = await searchCJProducts(query, { page: 1, size: 10 });
+            searches.push(search);
+          } catch (error) {
+            console.warn("[investigate-dropship] CJ title discovery failed; continuing", {
+              bestsellerId: String(record.id),
+              query,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      }
+
       // If search did not prove identity at the product level, inspect a
       // relevance-ranked fallback set for variant-level barcode evidence.
       // Variant lookup is the expensive operation, so do not inspect all 10
