@@ -111,7 +111,7 @@ export const printfulSupplierAdapter: TracerSupplierAdapter = {
       supplierProductId,
       supplierVariantId: variant.supplierVariantId,
       quantity: variant.inventory,
-      available: variant.inStock,
+      available: variant.inventory === null ? null : variant.inventory > 0,
       observedAt: new Date().toISOString(),
     };
   },
