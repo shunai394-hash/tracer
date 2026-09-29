@@ -65,7 +65,7 @@ export const MARKETPLACE_SOURCES = [
  * a fan-out safety bound, not a latency budget — raising it does not
  * multiply wall-clock time the way the old sequential loop did.
  */
-const DETAIL_ENRICHMENT_LIMIT = 2;
+const DETAIL_ENRICHMENT_LIMIT = 10;
 const YAHOO_DETAIL_ENRICHMENT_LIMIT = 4;
 
 export type CollectedMarketplace = {
