@@ -29,6 +29,34 @@ export type FoundationStatus = {
   base: boolean;
 };
 
+export type OrosyEnvironment = "demo" | "live";
+
+export function getOrosyEnvironment(): OrosyEnvironment {
+  return readEnv("OROSY_ENVIRONMENT") === "live" ? "live" : "demo";
+}
+
+export function getOrosyConfig() {
+  const environment = getOrosyEnvironment();
+  const apiKey =
+    environment === "live"
+      ? readEnv("OROSY_API_KEY")
+      : readEnv("OROSY_DEMO_API_KEY");
+
+  return {
+    apiKey,
+    environment,
+    baseUrl: readEnv("OROSY_API_BASE_URL") || "https://wholesale-api.orosy.com/v1",
+  };
+}
+
+export function getNewfindConfig() {
+  return {
+    webhookSecret: readEnv("NEWFIND_WEBHOOK_SECRET"),
+    apiUrl: readEnv("NEWFIND_API_URL"),
+    apiKey: readEnv("NEWFIND_API_KEY"),
+  };
+}
+
 export function getFoundationStatus(): FoundationStatus {
   const supabase = getSupabasePublicConfig();
 
@@ -165,26 +193,6 @@ export function isSupplierAutoOrderingEnabled(supplierName: string): boolean {
 }
 
 
-export type OrosyEnvironment = "demo" | "live";
-
-export function getOrosyEnvironment(): OrosyEnvironment {
-  return readEnv("OROSY_ENVIRONMENT") === "live" ? "live" : "demo";
-}
-
-export function getOrosyConfig() {
-  const environment = getOrosyEnvironment();
-  const apiKey =
-    environment === "live"
-      ? readEnv("OROSY_API_KEY")
-      : readEnv("OROSY_DEMO_API_KEY");
-
-  return {
-    apiKey,
-    environment,
-    baseUrl: readEnv("OROSY_API_BASE_URL") || "https://wholesale-api.orosy.com/v1",
-  };
-}
-
 export function isOrosyLiveOrderingEnabled(): boolean {
   return readEnv("OROSY_LIVE_ORDERING") === "1";
 }
@@ -237,14 +245,6 @@ export function getOrosyWarehouseShipTo(): {
   }
 
   return { name, postal_code: postalCode, prefecture, city, address_line1: addressLine1, phone };
-}
-
-export function getNewfindConfig() {
-  return {
-    webhookSecret: readEnv("NEWFIND_WEBHOOK_SECRET"),
-    apiUrl: readEnv("NEWFIND_API_URL"),
-    apiKey: readEnv("NEWFIND_API_KEY"),
-  };
 }
 
 export function isSupplierDryRunEnabled(): boolean {
