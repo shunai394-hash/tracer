@@ -33,6 +33,34 @@ function normalizeQuery(value: string): string {
   return value.normalize("NFKC").replace(/\s+/g, " ").trim();
 }
 
+
+const COMMERCE_DEMAND_TERMS = [
+  "イヤホン", "ヘッドホン", "earbuds", "earphone", "headphones", "airpods",
+  "スマホ", "スマートフォン", "iphone", "ipad", "galaxy", "pixel",
+  "美容", "化粧", "スキンケア", "美容液", "クリーム", "日焼け止め",
+  "serum", "moisturizer", "sunscreen", "shoes", "sneakers", "スニーカー",
+  "靴", "バッグ", "財布", "服", "シャツ", "ドレス", "ワンピース",
+  "アクセサリー", "ジュエリー", "家電", "掃除", "収納", "キッチン",
+  "水筒", "ボトル", "タンブラー", "寝具", "枕", "マットレス",
+  "フィットネス", "筋トレ", "ヨガ", "ペット", "猫", "犬", "car", "車用品",
+  "収納", "便利グッズ", "ランキング", "おすすめ", "比較", "レビュー",
+];
+
+const NON_COMMERCE_DEMAND_TERMS = [
+  "俳優", "女優", "芸能", "ニュース", "速報", "映画", "ドラマ", "ネタバレ",
+  "選挙", "政治", "政党", "首相", "国会", "ミサイル", "事件", "逮捕", "勾留",
+  "競馬", "jra", "サッカー", "野球", "卓球", "ゴルフ", "大会", "リーグ",
+  "人物", "天気", "地震", "台風", "地名", "駅", "路線", "学校",
+];
+
+function isCommerceDemandQuery(query: string, matchedProduct: string | null, candidateQuery: string | null): boolean {
+  if (matchedProduct || candidateQuery) return true;
+  const normalized = normalizeQuery(query).toLowerCase();
+  if (!normalized || /[�]/.test(normalized)) return false;
+  if (NON_COMMERCE_DEMAND_TERMS.some((term) => normalized.includes(term))) return false;
+  return COMMERCE_DEMAND_TERMS.some((term) => normalized.includes(term));
+}
+
 function queryOf(row: ObservationRow): string | null {
   const metadata = asRecord(row.metadata);
   const query = typeof metadata.query === "string" ? metadata.query : null;
@@ -120,6 +148,11 @@ export async function persistDemandIntelligence(): Promise<{
         .map((row) => row.product_id ?? productByObservation.get(row.id) ?? null)
         .find((value) => value) ?? null;
     const candidate = candidateByQuery.get(query) ?? null;
+    const candidateQuery = typeof candidate?.query === "string" ? normalizeQuery(candidate.query) : null;
+    if (!isCommerceDemandQuery(query, matchedProduct, candidateQuery)) {
+      skipped += 1;
+      continue;
+    }
     const window7 = analysis.windows.find((item) => item.days === 7);
     const window14 = analysis.windows.find((item) => item.days === 14);
     const window30 = analysis.windows.find((item) => item.days === 30);
