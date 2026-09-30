@@ -116,7 +116,8 @@ export async function GET(request: Request) {
     }
 
     const before = await snapshot(db);
-    const aiDecision = await aiDecide(before);\n    const decision = aiDecision.action;
+    const aiDecision = await aiDecide(before);
+    const decision = aiDecision.action;
     const actions: Array<Record<string, unknown>> = [];
     const errors: string[] = [];
 
