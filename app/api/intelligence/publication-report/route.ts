@@ -3,65 +3,79 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireCronAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
 
+// Read-only exact counts used to verify production publication runs.
 export async function GET(request: Request) {
   const authError = requireCronAuth(request);
   if (authError) return authError;
 
-  const db = createSupabaseAdminClient();
+  try {
+    const supabase = createSupabaseAdminClient();
+    const count = async (
+      label: string,
+      build: () => PromiseLike<{ count: number | null; error: { message: string } | null }>,
+    ): Promise<[string, number]> => {
+      const { count: value, error } = await build();
+      if (error) throw new Error(`${label}: ${error.message}`);
+      return [label, value ?? 0];
+    };
+    const listings = () => supabase.from("shop_listings").select("id", { count: "exact", head: true });
+    const cj = () =>
+      supabase
+        .from("supplier_listings")
+        .select("id", { count: "exact", head: true })
+        .eq("supplier", "cj")
+        .eq("inventory_confirmed", true)
+        .eq("price_confirmed", true)
+        .gt("inventory", 0)
+        .not("supplier_product_id", "is", null)
+        .not("supplier_variant_id", "is", null);
+    const deliveries = () =>
+      supabase.from("newfind_promotion_deliveries").select("listing_id", { count: "exact", head: true });
 
-  const [
-    published,
-    basePublished,
-    cjShippingCandidates,
-    newfindPending,
-    newfindSent,
-    newfindProcessed,
-    newfindFailed,
-  ] = await Promise.all([
-    db.from("shop_listings").select("id", { count: "exact", head: true }).eq("published", true),
-    db.from("shop_listings").select("id", { count: "exact", head: true }).eq("base_publication_status", "published"),
-    db.from("supplier_listings").select("id", { count: "exact", head: true })
-      .eq("supplier", "cj")
-      .eq("inventory_confirmed", true)
-      .eq("price_confirmed", true)
-      .gt("inventory", 0)
-      .gt("shipping_cost", 0),
-    db.from("newfind_promotion_deliveries").select("listing_id", { count: "exact", head: true }).eq("status", "pending"),
-    db.from("newfind_promotion_deliveries").select("listing_id", { count: "exact", head: true }).eq("status", "sent"),
-    db.from("newfind_promotion_deliveries").select("listing_id", { count: "exact", head: true }).eq("status", "processed"),
-    db.from("newfind_promotion_deliveries").select("listing_id", { count: "exact", head: true }).eq("status", "failed"),
-  ]);
+    const entries = await Promise.all([
+      count("shopPublished", () => listings().eq("published", true)),
+      count("shopPublishedSupplyFirst", () =>
+        listings().eq("published", true).eq("identity_method", "supply_discovered")),
+      count("shopPublishedShippingUnknown", () =>
+        listings().eq("published", true).is("shipping_cost", null)),
+      count("basePublished", () =>
+        listings().eq("published", true).not("base_item_id", "is", null).eq("base_publication_status", "published")),
+      count("baseItemsTotal", () => listings().not("base_item_id", "is", null)),
+      count("cjVerifiedCandidates", () => cj()),
+      count("cjVerifiedCandidatesShippingMeasured", () => cj().not("shipping_cost", "is", null).gt("shipping_cost", 0)),
+      count("newfindProcessed", () => deliveries().eq("status", "processed")),
+      count("newfindSent", () => deliveries().eq("status", "sent")),
+      count("newfindPending", () => deliveries().eq("status", "pending")),
+      count("newfindFailed", () => deliveries().eq("status", "failed")),
+    ]);
 
-  const errors = [
-    published.error,
-    basePublished.error,
-    cjShippingCandidates.error,
-    newfindPending.error,
-    newfindSent.error,
-    newfindProcessed.error,
-    newfindFailed.error,
-  ].filter(Boolean);
+    const { data: recentSupplyFirst, error: recentError } = await supabase
+      .from("shop_listings")
+      .select("id,slug,title,selling_price,shipping_cost,inventory,orderable,published,base_item_id,base_publication_status,base_last_error,pipeline_reason,published_at")
+      .eq("identity_method", "supply_discovered")
+      .order("published_at", { ascending: false })
+      .limit(50);
+    if (recentError) throw new Error(recentError.message);
 
-  if (errors.length > 0) {
+    const { data: recentDeliveries, error: deliveriesError } = await supabase
+      .from("newfind_promotion_deliveries")
+      .select("listing_id,status,http_status,ack_status,attempts,last_error,updated_at")
+      .order("updated_at", { ascending: false })
+      .limit(50);
+    if (deliveriesError) throw new Error(deliveriesError.message);
+
+    return NextResponse.json({
+      ok: true,
+      generatedAt: new Date().toISOString(),
+      counts: Object.fromEntries(entries),
+      recentSupplyFirst: recentSupplyFirst ?? [],
+      recentNewfindDeliveries: recentDeliveries ?? [],
+    });
+  } catch (error) {
     return NextResponse.json(
-      { ok: false, error: errors.map((e) => e?.message).join("; ") },
+      { ok: false, error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 },
     );
   }
-
-  return NextResponse.json({
-    ok: true,
-    generatedAt: new Date().toISOString(),
-    publishedListings: published.count ?? 0,
-    basePublishedListings: basePublished.count ?? 0,
-    cjVerifiedShippingCandidates: cjShippingCandidates.count ?? 0,
-    newfind: {
-      pending: newfindPending.count ?? 0,
-      sent: newfindSent.count ?? 0,
-      processed: newfindProcessed.count ?? 0,
-      failed: newfindFailed.count ?? 0,
-    },
-  });
 }

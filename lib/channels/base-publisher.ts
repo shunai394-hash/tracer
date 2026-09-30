@@ -50,28 +50,7 @@ export async function publishPublishedListingsToBase(
     // since unpublished or blocked the listing. Otherwise an old BASE item
     // can remain publicly sellable with stale stock.
     if (listing.base_item_id && listing.published !== true) {
-      // Never create a new BASE item when Japan shipping has not been
-    // measured. Existing BASE items are not altered by this gate.
-    if (!listing.base_item_id) {
-      const shippingCost =
-        typeof listing.shipping_cost === "number"
-          ? listing.shipping_cost
-          : typeof listing.shipping_cost === "string" && listing.shipping_cost.trim() !== ""
-            ? Number(listing.shipping_cost)
-            : null;
-      if (shippingCost === null || !Number.isFinite(shippingCost) || shippingCost <= 0) {
-        await supabase.from("shop_listings").update({
-          pipeline_stage: "BASE_PUBLICATION",
-          pipeline_status: "blocked",
-          pipeline_reason: "shipping_unknown",
-          pipeline_updated_at: new Date().toISOString(),
-        }).eq("id", listingId);
-        results.push({ listingId, ok: false, skipped: true, error: "shipping_unknown" });
-        continue;
-      }
-    }
-
-    if (listing.selling_price === null) {
+      if (listing.selling_price === null) {
         results.push({ listingId, ok: false, skipped: true, error: "base_hide_price_unknown" });
         continue;
       }
@@ -128,6 +107,25 @@ export async function publishPublishedListingsToBase(
         pipeline_updated_at: new Date().toISOString(),
       }).eq("id", listingId);
       results.push({ listingId, ok: false, skipped: true, error: "image_unknown" });
+      continue;
+    }
+
+    // Never create a new BASE item whose supplier shipping cost was not
+    // actually measured; the selling price cannot be trusted without it.
+    // Existing BASE items are left as they are so this gate does not break
+    // listings that are already live.
+    const shippingCost =
+      listing.shipping_cost === null || listing.shipping_cost === undefined
+        ? null
+        : Number(listing.shipping_cost);
+    if (!listing.base_item_id && (shippingCost === null || !Number.isFinite(shippingCost))) {
+      await supabase.from("shop_listings").update({
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "blocked",
+        pipeline_reason: "shipping_unknown",
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      results.push({ listingId, ok: false, skipped: true, error: "shipping_unknown" });
       continue;
     }
 
