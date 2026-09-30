@@ -143,6 +143,9 @@ export async function discoverAndCreateCjSupply(
           id: "1522412448668725248",
           variantId: "1522412448823914496",
           supplierListingId: null,
+          cost: 23,
+          inventory: 45890,
+          seededTitle: "bootstrap",
         },
       ]);
 
