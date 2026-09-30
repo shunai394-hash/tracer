@@ -1,1 +1,3 @@
-TRACER E2E BASE publication trigger marker. No application code change.
+TRACER E2E BASE publication trigger marker.
+Re-trigger autonomous sales publication after the production supply-pipeline repairs.
+[ops-trigger]
