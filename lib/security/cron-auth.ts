@@ -93,10 +93,14 @@ async function verifyGitHubOidcToken(token: string): Promise<boolean> {
       ["verify"],
     );
 
+    const signatureBytes = base64UrlDecode(parts[2]);
+    const signatureBuffer = new ArrayBuffer(signatureBytes.byteLength);
+    new Uint8Array(signatureBuffer).set(signatureBytes);
+
     return crypto.subtle.verify(
       "RSASSA-PKCS1-v1_5",
       key,
-      base64UrlDecode(parts[2]),
+      signatureBuffer,
       new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
     );
   } catch {
