@@ -6,7 +6,7 @@
     { "path": "/api/cron/supplier-investigation", "schedule": "5 12 * * *" },
     { "path": "/api/cron/sales-test-publication", "schedule": "10 12 * * *" },
     { "path": "/api/cron/inventory-refresh", "schedule": "15 12 * * *" },
-    { "path": "/api/cron/base-publish", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/patrol-ai", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/base-orders", "schedule": "25 12 * * *" },
     { "path": "/api/cron/dropship-execution", "schedule": "30 12 * * *" },
     { "path": "/api/cron/supplier-reconciliation", "schedule": "35 12 * * *" },
