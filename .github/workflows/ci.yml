@@ -34,20 +34,11 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - name: Run sales publication
+      - name: Wait for the main deployment to become available
+        run: sleep 180
+      - name: Run autonomous patrol AI
         run: |
           set -e
-          call() {
-            token="$(curl --fail-with-body --silent --show-error \
-              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" \
-              | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
-            curl --fail-with-body --silent --show-error --max-time 300 \
-              -H "Authorization: Bearer $token" \
-              "https://tracer-self.vercel.app$1"
-            echo
-          }
-          call /api/cron/patrol-ai
-          echo "Patrol AI triggered"
-          sleep 10
-          call /api/cron/base-publish
+          token="$(curl --fail-with-body --silent --show-error             -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app"             | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          curl --fail-with-body --silent --show-error --max-time 300             -H "Authorization: Bearer $token"             "https://tracer-self.vercel.app/api/cron/ai-patrol"
+          echo
