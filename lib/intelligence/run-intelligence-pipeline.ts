@@ -307,7 +307,7 @@ export async function runIntelligencePipeline(): Promise<{
   // those listings through the existing BASE publisher.
   const supplyFirstStep = await runStep(
     "supply_first",
-    () => discoverAndCreateCjSupply(3),
+    () => discoverAndCreateCjSupply(50),
   );
   steps.push(supplyFirstStep);
 
