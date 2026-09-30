@@ -91,7 +91,7 @@ export async function discoverAndCreateCjSupply(
 
   const { data: seededRows } = await db
     .from("supplier_listings")
-    .select("id,title,supplier_product_id,supplier_variant_id,cost,verification_status,shipping_status,next_verification_at")
+    .select("id,title,supplier_product_id,supplier_variant_id,cost,inventory,verification_status,shipping_status,next_verification_at")
     .eq("supplier", "cj")
     .eq("inventory_confirmed", true)
     .eq("price_confirmed", true)
