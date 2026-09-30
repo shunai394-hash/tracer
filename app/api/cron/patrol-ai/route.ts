@@ -30,9 +30,8 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
   const basePublishedQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).not("base_item_id", "is", null).eq("base_publication_status", "published").eq("published", true);
   const ordersQuery = db.from("shop_orders").select("*", { count: "exact", head: true });
 
-  const [productsResult, supplierListingsResult, orderableSuppliersResult, shopListingsResult, publishedListingsResult, eligibleForBaseResult, onBaseResult, basePublishedResult, ordersResult] = await Promise.all([
-    productsQuery, supplierListingsQuery, orderableSuppliersQuery, shopListingsQuery, publishedListingsQuery, eligibleForBaseQuery, onBaseQuery, basePublishedQuery, ordersQuery,
-  ]);
+  const [productsResult, supplierListingsResult, orderableSuppliersResult, shopListingsResult, publishedListingsResult, eligibleForBaseResult, onBaseResult, basePublishedResult, ordersResult] =
+    await Promise.all([productsQuery, supplierListingsQuery, orderableSuppliersQuery, shopListingsQuery, publishedListingsQuery, eligibleForBaseQuery, onBaseQuery, basePublishedQuery, ordersQuery]);
 
   const results = [
     ["products", productsResult], ["supplier_listings", supplierListingsResult], ["supplier_listings(orderable)", orderableSuppliersResult],
@@ -45,9 +44,15 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
   }
 
   return {
-    products: productsResult.count ?? 0, supplierListings: supplierListingsResult.count ?? 0, orderableSuppliers: orderableSuppliersResult.count ?? 0,
-    shopListings: shopListingsResult.count ?? 0, publishedListings: publishedListingsResult.count ?? 0, eligibleForBase: eligibleForBaseResult.count ?? 0,
-    onBase: onBaseResult.count ?? 0, basePublished: basePublishedResult.count ?? 0, orders: ordersResult.count ?? 0,
+    products: productsResult.count ?? 0,
+    supplierListings: supplierListingsResult.count ?? 0,
+    orderableSuppliers: orderableSuppliersResult.count ?? 0,
+    shopListings: shopListingsResult.count ?? 0,
+    publishedListings: publishedListingsResult.count ?? 0,
+    eligibleForBase: eligibleForBaseResult.count ?? 0,
+    onBase: onBaseResult.count ?? 0,
+    basePublished: basePublishedResult.count ?? 0,
+    orders: ordersResult.count ?? 0,
   };
 }
 
