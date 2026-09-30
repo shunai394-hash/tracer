@@ -21,11 +21,15 @@ jobs:
           set -euo pipefail
           test -n "$ACTIONS_ID_TOKEN_REQUEST_URL"
           test -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN"
-          OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app"
-          OIDC_TOKEN="$(curl --fail-with-body --silent --show-error             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"             "$OIDC_URL" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
-          test -n "$OIDC_TOKEN"
           for pass in 1 2 3 4; do
             echo "=== supply-first pass $pass/4 ==="
-            curl --fail-with-body --silent --show-error --max-time 300               -H "Authorization: Bearer $OIDC_TOKEN"               "https://tracer-self.vercel.app/api/cron/supply-first"
+            OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app"
+            OIDC_TOKEN="$(curl --fail-with-body --silent --show-error \
+              -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "$OIDC_URL" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            test -n "$OIDC_TOKEN"
+            curl --fail-with-body --silent --show-error --max-time 300 \
+              -H "Authorization: Bearer $OIDC_TOKEN" \
+              "https://tracer-self.vercel.app/api/cron/supply-first"
             sleep 5
           done
