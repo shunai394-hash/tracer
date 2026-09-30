@@ -90,14 +90,21 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
     const candidate = {
       id: seededCandidate.id,
       variantId: seededCandidate.variantId,
-      title: "seeded",
+      title: String(seededRows.find((row) => String(row.supplier_product_id) === seededCandidate.id)?.title ?? "Cornucopia Northern Lights Music Star Projector Lamp"),
       imageUrl: null,
       price: null,
     };
     const query = seededCandidate.query;
     try {
-      const detail = await getCJProductDetail(candidate.id);
-      if (!detail?.imageUrl || !detail.title) { rejected++; items.push({ rejectedStage: "product_detail_missing", supplierProductId: candidate.id }); continue; }
+      let detail = await getCJProductDetail(candidate.id);
+      if (!detail?.imageUrl || !detail.title) {
+        const fallback = await searchCJProducts(candidate.title, { page: 1, size: 3 }).catch(() => null);
+        const sameProduct = fallback?.products.find((x) => x.id === candidate.id && x.imageUrl && x.title) ?? null;
+        if (sameProduct) {
+          detail = sameProduct;
+        }
+      }
+      if (!detail?.imageUrl || !detail.title) { rejected++; items.push({ rejectedStage: "product_image_missing", supplierProductId: candidate.id }); continue; }
       const variant = await fetchCJVariantByVid(candidate.variantId);
       if (!variant?.vid || (variant.productId && variant.productId !== candidate.id)) { rejected++; items.push({ rejectedStage: "variant_missing_or_product_mismatch", supplierProductId: candidate.id, supplierVariantId: candidate.variantId }); continue; }
       const stock = await fetchCJVariantStock(variant.vid);
