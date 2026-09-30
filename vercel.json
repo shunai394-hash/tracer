@@ -12,7 +12,7 @@
     },
     {
       "path": "/api/cron/sales-test-publication",
-      "schedule": "20 5 * * *"
+      "schedule": "10 12 * * *"
     },
     {
       "path": "/api/cron/inventory-refresh",
@@ -20,7 +20,7 @@
     },
     {
       "path": "/api/cron/base-publish",
-      "schedule": "22 5 * * *"
+      "schedule": "20 12 * * *"
     },
     {
       "path": "/api/cron/dropship-execution",
