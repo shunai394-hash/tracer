@@ -29,7 +29,6 @@ async function markVerification(
     verification_status: patch.status,
     shipping_status: patch.shippingStatus ?? undefined,
     verification_error: patch.error ?? null,
-    verification_attempts: db.rpc ? undefined : undefined,
     last_verified_at: patch.status === "verified" ? now.toISOString() : undefined,
     next_verification_at: next.toISOString(),
     shipping_checked_at: patch.shippingStatus ? now.toISOString() : undefined,
@@ -133,6 +132,7 @@ export async function discoverAndCreateCjSupply(
         query: "seeded_rotated",
         id: String(row.supplier_product_id),
         variantId: String(row.supplier_variant_id),
+        supplierListingId: String(row.id),
       }))
     : [
         {
