@@ -1,0 +1,18 @@
+name: TRACER NEWFIND Retry
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Run NEWFIND retry
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error --max-time 300             -H "Authorization: Bearer $CRON_SECRET"             "https://tracer-self.vercel.app/api/cron/newfind-retry"
