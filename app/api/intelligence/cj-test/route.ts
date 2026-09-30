@@ -1,22 +1,34 @@
-import { searchCJProducts, fetchCJVariantStock, calculateCJFreight, fetchCJProductVariants } from "@/lib/sources/cj";
-import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
+import { NextRequest, NextResponse } from "next/server";
+import { searchCJProducts } from "@/lib/sources/cj";
+import { requireCronAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
+/**
+ * Internal CJ connectivity check.
+ * This endpoint spends the server-side CJ API credential and must remain
+ * protected by the operational cron secret.
+ */
+export async function GET(request: NextRequest) {
+  const authError = requireCronAuth(request);
+  if (authError) return authError;
+
   try {
     const url = new URL(request.url);
-    const query = url.searchParams.get("q")?.trim() || "Cornucopia Northern Lights Music Star Projector Lamp";
-    const vid = url.searchParams.get("vid")?.trim() || "";
+    const query = url.searchParams.get("q")?.trim() || "wireless earbuds";
     const result = await searchCJProducts(query, { page: 1, size: 5 });
-    const fx = await getObservedUsdToJpyRate();
-    const topVariants = result.products[0] ? await fetchCJProductVariants(result.products[0].id, { countryCode: "JP" }) : [];
-    const variant = vid ? {
-      stock: await fetchCJVariantStock(vid),
-      freight: await calculateCJFreight(vid, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 }),
-    } : null;
-    return Response.json({ ok: true, query, products: result.products, topVariants, variant, fx });
+    return NextResponse.json({
+      ok: true,
+      query,
+      totalRecords: result.totalRecords,
+      totalPages: result.totalPages,
+      productCount: result.products.length,
+      products: result.products,
+    });
   } catch (error) {
-    return Response.json({ ok: false, error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : "Unknown error" },
+      { status: 500 },
+    );
   }
 }
