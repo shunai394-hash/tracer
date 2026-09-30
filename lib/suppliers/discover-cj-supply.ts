@@ -334,7 +334,11 @@ export async function discoverAndCreateCjSupply(
       }
       const salePrice = yenPrice(cost, freight, fxRate);
       const sourceRef = `cj:${candidate.id}:${candidate.variantId}`;
-      const productInsert = await db.from("products").upsert({ canonical_name: detail.title, identity_key: sourceRef }, { onConflict: "identity_key" }).select("id").single();
+      const existingProduct = await db.from("products").select("id").eq("identity_key", sourceRef).limit(1).maybeSingle();
+      if (existingProduct.error) throw new Error(existingProduct.error.message);
+      const productInsert = existingProduct.data?.id
+        ? await db.from("products").update({ canonical_name: detail.title }).eq("id", existingProduct.data.id).select("id").single()
+        : await db.from("products").insert({ canonical_name: detail.title, identity_key: sourceRef }).select("id").single();
       if (productInsert.error) throw new Error(productInsert.error.message);
       const productId = String(productInsert.data.id);
       const supplierInsert = await upsertSupplierListing(db, {
@@ -352,7 +356,7 @@ export async function discoverAndCreateCjSupply(
         await markVerification(db, seededCandidate.supplierListingId, { status: "verified", shippingStatus: "verified" });
       }
       const listingSlug = slug(detail.title, candidate.id, candidate.variantId);
-      const shopInsert = await db.from("shop_listings").upsert({
+      const shopPayload = {
         product_id: productId, supplier_listing_id: supplierInsert.data.id, slug: listingSlug, title: detail.title,
         description: `TRACER supply-first product. Supplier: CJdropshipping. Variant: standard.`,
         image_url: detail.imageUrl, selling_price: salePrice, currency: "JPY", supplier_name: "cj",
@@ -361,7 +365,12 @@ export async function discoverAndCreateCjSupply(
         identity_confidence: 1, published: true, selection_reasons: ["supply_first","live_cj_variant","live_inventory_gt_zero","live_japan_freight",`fx_usdjpy_${fxRate.toFixed(4)}`],
         missing: [], published_at: new Date().toISOString(), pipeline_stage: "PUBLISHED", pipeline_status: "published",
         pipeline_reason: "supply_first_gate_passed", pipeline_updated_at: new Date().toISOString(), updated_at: new Date().toISOString()
-      }, { onConflict: "slug" }).select("id").single();
+      };
+      const existingShop = await db.from("shop_listings").select("id").eq("slug", listingSlug).limit(1).maybeSingle();
+      if (existingShop.error) throw new Error(existingShop.error.message);
+      const shopInsert = existingShop.data?.id
+        ? await db.from("shop_listings").update(shopPayload).eq("id", existingShop.data.id).select("id").single()
+        : await db.from("shop_listings").insert(shopPayload).select("id").single();
       if (shopInsert.error) throw new Error(shopInsert.error.message);
       discovered++; published++;
       items.push({ listingId: String(shopInsert.data.id), productId, supplierListingId: String(supplierInsert.data.id), title: detail.title, supplierProductId: candidate.id, supplierVariantId: candidate.variantId, costUsd: cost, freightUsd: freight, inventory: Math.floor(stock), sellingPriceJpy: salePrice, fxRate });
