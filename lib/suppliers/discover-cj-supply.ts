@@ -476,17 +476,34 @@ export async function discoverAndCreateCjSupply(
         const identityKey = sourceRef;
         const now = new Date().toISOString();
 
-        const productInsert = await db
+        // Do not depend on a live UNIQUE constraint for this supply-first
+        // path. Some production databases are behind the migration that added
+        // products.identity_key, and PostgREST upsert then fails with
+        // "no unique or exclusion constraint matching the ON CONFLICT
+        // specification". A lookup + insert/update keeps discovery moving.
+        const existingProduct = await db
           .from("products")
-          .upsert(
-            {
-              canonical_name: detail.title,
-              identity_key: identityKey,
-            },
-            { onConflict: "identity_key" },
-          )
           .select("id")
-          .single();
+          .eq("identity_key", identityKey)
+          .limit(1)
+          .maybeSingle();
+        if (existingProduct.error) throw new Error(existingProduct.error.message);
+
+        const productInsert = existingProduct.data?.id
+          ? await db
+              .from("products")
+              .update({ canonical_name: detail.title })
+              .eq("id", existingProduct.data.id)
+              .select("id")
+              .single()
+          : await db
+              .from("products")
+              .insert({
+                canonical_name: detail.title,
+                identity_key: identityKey,
+              })
+              .select("id")
+              .single();
 
         if (productInsert.error) throw new Error(productInsert.error.message);
         const productId = String(productInsert.data.id);
@@ -532,48 +549,60 @@ export async function discoverAndCreateCjSupply(
         const supplierListingId = String(supplierInsert.data.id);
 
         const listingSlug = slug(detail.title, candidate.id, variant.vid);
-        const shopInsert = await db
+        const shopPayload = {
+          product_id: productId,
+          supplier_listing_id: supplierListingId,
+          slug: listingSlug,
+          title: detail.title,
+          description: `TRACER supply-first product. Supplier: CJdropshipping. Variant: ${variant.nameEn ?? "standard"}.`,
+          image_url: detail.imageUrl,
+          selling_price: salePrice,
+          currency: "JPY",
+          supplier_name: "cj",
+          supplier_product_id: candidate.id,
+          supplier_variant_id: variant.vid,
+          source_cost: cost,
+          shipping_cost: freight,
+          inventory: Math.floor(stock),
+          orderable: true,
+          tracking_available: false,
+          identity_method: "supply_discovered",
+          identity_confidence: 1,
+          published: true,
+          selection_reasons: [
+            "supply_first",
+            "live_cj_variant",
+            "live_inventory_gt_zero",
+            "live_japan_freight",
+            `fx_usdjpy_${fxRate.toFixed(4)}`,
+          ],
+          missing: [],
+          published_at: now,
+          pipeline_stage: "PUBLISHED",
+          pipeline_status: "published",
+          pipeline_reason: "supply_first_gate_passed",
+          pipeline_updated_at: now,
+          updated_at: now,
+        };
+        const existingShop = await db
           .from("shop_listings")
-          .upsert(
-            {
-              product_id: productId,
-              supplier_listing_id: supplierListingId,
-              slug: listingSlug,
-              title: detail.title,
-              description: `TRACER supply-first product. Supplier: CJdropshipping. Variant: ${variant.nameEn ?? "standard"}.`,
-              image_url: detail.imageUrl,
-              selling_price: salePrice,
-              currency: "JPY",
-              supplier_name: "cj",
-              supplier_product_id: candidate.id,
-              supplier_variant_id: variant.vid,
-              source_cost: cost,
-              shipping_cost: freight,
-              inventory: Math.floor(stock),
-              orderable: true,
-              tracking_available: false,
-              identity_method: "supply_discovered",
-              identity_confidence: 1,
-              published: true,
-              selection_reasons: [
-                "supply_first",
-                "live_cj_variant",
-                "live_inventory_gt_zero",
-                "live_japan_freight",
-                `fx_usdjpy_${fxRate.toFixed(4)}`,
-              ],
-              missing: [],
-              published_at: now,
-              pipeline_stage: "PUBLISHED",
-              pipeline_status: "published",
-              pipeline_reason: "supply_first_gate_passed",
-              pipeline_updated_at: now,
-              updated_at: now,
-            },
-            { onConflict: "slug" },
-          )
           .select("id")
-          .single();
+          .eq("slug", listingSlug)
+          .limit(1)
+          .maybeSingle();
+        if (existingShop.error) throw new Error(existingShop.error.message);
+        const shopInsert = existingShop.data?.id
+          ? await db
+              .from("shop_listings")
+              .update(shopPayload)
+              .eq("id", existingShop.data.id)
+              .select("id")
+              .single()
+          : await db
+              .from("shop_listings")
+              .insert(shopPayload)
+              .select("id")
+              .single();
 
         if (shopInsert.error) throw new Error(shopInsert.error.message);
 
