@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireCronAuth } from "@/lib/security/cron-auth";
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { reconcileSupplierOrders } from "@/lib/ordering/reconcile";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
-  const authError = requireCronAuth(request);
+  const authError = await requireAutomationAuth(request);
   if (authError) return authError;
 
   try {

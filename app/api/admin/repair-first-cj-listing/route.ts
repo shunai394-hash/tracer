@@ -53,7 +53,7 @@ export async function GET(request: Request) {
 
     const inventoryConfirmed = inventory !== null;
     const shippingConfirmed = shippingCost !== null && shippingCost > 0;
-    const orderable = inventoryConfirmed && inventory > 0 && shippingConfirmed;
+    const orderable = inventory !== null && inventory > 0 && shippingConfirmed;
 
     if (listing.supplier_listing_id) {
       const { error } = await db

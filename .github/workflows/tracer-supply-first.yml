@@ -11,11 +11,26 @@ permissions:
   id-token: write
   contents: read
 
+# Each run takes ~13 minutes; never let the 15-minute schedule and a push
+# run hammer CJ's rate limit concurrently.
+concurrency:
+  group: tracer-supply-first
+  cancel-in-progress: false
+
 jobs:
   supply-first:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
+      - name: Pipeline audit (before)
+        run: |
+          set -euo pipefail
+          OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          curl --silent --show-error --max-time 60 \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            "https://tracer-self.vercel.app/api/intelligence/pipeline-audit" || true
+          echo
+
       - name: Run supply-first patrol passes
         run: |
           set -euo pipefail
@@ -26,9 +41,36 @@ jobs:
             OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app"
             OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$OIDC_URL" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
             test -n "$OIDC_TOKEN"
-            python -c 'import base64,json,sys; c=json.loads(base64.urlsafe_b64decode(sys.argv[1].split(".")[1]+"="*(-len(sys.argv[1].split(".")[1])%4))); print("OIDC:", {k:c.get(k) for k in ("iss","aud","repository","ref","workflow_ref")})' "$OIDC_TOKEN"
             curl --fail-with-body --silent --show-error --max-time 300 \
               -H "Authorization: Bearer $OIDC_TOKEN" \
               "https://tracer-self.vercel.app/api/cron/supply-first"
             sleep 5
           done
+
+      - name: Detect BASE orders and advance dropship fulfilment
+        if: always()
+        run: |
+          set -uo pipefail
+          failures=""
+          for stage in base-orders dropship-execution supplier-orders supplier-reconciliation; do
+            echo "=== $stage ==="
+            OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            if ! curl --fail-with-body --silent --show-error --max-time 300 \
+              -H "Authorization: Bearer $OIDC_TOKEN" \
+              "https://tracer-self.vercel.app/api/cron/$stage"; then
+              failures="$failures $stage"
+            fi
+            echo
+            sleep 5
+          done
+          if [ -n "$failures" ]; then echo "Failed stages:$failures"; exit 1; fi
+
+      - name: Pipeline audit (after)
+        if: always()
+        run: |
+          set -euo pipefail
+          OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          curl --silent --show-error --max-time 60 \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            "https://tracer-self.vercel.app/api/intelligence/pipeline-audit" || true
+          echo

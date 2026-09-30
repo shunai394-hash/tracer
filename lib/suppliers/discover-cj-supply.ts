@@ -9,7 +9,7 @@ import {
   searchCJProducts,
   calculateCJFreight,
 } from "@/lib/sources/cj";
-import { selectUnambiguousVariant } from "@/lib/sources/cj/variant-select";
+import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/cj/variant-select";
 
 function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
   const landed = (costUsd + shippingUsd) * fx;
@@ -17,22 +17,90 @@ function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
   return Math.ceil(withMargin / 100) * 100;
 }
 
+const CATALOG_QUERIES = [
+  "beauty", "home storage", "kitchen", "pet", "women", "phone accessories",
+  "bathroom", "office", "car accessories", "jewelry", "baby", "outdoor",
+  "fitness", "lighting", "garden", "bag",
+];
+const MAX_CATALOG_PAGES = 50;
+const CATALOG_CURSOR_JOB = "supply-first-catalog-cursor";
+
+type CatalogCursor = { queryIndex: number; page: number };
+
+function nextCatalogQuery(queryIndex: number, queryCount: number): CatalogCursor {
+  return { queryIndex: (queryIndex + 1) % queryCount, page: 1 };
+}
+
+async function readCatalogCursor(db: ReturnType<typeof createSupabaseAdminClient>): Promise<CatalogCursor> {
+  const { data, error } = await db
+    .from("cron_runs")
+    .select("metadata")
+    .eq("job_name", CATALOG_CURSOR_JOB)
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`supply-first cursor read failed: ${error.message}`);
+  const metadata = (data?.metadata ?? {}) as Record<string, unknown>;
+  const queryIndex = Number(metadata.queryIndex);
+  const page = Number(metadata.page);
+  return {
+    queryIndex: Number.isInteger(queryIndex) && queryIndex >= 0 ? queryIndex : 0,
+    page: Number.isInteger(page) && page >= 1 ? page : 1,
+  };
+}
+
+async function writeCatalogCursor(
+  db: ReturnType<typeof createSupabaseAdminClient>,
+  cursor: CatalogCursor & { published: number; rejected: number },
+): Promise<void> {
+  const now = new Date().toISOString();
+  const { error } = await db.from("cron_runs").insert({
+    job_name: CATALOG_CURSOR_JOB,
+    status: "succeeded",
+    started_at: now,
+    finished_at: now,
+    processed: cursor.published,
+    failed: cursor.rejected,
+    metadata: { queryIndex: cursor.queryIndex, page: cursor.page },
+  });
+  if (error) console.error("[supply-first] catalog cursor write failed", error.message);
+}
+
+function selectSupplyFirstVariant(variants: CJProductVariant[]): CJProductVariant | null {
+  const priced = variants
+    .map((variant) => ({ variant, price: Number(variant.sellPrice) }))
+    .filter((item) => item.variant.vid && Number.isFinite(item.price) && item.price > 0)
+    .sort((a, b) => a.price - b.price);
+  return priced[0]?.variant ?? null;
+}
+
 async function markVerification(
   db: ReturnType<typeof createSupabaseAdminClient>,
   id: string,
-  patch: { status: "verified" | "unavailable" | "retryable"; shippingStatus?: "verified" | "unavailable" | "retryable" | "unknown"; error?: string },
+  patch: { status: "verified" | "unavailable" | "retryable"; shippingStatus?: "verified" | "unavailable" | "retryable" | "unknown"; error?: string; attempts?: number },
 ): Promise<void> {
   const now = new Date();
-  const next = new Date(now.getTime() + (patch.status === "unavailable" || patch.shippingStatus === "unavailable" ? 7 : 1) * 86_400_000);
-  await db.from("supplier_listings").update({
+  const attempts = Math.max(0, patch.attempts ?? 0);
+  // Retryable rows back off (6h, 12h, 24h, ... capped at 7 days) so one
+  // persistently failing candidate cannot occupy the head of the queue.
+  const delayMs = patch.status === "unavailable" || patch.shippingStatus === "unavailable"
+    ? 7 * 86_400_000
+    : patch.status === "retryable"
+      ? Math.min(7 * 86_400_000, 6 * 3_600_000 * 2 ** Math.min(attempts, 5))
+      : 86_400_000;
+  const { error } = await db.from("supplier_listings").update({
     verification_status: patch.status,
     shipping_status: patch.shippingStatus ?? undefined,
     verification_error: patch.error ?? null,
+    verification_attempts: patch.status === "verified" ? 0 : attempts + 1,
     last_verified_at: patch.status === "verified" ? now.toISOString() : undefined,
-    next_verification_at: next.toISOString(),
+    next_verification_at: new Date(now.getTime() + delayMs).toISOString(),
     shipping_checked_at: patch.shippingStatus ? now.toISOString() : undefined,
     inventory_checked_at: now.toISOString(),
   }).eq("id", id);
+  // A failed write would leave the row at the head of the due queue and
+  // stall traversal, so surface it instead of dropping it.
+  if (error) console.error("[supply-first] verification state write failed", { id, error: error.message });
 }
 
 async function upsertSupplierListing(
@@ -89,7 +157,7 @@ export async function discoverAndCreateCjSupply(
     throw new Error("USD/JPY FX rate unavailable");
   }
 
-  const queries = ["beauty", "home storage", "kitchen", "pet", "women"];
+  const queries = CATALOG_QUERIES;
   const items: Array<Record<string, unknown>> = [];
   let discovered = 0;
   let published = 0;
@@ -105,69 +173,57 @@ export async function discoverAndCreateCjSupply(
     .select("supplier_product_id,supplier_variant_id")
     .not("supplier_variant_id", "is", null);
 
+  const publishedProducts = new Set(
+    (existingListings ?? []).map((row) => String(row.supplier_product_id ?? "")).filter(Boolean),
+  );
   const publishedVariants = new Set(
     (existingListings ?? []).map((row) => `${String(row.supplier_product_id ?? "")}:${String(row.supplier_variant_id ?? "")}`),
   );
 
-  const { data: seededRows } = await db
+  // Select only rows that are actually due, in the database. The previous
+  // version fetched the top-N rows by inventory (PostgREST may cap this at
+  // 1,000) and filtered them in memory, so once those rows had been marked
+  // retryable (next check +1 day) runs saw zero eligible candidates while
+  // the rest of the table was never read.
+  // Ordering by next_verification_at (nulls first) makes that column the
+  // traversal cursor: each checked row moves to the back of the queue.
+  const nowIso = new Date().toISOString();
+  const { data: seededRows, error: seededError } = await db
     .from("supplier_listings")
-    .select("id,title,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,next_verification_at")
+    .select("id,title,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,next_verification_at,verification_attempts")
     .eq("supplier", "cj")
     .not("supplier_product_id", "is", null)
     .not("supplier_variant_id", "is", null)
-    .order("inventory", { ascending: false })
-    .limit(5000);
+    .in("verification_status", ["unverified", "retryable"])
+    .or(`next_verification_at.is.null,next_verification_at.lte.${nowIso}`)
+    .order("next_verification_at", { ascending: true, nullsFirst: true })
+    .order("inventory", { ascending: false, nullsFirst: false })
+    .limit(500);
+  if (seededError) throw new Error(`supply-first candidate query failed: ${seededError.message}`);
 
-  const nowMs = Date.now();
-  const seeded = (seededRows ?? []).filter((row, index, rows) => {
-    const status = String(row.verification_status ?? "unverified");
-    const due = !row.next_verification_at || new Date(String(row.next_verification_at)).getTime() <= nowMs;
-    if (status === "verified" || status === "unavailable" || !due) return false;
+  const seenSeedKeys = new Set<string>();
+  const seeded = (seededRows ?? []).filter((row) => {
     const key = `${String(row.supplier_product_id)}:${String(row.supplier_variant_id)}`;
-    return !publishedVariants.has(key) &&
-      rows.findIndex((x) => x.supplier_product_id === row.supplier_product_id && x.supplier_variant_id === row.supplier_variant_id) === index;
+    if (publishedVariants.has(key) || seenSeedKeys.has(key)) return false;
+    seenSeedKeys.add(key);
+    return true;
   });
 
-  // Do not retry the same failed candidates forever. The scheduled job runs
-  // once per day, so rotate the verification window by day and inspect a
-  // bounded batch. This keeps the job inside its execution budget while
-  // ensuring the unverified CJ candidate pool is actually traversed.
-  const rotation = seeded.length > 0
-    ? Math.floor(Date.now() / 86_400_000) % seeded.length
-    : 0;
-  // Traverse every eligible candidate; the caller's deadline (not a fixed
-  // count) bounds the batch so the request stays inside maxDuration.
-  const rotatedSeeded = seeded.length > 0
-    ? [...seeded.slice(rotation), ...seeded.slice(0, rotation)]
-    : [];
   const deadlineAt = options?.deadlineAt ?? Number.POSITIVE_INFINITY;
   let deadlineReached = false;
 
-  const candidateInputs = (rotatedSeeded.length
-    ? rotatedSeeded.map((row) => ({
-        query: "seeded_rotated",
-        id: String(row.supplier_product_id),
-        variantId: String(row.supplier_variant_id),
-        cost: Number(row.cost),
-        inventory: Number(row.inventory),
-        inventoryConfirmed: row.inventory_confirmed === true,
-        priceConfirmed: row.price_confirmed === true,
-        seededTitle: String(row.title ?? ""),
-        supplierListingId: String(row.id),
-      }))
-    : [
-        {
-          query: "bootstrap-observed",
-          id: "1522412448668725248",
-          variantId: "1522412448823914496",
-          supplierListingId: null,
-          cost: 23,
-          inventory: 45890,
-          inventoryConfirmed: true,
-          priceConfirmed: true,
-          seededTitle: "bootstrap",
-        },
-      ]);
+  const candidateInputs = seeded.map((row) => ({
+    query: "seeded_due",
+    id: String(row.supplier_product_id),
+    variantId: String(row.supplier_variant_id),
+    cost: Number(row.cost),
+    inventory: Number(row.inventory),
+    inventoryConfirmed: row.inventory_confirmed === true,
+    priceConfirmed: row.price_confirmed === true,
+    seededTitle: String(row.title ?? ""),
+    supplierListingId: String(row.id),
+    attempts: Number(row.verification_attempts ?? 0),
+  }));
 
   for (const seededCandidate of candidateInputs) {
     if (published >= limit) break;
@@ -230,6 +286,7 @@ export async function discoverAndCreateCjSupply(
           await markVerification(db, seededCandidate.supplierListingId, {
             status: "retryable",
             error: "product_detail_and_catalog_search_missing",
+            attempts: seededCandidate.attempts,
           });
         }
         items.push({
@@ -240,25 +297,17 @@ export async function discoverAndCreateCjSupply(
       }
       // Reuse persisted variant/cost/inventory observations. Only image/title
       // and live Japan freight consume CJ requests for seeded rows.
-      let stock =
-        seededCandidate.inventoryConfirmed === true &&
-        Number.isFinite(seededCandidate.inventory) &&
-        seededCandidate.inventory > 0
-          ? seededCandidate.inventory
-          : null;
-
-      // Unverified rows are not dead data. Re-check stock live so the 5k+
-      // unverified pool can actually advance through the pipeline.
-      if (stock === null) {
-        stock = await fetchCJVariantStock(candidate.variantId);
-      }
+      // Always re-check stock live: a persisted count may be days old and a
+      // published row must reflect current CJ stock.
+      const stock = await fetchCJVariantStock(candidate.variantId);
 
       if (stock === null || stock <= 0) {
         rejected++;
         if (seededCandidate.supplierListingId) {
           await markVerification(db, seededCandidate.supplierListingId, {
             status: "retryable",
-            error: "live_inventory_unavailable",
+            error: stock === null ? "live_inventory_unknown" : "live_inventory_zero",
+            attempts: seededCandidate.attempts,
           });
         }
         items.push({
@@ -272,14 +321,14 @@ export async function discoverAndCreateCjSupply(
       const freight = await calculateCJFreight(candidate.variantId, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1, zip: "1000001" });
       if (freight === null || freight <= 0) {
         rejected++;
-        if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "unavailable", shippingStatus: "unavailable", error: "jp_freight_unavailable" });
+        if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "unavailable", shippingStatus: "unavailable", error: "jp_freight_unavailable", attempts: seededCandidate.attempts });
         items.push({ rejectedStage: "jp_freight_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, freight });
         continue;
       }
       const cost = Number(seededCandidate.cost ?? detail.price ?? cachedPrice);
       if (!Number.isFinite(cost) || cost <= 0) {
         rejected++;
-        if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: "cost_unavailable" });
+        if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: "cost_unavailable", attempts: seededCandidate.attempts });
         items.push({ rejectedStage: "cost_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, cost });
         continue;
       }
@@ -320,7 +369,7 @@ export async function discoverAndCreateCjSupply(
       rejected++;
       const message = error instanceof Error ? error.message : String(error);
       items.push({ rejectedStage: "error", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, error: message });
-      if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: message.slice(0, 500) });
+      if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: message.slice(0, 500), attempts: seededCandidate.attempts });
       console.warn("[supply-first] seeded candidate rejected", { productId: candidate.id, error: message });
     }
   }
@@ -330,47 +379,75 @@ export async function discoverAndCreateCjSupply(
   // Seeded verification is only one source of candidates. If all seeded
   // variants fail live Japan-freight verification, continue into the live CJ
   // catalog instead of stopping with zero new products.
+  // Persisted catalog cursor. The previous loop always read page 1 of the
+  // same five queries, so every run re-inspected (and re-rejected) the same
+  // ~100 products and discovery never advanced.
+  const cursor = await readCatalogCursor(db);
+  let queryIndex = cursor.queryIndex % queries.length;
+  let page = cursor.page;
+  let pagesScanned = 0;
   const seenSearchProducts = new Set<string>();
-  for (const query of queries) {
-    if (published >= limit || Date.now() >= deadlineAt) {
-      if (Date.now() >= deadlineAt) deadlineReached = true;
+  while (published < limit && pagesScanned < queries.length * 2) {
+    if (Date.now() >= deadlineAt) {
+      deadlineReached = true;
       break;
     }
+    const query = queries[queryIndex];
+    pagesScanned++;
 
     let search;
     try {
-      search = await searchCJProducts(query, { page: 1, size: 20 });
-    } catch {
+      search = await searchCJProducts(query, { page, size: 20 });
+    } catch (error) {
+      items.push({ rejectedStage: "catalog_search_failed", query, page, error: error instanceof Error ? error.message : String(error) });
+      ({ queryIndex, page } = nextCatalogQuery(queryIndex, queries.length));
       continue;
     }
-
+    const pageExhausted = search.products.length === 0 || page >= Math.min(search.totalPages, MAX_CATALOG_PAGES);
+    const pageQuery = query;
+    const pageNumber = page;
+    let pageCompleted = true;
     for (const candidate of search.products.map((x) => ({ ...x, variantId: null as string | null }))) {
       if (published >= limit || Date.now() >= deadlineAt) {
         if (Date.now() >= deadlineAt) deadlineReached = true;
+        pageCompleted = false;
         break;
       }
       if (seenSearchProducts.has(candidate.id)) continue;
       seenSearchProducts.add(candidate.id);
-      if (publishedVariants.has(`${candidate.id}:`)) continue;
-      if (!candidate.imageUrl || !candidate.title) continue;
+      if (publishedProducts.has(candidate.id)) continue;
+      const reject = (stage: string, extra?: Record<string, unknown>) => {
+        rejected++;
+        items.push({ rejectedStage: stage, supplierProductId: candidate.id, query: pageQuery, page: pageNumber, ...extra });
+      };
+      if (!candidate.imageUrl || !candidate.title) {
+        reject("catalog_image_or_title_missing");
+        continue;
+      }
 
       try {
-        const detail = await getCJProductDetail(candidate.id);
-        if (!detail?.imageUrl || !detail.title) continue;
+        // listV2 already carries title/image/price; a separate detail call
+        // only spent one rate-limited CJ request per candidate.
+        const detail = { title: candidate.title, imageUrl: candidate.imageUrl, price: candidate.price };
 
         const variants = await fetchCJProductVariants(candidate.id, { countryCode: "JP" });
+        // In supply-first the CJ variant itself is the sellable item, so a
+        // multi-variant product is not ambiguous: pick one concrete variant
+        // (cheapest priced) and name it explicitly in the listing title.
         const variant =
           (candidate.variantId
             ? variants.find((x) => x.vid === candidate.variantId)
-            : null) ?? selectUnambiguousVariant(variants);
+            : null) ??
+          selectUnambiguousVariant(variants) ??
+          selectSupplyFirstVariant(variants);
         if (!variant?.vid) {
-          rejected++;
+          reject("variant_unavailable", { variantCount: variants.length });
           continue;
         }
 
         const stock = await fetchCJVariantStock(variant.vid);
         if (stock === null || stock <= 0) {
-          rejected++;
+          reject(stock === null ? "live_inventory_unknown" : "live_inventory_zero", { supplierVariantId: variant.vid, stock });
           continue;
         }
 
@@ -381,14 +458,17 @@ export async function discoverAndCreateCjSupply(
           zip: "1000001",
         });
         if (freight === null || freight <= 0) {
-          rejected++;
+          reject("jp_freight_unavailable", { supplierVariantId: variant.vid, freight });
           continue;
         }
 
-        const cost = Number(variant.sellPrice ?? detail.price ?? candidate.price);
+        const cost = Number(variant.sellPrice ?? detail.price);
         if (!Number.isFinite(cost) || cost <= 0) {
-          rejected++;
+          reject("cost_unavailable", { supplierVariantId: variant.vid });
           continue;
+        }
+        if (variants.length > 1 && variant.nameEn) {
+          detail.title = `${detail.title} (${variant.nameEn})`;
         }
 
         const salePrice = yenPrice(cost, freight, fxRate);
@@ -505,7 +585,7 @@ export async function discoverAndCreateCjSupply(
           supplierListingId,
           title: detail.title,
           supplierProductId: candidate.id,
-          supplierVariantId: candidate.variantId,
+          supplierVariantId: variant.vid,
           costUsd: cost,
           freightUsd: freight,
           inventory: Math.floor(stock),
@@ -513,14 +593,20 @@ export async function discoverAndCreateCjSupply(
           fxRate,
         });
       } catch (error) {
-        rejected++;
+        reject("error", { error: error instanceof Error ? error.message : String(error) });
         console.warn("[supply-first] candidate rejected", {
           productId: candidate.id,
           error: error instanceof Error ? error.message : String(error),
         });
       }
     }
+    if (pageCompleted) {
+      ({ queryIndex, page } = pageExhausted
+        ? nextCatalogQuery(queryIndex, queries.length)
+        : { queryIndex, page: page + 1 });
+    }
   }
+  await writeCatalogCursor(db, { queryIndex, page, published, rejected });
 
   return { discovered, published, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
 }
