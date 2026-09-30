@@ -11,8 +11,6 @@ import { persistDemandIntelligence } from "@/lib/intelligence/persist-demand-int
 import { persistReorderRecommendations } from "@/lib/ordering/persist-reorder";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
-import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
-import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import {
   promoteShopListingToNewfind,
@@ -301,28 +299,6 @@ export async function runIntelligencePipeline(): Promise<{
   steps.push(await runStep("demand", () => inspectDemandObservations()));
   steps.push(await runStep("demand_analyze", () => persistDemandIntelligence()));
   steps.push(await runStep("supply", () => researchLimitedSupply()));
-  const supplyFirstStep = await runStep(
-    "supply_first_publish",
-    () => discoverAndCreateCjSupply(3),
-  );
-  steps.push(supplyFirstStep);
-  const supplyFirstIds =
-    supplyFirstStep.ok &&
-    supplyFirstStep.result &&
-    typeof supplyFirstStep.result === "object" &&
-    Array.isArray((supplyFirstStep.result as { items?: unknown }).items)
-      ? (supplyFirstStep.result as { items: Array<{ listingId?: unknown }> }).items
-          .map((item) => item.listingId)
-          .filter((id): id is string => typeof id === "string")
-      : [];
-  steps.push(
-    await runStep("base_supply_first", () => publishPublishedListingsToBase(3)),
-  );
-  steps.push(
-    await runStep("newfind_supply_first", () =>
-      Promise.all(supplyFirstIds.map((id) => promoteShopListingToNewfind(id))),
-    ),
-  );
 
   const intelligence = await runStep("intelligence", () =>
     buildOpportunityIntelligence(),
