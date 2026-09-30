@@ -9,6 +9,35 @@ function buildUrl(base: string): string {
   return `${trimmed}/api/integrations/tracer`;
 }
 
+// Public origin of the TRACER storefront. NEXT_PUBLIC_SITE_URL wins; on
+// Vercel the production domain is provided as VERCEL_PROJECT_PRODUCTION_URL.
+function tracerSiteOrigin(): string | null {
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  if (vercel) return `https://${vercel.replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
+  return null;
+}
+
+// Only hand NEWFIND a TRACER URL that actually serves the product page.
+async function resolveLiveTracerUrl(slug: string | null): Promise<string | null> {
+  const origin = tracerSiteOrigin();
+  if (!origin || !slug) return null;
+  const url = `${origin}/shop/${encodeURIComponent(slug)}`;
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { "x-tracer-liveness-check": "1" },
+      cache: "no-store",
+      redirect: "follow",
+      signal: AbortSignal.timeout(10_000),
+    });
+    return response.ok ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 function eventId(listingId: string): string {
   return `tracer-shop-listing:${listingId}`;
 }
@@ -158,7 +187,7 @@ export async function promoteShopListingToNewfind(
 
   const { data: listing, error } = await supabase
     .from("shop_listings")
-    .select("id, title, description, image_url, selling_price, currency, bestseller_id, product_id, slug")
+    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method")
     .eq("id", listingId)
     .eq("published", true)
     .maybeSingle();
@@ -205,21 +234,23 @@ export async function promoteShopListingToNewfind(
     brand = typeof bestseller?.brand === "string" ? bestseller.brand : null;
   }
 
-  // Supply-first listings have no marketplace URL by design. They are
-  // promoted using TRACER's own public shop URL instead of inventing a
-  // supplier/marketplace URL.
-  if (!productUrl) {
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "") ?? "";
-    const slug = typeof listing.slug === "string" ? listing.slug.trim() : "";
-    if (siteUrl && slug) {
-      productUrl = `${siteUrl}/shop/${encodeURIComponent(slug)}`;
-    }
-  }
+  // Supply-first listings are TRACER's own products: there is no marketplace
+  // page for them, so the product URL is the live TRACER storefront page.
+  // Marketplace-linked listings keep their marketplace URL as the product URL
+  // and also carry the TRACER URL.
+  const tracerUrl = await resolveLiveTracerUrl(
+    typeof listing.slug === "string" ? listing.slug : null,
+  );
+  const supplyFirst = !listing.bestseller_id;
+  if (supplyFirst) productUrl = tracerUrl;
 
   if (!productUrl) {
+    const reason = supplyFirst
+      ? "tracer_url_unavailable_newfind_requires_url"
+      : "product_url_missing_newfind_requires_url";
     await supabase.from("newfind_promotion_deliveries").update({
       status: "failed",
-      last_error: "tracer_public_shop_url_missing",
+      last_error: reason,
       last_attempt_at: new Date().toISOString(),
       lease_until: null,
       updated_at: new Date().toISOString(),
@@ -230,7 +261,7 @@ export async function promoteShopListingToNewfind(
       eventId: id,
       status: null,
       ackStatus: null,
-      detail: "tracer_public_shop_url_missing",
+      detail: reason,
     };
   }
 
@@ -252,7 +283,10 @@ export async function promoteShopListingToNewfind(
       currency: String(listing.currency ?? "JPY"),
       brand: brand || undefined,
       category: category || "other",
-      discovery_reason: "TRACER sales-test published product",
+      discovery_reason: supplyFirst
+        ? "TRACER supply-first published product"
+        : "TRACER sales-test published product",
+      tracer_url: tracerUrl ?? undefined,
       selection_score: 100,
       confidence: 0.9,
       source_ref: listing.id,
