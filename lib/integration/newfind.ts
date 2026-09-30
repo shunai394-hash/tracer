@@ -158,7 +158,7 @@ export async function promoteShopListingToNewfind(
 
   const { data: listing, error } = await supabase
     .from("shop_listings")
-    .select("id, title, description, image_url, selling_price, currency, bestseller_id, product_id")
+    .select("id, title, description, image_url, selling_price, currency, bestseller_id, product_id, slug")
     .eq("id", listingId)
     .eq("published", true)
     .maybeSingle();
@@ -205,10 +205,21 @@ export async function promoteShopListingToNewfind(
     brand = typeof bestseller?.brand === "string" ? bestseller.brand : null;
   }
 
+  // Supply-first listings have no marketplace URL by design. They are
+  // promoted using TRACER's own public shop URL instead of inventing a
+  // supplier/marketplace URL.
+  if (!productUrl) {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "") ?? "";
+    const slug = typeof listing.slug === "string" ? listing.slug.trim() : "";
+    if (siteUrl && slug) {
+      productUrl = `${siteUrl}/shop/${encodeURIComponent(slug)}`;
+    }
+  }
+
   if (!productUrl) {
     await supabase.from("newfind_promotion_deliveries").update({
       status: "failed",
-      last_error: "product_url_missing_newfind_requires_url",
+      last_error: "tracer_public_shop_url_missing",
       last_attempt_at: new Date().toISOString(),
       lease_until: null,
       updated_at: new Date().toISOString(),
@@ -219,7 +230,7 @@ export async function promoteShopListingToNewfind(
       eventId: id,
       status: null,
       ackStatus: null,
-      detail: "product_url_missing_newfind_requires_url",
+      detail: "tracer_public_shop_url_missing",
     };
   }
 
