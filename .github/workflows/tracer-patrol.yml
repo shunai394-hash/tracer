@@ -21,10 +21,20 @@ jobs:
             curl --fail-with-body --silent --show-error --max-time 300               -H "Authorization: Bearer $CRON_SECRET"               "$TRACER_URL$1"
           }
 
-          run_stage /api/cron/market-sourcing
-          sleep 10
-          run_stage /api/cron/supplier-investigation
-          sleep 10
+          # One patrol is deliberately multi-pass. Do not stop after the
+          # first bestseller row: keep advancing the persisted source cursor
+          # until several batches have been observed and several supplier
+          # candidates have been investigated.
+          for i in 1 2 3 4 5 6; do
+            run_stage /api/cron/market-sourcing
+            sleep 5
+          done
+
+          for i in 1 2 3 4; do
+            run_stage /api/cron/supplier-investigation
+            sleep 5
+          done
+
           run_stage /api/cron/sales-test-publication
           sleep 10
           run_stage /api/cron/inventory-refresh

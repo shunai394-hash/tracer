@@ -33,7 +33,14 @@ export async function linkInternalSupplyForBestseller(args: {
     .or(or)
     .limit(20);
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    // Internal supply is an optional acceleration path. A broken/missing
+    // permission on this private catalog must never stop the external CJ
+    // investigation path; otherwise one DB permission issue makes the entire
+    // autonomous patrol look like it discovered nothing.
+    console.error("[TRACER INTERNAL SUPPLY LOOKUP SKIPPED]", error);
+    return { matched: false, supplierListingId: null };
+  }
 
   for (const product of products ?? []) {
     const productIds = identifiersFromRecord(product as Record<string, unknown>);
