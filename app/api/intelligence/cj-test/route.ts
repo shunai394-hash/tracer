@@ -8,7 +8,8 @@ export async function GET(request: Request) {
     const query = url.searchParams.get("q")?.trim() || "Cornucopia Northern Lights Music Star Projector Lamp";
     const vid = url.searchParams.get("vid")?.trim() || "";
     const result = await searchCJProducts(query, { page: 1, size: 5 });
-    const topVariants = result.products[0] ? await fetchCJProductVariants(result.products[0].id, { countryCode: "JP" }) : [];\n    const variant = vid ? {
+    const topVariants = result.products[0] ? await fetchCJProductVariants(result.products[0].id, { countryCode: "JP" }) : [];
+    const variant = vid ? {
       stock: await fetchCJVariantStock(vid),
       freight: await calculateCJFreight(vid, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 }),
     } : null;
