@@ -26,3 +26,20 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run lint
       - run: npm run build
+
+  ops-trigger:
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[ops-trigger]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run sales publication
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -e
+          curl --fail-with-body --silent --show-error --max-time 300 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "https://tracer-self.vercel.app/api/cron/sales-test-publication"
+          sleep 10
+          curl --fail-with-body --silent --show-error --max-time 300 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "https://tracer-self.vercel.app/api/cron/base-publish"
