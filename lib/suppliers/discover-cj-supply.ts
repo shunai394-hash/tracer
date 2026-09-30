@@ -55,6 +55,18 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
 
   // Reuse previously discovered CJ IDs first. These rows are only candidates;
   // stock, variant and Japan freight are re-verified live before publication.
+  // Do not keep selecting the already-published winner. The first bootstrap
+  // run proved the BASE path; subsequent runs must advance through the
+  // remaining verified CJ supply candidates.
+  const { data: existingListings } = await db
+    .from("shop_listings")
+    .select("supplier_product_id,supplier_variant_id")
+    .not("supplier_variant_id", "is", null);
+
+  const publishedVariants = new Set(
+    (existingListings ?? []).map((row) => `${String(row.supplier_product_id ?? "")}:${String(row.supplier_variant_id ?? "")}`),
+  );
+
   const { data: seededRows } = await db
     .from("supplier_listings")
     .select("title,supplier_product_id,supplier_variant_id,cost")
@@ -65,11 +77,13 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
     .not("supplier_product_id", "is", null)
     .not("supplier_variant_id", "is", null)
     .order("inventory", { ascending: false })
-    .limit(12);
+    .limit(50);
 
-  const seeded = (seededRows ?? []).filter((row, index, rows) =>
-    rows.findIndex((x) => x.supplier_product_id === row.supplier_product_id && x.supplier_variant_id === row.supplier_variant_id) === index
-  );
+  const seeded = (seededRows ?? []).filter((row, index, rows) => {
+    const key = `${String(row.supplier_product_id)}:${String(row.supplier_variant_id)}`;
+    return !publishedVariants.has(key) &&
+      rows.findIndex((x) => x.supplier_product_id === row.supplier_product_id && x.supplier_variant_id === row.supplier_variant_id) === index;
+  });
 
   const candidateInputs = (seeded.length
     ? seeded.map((row) => ({
