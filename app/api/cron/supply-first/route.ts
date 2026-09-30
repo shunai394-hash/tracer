@@ -20,7 +20,7 @@ export async function GET(request: Request) {
 
   try {
     const startedAt = Date.now();
-    const supplyFirst = await discoverAndCreateCjSupply(50, {
+    const supplyFirst = await discoverAndCreateCjSupply(100, {
       deadlineAt: startedAt + DISCOVERY_BUDGET_MS,
     });
 
