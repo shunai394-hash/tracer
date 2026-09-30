@@ -9,6 +9,7 @@
     { "path": "/api/cron/inventory-refresh", "schedule": "40 * * * *" },
     { "path": "/api/cron/base-publish", "schedule": "45 * * * *" },
     { "path": "/api/cron/dropship-execution", "schedule": "50 * * * *" },
+    { "path": "/api/cron/supplier-reconciliation", "schedule": "53 * * * *" },
     { "path": "/api/cron/supplier-orders", "schedule": "55 * * * *" },
     { "path": "/api/cron/newfind-retry", "schedule": "58 * * * *" }
   ]
