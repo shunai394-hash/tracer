@@ -10,4 +10,4 @@
  * The later sales-test and BASE cron stages run automatically from vercel.json
  * after supplier investigation.
  */
-export const BESTSELLER_CANDIDATE_BATCH_SIZE = 1;
+export const BESTSELLER_CANDIDATE_BATCH_SIZE = 2;
