@@ -69,7 +69,11 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
 
       const supplierStatus = normalizeStatus(statusResult?.status);
       const nextStatus =
-        supplierStatus === "shipped" || supplierStatus === "delivered" || supplierStatus === "failed" || supplierStatus === "cancelled"
+        supplierStatus === "processing" ||
+        supplierStatus === "shipped" ||
+        supplierStatus === "delivered" ||
+        supplierStatus === "failed" ||
+        supplierStatus === "cancelled"
           ? supplierStatus
           : String(po.status);
 
@@ -105,6 +109,7 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
         const internalStatus =
           nextStatus === "delivered" ? "delivered" :
           nextStatus === "shipped" ? "shipped" :
+          nextStatus === "processing" ? "processing" :
           nextStatus === "failed" ? "failed" :
           nextStatus === "cancelled" ? "cancelled" :
           "reserved";
