@@ -1,0 +1,18 @@
+name: TRACER Supply First Patrol
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  supply-first:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Run supply-first patrol
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error --max-time 300             -H "Authorization: Bearer $CRON_SECRET"             "https://tracer-self.vercel.app/api/cron/supply-first"
