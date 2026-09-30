@@ -18,6 +18,24 @@ function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
   return Math.ceil(withMargin / 100) * 100;
 }
 
+async function markVerification(
+  db: ReturnType<typeof createSupabaseAdminClient>,
+  id: string,
+  patch: { status: "verified" | "unavailable" | "retryable"; shippingStatus?: "verified" | "unavailable" | "retryable" | "unknown"; error?: string },
+): Promise<void> {
+  const now = new Date();
+  const next = new Date(now.getTime() + (patch.status === "unavailable" || patch.shippingStatus === "unavailable" ? 7 : 1) * 86_400_000);
+  await db.from("supplier_listings").update({
+    verification_status: patch.status,
+    shipping_status: patch.shippingStatus ?? undefined,
+    verification_error: patch.error ?? null,
+    last_verified_at: patch.status === "verified" ? now.toISOString() : undefined,
+    next_verification_at: next.toISOString(),
+    shipping_checked_at: patch.shippingStatus ? now.toISOString() : undefined,
+    inventory_checked_at: now.toISOString(),
+  }).eq("id", id);
+}
+
 function slug(title: string, productId: string, variantId: string): string {
   const base = title
     .toLowerCase()
@@ -74,7 +92,7 @@ export async function discoverAndCreateCjSupply(
 
   const { data: seededRows } = await db
     .from("supplier_listings")
-    .select("title,supplier_product_id,supplier_variant_id,cost")
+    .select("id,title,supplier_product_id,supplier_variant_id,cost,verification_status,shipping_status,next_verification_at")
     .eq("supplier", "cj")
     .eq("inventory_confirmed", true)
     .eq("price_confirmed", true)
@@ -84,7 +102,11 @@ export async function discoverAndCreateCjSupply(
     .order("inventory", { ascending: false })
     .limit(500);
 
+  const nowMs = Date.now();
   const seeded = (seededRows ?? []).filter((row, index, rows) => {
+    const status = String(row.verification_status ?? "unverified");
+    const due = !row.next_verification_at || new Date(String(row.next_verification_at)).getTime() <= nowMs;
+    if (status === "verified" || status === "unavailable" || !due) return false;
     const key = `${String(row.supplier_product_id)}:${String(row.supplier_variant_id)}`;
     return !publishedVariants.has(key) &&
       rows.findIndex((x) => x.supplier_product_id === row.supplier_product_id && x.supplier_variant_id === row.supplier_variant_id) === index;
@@ -110,12 +132,14 @@ export async function discoverAndCreateCjSupply(
         query: "seeded_rotated",
         id: String(row.supplier_product_id),
         variantId: String(row.supplier_variant_id),
+        supplierListingId: String(row.id),
       }))
     : [
         {
           query: "bootstrap-observed",
           id: "1522412448668725248",
           variantId: "1522412448823914496",
+          supplierListingId: null,
         },
       ]);
 
@@ -135,15 +159,15 @@ export async function discoverAndCreateCjSupply(
     const query = seededCandidate.query;
     try {
       const detail = await getCJProductDetail(candidate.id);
-      if (!detail?.imageUrl || !detail.title) { rejected++; items.push({ rejectedStage: "product_detail_missing", supplierProductId: candidate.id }); continue; }
+      if (!detail?.imageUrl || !detail.title) { rejected++; if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: "product_detail_missing" }); items.push({ rejectedStage: "product_detail_missing", supplierProductId: candidate.id }); continue; }
       const variant = await fetchCJVariantByVid(candidate.variantId);
-      if (!variant?.vid || (variant.productId && variant.productId !== candidate.id)) { rejected++; items.push({ rejectedStage: "variant_missing_or_product_mismatch", supplierProductId: candidate.id, supplierVariantId: candidate.variantId }); continue; }
+      if (!variant?.vid || (variant.productId && variant.productId !== candidate.id)) { rejected++; if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: "variant_missing_or_product_mismatch" }); items.push({ rejectedStage: "variant_missing_or_product_mismatch", supplierProductId: candidate.id, supplierVariantId: candidate.variantId }); continue; }
       const stock = await fetchCJVariantStock(variant.vid);
-      if (stock === null || stock <= 0) { rejected++; items.push({ rejectedStage: "live_stock_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, stock }); continue; }
+      if (stock === null || stock <= 0) { rejected++; if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: "live_stock_unavailable" }); items.push({ rejectedStage: "live_stock_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, stock }); continue; }
       const freight = await calculateCJFreight(variant.vid, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1, zip: "1000001" });
-      if (freight === null || freight <= 0) { rejected++; items.push({ rejectedStage: "jp_freight_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, freight }); continue; }
+      if (freight === null || freight <= 0) { rejected++; if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "unavailable", shippingStatus: "unavailable", error: "jp_freight_unavailable" }); items.push({ rejectedStage: "jp_freight_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, freight }); continue; }
       const cost = Number(variant.sellPrice ?? detail.price);
-      if (!Number.isFinite(cost) || cost <= 0) { rejected++; items.push({ rejectedStage: "cost_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, cost }); continue; }
+      if (!Number.isFinite(cost) || cost <= 0) { rejected++; if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: "cost_unavailable" }); items.push({ rejectedStage: "cost_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, cost }); continue; }
       const salePrice = yenPrice(cost, freight, fxRate);
       const sourceRef = `cj:${candidate.id}:${variant.vid}`;
       const productInsert = await db.from("products").upsert({ canonical_name: detail.title, identity_key: sourceRef }, { onConflict: "identity_key" }).select("id").single();
@@ -159,6 +183,10 @@ export async function discoverAndCreateCjSupply(
         fetched_at: new Date().toISOString(), metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate }
       }, { onConflict: "supplier,external_id" }).select("id").single();
       if (supplierInsert.error) throw new Error(supplierInsert.error.message);
+      await markVerification(db, String(supplierInsert.data.id), { status: "verified", shippingStatus: "verified" });
+      if (seededCandidate.supplierListingId && seededCandidate.supplierListingId !== String(supplierInsert.data.id)) {
+        await markVerification(db, seededCandidate.supplierListingId, { status: "verified", shippingStatus: "verified" });
+      }
       const listingSlug = slug(detail.title, candidate.id, variant.vid);
       const shopInsert = await db.from("shop_listings").upsert({
         product_id: productId, supplier_listing_id: supplierInsert.data.id, slug: listingSlug, title: detail.title,
@@ -177,6 +205,7 @@ export async function discoverAndCreateCjSupply(
       rejected++;
       const message = error instanceof Error ? error.message : String(error);
       items.push({ rejectedStage: "error", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, error: message });
+      if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: message.slice(0, 500) });
       console.warn("[supply-first] seeded candidate rejected", { productId: candidate.id, error: message });
     }
   }
