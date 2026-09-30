@@ -116,7 +116,7 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
       if (!variant?.vid || (variant.productId && variant.productId !== candidate.id)) { rejected++; items.push({ rejectedStage: "variant_missing_or_product_mismatch", supplierProductId: candidate.id, supplierVariantId: candidate.variantId }); continue; }
       const stock = await fetchCJVariantStock(variant.vid);
       if (stock === null || stock <= 0) { rejected++; items.push({ rejectedStage: "live_stock_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, stock }); continue; }
-      const freight = await calculateCJFreight(variant.vid, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 });
+      const freight = await calculateCJFreight(variant.vid, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1, zip: "1000001" });
       if (freight === null || freight <= 0) { rejected++; items.push({ rejectedStage: "jp_freight_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, freight }); continue; }
       const cost = Number(variant.sellPrice ?? detail.price);
       if (!Number.isFinite(cost) || cost <= 0) { rejected++; items.push({ rejectedStage: "cost_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, cost }); continue; }
@@ -196,6 +196,7 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
           startCountryCode: "CN",
           endCountryCode: "JP",
           quantity: 1,
+          zip: "1000001",
         });
         if (freight === null || freight <= 0) {
           rejected++;
