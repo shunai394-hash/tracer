@@ -26,11 +26,11 @@ let jwksCache: { expiresAt: number; keys: GitHubJwk[] } | null = null;
 function base64UrlDecode(value: string): Uint8Array {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-  return Uint8Array.from(Buffer.from(padded, "base64"));
+  return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
 }
 
 function parseJson<T>(value: Uint8Array): T {
-  return JSON.parse(Buffer.from(value).toString("utf8")) as T;
+  return JSON.parse(new TextDecoder().decode(value)) as T;
 }
 
 async function getGitHubSigningKey(kid: string): Promise<GitHubJwk | null> {
