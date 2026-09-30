@@ -89,5 +89,3 @@ export async function POST() {
     );
   }
 }
-
-export const GET = POST;
