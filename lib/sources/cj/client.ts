@@ -749,13 +749,29 @@ function extractCJVariantRows(data: CJVariantQueryResponse["data"]): CJVariantRo
   return data.content ?? data.variantList ?? data.productList ?? [];
 }
 
-export async function fetchCJProductVariants(
-  pid: string,
-  options?: { countryCode?: string },
-): Promise<CJProductVariant[]> {
+function toCJProductVariant(row: CJVariantRow, pid: string): CJProductVariant | null {
+  const vid = row.vid?.trim() || row.variantId?.trim();
+  if (!vid) return null;
+  const barcode = [row.barcode, row.variantBarcode, row.variantBarCode, row.productBarCode]
+    .find((value) => value !== undefined && value !== null && String(value).trim());
+  return {
+    vid,
+    productId: row.pid?.trim() || row.productId?.trim() || pid,
+    sku: row.variantSku?.trim() || row.sku?.trim() || null,
+    nameEn: row.variantNameEn?.trim() || row.variantKey?.trim() || null,
+    sellPrice:
+      row.variantSellPrice === undefined || row.variantSellPrice === null
+        ? null
+        : String(row.variantSellPrice),
+    barcode: barcode ? String(barcode).replace(/\D/g, "") || null : null,
+    inventory: null,
+  };
+}
+
+async function queryCJVariantRows(pid: string, countryCode?: string): Promise<CJVariantRow[]> {
   const token = await getAccessToken();
   const params = new URLSearchParams({ pid });
-  if (options?.countryCode) params.set("countryCode", options.countryCode);
+  if (countryCode) params.set("countryCode", countryCode);
   const response = await fetchCJWithRateLimit(
     `https://developers.cjdropshipping.com/api2.0/v1/product/variant/query?${params.toString()}`,
     {
@@ -777,31 +793,47 @@ export async function fetchCJProductVariants(
     throw new CJRequestError(payload.message || "CJ variant query failed");
   }
 
-  const rows = extractCJVariantRows(payload.data);
-
   if (process.env.CJ_DEBUG_LOG === "1") {
     console.log("[cj-diagnostic] product/variant/query response:", JSON.stringify(payload));
   }
 
+  return extractCJVariantRows(payload.data);
+}
+
+/** product/query embeds the full variant list under data.variants. */
+async function queryCJDetailVariantRows(pid: string): Promise<CJVariantRow[]> {
+  const token = await getAccessToken();
+  const params = new URLSearchParams({ pid });
+  const response = await fetchCJWithRateLimit(
+    `https://developers.cjdropshipping.com/api2.0/v1/product/query?${params.toString()}`,
+    {
+      method: "GET",
+      headers: { "CJ-Access-Token": token },
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) return [];
+  const payload = (await response.json()) as { result?: boolean; data?: unknown };
+  if (payload.result === false) return [];
+  const data = Array.isArray(payload.data) ? payload.data[0] : payload.data;
+  if (!data || typeof data !== "object") return [];
+  const variants = (data as Record<string, unknown>).variants;
+  return Array.isArray(variants) ? (variants as CJVariantRow[]) : [];
+}
+
+export async function fetchCJProductVariants(
+  pid: string,
+  options?: { countryCode?: string },
+): Promise<CJProductVariant[]> {
+  // countryCode restricts CJ's answer to variants stocked in that country's
+  // warehouse; for CN-shipped items to Japan that is usually an empty list,
+  // which made every catalog candidate look variant-less. Fall back to the
+  // unfiltered list and then to the variants embedded in product/query.
+  let rows = await queryCJVariantRows(pid, options?.countryCode);
+  if (rows.length === 0 && options?.countryCode) rows = await queryCJVariantRows(pid);
+  if (rows.length === 0) rows = await queryCJDetailVariantRows(pid);
+
   return rows
-    .map((row): CJProductVariant | null => {
-      const vid = row.vid?.trim() || row.variantId?.trim();
-      if (!vid) return null;
-      return {
-        vid,
-        productId: row.pid?.trim() || row.productId?.trim() || pid,
-        sku: row.variantSku?.trim() || row.sku?.trim() || null,
-        nameEn: row.variantNameEn?.trim() || row.variantKey?.trim() || null,
-        sellPrice:
-          row.variantSellPrice === undefined || row.variantSellPrice === null
-            ? null
-            : String(row.variantSellPrice),
-        barcode:
-          [row.barcode, row.variantBarcode, row.variantBarCode, row.productBarCode].find((value) => value !== undefined && value !== null && String(value).trim())
-            ? String([row.barcode, row.variantBarcode, row.variantBarCode, row.productBarCode].find((value) => value !== undefined && value !== null && String(value).trim())).replace(/\D/g, "") || null
-            : null,
-        inventory: null,
-      };
-    })
+    .map((row) => toCJProductVariant(row, pid))
     .filter((variant): variant is CJProductVariant => variant !== null);
 }

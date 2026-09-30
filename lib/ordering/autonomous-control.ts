@@ -121,7 +121,7 @@ export async function runAutonomousOrderControl(runKey: string): Promise<RunResu
 
   const { data: orders, error } = await supabase
     .from("shop_orders")
-    .select("id,order_number,payment_status,order_status")
+    .select("id,payment_status,order_status")
     .eq("payment_status", "paid")
     .in("order_status", ["placed", "processing", "fulfilled"])
     .order("created_at", { ascending: true })

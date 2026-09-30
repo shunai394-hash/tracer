@@ -430,7 +430,7 @@ export async function discoverAndCreateCjSupply(
         // only spent one rate-limited CJ request per candidate.
         const detail = { title: candidate.title, imageUrl: candidate.imageUrl, price: candidate.price };
 
-        const variants = await fetchCJProductVariants(candidate.id, { countryCode: "JP" });
+        const variants = await fetchCJProductVariants(candidate.id);
         // In supply-first the CJ variant itself is the sellable item, so a
         // multi-variant product is not ambiguous: pick one concrete variant
         // (cheapest priced) and name it explicitly in the listing title.
