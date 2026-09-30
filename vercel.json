@@ -1,16 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build",
-  "crons": [
-    { "path": "/api/cron/market-sourcing", "schedule": "0 * * * *" },
-    { "path": "/api/cron/supplier-investigation", "schedule": "5 * * * *" },
-    { "path": "/api/cron/sales-test-publication", "schedule": "10 * * * *" },
-    { "path": "/api/cron/inventory-refresh", "schedule": "15 * * * *" },
-    { "path": "/api/cron/base-publish", "schedule": "20 * * * *" },
-    { "path": "/api/cron/dropship-execution", "schedule": "30 * * * *" },
-    { "path": "/api/cron/supplier-reconciliation", "schedule": "35 * * * *" },
-    { "path": "/api/cron/supplier-orders", "schedule": "40 * * * *" },
-    { "path": "/api/cron/newfind-retry", "schedule": "*/20 * * * *" },
-    { "path": "/api/cron/supply-first", "schedule": "*/15 * * * *" }
-  ]
+  "buildCommand": "npm run build"
 }
