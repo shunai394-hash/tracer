@@ -78,6 +78,12 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true,
     generatedAt: nowIso,
+    // Which commit production is actually serving (set by Vercel at build).
+    deployment: {
+      commitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+      env: process.env.VERCEL_ENV ?? null,
+      deploymentId: process.env.VERCEL_DEPLOYMENT_ID ?? null,
+    },
     counts,
     shopListingBlockedReasons: blocked,
     recentPublished: recentPublished ?? [],
