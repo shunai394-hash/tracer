@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { calculateCJFreight, fetchCJVariantStock } from "@/lib/sources/cj/client";
+import { calculateCJFreight, fetchCJProductInventory, fetchCJVariantStock } from "@/lib/sources/cj/client";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -30,7 +30,20 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: "supplier_variant_missing", listingId: listing.id }, { status: 422 });
     }
 
-    const inventory = await fetchCJVariantStock(variantId);
+    let inventory: number | null = null;
+    let inventorySource = "variant_stock_endpoint";
+
+    try {
+      inventory = await fetchCJVariantStock(variantId);
+    } catch (error) {
+      console.warn("[TRACER REPAIR FIRST CJ LISTING] variant stock endpoint failed", error);
+    }
+
+    if (inventory === null) {
+      inventory = await fetchCJProductInventory(productId);
+      inventorySource = "product_catalog_exact_product_id";
+    }
+
     const shippingCost = await calculateCJFreight(variantId, {
       startCountryCode: "CN",
       endCountryCode: "JP",
@@ -74,7 +87,7 @@ export async function GET(request: Request) {
       .eq("id", String(listing.id));
     if (shopError) throw new Error(shopError.message);
 
-    return NextResponse.json({ ok: true, listingId: listing.id, title: listing.title, supplierProductId: productId, supplierVariantId: variantId, inventory, shippingCost, orderable, liveSupplierData: true });
+    return NextResponse.json({ ok: true, listingId: listing.id, title: listing.title, supplierProductId: productId, supplierVariantId: variantId, inventory, inventorySource, shippingCost, orderable, liveSupplierData: true });
   } catch (error) {
     console.error("[TRACER REPAIR FIRST CJ LISTING]", error);
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
