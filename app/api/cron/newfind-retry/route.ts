@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { retryPendingNewfindPromotions } from "@/lib/integration/newfind";
-import { requireCronAuth } from "@/lib/security/cron-auth";
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
   try {
-    const authError = requireCronAuth(request);
+    const authError = await requireAutomationAuth(request);
     if (authError) return authError;
 
     const result = await retryPendingNewfindPromotions(50);
