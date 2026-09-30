@@ -52,6 +52,13 @@ export async function GET(request: Request) {
     const base = await publishPublishedListingsToBase(
       Math.max(5, listingIds.length),
     );
+    console.log("[TRACER BASE PUBLISH RESULT]", JSON.stringify({
+      attempted: base.attempted,
+      published: base.published,
+      skipped: base.skipped,
+      failed: base.failed,
+      results: base.results,
+    }));
 
     const newfind = await Promise.all(
       listingIds.map((listingId) =>
