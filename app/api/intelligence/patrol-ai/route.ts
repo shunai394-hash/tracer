@@ -46,7 +46,10 @@ export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
 
+  const patrolId = crypto.randomUUID();
   const startedAt = new Date().toISOString();
+  console.log("[TRACER_PATROL_START]", JSON.stringify({ patrolId, startedAt }));
+
   const before = await audit(request);
   const repairs: string[] = [];
   const results: unknown[] = [];
@@ -56,28 +59,87 @@ export async function GET(request: Request) {
   const retryable = count(before, "cj_retryable");
   const basePublished = count(before, "shop_listings_on_base_published");
 
-  if (orderable === 0 || due > 0 || retryable > 0) {
+  console.log("[TRACER_PATROL_BEFORE]", JSON.stringify({
+    patrolId,
+    orderable,
+    due,
+    retryable,
+    basePublished,
+    deployment: before.deployment,
+  }));
+
+  const decision = orderable === 0 || due > 0 || retryable > 0
+    ? "repair_first_supply_first"
+    : "observe";
+  console.log("[TRACER_PATROL_DECISION]", JSON.stringify({
+    patrolId,
+    action: decision,
+    reason: { orderable, due, retryable },
+  }));
+
+  if (decision === "repair_first_supply_first") {
     repairs.push("supply-first");
-    results.push(await repair(request, "supply-first"));
+    const result = await repair(request, "supply-first");
+    results.push(result);
+    console.log("[TRACER_PATROL_REPAIR]", JSON.stringify({
+      patrolId,
+      stage: "supply-first",
+      status: result.status,
+      ok: result.ok,
+    }));
   }
 
   const afterSupply = await audit(request);
   if (count(afterSupply, "supplier_listings_orderable") > 0 && basePublished === 0) {
     repairs.push("base-publish");
-    results.push(await repair(request, "base-publish"));
+    const result = await repair(request, "base-publish");
+    results.push(result);
+    console.log("[TRACER_PATROL_REPAIR]", JSON.stringify({
+      patrolId,
+      stage: "base-publish",
+      status: result.status,
+      ok: result.ok,
+    }));
   }
 
   const after = await audit(request);
+  const verdict = count(after, "supplier_listings_orderable") > 0
+    ? "SUPPLY_AVAILABLE"
+    : "SUPPLY_STILL_BLOCKED";
+
+  console.log("[TRACER_PATROL_AFTER]", JSON.stringify({
+    patrolId,
+    orderable: count(after, "supplier_listings_orderable"),
+    due: count(after, "cj_due_for_verification"),
+    retryable: count(after, "cj_retryable"),
+    basePublished: count(after, "shop_listings_on_base_published"),
+    deployment: after.deployment,
+  }));
+
+  const finishedAt = new Date().toISOString();
   const report = {
     patrol: "TRACER Production Patrol",
+    patrolId,
     startedAt,
-    finishedAt: new Date().toISOString(),
+    finishedAt,
     repairs,
     before,
     after,
     results,
-    verdict: count(after, "supplier_listings_orderable") > 0 ? "SUPPLY_AVAILABLE" : "SUPPLY_STILL_BLOCKED",
+    verdict,
   };
-  console.log("[TRACER_PATROL]", JSON.stringify(report));
+  console.log("[TRACER_PATROL_COMPLETE]", JSON.stringify({
+    patrolId,
+    finishedAt,
+    verdict,
+    repairs,
+    before: { orderable, due, retryable, basePublished },
+    after: {
+      orderable: count(after, "supplier_listings_orderable"),
+      due: count(after, "cj_due_for_verification"),
+      retryable: count(after, "cj_retryable"),
+      basePublished: count(after, "shop_listings_on_base_published"),
+    },
+  }));
   return NextResponse.json(report);
 }
