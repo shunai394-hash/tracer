@@ -186,7 +186,7 @@ export async function discoverAndCreateCjSupply(
   for (const query of queries) {
     if (published >= limit) break;
 
-    if (candidateInputs.length > 0) break;
+    if (seeded.length > 0) break;
     let search;
     try {
       search = await searchCJProducts(query, { page: 1, size: 3 });
