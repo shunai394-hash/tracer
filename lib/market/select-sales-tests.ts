@@ -405,45 +405,46 @@ export async function selectAndPublishSalesTests(
 
     await markPipeline(String(item.bestseller.id), "SELECTED", "selected", "sales_test_selected");
 
-    const upsert = await supabase
-      .from("shop_listings")
-      .upsert(
-        {
-          product_id: productId,
-          bestseller_id: item.bestseller.id,
-          supplier_listing_id: item.isInternalSupply ? null : item.listing.id,
-          slug,
-          title: item.bestseller.title,
-          description: item.isInternalSupply
-            ? "TRACER独自供給カタログの商品です。需要・価格・在庫・注文可否をTRACER側で管理しています。"
-            : "市場ランキングで確認された売れ筋商品です。仕入は識別子で同一商品と確認できた無在庫仕入先のみを使います。",
-          image_url: item.bestseller.image_url,
-          selling_price: item.isInternalSupply
-            ? item.listing.catalog_sale_price
-            : item.bestseller.price,
-          currency: item.isInternalSupply ? item.listing.currency : item.bestseller.currency,
-          supplier_name: item.listing.supplier,
-          supplier_product_id: item.listing.supplier_product_id ?? item.listing.external_id,
-          supplier_variant_id: item.listing.supplier_variant_id ?? item.listing.cj_variant_id,
-          source_cost: item.profit.sourceCost,
-          shipping_cost: item.profit.internationalShipping,
-          inventory: asNumber(item.listing.inventory),
-          orderable: item.listing.orderable ?? false,
-          tracking_available: item.listing.tracking_available,
-          identity_method: item.listing.identity_method,
-          identity_confidence: item.listing.identity_confidence,
-          contribution_profit: item.profit.contributionProfit,
-          contribution_margin: item.profit.contributionMargin,
-          published: true,
-          selection_reasons: item.reasons,
-          missing: [],
-          published_at: fetchedAt,
-          updated_at: fetchedAt,
-        },
-        { onConflict: "slug" },
-      )
-      .select("id")
-      .single();
+    const listingPayload = {
+      product_id: productId,
+      bestseller_id: item.bestseller.id,
+      supplier_listing_id: item.isInternalSupply ? null : item.listing.id,
+      slug,
+      title: item.bestseller.title,
+      description: item.isInternalSupply
+        ? "TRACER独自供給カタログの商品です。需要・価格・在庫・注文可否をTRACER側で管理しています。"
+        : "市場ランキングで確認された売れ筋商品です。仕入は識別子で同一商品と確認できた無在庫仕入先のみを使います。",
+      image_url: item.bestseller.image_url,
+      selling_price: item.isInternalSupply ? item.listing.catalog_sale_price : item.bestseller.price,
+      currency: item.isInternalSupply ? item.listing.currency : item.bestseller.currency,
+      supplier_name: item.listing.supplier,
+      supplier_product_id: item.listing.supplier_product_id ?? item.listing.external_id,
+      supplier_variant_id: item.listing.supplier_variant_id ?? item.listing.cj_variant_id,
+      source_cost: item.profit.sourceCost,
+      shipping_cost: item.profit.internationalShipping,
+      inventory: asNumber(item.listing.inventory),
+      orderable: item.listing.orderable ?? false,
+      tracking_available: item.listing.tracking_available,
+      identity_method: item.listing.identity_method,
+      identity_confidence: item.listing.identity_confidence,
+      contribution_profit: item.profit.contributionProfit,
+      contribution_margin: item.profit.contributionMargin,
+      published: true,
+      selection_reasons: item.reasons,
+      missing: [],
+      published_at: fetchedAt,
+      updated_at: fetchedAt,
+    };
+    const existing = await supabase.from("shop_listings").select("id").eq("slug", slug).maybeSingle();
+    let upsert: { data: { id: string } | null; error: { message: string } | null };
+    if (existing.error) throw new Error(existing.error.message);
+    if (existing.data?.id) {
+      const updated = await supabase.from("shop_listings").update(listingPayload).eq("id", existing.data.id).select("id").single();
+      upsert = { data: updated.data as { id: string } | null, error: updated.error ? { message: updated.error.message } : null };
+    } else {
+      const inserted = await supabase.from("shop_listings").insert(listingPayload).select("id").single();
+      upsert = { data: inserted.data as { id: string } | null, error: inserted.error ? { message: inserted.error.message } : null };
+    }
 
     if (upsert.error) {
       await markPipeline(
