@@ -43,7 +43,7 @@ export async function GET(request: Request) {
     // /api/intelligence/bestsellers endpoint already uses this path, but the
     // scheduled pipeline previously skipped it entirely, leaving BASE at the
     // first manually discovered item. Reuse the same live CJ gates here.
-    const supplyFirst = await discoverAndCreateCjSupply(3);
+    const supplyFirst = await discoverAndCreateCjSupply(20);
 
     if (supplyFirst.published > 0) {
       const newfind = await Promise.all(
@@ -105,7 +105,7 @@ export async function GET(request: Request) {
     if (readyError) throw new Error(readyError.message);
 
     const candidateIds = (readyRows ?? []).map((row) => String(row.id));
-    const decision = await selectAndPublishSalesTests(candidateIds, 3);
+    const decision = await selectAndPublishSalesTests(candidateIds, 10);
 
     const newfind = await Promise.all(
       decision.publishedListingIds.map((listingId) =>
