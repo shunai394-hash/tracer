@@ -183,19 +183,31 @@ export async function discoverAndCreateCjSupply(
 
   if (published >= limit) return { discovered, published, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
 
+  // Seeded verification is only one source of candidates. If all seeded
+  // variants fail live Japan-freight verification, continue into the live CJ
+  // catalog instead of stopping with zero new products.
+  const seenSearchProducts = new Set<string>();
   for (const query of queries) {
-    if (published >= limit) break;
+    if (published >= limit || Date.now() >= deadlineAt) {
+      if (Date.now() >= deadlineAt) deadlineReached = true;
+      break;
+    }
 
-    if (seeded.length > 0) break;
     let search;
     try {
-      search = await searchCJProducts(query, { page: 1, size: 3 });
+      search = await searchCJProducts(query, { page: 1, size: 20 });
     } catch {
       continue;
     }
 
     for (const candidate of search.products.map((x) => ({ ...x, variantId: null as string | null }))) {
-      if (published >= limit) break;
+      if (published >= limit || Date.now() >= deadlineAt) {
+        if (Date.now() >= deadlineAt) deadlineReached = true;
+        break;
+      }
+      if (seenSearchProducts.has(candidate.id)) continue;
+      seenSearchProducts.add(candidate.id);
+      if (publishedVariants.has(`${candidate.id}:`)) continue;
       if (!candidate.imageUrl || !candidate.title) continue;
 
       try {
