@@ -5,7 +5,6 @@ import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import {
   fetchCJProductVariants,
   fetchCJVariantStock,
-  fetchCJVariantByVid,
   getCJProductDetail,
   searchCJProducts,
   calculateCJFreight,
@@ -206,17 +205,16 @@ export async function discoverAndCreateCjSupply(
         continue;
       }
       const salePrice = yenPrice(cost, freight, fxRate);
-      const salePrice = yenPrice(cost, freight, fxRate);
-      const sourceRef = `cj:${candidate.id}:${variant.vid}`;
+      const sourceRef = `cj:${candidate.id}:${candidate.variantId}`;
       const productInsert = await db.from("products").upsert({ canonical_name: detail.title, identity_key: sourceRef }, { onConflict: "identity_key" }).select("id").single();
       if (productInsert.error) throw new Error(productInsert.error.message);
       const productId = String(productInsert.data.id);
       const supplierInsert = await db.from("supplier_listings").upsert({
-        supplier: "cj", external_id: variant.vid, sku: variant.sku, title: detail.title, product_id: productId,
+        supplier: "cj", external_id: candidate.variantId, sku: null, title: detail.title, product_id: productId,
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
         order_method: "cj_api", api_available: true, identity_method: "supply_discovered",
         identity_status: "supply_discovered", identity_confidence: 1, configured: true,
-        supplier_product_id: candidate.id, supplier_variant_id: variant.vid, cj_variant_id: variant.vid,
+        supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
         orderable: true, price_confirmed: true, inventory_confirmed: true, tracking_available: false,
         fetched_at: new Date().toISOString(), metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate }
       }, { onConflict: "supplier,external_id" }).select("id").single();
@@ -225,12 +223,12 @@ export async function discoverAndCreateCjSupply(
       if (seededCandidate.supplierListingId && seededCandidate.supplierListingId !== String(supplierInsert.data.id)) {
         await markVerification(db, seededCandidate.supplierListingId, { status: "verified", shippingStatus: "verified" });
       }
-      const listingSlug = slug(detail.title, candidate.id, variant.vid);
+      const listingSlug = slug(detail.title, candidate.id, candidate.variantId);
       const shopInsert = await db.from("shop_listings").upsert({
         product_id: productId, supplier_listing_id: supplierInsert.data.id, slug: listingSlug, title: detail.title,
-        description: `TRACER supply-first product. Supplier: CJdropshipping. Variant: ${variant.nameEn ?? "standard"}.`,
+        description: `TRACER supply-first product. Supplier: CJdropshipping. Variant: standard.`,
         image_url: detail.imageUrl, selling_price: salePrice, currency: "JPY", supplier_name: "cj",
-        supplier_product_id: candidate.id, supplier_variant_id: variant.vid, source_cost: cost, shipping_cost: freight,
+        supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, source_cost: cost, shipping_cost: freight,
         inventory: Math.floor(stock), orderable: true, tracking_available: false, identity_method: "supply_discovered",
         identity_confidence: 1, published: true, selection_reasons: ["supply_first","live_cj_variant","live_inventory_gt_zero","live_japan_freight",`fx_usdjpy_${fxRate.toFixed(4)}`],
         missing: [], published_at: new Date().toISOString(), pipeline_stage: "PUBLISHED", pipeline_status: "published",
@@ -238,7 +236,7 @@ export async function discoverAndCreateCjSupply(
       }, { onConflict: "slug" }).select("id").single();
       if (shopInsert.error) throw new Error(shopInsert.error.message);
       discovered++; published++;
-      items.push({ listingId: String(shopInsert.data.id), productId, supplierListingId: String(supplierInsert.data.id), title: detail.title, supplierProductId: candidate.id, supplierVariantId: variant.vid, costUsd: cost, freightUsd: freight, inventory: Math.floor(stock), sellingPriceJpy: salePrice, fxRate });
+      items.push({ listingId: String(shopInsert.data.id), productId, supplierListingId: String(supplierInsert.data.id), title: detail.title, supplierProductId: candidate.id, supplierVariantId: candidate.variantId, costUsd: cost, freightUsd: freight, inventory: Math.floor(stock), sellingPriceJpy: salePrice, fxRate });
     } catch (error) {
       rejected++;
       const message = error instanceof Error ? error.message : String(error);
