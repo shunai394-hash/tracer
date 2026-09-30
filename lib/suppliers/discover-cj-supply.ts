@@ -33,11 +33,16 @@ function slug(title: string, productId: string, variantId: string): string {
  * Every published row must have a live variant id, live stock > 0, live
  * Japan freight, a positive cost and a non-empty image.
  */
-export async function discoverAndCreateCjSupply(limit = 1): Promise<{
+export async function discoverAndCreateCjSupply(
+  limit = 1,
+  options?: { deadlineAt?: number },
+): Promise<{
   discovered: number;
   published: number;
   rejected: number;
   candidateCount: number;
+  eligibleCount: number;
+  deadlineReached: boolean;
   items: Array<Record<string, unknown>>;
 }> {
   const db = createSupabaseAdminClient();
@@ -92,9 +97,13 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
   const rotation = seeded.length > 0
     ? Math.floor(Date.now() / 86_400_000) % seeded.length
     : 0;
+  // Traverse every eligible candidate; the caller's deadline (not a fixed
+  // count) bounds the batch so the request stays inside maxDuration.
   const rotatedSeeded = seeded.length > 0
-    ? [...seeded.slice(rotation), ...seeded.slice(0, rotation)].slice(0, 12)
+    ? [...seeded.slice(rotation), ...seeded.slice(0, rotation)]
     : [];
+  const deadlineAt = options?.deadlineAt ?? Number.POSITIVE_INFINITY;
+  let deadlineReached = false;
 
   const candidateInputs = (rotatedSeeded.length
     ? rotatedSeeded.map((row) => ({
@@ -112,6 +121,10 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
 
   for (const seededCandidate of candidateInputs) {
     if (published >= limit) break;
+    if (Date.now() >= deadlineAt) {
+      deadlineReached = true;
+      break;
+    }
     const candidate = {
       id: seededCandidate.id,
       variantId: seededCandidate.variantId,
@@ -162,11 +175,13 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
       items.push({ listingId: String(shopInsert.data.id), productId, supplierListingId: String(supplierInsert.data.id), title: detail.title, supplierProductId: candidate.id, supplierVariantId: variant.vid, costUsd: cost, freightUsd: freight, inventory: Math.floor(stock), sellingPriceJpy: salePrice, fxRate });
     } catch (error) {
       rejected++;
-      console.warn("[supply-first] seeded candidate rejected", { productId: candidate.id, error: error instanceof Error ? error.message : String(error) });
+      const message = error instanceof Error ? error.message : String(error);
+      items.push({ rejectedStage: "error", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, error: message });
+      console.warn("[supply-first] seeded candidate rejected", { productId: candidate.id, error: message });
     }
   }
 
-  if (published >= limit) return { discovered, published, rejected, candidateCount: candidateInputs.length, items };
+  if (published >= limit) return { discovered, published, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
 
   for (const query of queries) {
     if (published >= limit) break;
@@ -358,5 +373,5 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
     }
   }
 
-  return { discovered, published, rejected, candidateCount: candidateInputs.length, items };
+  return { discovered, published, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
 }

@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { AddToCartButton } from "@/components/add-to-cart-button";
 import { getShopListingBySlug, recordShopFunnelEvent } from "@/lib/shop/store";
@@ -15,10 +16,16 @@ async function loadShopProduct(slug: string) {
       return { listing: null, evidence: [], bestseller: null, configError: false } as const;
     }
 
-    await recordShopFunnelEvent({
-      listingId: listing.id,
-      eventType: "view",
-    });
+    // TRACER's own URL liveness check (before promoting to NEWFIND) is not
+    // a customer view and must not be counted in the funnel.
+    const isLivenessCheck =
+      (await headers()).get("x-tracer-liveness-check") === "1";
+    if (!isLivenessCheck) {
+      await recordShopFunnelEvent({
+        listingId: listing.id,
+        eventType: "view",
+      });
+    }
 
     const evidence = listing.productId
       ? await listEvidenceForProduct(listing.productId)
