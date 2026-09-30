@@ -175,10 +175,48 @@ export async function discoverAndCreateCjSupply(
       const cachedTitle = String(cachedProduct?.title ?? "").trim();
       const cachedImageUrl = String(cachedProduct?.image_url ?? "").trim();
       const cachedPrice = Number(cachedProduct?.price);
-      const detail = cachedTitle && cachedImageUrl
+      let detail = cachedTitle && cachedImageUrl
         ? { title: cachedTitle, imageUrl: cachedImageUrl, price: Number.isFinite(cachedPrice) ? cachedPrice : null }
         : await getCJProductDetail(candidate.id);
-      if (!detail?.imageUrl || !detail.title) { rejected++; if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: "product_detail_missing" }); items.push({ rejectedStage: "product_detail_missing", supplierProductId: candidate.id }); continue; }
+
+      // Some CJ product-query responses are empty even though the product is
+      // still discoverable through listV2. Do not discard an otherwise
+      // orderable seeded variant just because the detail endpoint is missing
+      // title/image. Retry the catalog search using the persisted title and
+      // require the returned product id to match exactly.
+      if (!detail?.imageUrl || !detail.title) {
+        const fallbackQuery = seededCandidate.seededTitle.trim();
+        if (fallbackQuery) {
+          try {
+            const fallback = await searchCJProducts(fallbackQuery, { page: 1, size: 20 });
+            const matched = fallback.products.find((product) => product.id === candidate.id);
+            if (matched?.imageUrl && matched.title) {
+              detail = {
+                title: matched.title,
+                imageUrl: matched.imageUrl,
+                price: Number.isFinite(Number(matched.price)) ? Number(matched.price) : null,
+              };
+            }
+          } catch {
+            // The original detail failure remains the durable retry reason.
+          }
+        }
+      }
+
+      if (!detail?.imageUrl || !detail.title) {
+        rejected++;
+        if (seededCandidate.supplierListingId) {
+          await markVerification(db, seededCandidate.supplierListingId, {
+            status: "retryable",
+            error: "product_detail_and_catalog_search_missing",
+          });
+        }
+        items.push({
+          rejectedStage: "product_detail_and_catalog_search_missing",
+          supplierProductId: candidate.id,
+        });
+        continue;
+      }
       // Reuse persisted variant/cost/inventory observations. Only image/title
       // and live Japan freight consume CJ requests for seeded rows.
       const stock = Number.isFinite(seededCandidate.inventory) && seededCandidate.inventory > 0
