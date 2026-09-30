@@ -158,15 +158,34 @@ export async function discoverAndCreateCjSupply(
     };
     const query = seededCandidate.query;
     try {
-      const detail = await getCJProductDetail(candidate.id);
+      // Prefer persisted CJ catalog observations. This avoids spending CJ API
+      // requests on product-detail calls for candidates we already observed.
+      const { data: cachedProduct } = await db
+        .from("demand_cj_products")
+        .select("title,price,image_url,inventory")
+        .eq("cj_product_id", candidate.id)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const cachedTitle = String(cachedProduct?.title ?? "").trim();
+      const cachedImageUrl = String(cachedProduct?.image_url ?? "").trim();
+      const cachedPrice = Number(cachedProduct?.price);
+      const detail = cachedTitle && cachedImageUrl
+        ? { title: cachedTitle, imageUrl: cachedImageUrl, price: Number.isFinite(cachedPrice) ? cachedPrice : null }
+        : await getCJProductDetail(candidate.id);
       if (!detail?.imageUrl || !detail.title) { rejected++; if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: "product_detail_missing" }); items.push({ rejectedStage: "product_detail_missing", supplierProductId: candidate.id }); continue; }
       const variant = await fetchCJVariantByVid(candidate.variantId);
       if (!variant?.vid || (variant.productId && variant.productId !== candidate.id)) { rejected++; if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: "variant_missing_or_product_mismatch" }); items.push({ rejectedStage: "variant_missing_or_product_mismatch", supplierProductId: candidate.id, supplierVariantId: candidate.variantId }); continue; }
-      const stock = await fetchCJVariantStock(variant.vid);
+      // Reuse the freshest persisted inventory when available; live freight
+      // remains the publication gate because Japan shipping is cost-critical.
+      const cachedInventory = Number(cachedProduct?.inventory);
+      const stock = Number.isFinite(cachedInventory) && cachedInventory > 0
+        ? cachedInventory
+        : await fetchCJVariantStock(variant.vid);
       if (stock === null || stock <= 0) { rejected++; if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: "live_stock_unavailable" }); items.push({ rejectedStage: "live_stock_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, stock }); continue; }
       const freight = await calculateCJFreight(variant.vid, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1, zip: "1000001" });
       if (freight === null || freight <= 0) { rejected++; if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "unavailable", shippingStatus: "unavailable", error: "jp_freight_unavailable" }); items.push({ rejectedStage: "jp_freight_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, freight }); continue; }
-      const cost = Number(variant.sellPrice ?? detail.price);
+      const cost = Number(variant.sellPrice ?? detail.price ?? cachedPrice);
       if (!Number.isFinite(cost) || cost <= 0) { rejected++; if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: "cost_unavailable" }); items.push({ rejectedStage: "cost_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, cost }); continue; }
       const salePrice = yenPrice(cost, freight, fxRate);
       const sourceRef = `cj:${candidate.id}:${variant.vid}`;
