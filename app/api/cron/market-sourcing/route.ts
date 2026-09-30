@@ -6,7 +6,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// Keep each observation invocation comfortably below Vercel's 60s hard limit.\n// Larger batches are resumed through cron_runs.nextIndex on the next invocation.\nconst MARKET_SOURCING_BATCH_SIZE = 3;
+// Keep each observation invocation comfortably below Vercel's 60s hard limit.
+// Larger batches are resumed through cron_runs.nextIndex on the next invocation.\nconst MARKET_SOURCING_BATCH_SIZE = 3;
 
 export async function GET(request: Request) {
   const authError = requireCronAuth(request);
