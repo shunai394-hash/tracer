@@ -39,19 +39,20 @@ async function upsertSupplierListing(
   db: ReturnType<typeof createSupabaseAdminClient>,
   payload: Record<string, unknown>,
   preferredId?: string | null,
-): Promise<{ data: { id: string } | null; error: Error | null }> {
+): Promise<{ data: { id: string }; error: Error | null }> {
   const supplier = String(payload.supplier ?? "");
   const externalId = String(payload.external_id ?? "");
   const existing = preferredId
     ? await db.from("supplier_listings").select("id").eq("id", preferredId).limit(1)
     : await db.from("supplier_listings").select("id").eq("supplier", supplier).eq("external_id", externalId).order("created_at", { ascending: true }).limit(1);
-  if (existing.error) return { data: null, error: new Error(existing.error.message) };
+  if (existing.error) return { data: { id: "" }, error: new Error(existing.error.message) };
   const existingId = existing.data?.[0]?.id ? String(existing.data[0].id) : null;
   const result = existingId
     ? await db.from("supplier_listings").update(payload).eq("id", existingId).select("id").single()
     : await db.from("supplier_listings").insert(payload).select("id").single();
-  if (result.error) return { data: null, error: new Error(result.error.message) };
-  return { data: result.data ? { id: String(result.data.id) } : null, error: null };
+  if (result.error) return { data: { id: "" }, error: new Error(result.error.message) };
+  if (!result.data?.id) return { data: { id: "" }, error: new Error("supplier listing upsert returned no id") };
+  return { data: { id: String(result.data.id) }, error: null };
 }
 
 function slug(title: string, productId: string, variantId: string): string {
