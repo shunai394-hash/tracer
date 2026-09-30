@@ -17,10 +17,10 @@ export async function POST() {
     // Supply-first is now the primary path: a real CJ product with live
     // variant/stock/freight evidence can become a TRACER-owned listing without
     // pretending that it is identical to a marketplace product.
-    const supplyFirst = await discoverAndCreateCjSupply(10);
+    const supplyFirst = await discoverAndCreateCjSupply(50);
 
     if (supplyFirst.published > 0) {
-      const base = await publishPublishedListingsToBase(5);
+      const base = await publishPublishedListingsToBase(50);
       const listingIds = supplyFirst.items
         .map((item) => String(item.listingId ?? ""))
         .filter(Boolean);
