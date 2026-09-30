@@ -461,6 +461,7 @@ export async function calculateCJFreight(
     startCountryCode?: string;
     endCountryCode?: string;
     quantity?: number;
+    zip?: string;
   },
 ): Promise<number | null> {
   const token = await getAccessToken();
@@ -475,6 +476,7 @@ export async function calculateCJFreight(
       body: JSON.stringify({
         startCountryCode: options?.startCountryCode ?? "CN",
         endCountryCode: options?.endCountryCode ?? "JP",
+        ...(options?.zip ? { zip: options.zip } : {}),
         products: [
           {
             quantity: options?.quantity ?? 1,
