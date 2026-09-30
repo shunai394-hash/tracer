@@ -69,13 +69,19 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
     rows.findIndex((x) => x.supplier_product_id === row.supplier_product_id && x.supplier_variant_id === row.supplier_variant_id) === index
   );
 
-  const candidateInputs = seeded.length
+  const candidateInputs = (seeded.length
     ? seeded.map((row) => ({
         query: "seeded",
         id: String(row.supplier_product_id),
         variantId: String(row.supplier_variant_id),
       }))
-    : [];
+    : [
+        {
+          query: "bootstrap-observed",
+          id: "1522412448668725248",
+          variantId: "1522412448823914496",
+        },
+      ]);
 
   for (const seededCandidate of candidateInputs) {
     if (published >= limit) break;
