@@ -9,7 +9,7 @@ const BASE = "https://tracer-self.vercel.app";
 
 async function getAudit(token: string) {
   const response = await fetch(`${BASE}/api/intelligence/pipeline-audit`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: token },
     cache: "no-store",
   });
   const body = await response.text();
@@ -21,7 +21,7 @@ async function getAudit(token: string) {
 
 async function runCron(path: string, token: string) {
   const response = await fetch(`${BASE}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: token },
     cache: "no-store",
   });
   const body = await response.text();
