@@ -1,7 +1,7 @@
 ﻿import "server-only";
 
 import { createCJOrderV2, getCJOrderStatus, getCJTrackingInfo } from "@/lib/sources/cj/create-order";
-import { calculateCJFreight, fetchCJVariantByVid, fetchCJVariantStock, getCJProductDetail, searchCJProducts, getCJFreightOptions } from "@/lib/sources/cj/client";
+import { calculateCJFreight, fetchCJProductInventory, fetchCJVariantByVid, fetchCJVariantStock, getCJProductDetail, searchCJProducts, getCJFreightOptions } from "@/lib/sources/cj/client";
 import type {
   SupplierInventory,
   SupplierOrder,
@@ -143,6 +143,28 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
   },
 
   async createOrder(input: SupplierOrderInput): Promise<SupplierOrderResult> {
+    let liveInventory: number | null = null;
+    try {
+      liveInventory = await fetchCJVariantStock(input.supplierVariantId);
+    } catch {
+      liveInventory = null;
+    }
+
+    if (liveInventory === null) {
+      liveInventory = await fetchCJProductInventory(input.supplierProductId);
+    }
+
+    if (liveInventory === null || liveInventory < input.quantity) {
+      return {
+        succeeded: false,
+        supplierOrderId: null,
+        responseCode: "CJ_INVENTORY_UNAVAILABLE",
+        responseMessage: `CJ live inventory is insufficient for this order: available=${liveInventory ?? "unknown"} requested=${input.quantity}`,
+        trackingNumber: null,
+        raw: { liveInventory, requestedQuantity: input.quantity },
+      };
+    }
+
     const freightOptions = await getCJFreightOptions(input.supplierVariantId, {
       startCountryCode: "CN",
       endCountryCode: input.shippingCountryCode,
