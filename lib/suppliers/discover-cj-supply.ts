@@ -97,11 +97,11 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
     const query = seededCandidate.query;
     try {
       const detail = await getCJProductDetail(candidate.id);
-      const search = !detail?.imageUrl || !detailCandidate.title
+      const search = !detail?.imageUrl || !detail.title
         ? await searchCJProducts(candidate.title, { page: 1, size: 10 }).catch(() => null)
         : null;
       const detailCandidate =
-        detail?.imageUrl && detailCandidate.title
+        detail?.imageUrl && detail.title
           ? detail
           : search?.products.find((p) => p.id === candidate.id && p.imageUrl && p.title) ?? null;
       if (!detailCandidate?.imageUrl || !detailCandidate.title) { rejected++; items.push({ rejectedStage: "product_detail_missing", supplierProductId: candidate.id }); continue; }
