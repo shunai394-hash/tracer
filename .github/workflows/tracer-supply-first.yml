@@ -7,21 +7,28 @@ on:
     - cron: "*/15 * * * *"
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   supply-first:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Run supply-first patrol passes
-        env:
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -euo pipefail
-          test -n "$CRON_SECRET"
+          test -n "$ACTIONS_ID_TOKEN_REQUEST_URL"
+          test -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN"
           for pass in 1 2 3 4; do
             echo "=== supply-first pass $pass/4 ==="
+            OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app"
+            OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$OIDC_URL" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            test -n "$OIDC_TOKEN"
+            python -c 'import base64,json,sys; c=json.loads(base64.urlsafe_b64decode(sys.argv[1].split(".")[1]+"="*(-len(sys.argv[1].split(".")[1])%4))); print("OIDC:", {k:c.get(k) for k in ("iss","aud","repository","ref","workflow_ref")})' "$OIDC_TOKEN"
             curl --fail-with-body --silent --show-error --max-time 300 \
-              -H "Authorization: Bearer $CRON_SECRET" \
+              -H "Authorization: Bearer $OIDC_TOKEN" \
               "https://tracer-self.vercel.app/api/cron/supply-first"
             sleep 5
           done
