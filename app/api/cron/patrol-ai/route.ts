@@ -56,11 +56,42 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
   };
 }
 
-function decide(before: Snapshot) {
-  if (before.eligibleForBase > before.basePublished) return "publish_base";
-  if (before.publishedListings === 0) return "discover_supply";
-  if (before.orderableSuppliers === 0) return "discover_supply";
-  return "recheck_pipeline";
+type RepairAction = "discover_supply" | "publish_base" | "recheck_pipeline";
+
+async function aiDecide(before: Snapshot): Promise<{ action: RepairAction; reason: string; model: string }> {
+  const apiKey = process.env.OPENAI_API_KEY ?? process.env.AI_API_KEY;
+  const model = process.env.TRACER_PATROL_MODEL ?? "gpt-4o-mini";
+  const fallback = (): { action: RepairAction; reason: string; model: string } => {
+    if (before.eligibleForBase > before.basePublished) return { action: "publish_base", reason: "BASE公開可能件数がBASE公開済み件数を上回っています。", model: "rule-fallback" };
+    if (before.publishedListings === 0 || before.orderableSuppliers === 0) return { action: "discover_supply", reason: "公開済み商品または発注可能な仕入先がありません。", model: "rule-fallback" };
+    return { action: "recheck_pipeline", reason: "主要件数は存在するため再監査します。", model: "rule-fallback" };
+  };
+  if (!apiKey) return fallback();
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: "You are TRACER Patrol AI. Choose exactly one safe repair action from discover_supply, publish_base, recheck_pipeline. Never invent facts. The action must be reversible/safe and must not place paid supplier orders. Return JSON {action,reason}." },
+          { role: "user", content: JSON.stringify({ snapshot: before }) },
+        ],
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!response.ok) throw new Error(`patrol AI HTTP ${response.status}`);
+    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    const parsed = JSON.parse(payload.choices?.[0]?.message?.content ?? "{}") as { action?: string; reason?: string };
+    if (!["discover_supply", "publish_base", "recheck_pipeline"].includes(parsed.action ?? "")) throw new Error("patrol AI returned invalid action");
+    return { action: parsed.action as RepairAction, reason: parsed.reason || "AIが安全な修復アクションを選択しました。", model };
+  } catch (error) {
+    const fallbackDecision = fallback();
+    return { ...fallbackDecision, reason: `AI判断に失敗したため安全なルール判断へフォールバック: ${error instanceof Error ? error.message : String(error)}` };
+  }
 }
 
 export async function GET(request: Request) {
@@ -85,7 +116,7 @@ export async function GET(request: Request) {
     }
 
     const before = await snapshot(db);
-    const decision = decide(before);
+    const aiDecision = await aiDecide(before);\n    const decision = aiDecision.action;
     const actions: Array<Record<string, unknown>> = [];
     const errors: string[] = [];
 
