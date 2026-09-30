@@ -92,7 +92,7 @@ export async function discoverAndCreateCjSupply(
 
   const { data: seededRows } = await db
     .from("supplier_listings")
-    .select("id,title,supplier_product_id,supplier_variant_id,cost,verification_status,shipping_status,next_verification_at")
+    .select("id,title,supplier_product_id,supplier_variant_id,cost,inventory,verification_status,shipping_status,next_verification_at")
     .eq("supplier", "cj")
     .eq("inventory_confirmed", true)
     .eq("price_confirmed", true)
@@ -205,7 +205,7 @@ export async function discoverAndCreateCjSupply(
         items.push({ rejectedStage: "cost_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, cost });
         continue;
       }
-      const salePrice = yenPrice(cost, freight, fxRate);
+      const variant = { vid: candidate.variantId, sku: null as string | null, nameEn: "standard" };
       const salePrice = yenPrice(cost, freight, fxRate);
       const sourceRef = `cj:${candidate.id}:${variant.vid}`;
       const productInsert = await db.from("products").upsert({ canonical_name: detail.title, identity_key: sourceRef }, { onConflict: "identity_key" }).select("id").single();
