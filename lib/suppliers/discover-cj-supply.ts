@@ -110,11 +110,10 @@ export async function discoverAndCreateCjSupply(
 
   const { data: seededRows } = await db
     .from("supplier_listings")
-    .select("id,title,supplier_product_id,supplier_variant_id,cost,inventory,verification_status,shipping_status,next_verification_at")
+    .select("id,title,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,next_verification_at")
     .eq("supplier", "cj")
-    .eq("inventory_confirmed", true)
-    .eq("price_confirmed", true)
-    .gt("inventory", 0)
+    .not("supplier_product_id", "is", null)
+    .not("supplier_variant_id", "is", null)
     .not("supplier_product_id", "is", null)
     .not("supplier_variant_id", "is", null)
     .order("inventory", { ascending: false })
@@ -152,6 +151,8 @@ export async function discoverAndCreateCjSupply(
         variantId: String(row.supplier_variant_id),
         cost: Number(row.cost),
         inventory: Number(row.inventory),
+        inventoryConfirmed: row.inventory_confirmed === true,
+        priceConfirmed: row.price_confirmed === true,
         seededTitle: String(row.title ?? ""),
         supplierListingId: String(row.id),
       }))
@@ -238,13 +239,33 @@ export async function discoverAndCreateCjSupply(
       }
       // Reuse persisted variant/cost/inventory observations. Only image/title
       // and live Japan freight consume CJ requests for seeded rows.
-      const stock = Number.isFinite(seededCandidate.inventory) && seededCandidate.inventory > 0
-        ? seededCandidate.inventory
-        : null;
+      let stock =
+        seededCandidate.inventoryConfirmed === true &&
+        Number.isFinite(seededCandidate.inventory) &&
+        seededCandidate.inventory > 0
+          ? seededCandidate.inventory
+          : null;
+
+      // Unverified rows are not dead data. Re-check stock live so the 5k+
+      // unverified pool can actually advance through the pipeline.
+      if (stock === null) {
+        stock = await fetchCJVariantStock(candidate.variantId);
+      }
+
       if (stock === null || stock <= 0) {
         rejected++;
-        if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: "stored_inventory_unavailable" });
-        items.push({ rejectedStage: "stored_inventory_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, stock });
+        if (seededCandidate.supplierListingId) {
+          await markVerification(db, seededCandidate.supplierListingId, {
+            status: "retryable",
+            error: "live_inventory_unavailable",
+          });
+        }
+        items.push({
+          rejectedStage: "live_inventory_unavailable",
+          supplierProductId: candidate.id,
+          supplierVariantId: candidate.variantId,
+          stock,
+        });
         continue;
       }
       const freight = await calculateCJFreight(candidate.variantId, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1, zip: "1000001" });
