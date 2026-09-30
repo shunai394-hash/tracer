@@ -110,22 +110,55 @@ export async function publishPublishedListingsToBase(
       continue;
     }
 
-    // Never create a new BASE item whose supplier shipping cost was not
-    // actually measured; the selling price cannot be trusted without it.
-    // Existing BASE items are left as they are so this gate does not break
-    // listings that are already live.
+    // Shipping is part of the economics gate. A missing, non-finite, or
+    // non-positive supplier shipping cost means the selling price is not
+    // economically verified. This applies to existing BASE items too:
+    // never leave an already-published item publicly sellable after its
+    // supplier economics become unknown.
     const shippingCost =
       listing.shipping_cost === null || listing.shipping_cost === undefined
         ? null
         : Number(listing.shipping_cost);
-    if (!listing.base_item_id && (shippingCost === null || !Number.isFinite(shippingCost))) {
+    if (shippingCost === null || !Number.isFinite(shippingCost) || shippingCost <= 0) {
+      if (listing.base_item_id) {
+        try {
+          await editBaseItem({
+            itemId: String(listing.base_item_id),
+            title: listing.title,
+            detail: listing.description ?? listing.title,
+            price: Number(listing.selling_price ?? 0),
+            stock: 0,
+            visible: false,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          await supabase.from("shop_listings").update({
+            base_last_error: message,
+            pipeline_stage: "BASE_RECONCILIATION",
+            pipeline_status: "failed",
+            pipeline_reason: "base_hide_shipping_unknown_failed",
+            pipeline_error: message,
+            pipeline_updated_at: new Date().toISOString(),
+          }).eq("id", listingId);
+          results.push({ listingId, ok: false, error: message });
+          continue;
+        }
+      }
       await supabase.from("shop_listings").update({
+        published: false,
+        base_publication_status: listing.base_item_id ? "published" : "blocked",
+        base_publication_lease_until: null,
         pipeline_stage: "BASE_PUBLICATION",
         pipeline_status: "blocked",
-        pipeline_reason: "shipping_unknown",
+        pipeline_reason: shippingCost === null ? "shipping_unknown" : "shipping_invalid",
         pipeline_updated_at: new Date().toISOString(),
       }).eq("id", listingId);
-      results.push({ listingId, ok: false, skipped: true, error: "shipping_unknown" });
+      results.push({
+        listingId,
+        ok: false,
+        skipped: true,
+        error: shippingCost === null ? "shipping_unknown" : "shipping_invalid",
+      });
       continue;
     }
 
