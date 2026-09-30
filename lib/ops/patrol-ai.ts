@@ -1,5 +1,6 @@
 import "server-only";
 
+// Autonomous patrol decision engine: inspect production state, choose a bounded repair, then re-audit.
 export type PatrolAudit = {
   counts?: Record<string, number | string>;
   shopListingBlockedReasons?: Record<string, number>;
