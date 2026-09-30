@@ -127,7 +127,33 @@ async function fetchCJWithRateLimit(
     await waitForCJRateLimit();
 
     const response = await fetch(input, init);
-    if (response.status !== 429 || attempt === maxAttempts) {
+    if (response.status !== 429) {
+      return response;
+    }
+
+    const diagnosticResponse = response.clone();
+    let diagnostic: { code?: number; result?: boolean; message?: string; pointsInfo?: unknown } = {};
+    try {
+      diagnostic = (await diagnosticResponse.json()) as typeof diagnostic;
+    } catch {
+      // Keep the original response available to the caller.
+    }
+
+    console.warn("[cj] HTTP 429", {
+      attempt,
+      maxAttempts,
+      code: diagnostic.code,
+      message: diagnostic.message,
+      pointsInfo: diagnostic.pointsInfo,
+    });
+
+    if (diagnostic.code === 16900500 || /insufficient api points/i.test(diagnostic.message ?? "")) {
+      throw new CJRequestError(
+        diagnostic.message || "CJ API points exhausted",
+      );
+    }
+
+    if (attempt === maxAttempts) {
       return response;
     }
 
@@ -137,7 +163,7 @@ async function fetchCJWithRateLimit(
         ? Math.min(Math.max(retryAfter * 1000, 1_000), 15_000)
         : Math.min(1000 * 2 ** (attempt - 1), 8_000);
 
-    console.warn("[cj] rate limited; retrying", {
+    console.warn("[cj] QPS rate limited; retrying", {
       attempt,
       maxAttempts,
       retryMs,
