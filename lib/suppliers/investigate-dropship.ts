@@ -757,6 +757,7 @@ export async function investigateDropshipForBestsellers(
               startCountryCode: "CN",
               endCountryCode: "JP",
               quantity: 1,
+              zip: "1000001",
             });
             if (freight !== null) observedShippingCost = freight;
           } catch (error) {
