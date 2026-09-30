@@ -205,7 +205,6 @@ export async function discoverAndCreateCjSupply(
         items.push({ rejectedStage: "cost_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, cost });
         continue;
       }
-      const variant = { vid: candidate.variantId, sku: null as string | null, nameEn: "standard" };
       const salePrice = yenPrice(cost, freight, fxRate);
       const salePrice = yenPrice(cost, freight, fxRate);
       const sourceRef = `cj:${candidate.id}:${variant.vid}`;
