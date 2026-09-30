@@ -47,6 +47,19 @@ jobs:
             sleep 5
           done
 
+      - name: Publish eligible listings to BASE
+        if: always()
+        run: |
+          set -uo pipefail
+          OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          if ! curl --fail-with-body --silent --show-error --max-time 300 \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            "https://tracer-self.vercel.app/api/cron/base-publish"; then
+            echo "BASE publication failed"
+            exit 1
+          fi
+          echo
+
       - name: Detect BASE orders and advance dropship fulfilment
         if: always()
         run: |
