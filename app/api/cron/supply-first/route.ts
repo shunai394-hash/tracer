@@ -13,6 +13,9 @@ export const maxDuration = 300;
 
 // Leave headroom after supplier verification for BASE creation + NEWFIND.
 const DISCOVERY_BUDGET_MS = 180_000;
+// CJ enforces a hard account-level QPS limit. Keep each patrol deliberately small
+// so overlapping Vercel invocations cannot consume the whole budget in one run.
+const DISCOVERY_BATCH_SIZE = 5;
 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -20,7 +23,7 @@ export async function GET(request: Request) {
 
   try {
     const startedAt = Date.now();
-    const supplyFirst = await discoverAndCreateCjSupply(100, {
+    const supplyFirst = await discoverAndCreateCjSupply(DISCOVERY_BATCH_SIZE, {
       deadlineAt: startedAt + DISCOVERY_BUDGET_MS,
     });
 
