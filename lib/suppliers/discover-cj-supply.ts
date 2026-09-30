@@ -57,7 +57,7 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
   // stock, variant and Japan freight are re-verified live before publication.
   const { data: seededRows } = await db
     .from("supplier_listings")
-    .select("title,supplier_product_id,supplier_variant_id,cost")
+    .select("title,supplier_product_id,supplier_variant_id,cost,inventory,metadata")
     .eq("supplier", "cj")
     .eq("inventory_confirmed", true)
     .eq("price_confirmed", true)
@@ -90,13 +90,20 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
     const candidate = {
       id: seededCandidate.id,
       variantId: seededCandidate.variantId,
-      title: "seeded",
+      title: String(seededRows.find((row) => row.supplier_product_id === seededCandidate.id && row.supplier_variant_id === seededCandidate.variantId)?.title ?? ""),
       imageUrl: null,
       price: null,
     };
     const query = seededCandidate.query;
     try {
-      const detail = await getCJProductDetail(candidate.id);
+      let detail = await getCJProductDetail(candidate.id);
+      if (!detail?.imageUrl || !detail.title) {
+        const search = await searchCJProducts(candidate.title, { page: 1, size: 10 }).catch(() => null);
+        const recovered = search?.products.find((p) => p.id === candidate.id && p.imageUrl && p.title);
+        if (recovered) {
+          detail = recovered;
+        }
+      }
       if (!detail?.imageUrl || !detail.title) { rejected++; items.push({ rejectedStage: "product_detail_missing", supplierProductId: candidate.id }); continue; }
       const variant = await fetchCJVariantByVid(candidate.variantId);
       if (!variant?.vid || (variant.productId && variant.productId !== candidate.id)) { rejected++; items.push({ rejectedStage: "variant_missing_or_product_mismatch", supplierProductId: candidate.id, supplierVariantId: candidate.variantId }); continue; }
