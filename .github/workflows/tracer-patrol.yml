@@ -41,6 +41,7 @@ jobs:
           before=r.get("before",{}).get("counts",{})
           after=r.get("after",{}).get("counts",{})
           print("=== TRACER PATROL REPORT ===")
+          print("patrolId:", r.get("patrolId"))
           print("repairs:", r.get("repairs", []))
           print("orderable before:", before.get("supplier_listings_orderable"))
           print("orderable after:", after.get("supplier_listings_orderable"))
