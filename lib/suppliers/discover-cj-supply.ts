@@ -563,7 +563,7 @@ export async function discoverAndCreateCjSupply(
           supplier_listing_id: supplierListingId,
           slug: listingSlug,
           title: detail.title,
-          description: `TRACER supply-first product. Supplier: CJdropshipping. Variant: ${variant.nameEn ?? "standard"}.`,
+          description: `日本向けに厳選した商品です。\n\nCJdropshippingから仕入れ、在庫・日本向け送料を確認したうえで掲載しています。\n\n商品仕様：${detail.title}\nバリエーション：${variant.nameEn ?? "標準仕様"}\n\n※商品名・仕様は仕入先の商品情報を基にしています。対応機種・サイズなどはご注文前に商品画像・仕様をご確認ください。\n※仕入先の在庫・配送状況により、販売を停止する場合があります。`,
           image_url: detail.imageUrl,
           selling_price: salePrice,
           currency: "JPY",
