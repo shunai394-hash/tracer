@@ -272,6 +272,17 @@ async function recordUnconfiguredSupplier(args: {
   fetchedAt: string;
 }) {
   const supabase = createSupabaseAdminClient();
+  // One placeholder per (supplier, bestseller) is enough. Re-inserting it on
+  // every investigation pass is what inflated supplier_listings to tens of
+  // thousands of non-orderable rows.
+  const { data: existing } = await supabase
+    .from("supplier_listings")
+    .select("id")
+    .eq("supplier", args.supplier)
+    .eq("bestseller_id", args.bestsellerId)
+    .eq("configured", false)
+    .limit(1);
+  if ((existing ?? []).length > 0) return;
   await supabase.from("supplier_listings").insert({
     supplier: args.supplier,
     bestseller_id: args.bestsellerId,

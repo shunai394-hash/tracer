@@ -6,6 +6,7 @@ import {
   verifyVariantSelectionInvariants,
   type CJProductVariant,
 } from "@/lib/sources/cj/variant-select";
+import { firstCJImageUrl, parseCJStockData } from "@/lib/sources/cj/parse";
 
 export { selectUnambiguousVariant, verifyVariantSelectionInvariants };
 export type { CJProductVariant };
@@ -39,12 +40,18 @@ type CJAuthResponse = {
 };
 
 type CJProduct = {
+  // product/listV2 fields
   id?: string;
   nameEn?: string;
   sku?: string;
   bigImage?: string;
-  sellPrice?: string;
-  nowPrice?: string | null;
+  // product/query (detail) uses different field names for the same data
+  pid?: string;
+  productNameEn?: string;
+  productSku?: string;
+  productImage?: string | string[];
+  sellPrice?: string | number;
+  nowPrice?: string | number | null;
   warehouseInventoryNum?: number;
   listedNum?: number;
   productType?: string;
@@ -248,8 +255,8 @@ const searchLogState = { done: false };
 const detailLogState = { done: false };
 
 function normalizeProduct(product: CJProduct): CJProductCandidate | null {
-  const id = product.id?.trim();
-  const title = product.nameEn?.trim();
+  const id = product.id?.trim() || product.pid?.trim();
+  const title = product.nameEn?.trim() || product.productNameEn?.trim();
 
   if (!id || !title) {
     return null;
@@ -258,9 +265,9 @@ function normalizeProduct(product: CJProduct): CJProductCandidate | null {
   return {
     id,
     title,
-    sku: product.sku?.trim() || null,
-    price: product.sellPrice?.trim() || product.nowPrice?.trim() || null,
-    imageUrl: product.bigImage?.trim() || null,
+    sku: product.sku?.trim() || product.productSku?.trim() || null,
+    price: String(product.sellPrice ?? "").trim() || String(product.nowPrice ?? "").trim() || null,
+    imageUrl: product.bigImage?.trim() || firstCJImageUrl(product.productImage),
     inventory:
       typeof product.warehouseInventoryNum === "number"
         ? product.warehouseInventoryNum
@@ -331,6 +338,35 @@ export async function fetchCJProductInventory(
     throw new CJRequestError("CJ product id is empty");
   }
 
+  try {
+    const token = await getAccessToken();
+    const params = new URLSearchParams({ pid: normalizedProductId });
+    const response = await fetchCJWithRateLimit(
+      `https://developers.cjdropshipping.com/api2.0/v1/product/stock/getInventoryByPid?${params.toString()}`,
+      {
+        method: "GET",
+        headers: { "CJ-Access-Token": token },
+        cache: "no-store",
+      },
+    );
+    if (response.ok) {
+      const payload = (await response.json()) as { result?: boolean; data?: unknown };
+      if (payload.result !== false) {
+        const data = payload.data as Record<string, unknown> | null | undefined;
+        // Product-level warehouse totals, not the per-variant breakdown.
+        const quantity = parseCJStockData(
+          data && typeof data === "object" && Array.isArray(data.inventories)
+            ? data.inventories
+            : data,
+        );
+        if (quantity !== null) return quantity;
+      }
+    }
+  } catch (error) {
+    if (error instanceof CJConfigError) throw error;
+    // Fall through to the catalog listing below.
+  }
+
   const result = await searchCJProducts(normalizedProductId, { page: 1, size: 20 });
   const exact = result.products.find((product) => product.id === normalizedProductId);
   return exact?.inventory ?? null;
@@ -367,46 +403,7 @@ export async function fetchCJVariantStock(vid: string): Promise<number | null> {
     throw new CJRequestError(payload.message || "CJ variant stock lookup failed");
   }
 
-  const candidates: unknown[] = Array.isArray(payload.data)
-    ? payload.data
-    : payload.data && typeof payload.data === "object"
-      ? [
-          payload.data,
-          ...Object.values(payload.data as Record<string, unknown>).filter(
-            (value) => Array.isArray(value),
-          ).flat(),
-        ]
-      : [payload.data];
-
-  const stockKeys = [
-    "stock",
-    "inventory",
-    "inventoryNum",
-    "availableStock",
-    "warehouseInventoryNum",
-    "totalInventory",
-    "quantity",
-  ] as const;
-
-  for (const candidate of candidates) {
-    if (typeof candidate === "number" && Number.isFinite(candidate)) {
-      return candidate;
-    }
-    if (!candidate || typeof candidate !== "object") continue;
-    const record = candidate as Record<string, unknown>;
-    for (const key of stockKeys) {
-      const value = record[key];
-      const numeric =
-        typeof value === "number"
-          ? value
-          : typeof value === "string" && value.trim()
-            ? Number(value)
-            : NaN;
-      if (Number.isFinite(numeric)) return numeric;
-    }
-  }
-
-  return null;
+  return parseCJStockData(payload.data);
 }
 
 export type CJFreightOption = {
@@ -651,7 +648,7 @@ export async function getCJProductDetail(
     result?: boolean;
     data?: CJProduct & { productList?: CJProduct[] };
   };
-  const product = payload.data?.id
+  const product = payload.data?.id || payload.data?.pid
     ? payload.data
     : payload.data?.productList?.[0];
   if (product) logRawCjProductOnce("product/query", product, detailLogState);

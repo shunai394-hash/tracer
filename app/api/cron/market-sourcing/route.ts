@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
-import { requireCronAuth } from "@/lib/security/cron-auth";
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -14,7 +14,7 @@ export const maxDuration = 60;
 const MARKET_SOURCING_BATCH_SIZE = 10;
 
 export async function GET(request: Request) {
-  const authError = requireCronAuth(request);
+  const authError = await requireAutomationAuth(request);
   if (authError) return authError;
 
   const supabase = createSupabaseAdminClient();
