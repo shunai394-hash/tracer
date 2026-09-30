@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: tracer-autonomous-patrol-ai
+  group: tracer-supply-first
   cancel-in-progress: false
 
 jobs:
