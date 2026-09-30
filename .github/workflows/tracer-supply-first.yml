@@ -15,7 +15,7 @@ permissions:
 # run hammer CJ's rate limit concurrently.
 concurrency:
   group: tracer-supply-first
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   supply-first:
