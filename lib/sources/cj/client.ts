@@ -323,6 +323,19 @@ export async function fetchCJVariantByVid(vid: string): Promise<CJProductVariant
   };
 }
 
+export async function fetchCJProductInventory(
+  productId: string,
+): Promise<number | null> {
+  const normalizedProductId = productId.trim();
+  if (!normalizedProductId) {
+    throw new CJRequestError("CJ product id is empty");
+  }
+
+  const result = await searchCJProducts(normalizedProductId, { page: 1, size: 20 });
+  const exact = result.products.find((product) => product.id === normalizedProductId);
+  return exact?.inventory ?? null;
+}
+
 export async function fetchCJVariantStock(vid: string): Promise<number | null> {
   const normalizedVid = vid.trim();
   if (!normalizedVid) throw new CJRequestError("CJ variant id is empty");
