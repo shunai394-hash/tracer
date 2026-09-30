@@ -20,29 +20,35 @@ type Snapshot = {
 };
 
 async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promise<Snapshot> {
-  const count = async (table: string, apply?: (q: any) => any) => {
-    let q: any = db.from(table).select("*", { count: "exact", head: true });
-    if (apply) q = apply(q);
-    const { count, error } = await q;
-    if (error) throw new Error(`${table}: ${error.message}`);
-    return count ?? 0;
-  };
+  const productsQuery = db.from("products").select("*", { count: "exact", head: true });
+  const supplierListingsQuery = db.from("supplier_listings").select("*", { count: "exact", head: true });
+  const orderableSuppliersQuery = db.from("supplier_listings").select("*", { count: "exact", head: true }).eq("orderable", true);
+  const shopListingsQuery = db.from("shop_listings").select("*", { count: "exact", head: true });
+  const publishedListingsQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).eq("published", true);
+  const eligibleForBaseQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).eq("published", true).eq("orderable", true).gt("inventory", 0).not("image_url", "is", null);
+  const onBaseQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).not("base_item_id", "is", null);
+  const basePublishedQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).not("base_item_id", "is", null).eq("base_publication_status", "published").eq("published", true);
+  const ordersQuery = db.from("shop_orders").select("*", { count: "exact", head: true });
 
-  const [products, supplierListings, orderableSuppliers, shopListings, publishedListings,
-    eligibleForBase, onBase, basePublished, orders] = await Promise.all([
-    count("products"),
-    count("supplier_listings"),
-    count("supplier_listings", q => q.eq("orderable", true)),
-    count("shop_listings"),
-    count("shop_listings", q => q.eq("published", true)),
-    count("shop_listings", q => q.eq("published", true).eq("orderable", true).gt("inventory", 0).not("image_url", "is", null)),
-    count("shop_listings", q => q.not("base_item_id", "is", null)),
-    count("shop_listings", q => q.not("base_item_id", "is", null).eq("base_publication_status", "published").eq("published", true)),
-    count("shop_orders"),
+  const [productsResult, supplierListingsResult, orderableSuppliersResult, shopListingsResult, publishedListingsResult, eligibleForBaseResult, onBaseResult, basePublishedResult, ordersResult] = await Promise.all([
+    productsQuery, supplierListingsQuery, orderableSuppliersQuery, shopListingsQuery, publishedListingsQuery, eligibleForBaseQuery, onBaseQuery, basePublishedQuery, ordersQuery,
   ]);
 
-  return { products, supplierListings, orderableSuppliers, shopListings, publishedListings,
-    eligibleForBase, onBase, basePublished, orders };
+  const results = [
+    ["products", productsResult], ["supplier_listings", supplierListingsResult], ["supplier_listings(orderable)", orderableSuppliersResult],
+    ["shop_listings", shopListingsResult], ["shop_listings(published)", publishedListingsResult], ["shop_listings(eligible)", eligibleForBaseResult],
+    ["shop_listings(on_base)", onBaseResult], ["shop_listings(base_published)", basePublishedResult], ["shop_orders", ordersResult],
+  ] as const;
+
+  for (const [label, result] of results) {
+    if (result.error) throw new Error(`${label}: ${result.error.message}`);
+  }
+
+  return {
+    products: productsResult.count ?? 0, supplierListings: supplierListingsResult.count ?? 0, orderableSuppliers: orderableSuppliersResult.count ?? 0,
+    shopListings: shopListingsResult.count ?? 0, publishedListings: publishedListingsResult.count ?? 0, eligibleForBase: eligibleForBaseResult.count ?? 0,
+    onBase: onBaseResult.count ?? 0, basePublished: basePublishedResult.count ?? 0, orders: ordersResult.count ?? 0,
+  };
 }
 
 function decide(before: Snapshot) {
