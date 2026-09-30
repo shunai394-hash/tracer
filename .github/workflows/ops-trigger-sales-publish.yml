@@ -16,8 +16,8 @@ jobs:
           set -e
           curl --fail-with-body --silent --show-error --max-time 300 \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "https://tracer-oj6gg3lhx-shunai394-9704s-projects.vercel.app/api/cron/sales-test-publication"
+            "https://tracer-self.vercel.app/api/cron/sales-test-publication"
           sleep 10
           curl --fail-with-body --silent --show-error --max-time 300 \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "https://tracer-oj6gg3lhx-shunai394-9704s-projects.vercel.app/api/cron/base-publish"
+            "https://tracer-self.vercel.app/api/cron/base-publish"
