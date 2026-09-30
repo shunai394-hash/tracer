@@ -205,7 +205,7 @@ export async function discoverAndCreateCjSupply(
         items.push({ rejectedStage: "cost_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, cost });
         continue;
       }
-      const salePrice = yenPrice(cost, freight, fxRate);
+      const variant = { vid: candidate.variantId, sku: null as string | null, nameEn: "standard" };
       const salePrice = yenPrice(cost, freight, fxRate);
       const sourceRef = `cj:${candidate.id}:${variant.vid}`;
       const productInsert = await db.from("products").upsert({ canonical_name: detail.title, identity_key: sourceRef }, { onConflict: "identity_key" }).select("id").single();
