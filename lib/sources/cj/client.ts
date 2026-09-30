@@ -674,11 +674,27 @@ export async function getCJProductDetail(
 
   const payload = (await response.json()) as {
     result?: boolean;
-    data?: CJProduct & { productList?: CJProduct[] };
+    data?: unknown;
   };
-  const product = payload.data?.id || payload.data?.pid
-    ? payload.data
-    : payload.data?.productList?.[0];
+
+  // product/query has appeared as either a single object or a wrapper
+  // containing productList/content in different CJ API responses. Normalize
+  // both forms instead of turning a valid product into null.
+  const data = payload.data;
+  let product: CJProduct | undefined;
+  if (Array.isArray(data)) {
+    product = data[0] as CJProduct | undefined;
+  } else if (data && typeof data === "object") {
+    const record = data as Record<string, unknown>;
+    if (record.id || record.pid) {
+      product = record as CJProduct;
+    } else if (Array.isArray(record.productList)) {
+      product = record.productList[0] as CJProduct | undefined;
+    } else if (Array.isArray(record.content)) {
+      product = record.content[0] as CJProduct | undefined;
+    }
+  }
+
   if (product) logRawCjProductOnce("product/query", product, detailLogState);
   return product ? normalizeProduct(product) : null;
 }
