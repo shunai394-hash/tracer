@@ -358,7 +358,7 @@ export async function discoverAndCreateCjSupply(
       const listingSlug = slug(detail.title, candidate.id, candidate.variantId);
       const shopPayload = {
         product_id: productId, supplier_listing_id: supplierInsert.data.id, slug: listingSlug, title: detail.title,
-        description: `TRACER supply-first product. Supplier: CJdropshipping. Variant: standard.`,
+        description: `日本向けに厳選した商品です。\n\nCJdropshippingから仕入れ、在庫・日本向け送料を確認したうえで掲載しています。\n\n商品仕様：${detail.title}\nバリエーション：標準仕様\n\n※商品名・仕様は仕入先の商品情報を基にしています。対応機種・サイズなどはご注文前に商品画像・仕様をご確認ください。\n※仕入先の在庫・配送状況により、販売を停止する場合があります。`,
         image_url: detail.imageUrl, selling_price: salePrice, currency: "JPY", supplier_name: "cj",
         supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, source_cost: cost, shipping_cost: freight,
         inventory: Math.floor(stock), orderable: true, tracking_available: false, identity_method: "supply_discovered",
