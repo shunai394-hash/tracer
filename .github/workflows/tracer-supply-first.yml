@@ -14,14 +14,16 @@ permissions:
 jobs:
   supply-first:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
-      - name: Run supply-first patrol
+      - name: Run supply-first patrol passes
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -euo pipefail
           test -n "$CRON_SECRET"
-          curl --fail-with-body --silent --show-error --max-time 300 \
-            -H "Authorization: Bearer $CRON_SECRET" \
-            "https://tracer-self.vercel.app/api/cron/supply-first"
+          for pass in 1 2 3 4; do
+            echo "=== supply-first pass $pass/4 ==="
+            curl --fail-with-body --silent --show-error --max-time 300               -H "Authorization: Bearer $CRON_SECRET"               "https://tracer-self.vercel.app/api/cron/supply-first"
+            sleep 5
+          done
