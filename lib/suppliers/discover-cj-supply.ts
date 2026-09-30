@@ -77,7 +77,7 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
     .not("supplier_product_id", "is", null)
     .not("supplier_variant_id", "is", null)
     .order("inventory", { ascending: false })
-    .limit(50);
+    .limit(500);
 
   const seeded = (seededRows ?? []).filter((row, index, rows) => {
     const key = `${String(row.supplier_product_id)}:${String(row.supplier_variant_id)}`;
