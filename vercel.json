@@ -10,7 +10,7 @@
     { "path": "/api/cron/dropship-execution", "schedule": "30 12 * * *" },
     { "path": "/api/cron/supplier-reconciliation", "schedule": "35 12 * * *" },
     { "path": "/api/cron/supplier-orders", "schedule": "40 12 * * *" },
-    { "path": "/api/cron/newfind-retry", "schedule": "*/20 * * * *" },
-    { "path": "/api/cron/supply-first", "schedule": "*/15 * * * *" }
+    { "path": "/api/cron/newfind-retry", "schedule": "45 12 * * *" },
+    { "path": "/api/cron/supply-first", "schedule": "50 12 * * *" }
   ]
 }
