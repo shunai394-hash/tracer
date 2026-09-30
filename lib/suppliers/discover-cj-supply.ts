@@ -85,16 +85,17 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
       rows.findIndex((x) => x.supplier_product_id === row.supplier_product_id && x.supplier_variant_id === row.supplier_variant_id) === index;
   });
 
-  // Do not retry the same failed candidates forever. The scheduled job runs
-  // once per day, so rotate the verification window by day and inspect a
-  // bounded batch. This keeps the job inside its execution budget while
-  // ensuring the 38 currently eligible CJ candidates are actually traversed.
+  // Rotate the candidate pool by day, but do not impose an arbitrary
+  // 12-candidate daily cap. The cron has a 300s Vercel budget; stop safely
+  // before the hard timeout while continuing until the publication limit is
+  // reached or the currently eligible pool has been traversed.
   const rotation = seeded.length > 0
     ? Math.floor(Date.now() / 86_400_000) % seeded.length
     : 0;
   const rotatedSeeded = seeded.length > 0
-    ? [...seeded.slice(rotation), ...seeded.slice(0, rotation)].slice(0, 12)
+    ? [...seeded.slice(rotation), ...seeded.slice(0, rotation)]
     : [];
+  const verificationDeadline = Date.now() + 270_000;
 
   const candidateInputs = (rotatedSeeded.length
     ? rotatedSeeded.map((row) => ({
@@ -111,7 +112,7 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
       ]);
 
   for (const seededCandidate of candidateInputs) {
-    if (published >= limit) break;
+    if (published >= limit || Date.now() >= verificationDeadline) break;
     const candidate = {
       id: seededCandidate.id,
       variantId: seededCandidate.variantId,
