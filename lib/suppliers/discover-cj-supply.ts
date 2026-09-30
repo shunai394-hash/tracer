@@ -114,8 +114,6 @@ export async function discoverAndCreateCjSupply(
     .eq("supplier", "cj")
     .not("supplier_product_id", "is", null)
     .not("supplier_variant_id", "is", null)
-    .not("supplier_product_id", "is", null)
-    .not("supplier_variant_id", "is", null)
     .order("inventory", { ascending: false })
     .limit(5000);
 
@@ -132,7 +130,7 @@ export async function discoverAndCreateCjSupply(
   // Do not retry the same failed candidates forever. The scheduled job runs
   // once per day, so rotate the verification window by day and inspect a
   // bounded batch. This keeps the job inside its execution budget while
-  // ensuring the 38 currently eligible CJ candidates are actually traversed.
+  // ensuring the unverified CJ candidate pool is actually traversed.
   const rotation = seeded.length > 0
     ? Math.floor(Date.now() / 86_400_000) % seeded.length
     : 0;
@@ -164,6 +162,8 @@ export async function discoverAndCreateCjSupply(
           supplierListingId: null,
           cost: 23,
           inventory: 45890,
+          inventoryConfirmed: true,
+          priceConfirmed: true,
           seededTitle: "bootstrap",
         },
       ]);
