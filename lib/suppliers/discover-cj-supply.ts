@@ -5,6 +5,7 @@ import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import {
   fetchCJProductVariants,
   fetchCJVariantStock,
+  fetchCJVariantByVid,
   getCJProductDetail,
   searchCJProducts,
   calculateCJFreight,
@@ -96,9 +97,8 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
     try {
       const detail = await getCJProductDetail(candidate.id);
       if (!detail?.imageUrl || !detail.title) continue;
-      const variants = await fetchCJProductVariants(candidate.id, { countryCode: "JP" });
-      const variant = variants.find((x) => x.vid === candidate.variantId) ?? null;
-      if (!variant?.vid) continue;
+      const variant = await fetchCJVariantByVid(candidate.variantId);
+      if (!variant?.vid || (variant.productId && variant.productId !== candidate.id)) continue;
       const stock = await fetchCJVariantStock(variant.vid);
       if (stock === null || stock <= 0) continue;
       const freight = await calculateCJFreight(variant.vid, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 });
