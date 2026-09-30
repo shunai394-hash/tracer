@@ -5,14 +5,32 @@ on:
     - cron: "*/20 * * * *"
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   retry:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Run NEWFIND retry
-        env:
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      - name: Mint GitHub OIDC token
+        id: oidc
         run: |
           set -euo pipefail
-          curl --fail-with-body --silent --show-error --max-time 300             -H "Authorization: Bearer $CRON_SECRET"             "https://tracer-self.vercel.app/api/cron/newfind-retry"
+          token="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://tracer-self.vercel.app" \
+            | jq -r '.value')"
+          test -n "$token"
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Run NEWFIND retry
+        env:
+          OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error --max-time 300 \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            "https://tracer-self.vercel.app/api/cron/newfind-retry"
