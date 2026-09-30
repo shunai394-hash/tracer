@@ -26,21 +26,27 @@ jobs:
           test -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN"
           run_stage() {
             echo "=== $1 ==="
-            # Mint a fresh token per stage: OIDC tokens are short-lived and a
-            # single stage may run for up to 300s.
             token="$(curl --fail-with-body --silent --show-error \
               -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
               "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" \
               | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
             test -n "$token"
-            # A failing stage (including 409 cron_already_running) must not
-            # abort every downstream stage; record it and fail at the end.
-            if ! curl --fail-with-body --silent --show-error --max-time 300 \
+
+            # 409 cron_already_running is an expected overlap signal, not a
+            # pipeline failure. Preserve all other non-2xx responses as failures.
+            body_file="$(mktemp)"
+            http_code="$(curl --silent --show-error --max-time 300 \
+              -o "$body_file" -w "%{http_code}" \
               -H "Authorization: Bearer $token" \
-              "$TRACER_URL$1"; then
+              "$TRACER_URL$1")" || true
+            cat "$body_file"
+            echo
+            if [ "$http_code" = "409" ] && grep -q '"reason":"cron_already_running"' "$body_file"; then
+              echo "=== $1 already running; treating as non-failure ==="
+            elif [[ "$http_code" != 2* ]]; then
               failures="$failures $1"
             fi
-            echo
+            rm -f "$body_file"
           }
           failures=""
 
