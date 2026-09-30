@@ -37,6 +37,7 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
   discovered: number;
   published: number;
   rejected: number;
+  candidateCount: number;
   items: Array<Record<string, unknown>>;
 }> {
   const db = createSupabaseAdminClient();
@@ -96,15 +97,15 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
     const query = seededCandidate.query;
     try {
       const detail = await getCJProductDetail(candidate.id);
-      if (!detail?.imageUrl || !detail.title) continue;
+      if (!detail?.imageUrl || !detail.title) { rejected++; items.push({ rejectedStage: "product_detail_missing", supplierProductId: candidate.id }); continue; }
       const variant = await fetchCJVariantByVid(candidate.variantId);
-      if (!variant?.vid || (variant.productId && variant.productId !== candidate.id)) continue;
+      if (!variant?.vid || (variant.productId && variant.productId !== candidate.id)) { rejected++; items.push({ rejectedStage: "variant_missing_or_product_mismatch", supplierProductId: candidate.id, supplierVariantId: candidate.variantId }); continue; }
       const stock = await fetchCJVariantStock(variant.vid);
-      if (stock === null || stock <= 0) continue;
+      if (stock === null || stock <= 0) { rejected++; items.push({ rejectedStage: "live_stock_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, stock }); continue; }
       const freight = await calculateCJFreight(variant.vid, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 });
-      if (freight === null || freight <= 0) continue;
+      if (freight === null || freight <= 0) { rejected++; items.push({ rejectedStage: "jp_freight_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, freight }); continue; }
       const cost = Number(variant.sellPrice ?? detail.price);
-      if (!Number.isFinite(cost) || cost <= 0) continue;
+      if (!Number.isFinite(cost) || cost <= 0) { rejected++; items.push({ rejectedStage: "cost_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, cost }); continue; }
       const salePrice = yenPrice(cost, freight, fxRate);
       const sourceRef = `cj:${candidate.id}:${variant.vid}`;
       const productInsert = await db.from("products").upsert({ canonical_name: detail.title, identity_key: sourceRef }, { onConflict: "identity_key" }).select("id").single();
@@ -140,7 +141,7 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
     }
   }
 
-  if (published >= limit) return { discovered, published, rejected, items };
+  if (published >= limit) return { discovered, published, rejected, candidateCount: candidateInputs.length, items };
 
   for (const query of queries) {
     if (published >= limit) break;
@@ -331,5 +332,5 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
     }
   }
 
-  return { discovered, published, rejected, items };
+  return { discovered, published, rejected, candidateCount: candidateInputs.length, items };
 }
