@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
-import { requireCronAuth } from "@/lib/security/cron-auth";
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -15,7 +15,7 @@ export const maxDuration = 300;
 const DISCOVERY_BUDGET_MS = 180_000;
 
 export async function GET(request: Request) {
-  const authError = requireCronAuth(request);
+  const authError = await requireAutomationAuth(request);
   if (authError) return authError;
 
   try {
