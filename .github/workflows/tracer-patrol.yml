@@ -1,0 +1,38 @@
+name: TRACER Recurring Patrol
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+jobs:
+  patrol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Run commerce patrol pipeline
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          TRACER_URL: https://tracer-self.vercel.app
+        run: |
+          set -euo pipefail
+          run_stage() {
+            echo "=== $1 ==="
+            curl --fail-with-body --silent --show-error --max-time 300               -H "Authorization: Bearer $CRON_SECRET"               "$TRACER_URL$1"
+          }
+
+          run_stage /api/cron/market-sourcing
+          sleep 10
+          run_stage /api/cron/supplier-investigation
+          sleep 10
+          run_stage /api/cron/sales-test-publication
+          sleep 10
+          run_stage /api/cron/inventory-refresh
+          sleep 10
+          run_stage /api/cron/base-publish
+          sleep 10
+          run_stage /api/cron/dropship-execution
+          sleep 10
+          run_stage /api/cron/supplier-reconciliation
+          sleep 10
+          run_stage /api/cron/supplier-orders
