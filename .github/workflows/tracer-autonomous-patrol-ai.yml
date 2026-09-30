@@ -1,0 +1,36 @@
+name: TRACER Autonomous Patrol AI
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tracer-autonomous-patrol-ai
+  cancel-in-progress: false
+
+jobs:
+  patrol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Autonomous patrol, repair, and report
+        shell: bash
+        run: |
+          set -euo pipefail
+          OIDC_TOKEN=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=tracer" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
+          RESPONSE=$(curl -sS -w "\n%{http_code}" --max-time 300 \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            "https://tracer-self.vercel.app/api/cron/ai-patrol")
+          BODY=$(printf "%s" "$RESPONSE" | sed '$d')
+          CODE=$(printf "%s" "$RESPONSE" | tail -n 1)
+          echo "=== TRACER AUTONOMOUS PATROL AI ==="
+          echo "$BODY"
+          echo "HTTP $CODE"
+          if [ "$CODE" -lt 200 ] || [ "$CODE" -ge 300 ]; then
+            exit 1
+          fi
