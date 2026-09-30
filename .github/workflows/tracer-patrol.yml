@@ -1,82 +1,49 @@
-name: TRACER Recurring Patrol
+name: TRACER Production Patrol
 
 on:
   schedule:
-    - cron: "0 * * * *"
+    - cron: "*/20 * * * *"
   workflow_dispatch:
 
-# The CRON_SECRET Actions secret is not populated, so every stage
-# authenticates with a GitHub OIDC token instead (verified server-side by
-# requireAutomationAuth: issuer, audience, repository and refs/heads/main).
 permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: tracer-production-patrol
+  cancel-in-progress: false
+
 jobs:
   patrol:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     steps:
-      - name: Run commerce patrol pipeline
-        env:
-          TRACER_URL: https://tracer-self.vercel.app
+      - name: Measure, repair, and report
+        shell: bash
         run: |
           set -euo pipefail
-          test -n "$ACTIONS_ID_TOKEN_REQUEST_URL"
-          test -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN"
-          run_stage() {
-            echo "=== $1 ==="
-            token="$(curl --fail-with-body --silent --show-error \
-              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" \
-              | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
-            test -n "$token"
+          OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app"
+          OIDC_TOKEN="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "$OIDC_URL" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          test -n "$OIDC_TOKEN"
 
-            # 409 cron_already_running is an expected overlap signal, not a
-            # pipeline failure. Preserve all other non-2xx responses as failures.
-            body_file="$(mktemp)"
-            http_code="$(curl --silent --show-error --max-time 300 \
-              -o "$body_file" -w "%{http_code}" \
-              -H "Authorization: Bearer $token" \
-              "$TRACER_URL$1")" || true
-            cat "$body_file"
-            echo
-            if [ "$http_code" = "409" ] && grep -q '"reason":"cron_already_running"' "$body_file"; then
-              echo "=== $1 already running; treating as non-failure ==="
-            elif [[ "$http_code" != 2* ]]; then
-              failures="$failures $1"
-            fi
-            rm -f "$body_file"
-          }
-          failures=""
+          curl --fail-with-body --silent --show-error --max-time 300 \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            "https://tracer-self.vercel.app/api/intelligence/patrol-ai" | tee patrol-report.json
 
-          # One patrol is deliberately multi-pass so the persisted market
-          # cursor advances through several batches per hour.
-          for i in 1 2 3 4 5 6; do
-            run_stage /api/cron/market-sourcing
-            sleep 5
-          done
-
-          for i in 1 2 3 4; do
-            run_stage /api/cron/supplier-investigation
-            sleep 5
-          done
-
-          run_stage /api/cron/sales-test-publication
-          sleep 10
-          run_stage /api/cron/inventory-refresh
-          sleep 10
-          run_stage /api/cron/base-publish
-          sleep 10
-          run_stage /api/cron/base-orders
-          sleep 10
-          run_stage /api/cron/dropship-execution
-          sleep 10
-          run_stage /api/cron/supplier-reconciliation
-          sleep 10
-          run_stage /api/cron/supplier-orders
-
-          if [ -n "$failures" ]; then
-            echo "Failed stages:$failures"
-            exit 1
-          fi
+          python3 - <<'PY'
+          import json
+          with open("patrol-report.json", encoding="utf-8") as f:
+              r=json.load(f)
+          before=r.get("before",{}).get("counts",{})
+          after=r.get("after",{}).get("counts",{})
+          print("=== TRACER PATROL REPORT ===")
+          print("repairs:", r.get("repairs", []))
+          print("orderable before:", before.get("supplier_listings_orderable"))
+          print("orderable after:", after.get("supplier_listings_orderable"))
+          print("BASE published before:", before.get("shop_listings_on_base_published"))
+          print("BASE published after:", after.get("shop_listings_on_base_published"))
+          print("verdict:", r.get("verdict"))
+          print("deployment:", r.get("after",{}).get("deployment",{}))
+          PY
