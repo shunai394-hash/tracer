@@ -35,6 +35,25 @@ async function markVerification(
   }).eq("id", id);
 }
 
+async function upsertSupplierListing(
+  db: ReturnType<typeof createSupabaseAdminClient>,
+  payload: Record<string, unknown>,
+  preferredId?: string | null,
+): Promise<{ data: { id: string } | null; error: Error | null }> {
+  const supplier = String(payload.supplier ?? "");
+  const externalId = String(payload.external_id ?? "");
+  const existing = preferredId
+    ? await db.from("supplier_listings").select("id").eq("id", preferredId).limit(1)
+    : await db.from("supplier_listings").select("id").eq("supplier", supplier).eq("external_id", externalId).order("created_at", { ascending: true }).limit(1);
+  if (existing.error) return { data: null, error: new Error(existing.error.message) };
+  const existingId = existing.data?.[0]?.id ? String(existing.data[0].id) : null;
+  const result = existingId
+    ? await db.from("supplier_listings").update(payload).eq("id", existingId).select("id").single()
+    : await db.from("supplier_listings").insert(payload).select("id").single();
+  if (result.error) return { data: null, error: new Error(result.error.message) };
+  return { data: result.data ? { id: String(result.data.id) } : null, error: null };
+}
+
 function slug(title: string, productId: string, variantId: string): string {
   const base = title
     .toLowerCase()
@@ -247,7 +266,7 @@ export async function discoverAndCreateCjSupply(
       const productInsert = await db.from("products").upsert({ canonical_name: detail.title, identity_key: sourceRef }, { onConflict: "identity_key" }).select("id").single();
       if (productInsert.error) throw new Error(productInsert.error.message);
       const productId = String(productInsert.data.id);
-      const supplierInsert = await db.from("supplier_listings").upsert({
+      const supplierInsert = await upsertSupplierListing(db, {
         supplier: "cj", external_id: candidate.variantId, sku: null, title: detail.title, product_id: productId,
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
         order_method: "cj_api", api_available: true, identity_method: "supply_discovered",
@@ -255,7 +274,7 @@ export async function discoverAndCreateCjSupply(
         supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
         orderable: true, price_confirmed: true, inventory_confirmed: true, tracking_available: false,
         fetched_at: new Date().toISOString(), metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate }
-      }, { onConflict: "supplier,external_id" }).select("id").single();
+      }, seededCandidate.supplierListingId);
       if (supplierInsert.error) throw new Error(supplierInsert.error.message);
       await markVerification(db, String(supplierInsert.data.id), { status: "verified", shippingStatus: "verified" });
       if (seededCandidate.supplierListingId && seededCandidate.supplierListingId !== String(supplierInsert.data.id)) {
@@ -370,9 +389,7 @@ export async function discoverAndCreateCjSupply(
         if (productInsert.error) throw new Error(productInsert.error.message);
         const productId = String(productInsert.data.id);
 
-        const supplierInsert = await db
-          .from("supplier_listings")
-          .upsert(
+        const supplierInsert = await upsertSupplierListing(db, 
             {
               supplier: "cj",
               external_id: variant.vid,
@@ -407,11 +424,7 @@ export async function discoverAndCreateCjSupply(
                 image_url: detail.imageUrl,
                 variant_title: variant.nameEn,
               },
-            },
-            { onConflict: "supplier,external_id" },
-          )
-          .select("id")
-          .single();
+            });
 
         if (supplierInsert.error) throw new Error(supplierInsert.error.message);
         const supplierListingId = String(supplierInsert.data.id);
