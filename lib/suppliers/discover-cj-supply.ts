@@ -110,23 +110,38 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
     };
     const query = seededCandidate.query;
     try {
-      const detail = await getCJProductDetail(candidate.id);
-      if (!detail?.imageUrl || !detail.title) { rejected++; items.push({ rejectedStage: "product_detail_missing", supplierProductId: candidate.id }); continue; }
+      const detail = await getCJProductDetail(candidate.id).catch(() => null);
+      // CJ's detail endpoint can omit title/image for catalog items even when
+      // the variant is live. Recover those presentation fields from the
+      // catalog search without weakening the live variant/stock/freight gates.
+      const fallbackSearch = !detail?.imageUrl || !detail.title
+        ? await searchCJProducts(String((seededRows ?? []).find((r) => String(r.supplier_product_id) === candidate.id)?.title ?? ""), { page: 1, size: 10 }).catch(() => null)
+        : null;
+      const fallback = fallbackSearch?.products.find(
+        (p) => p.id === candidate.id && Boolean(p.imageUrl) && Boolean(p.title),
+      );
+      const resolvedTitle = detail?.title || fallback?.title;
+      const resolvedImageUrl = detail?.imageUrl || fallback?.imageUrl;
+      if (!resolvedImageUrl || !resolvedTitle) {
+        rejected++;
+        items.push({ rejectedStage: "product_presentation_missing", supplierProductId: candidate.id });
+        continue;
+      }
       const variant = await fetchCJVariantByVid(candidate.variantId);
       if (!variant?.vid || (variant.productId && variant.productId !== candidate.id)) { rejected++; items.push({ rejectedStage: "variant_missing_or_product_mismatch", supplierProductId: candidate.id, supplierVariantId: candidate.variantId }); continue; }
       const stock = await fetchCJVariantStock(variant.vid);
       if (stock === null || stock <= 0) { rejected++; items.push({ rejectedStage: "live_stock_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, stock }); continue; }
       const freight = await calculateCJFreight(variant.vid, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 });
       if (freight === null || freight <= 0) { rejected++; items.push({ rejectedStage: "jp_freight_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, freight }); continue; }
-      const cost = Number(variant.sellPrice ?? detail.price);
+      const cost = Number(variant.sellPrice ?? detail?.price);
       if (!Number.isFinite(cost) || cost <= 0) { rejected++; items.push({ rejectedStage: "cost_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, cost }); continue; }
       const salePrice = yenPrice(cost, freight, fxRate);
       const sourceRef = `cj:${candidate.id}:${variant.vid}`;
-      const productInsert = await db.from("products").upsert({ canonical_name: detail.title, identity_key: sourceRef }, { onConflict: "identity_key" }).select("id").single();
+      const productInsert = await db.from("products").upsert({ canonical_name: resolvedTitle, identity_key: sourceRef }, { onConflict: "identity_key" }).select("id").single();
       if (productInsert.error) throw new Error(productInsert.error.message);
       const productId = String(productInsert.data.id);
       const supplierInsert = await db.from("supplier_listings").upsert({
-        supplier: "cj", external_id: variant.vid, sku: variant.sku, title: detail.title, product_id: productId,
+        supplier: "cj", external_id: variant.vid, sku: variant.sku, title: resolvedTitle, product_id: productId,
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
         order_method: "cj_api", api_available: true, identity_method: "supply_discovered",
         identity_status: "supply_discovered", identity_confidence: 1, configured: true,
@@ -139,7 +154,7 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
       const shopInsert = await db.from("shop_listings").upsert({
         product_id: productId, supplier_listing_id: supplierInsert.data.id, slug: listingSlug, title: detail.title,
         description: `TRACER supply-first product. Supplier: CJdropshipping. Variant: ${variant.nameEn ?? "standard"}.`,
-        image_url: detail.imageUrl, selling_price: salePrice, currency: "JPY", supplier_name: "cj",
+        image_url: resolvedImageUrl, selling_price: salePrice, currency: "JPY", supplier_name: "cj",
         supplier_product_id: candidate.id, supplier_variant_id: variant.vid, source_cost: cost, shipping_cost: freight,
         inventory: Math.floor(stock), orderable: true, tracking_available: false, identity_method: "supply_discovered",
         identity_confidence: 1, published: true, selection_reasons: ["supply_first","live_cj_variant","live_inventory_gt_zero","live_japan_freight",`fx_usdjpy_${fxRate.toFixed(4)}`],
@@ -148,7 +163,7 @@ export async function discoverAndCreateCjSupply(limit = 1): Promise<{
       }, { onConflict: "slug" }).select("id").single();
       if (shopInsert.error) throw new Error(shopInsert.error.message);
       discovered++; published++;
-      items.push({ listingId: String(shopInsert.data.id), productId, supplierListingId: String(supplierInsert.data.id), title: detail.title, supplierProductId: candidate.id, supplierVariantId: variant.vid, costUsd: cost, freightUsd: freight, inventory: Math.floor(stock), sellingPriceJpy: salePrice, fxRate });
+      items.push({ listingId: String(shopInsert.data.id), productId, supplierListingId: String(supplierInsert.data.id), title: resolvedTitle, supplierProductId: candidate.id, supplierVariantId: variant.vid, costUsd: cost, freightUsd: freight, inventory: Math.floor(stock), sellingPriceJpy: salePrice, fxRate });
     } catch (error) {
       rejected++;
       console.warn("[supply-first] seeded candidate rejected", { productId: candidate.id, error: error instanceof Error ? error.message : String(error) });
