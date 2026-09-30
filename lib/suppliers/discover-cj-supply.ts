@@ -91,7 +91,7 @@ export async function discoverAndCreateCjSupply(
 
   const { data: seededRows } = await db
     .from("supplier_listings")
-    .select("id,title,supplier_product_id,supplier_variant_id,cost,inventory,verification_status,shipping_status,next_verification_at")
+    .select("id,title,supplier_product_id,supplier_variant_id,cost,inventory,verification_status,shipping_status,next_verification_at,metadata")
     .eq("supplier", "cj")
     .eq("inventory_confirmed", true)
     .eq("price_confirmed", true)
@@ -135,6 +135,7 @@ export async function discoverAndCreateCjSupply(
         inventory: Number(row.inventory),
         seededTitle: String(row.title ?? ""),
         supplierListingId: String(row.id),
+        metadata: row.metadata,
       }))
     : [
         {
@@ -154,11 +155,17 @@ export async function discoverAndCreateCjSupply(
       deadlineReached = true;
       break;
     }
+    const seededMetadata = seededCandidate.metadata && typeof seededCandidate.metadata === "object"
+      ? seededCandidate.metadata as Record<string, unknown>
+      : {};
+    const seededImageUrl = typeof seededMetadata.image_url === "string"
+      ? seededMetadata.image_url.trim()
+      : "";
     const candidate = {
       id: seededCandidate.id,
       variantId: seededCandidate.variantId,
       title: seededCandidate.seededTitle,
-      imageUrl: null,
+      imageUrl: seededImageUrl || null,
       price: Number.isFinite(seededCandidate.cost) ? seededCandidate.cost : null,
     };
     const query = seededCandidate.query;
@@ -175,9 +182,11 @@ export async function discoverAndCreateCjSupply(
       const cachedTitle = String(cachedProduct?.title ?? "").trim();
       const cachedImageUrl = String(cachedProduct?.image_url ?? "").trim();
       const cachedPrice = Number(cachedProduct?.price);
-      let detail = cachedTitle && cachedImageUrl
-        ? { title: cachedTitle, imageUrl: cachedImageUrl, price: Number.isFinite(cachedPrice) ? cachedPrice : null }
-        : await getCJProductDetail(candidate.id);
+      let detail = candidate.imageUrl
+        ? { title: candidate.title, imageUrl: candidate.imageUrl, price: Number.isFinite(cachedPrice) ? cachedPrice : candidate.price }
+        : cachedTitle && cachedImageUrl
+          ? { title: cachedTitle, imageUrl: cachedImageUrl, price: Number.isFinite(cachedPrice) ? cachedPrice : null }
+          : await getCJProductDetail(candidate.id);
 
       // Some CJ product-query responses are empty even though the product is
       // still discoverable through listV2. Do not discard an otherwise
