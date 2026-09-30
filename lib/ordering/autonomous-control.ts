@@ -22,7 +22,7 @@ async function recordEvent(args: {
   payload?: Record<string, unknown>;
 }) {
   const supabase = createSupabaseAdminClient();
-  await supabase.from("order_automation_events").upsert({
+  const { error } = await supabase.from("order_automation_events").upsert({
     event_key: args.eventKey,
     purchase_order_id: args.purchaseOrderId ?? null,
     shop_order_id: args.shopOrderId ?? null,
@@ -30,6 +30,13 @@ async function recordEvent(args: {
     status: args.status,
     payload: args.payload ?? {},
   }, { onConflict: "event_key" });
+
+  if (error && error.code !== "42501" && error.code !== "42P01") {
+    throw new Error(error.message);
+  }
+  if (error) {
+    console.warn("[TRACER AUTOMATION EVENT AUDIT SKIPPED]", error.message);
+  }
 }
 
 /**
@@ -48,13 +55,31 @@ export async function runAutonomousOrderControl(runKey: string): Promise<RunResu
   initializeProcurement();
   const supabase = createSupabaseAdminClient();
 
-  const existingRun = await supabase
+  // The automation audit tables are operational telemetry, not a prerequisite
+  // for creating or executing a supplier order. A stale/missing Supabase grant
+  // must not turn a paid customer order into a silently unprocessed order.
+  let auditPersistence = true;
+  let existingRun: { data: { id?: string; status?: string; processed_count?: number; succeeded_count?: number; failed_count?: number } | null; error?: { code?: string; message?: string } | null };
+
+  const existingRunQuery = await supabase
     .from("order_automation_runs")
     .select("id,status,processed_count,succeeded_count,failed_count")
     .eq("run_key", runKey)
     .maybeSingle();
 
-  if (existingRun.data?.status === "completed") {
+  if (existingRunQuery.error) {
+    if (existingRunQuery.error.code === "42501" || existingRunQuery.error.code === "42P01") {
+      auditPersistence = false;
+      existingRun = { data: null, error: existingRunQuery.error };
+      console.warn("[TRACER AUTOMATION AUDIT DEGRADED]", existingRunQuery.error.message);
+    } else {
+      throw new Error(existingRunQuery.error.message);
+    }
+  } else {
+    existingRun = existingRunQuery;
+  }
+
+  if (auditPersistence && existingRun.data?.status === "completed") {
     return {
       runId: String(existingRun.data.id),
       processed: Number(existingRun.data.processed_count ?? 0),
@@ -64,28 +89,35 @@ export async function runAutonomousOrderControl(runKey: string): Promise<RunResu
     };
   }
 
-  const run = existingRun.data?.id
-    ? { id: String(existingRun.data.id) }
-    : await (async () => {
-        const inserted = await supabase
-          .from("order_automation_runs")
-          .insert({ run_key: runKey, mode: "scheduled", status: "running" })
-          .select("id")
-          .single();
-        if (inserted.error) {
-          if (inserted.error.code === "23505") {
-            const retry = await supabase
-              .from("order_automation_runs")
-              .select("id")
-              .eq("run_key", runKey)
-              .single();
-            if (!retry.data) throw new Error(retry.error?.message ?? "automation run claim failed");
-            return { id: String(retry.data.id) };
+  const run = auditPersistence
+    ? existingRun.data?.id
+      ? { id: String(existingRun.data.id) }
+      : await (async () => {
+          const inserted = await supabase
+            .from("order_automation_runs")
+            .insert({ run_key: runKey, mode: "scheduled", status: "running" })
+            .select("id")
+            .single();
+          if (inserted.error) {
+            if (inserted.error.code === "23505") {
+              const retry = await supabase
+                .from("order_automation_runs")
+                .select("id")
+                .eq("run_key", runKey)
+                .single();
+              if (!retry.data) throw new Error(retry.error?.message ?? "automation run claim failed");
+              return { id: String(retry.data.id) };
+            }
+            if (inserted.error.code === "42501" || inserted.error.code === "42P01") {
+              auditPersistence = false;
+              console.warn("[TRACER AUTOMATION AUDIT DEGRADED]", inserted.error.message);
+              return { id: `degraded:${runKey}` };
+            }
+            throw new Error(inserted.error.message);
           }
-          throw new Error(inserted.error.message);
-        }
-        return { id: String(inserted.data.id) };
-      })();
+          return { id: String(inserted.data.id) };
+        })()
+    : { id: `degraded:${runKey}` };
 
   const { data: orders, error } = await supabase
     .from("shop_orders")
@@ -172,16 +204,25 @@ export async function runAutonomousOrderControl(runKey: string): Promise<RunResu
     }
   }
 
-  await supabase
-    .from("order_automation_runs")
-    .update({
-      status: failed > 0 && succeeded === 0 ? "failed" : "completed",
-      finished_at: new Date().toISOString(),
-      processed_count: processed,
-      succeeded_count: succeeded,
-      failed_count: failed,
-    })
-    .eq("id", run.id);
+  if (auditPersistence) {
+    const { error: runUpdateError } = await supabase
+      .from("order_automation_runs")
+      .update({
+        status: failed > 0 && succeeded === 0 ? "failed" : "completed",
+        finished_at: new Date().toISOString(),
+        processed_count: processed,
+        succeeded_count: succeeded,
+        failed_count: failed,
+      })
+      .eq("id", run.id);
+
+    if (runUpdateError && runUpdateError.code !== "42501" && runUpdateError.code !== "42P01") {
+      throw new Error(runUpdateError.message);
+    }
+    if (runUpdateError) {
+      console.warn("[TRACER AUTOMATION AUDIT UPDATE SKIPPED]", runUpdateError.message);
+    }
+  }
 
   return { runId: run.id, processed, succeeded, failed, purchaseOrderIds };
 }
