@@ -4,6 +4,7 @@ import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -17,6 +18,8 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
 
   try {
+    await recoverStaleCronRun(supabase, "sales-test-publication", maxDuration);
+
     const { data: cronRun, error: claimError } = await supabase
       .from("cron_runs")
       .insert({
@@ -43,7 +46,12 @@ export async function GET(request: Request) {
     // /api/intelligence/bestsellers endpoint already uses this path, but the
     // scheduled pipeline previously skipped it entirely, leaving BASE at the
     // first manually discovered item. Reuse the same live CJ gates here.
-    const supplyFirst = await discoverAndCreateCjSupply(20);
+    // Bound CJ discovery so the rest of this stage (and the cron_runs
+    // bookkeeping) finishes inside maxDuration; unbounded, the function was
+    // killed and left the lock held.
+    const supplyFirst = await discoverAndCreateCjSupply(20, {
+      deadlineAt: startedAt + 150_000,
+    });
 
     if (supplyFirst.published > 0) {
       const newfind = await Promise.all(

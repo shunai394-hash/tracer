@@ -3,11 +3,14 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { linkInternalSupplyForBestseller } from "@/lib/suppliers/internal-catalog";
 import { syncTracerCatalogFromInternalSupply } from "@/lib/suppliers/sync-tracer-catalog";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
+
+const INVESTIGATION_BUDGET_MS = 200_000;
 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -18,6 +21,8 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
 
   try {
+    await recoverStaleCronRun(supabase, "supplier-investigation", maxDuration);
+
     const { data: cronRun, error: claimError } = await supabase
       .from("cron_runs")
       .insert({
@@ -109,18 +114,35 @@ export async function GET(request: Request) {
       });
     }
 
-    const result = externalCandidateIds.length
-      ? await investigateDropshipForBestsellers(externalCandidateIds)
-      : {
-          processed: 0,
-          matched: 0,
-          rowErrors: 0,
-          skippedNoIdentifier: 0,
-          unconfigured: 0,
-          noIdentifierOverlap: 0,
-          supplyBarcodeMissing: 0,
-          rowErrorDetails: [],
-        };
+    // Investigate one bestseller at a time and stop at a deadline: each row
+    // fans out into many rate-limited CJ calls, and a batch that overran
+    // maxDuration was killed mid-flight (504) and left the lock held.
+    const result = {
+      processed: 0,
+      matched: 0,
+      rowErrors: 0,
+      skippedNoIdentifier: 0,
+      unconfigured: 0,
+      noIdentifierOverlap: 0,
+      supplyBarcodeMissing: 0,
+      rowErrorDetails: [] as Awaited<ReturnType<typeof investigateDropshipForBestsellers>>["rowErrorDetails"],
+      deferred: 0,
+    };
+    for (const [index, candidateId] of externalCandidateIds.entries()) {
+      if (Date.now() - startedAt >= INVESTIGATION_BUDGET_MS) {
+        result.deferred = externalCandidateIds.length - index;
+        break;
+      }
+      const row = await investigateDropshipForBestsellers([candidateId]);
+      result.processed += row.processed;
+      result.matched += row.matched;
+      result.rowErrors += row.rowErrors;
+      result.skippedNoIdentifier += row.skippedNoIdentifier;
+      result.unconfigured += row.unconfigured;
+      result.noIdentifierOverlap += row.noIdentifierOverlap;
+      result.supplyBarcodeMissing += row.supplyBarcodeMissing;
+      result.rowErrorDetails.push(...row.rowErrorDetails);
+    }
 
     const totalMatched = internalMatchedIds.length + result.matched;
     const metadata = {
@@ -136,6 +158,7 @@ export async function GET(request: Request) {
       noIdentifierOverlap: result.noIdentifierOverlap,
       supplyBarcodeMissing: result.supplyBarcodeMissing,
       rowErrors: result.rowErrors,
+      deferred: result.deferred,
       // Sales-test publication, NEWFIND promotion, and BASE publication are
       // deliberately not chained here. Each has its own cron schedule.
     };
