@@ -47,6 +47,7 @@ jobs:
               "https://tracer-self.vercel.app$1"
             echo
           }
-          call /api/cron/sales-test-publication
+          call /api/cron/patrol-ai
+          echo "Patrol AI triggered"
           sleep 10
           call /api/cron/base-publish
