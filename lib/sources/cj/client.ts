@@ -533,22 +533,50 @@ export async function calculateCJFreight(
   const payload = (await response.json()) as {
     result?: boolean;
     message?: string;
-    data?: Array<{
-      logisticPrice?: number | string | null;
-      totalPostageFee?: number | string | null;
-    }>;
+    data?: unknown;
   };
 
   if (payload.result === false) {
     throw new CJRequestError(payload.message || "CJ freight calculation failed");
   }
 
-  const prices = (payload.data ?? [])
+  // CJ has returned several freight field names across API versions and
+  // wrappers. Accept the documented price fields plus equivalent numeric
+  // postage/shipping fields, while never treating an unknown value as zero.
+  const readPrice = (value: unknown): number | null => {
+    if (typeof value === "number") return Number.isFinite(value) && value > 0 ? value : null;
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+    return null;
+  };
+
+  const rows: unknown[] = Array.isArray(payload.data)
+    ? payload.data
+    : payload.data && typeof payload.data === "object"
+      ? Object.values(payload.data as Record<string, unknown>).flatMap((value) =>
+          Array.isArray(value) ? value : [value],
+        )
+      : [];
+
+  const prices = rows
     .map((row) => {
-      const total = Number(row.totalPostageFee);
-      const simple = Number(row.logisticPrice);
-      if (Number.isFinite(total) && total > 0) return total;
-      return Number.isFinite(simple) && simple > 0 ? simple : null;
+      if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+      const record = row as Record<string, unknown>;
+      for (const key of [
+        "totalPostageFee",
+        "logisticPrice",
+        "shippingCost",
+        "shippingFee",
+        "postageFee",
+        "freight",
+        "freightCost",
+      ]) {
+        const price = readPrice(record[key]);
+        if (price !== null) return price;
+      }
+      return null;
     })
     .filter((value): value is number => value !== null);
 
