@@ -144,3 +144,4 @@ Real CJ supplier ordering remains separately guarded by `CJ_LIVE_ORDERING=0`. `C
 For a specific batch, use the sourcing decision endpoint with authenticated access. The endpoint supports a candidate offset so later verified candidates can be investigated without changing the observation layer.
 
 <!-- production-deploy-retrigger: 2026-09-30 -->
+<!-- supply-first-production-retrigger: 2026-09-30 -->
