@@ -8,7 +8,10 @@ export const maxDuration = 60;
 
 // Keep each observation invocation comfortably below Vercel's 60s hard limit.
 // Larger batches are resumed through cron_runs.nextIndex on the next invocation.
-// Process a meaningful slice on every patrol. The workflow repeats this stage\n// several times so one hourly patrol can traverse multiple marketplace pages\n// instead of advancing only a few rows and appearing to stall at one product.\nconst MARKET_SOURCING_BATCH_SIZE = 10;
+// Process a meaningful slice on every patrol. The workflow repeats this stage
+// several times so one hourly patrol can traverse multiple marketplace pages
+// instead of advancing only a few rows and appearing to stall at one product.
+const MARKET_SOURCING_BATCH_SIZE = 10;
 
 export async function GET(request: Request) {
   const authError = requireCronAuth(request);
