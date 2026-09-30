@@ -156,7 +156,7 @@ export async function linkInternalSupplyForBestseller(args: {
     if (listingResult.error) throw new Error(listingResult.error.message);
     const listing = listingResult.data;
 
-    await supabase.from("internal_supply_links").upsert({
+    const linkPayload = {
       bestseller_id: args.bestseller.id,
       supply_product_id: product.id,
       supply_variant_id: variant.id,
@@ -164,7 +164,18 @@ export async function linkInternalSupplyForBestseller(args: {
       identity_confidence: selected.identity.confidence,
       identity_rationale: selected.identity.rationale,
       status: "verified",
-    }, { onConflict: "bestseller_id,supply_product_id,supply_variant_id" });
+    };
+
+    // This link is telemetry/cache, not a prerequisite for creating the
+    // supplier listing. Older production databases may not yet have the
+    // composite unique constraint required by PostgREST upsert(onConflict).
+    // Never let that schema drift discard an otherwise valid supplier match.
+    const linkResult = await supabase
+      .from("internal_supply_links")
+      .insert(linkPayload);
+    if (linkResult.error && !/duplicate|unique/i.test(linkResult.error.message)) {
+      console.warn("[TRACER INTERNAL SUPPLY LINK SKIPPED]", linkResult.error.message);
+    }
 
     return { matched: true, supplierListingId: String(listing.id) };
   }
