@@ -29,7 +29,7 @@ export async function publishPublishedListingsToBase(
   const { data: listings, error } = await supabase
     .from("shop_listings")
     .select(
-      "id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable",
+      "id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,shipping_cost",
     )
     .or("published.eq.true,base_item_id.not.is.null")
     // Prioritize listings that have not reached BASE yet. Otherwise a cron
@@ -50,7 +50,28 @@ export async function publishPublishedListingsToBase(
     // since unpublished or blocked the listing. Otherwise an old BASE item
     // can remain publicly sellable with stale stock.
     if (listing.base_item_id && listing.published !== true) {
-      if (listing.selling_price === null) {
+      // Never create a new BASE item when Japan shipping has not been
+    // measured. Existing BASE items are not altered by this gate.
+    if (!listing.base_item_id) {
+      const shippingCost =
+        typeof listing.shipping_cost === "number"
+          ? listing.shipping_cost
+          : typeof listing.shipping_cost === "string" && listing.shipping_cost.trim() !== ""
+            ? Number(listing.shipping_cost)
+            : null;
+      if (shippingCost === null || !Number.isFinite(shippingCost) || shippingCost <= 0) {
+        await supabase.from("shop_listings").update({
+          pipeline_stage: "BASE_PUBLICATION",
+          pipeline_status: "blocked",
+          pipeline_reason: "shipping_unknown",
+          pipeline_updated_at: new Date().toISOString(),
+        }).eq("id", listingId);
+        results.push({ listingId, ok: false, skipped: true, error: "shipping_unknown" });
+        continue;
+      }
+    }
+
+    if (listing.selling_price === null) {
         results.push({ listingId, ok: false, skipped: true, error: "base_hide_price_unknown" });
         continue;
       }
