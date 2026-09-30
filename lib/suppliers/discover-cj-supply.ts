@@ -313,9 +313,8 @@ export async function discoverAndCreateCjSupply(
         }
 
         const salePrice = yenPrice(cost, freight, fxRate);
-        const sourceRef = `cj:${candidate.id}:${candidate.variantId}`;
+        const sourceRef = `cj:${candidate.id}:${variant.vid}`;
         const identityKey = sourceRef;
-        const tracerSku = `TRC-CJ-${candidate.id.slice(-10)}-${variant.vid.slice(-10)}`;
         const now = new Date().toISOString();
 
         const productInsert = await db
