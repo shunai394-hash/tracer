@@ -32,21 +32,19 @@ jobs:
 
           curl --fail-with-body --silent --show-error --max-time 300 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
-            "https://tracer-self.vercel.app/api/intelligence/patrol-ai" | tee patrol-report.json
+            "https://tracer-self.vercel.app/api/cron/patrol-ai" | tee patrol-report.json
 
           python3 - <<'PY'
           import json
           with open("patrol-report.json", encoding="utf-8") as f:
               r=json.load(f)
-          before=r.get("before",{}).get("counts",{})
-          after=r.get("after",{}).get("counts",{})
-          print("=== TRACER PATROL REPORT ===")
-          print("patrolId:", r.get("patrolId"))
-          print("repairs:", r.get("repairs", []))
-          print("orderable before:", before.get("supplier_listings_orderable"))
-          print("orderable after:", after.get("supplier_listings_orderable"))
-          print("BASE published before:", before.get("shop_listings_on_base_published"))
-          print("BASE published after:", after.get("shop_listings_on_base_published"))
-          print("verdict:", r.get("verdict"))
-          print("deployment:", r.get("after",{}).get("deployment",{}))
+          print("=== TRACER AI PATROL REPORT ===")
+          print("status:", r.get("status"))
+          print("decision:", r.get("decision"))
+          print("errors:", r.get("errors", []))
+          print("published before:", r.get("before",{}).get("publishedListings"))
+          print("published after:", r.get("after",{}).get("publishedListings"))
+          print("BASE published before:", r.get("before",{}).get("basePublished"))
+          print("BASE published after:", r.get("after",{}).get("basePublished"))
+          print("progress:", r.get("progress", {}))
           PY
