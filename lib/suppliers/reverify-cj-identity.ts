@@ -25,8 +25,11 @@ function num(value: unknown): number | null {
 
 /**
  * Re-check existing CJ supply that was discovered without marketplace
- * identity. A marketplace bestseller with the same barcode may have been
- * observed after the CJ variant was first verified. Promotion is delegated to
+ * identity. This includes both verified and still-unverified rows when they
+ * are already orderable and have a concrete variant id; identity verification
+ * itself is evidence-gated and does not make the supplier inventory trusted.
+ * A marketplace bestseller with the same barcode may have been observed after
+ * the CJ variant was first verified. Promotion is delegated to
  * resolveMarketplaceIdentity, which only accepts a CJ variant barcode that
  * exactly and uniquely matches one marketplace record's JAN/GTIN/EAN/UPC;
  * pid, vid, SKU, title and image are never treated as identity evidence.
@@ -56,7 +59,7 @@ export async function reverifyCjSupplyIdentities(options: {
     .from("supplier_listings")
     .select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata")
     .eq("supplier", "cj")
-    .eq("verification_status", "verified")
+    .in("verification_status", ["verified", "unverified"])
     .eq("orderable", true)
     .eq("identity_method", "supply_discovered")
     .not("supplier_variant_id", "is", null)
