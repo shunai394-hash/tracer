@@ -130,6 +130,8 @@ export type SupplierOrder = {
   supplierOrderId: string;
   supplierName: string;
   status: string | null;
+  /** True only when the supplier API explicitly confirms payment completion. */
+  paymentConfirmed?: boolean;
   createdAt: string | null;
 };
 
