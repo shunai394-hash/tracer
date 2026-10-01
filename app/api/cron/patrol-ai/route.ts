@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
+import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -14,6 +15,7 @@ type Snapshot = {
   shopListings: number;
   publishedListings: number;
   eligibleForBase: number;
+  autoProcurementEligibleListings: number;
   onBase: number;
   basePublished: number;
   orders: number;
@@ -25,17 +27,17 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
   const orderableSuppliersQuery = db.from("supplier_listings").select("*", { count: "exact", head: true }).eq("orderable", true);
   const shopListingsQuery = db.from("shop_listings").select("*", { count: "exact", head: true });
   const publishedListingsQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).eq("published", true);
-  const eligibleForBaseQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).eq("published", true).eq("orderable", true).gt("inventory", 0).not("image_url", "is", null);
+  const eligibilityListingsQuery = db.from("shop_listings").select("supplier_name,orderable,inventory,image_url").eq("published", true);
   const onBaseQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).not("base_item_id", "is", null);
   const basePublishedQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).not("base_item_id", "is", null).eq("base_publication_status", "published").eq("published", true);
   const ordersQuery = db.from("shop_orders").select("*", { count: "exact", head: true });
 
-  const [productsResult, supplierListingsResult, orderableSuppliersResult, shopListingsResult, publishedListingsResult, eligibleForBaseResult, onBaseResult, basePublishedResult, ordersResult] =
-    await Promise.all([productsQuery, supplierListingsQuery, orderableSuppliersQuery, shopListingsQuery, publishedListingsQuery, eligibleForBaseQuery, onBaseQuery, basePublishedQuery, ordersQuery]);
+  const [productsResult, supplierListingsResult, orderableSuppliersResult, shopListingsResult, publishedListingsResult, eligibilityListingsResult, onBaseResult, basePublishedResult, ordersResult] =
+    await Promise.all([productsQuery, supplierListingsQuery, orderableSuppliersQuery, shopListingsQuery, publishedListingsQuery, eligibilityListingsQuery, onBaseQuery, basePublishedQuery, ordersQuery]);
 
   const results = [
     ["products", productsResult], ["supplier_listings", supplierListingsResult], ["supplier_listings(orderable)", orderableSuppliersResult],
-    ["shop_listings", shopListingsResult], ["shop_listings(published)", publishedListingsResult], ["shop_listings(eligible)", eligibleForBaseResult],
+    ["shop_listings", shopListingsResult], ["shop_listings(published)", publishedListingsResult], ["shop_listings(eligibility)", eligibilityListingsResult],
     ["shop_listings(on_base)", onBaseResult], ["shop_listings(base_published)", basePublishedResult], ["shop_orders", ordersResult],
   ] as const;
 
@@ -43,13 +45,29 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
     if (result.error) throw new Error(`${label}: ${result.error.message}`);
   }
 
+  const eligibleRows = (eligibilityListingsResult.data ?? []).filter((row) => {
+    const inventory = Number(row.inventory);
+    return (
+      row.orderable === true &&
+      Number.isFinite(inventory) &&
+      inventory > 0 &&
+      row.image_url !== null &&
+      row.image_url !== "" &&
+      getAutoProcurementEligibility(typeof row.supplier_name === "string" ? row.supplier_name : null).eligible
+    );
+  });
+  const autoProcurementEligibleRows = (eligibilityListingsResult.data ?? []).filter((row) =>
+    getAutoProcurementEligibility(typeof row.supplier_name === "string" ? row.supplier_name : null).eligible
+  );
+
   return {
     products: productsResult.count ?? 0,
     supplierListings: supplierListingsResult.count ?? 0,
     orderableSuppliers: orderableSuppliersResult.count ?? 0,
     shopListings: shopListingsResult.count ?? 0,
     publishedListings: publishedListingsResult.count ?? 0,
-    eligibleForBase: eligibleForBaseResult.count ?? 0,
+    eligibleForBase: eligibleRows.length,
+    autoProcurementEligibleListings: autoProcurementEligibleRows.length,
     onBase: onBaseResult.count ?? 0,
     basePublished: basePublishedResult.count ?? 0,
     orders: ordersResult.count ?? 0,
