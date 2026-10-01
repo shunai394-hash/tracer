@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { searchSuperDeliveryProducts } from "@/lib/sources/superdelivery/client";
+import { getSuperDeliveryCatalog, findSuperDeliveryProductsByJan } from "@/lib/sources/superdelivery/client";
 
 const SUPPLIER = "superdelivery";
 const DEFAULT_BATCH_SIZE = 2;
@@ -45,6 +45,7 @@ export async function discoverSuperDeliverySupply(
   if (error) throw new Error(error.message);
 
   const gateCandidates: string[] = [];
+  const catalog = await getSuperDeliveryCatalog();
   const blocked: Array<{ bestsellerId: string; reason: string }> = [];
   let matched = 0;
   let persisted = 0;
@@ -54,8 +55,8 @@ export async function discoverSuperDeliverySupply(
     const jan = String(candidate.jan ?? "").trim();
 
     try {
-      const matches = (await searchSuperDeliveryProducts(jan)).filter(
-        (item) => String(item.janCode ?? "").trim() === jan,
+      const matches = findSuperDeliveryProductsByJan(catalog, jan).filter(
+        (item) => item.stock !== null && item.stock > 0,
       );
 
       if (matches.length === 0) {
