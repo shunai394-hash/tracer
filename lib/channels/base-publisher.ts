@@ -21,14 +21,18 @@ export type BasePublicationResult = {
 
 export async function publishPublishedListingsToBase(
   limit = 10,
+  listingIds?: string[],
 ): Promise<BasePublicationResult> {
   if (!isBaseConfigured()) {
+    return { attempted: 0, published: 0, skipped: 0, failed: 0, results: [] };
+  }
+  if (listingIds !== undefined && listingIds.length === 0) {
     return { attempted: 0, published: 0, skipped: 0, failed: 0, results: [] };
   }
 
   const supabase = createSupabaseAdminClient();
 
-  const { data: listings, error } = await supabase
+  let query = supabase
     .from("shop_listings")
     .select(
       "id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,shipping_cost,supplier_name,supplier_listing_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons",
@@ -36,7 +40,11 @@ export async function publishPublishedListingsToBase(
     // Existing BASE items stay in scope so their stock/visibility keep being
     // reconciled (including hiding items TRACER has since unpublished).
     // Only the creation of a NEW BASE item requires the Sales Test Gate.
-    .or("published.eq.true,base_item_id.not.is.null")
+    .or("published.eq.true,base_item_id.not.is.null");
+  if (listingIds && listingIds.length > 0) {
+    query = query.in("id", Array.from(new Set(listingIds)));
+  }
+  const { data: listings, error } = await query
     // Listings not yet on BASE first, so reconciliation cannot starve them.
     .order("base_item_id", { ascending: true, nullsFirst: true })
     .order("created_at", { ascending: false })

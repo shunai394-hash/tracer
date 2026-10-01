@@ -53,7 +53,8 @@ export async function selectAndPublishSupplySalesTests(
     .from("supplier_listings")
     .select("*")
     .in("product_id", uniqueProductIds)
-    .eq("supplier", "cj")
+    // All suppliers share the same strict Sales Test Gate. Supplier-specific
+    // capability checks below decide whether the candidate can actually pass.
     // supplier_listings has no updated_at column; fetched_at is the latest
     // live supplier observation.
     .order("fetched_at", { ascending: false, nullsFirst: false });
@@ -144,7 +145,7 @@ export async function selectAndPublishSupplySalesTests(
       sellingProvider: "tracer_supply",
       sourceCost: num(listing.cost),
       sourceCurrency: typeof listing.currency === "string" ? listing.currency : "USD",
-      sourceProvider: "cj",
+      sourceProvider: String(listing.supplier ?? "unknown"),
       internationalShipping: num(listing.shipping_cost),
       domesticShipping: null,
       shippingCurrency: typeof listing.currency === "string" ? listing.currency : "USD",
@@ -200,7 +201,7 @@ export async function selectAndPublishSupplySalesTests(
       image_url: item.base.image_url,
       selling_price: num(metadata.selling_price_jpy),
       currency: "JPY",
-      supplier_name: "cj",
+      supplier_name: String(item.listing.supplier ?? "unknown"),
       supplier_product_id: item.listing.supplier_product_id,
       supplier_variant_id: item.listing.supplier_variant_id,
       source_cost: item.profit.sourceCost,

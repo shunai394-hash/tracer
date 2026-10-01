@@ -2,16 +2,53 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build",
   "crons": [
-    { "path": "/api/cron/market-sourcing", "schedule": "0 12 * * *" },
-    { "path": "/api/cron/supplier-investigation", "schedule": "5 12 * * *" },
-    { "path": "/api/cron/sales-test-publication", "schedule": "10 12 * * *" },
-    { "path": "/api/cron/inventory-refresh", "schedule": "15 12 * * *" },
-    { "path": "/api/cron/patrol-ai", "schedule": "55 12 * * *" },
-    { "path": "/api/cron/base-orders", "schedule": "25 12 * * *" },
-    { "path": "/api/cron/dropship-execution", "schedule": "30 12 * * *" },
-    { "path": "/api/cron/supplier-reconciliation", "schedule": "35 12 * * *" },
-    { "path": "/api/cron/supplier-orders", "schedule": "40 12 * * *" },
-    { "path": "/api/cron/newfind-retry", "schedule": "45 12 * * *" },
-    { "path": "/api/cron/supply-first", "schedule": "50 12 * * *" }
+    {
+      "path": "/api/cron/superdelivery-sales-route",
+      "schedule": "20 12 * * *"
+    },
+    {
+      "path": "/api/cron/market-sourcing",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/supplier-investigation",
+      "schedule": "5 12 * * *"
+    },
+    {
+      "path": "/api/cron/sales-test-publication",
+      "schedule": "10 12 * * *"
+    },
+    {
+      "path": "/api/cron/inventory-refresh",
+      "schedule": "15 12 * * *"
+    },
+    {
+      "path": "/api/cron/patrol-ai",
+      "schedule": "55 12 * * *"
+    },
+    {
+      "path": "/api/cron/base-orders",
+      "schedule": "25 12 * * *"
+    },
+    {
+      "path": "/api/cron/dropship-execution",
+      "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/cron/supplier-reconciliation",
+      "schedule": "35 12 * * *"
+    },
+    {
+      "path": "/api/cron/supplier-orders",
+      "schedule": "40 12 * * *"
+    },
+    {
+      "path": "/api/cron/newfind-retry",
+      "schedule": "45 12 * * *"
+    },
+    {
+      "path": "/api/cron/supply-first",
+      "schedule": "50 12 * * *"
+    }
   ]
 }
