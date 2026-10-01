@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createDropshipPurchaseOrdersForShopOrder } from "@/lib/ordering/dropship";
-import { executeSupplierPurchaseOrder } from "@/lib/ordering/supplier-execution";
+import { executeVerifiedSupplierPurchaseOrder } from "@/lib/ordering/verified-supplier-execution";
 import { initializeProcurement } from "@/lib/procurement/init";
 
 type RunResult = {
@@ -151,7 +151,7 @@ export async function runAutonomousOrderControl(runKey: string): Promise<RunResu
           payload: { run_key: runKey, source: "autonomous_order_control" },
         });
 
-        const execution = await executeSupplierPurchaseOrder(poId);
+        const execution = await executeVerifiedSupplierPurchaseOrder(poId);
         if (execution.succeeded) {
           succeeded += 1;
           await recordEvent({
