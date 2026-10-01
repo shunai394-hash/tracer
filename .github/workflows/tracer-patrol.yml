@@ -1,10 +1,6 @@
 name: TRACER Production Patrol
 
 on:
-  push:
-    branches: [main]
-  schedule:
-    - cron: "*/20 * * * *"
   workflow_dispatch:
 
 permissions:
