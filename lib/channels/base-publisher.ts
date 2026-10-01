@@ -2,6 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createBaseItem, editBaseItem, addBaseItemImage, isBaseConfigured } from "@/lib/channels/base";
+import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -29,7 +30,7 @@ export async function publishPublishedListingsToBase(
   const { data: listings, error } = await supabase
     .from("shop_listings")
     .select(
-      "id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,shipping_cost",
+      "id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,shipping_cost,supplier_name",
     )
     .or("published.eq.true,base_item_id.not.is.null")
     // Prioritize listings that have not reached BASE yet. Otherwise a cron
@@ -85,6 +86,54 @@ export async function publishPublishedListingsToBase(
         }).eq("id", listingId);
         results.push({ listingId, ok: false, error: message });
       }
+      continue;
+    }
+
+    const autoProcurement = getAutoProcurementEligibility(
+      typeof listing.supplier_name === "string" ? listing.supplier_name : null,
+    );
+    if (!autoProcurement.eligible) {
+      let baseSyncError: string | null = null;
+      if (listing.base_item_id && listing.selling_price !== null) {
+        try {
+          await editBaseItem({
+            itemId: String(listing.base_item_id),
+            title: listing.title,
+            detail: listing.description ?? listing.title,
+            price: Number(listing.selling_price),
+            stock: 0,
+            visible: false,
+          });
+        } catch (error) {
+          baseSyncError = error instanceof Error ? error.message : String(error);
+        }
+      }
+
+      const now = new Date().toISOString();
+      const { error: blockError } = await supabase
+        .from("shop_listings")
+        .update({
+          published: false,
+          orderable: false,
+          base_publication_lease_until: null,
+          pipeline_stage: "BASE_PUBLICATION",
+          pipeline_status: "blocked",
+          pipeline_reason: "supplier_auto_procurement_capability_missing",
+          pipeline_error: baseSyncError,
+          pipeline_updated_at: now,
+          updated_at: now,
+        })
+        .eq("id", listingId);
+      if (blockError) throw new Error(blockError.message);
+
+      results.push({
+        listingId,
+        ok: false,
+        skipped: true,
+        error: baseSyncError
+          ? `supplier_auto_procurement_capability_missing:${autoProcurement.missing.join("|")}:base_hide_failed:${baseSyncError}`
+          : `supplier_auto_procurement_capability_missing:${autoProcurement.missing.join("|")}`,
+      });
       continue;
     }
 
