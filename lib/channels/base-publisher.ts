@@ -30,7 +30,7 @@ export async function publishPublishedListingsToBase(
   const { data: listings, error } = await supabase
     .from("shop_listings")
     .select(
-      "id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,shipping_cost,supplier_name",
+      "id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,shipping_cost,supplier_name,supplier_listing_id",
     )
     .or("published.eq.true,base_item_id.not.is.null")
     // Prioritize listings that have not reached BASE yet. Otherwise a cron
@@ -125,6 +125,19 @@ export async function publishPublishedListingsToBase(
         })
         .eq("id", listingId);
       if (blockError) throw new Error(blockError.message);
+
+      if (listing.supplier_listing_id) {
+        const { error: supplierBlockError } = await supabase
+          .from("supplier_listings")
+          .update({
+            orderable: false,
+            verification_status: "retryable",
+            verification_error: `supplier_auto_procurement_capability_missing:${autoProcurement.missing.join("|")}`,
+            fetched_at: now,
+          })
+          .eq("id", String(listing.supplier_listing_id));
+        if (supplierBlockError) throw new Error(supplierBlockError.message);
+      }
 
       results.push({
         listingId,
