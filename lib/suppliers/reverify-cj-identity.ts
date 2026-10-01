@@ -7,6 +7,9 @@ import {
 } from "@/lib/intelligence/persist-cj-supply-intelligence";
 
 const CURSOR_JOB = "cj-identity-reverify-cursor";
+const DEFAULT_LIMIT = 25;
+const MAX_LIMIT = 50;
+const CONCURRENCY = 5;
 
 export type CjIdentityReverifyResult = {
   checked: number;
@@ -25,14 +28,8 @@ function num(value: unknown): number | null {
 
 /**
  * Re-check existing CJ supply that was discovered without marketplace
- * identity. This includes both verified and still-unverified rows when they
- * are already orderable and have a concrete variant id; identity verification
- * itself is evidence-gated and does not make the supplier inventory trusted.
- * A marketplace bestseller with the same barcode may have been observed after
- * the CJ variant was first verified. Promotion is delegated to
- * resolveMarketplaceIdentity, which only accepts a CJ variant barcode that
- * exactly and uniquely matches one marketplace record's JAN/GTIN/EAN/UPC;
- * pid, vid, SKU, title and image are never treated as identity evidence.
+ * identity. Identity promotion remains evidence-gated: only a unique exact
+ * CJ variant barcode -> marketplace JAN/GTIN/EAN/UPC match is accepted.
  * Traversal is resumable through a persisted id cursor.
  */
 export async function reverifyCjSupplyIdentities(options: {
@@ -40,7 +37,7 @@ export async function reverifyCjSupplyIdentities(options: {
   deadlineAt?: number;
 } = {}): Promise<CjIdentityReverifyResult> {
   const db = createSupabaseAdminClient();
-  const limit = Math.max(1, Math.min(options.limit ?? 25, 50));
+  const limit = Math.max(1, Math.min(options.limit ?? DEFAULT_LIMIT, MAX_LIMIT));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
 
   const { data: cursorRow, error: cursorError } = await db
@@ -51,6 +48,7 @@ export async function reverifyCjSupplyIdentities(options: {
     .limit(1)
     .maybeSingle();
   if (cursorError) throw new Error(`identity reverify cursor read failed: ${cursorError.message}`);
+
   const afterId = typeof (cursorRow?.metadata as Record<string, unknown> | undefined)?.afterId === "string"
     ? String((cursorRow?.metadata as Record<string, unknown>).afterId)
     : null;
@@ -67,6 +65,7 @@ export async function reverifyCjSupplyIdentities(options: {
     .order("id", { ascending: true })
     .limit(limit);
   if (afterId) query = query.gt("id", afterId);
+
   const { data: rows, error } = await query;
   if (error) throw new Error(`identity reverify candidate query failed: ${error.message}`);
 
@@ -80,24 +79,16 @@ export async function reverifyCjSupplyIdentities(options: {
     nextCursor: null,
   };
 
-  let lastId: string | null = null;
-  for (const row of rows ?? []) {
-    if (Date.now() >= deadlineAt) break;
-    lastId = String(row.id);
-    result.checked += 1;
+  const processRow = async (row: (typeof rows)[number]) => {
+    const supplierListingId = String(row.id);
     try {
       const identity = await resolveMarketplaceIdentity({
         db,
         supplierProductId: String(row.supplier_product_id),
         supplierVariantId: String(row.supplier_variant_id),
       });
-      if (!identity) {
-        result.noUniqueBarcodeMatch += 1;
-        continue;
-      }
+      if (!identity) return { kind: "no_match" as const, supplierListingId };
 
-      // Rebuild the supply evidence for the canonical market product from the
-      // supply facts recorded at verification time; never invent economics.
       const { data: intelligence } = await db
         .from("product_intelligence")
         .select("image_url,metadata")
@@ -111,8 +102,7 @@ export async function reverifyCjSupplyIdentities(options: {
       const sellingPriceJpy = num(metadata.selling_price_jpy);
       const imageUrl = typeof intelligence?.image_url === "string" ? intelligence.image_url : "";
       if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) {
-        result.missingEconomics += 1;
-        continue;
+        return { kind: "missing_economics" as const, supplierListingId };
       }
 
       await persistCjSupplyIntelligence({
@@ -121,7 +111,7 @@ export async function reverifyCjSupplyIdentities(options: {
         imageUrl,
         cost,
         shippingCost,
-        supplierListingId: String(row.id),
+        supplierListingId,
         supplierProductId: String(row.supplier_product_id),
         supplierVariantId: String(row.supplier_variant_id),
         inventory,
@@ -129,17 +119,47 @@ export async function reverifyCjSupplyIdentities(options: {
         fxRate,
         sellingPriceJpy,
       }, { identity });
-      result.promoted += 1;
-      result.promotedListings.push({ supplierListingId: String(row.id), bestsellerId: identity.bestsellerId, method: identity.method });
+
+      return {
+        kind: "promoted" as const,
+        supplierListingId,
+        bestsellerId: identity.bestsellerId,
+        method: identity.method,
+      };
     } catch (rowError) {
-      result.errors.push({ supplierListingId: String(row.id), error: rowError instanceof Error ? rowError.message : String(rowError) });
+      return {
+        kind: "error" as const,
+        supplierListingId,
+        error: rowError instanceof Error ? rowError.message : String(rowError),
+      };
+    }
+  };
+
+  const selectedRows = rows ?? [];
+  let processed = 0;
+  for (let offset = 0; offset < selectedRows.length; offset += CONCURRENCY) {
+    if (Date.now() >= deadlineAt) break;
+    const batch = selectedRows.slice(offset, offset + CONCURRENCY);
+    const results = await Promise.all(batch.map(processRow));
+    for (const item of results) {
+      processed += 1;
+      result.checked += 1;
+      if (item.kind === "promoted") {
+        result.promoted += 1;
+        result.promotedListings.push({ supplierListingId: item.supplierListingId, bestsellerId: item.bestsellerId, method: item.method });
+      } else if (item.kind === "no_match") {
+        result.noUniqueBarcodeMatch += 1;
+      } else if (item.kind === "missing_economics") {
+        result.missingEconomics += 1;
+      } else {
+        result.errors.push({ supplierListingId: item.supplierListingId, error: item.error });
+      }
     }
   }
 
-  // Wrap around once the whole verified backlog has been traversed.
-  const fetched = rows ?? [];
-  const reachedEnd = fetched.length < limit && (fetched.length === 0 || lastId === String(fetched.at(-1)?.id));
-  result.nextCursor = reachedEnd ? null : lastId ?? afterId;
+  const lastProcessedId = processed > 0 ? String(selectedRows[processed - 1]?.id) : afterId;
+  result.nextCursor = processed < selectedRows.length ? lastProcessedId : selectedRows.length < limit ? null : lastProcessedId;
+
   const now = new Date().toISOString();
   await db.from("cron_runs").insert({
     job_name: CURSOR_JOB,
@@ -148,7 +168,12 @@ export async function reverifyCjSupplyIdentities(options: {
     finished_at: now,
     processed: result.checked,
     failed: result.errors.length,
-    metadata: { afterId: result.nextCursor, promoted: result.promoted },
+    metadata: {
+      afterId: result.nextCursor,
+      promoted: result.promoted,
+      noUniqueBarcodeMatch: result.noUniqueBarcodeMatch,
+      missingEconomics: result.missingEconomics,
+    },
   });
   return result;
 }
