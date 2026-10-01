@@ -26,6 +26,9 @@ export async function publishPublishedListingsToBase(
   if (!isBaseConfigured()) {
     return { attempted: 0, published: 0, skipped: 0, failed: 0, results: [] };
   }
+  if (listingIds !== undefined && listingIds.length === 0) {
+    return { attempted: 0, published: 0, skipped: 0, failed: 0, results: [] };
+  }
 
   const supabase = createSupabaseAdminClient();
 
