@@ -113,6 +113,9 @@ export async function GET(request: Request) {
   let cronId: string | null = null;
 
   try {
+    // A Vercel timeout can leave the singleton lock in `running` forever.
+    // Reclaim only rows older than this route's maxDuration before acquiring it.
+    await recoverStaleCronRun(db, "patrol-ai", 300);
     const runState = await runPatrol(db);
     if (runState.alreadyRunning) {
       return NextResponse.json({
