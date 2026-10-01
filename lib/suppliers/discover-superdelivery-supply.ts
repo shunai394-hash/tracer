@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSuperDeliveryCatalog, findSuperDeliveryProductsByJan } from "@/lib/sources/superdelivery/client";
 
 const SUPPLIER = "superdelivery";
-const DEFAULT_BATCH_SIZE = 2;
+const DEFAULT_BATCH_SIZE = 5;
 
 /**
  * SUPER DELIVERY -> TRACER supply bridge.
