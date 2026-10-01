@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 import { collectGoogleTrendsDemand } from "@/lib/intelligence/collect-google-trends";
 import { matchDemandProductsByCategory } from "@/lib/intelligence/match-demand-products";
@@ -13,14 +13,12 @@ import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers"
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
-import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import {
   promoteShopListingToNewfind,
   retryPendingNewfindPromotions,
 } from "@/lib/integration/newfind";
 import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { MARKETPLACE_SOURCES } from "@/lib/market/collect-bestsellers";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import {
   GeminiConfigError,
@@ -227,26 +225,6 @@ async function syncShoppingDemandObservations(): Promise<unknown> {
   };
 }
 
-async function getNextMarketplaceSourceIndex(): Promise<number> {
-  const supabase = createSupabaseAdminClient();
-  const { data } = await supabase
-    .from("cron_runs")
-    .select("metadata")
-    .eq("job_name", "market-sourcing")
-    .order("started_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const previous = data?.metadata && typeof data.metadata === "object" && !Array.isArray(data.metadata)
-    ? Number((data.metadata as Record<string, unknown>).sourceIndex)
-    : NaN;
-
-  if (Number.isInteger(previous) && previous >= 0) {
-    return (previous + 1) % MARKETPLACE_SOURCES.length;
-  }
-  return 0;
-}
-
 async function inspectDemandObservations(): Promise<unknown> {
   const supabase = createSupabaseAdminClient();
   const { count, error } = await supabase
@@ -302,36 +280,16 @@ export async function runIntelligencePipeline(): Promise<{
   steps.push(await runStep("demand_analyze", () => persistDemandIntelligence()));
   steps.push(await runStep("supply", () => researchLimitedSupply()));
 
-  // Supply-first is a first-class sales path. It advances through verified CJ
-  // variants that are not already represented by a shop listing, then sends
-  // those listings through the existing BASE publisher.
+  // Supply-first verifies real CJ variants, stock, freight, and procurement readiness.
+  // It does not publish. Publication remains behind the intelligence + sales-test gate.
   const supplyFirstStep = await runStep(
     "supply_first",
     () => discoverAndCreateCjSupply(50),
   );
   steps.push(supplyFirstStep);
-
-  const supplyItems =
-    supplyFirstStep.result &&
-    typeof supplyFirstStep.result === "object" &&
-    Array.isArray((supplyFirstStep.result as { items?: unknown }).items)
-      ? ((supplyFirstStep.result as { items: Array<Record<string, unknown>> }).items)
-      : [];
-
-  steps.push(
-    await runStep("base_publish_supply_first", () =>
-      publishPublishedListingsToBase(Math.max(5, supplyItems.length)),
-    ),
-  );
-
-  steps.push(
-    await runStep("newfind_supply_first", async () => {
-      const ids = supplyItems
-        .map((item) => String(item.listingId ?? ""))
-        .filter(Boolean);
-      return Promise.all(ids.map((id) => promoteShopListingToNewfind(id)));
-    }),
-  );
+  // Supply-first only verifies supplier-side availability.
+  // It never publishes directly to BASE or NEWFIND.
+  // Public publication remains behind intelligence, scoring, and the sales-test gate.
 
   const intelligence = await runStep("intelligence", () =>
     buildOpportunityIntelligence(),
@@ -385,5 +343,3 @@ export async function runIntelligencePipeline(): Promise<{
     steps,
   };
 }
-
-

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
-import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 
 export const runtime = "nodejs";
@@ -74,13 +73,12 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
   };
 }
 
-type RepairAction = "discover_supply" | "publish_base" | "recheck_pipeline";
+type RepairAction = "discover_supply" | "recheck_pipeline";
 
 async function aiDecide(before: Snapshot): Promise<{ action: RepairAction; reason: string; model: string }> {
   const apiKey = process.env.OPENAI_API_KEY ?? process.env.AI_API_KEY;
   const model = process.env.TRACER_PATROL_MODEL ?? "gpt-4o-mini";
   const fallback = (): { action: RepairAction; reason: string; model: string } => {
-    if (before.eligibleForBase > before.basePublished) return { action: "publish_base", reason: "BASE公開可能件数がBASE公開済み件数を上回っています。", model: "rule-fallback" };
     if (before.publishedListings === 0 || before.orderableSuppliers === 0) return { action: "discover_supply", reason: "公開済み商品または発注可能な仕入先がありません。", model: "rule-fallback" };
     return { action: "recheck_pipeline", reason: "主要件数は存在するため再監査します。", model: "rule-fallback" };
   };
@@ -95,7 +93,7 @@ async function aiDecide(before: Snapshot): Promise<{ action: RepairAction; reaso
         temperature: 0,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: "You are TRACER Patrol AI. Choose exactly one safe repair action from discover_supply, publish_base, recheck_pipeline. Never invent facts. The action must be reversible/safe and must not place paid supplier orders. Return JSON {action,reason}." },
+          { role: "system", content: "You are TRACER Patrol AI. Choose exactly one safe repair action from discover_supply, recheck_pipeline. Never invent facts. The action must be reversible/safe and must not place paid supplier orders. Return JSON {action,reason}." },
           { role: "user", content: JSON.stringify({ snapshot: before }) },
         ],
       }),
@@ -104,7 +102,7 @@ async function aiDecide(before: Snapshot): Promise<{ action: RepairAction; reaso
     if (!response.ok) throw new Error(`patrol AI HTTP ${response.status}`);
     const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
     const parsed = JSON.parse(payload.choices?.[0]?.message?.content ?? "{}") as { action?: string; reason?: string };
-    if (!["discover_supply", "publish_base", "recheck_pipeline"].includes(parsed.action ?? "")) throw new Error("patrol AI returned invalid action");
+    if (!["discover_supply", "recheck_pipeline"].includes(parsed.action ?? "")) throw new Error("patrol AI returned invalid action");
     return { action: parsed.action as RepairAction, reason: parsed.reason || "AIが安全な修復アクションを選択しました。", model };
   } catch (error) {
     const fallbackDecision = fallback();
@@ -156,32 +154,9 @@ export async function GET(request: Request) {
       }
     }
 
-    // Always run BASE reconciliation after discovery or when eligible supply
-    // already exists. This is the actual repair step that turns verified supply
-    // into a public listing.
-    try {
-      const base = await publishPublishedListingsToBase(10);
-      actions.push({
-        action: "publish_base",
-        attempted: base.attempted,
-        published: base.published,
-        skipped: base.skipped,
-        failed: base.failed,
-        results: base.results,
-      });
-      for (const item of base.results) {
-        if (!item.ok && !item.skipped && item.error) errors.push(String(item.error));
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      errors.push(message);
-      actions.push({ action: "publish_base", ok: false, error: message });
-    }
-
     const after = await snapshot(db);
     const progress = {
       newPublishedListings: after.publishedListings - before.publishedListings,
-      newBaseItems: after.basePublished - before.basePublished,
       newOrders: after.orders - before.orders,
     };
 
@@ -202,7 +177,7 @@ export async function GET(request: Request) {
       errors,
       message: errors.length
         ? "巡回AIが異常を検知し、修復を実行したが未解決項目が残っています。"
-        : progress.newBaseItems > 0 || progress.newPublishedListings > 0
+        : progress.newPublishedListings > 0
           ? "巡回AIが異常を検知し、自動修復して進捗を確認しました。"
           : "巡回AIは実行済みですが、今回の巡回では公開可能な新規商品を確認できませんでした。",
     };

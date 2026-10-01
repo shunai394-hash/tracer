@@ -88,6 +88,35 @@ export async function promoteShopListingToNewfind(
   const id = eventId(listingId);
   const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
 
+  // Sales Test Gate is the only entry point for NEWFIND promotion.
+  // Non-gated listings must not create or mutate NEWFIND delivery state.
+  const { data: listing, error } = await supabase
+    .from("shop_listings")
+    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, pipeline_stage, pipeline_status, pipeline_reason")
+    .eq("id", listingId)
+    .eq("published", true)
+    .eq("pipeline_stage", "PUBLISHED")
+    .eq("pipeline_status", "published")
+    .eq("pipeline_reason", "sales_test_gate_passed")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!listing) {
+    return {
+      configured: Boolean(cfg.apiUrl && cfg.webhookSecret),
+      sent: false,
+      eventId: id,
+      status: null,
+      ackStatus: null,
+      detail: "sales_test_gate_not_passed",
+    };
+  }
+
+
+
   // Persist the delivery even when NEWFIND is temporarily unconfigured.
   // Once configuration is restored, the retry cron can drain this pending
   // row without requiring the source listing to be republished.
@@ -185,40 +214,7 @@ export async function promoteShopListingToNewfind(
     };
   }
 
-  const { data: listing, error } = await supabase
-    .from("shop_listings")
-    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method")
-    .eq("id", listingId)
-    .eq("published", true)
-    .maybeSingle();
 
-  if (error) {
-    await supabase.from("newfind_promotion_deliveries").update({
-      status: "failed",
-      last_error: error.message,
-      last_attempt_at: new Date().toISOString(),
-      lease_until: null,
-      updated_at: new Date().toISOString(),
-    }).eq("listing_id", listingId);
-    throw new Error(error.message);
-  }
-  if (!listing) {
-    await supabase.from("newfind_promotion_deliveries").update({
-      status: "failed",
-      last_error: "published_listing_not_found",
-      last_attempt_at: new Date().toISOString(),
-      lease_until: null,
-      updated_at: new Date().toISOString(),
-    }).eq("listing_id", listingId);
-    return {
-      configured: true,
-      sent: false,
-      eventId: id,
-      status: null,
-      ackStatus: null,
-      detail: "published_listing_not_found",
-    };
-  }
 
   let productUrl: string | null = null;
   let category: string | null = null;
@@ -234,20 +230,12 @@ export async function promoteShopListingToNewfind(
     brand = typeof bestseller?.brand === "string" ? bestseller.brand : null;
   }
 
-  // Supply-first listings are TRACER's own products: there is no marketplace
-  // page for them, so the product URL is the live TRACER storefront page.
-  // Marketplace-linked listings keep their marketplace URL as the product URL
-  // and also carry the TRACER URL.
   const tracerUrl = await resolveLiveTracerUrl(
     typeof listing.slug === "string" ? listing.slug : null,
   );
-  const supplyFirst = !listing.bestseller_id;
-  if (supplyFirst) productUrl = tracerUrl;
 
   if (!productUrl) {
-    const reason = supplyFirst
-      ? "tracer_url_unavailable_newfind_requires_url"
-      : "product_url_missing_newfind_requires_url";
+    const reason = "product_url_missing_newfind_requires_url";
     await supabase.from("newfind_promotion_deliveries").update({
       status: "failed",
       last_error: reason,
@@ -283,9 +271,7 @@ export async function promoteShopListingToNewfind(
       currency: String(listing.currency ?? "JPY"),
       brand: brand || undefined,
       category: category || "other",
-      discovery_reason: supplyFirst
-        ? "TRACER supply-first published product"
-        : "TRACER sales-test published product",
+      discovery_reason: "TRACER sales-test published product",
       tracer_url: tracerUrl ?? undefined,
       selection_score: 100,
       confidence: 0.9,

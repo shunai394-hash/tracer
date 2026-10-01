@@ -30,7 +30,7 @@ export async function publishPublishedListingsToBase(
   const { data: listings, error } = await supabase
     .from("shop_listings")
     .select(
-      "id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,shipping_cost,supplier_name,supplier_listing_id",
+      "id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,shipping_cost,supplier_name,supplier_listing_id,pipeline_stage,pipeline_status,pipeline_reason",
     )
     .or("published.eq.true,base_item_id.not.is.null")
     // Prioritize listings that have not reached BASE yet. Otherwise a cron
@@ -46,6 +46,10 @@ export async function publishPublishedListingsToBase(
 
   for (const listing of listings ?? []) {
     const listingId = String(listing.id);
+    const hasSalesTestGate =
+      listing.pipeline_stage === "PUBLISHED" &&
+      listing.pipeline_status === "published" &&
+      listing.pipeline_reason === "sales_test_gate_passed";
 
     // Existing BASE items must be actively reconciled even when TRACER has
     // since unpublished or blocked the listing. Otherwise an old BASE item
@@ -86,6 +90,18 @@ export async function publishPublishedListingsToBase(
         }).eq("id", listingId);
         results.push({ listingId, ok: false, error: message });
       }
+      continue;
+    }
+
+    // New BASE publication is downstream of the Sales Test Gate.
+    // Existing BASE items are handled by the reconciliation branch above.
+    if (!listing.base_item_id && !hasSalesTestGate) {
+      results.push({
+        listingId,
+        ok: false,
+        skipped: true,
+        error: "sales_test_gate_not_passed",
+      });
       continue;
     }
 
@@ -407,7 +423,7 @@ export async function publishPublishedListingsToBase(
           base_last_error: null,
           pipeline_stage: "BASE_PUBLISHED",
           pipeline_status: "published",
-          pipeline_reason: "base_item_created",
+          pipeline_reason: "sales_test_gate_passed",
           pipeline_error: null,
           pipeline_updated_at: new Date().toISOString(),
         })

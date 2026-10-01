@@ -1,4 +1,3 @@
-import { isBaseConfigured } from "@/lib/channels/base";
 
 type BaseListing = {
   id: string;

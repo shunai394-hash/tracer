@@ -27,17 +27,46 @@ function normalizePaymentState(value: unknown): "paid" | "unpaid" | "unknown" {
 
 function extractCJPaymentConfirmation(raw: unknown): boolean {
   if (!raw || typeof raw !== "object") return false;
+
   const root = raw as Record<string, unknown>;
-  const data = root.data && typeof root.data === "object" ? root.data as Record<string, unknown> : null;
-  const payment = data?.payment && typeof data.payment === "object" ? data.payment as Record<string, unknown> : null;
+  const data =
+    root.data && typeof root.data === "object"
+      ? root.data as Record<string, unknown>
+      : null;
+
+  if (!data) return false;
+
+  // CJ explicitly returns these fields after payment.
+  const paymentDate = data.paymentDate;
+  if (typeof paymentDate === "string" && paymentDate.trim()) {
+    return true;
+  }
+
+  const paymentDateTime = data.paymentDateTime;
+  if (
+    typeof paymentDateTime === "number" &&
+    Number.isFinite(paymentDateTime) &&
+    paymentDateTime > 0
+  ) {
+    return true;
+  }
+
+  // Keep compatibility with explicit payment-state fields,
+  // but fail closed when payment is not explicitly confirmed.
+  const payment =
+    data.payment && typeof data.payment === "object"
+      ? data.payment as Record<string, unknown>
+      : null;
+
   const candidates = [
-    data?.paymentStatus,
-    data?.payStatus,
-    data?.paymentState,
-    data?.payState,
+    data.paymentStatus,
+    data.payStatus,
+    data.paymentState,
+    data.payState,
     payment?.status,
     payment?.paymentStatus,
   ];
+
   return candidates.some((value) => normalizePaymentState(value) === "paid");
 }
 

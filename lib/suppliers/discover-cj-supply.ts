@@ -52,7 +52,7 @@ async function readCatalogCursor(db: ReturnType<typeof createSupabaseAdminClient
 
 async function writeCatalogCursor(
   db: ReturnType<typeof createSupabaseAdminClient>,
-  cursor: CatalogCursor & { published: number; rejected: number },
+  cursor: CatalogCursor & { discovered: number; rejected: number },
 ): Promise<void> {
   const now = new Date().toISOString();
   const { error } = await db.from("cron_runs").insert({
@@ -60,7 +60,7 @@ async function writeCatalogCursor(
     status: "succeeded",
     started_at: now,
     finished_at: now,
-    processed: cursor.published,
+    processed: cursor.discovered,
     failed: cursor.rejected,
     metadata: { queryIndex: cursor.queryIndex, page: cursor.page },
   });
@@ -136,7 +136,7 @@ function slug(title: string, productId: string, variantId: string): string {
 /**
  * Supply-first path. This deliberately does not claim marketplace identity.
  * The CJ product/variant itself is the source of truth for the sellable item.
- * Every published row must have a live variant id, live stock > 0, live
+ * Every supply candidate must have a live variant id, live stock > 0, live
  * Japan freight, a positive cost and a non-empty image.
  */
 export async function discoverAndCreateCjSupply(
@@ -144,7 +144,6 @@ export async function discoverAndCreateCjSupply(
   options?: { deadlineAt?: number },
 ): Promise<{
   discovered: number;
-  published: number;
   rejected: number;
   candidateCount: number;
   eligibleCount: number;
@@ -160,7 +159,6 @@ export async function discoverAndCreateCjSupply(
   if (!autoProcurement.eligible) {
     return {
       discovered: 0,
-      published: 0,
       rejected: 0,
       candidateCount: 0,
       eligibleCount: 0,
@@ -178,12 +176,11 @@ export async function discoverAndCreateCjSupply(
   const queries = CATALOG_QUERIES;
   const items: Array<Record<string, unknown>> = [];
   let discovered = 0;
-  let published = 0;
   let rejected = 0;
 
   // Reuse previously discovered CJ IDs first. These rows are only candidates;
   // stock, variant and Japan freight are re-verified live before publication.
-  // Do not keep selecting the already-published winner. The first bootstrap
+  // Do not keep selecting the same existing listing. The first bootstrap
   // run proved the BASE path; subsequent runs must advance through the
   // remaining verified CJ supply candidates.
   const { data: existingListings } = await db
@@ -191,10 +188,10 @@ export async function discoverAndCreateCjSupply(
     .select("supplier_product_id,supplier_variant_id")
     .not("supplier_variant_id", "is", null);
 
-  const publishedProducts = new Set(
+  const existingProducts = new Set(
     (existingListings ?? []).map((row) => String(row.supplier_product_id ?? "")).filter(Boolean),
   );
-  const publishedVariants = new Set(
+  const existingVariants = new Set(
     (existingListings ?? []).map((row) => `${String(row.supplier_product_id ?? "")}:${String(row.supplier_variant_id ?? "")}`),
   );
 
@@ -222,7 +219,7 @@ export async function discoverAndCreateCjSupply(
   const seenSeedKeys = new Set<string>();
   const seeded = (seededRows ?? []).filter((row) => {
     const key = `${String(row.supplier_product_id)}:${String(row.supplier_variant_id)}`;
-    if (publishedVariants.has(key) || seenSeedKeys.has(key)) return false;
+    if (existingVariants.has(key) || seenSeedKeys.has(key)) return false;
     seenSeedKeys.add(key);
     return true;
   });
@@ -244,7 +241,7 @@ export async function discoverAndCreateCjSupply(
   }));
 
   for (const seededCandidate of candidateInputs) {
-    if (published >= limit) break;
+    if (discovered >= limit) break;
     if (Date.now() >= deadlineAt) {
       deadlineReached = true;
       break;
@@ -316,7 +313,7 @@ export async function discoverAndCreateCjSupply(
       // Reuse persisted variant/cost/inventory observations. Only image/title
       // and live Japan freight consume CJ requests for seeded rows.
       // Always re-check stock live: a persisted count may be days old and a
-      // published row must reflect current CJ stock.
+      // Every supply candidate must reflect current CJ stock.
       const stock = await fetchCJVariantStock(candidate.variantId);
 
       if (stock === null || stock <= 0) {
@@ -365,7 +362,7 @@ export async function discoverAndCreateCjSupply(
         order_method: "cj_api", api_available: true, identity_method: "supply_discovered",
         identity_status: "supply_discovered", identity_confidence: 1, configured: true,
         supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
-        orderable: true, price_confirmed: true, inventory_confirmed: true, tracking_available: false,
+        orderable: true, price_confirmed: true, inventory_confirmed: true, tracking_available: true,
         fetched_at: new Date().toISOString(), metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate }
       }, seededCandidate.supplierListingId);
       if (supplierInsert.error) throw new Error(supplierInsert.error.message);
@@ -379,10 +376,10 @@ export async function discoverAndCreateCjSupply(
         description: `日本向けに厳選した商品です。\n\nCJdropshippingから仕入れ、在庫・日本向け送料を確認したうえで掲載しています。\n\n商品仕様：${detail.title}\nバリエーション：標準仕様\n\n※商品名・仕様は仕入先の商品情報を基にしています。対応機種・サイズなどはご注文前に商品画像・仕様をご確認ください。\n※仕入先の在庫・配送状況により、販売を停止する場合があります。`,
         image_url: detail.imageUrl, selling_price: salePrice, currency: "JPY", supplier_name: "cj",
         supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, source_cost: cost, shipping_cost: freight,
-        inventory: Math.floor(stock), orderable: true, tracking_available: false, identity_method: "supply_discovered",
-        identity_confidence: 1, published: true, selection_reasons: ["supply_first","live_cj_variant","live_inventory_gt_zero","live_japan_freight",`fx_usdjpy_${fxRate.toFixed(4)}`],
-        missing: [], published_at: new Date().toISOString(), pipeline_stage: "PUBLISHED", pipeline_status: "published",
-        pipeline_reason: "supply_first_gate_passed", pipeline_updated_at: new Date().toISOString(), updated_at: new Date().toISOString()
+        inventory: Math.floor(stock), orderable: true, tracking_available: true, identity_method: "supply_discovered",
+        identity_confidence: 1, published: false, selection_reasons: ["supply_first","live_cj_variant","live_inventory_gt_zero","live_japan_freight",`fx_usdjpy_${fxRate.toFixed(4)}`],
+        missing: [], pipeline_stage: "SUPPLY_VERIFIED", pipeline_status: "supply_verified",
+        pipeline_reason: "supply_first_verified_waiting_for_sales_test", pipeline_updated_at: new Date().toISOString(), updated_at: new Date().toISOString()
       };
       const existingShop = await db.from("shop_listings").select("id").eq("slug", listingSlug).limit(1).maybeSingle();
       if (existingShop.error) throw new Error(existingShop.error.message);
@@ -390,7 +387,7 @@ export async function discoverAndCreateCjSupply(
         ? await db.from("shop_listings").update(shopPayload).eq("id", existingShop.data.id).select("id").single()
         : await db.from("shop_listings").insert(shopPayload).select("id").single();
       if (shopInsert.error) throw new Error(shopInsert.error.message);
-      discovered++; published++;
+      discovered++;
       items.push({ listingId: String(shopInsert.data.id), productId, supplierListingId: String(supplierInsert.data.id), title: detail.title, supplierProductId: candidate.id, supplierVariantId: candidate.variantId, costUsd: cost, freightUsd: freight, inventory: Math.floor(stock), sellingPriceJpy: salePrice, fxRate });
     } catch (error) {
       rejected++;
@@ -401,7 +398,7 @@ export async function discoverAndCreateCjSupply(
     }
   }
 
-  if (published >= limit) return { discovered, published, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
+  if (discovered >= limit) return { discovered, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
 
   // Seeded verification is only one source of candidates. If all seeded
   // variants fail live Japan-freight verification, continue into the live CJ
@@ -414,7 +411,7 @@ export async function discoverAndCreateCjSupply(
   let page = cursor.page;
   let pagesScanned = 0;
   const seenSearchProducts = new Set<string>();
-  while (published < limit && pagesScanned < queries.length * 2) {
+  while (discovered < limit && pagesScanned < queries.length * 2) {
     if (Date.now() >= deadlineAt) {
       deadlineReached = true;
       break;
@@ -435,14 +432,14 @@ export async function discoverAndCreateCjSupply(
     const pageNumber = page;
     let pageCompleted = true;
     for (const candidate of search.products.map((x) => ({ ...x, variantId: null as string | null }))) {
-      if (published >= limit || Date.now() >= deadlineAt) {
+      if (discovered >= limit || Date.now() >= deadlineAt) {
         if (Date.now() >= deadlineAt) deadlineReached = true;
         pageCompleted = false;
         break;
       }
       if (seenSearchProducts.has(candidate.id)) continue;
       seenSearchProducts.add(candidate.id);
-      if (publishedProducts.has(candidate.id)) continue;
+      if (existingProducts.has(candidate.id)) continue;
       const reject = (stage: string, extra?: Record<string, unknown>) => {
         rejected++;
         items.push({ rejectedStage: stage, supplierProductId: candidate.id, query: pageQuery, page: pageNumber, ...extra });
@@ -559,7 +556,7 @@ export async function discoverAndCreateCjSupply(
               orderable: true,
               price_confirmed: true,
               inventory_confirmed: true,
-              tracking_available: false,
+              tracking_available: true,
               fetched_at: now,
               metadata: {
                 source: "cj_supply_first",
@@ -592,10 +589,10 @@ export async function discoverAndCreateCjSupply(
           shipping_cost: freight,
           inventory: Math.floor(stock),
           orderable: true,
-          tracking_available: false,
+          tracking_available: true,
           identity_method: "supply_discovered",
           identity_confidence: 1,
-          published: true,
+          published: false,
           selection_reasons: [
             "supply_first",
             "live_cj_variant",
@@ -604,10 +601,9 @@ export async function discoverAndCreateCjSupply(
             `fx_usdjpy_${fxRate.toFixed(4)}`,
           ],
           missing: [],
-          published_at: now,
-          pipeline_stage: "PUBLISHED",
-          pipeline_status: "published",
-          pipeline_reason: "supply_first_gate_passed",
+          pipeline_stage: "SUPPLY_VERIFIED",
+          pipeline_status: "supply_verified",
+          pipeline_reason: "supply_first_verified_waiting_for_sales_test",
           pipeline_updated_at: now,
           updated_at: now,
         };
@@ -634,7 +630,6 @@ export async function discoverAndCreateCjSupply(
         if (shopInsert.error) throw new Error(shopInsert.error.message);
 
         discovered++;
-        published++;
         items.push({
           listingId: String(shopInsert.data.id),
           productId,
@@ -662,7 +657,7 @@ export async function discoverAndCreateCjSupply(
         : { queryIndex, page: page + 1 });
     }
   }
-  await writeCatalogCursor(db, { queryIndex, page, published, rejected });
+  await writeCatalogCursor(db, { queryIndex, page, discovered, rejected });
 
-  return { discovered, published, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
+  return { discovered, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
 }

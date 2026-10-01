@@ -89,18 +89,6 @@ export async function GET(request: Request) {
     }));
   }
 
-  const afterSupply = await audit(request);
-  if (count(afterSupply, "supplier_listings_orderable") > 0 && basePublished === 0) {
-    repairs.push("base-publish");
-    const result = await repair(request, "base-publish");
-    results.push(result);
-    console.log("[TRACER_PATROL_REPAIR]", JSON.stringify({
-      patrolId,
-      stage: "base-publish",
-      status: result.status,
-      ok: result.ok,
-    }));
-  }
 
   const after = await audit(request);
   const verdict = count(after, "supplier_listings_orderable") > 0

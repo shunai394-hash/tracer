@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
-import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 
@@ -49,59 +48,11 @@ export async function GET(request: Request) {
     // Bound CJ discovery so the rest of this stage (and the cron_runs
     // bookkeeping) finishes inside maxDuration; unbounded, the function was
     // killed and left the lock held.
-    const supplyFirst = await discoverAndCreateCjSupply(20, {
+    await discoverAndCreateCjSupply(20, {
       deadlineAt: startedAt + 150_000,
     });
-
-    if (supplyFirst.published > 0) {
-      const newfind = await Promise.all(
-        supplyFirst.items
-          .map((item) => String(item.listingId ?? ""))
-          .filter(Boolean)
-          .map((listingId) =>
-            promoteShopListingToNewfind(listingId).catch((error) => ({
-              configured: true,
-              sent: false,
-              eventId: `tracer-shop-listing:${listingId}`,
-              status: null,
-              ackStatus: null,
-              detail: error instanceof Error ? error.message : String(error),
-            })),
-          ),
-      );
-
-      if (cronRunId) {
-        await supabase.from("cron_runs").update({
-          status: "succeeded",
-          finished_at: new Date().toISOString(),
-          duration_ms: Date.now() - startedAt,
-          processed: supplyFirst.candidateCount,
-          failed: supplyFirst.rejected,
-          metadata: {
-            phase: "sales_test_publication",
-            mode: "supply_first",
-            candidateCount: supplyFirst.candidateCount,
-            discovered: supplyFirst.discovered,
-            published: supplyFirst.published,
-            rejected: supplyFirst.rejected,
-            newfind: newfind.length,
-          },
-        }).eq("id", cronRunId);
-      }
-
-      return NextResponse.json({
-        ok: true,
-        phase: "sales_test_publication",
-        elapsedMs: Date.now() - startedAt,
-        mode: "supply_first",
-        supplyFirst,
-        newfind,
-        nextPhase: "base_publication",
-      });
-    }
-
-    // Keep the existing market-linked pipeline as the fallback when the
-    // supply-first source has no publishable candidate.
+    // Supply-first only verifies supplier availability.
+    // It never publishes directly; publication remains behind the sales-test gate.
     const { data: readyRows, error: readyError } = await supabase
       .from("marketplace_bestsellers")
       .select("id")
@@ -115,19 +66,6 @@ export async function GET(request: Request) {
     const candidateIds = (readyRows ?? []).map((row) => String(row.id));
     const decision = await selectAndPublishSalesTests(candidateIds, 10);
 
-    const newfind = await Promise.all(
-      decision.publishedListingIds.map((listingId) =>
-        promoteShopListingToNewfind(listingId).catch((error) => ({
-          configured: true,
-          sent: false,
-          eventId: `tracer-shop-listing:${listingId}`,
-          status: null,
-          ackStatus: null,
-          detail: error instanceof Error ? error.message : String(error),
-        })),
-      ),
-    );
-
     if (cronRunId) {
       await supabase.from("cron_runs").update({
         status: "succeeded",
@@ -137,10 +75,9 @@ export async function GET(request: Request) {
         failed: 0,
         metadata: {
           phase: "sales_test_publication",
-          mode: "market_linked_fallback",
+          mode: "market_linked_sales_test",
           considered: decision.considered,
           published: decision.published,
-          newfind: newfind.length,
         },
       }).eq("id", cronRunId);
     }
@@ -149,11 +86,10 @@ export async function GET(request: Request) {
       ok: true,
       phase: "sales_test_publication",
       elapsedMs: Date.now() - startedAt,
-      mode: "market_linked_fallback",
+      mode: "market_linked_sales_test",
       candidateCount: candidateIds.length,
       decision,
-      newfind,
-      nextPhase: "base_publication",
+      nextPhase: "downstream_delivery",
     });
   } catch (error) {
     if (cronRunId) {

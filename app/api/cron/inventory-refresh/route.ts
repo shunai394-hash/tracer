@@ -19,10 +19,10 @@ export async function GET(request: Request) {
     const supabase = createSupabaseAdminClient();
     const { data: listings, error } = await supabase
       .from("shop_listings")
-      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price")
-      .eq("published", true)
+      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason")
       .not("supplier_name", "is", null)
       .not("supplier_variant_id", "is", null)
+      .or("base_item_id.not.is.null,and(pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published,pipeline_reason.eq.sales_test_gate_passed)")
       .order("updated_at", { ascending: true })
       .limit(20);
 
@@ -54,9 +54,6 @@ export async function GET(request: Request) {
             .update({
               published: false,
               orderable: false,
-              pipeline_stage: "INVENTORY_REFRESH",
-              pipeline_status: "blocked",
-              pipeline_reason: "supplier_auto_procurement_capability_missing",
               pipeline_error: autoProcurement.missing.join("|"),
               pipeline_updated_at: now,
               updated_at: now,
@@ -123,9 +120,6 @@ export async function GET(request: Request) {
             .update({
               inventory: null,
               orderable: false,
-              pipeline_stage: "INVENTORY_REFRESH",
-              pipeline_status: "blocked",
-              pipeline_reason: "inventory_unknown",
               pipeline_error: "Supplier variant stock could not be verified",
               pipeline_updated_at: now,
               updated_at: now,
@@ -180,11 +174,6 @@ export async function GET(request: Request) {
           .update({
             inventory,
             orderable,
-            pipeline_stage: "PUBLISHED",
-            pipeline_status: orderable ? "published" : "blocked",
-            pipeline_reason: orderable ? "inventory_verified" : "inventory_zero",
-            pipeline_error: null,
-            pipeline_updated_at: now,
             updated_at: now,
           })
           .eq("id", listingId);

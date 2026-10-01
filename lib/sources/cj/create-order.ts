@@ -259,6 +259,8 @@ export async function getCJTrackingInfo(trackNumber: string): Promise<CJTracking
 export type CJOrderStatusResult = {
   status: string | null;
   trackingNumber: string | null;
+  paymentDate: string | null;
+  paymentDateTime: number | null;
   raw: unknown;
 };
 
@@ -285,10 +287,30 @@ export async function getCJOrderStatus(supplierOrderId: string): Promise<CJOrder
       trackNumber?: string;
       trackingNumber?: string;
       logisticNo?: string;
+      paymentDate?: string;
+      paymentDateTime?: number;
     };
   };
   const status = payload.data?.orderStatus ?? payload.data?.status ?? null;
   const trackingNumber =
     payload.data?.trackNumber ?? payload.data?.trackingNumber ?? payload.data?.logisticNo ?? null;
-  return { status, trackingNumber, raw: payload };
+
+  const paymentDate =
+    typeof payload.data?.paymentDate === "string" && payload.data.paymentDate.trim()
+      ? payload.data.paymentDate
+      : null;
+
+  const paymentDateTime =
+    typeof payload.data?.paymentDateTime === "number" &&
+    Number.isFinite(payload.data.paymentDateTime)
+      ? payload.data.paymentDateTime
+      : null;
+
+  return {
+    status,
+    trackingNumber,
+    paymentDate,
+    paymentDateTime,
+    raw: payload,
+  };
 }
