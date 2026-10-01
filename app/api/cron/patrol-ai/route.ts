@@ -4,6 +4,7 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { runIntelligencePipeline } from "@/lib/intelligence/run-intelligence-pipeline";
+import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
