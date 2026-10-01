@@ -187,7 +187,7 @@ export async function persistCjSupplyIntelligence(
   const existingOffer = await supabase
     .from("product_offers")
     .select("id")
-    .eq("product_id", args.productId)
+    .eq("product_id", marketplaceIdentity?.productId ?? args.productId)
     .eq("seller_name", "CJdropshipping")
     .order("observed_at", { ascending: false })
     .limit(1)
