@@ -7,6 +7,7 @@ import { tracerTestSupplier } from "@/lib/procurement/test-supplier";
 import { faireSupplierAdapter } from "@/lib/procurement/faire-adapter";
 import { dsersSupplierAdapter } from "@/lib/procurement/dsers-adapter";
 import { tracerInternalSupplierAdapter } from "@/lib/procurement/tracer-internal-adapter";
+import { superDeliverySupplierAdapter } from "@/lib/procurement/superdelivery-adapter";
 
 let initialized = false;
 
@@ -21,6 +22,7 @@ export function initializeProcurement(): void {
   registerSupplierAdapter(faireSupplierAdapter);
   registerSupplierAdapter(dsersSupplierAdapter);
   registerSupplierAdapter(tracerInternalSupplierAdapter);
+  registerSupplierAdapter(superDeliverySupplierAdapter);
   initialized = true;
 }
 
