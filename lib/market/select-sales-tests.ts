@@ -5,7 +5,6 @@ import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { getSupplierCapabilities } from "@/lib/procurement/registry";
-import { getSupplierCapabilities } from "@/lib/procurement/registry";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -368,6 +367,11 @@ export async function selectAndPublishSalesTests(
       if (intelligenceConfidence === null || intelligenceConfidence < 0.6) {
         reasons.push("intelligence_confidence_low");
       }
+    }
+    if (reasons.length > 0) {
+      await markPipeline(String(bestseller.id), "SALES_TEST", "blocked", reasons.join(","));
+      rejected.push({ id: String(bestseller.id), reasons });
+      continue;
     }
     const demandScore = asNumber(intelligence?.demand_score) ?? 0;
     const searchFitScore = asNumber(intelligence?.search_fit_score) ?? 0;
