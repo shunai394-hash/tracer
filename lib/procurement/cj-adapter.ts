@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 import { createCJOrderV2, getCJOrderStatus, getCJTrackingInfo } from "@/lib/sources/cj/create-order";
 import { calculateCJFreight, fetchCJProductInventory, fetchCJVariantByVid, fetchCJVariantStock, getCJProductDetail, searchCJProducts, getCJFreightOptions } from "@/lib/sources/cj/client";
@@ -17,6 +17,30 @@ import type {
 
 const SUPPLIER_NAME = "cj";
 
+function normalizePaymentState(value: unknown): "paid" | "unpaid" | "unknown" {
+  if (typeof value !== "string") return "unknown";
+  const normalized = value.trim().toLowerCase().replace(/[\s_-]+/g, "");
+  if (["paid", "paymentcompleted", "paymentsuccess", "success", "completed"].includes(normalized)) return "paid";
+  if (["unpaid", "pending", "paymentpending", "created", "unpay", "waitpay"].includes(normalized)) return "unpaid";
+  return "unknown";
+}
+
+function extractCJPaymentConfirmation(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  const root = raw as Record<string, unknown>;
+  const data = root.data && typeof root.data === "object" ? root.data as Record<string, unknown> : null;
+  const payment = data?.payment && typeof data.payment === "object" ? data.payment as Record<string, unknown> : null;
+  const candidates = [
+    data?.paymentStatus,
+    data?.payStatus,
+    data?.paymentState,
+    data?.payState,
+    payment?.status,
+    payment?.paymentStatus,
+  ];
+  return candidates.some((value) => normalizePaymentState(value) === "paid");
+}
+
 export const cjSupplierAdapter: TracerSupplierAdapter = {
   name: SUPPLIER_NAME,
   capabilities: {
@@ -28,7 +52,7 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
     shippingRequiresDestination: true,
     orderPreflight: false,
     orderCreation: true,
-    payment: false,
+    payment: true,
     orderStatus: true,
     tracking: true,
     liveOrdering: true,
@@ -222,6 +246,7 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
       supplierOrderId,
       supplierName: SUPPLIER_NAME,
       status: result.status,
+      paymentConfirmed: extractCJPaymentConfirmation(result.raw),
       createdAt: null,
     };
   },
@@ -242,4 +267,3 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
     };
   },
 };
-
