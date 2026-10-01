@@ -25,7 +25,7 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
   const orderableSuppliersQuery = db.from("supplier_listings").select("*", { count: "exact", head: true }).eq("orderable", true);
   const shopListingsQuery = db.from("shop_listings").select("*", { count: "exact", head: true });
   const publishedListingsQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).eq("published", true);
-  const eligibleForBaseQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).eq("published", true).eq("orderable", true).gt("inventory", 0).not("image_url", "is", null);
+  const eligibleForBaseQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).eq("published", true).eq("orderable", true).gt("inventory", 0).not("image_url", "is", null).is("base_item_id", null);
   const onBaseQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).not("base_item_id", "is", null);
   const basePublishedQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).not("base_item_id", "is", null).eq("base_publication_status", "published").eq("published", true);
   const ordersQuery = db.from("shop_orders").select("*", { count: "exact", head: true });
