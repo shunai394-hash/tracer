@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
+import { getSupplierCapabilities } from "@/lib/procurement/registry";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -186,6 +187,27 @@ export async function selectAndPublishSalesTests(
       rejected.push({ id: String(bestseller.id), reasons });
       continue;
     }
+    // Publication is allowed only when the supplier can execute the complete
+    // autonomous procurement lifecycle. Keep this gate identical in meaning
+    // to supplier-execution.ts so a listing can never be public while its
+    // eventual purchase path is known to be non-automatable.
+    const supplierCapabilities = getSupplierCapabilities(String(listing.supplier ?? ""));
+    const requiredCapabilities = [
+      ["variant", supplierCapabilities.variant],
+      ["inventory", supplierCapabilities.inventory],
+      ["price", supplierCapabilities.price],
+      ["shipping", supplierCapabilities.shipping],
+      ["orderCreation", supplierCapabilities.orderCreation],
+      ["payment", supplierCapabilities.payment],
+      ["liveOrdering", supplierCapabilities.liveOrdering],
+    ] as const;
+    const missingSupplierCapabilities = requiredCapabilities
+      .filter(([, supported]) => !supported)
+      .map(([name]) => name);
+    if (missingSupplierCapabilities.length > 0) {
+      reasons.push(`supplier_capability_missing:${missingSupplierCapabilities.join(",")}`);
+    }
+
     if (listing.cost === null) reasons.push("source_cost_unknown");
     if (isInternalSupply && asNumber(listing.catalog_sale_price) === null) reasons.push("selling_price_unknown");
     if (!isInternalSupply && bestseller.price === null) reasons.push("selling_price_unknown");
