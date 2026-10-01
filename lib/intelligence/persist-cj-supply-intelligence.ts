@@ -20,7 +20,7 @@ export type PersistCjSupplyIntelligenceArgs = {
   sellingPriceJpy: number;
 };
 
-type MarketplaceIdentity = {
+export type MarketplaceIdentity = {
   bestsellerId: string;
   productId: string;
   method: "gtin" | "jan" | "ean" | "upc";
@@ -28,7 +28,7 @@ type MarketplaceIdentity = {
   rationale: string;
 };
 
-async function resolveMarketplaceIdentity(args: {
+export async function resolveMarketplaceIdentity(args: {
   db: ReturnType<typeof createSupabaseAdminClient>;
   supplierProductId: string;
   supplierVariantId: string;
@@ -117,7 +117,8 @@ async function resolveMarketplaceIdentity(args: {
 
 export async function persistCjSupplyIntelligence(
   args: PersistCjSupplyIntelligenceArgs,
-): Promise<{ offerId: string; intelligenceId: string }> {
+  options: { identity?: MarketplaceIdentity | null } = {},
+): Promise<{ offerId: string; intelligenceId: string; identity: MarketplaceIdentity | null }> {
   const supabase = createSupabaseAdminClient();
   const now = new Date().toISOString();
   const currencyAssessment = assessCurrencyConfidence({
@@ -126,11 +127,13 @@ export async function persistCjSupplyIntelligence(
     provider: "cj",
   });
 
-  const marketplaceIdentity = await resolveMarketplaceIdentity({
-    db: supabase,
-    supplierProductId: args.supplierProductId,
-    supplierVariantId: args.supplierVariantId,
-  });
+  const marketplaceIdentity = options.identity !== undefined
+    ? options.identity
+    : await resolveMarketplaceIdentity({
+        db: supabase,
+        supplierProductId: args.supplierProductId,
+        supplierVariantId: args.supplierVariantId,
+      });
   const canonicalProductId = marketplaceIdentity?.productId ?? args.productId;
 
   if (marketplaceIdentity) {
@@ -177,7 +180,7 @@ export async function persistCjSupplyIntelligence(
       selling_price_jpy: args.sellingPriceJpy,
       currency_confidence: currencyAssessment.confidence,
       currency_confidence_reasons: currencyAssessment.reasons,
-      identity_confidence: marketplaceIdentity?.confidence ?? 1,
+      identity_confidence: marketplaceIdentity?.confidence ?? 0,
       identity_status: marketplaceIdentity ? "linked" : "supply_discovered",
       identity_method: marketplaceIdentity?.method ?? "supply_discovered",
       identity_rationale: marketplaceIdentity?.rationale ?? "CJ supply discovered; marketplace identity not confirmed",
@@ -234,7 +237,8 @@ export async function persistCjSupplyIntelligence(
         currency: "USD",
         current_price: args.cost,
         price_confidence: currencyAssessment.confidence === "high" ? 0.9 : currencyAssessment.confidence === "medium" ? 0.6 : 0.2,
-        identity_confidence: marketplaceIdentity?.confidence ?? 1,
+        // Unconfirmed marketplace identity carries no identity evidence.
+        identity_confidence: marketplaceIdentity?.confidence ?? 0,
         demand_signal: existingIntelligence.data?.demand_signal ?? null,
         supply_signal: 1,
         metadata: {
@@ -252,7 +256,7 @@ export async function persistCjSupplyIntelligence(
           demand_evidence_status: existingMetadata.demand_evidence_status ?? "not_observed",
           identity_status: marketplaceIdentity ? "linked" : "supply_discovered",
           identity_method: marketplaceIdentity?.method ?? "supply_discovered",
-          identity_confidence: marketplaceIdentity?.confidence ?? 1,
+          identity_confidence: marketplaceIdentity?.confidence ?? 0,
           identity_rationale: marketplaceIdentity?.rationale ?? "CJ supply discovered; marketplace identity not confirmed",
           intelligence_source: "cj_supply_discovery",
         },
@@ -265,5 +269,5 @@ export async function persistCjSupplyIntelligence(
     .single();
 
   if (intelligence.error) throw new Error(intelligence.error.message);
-  return { offerId, intelligenceId: String(intelligence.data.id) };
+  return { offerId, intelligenceId: String(intelligence.data.id), identity: marketplaceIdentity };
 }

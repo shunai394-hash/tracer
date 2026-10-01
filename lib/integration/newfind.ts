@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHmac } from "node:crypto";
 import { getNewfindConfig } from "@/lib/config/env";
-import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
+import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 
 function buildUrl(base: string): string {
   const trimmed = base.trim().replace(/\/$/, "");
@@ -37,6 +37,50 @@ async function resolveLiveTracerUrl(slug: string | null): Promise<string | null>
   } catch {
     return null;
   }
+}
+
+function readSelectionReasons(listing: { selection_reasons?: unknown }): string[] {
+  return Array.isArray(listing.selection_reasons) ? listing.selection_reasons.map(String) : [];
+}
+
+// "selection_score_72.4" (supply gate) / "quality_score_68.0" (market gate).
+function selectionScore(listing: { selection_reasons?: unknown }): number {
+  for (const reason of readSelectionReasons(listing)) {
+    const match = /^(?:selection|quality)_score_(\d+(?:\.\d+)?)$/.exec(reason);
+    if (match) return Math.max(0, Math.min(100, Number(match[1])));
+  }
+  return 0;
+}
+
+function identityConfidence(listing: { identity_confidence?: unknown }): number {
+  const value = Number(listing.identity_confidence);
+  return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+}
+
+/** Human-readable TRACER discovery evidence shown with the NEWFIND discovery. */
+function discoveryReason(listing: {
+  selection_reasons?: unknown;
+  identity_method?: unknown;
+  supplier_name?: unknown;
+  contribution_margin?: unknown;
+  base_item_id?: unknown;
+}): string {
+  const reasons = readSelectionReasons(listing);
+  const path = reasons.includes("sales_test_gate:supply")
+    ? "supply-first"
+    : reasons.includes("sales_test_gate:market")
+      ? "marketplace ranking"
+      : "sales test";
+  const parts = [
+    `TRACER discovery via ${path}; passed Sales Test Gate`,
+    listing.identity_method ? `identity=${String(listing.identity_method)}` : null,
+    listing.supplier_name ? `supplier=${String(listing.supplier_name)}` : null,
+    Number.isFinite(Number(listing.contribution_margin))
+      ? `margin=${Number(listing.contribution_margin).toFixed(1)}%`
+      : null,
+    listing.base_item_id ? "listed on BASE" : null,
+  ].filter(Boolean);
+  return parts.join("; ");
 }
 
 function eventId(listingId: string): string {
@@ -118,7 +162,7 @@ export async function promoteShopListingToNewfind(
   // Non-gated listings must not create or mutate NEWFIND delivery state.
   const { data: listing, error } = await supabase
     .from("shop_listings")
-    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
+    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, identity_confidence, supplier_name, base_item_id, contribution_margin, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
     .eq("id", listingId)
     .eq("published", true)
     .maybeSingle();
@@ -258,6 +302,11 @@ export async function promoteShopListingToNewfind(
     typeof listing.slug === "string" ? listing.slug : null,
   );
 
+  // Supply-first listings have no marketplace bestseller, so they never had a
+  // product_url and every delivery failed with product_url_missing. The live
+  // TRACER product page (verified 200 above) is the real public sales URL.
+  if (!productUrl && tracerUrl) productUrl = tracerUrl;
+
   if (!productUrl) {
     const reason = "product_url_missing_newfind_requires_url";
     await supabase.from("newfind_promotion_deliveries").update({
@@ -295,10 +344,10 @@ export async function promoteShopListingToNewfind(
       currency: String(listing.currency ?? "JPY"),
       brand: brand || undefined,
       category: category || "other",
-      discovery_reason: "TRACER sales-test published product",
+      discovery_reason: discoveryReason(listing),
       tracer_url: tracerUrl ?? undefined,
-      selection_score: 100,
-      confidence: 0.9,
+      selection_score: selectionScore(listing),
+      confidence: identityConfidence(listing),
       source_ref: listing.id,
       source_url: productUrl,
       note: String(listing.description ?? ""),
@@ -410,4 +459,111 @@ export async function promoteShopListingToNewfind(
     ackStatus,
     detail,
   };
+}
+
+export type NewfindRescueResult = {
+  /** Gate-passed, still-public listings examined. */
+  candidates: number;
+  /** Of those, how many have a BASE item. */
+  onBase: number;
+  /** Already processed by NEWFIND (nothing to do). */
+  alreadyProcessed: number;
+  /** No delivery row yet / pending / failed / sent-but-unacknowledged. */
+  undelivered: { missing: number; pending: number; failed: number; sent: number; sending: number };
+  attempted: number;
+  processed: number;
+  stillFailing: Array<{ listingId: string; detail: string }>;
+};
+
+/**
+ * Rescue listings that passed the Sales Test Gate (and are typically already
+ * on BASE) but never reached NEWFIND: no delivery row, or a pending / failed /
+ * unacknowledged one. Selection is by Sales Test Gate provenance, never by
+ * published=true alone. Delivery stays idempotent: promoteShopListingToNewfind
+ * re-checks the gate, skips processed deliveries, honours the sending lease and
+ * NEWFIND dedupes on the stable event_id, so this cannot double-post.
+ */
+export async function rescueUndeliveredGatePassedListings(options: {
+  limit?: number;
+  deadlineAt?: number;
+} = {}): Promise<NewfindRescueResult> {
+  const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
+  const limit = Math.max(1, Math.min(options.limit ?? 5, 50));
+  const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
+
+  // Two plain filters (one per provenance marker) instead of an or() over a
+  // jsonb containment, whose quoting inside or() is easy to get wrong.
+  const columns = "id, base_item_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, updated_at";
+  const [byReason, byMarker] = await Promise.all([
+    supabase.from("shop_listings").select(columns)
+      .eq("published", true)
+      .eq("pipeline_reason", SALES_TEST_GATE_PASSED)
+      .limit(500),
+    supabase.from("shop_listings").select(columns)
+      .eq("published", true)
+      .filter("selection_reasons", "cs", JSON.stringify([SALES_TEST_GATE_PASSED]))
+      .limit(500),
+  ]);
+  if (byReason.error) throw new Error(byReason.error.message);
+  if (byMarker.error) throw new Error(byMarker.error.message);
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const row of [...(byReason.data ?? []), ...(byMarker.data ?? [])]) {
+    byId.set(String(row.id), row as Record<string, unknown>);
+  }
+  // BASE-listed first (customers can already buy those), then oldest first.
+  const listings = Array.from(byId.values()).sort((a, b) =>
+    Number(Boolean(b.base_item_id)) - Number(Boolean(a.base_item_id)) ||
+    String(a.updated_at ?? "").localeCompare(String(b.updated_at ?? "")),
+  );
+
+  const gated = (listings ?? []).filter((row) => hasPassedSalesTestGate(row));
+  const result: NewfindRescueResult = {
+    candidates: gated.length,
+    onBase: gated.filter((row) => row.base_item_id).length,
+    alreadyProcessed: 0,
+    undelivered: { missing: 0, pending: 0, failed: 0, sent: 0, sending: 0 },
+    attempted: 0,
+    processed: 0,
+    stillFailing: [],
+  };
+  if (gated.length === 0) return result;
+
+  const ids = gated.map((row) => String(row.id));
+  const deliveries = new Map<string, string>();
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error: deliveryError } = await supabase
+      .from("newfind_promotion_deliveries")
+      .select("listing_id, status, ack_status")
+      .in("listing_id", ids.slice(i, i + 100));
+    if (deliveryError) throw new Error(deliveryError.message);
+    for (const row of data ?? []) {
+      const processed = row.status === "processed" && row.ack_status === "processed";
+      deliveries.set(String(row.listing_id), processed ? "processed" : String(row.status ?? "pending"));
+    }
+  }
+
+  const targets: string[] = [];
+  for (const id of ids) {
+    const status = deliveries.get(id) ?? "missing";
+    if (status === "processed") {
+      result.alreadyProcessed += 1;
+      continue;
+    }
+    const bucket = status in result.undelivered ? status as keyof NewfindRescueResult["undelivered"] : "pending";
+    result.undelivered[bucket] += 1;
+    targets.push(id);
+  }
+
+  for (const listingId of targets.slice(0, limit)) {
+    if (Date.now() >= deadlineAt) break;
+    result.attempted += 1;
+    const delivery = await promoteShopListingToNewfind(listingId).catch((error) => ({
+      sent: false,
+      ackStatus: null,
+      detail: error instanceof Error ? error.message : String(error),
+    }));
+    if (delivery.ackStatus === "processed") result.processed += 1;
+    else result.stillFailing.push({ listingId, detail: delivery.detail });
+  }
+  return result;
 }

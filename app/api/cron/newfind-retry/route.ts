@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { retryPendingNewfindPromotions } from "@/lib/integration/newfind";
+import { rescueUndeliveredGatePassedListings, retryPendingNewfindPromotions } from "@/lib/integration/newfind";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
@@ -14,11 +14,19 @@ export async function GET(request: Request) {
     // Keep one delivery per invocation so the 60s function ceiling cannot be
     // consumed by a large retry batch. The workflow runs every 20 minutes and
     // drains the queue incrementally.
+    const startedAt = Date.now();
     const result = await retryPendingNewfindPromotions(1);
+    // Also rescue gate-passed (usually BASE-listed) listings that have no
+    // delivery row at all, which the delivery-row retry above cannot see.
+    const rescue = await rescueUndeliveredGatePassedListings({
+      limit: 2,
+      deadlineAt: startedAt + 40_000,
+    });
     return NextResponse.json({
       ok: true,
       phase: "newfind_retry",
       ...result,
+      rescue,
     });
   } catch (error) {
     console.error("[TRACER NEWFIND RETRY CRON ERROR]", error);

@@ -5,6 +5,7 @@ import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibilit
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { runIntelligencePipeline } from "@/lib/intelligence/run-intelligence-pipeline";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
+import { rescueUndeliveredGatePassedListings } from "@/lib/integration/newfind";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -134,7 +135,9 @@ export async function GET(request: Request) {
     // The patrol must always execute the canonical full intelligence loop.
     // AI patrol must not choose a shallow repair path that bypasses Market,
     // Identity, Demand, Supply, Opportunity, and the Sales Test Gate.
-    const pipeline = await runIntelligencePipeline();
+    // Leave room for BASE publication, NEWFIND rescue and the cron_runs
+    // bookkeeping below; deferred stages resume on the next patrol.
+    const pipeline = await runIntelligencePipeline({ deadlineAt: startedAt + 200_000 });
 
     const actions: Array<Record<string, unknown>> = [{
       action: "run_full_intelligence_pipeline",
@@ -160,6 +163,19 @@ export async function GET(request: Request) {
     } catch (error) {
       errors.push(error instanceof Error ? error.message : String(error));
       actions.push({ action: "publish_base", ok: false, error: errors.at(-1) });
+    }
+
+    // BASE -> NEWFIND: deliver gate-passed listings that never reached NEWFIND
+    // (no delivery row, pending, failed or unacknowledged). Idempotent.
+    try {
+      const rescue = await rescueUndeliveredGatePassedListings({
+        limit: 3,
+        deadlineAt: startedAt + 270_000,
+      });
+      actions.push({ action: "newfind_rescue", result: rescue });
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+      actions.push({ action: "newfind_rescue", ok: false, error: errors.at(-1) });
     }
 
     const after = await snapshot(db);

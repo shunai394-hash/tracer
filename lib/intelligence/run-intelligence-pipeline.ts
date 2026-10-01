@@ -20,6 +20,8 @@ import {
 } from "@/lib/integration/newfind";
 import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { readMarketCursor, writeMarketCursor } from "@/lib/market/market-cursor";
+import { reverifyCjSupplyIdentities } from "@/lib/suppliers/reverify-cj-identity";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import {
   GeminiConfigError,
@@ -57,10 +59,33 @@ function classifyFailure(error: unknown): {
   };
 }
 
+// Deadline handling. Vercel kills the function at maxDuration (300s) without
+// running any cleanup, which leaves half-finished work and a running lock.
+// Every step checks the remaining budget first; a step that cannot start in
+// time is recorded as deferred (skipped, retryable) and the next patrol
+// resumes from persisted cursors / due queues instead of repeating work.
+let pipelineDeadlineAt = Number.POSITIVE_INFINITY;
+
+// Reserve time for the cheap downstream stages (intelligence, Sales Test
+// Gate, NEWFIND) so an expensive discovery stage cannot starve them.
+const DOWNSTREAM_RESERVE_MS = 75_000;
+
 async function runStep(
   name: string,
   fn: () => Promise<unknown>,
+  options: { downstream?: boolean } = {},
 ): Promise<PipelineStepResult> {
+  const remaining = pipelineDeadlineAt - Date.now();
+  const required = options.downstream ? 5_000 : DOWNSTREAM_RESERVE_MS;
+  if (remaining < required) {
+    return {
+      name,
+      ok: true,
+      skipped: true,
+      retryable: true,
+      result: { skipped: true, reason: "deferred_to_next_patrol_time_budget", remainingMs: Math.max(0, remaining) },
+    };
+  }
   try {
     const result = await fn();
     const skipped =
@@ -221,14 +246,27 @@ async function inspectDemandObservations(): Promise<unknown> {
   return { observations: count ?? 0, source: "demand_observations", note: "Demand rows are written by discovery; this step only verifies they remain queryable" };
 }
 
-export async function runIntelligencePipeline(): Promise<{
+export async function runIntelligencePipeline(options: { deadlineAt?: number } = {}): Promise<{
   ok: boolean;
   complete: boolean;
   steps: PipelineStepResult[];
 }> {
   const steps: PipelineStepResult[] = [];
+  pipelineDeadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
+  const db = createSupabaseAdminClient();
 
-  const bestsellerStep = await runStep("bestsellers", () => persistMarketplaceBestsellers());
+  // Resume market discovery from the persisted cursor instead of re-reading
+  // marketplace 0 / item 0 on every patrol, and advance it afterwards.
+  const bestsellerStep = await runStep("bestsellers", async () => {
+    const cursor = await readMarketCursor(db);
+    const observation = await persistMarketplaceBestsellers({
+      sourceIndex: cursor.sourceIndex,
+      startIndex: cursor.startIndex,
+      batchSize: 10,
+    });
+    const next = await writeMarketCursor(db, observation, "patrol-ai");
+    return { ...observation, cursor, nextCursor: next };
+  });
   steps.push(bestsellerStep);
 
   const bestsellerIds =
@@ -257,7 +295,10 @@ export async function runIntelligencePipeline(): Promise<{
   // Keep each patrol bounded: live CJ stock/freight and identity checks are
   // network-bound, while Opportunity Intelligence and Sales Test are also
   // required in the same invocation. Larger backlogs are drained by later patrols.
-  const supplyFirstStep = await runStep("supply_first", () => discoverAndCreateCjSupply(3));
+  const supplyFirstStep = await runStep("supply_first", () =>
+    discoverAndCreateCjSupply(3, {
+      deadlineAt: Math.min(pipelineDeadlineAt - DOWNSTREAM_RESERVE_MS, Date.now() + 120_000),
+    }));
   steps.push(supplyFirstStep);
 
   const supplyItems =
@@ -265,25 +306,58 @@ export async function runIntelligencePipeline(): Promise<{
       ? ((supplyFirstStep.result as { items: Array<Record<string, unknown>> }).items)
       : [];
 
-  const intelligence = await runStep("intelligence", () => buildOpportunityIntelligence());
-  steps.push(intelligence);
-  steps.push(await runStep("score", () => scoreProductIntelligence()));
-  const supplyProductIds = supplyItems.map((item) => String(item.productId ?? "")).filter(Boolean);
-  steps.push(await runStep("supply_sales_test_select", () => selectAndPublishSupplySalesTests(supplyProductIds, 3)));
+  // Identity re-verification of existing CJ supply against marketplace
+  // barcodes observed since. Unique exact barcode matches only.
+  steps.push(await runStep("identity_reverify", () =>
+    reverifyCjSupplyIdentities({
+      limit: 5,
+      deadlineAt: pipelineDeadlineAt - DOWNSTREAM_RESERVE_MS,
+    })));
 
-  const salesTestStep = await runStep("sales_test_select", () => selectAndPublishSalesTests(bestsellerIds, 3));
+  const intelligence = await runStep("intelligence", () => buildOpportunityIntelligence(), { downstream: true });
+  steps.push(intelligence);
+  steps.push(await runStep("score", () => scoreProductIntelligence(), { downstream: true }));
+
+  // Reconsider supply verified by earlier patrols too, so a deferred or
+  // timed-out patrol does not strand verified supply before the gate.
+  const supplyProductIds = supplyItems.map((item) => String(item.productId ?? "")).filter(Boolean);
+  const { data: verifiedSupply } = await db
+    .from("supplier_listings")
+    .select("product_id")
+    .eq("supplier", "cj")
+    .eq("verification_status", "verified")
+    .eq("orderable", true)
+    .not("product_id", "is", null)
+    .order("last_verified_at", { ascending: false, nullsFirst: false })
+    .limit(50);
+  const supplyCandidateIds = Array.from(new Set([
+    ...supplyProductIds,
+    ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
+  ]));
+  const supplySalesStep = await runStep(
+    "supply_sales_test_select",
+    () => selectAndPublishSupplySalesTests(supplyCandidateIds, 3),
+    { downstream: true },
+  );
+  steps.push(supplySalesStep);
+
+  const salesTestStep = await runStep("sales_test_select", () => selectAndPublishSalesTests(bestsellerIds, 3), { downstream: true });
   steps.push(salesTestStep);
 
+  // Both Sales Test Gate paths deliver to NEWFIND (previously only the
+  // market path did). promoteShopListingToNewfind re-checks the gate.
+  steps.push(await runStep("newfind_promotion", async () => {
+    const ids = [salesTestStep, supplySalesStep].flatMap((step) => {
+      const result = step.result as { publishedListingIds?: unknown } | undefined;
+      return Array.isArray(result?.publishedListingIds)
+        ? result.publishedListingIds.filter((id): id is string => typeof id === "string")
+        : [];
+    });
+    return Promise.all(ids.map((id) => promoteShopListingToNewfind(id)));
+  }, { downstream: true }));
   // NEWFIND has its own scheduled retry worker. Keep patrol delivery bounded so
   // one slow downstream destination cannot consume the entire patrol timeout.
-  steps.push(await runStep("newfind_retry", () => retryPendingNewfindPromotions(1)));
-  steps.push(await runStep("newfind_promotion", async () => {
-    const result = salesTestStep.result as { publishedListingIds?: unknown } | undefined;
-    const ids = Array.isArray(result?.publishedListingIds)
-      ? result.publishedListingIds.filter((id): id is string => typeof id === "string")
-      : [];
-    return Promise.all(ids.map((id) => promoteShopListingToNewfind(id)));
-  }));
+  steps.push(await runStep("newfind_retry", () => retryPendingNewfindPromotions(1), { downstream: true }));
 
   steps.push(await runStep("ordering", () => persistReorderRecommendations()));
   steps.push(await runStep("test_ready", async () => {
