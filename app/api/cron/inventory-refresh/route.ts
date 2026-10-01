@@ -4,6 +4,7 @@ import { editBaseItem, isBaseConfigured } from "@/lib/channels/base";
 import { isSupplierConfigured } from "@/lib/config/env";
 import { initializeProcurement } from "@/lib/procurement/init";
 import { getSupplierAdapter } from "@/lib/procurement/registry";
+import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
@@ -42,6 +43,67 @@ export async function GET(request: Request) {
         }
         if (!isSupplierConfigured(supplierName)) {
           results.push({ listingId, ok: false, blocked: true, reason: "supplier_not_configured", supplier: supplierName });
+          continue;
+        }
+
+        const autoProcurement = getAutoProcurementEligibility(supplierName);
+        if (!autoProcurement.eligible) {
+          const now = new Date().toISOString();
+          const { error: blockError } = await supabase
+            .from("shop_listings")
+            .update({
+              published: false,
+              orderable: false,
+              pipeline_stage: "INVENTORY_REFRESH",
+              pipeline_status: "blocked",
+              pipeline_reason: "supplier_auto_procurement_capability_missing",
+              pipeline_error: autoProcurement.missing.join("|"),
+              pipeline_updated_at: now,
+              updated_at: now,
+            })
+            .eq("id", listingId);
+          if (blockError) throw new Error(blockError.message);
+
+          if (listing.supplier_listing_id) {
+            const { error: supplierError } = await supabase
+              .from("supplier_listings")
+              .update({
+                orderable: false,
+                fetched_at: now,
+              })
+              .eq("id", String(listing.supplier_listing_id));
+            if (supplierError) throw new Error(supplierError.message);
+          }
+
+          let baseSyncError: string | null = null;
+          if (listing.base_item_id && listing.selling_price !== null && isBaseConfigured()) {
+            try {
+              await editBaseItem({
+                itemId: String(listing.base_item_id),
+                title: String(listing.title ?? ""),
+                detail: String(listing.description ?? listing.title ?? ""),
+                price: Number(listing.selling_price),
+                stock: 0,
+                visible: false,
+              });
+              baseUpdated++;
+            } catch (error) {
+              baseSyncError = error instanceof Error ? error.message : String(error);
+              baseErrors++;
+              await supabase.from("shop_listings").update({
+                base_last_error: baseSyncError,
+              }).eq("id", listingId);
+            }
+          }
+
+          results.push({
+            listingId,
+            ok: false,
+            blocked: true,
+            reason: "supplier_auto_procurement_capability_missing",
+            missing: autoProcurement.missing,
+            baseSyncError,
+          });
           continue;
         }
         if (supplierName.toLowerCase() === "dsers") {
