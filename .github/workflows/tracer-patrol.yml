@@ -2,6 +2,8 @@ name: TRACER Production Patrol
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
 
 permissions:
   id-token: write
