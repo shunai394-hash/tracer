@@ -97,6 +97,21 @@ export async function selectAndPublishSupplySalesTests(
     const missingCapabilities = required.filter(([, supported]) => !supported).map(([name]) => name);
     if (missingCapabilities.length) reasons.push(`supplier_capability_missing:${missingCapabilities.join(",")}`);
 
+    if (listing.identity_status !== "linked") reasons.push("identity_not_confirmed");
+    const identityMethod = String(listing.identity_method ?? "").trim().toLowerCase();
+    const identifierGradeMethods = new Set([
+      "asin",
+      "jan",
+      "gtin",
+      "ean",
+      "upc",
+      "mpn",
+      "brand_mpn",
+      "tracer_catalog",
+    ]);
+    if (!identifierGradeMethods.has(identityMethod)) reasons.push("identity_not_confirmed");
+    if (num(listing.identity_confidence) === null || (num(listing.identity_confidence) ?? 0) < 0.88) reasons.push("identity_confidence_low");
+
     if (listing.tracking_available !== true) reasons.push("tracking_unknown");
     if (listing.api_available !== true) reasons.push("supplier_api_unknown");
     if (listing.orderable !== true) reasons.push("supplier_not_orderable");
@@ -104,7 +119,6 @@ export async function selectAndPublishSupplySalesTests(
     if ((num(listing.inventory) ?? 0) <= 0) reasons.push("inventory_zero");
     if (typeof listing.supplier_product_id !== "string" || !listing.supplier_product_id) reasons.push("supplier_product_unknown");
     if (typeof listing.supplier_variant_id !== "string" || !listing.supplier_variant_id) reasons.push("supplier_variant_unknown");
-    if (num(listing.identity_confidence) === null || (num(listing.identity_confidence) ?? 0) < 0.88) reasons.push("identity_confidence_low");
 
     const metadata = base.metadata && typeof base.metadata === "object" && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const sellingPrice = num(metadata.selling_price_jpy);
