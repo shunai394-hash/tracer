@@ -12,6 +12,7 @@ import { persistReorderRecommendations } from "@/lib/ordering/persist-reorder";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
+import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import {
@@ -302,9 +303,9 @@ export async function runIntelligencePipeline(): Promise<{
   steps.push(await runStep("demand_analyze", () => persistDemandIntelligence()));
   steps.push(await runStep("supply", () => researchLimitedSupply()));
 
-  // Supply-first is a first-class sales path. It advances through verified CJ
-  // variants that are not already represented by a shop listing, then sends
-  // those listings through the existing BASE publisher.
+  // Supply-first is discovery only. It creates canonical product/offer/intelligence
+  // evidence; publication is deferred until the same Opportunity Intelligence
+  // and strict sales-test gates have passed.
   const supplyFirstStep = await runStep(
     "supply_first",
     () => discoverAndCreateCjSupply(50),
@@ -318,26 +319,20 @@ export async function runIntelligencePipeline(): Promise<{
       ? ((supplyFirstStep.result as { items: Array<Record<string, unknown>> }).items)
       : [];
 
-  steps.push(
-    await runStep("base_publish_supply_first", () =>
-      publishPublishedListingsToBase(Math.max(5, supplyItems.length)),
-    ),
-  );
-
-  steps.push(
-    await runStep("newfind_supply_first", async () => {
-      const ids = supplyItems
-        .map((item) => String(item.listingId ?? ""))
-        .filter(Boolean);
-      return Promise.all(ids.map((id) => promoteShopListingToNewfind(id)));
-    }),
-  );
-
   const intelligence = await runStep("intelligence", () =>
     buildOpportunityIntelligence(),
   );
   steps.push(intelligence);
   steps.push(await runStep("score", () => scoreProductIntelligence()));
+  const supplyProductIds = supplyItems
+    .map((item) => String(item.productId ?? ""))
+    .filter(Boolean);
+  steps.push(
+    await runStep("supply_sales_test_select", () =>
+      selectAndPublishSupplySalesTests(supplyProductIds, 3),
+    ),
+  );
+
   const salesTestStep = await runStep(
     "sales_test_select",
     () => selectAndPublishSalesTests(bestsellerIds, 3),
