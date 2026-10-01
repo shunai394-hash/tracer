@@ -2,7 +2,7 @@ import "server-only";
 
 import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { fetchCJProductVariants } from "@/lib/sources/cj";
+import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
 import { identifiersFromRecord, matchProductIdentity } from "@/lib/market/identifiers";
 
 export type PersistCjSupplyIntelligenceArgs = {
@@ -45,7 +45,26 @@ async function resolveMarketplaceIdentity(args: {
     return null;
   }
 
-  const variant = variants.find((item) => item.vid === args.supplierVariantId);
+  let variant = variants.find((item) => item.vid === args.supplierVariantId) ?? null;
+
+  // CJ can omit the barcode in product/variant/query while queryByVid still
+  // exposes the supplier-declared barcode. Recover that field before giving
+  // up. Never infer identity from pid, vid, SKU, title, image, or position.
+  if (!variant?.barcode) {
+    try {
+      const detailVariant = await fetchCJVariantByVid(args.supplierVariantId);
+      if (detailVariant?.vid === args.supplierVariantId && detailVariant.barcode) {
+        variant = { ...(variant ?? detailVariant), ...detailVariant };
+      }
+    } catch (error) {
+      console.warn("[cj-supply-identity] queryByVid barcode lookup failed", {
+        supplierProductId: args.supplierProductId,
+        supplierVariantId: args.supplierVariantId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   const barcode = typeof variant?.barcode === "string" ? variant.barcode.trim() : "";
   if (!barcode) return null;
 
