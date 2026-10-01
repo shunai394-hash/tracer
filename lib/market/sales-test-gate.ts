@@ -93,3 +93,33 @@ export function verifySalesTestGateInvariants(): {
     cases,
   };
 }
+
+// The Sales Test Gate is the only automated path allowed to set
+// shop_listings.published = true. Every listing it publishes carries this
+// marker twice: in pipeline_reason (with stage PUBLISHED / status published)
+// and in selection_reasons. Downstream stages may legitimately move the
+// pipeline_* columns on (e.g. BASE_PUBLISHED), so selection_reasons is the
+// durable proof; new BASE items and NEWFIND delivery require it.
+export const SALES_TEST_GATE_PASSED = "sales_test_gate_passed";
+
+export type SalesTestGateRow = {
+  published?: unknown;
+  pipeline_stage?: unknown;
+  pipeline_status?: unknown;
+  pipeline_reason?: unknown;
+  selection_reasons?: unknown;
+};
+
+/** True only for a listing the Sales Test Gate published and that is still public. */
+export function hasPassedSalesTestGate(row: SalesTestGateRow): boolean {
+  if (row.published !== true) return false;
+  if (Array.isArray(row.selection_reasons) && row.selection_reasons.includes(SALES_TEST_GATE_PASSED)) {
+    return true;
+  }
+  return (
+    // BASE publication advances the stage but keeps the gate reason.
+    (row.pipeline_stage === "PUBLISHED" || row.pipeline_stage === "BASE_PUBLISHED") &&
+    row.pipeline_status === "published" &&
+    row.pipeline_reason === SALES_TEST_GATE_PASSED
+  );
+}

@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHmac } from "node:crypto";
 import { getNewfindConfig } from "@/lib/config/env";
+import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
 
 function buildUrl(base: string): string {
   const trimmed = base.trim().replace(/\/$/, "");
@@ -92,19 +93,19 @@ export async function promoteShopListingToNewfind(
   // Non-gated listings must not create or mutate NEWFIND delivery state.
   const { data: listing, error } = await supabase
     .from("shop_listings")
-    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, pipeline_stage, pipeline_status, pipeline_reason")
+    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
     .eq("id", listingId)
     .eq("published", true)
-    .eq("pipeline_stage", "PUBLISHED")
-    .eq("pipeline_status", "published")
-    .eq("pipeline_reason", "sales_test_gate_passed")
     .maybeSingle();
 
   if (error) {
     throw new Error(error.message);
   }
 
-  if (!listing) {
+  // Re-checked on every call, including retries of existing deliveries.
+  // BASE publication moves pipeline_stage to BASE_PUBLISHED; the shared check
+  // still recognises the gate provenance so NEWFIND keeps working after BASE.
+  if (!listing || !hasPassedSalesTestGate(listing)) {
     return {
       configured: Boolean(cfg.apiUrl && cfg.webhookSecret),
       sent: false,
@@ -114,8 +115,6 @@ export async function promoteShopListingToNewfind(
       detail: "sales_test_gate_not_passed",
     };
   }
-
-
 
   // Persist the delivery even when NEWFIND is temporarily unconfigured.
   // Once configuration is restored, the retry cron can drain this pending

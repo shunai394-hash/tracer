@@ -2,7 +2,9 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupplierCapabilities } from "@/lib/procurement/registry";
+import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
+import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -52,7 +54,9 @@ export async function selectAndPublishSupplySalesTests(
     .select("*")
     .in("product_id", uniqueProductIds)
     .eq("supplier", "cj")
-    .order("updated_at", { ascending: false });
+    // supplier_listings has no updated_at column; fetched_at is the latest
+    // live supplier observation.
+    .order("fetched_at", { ascending: false, nullsFirst: false });
   if (listingError) throw new Error(listingError.message);
 
   const intelligenceByProduct = new Map((intelligenceRows ?? []).map((row) => [String(row.product_id), row as Record<string, unknown>]));
@@ -96,6 +100,16 @@ export async function selectAndPublishSupplySalesTests(
     ] as const;
     const missingCapabilities = required.filter(([, supported]) => !supported).map(([name]) => name);
     if (missingCapabilities.length) reasons.push(`supplier_capability_missing:${missingCapabilities.join(",")}`);
+
+    // Same shared AUTO gate as the market-linked sales test, so both
+    // publication paths agree on what "automatically procurable" means.
+    const autoProcurement = getAutoProcurementEligibility(String(listing.supplier ?? ""));
+    if (!autoProcurement.eligible) {
+      reasons.push(`supplier_auto_procurement_capability_missing:${autoProcurement.missing.join("|")}`);
+    }
+
+    if (typeof base.image_url !== "string" || !base.image_url.trim()) reasons.push("image_unknown");
+    if (listing.price_confirmed !== true) reasons.push("price_unconfirmed");
 
     if (listing.identity_status !== "linked") reasons.push("identity_not_confirmed");
     const identityMethod = String(listing.identity_method ?? "").trim().toLowerCase();
@@ -199,12 +213,15 @@ export async function selectAndPublishSupplySalesTests(
       contribution_profit: item.profit.contributionProfit,
       contribution_margin: item.profit.contributionMargin,
       published: true,
-      selection_reasons: ["supply_intelligence_gate_passed", "selection_score_" + (num(item.intelligence.selection_score)?.toFixed(1) ?? "0")],
+      selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:supply", "supply_intelligence_gate_passed", "selection_score_" + (num(item.intelligence.selection_score)?.toFixed(1) ?? "0")],
       missing: [],
       published_at: now,
+      // Both sales-test paths share one provenance marker; BASE creation and
+      // NEWFIND delivery accept only this reason.
       pipeline_stage: "PUBLISHED",
       pipeline_status: "published",
-      pipeline_reason: "supply_sales_test_gate_passed",
+      pipeline_reason: SALES_TEST_GATE_PASSED,
+      pipeline_error: null,
       pipeline_updated_at: now,
       updated_at: now,
     };

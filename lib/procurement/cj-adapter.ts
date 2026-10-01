@@ -81,9 +81,13 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
     shippingRequiresDestination: true,
     orderPreflight: false,
     orderCreation: true,
-    // CJ order creation/status are implemented, but supplier-side payment
-    // completion is not yet verified end-to-end. Fail closed until it is.
-    payment: false,
+    // createOrderV2 uses balance payment (payType 2), and the only execution
+    // path (executeVerifiedSupplierPurchaseOrder) treats an order as placed
+    // solely when getOrderDetail reports paymentDate/paymentDateTime or an
+    // explicit paid state; otherwise it stays supplier_payment_pending or
+    // supplier_payment_verification_failed for manual reconciliation.
+    // Real orders remain behind CJ_LIVE_ORDERING and CJ_AUTO_ORDERING.
+    payment: true,
     orderStatus: true,
     tracking: true,
     liveOrdering: true,

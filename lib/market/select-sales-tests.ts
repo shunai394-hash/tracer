@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
+import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { getSupplierCapabilities } from "@/lib/procurement/registry";
 
@@ -467,11 +468,11 @@ export async function selectAndPublishSalesTests(
       contribution_profit: item.profit.contributionProfit,
       contribution_margin: item.profit.contributionMargin,
       published: true,
-      selection_reasons: item.reasons,
+      selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:market", ...item.reasons],
       missing: [],
       pipeline_stage: "PUBLISHED",
       pipeline_status: "published",
-      pipeline_reason: "sales_test_gate_passed",
+      pipeline_reason: SALES_TEST_GATE_PASSED,
       pipeline_error: null,
       pipeline_updated_at: fetchedAt,
       published_at: fetchedAt,

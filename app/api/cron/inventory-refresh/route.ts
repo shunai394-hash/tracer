@@ -5,10 +5,11 @@ import { isSupplierConfigured } from "@/lib/config/env";
 import { initializeProcurement } from "@/lib/procurement/init";
 import { getSupplierAdapter } from "@/lib/procurement/registry";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
+import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -28,10 +29,32 @@ export async function GET(request: Request) {
 
     if (error) throw new Error(error.message);
 
+    // Gate-passed listings whose pipeline_* moved on (e.g. temporarily
+    // blocked for zero stock) must keep being refreshed, or they could never
+    // become orderable again. selection_reasons carries the durable marker.
+    const { data: gatedListings, error: gatedError } = await supabase
+      .from("shop_listings")
+      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason")
+      .not("supplier_name", "is", null)
+      .not("supplier_variant_id", "is", null)
+      .eq("published", true)
+      .filter("selection_reasons", "cs", JSON.stringify([SALES_TEST_GATE_PASSED]))
+      .order("updated_at", { ascending: true })
+      .limit(20);
+    if (gatedError) throw new Error(gatedError.message);
+
+    const seen = new Set<string>();
+    const refreshTargets = [...(listings ?? []), ...(gatedListings ?? [])].filter((row) => {
+      const id = String(row.id);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
     const results = [];
     let baseUpdated = 0;
     let baseErrors = 0;
-    for (const listing of listings ?? []) {
+    for (const listing of refreshTargets) {
       const listingId = String(listing.id);
       const supplierName = String(listing.supplier_name ?? "").trim();
       const variantId = String(listing.supplier_variant_id);

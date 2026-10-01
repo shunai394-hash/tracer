@@ -5,10 +5,30 @@ import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sal
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+// NEWFIND delivery for listings this run's Sales Test Gate just published.
+// promoteShopListingToNewfind re-checks the gate itself; a failure is
+// reported, not thrown, and the pending delivery row is retried by
+// /api/cron/newfind-retry.
+async function promoteGatePassedListings(listingIds: string[]) {
+  return Promise.all(
+    listingIds.map((listingId) =>
+      promoteShopListingToNewfind(listingId).catch((error) => ({
+        configured: true,
+        sent: false,
+        eventId: `tracer-shop-listing:${listingId}`,
+        status: null,
+        ackStatus: null,
+        detail: error instanceof Error ? error.message : String(error),
+      })),
+    ),
+  );
+}
 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -49,10 +69,28 @@ export async function GET(request: Request) {
       deadlineAt: startedAt + 150_000,
     });
     await buildOpportunityIntelligence();
+
+    // Also reconsider supply verified by earlier supply-first runs: its
+    // intelligence may only have become complete after that run finished.
+    const { data: verifiedSupply, error: verifiedSupplyError } = await supabase
+      .from("supplier_listings")
+      .select("product_id")
+      .eq("supplier", "cj")
+      .eq("verification_status", "verified")
+      .eq("orderable", true)
+      .not("product_id", "is", null)
+      .order("last_verified_at", { ascending: false, nullsFirst: false })
+      .limit(50);
+    if (verifiedSupplyError) throw new Error(verifiedSupplyError.message);
+
     const supplySelected = await selectAndPublishSupplySalesTests(
-      supplyFirst.items.map((item) => String(item.productId ?? "")).filter(Boolean),
+      [
+        ...supplyFirst.items.map((item) => String(item.productId ?? "")),
+        ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")),
+      ].filter(Boolean),
       3,
     );
+    const supplyNewfind = await promoteGatePassedListings(supplySelected.publishedListingIds);
 
     if (cronRunId) {
       await supabase.from("cron_runs").update({
@@ -81,6 +119,7 @@ export async function GET(request: Request) {
         mode: "supply_first_intelligence_gate",
         supplyFirst,
         supplySelected,
+        newfind: supplyNewfind,
         nextPhase: "base_publication",
       });
     }
@@ -99,6 +138,7 @@ export async function GET(request: Request) {
 
     const candidateIds = (readyRows ?? []).map((row) => String(row.id));
     const decision = await selectAndPublishSalesTests(candidateIds, 10);
+    const newfind = await promoteGatePassedListings(decision.publishedListingIds);
 
     if (cronRunId) {
       await supabase.from("cron_runs").update({
@@ -123,6 +163,7 @@ export async function GET(request: Request) {
       mode: "market_linked_sales_test",
       candidateCount: candidateIds.length,
       decision,
+      newfind,
       nextPhase: "downstream_delivery",
     });
   } catch (error) {

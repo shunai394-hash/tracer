@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createBaseItem, editBaseItem, addBaseItemImage, isBaseConfigured } from "@/lib/channels/base";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
+import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -30,10 +31,14 @@ export async function publishPublishedListingsToBase(
   const { data: listings, error } = await supabase
     .from("shop_listings")
     .select(
-      "id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,shipping_cost,supplier_name,supplier_listing_id,pipeline_stage,pipeline_status,pipeline_reason",
+      "id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,shipping_cost,supplier_name,supplier_listing_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons",
     )
-    .eq("published", true)
-    .is("base_item_id", null)
+    // Existing BASE items stay in scope so their stock/visibility keep being
+    // reconciled (including hiding items TRACER has since unpublished).
+    // Only the creation of a NEW BASE item requires the Sales Test Gate.
+    .or("published.eq.true,base_item_id.not.is.null")
+    // Listings not yet on BASE first, so reconciliation cannot starve them.
+    .order("base_item_id", { ascending: true, nullsFirst: true })
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -43,10 +48,7 @@ export async function publishPublishedListingsToBase(
 
   for (const listing of listings ?? []) {
     const listingId = String(listing.id);
-    const hasSalesTestGate =
-      listing.pipeline_stage === "PUBLISHED" &&
-      listing.pipeline_status === "published" &&
-      listing.pipeline_reason === "sales_test_gate_passed";
+    const hasSalesTestGate = hasPassedSalesTestGate(listing);
 
     // Existing BASE items must be actively reconciled even when TRACER has
     // since unpublished or blocked the listing. Otherwise an old BASE item
@@ -420,7 +422,8 @@ export async function publishPublishedListingsToBase(
           base_last_error: null,
           pipeline_stage: "BASE_PUBLISHED",
           pipeline_status: "published",
-          pipeline_reason: "sales_test_gate_passed",
+          // Keep the gate provenance; only the stage moves on.
+          pipeline_reason: hasSalesTestGate ? SALES_TEST_GATE_PASSED : listing.pipeline_reason,
           pipeline_error: null,
           pipeline_updated_at: new Date().toISOString(),
         })

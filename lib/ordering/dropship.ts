@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getCJConfig, isSupplierConfigured, isSupplierLiveOrderingEnabled } from "@/lib/config/env";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
-import { executeSupplierPurchaseOrder } from "@/lib/ordering/supplier-execution";
+import { executeVerifiedSupplierPurchaseOrder } from "@/lib/ordering/verified-supplier-execution";
 import {
   evaluateDropshipOrderGate,
   type DropshipOrderGateResult,
@@ -416,7 +416,9 @@ export type ExecuteLiveOrderResult = {
 export async function executeLivePurchaseOrder(
   purchaseOrderId: string,
 ): Promise<ExecuteLiveOrderResult> {
-  const result = await executeSupplierPurchaseOrder(purchaseOrderId);
+  // Route through the payment-verifying wrapper: a supplier order ID alone
+  // is never a successful purchase.
+  const result = await executeVerifiedSupplierPurchaseOrder(purchaseOrderId);
   return {
     purchaseOrderId: result.purchaseOrderId,
     attempted: result.attempted,

@@ -11,6 +11,7 @@ import {
 } from "@/lib/sources/cj";
 import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/cj/variant-select";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
+import { getSupplierCapabilities } from "@/lib/procurement/registry";
 import { persistCjSupplyIntelligence } from "@/lib/intelligence/persist-cj-supply-intelligence";
 
 function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
@@ -162,6 +163,9 @@ export async function discoverAndCreateCjSupply(
       items: [],
     };
   }
+
+  // Mirror the adapter's real capability instead of asserting tracking.
+  const cjTrackingAvailable = getSupplierCapabilities("cj").tracking === true;
 
   const fx = await getObservedUsdToJpyRate();
   const fxRate = fx?.rate ?? null;
@@ -359,7 +363,7 @@ export async function discoverAndCreateCjSupply(
         order_method: "cj_api", api_available: true, identity_method: "supply_discovered",
         identity_status: "supply_discovered", identity_confidence: 1, configured: true,
         supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
-        orderable: true, price_confirmed: true, inventory_confirmed: true, tracking_available: true,
+        orderable: true, price_confirmed: true, inventory_confirmed: true, tracking_available: cjTrackingAvailable,
         fetched_at: new Date().toISOString(), metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate }
       }, seededCandidate.supplierListingId);
       if (supplierInsert.error) throw new Error(supplierInsert.error.message);
@@ -565,7 +569,7 @@ export async function discoverAndCreateCjSupply(
               orderable: true,
               price_confirmed: true,
               inventory_confirmed: true,
-              tracking_available: true,
+              tracking_available: cjTrackingAvailable,
               fetched_at: now,
               metadata: {
                 source: "cj_supply_first",
