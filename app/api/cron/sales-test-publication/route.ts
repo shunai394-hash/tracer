@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
+import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
+import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
@@ -42,60 +44,44 @@ export async function GET(request: Request) {
 
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
-    // Supply-first is the primary autonomous sales path. The manual
-    // /api/intelligence/bestsellers endpoint already uses this path, but the
-    // scheduled pipeline previously skipped it entirely, leaving BASE at the
-    // first manually discovered item. Reuse the same live CJ gates here.
-    // Bound CJ discovery so the rest of this stage (and the cron_runs
-    // bookkeeping) finishes inside maxDuration; unbounded, the function was
-    // killed and left the lock held.
+    // Discovery is not publication. Build Opportunity Intelligence first,
+    // then let the strict supply sales-test gate decide whether anything can publish.
     const supplyFirst = await discoverAndCreateCjSupply(20, {
       deadlineAt: startedAt + 150_000,
     });
+    await buildOpportunityIntelligence();
+    const supplySelected = await selectAndPublishSupplySalesTests(
+      supplyFirst.items.map((item) => String(item.productId ?? "")).filter(Boolean),
+      3,
+    );
 
-    if (supplyFirst.published > 0) {
-      const newfind = await Promise.all(
-        supplyFirst.items
-          .map((item) => String(item.listingId ?? ""))
-          .filter(Boolean)
-          .map((listingId) =>
-            promoteShopListingToNewfind(listingId).catch((error) => ({
-              configured: true,
-              sent: false,
-              eventId: `tracer-shop-listing:${listingId}`,
-              status: null,
-              ackStatus: null,
-              detail: error instanceof Error ? error.message : String(error),
-            })),
-          ),
-      );
+    if (cronRunId) {
+      await supabase.from("cron_runs").update({
+        status: "succeeded",
+        finished_at: new Date().toISOString(),
+        duration_ms: Date.now() - startedAt,
+        processed: supplyFirst.candidateCount,
+        failed: supplyFirst.rejected,
+        metadata: {
+          phase: "sales_test_publication",
+          mode: "supply_first_intelligence_gate",
+          candidateCount: supplyFirst.candidateCount,
+          discovered: supplyFirst.discovered,
+          verified: supplyFirst.verified,
+          published: supplySelected.published,
+          rejected: supplyFirst.rejected,
+        },
+      }).eq("id", cronRunId);
+    }
 
-      if (cronRunId) {
-        await supabase.from("cron_runs").update({
-          status: "succeeded",
-          finished_at: new Date().toISOString(),
-          duration_ms: Date.now() - startedAt,
-          processed: supplyFirst.candidateCount,
-          failed: supplyFirst.rejected,
-          metadata: {
-            phase: "sales_test_publication",
-            mode: "supply_first",
-            candidateCount: supplyFirst.candidateCount,
-            discovered: supplyFirst.discovered,
-            published: supplyFirst.published,
-            rejected: supplyFirst.rejected,
-            newfind: newfind.length,
-          },
-        }).eq("id", cronRunId);
-      }
-
+    if (supplySelected.published > 0) {
       return NextResponse.json({
         ok: true,
         phase: "sales_test_publication",
         elapsedMs: Date.now() - startedAt,
-        mode: "supply_first",
+        mode: "supply_first_intelligence_gate",
         supplyFirst,
-        newfind,
+        supplySelected,
         nextPhase: "base_publication",
       });
     }
