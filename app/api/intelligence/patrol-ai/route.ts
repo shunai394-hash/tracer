@@ -26,7 +26,7 @@ async function audit(request: Request): Promise<Audit> {
   return (await response.json()) as Audit;
 }
 
-async function repair(request: Request, stage: string) {
+async function runStage(request: Request, stage: string) {
   const origin = new URL(request.url).origin;
   const response = await fetch(`${origin}/api/cron/${stage}`, {
     headers: { Authorization: request.headers.get("authorization") ?? "" },
@@ -39,8 +39,13 @@ async function repair(request: Request, stage: string) {
 }
 
 /**
- * Production Patrol: measure the live funnel, choose a bounded repair, execute
- * it, then measure again. It never invents data and never places a purchase.
+ * Production Patrol: measure the live funnel, run the full intelligence loop,
+ * then use supply-first only as a bounded fallback when the intelligence cron
+ * itself fails. It never invents data and never places a purchase.
+ *
+ * Important: supply availability must not short-circuit Market -> Identity ->
+ * Demand -> Opportunity -> Sales Test Gate. Previously, any due supply row
+ * caused patrol-ai to run only supply-first forever.
  */
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -58,6 +63,7 @@ export async function GET(request: Request) {
   const due = count(before, "cj_due_for_verification");
   const retryable = count(before, "cj_retryable");
   const basePublished = count(before, "shop_listings_on_base_published");
+  const gatePublishedBefore = count(before, "sales_test_gate_published");
 
   console.log("[TRACER_PATROL_BEFORE]", JSON.stringify({
     patrolId,
@@ -65,35 +71,40 @@ export async function GET(request: Request) {
     due,
     retryable,
     basePublished,
+    gatePublishedBefore,
     deployment: before.deployment,
   }));
 
-  const decision = orderable === 0 || due > 0 || retryable > 0
-    ? "repair_first_supply_first"
-    : "observe";
-  console.log("[TRACER_PATROL_DECISION]", JSON.stringify({
+  const intelligence = await runStage(request, "intelligence");
+  repairs.push("intelligence");
+  results.push(intelligence);
+  console.log("[TRACER_PATROL_INTELLIGENCE]", JSON.stringify({
     patrolId,
-    action: decision,
-    reason: { orderable, due, retryable },
+    status: intelligence.status,
+    ok: intelligence.ok,
   }));
 
-  if (decision === "repair_first_supply_first") {
-    repairs.push("supply-first");
-    const result = await repair(request, "supply-first");
-    results.push(result);
-    console.log("[TRACER_PATROL_REPAIR]", JSON.stringify({
+  if (!intelligence.ok && (due > 0 || retryable > 0 || orderable === 0)) {
+    const fallback = await runStage(request, "supply-first");
+    repairs.push("supply-first-fallback");
+    results.push(fallback);
+    console.log("[TRACER_PATROL_FALLBACK]", JSON.stringify({
       patrolId,
       stage: "supply-first",
-      status: result.status,
-      ok: result.ok,
+      status: fallback.status,
+      ok: fallback.ok,
     }));
   }
 
-
   const after = await audit(request);
-  const verdict = count(after, "supplier_listings_orderable") > 0
-    ? "SUPPLY_AVAILABLE"
-    : "SUPPLY_STILL_BLOCKED";
+  const gatePublishedAfter = count(after, "sales_test_gate_published");
+  const newGatePublished = Math.max(0, gatePublishedAfter - gatePublishedBefore);
+  const verdict =
+    newGatePublished > 0
+      ? "SALES_TEST_GATE_PROGRESS"
+      : intelligence.ok
+        ? "INTELLIGENCE_CYCLE_COMPLETE"
+        : "INTELLIGENCE_CYCLE_FAILED";
 
   console.log("[TRACER_PATROL_AFTER]", JSON.stringify({
     patrolId,
@@ -101,6 +112,9 @@ export async function GET(request: Request) {
     due: count(after, "cj_due_for_verification"),
     retryable: count(after, "cj_retryable"),
     basePublished: count(after, "shop_listings_on_base_published"),
+    gatePublishedBefore,
+    gatePublishedAfter,
+    newGatePublished,
     deployment: after.deployment,
   }));
 
@@ -115,18 +129,21 @@ export async function GET(request: Request) {
     after,
     results,
     verdict,
+    gateProgress: {
+      before: gatePublishedBefore,
+      after: gatePublishedAfter,
+      newPublished: newGatePublished,
+    },
   };
   console.log("[TRACER_PATROL_COMPLETE]", JSON.stringify({
     patrolId,
     finishedAt,
     verdict,
     repairs,
-    before: { orderable, due, retryable, basePublished },
-    after: {
-      orderable: count(after, "supplier_listings_orderable"),
-      due: count(after, "cj_due_for_verification"),
-      retryable: count(after, "cj_retryable"),
-      basePublished: count(after, "shop_listings_on_base_published"),
+    gateProgress: {
+      before: gatePublishedBefore,
+      after: gatePublishedAfter,
+      newPublished: newGatePublished,
     },
   }));
   return NextResponse.json(report);
