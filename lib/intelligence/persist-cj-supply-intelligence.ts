@@ -2,6 +2,8 @@ import "server-only";
 
 import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { fetchCJProductVariants } from "@/lib/sources/cj";
+import { identifiersFromRecord, matchProductIdentity } from "@/lib/market/identifiers";
 
 export type PersistCjSupplyIntelligenceArgs = {
   productId: string;
@@ -18,6 +20,100 @@ export type PersistCjSupplyIntelligenceArgs = {
   sellingPriceJpy: number;
 };
 
+type MarketplaceIdentity = {
+  bestsellerId: string;
+  productId: string;
+  method: "gtin" | "jan" | "ean" | "upc";
+  confidence: number;
+  rationale: string;
+};
+
+/**
+ * Supply-first discovery must never manufacture marketplace identity.
+ * CJ's variant barcode is the only identifier this path can use to bridge
+ * a CJ supply candidate to an existing marketplace bestseller. SKU/PID/VID
+ * are CJ-internal identifiers and are intentionally not treated as MPN/ASIN.
+ */
+async function resolveMarketplaceIdentity(args: {
+  db: ReturnType<typeof createSupabaseAdminClient>;
+  supplierProductId: string;
+  supplierVariantId: string;
+}): Promise<MarketplaceIdentity | null> {
+  let variants: Awaited<ReturnType<typeof fetchCJProductVariants>> = [];
+  try {
+    variants = await fetchCJProductVariants(args.supplierProductId, { countryCode: "JP" });
+  } catch (error) {
+    console.warn("[cj-supply-identity] variant barcode lookup failed", {
+      supplierProductId: args.supplierProductId,
+      supplierVariantId: args.supplierVariantId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+
+  const variant = variants.find((item) => item.vid === args.supplierVariantId);
+  const barcode = typeof variant?.barcode === "string" ? variant.barcode.trim() : "";
+  if (!barcode) return null;
+
+  const supplyIds = identifiersFromRecord({ gtin: barcode });
+  if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc) return null;
+
+  // Fetch exact barcode candidates only; final identity is still decided by
+  // the shared matcher, including GS1 family normalization and check digits.
+  const digits = barcode.replace(/\D/g, "");
+  if (!digits) return null;
+  const variantsToQuery = new Set([digits]);
+  if (digits.length === 12) variantsToQuery.add(digits.padStart(14, "0"));
+  if (digits.length === 13) variantsToQuery.add(digits.padStart(14, "0"));
+  if (digits.length === 14) variantsToQuery.add(digits.slice(1));
+
+  const clauses = [...variantsToQuery].flatMap((value) =>
+    ["jan", "gtin", "ean", "upc"].map((column) => `${column}.eq.${value}`),
+  );
+  const { data: bestsellers, error } = await args.db
+    .from("marketplace_bestsellers")
+    .select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand")
+    .or(clauses.join(","))
+    .limit(50);
+  if (error) throw new Error(`CJ marketplace identity lookup failed: ${error.message}`);
+
+  const matches = (bestsellers ?? [])
+    .filter((row) => typeof row.product_id === "string" && row.product_id.trim())
+    .map((row) => {
+      const marketIds = identifiersFromRecord(row as Record<string, unknown>);
+      const identity = matchProductIdentity({
+        market: {
+          ...marketIds,
+          brand: typeof row.brand === "string" ? row.brand : null,
+          title: typeof row.title === "string" ? row.title : null,
+        },
+        supply: {
+          ...supplyIds,
+          title: null,
+          brand: null,
+        },
+      });
+      return {
+        row,
+        identity,
+      };
+    })
+    .filter((item) => item.identity.salesEligible && item.identity.method !== "mpn")
+    .map((item) => ({
+      bestsellerId: String(item.row.id),
+      productId: String(item.row.product_id),
+      method: item.identity.method as MarketplaceIdentity["method"],
+      confidence: item.identity.confidence,
+      rationale: item.identity.rationale,
+    }));
+
+  // More than one marketplace record claiming the same CJ barcode is not a
+  // safe automatic link. Leave it supply-discovered until the market side is
+  // unambiguous rather than selecting an arbitrary bestseller.
+  if (matches.length !== 1) return null;
+  return matches[0];
+}
+
 export async function persistCjSupplyIntelligence(
   args: PersistCjSupplyIntelligenceArgs,
 ): Promise<{ offerId: string; intelligenceId: string }> {
@@ -29,8 +125,36 @@ export async function persistCjSupplyIntelligence(
     provider: "cj",
   });
 
+  const marketplaceIdentity = await resolveMarketplaceIdentity({
+    db: supabase,
+    supplierProductId: args.supplierProductId,
+    supplierVariantId: args.supplierVariantId,
+  });
+  const canonicalProductId = marketplaceIdentity?.productId ?? args.productId;
+
+  if (marketplaceIdentity) {
+    const { error } = await supabase
+      .from("supplier_listings")
+      .update({
+        bestseller_id: marketplaceIdentity.bestsellerId,
+        product_id: canonicalProductId,
+        identity_method: marketplaceIdentity.method,
+        identity_status: "linked",
+        identity_confidence: marketplaceIdentity.confidence,
+        metadata: {
+          source: "cj_supply_first",
+          identity_source: "cj_variant_barcode_to_marketplace_bestseller",
+          identity_rationale: marketplaceIdentity.rationale,
+          supplier_product_id: args.supplierProductId,
+          supplier_variant_id: args.supplierVariantId,
+        },
+      })
+      .eq("id", args.supplierListingId);
+    if (error) throw new Error(`CJ supplier identity promotion failed: ${error.message}`);
+  }
+
   const offerPayload = {
-    product_id: args.productId,
+    product_id: canonicalProductId,
     seller_name: "CJdropshipping",
     offer_url: null,
     image_url: args.imageUrl,
@@ -52,8 +176,10 @@ export async function persistCjSupplyIntelligence(
       selling_price_jpy: args.sellingPriceJpy,
       currency_confidence: currencyAssessment.confidence,
       currency_confidence_reasons: currencyAssessment.reasons,
-      identity_confidence: 1,
-      identity_status: "supply_discovered",
+      identity_confidence: marketplaceIdentity?.confidence ?? 1,
+      identity_status: marketplaceIdentity ? "linked" : "supply_discovered",
+      identity_method: marketplaceIdentity?.method ?? "supply_discovered",
+      identity_rationale: marketplaceIdentity?.rationale ?? "CJ supply discovered; marketplace identity not confirmed",
       demand_evidence_status: "not_observed",
     },
   };
@@ -61,7 +187,7 @@ export async function persistCjSupplyIntelligence(
   const existingOffer = await supabase
     .from("product_offers")
     .select("id")
-    .eq("product_id", args.productId)
+    .eq("product_id", canonicalProductId)
     .eq("seller_name", "CJdropshipping")
     .order("observed_at", { ascending: false })
     .limit(1)
@@ -93,7 +219,7 @@ export async function persistCjSupplyIntelligence(
     .from("product_intelligence")
     .upsert(
       {
-        product_id: args.productId,
+        product_id: canonicalProductId,
         normalized_title: args.title,
         brand_name: null,
         category: null,
@@ -108,7 +234,7 @@ export async function persistCjSupplyIntelligence(
             : currencyAssessment.confidence === "medium"
               ? 0.6
               : 0.2,
-        identity_confidence: 1,
+        identity_confidence: marketplaceIdentity?.confidence ?? 1,
         demand_signal: null,
         supply_signal: 1,
         metadata: {
@@ -123,6 +249,10 @@ export async function persistCjSupplyIntelligence(
           selling_price_jpy: args.sellingPriceJpy,
           shipping_cost_usd: args.shippingCost,
           demand_evidence_status: "not_observed",
+          identity_status: marketplaceIdentity ? "linked" : "supply_discovered",
+          identity_method: marketplaceIdentity?.method ?? "supply_discovered",
+          identity_confidence: marketplaceIdentity?.confidence ?? 1,
+          identity_rationale: marketplaceIdentity?.rationale ?? "CJ supply discovered; marketplace identity not confirmed",
           intelligence_source: "cj_supply_discovery",
         },
         last_seen_at: now,
