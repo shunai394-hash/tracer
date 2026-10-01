@@ -6,6 +6,7 @@ import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibilit
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
+import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -173,6 +174,19 @@ export async function GET(request: Request) {
       actions.push({ action: "build_opportunity_intelligence", result: intelligence });
       const sales = await selectAndPublishSupplySalesTests(discoveredProductIds, 3);
       actions.push({ action: "supply_sales_test_select", result: sales });
+      // NEWFIND re-checks the Sales Test Gate per listing.
+      const newfind = await Promise.all(
+        sales.publishedListingIds.map((listingId) =>
+          promoteShopListingToNewfind(listingId).catch((error) => ({
+            configured: true,
+            sent: false,
+            eventId: `tracer-shop-listing:${listingId}`,
+            status: null,
+            detail: error instanceof Error ? error.message : String(error),
+          })),
+        ),
+      );
+      actions.push({ action: "newfind_promote", result: newfind });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       errors.push(message);
