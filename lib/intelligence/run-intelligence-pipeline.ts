@@ -14,7 +14,6 @@ import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-d
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
-import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import {
   promoteShopListingToNewfind,
   retryPendingNewfindPromotions,
