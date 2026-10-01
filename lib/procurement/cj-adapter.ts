@@ -52,7 +52,7 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
     shippingRequiresDestination: true,
     orderPreflight: false,
     orderCreation: true,
-    payment: true,
+    payment: false,
     orderStatus: true,
     tracking: true,
     liveOrdering: true,
@@ -90,14 +90,10 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
     };
   },
 
-  async getVariant(
-    supplierProductId: string,
-    supplierVariantId: string,
-  ): Promise<SupplierVariant | null> {
+  async getVariant(supplierProductId: string, supplierVariantId: string): Promise<SupplierVariant | null> {
     if (!supplierVariantId) return null;
     const variant = await fetchCJVariantByVid(supplierVariantId);
     if (!variant) return null;
-
     return {
       supplierVariantId: variant.vid,
       supplierProductId: variant.productId || supplierProductId,
@@ -110,103 +106,41 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
     };
   },
 
-  async getInventory(
-    supplierProductId: string,
-    supplierVariantId?: string,
-  ): Promise<SupplierInventory | null> {
+  async getInventory(supplierProductId: string, supplierVariantId?: string): Promise<SupplierInventory | null> {
     if (!supplierVariantId) return null;
     const inventory = await fetchCJVariantStock(supplierVariantId);
-    return {
-      supplierProductId,
-      supplierVariantId,
-      quantity: inventory,
-      available: inventory !== null ? inventory > 0 : null,
-      observedAt: new Date().toISOString(),
-    };
+    return { supplierProductId, supplierVariantId, quantity: inventory, available: inventory !== null ? inventory > 0 : null, observedAt: new Date().toISOString() };
   },
 
-  async getPrice(
-    supplierProductId: string,
-    supplierVariantId?: string,
-  ): Promise<SupplierPrice | null> {
+  async getPrice(supplierProductId: string, supplierVariantId?: string): Promise<SupplierPrice | null> {
     if (!supplierVariantId) return null;
     const variant = await fetchCJVariantByVid(supplierVariantId);
     if (!variant || variant.sellPrice === null) return null;
-    return {
-      supplierProductId,
-      supplierVariantId,
-      amount: Number(variant.sellPrice),
-      currency: "USD",
-      observedAt: new Date().toISOString(),
-    };
+    return { supplierProductId, supplierVariantId, amount: Number(variant.sellPrice), currency: "USD", observedAt: new Date().toISOString() };
   },
 
-  async getShipping(
-    supplierProductId: string,
-    supplierVariantId?: string,
-    context?: { destinationCountryCode?: string; destinationPostalCode?: string; quantity?: number },
-  ): Promise<SupplierShipping | null> {
+  async getShipping(supplierProductId: string, supplierVariantId?: string, context?: { destinationCountryCode?: string; destinationPostalCode?: string; quantity?: number }): Promise<SupplierShipping | null> {
     if (!supplierVariantId) return null;
     const destinationCountryCode = context?.destinationCountryCode?.trim().toUpperCase();
     const quantity = context?.quantity ?? 1;
     if (!destinationCountryCode || quantity <= 0) return null;
-    const amount = await calculateCJFreight(supplierVariantId, {
-      startCountryCode: "CN",
-      endCountryCode: destinationCountryCode,
-      quantity,
-    });
+    const amount = await calculateCJFreight(supplierVariantId, { startCountryCode: "CN", endCountryCode: destinationCountryCode, quantity });
     if (amount === null) return null;
-    return {
-      supplierProductId,
-      supplierVariantId,
-      amount,
-      currency: "USD",
-      available: true,
-      observedAt: new Date().toISOString(),
-    };
+    return { supplierProductId, supplierVariantId, amount, currency: "USD", available: true, observedAt: new Date().toISOString() };
   },
 
   async createOrder(input: SupplierOrderInput): Promise<SupplierOrderResult> {
     let liveInventory: number | null = null;
-    try {
-      liveInventory = await fetchCJVariantStock(input.supplierVariantId);
-    } catch {
-      liveInventory = null;
-    }
-
-    if (liveInventory === null) {
-      liveInventory = await fetchCJProductInventory(input.supplierProductId);
-    }
-
+    try { liveInventory = await fetchCJVariantStock(input.supplierVariantId); } catch { liveInventory = null; }
+    if (liveInventory === null) liveInventory = await fetchCJProductInventory(input.supplierProductId);
     if (liveInventory === null || liveInventory < input.quantity) {
-      return {
-        succeeded: false,
-        supplierOrderId: null,
-        responseCode: "CJ_INVENTORY_UNAVAILABLE",
-        responseMessage: `CJ live inventory is insufficient for this order: available=${liveInventory ?? "unknown"} requested=${input.quantity}`,
-        trackingNumber: null,
-        raw: { liveInventory, requestedQuantity: input.quantity },
-      };
+      return { succeeded: false, supplierOrderId: null, responseCode: "CJ_INVENTORY_UNAVAILABLE", responseMessage: `CJ live inventory is insufficient for this order: available=${liveInventory ?? "unknown"} requested=${input.quantity}`, trackingNumber: null, raw: { liveInventory, requestedQuantity: input.quantity } };
     }
-
-    const freightOptions = await getCJFreightOptions(input.supplierVariantId, {
-      startCountryCode: "CN",
-      endCountryCode: input.shippingCountryCode,
-      zip: input.shippingZip,
-      quantity: input.quantity,
-    });
+    const freightOptions = await getCJFreightOptions(input.supplierVariantId, { startCountryCode: "CN", endCountryCode: input.shippingCountryCode, zip: input.shippingZip, quantity: input.quantity });
     const selectedLogistic = freightOptions[0]?.logisticName;
     if (!selectedLogistic) {
-      return {
-        succeeded: false,
-        supplierOrderId: null,
-        responseCode: "CJ_LOGISTICS_UNAVAILABLE",
-        responseMessage: "No verified CJ logistics option is available for this destination and variant",
-        trackingNumber: null,
-        raw: { freightOptions },
-      };
+      return { succeeded: false, supplierOrderId: null, responseCode: "CJ_LOGISTICS_UNAVAILABLE", responseMessage: "No verified CJ logistics option is available for this destination and variant", trackingNumber: null, raw: { freightOptions } };
     }
-
     const result = await createCJOrderV2({
       orderNumber: input.orderNumber,
       shippingCountryCode: input.shippingCountryCode,
@@ -221,49 +155,21 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
       email: input.email,
       logisticName: selectedLogistic,
       fromCountryCode: "CN",
-      products: [
-        {
-          vid: input.supplierVariantId,
-          quantity: input.quantity,
-        },
-      ],
+      products: [{ vid: input.supplierVariantId, quantity: input.quantity }],
     });
-
-    return {
-      succeeded: result.succeeded,
-      supplierOrderId: result.supplierOrderId,
-      responseCode: result.responseCode ?? "CJ_UNKNOWN",
-      responseMessage: result.responseMessage,
-      trackingNumber: null,
-      raw: result.raw,
-    };
+    return { succeeded: result.succeeded, supplierOrderId: result.supplierOrderId, responseCode: result.responseCode ?? "CJ_UNKNOWN", responseMessage: result.responseMessage, trackingNumber: null, raw: result.raw };
   },
 
   async getOrderStatus(supplierOrderId: string): Promise<SupplierOrder | null> {
     const result = await getCJOrderStatus(supplierOrderId);
-
-    return {
-      supplierOrderId,
-      supplierName: SUPPLIER_NAME,
-      status: result.status,
-      paymentConfirmed: extractCJPaymentConfirmation(result.raw),
-      createdAt: null,
-    };
+    return { supplierOrderId, supplierName: SUPPLIER_NAME, status: result.status, paymentConfirmed: extractCJPaymentConfirmation(result.raw), createdAt: null };
   },
 
   async getTracking(supplierOrderId: string): Promise<SupplierTracking | null> {
     const order = await getCJOrderStatus(supplierOrderId);
     if (!order.trackingNumber) return null;
-
     const tracking = await getCJTrackingInfo(order.trackingNumber);
     if (!tracking?.trackingNumber) return null;
-
-    return {
-      supplierOrderId,
-      trackingNumber: tracking.lastMileTrackingNumber ?? tracking.trackingNumber,
-      carrier: tracking.carrier,
-      trackingUrl: tracking.trackingUrl,
-      shippedAt: tracking.shippedAt,
-    };
+    return { supplierOrderId, trackingNumber: tracking.lastMileTrackingNumber ?? tracking.trackingNumber, carrier: tracking.carrier, trackingUrl: tracking.trackingUrl, shippedAt: tracking.shippedAt };
   },
 };
