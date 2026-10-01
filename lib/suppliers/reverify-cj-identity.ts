@@ -37,7 +37,12 @@ export async function reverifyCjSupplyIdentities(options: {
   deadlineAt?: number;
 } = {}): Promise<CjIdentityReverifyResult> {
   const db = createSupabaseAdminClient();
-  const limit = Math.max(1, Math.min(options.limit ?? DEFAULT_LIMIT, MAX_LIMIT));
+  // The patrol historically passed 5 here, which meant the resumable cursor
+  // could only advance five rows per invocation. Keep the actual traversal
+  // bounded by MAX_LIMIT while enforcing a useful minimum batch; processing
+  // remains 5-way concurrent below.
+  const requestedLimit = options.limit ?? DEFAULT_LIMIT;
+  const limit = Math.max(25, Math.min(requestedLimit, MAX_LIMIT));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
 
   const { data: cursorRow, error: cursorError } = await db
