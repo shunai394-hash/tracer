@@ -28,12 +28,6 @@ type MarketplaceIdentity = {
   rationale: string;
 };
 
-/**
- * Supply-first discovery must never manufacture marketplace identity.
- * CJ's variant barcode is the only identifier this path can use to bridge
- * a CJ supply candidate to an existing marketplace bestseller. SKU/PID/VID
- * are CJ-internal identifiers and are intentionally not treated as MPN/ASIN.
- */
 async function resolveMarketplaceIdentity(args: {
   db: ReturnType<typeof createSupabaseAdminClient>;
   supplierProductId: string;
@@ -58,13 +52,10 @@ async function resolveMarketplaceIdentity(args: {
   const supplyIds = identifiersFromRecord({ gtin: barcode });
   if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc) return null;
 
-  // Fetch exact barcode candidates only; final identity is still decided by
-  // the shared matcher, including GS1 family normalization and check digits.
   const digits = barcode.replace(/\D/g, "");
   if (!digits) return null;
   const variantsToQuery = new Set([digits]);
-  if (digits.length === 12) variantsToQuery.add(digits.padStart(14, "0"));
-  if (digits.length === 13) variantsToQuery.add(digits.padStart(14, "0"));
+  if (digits.length === 12 || digits.length === 13) variantsToQuery.add(digits.padStart(14, "0"));
   if (digits.length === 14) variantsToQuery.add(digits.slice(1));
 
   const clauses = [...variantsToQuery].flatMap((value) =>
@@ -87,18 +78,11 @@ async function resolveMarketplaceIdentity(args: {
           brand: typeof row.brand === "string" ? row.brand : null,
           title: typeof row.title === "string" ? row.title : null,
         },
-        supply: {
-          ...supplyIds,
-          title: null,
-          brand: null,
-        },
+        supply: { ...supplyIds, title: null, brand: null },
       });
-      return {
-        row,
-        identity,
-      };
+      return { row, identity };
     })
-    .filter((item) => item.identity.salesEligible && item.identity.method !== "mpn")
+    .filter((item) => item.identity.salesEligible && ["gtin", "jan", "ean", "upc"].includes(item.identity.method))
     .map((item) => ({
       bestsellerId: String(item.row.id),
       productId: String(item.row.product_id),
@@ -107,9 +91,7 @@ async function resolveMarketplaceIdentity(args: {
       rationale: item.identity.rationale,
     }));
 
-  // More than one marketplace record claiming the same CJ barcode is not a
-  // safe automatic link. Leave it supply-discovered until the market side is
-  // unambiguous rather than selecting an arbitrary bestseller.
+  // Never choose arbitrarily when a barcode maps to multiple market records.
   if (matches.length !== 1) return null;
   return matches[0];
 }
@@ -192,52 +174,52 @@ export async function persistCjSupplyIntelligence(
     .order("observed_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-
   if (existingOffer.error) throw new Error(existingOffer.error.message);
 
   let offerId: string;
   if (existingOffer.data?.id) {
-    const updated = await supabase
-      .from("product_offers")
-      .update(offerPayload)
-      .eq("id", existingOffer.data.id)
-      .select("id")
-      .single();
+    const updated = await supabase.from("product_offers").update(offerPayload).eq("id", existingOffer.data.id).select("id").single();
     if (updated.error) throw new Error(updated.error.message);
     offerId = String(updated.data.id);
   } else {
-    const inserted = await supabase
-      .from("product_offers")
-      .insert(offerPayload)
-      .select("id")
-      .single();
+    const inserted = await supabase.from("product_offers").insert(offerPayload).select("id").single();
     if (inserted.error) throw new Error(inserted.error.message);
     offerId = String(inserted.data.id);
   }
+
+  // A supply refresh must not erase demand/search/market evidence already
+  // produced for the canonical market product. Preserve existing intelligence
+  // fields and only refresh the supply-side facts here.
+  const existingIntelligence = await supabase
+    .from("product_intelligence")
+    .select("normalized_title,brand_name,category,source_url,demand_signal,metadata")
+    .eq("product_id", canonicalProductId)
+    .maybeSingle();
+  if (existingIntelligence.error) throw new Error(existingIntelligence.error.message);
+
+  const existingMetadata = existingIntelligence.data?.metadata && typeof existingIntelligence.data.metadata === "object"
+    ? existingIntelligence.data.metadata as Record<string, unknown>
+    : {};
 
   const intelligence = await supabase
     .from("product_intelligence")
     .upsert(
       {
         product_id: canonicalProductId,
-        normalized_title: args.title,
-        brand_name: null,
-        category: null,
+        normalized_title: existingIntelligence.data?.normalized_title ?? args.title,
+        brand_name: existingIntelligence.data?.brand_name ?? null,
+        category: existingIntelligence.data?.category ?? null,
         seller_name: "CJdropshipping",
-        source_url: null,
+        source_url: existingIntelligence.data?.source_url ?? null,
         image_url: args.imageUrl,
         currency: "USD",
         current_price: args.cost,
-        price_confidence:
-          currencyAssessment.confidence === "high"
-            ? 0.9
-            : currencyAssessment.confidence === "medium"
-              ? 0.6
-              : 0.2,
+        price_confidence: currencyAssessment.confidence === "high" ? 0.9 : currencyAssessment.confidence === "medium" ? 0.6 : 0.2,
         identity_confidence: marketplaceIdentity?.confidence ?? 1,
-        demand_signal: null,
+        demand_signal: existingIntelligence.data?.demand_signal ?? null,
         supply_signal: 1,
         metadata: {
+          ...existingMetadata,
           provider: "cj",
           source: "cj_supply_first",
           supplier_listing_id: args.supplierListingId,
@@ -248,7 +230,7 @@ export async function persistCjSupplyIntelligence(
           fx_rate: args.fxRate,
           selling_price_jpy: args.sellingPriceJpy,
           shipping_cost_usd: args.shippingCost,
-          demand_evidence_status: "not_observed",
+          demand_evidence_status: existingMetadata.demand_evidence_status ?? "not_observed",
           identity_status: marketplaceIdentity ? "linked" : "supply_discovered",
           identity_method: marketplaceIdentity?.method ?? "supply_discovered",
           identity_confidence: marketplaceIdentity?.confidence ?? 1,
@@ -264,9 +246,5 @@ export async function persistCjSupplyIntelligence(
     .single();
 
   if (intelligence.error) throw new Error(intelligence.error.message);
-
-  return {
-    offerId,
-    intelligenceId: String(intelligence.data.id),
-  };
+  return { offerId, intelligenceId: String(intelligence.data.id) };
 }
