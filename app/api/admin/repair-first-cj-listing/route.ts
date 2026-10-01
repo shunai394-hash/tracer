@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   try {
     const { data: listing, error: listingError } = await db
       .from("shop_listings")
-      .select("id,title,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,published,inventory,orderable")
+      .select("id,title,description,selling_price,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,base_item_id,published,inventory,orderable")
       .eq("published", true)
       .eq("supplier_name", "cj")
       .order("published_at", { ascending: true })
@@ -34,8 +34,8 @@ export async function GET(request: Request) {
           await editBaseItem({
             itemId: String(listing.base_item_id),
             title: String(listing.title ?? ""),
-            detail: String(listing.title ?? ""),
-            price: 0,
+            detail: String(listing.description ?? listing.title ?? ""),
+            price: Number(listing.selling_price ?? 0),
             stock: 0,
             visible: false,
           });
