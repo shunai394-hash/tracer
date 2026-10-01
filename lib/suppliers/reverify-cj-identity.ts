@@ -40,7 +40,7 @@ export async function reverifyCjSupplyIdentities(options: {
   deadlineAt?: number;
 } = {}): Promise<CjIdentityReverifyResult> {
   const db = createSupabaseAdminClient();
-  const limit = Math.max(1, Math.min(options.limit ?? 5, 25));
+  const limit = Math.max(1, Math.min(options.limit ?? 25, 50));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
 
   const { data: cursorRow, error: cursorError } = await db
