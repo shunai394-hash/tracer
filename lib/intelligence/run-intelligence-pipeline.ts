@@ -96,15 +96,9 @@ async function researchLimitedSupply(): Promise<unknown> {
     .order("created_at", { ascending: false })
     .limit(1);
 
-  if (error) {
-    throw new Error(error.message);
-  }
-
+  if (error) throw new Error(error.message);
   const candidate = candidates?.[0];
-
-  if (!candidate) {
-    return { skipped: true, reason: "no_new_candidates" };
-  }
+  if (!candidate) return { skipped: true, reason: "no_new_candidates" };
 
   if (!isGeminiConfigured()) {
     return {
@@ -117,7 +111,6 @@ async function researchLimitedSupply(): Promise<unknown> {
 
   try {
     const researched = await researchDemandCandidateWithCJ(candidate.id);
-    // Persist only after demand-relevance ranking. Never take CJ fetch order.
     const persisted = await persistDemandCJProducts(candidate.id, 3);
     return { researched, persisted };
   } catch (error) {
@@ -196,7 +189,6 @@ async function syncShoppingDemandObservations(): Promise<unknown> {
   for (const item of grouped.values()) {
     const key = `${item.query}|${item.observedAt.slice(0, 10)}`;
     if (existingKeys.has(key)) continue;
-
     const { error: insertError } = await supabase
       .from("demand_observations")
       .insert({
@@ -213,17 +205,11 @@ async function syncShoppingDemandObservations(): Promise<unknown> {
           proxy: "count_of_observed_product_results",
         },
       });
-    if (insertError && insertError.code !== "23505") {
-      throw new Error(insertError.message);
-    }
+    if (insertError && insertError.code !== "23505") throw new Error(insertError.message);
     if (!insertError) upserted += 1;
   }
 
-  return {
-    source: "google_shopping_observations",
-    grouped: grouped.size,
-    upserted,
-  };
+  return { source: "google_shopping_observations", grouped: grouped.size, upserted };
 }
 
 async function inspectDemandObservations(): Promise<unknown> {
@@ -231,16 +217,8 @@ async function inspectDemandObservations(): Promise<unknown> {
   const { count, error } = await supabase
     .from("demand_observations")
     .select("id", { count: "exact", head: true });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return {
-    observations: count ?? 0,
-    source: "demand_observations",
-    note: "Demand rows are written by discovery; this step only verifies they remain queryable",
-  };
+  if (error) throw new Error(error.message);
+  return { observations: count ?? 0, source: "demand_observations", note: "Demand rows are written by discovery; this step only verifies they remain queryable" };
 }
 
 export async function runIntelligencePipeline(): Promise<{
@@ -254,24 +232,16 @@ export async function runIntelligencePipeline(): Promise<{
   steps.push(bestsellerStep);
 
   const bestsellerIds =
-    bestsellerStep.ok &&
-    bestsellerStep.result &&
-    typeof bestsellerStep.result === "object" &&
-    Array.isArray((bestsellerStep.result as { bestsellerIds?: unknown }).bestsellerIds)
+    bestsellerStep.ok && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { bestsellerIds?: unknown }).bestsellerIds)
       ? ((bestsellerStep.result as { bestsellerIds: string[] }).bestsellerIds)
       : [];
 
   const supplierCandidateIds =
-    bestsellerStep.ok &&
-    bestsellerStep.result &&
-    typeof bestsellerStep.result === "object" &&
-    Array.isArray((bestsellerStep.result as { supplierCandidateIds?: unknown }).supplierCandidateIds)
+    bestsellerStep.ok && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { supplierCandidateIds?: unknown }).supplierCandidateIds)
       ? (bestsellerStep.result as { supplierCandidateIds: string[] }).supplierCandidateIds
       : [];
 
-  steps.push(
-    await runStep("dropship", () => investigateDropshipForBestsellers(supplierCandidateIds)),
-  );
+  steps.push(await runStep("dropship", () => investigateDropshipForBestsellers(supplierCandidateIds)));
   steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand()));
   steps.push(await runStep("normalize", () => normalizeProductIntelligence()));
   steps.push(await runStep("identity", () => stampDemandCJIdentities()));
@@ -284,77 +254,46 @@ export async function runIntelligencePipeline(): Promise<{
   // Supply-first is discovery only. It creates canonical product/offer/intelligence
   // evidence; publication is deferred until the same Opportunity Intelligence
   // and strict sales-test gates have passed.
-  const supplyFirstStep = await runStep(
-    "supply_first",
-    () => discoverAndCreateCjSupply(50),
-  );
+  // Keep each patrol bounded: live CJ stock/freight and identity checks are
+  // network-bound, while Opportunity Intelligence and Sales Test are also
+  // required in the same invocation. Larger backlogs are drained by later patrols.
+  const supplyFirstStep = await runStep("supply_first", () => discoverAndCreateCjSupply(3));
   steps.push(supplyFirstStep);
 
   const supplyItems =
-    supplyFirstStep.result &&
-    typeof supplyFirstStep.result === "object" &&
-    Array.isArray((supplyFirstStep.result as { items?: unknown }).items)
+    supplyFirstStep.result && typeof supplyFirstStep.result === "object" && Array.isArray((supplyFirstStep.result as { items?: unknown }).items)
       ? ((supplyFirstStep.result as { items: Array<Record<string, unknown>> }).items)
       : [];
 
-  const intelligence = await runStep("intelligence", () =>
-    buildOpportunityIntelligence(),
-  );
+  const intelligence = await runStep("intelligence", () => buildOpportunityIntelligence());
   steps.push(intelligence);
   steps.push(await runStep("score", () => scoreProductIntelligence()));
-  const supplyProductIds = supplyItems
-    .map((item) => String(item.productId ?? ""))
-    .filter(Boolean);
-  steps.push(
-    await runStep("supply_sales_test_select", () =>
-      selectAndPublishSupplySalesTests(supplyProductIds, 3),
-    ),
-  );
+  const supplyProductIds = supplyItems.map((item) => String(item.productId ?? "")).filter(Boolean);
+  steps.push(await runStep("supply_sales_test_select", () => selectAndPublishSupplySalesTests(supplyProductIds, 3)));
 
-  const salesTestStep = await runStep(
-    "sales_test_select",
-    () => selectAndPublishSalesTests(bestsellerIds, 3),
-  );
+  const salesTestStep = await runStep("sales_test_select", () => selectAndPublishSalesTests(bestsellerIds, 3));
   steps.push(salesTestStep);
-  steps.push(
-    await runStep("newfind_retry", () => retryPendingNewfindPromotions(20)),
-  );
-  steps.push(
-    await runStep("newfind_promotion", async () => {
-      const result = salesTestStep.result as
-        | { publishedListingIds?: unknown }
-        | undefined;
-      const ids = Array.isArray(result?.publishedListingIds)
-        ? result.publishedListingIds.filter((id): id is string => typeof id === "string")
-        : [];
-      return Promise.all(ids.map((id) => promoteShopListingToNewfind(id)));
-    }),
-  );
+
+  // NEWFIND has its own scheduled retry worker. Keep patrol delivery bounded so
+  // one slow downstream destination cannot consume the entire patrol timeout.
+  steps.push(await runStep("newfind_retry", () => retryPendingNewfindPromotions(1)));
+  steps.push(await runStep("newfind_promotion", async () => {
+    const result = salesTestStep.result as { publishedListingIds?: unknown } | undefined;
+    const ids = Array.isArray(result?.publishedListingIds)
+      ? result.publishedListingIds.filter((id): id is string => typeof id === "string")
+      : [];
+    return Promise.all(ids.map((id) => promoteShopListingToNewfind(id)));
+  }));
 
   steps.push(await runStep("ordering", () => persistReorderRecommendations()));
-  steps.push(
-    await runStep("test_ready", async () => {
-      if (!intelligence.ok) {
-        return {
-          skipped: true,
-          reason: "intelligence_step_failed",
-          retryable: intelligence.retryable === true,
-        };
-      }
-
-      const result = intelligence.result as { testReady?: number } | undefined;
-      return {
-        testReady: result?.testReady ?? 0,
-        note: "TEST_READY is produced only after the data quality gate",
-      };
-    }),
-  );
+  steps.push(await runStep("test_ready", async () => {
+    if (!intelligence.ok) {
+      return { skipped: true, reason: "intelligence_step_failed", retryable: intelligence.retryable === true };
+    }
+    const result = intelligence.result as { testReady?: number } | undefined;
+    return { testReady: result?.testReady ?? 0, note: "TEST_READY is produced only after the data quality gate" };
+  }));
 
   const blockingFailed = steps.some((step) => !step.ok && !step.skipped);
-
-  return {
-    ok: !blockingFailed,
-    complete: steps.every((step) => step.ok),
-    steps,
-  };
+  return { ok: !blockingFailed, complete: steps.every((step) => step.ok), steps };
 }
