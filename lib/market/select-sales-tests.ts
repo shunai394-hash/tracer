@@ -208,27 +208,6 @@ export async function selectAndPublishSalesTests(
       reasons.push(`supplier_capability_missing:${missingSupplierCapabilities.join(",")}`);
     }
 
-    // Publication is allowed only when the supplier can execute the complete
-    // autonomous procurement lifecycle. Keep this gate aligned with
-    // supplier-execution.ts so a listing cannot be public while its eventual
-    // purchase path is known to be non-automatable.
-    const supplierCapabilities = getSupplierCapabilities(String(listing.supplier ?? ""));
-    const requiredCapabilities = [
-      ["variant", supplierCapabilities.variant],
-      ["inventory", supplierCapabilities.inventory],
-      ["price", supplierCapabilities.price],
-      ["shipping", supplierCapabilities.shipping],
-      ["orderCreation", supplierCapabilities.orderCreation],
-      ["payment", supplierCapabilities.payment],
-      ["liveOrdering", supplierCapabilities.liveOrdering],
-    ] as const;
-    const missingSupplierCapabilities = requiredCapabilities
-      .filter(([, supported]) => !supported)
-      .map(([name]) => name);
-    if (missingSupplierCapabilities.length > 0) {
-      reasons.push(`supplier_capability_missing:${missingSupplierCapabilities.join(",")}`);
-    }
-
     if (listing.cost === null) reasons.push("source_cost_unknown");
     if (isInternalSupply && asNumber(listing.catalog_sale_price) === null) reasons.push("selling_price_unknown");
     if (!isInternalSupply && bestseller.price === null) reasons.push("selling_price_unknown");
