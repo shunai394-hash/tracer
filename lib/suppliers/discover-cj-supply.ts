@@ -10,6 +10,7 @@ import {
   calculateCJFreight,
 } from "@/lib/sources/cj";
 import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/cj/variant-select";
+import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 
 function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
   const landed = (costUsd + shippingUsd) * fx;
@@ -151,6 +152,23 @@ export async function discoverAndCreateCjSupply(
   items: Array<Record<string, unknown>>;
 }> {
   const db = createSupabaseAdminClient();
+
+  // Supply-first is only allowed to discover products that TRACER can
+  // procure autonomously. CJ currently fails the shared AUTO gate because
+  // payment completion is not yet verified end-to-end.
+  const autoProcurement = getAutoProcurementEligibility("cj");
+  if (!autoProcurement.eligible) {
+    return {
+      discovered: 0,
+      published: 0,
+      rejected: 0,
+      candidateCount: 0,
+      eligibleCount: 0,
+      deadlineReached: false,
+      items: [],
+    };
+  }
+
   const fx = await getObservedUsdToJpyRate();
   const fxRate = fx?.rate ?? null;
   if (!fxRate || !Number.isFinite(fxRate) || fxRate <= 0) {
