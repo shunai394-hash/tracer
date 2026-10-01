@@ -90,3 +90,28 @@ jobs:
           PY
 
           if [ -n "$failures" ]; then echo "Smoke failures:$failures"; exit 1; fi
+
+      - name: Run autonomous AI patrol after production deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app"
+          OIDC_TOKEN="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "$OIDC_URL" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          curl --fail-with-body --silent --show-error --max-time 300 \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            "https://tracer-self.vercel.app/api/cron/patrol-ai" | tee patrol-after-deploy.json
+          python3 - <<'PY'
+          import json
+          r=json.load(open("patrol-after-deploy.json", encoding="utf-8"))
+          print("=== AI PATROL AFTER DEPLOY ===")
+          print("status:", r.get("status"))
+          print("decision:", r.get("decision"))
+          print("published before:", r.get("before",{}).get("publishedListings"))
+          print("published after:", r.get("after",{}).get("publishedListings"))
+          print("BASE before:", r.get("before",{}).get("basePublished"))
+          print("BASE after:", r.get("after",{}).get("basePublished"))
+          print("progress:", r.get("progress", {}))
+          print("errors:", r.get("errors", []))
+          PY
