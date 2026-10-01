@@ -11,6 +11,7 @@ import {
 } from "@/lib/sources/cj";
 import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/cj/variant-select";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
+import { persistCjSupplyIntelligence } from "@/lib/intelligence/persist-cj-supply-intelligence";
 
 function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
   const landed = (costUsd + shippingUsd) * fx;
@@ -52,7 +53,7 @@ async function readCatalogCursor(db: ReturnType<typeof createSupabaseAdminClient
 
 async function writeCatalogCursor(
   db: ReturnType<typeof createSupabaseAdminClient>,
-  cursor: CatalogCursor & { discovered: number; rejected: number },
+  cursor: CatalogCursor & { verified: number; rejected: number },
 ): Promise<void> {
   const now = new Date().toISOString();
   const { error } = await db.from("cron_runs").insert({
@@ -60,7 +61,7 @@ async function writeCatalogCursor(
     status: "succeeded",
     started_at: now,
     finished_at: now,
-    processed: cursor.discovered,
+    processed: cursor.verified,
     failed: cursor.rejected,
     metadata: { queryIndex: cursor.queryIndex, page: cursor.page },
   });
@@ -124,26 +125,19 @@ async function upsertSupplierListing(
   return { data: { id: String(result.data.id) }, error: null };
 }
 
-function slug(title: string, productId: string, variantId: string): string {
-  const base = title
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 54);
-  return `${base || "tracer-product"}-${productId.slice(-8)}-${variantId.slice(-8)}`;
-}
-
 /**
  * Supply-first path. This deliberately does not claim marketplace identity.
  * The CJ product/variant itself is the source of truth for the sellable item.
- * Every supply candidate must have a live variant id, live stock > 0, live
- * Japan freight, a positive cost and a non-empty image.
+ * Every discovered row must have a live variant id, live stock > 0, live
+ * Japan freight, a positive cost and a non-empty image. Discovery never publishes.
  */
 export async function discoverAndCreateCjSupply(
   limit = 1,
   options?: { deadlineAt?: number },
 ): Promise<{
   discovered: number;
+  published: number;
+  verified: number;
   rejected: number;
   candidateCount: number;
   eligibleCount: number;
@@ -159,6 +153,8 @@ export async function discoverAndCreateCjSupply(
   if (!autoProcurement.eligible) {
     return {
       discovered: 0,
+      published: 0,
+      verified: 0,
       rejected: 0,
       candidateCount: 0,
       eligibleCount: 0,
@@ -176,6 +172,7 @@ export async function discoverAndCreateCjSupply(
   const queries = CATALOG_QUERIES;
   const items: Array<Record<string, unknown>> = [];
   let discovered = 0;
+  let verified = 0;
   let rejected = 0;
 
   // Reuse previously discovered CJ IDs first. These rows are only candidates;
@@ -241,7 +238,7 @@ export async function discoverAndCreateCjSupply(
   }));
 
   for (const seededCandidate of candidateInputs) {
-    if (discovered >= limit) break;
+    if (verified >= limit) break;
     if (Date.now() >= deadlineAt) {
       deadlineReached = true;
       break;
@@ -370,25 +367,37 @@ export async function discoverAndCreateCjSupply(
       if (seededCandidate.supplierListingId && seededCandidate.supplierListingId !== String(supplierInsert.data.id)) {
         await markVerification(db, seededCandidate.supplierListingId, { status: "verified", shippingStatus: "verified" });
       }
-      const listingSlug = slug(detail.title, candidate.id, candidate.variantId);
-      const shopPayload = {
-        product_id: productId, supplier_listing_id: supplierInsert.data.id, slug: listingSlug, title: detail.title,
-        description: `日本向けに厳選した商品です。\n\nCJdropshippingから仕入れ、在庫・日本向け送料を確認したうえで掲載しています。\n\n商品仕様：${detail.title}\nバリエーション：標準仕様\n\n※商品名・仕様は仕入先の商品情報を基にしています。対応機種・サイズなどはご注文前に商品画像・仕様をご確認ください。\n※仕入先の在庫・配送状況により、販売を停止する場合があります。`,
-        image_url: detail.imageUrl, selling_price: salePrice, currency: "JPY", supplier_name: "cj",
-        supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, source_cost: cost, shipping_cost: freight,
-        inventory: Math.floor(stock), orderable: true, tracking_available: true, identity_method: "supply_discovered",
-        identity_confidence: 1, published: false, selection_reasons: ["supply_first","live_cj_variant","live_inventory_gt_zero","live_japan_freight",`fx_usdjpy_${fxRate.toFixed(4)}`],
-        missing: [], pipeline_stage: "SUPPLY_VERIFIED", pipeline_status: "supply_verified",
-        pipeline_reason: "supply_first_verified_waiting_for_sales_test", pipeline_updated_at: new Date().toISOString(), updated_at: new Date().toISOString()
-      };
-      const existingShop = await db.from("shop_listings").select("id").eq("slug", listingSlug).limit(1).maybeSingle();
-      if (existingShop.error) throw new Error(existingShop.error.message);
-      const shopInsert = existingShop.data?.id
-        ? await db.from("shop_listings").update(shopPayload).eq("id", existingShop.data.id).select("id").single()
-        : await db.from("shop_listings").insert(shopPayload).select("id").single();
-      if (shopInsert.error) throw new Error(shopInsert.error.message);
+      const intelligence = await persistCjSupplyIntelligence({
+        productId,
+        title: detail.title,
+        imageUrl: detail.imageUrl,
+        cost,
+        shippingCost: freight,
+        supplierListingId: String(supplierInsert.data.id),
+        supplierProductId: candidate.id,
+        supplierVariantId: candidate.variantId,
+        inventory: Math.floor(stock),
+        query,
+        fxRate,
+        sellingPriceJpy: salePrice,
+      });
       discovered++;
-      items.push({ listingId: String(shopInsert.data.id), productId, supplierListingId: String(supplierInsert.data.id), title: detail.title, supplierProductId: candidate.id, supplierVariantId: candidate.variantId, costUsd: cost, freightUsd: freight, inventory: Math.floor(stock), sellingPriceJpy: salePrice, fxRate });
+      verified++;
+      items.push({
+        productId,
+        supplierListingId: String(supplierInsert.data.id),
+        offerId: intelligence.offerId,
+        intelligenceId: intelligence.intelligenceId,
+        title: detail.title,
+        supplierProductId: candidate.id,
+        supplierVariantId: candidate.variantId,
+        costUsd: cost,
+        freightUsd: freight,
+        inventory: Math.floor(stock),
+        sellingPriceJpy: salePrice,
+        fxRate,
+        published: false,
+      });
     } catch (error) {
       rejected++;
       const message = error instanceof Error ? error.message : String(error);
@@ -398,7 +407,7 @@ export async function discoverAndCreateCjSupply(
     }
   }
 
-  if (discovered >= limit) return { discovered, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
+  if (verified >= limit) return { discovered, published: 0, verified, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
 
   // Seeded verification is only one source of candidates. If all seeded
   // variants fail live Japan-freight verification, continue into the live CJ
@@ -411,7 +420,7 @@ export async function discoverAndCreateCjSupply(
   let page = cursor.page;
   let pagesScanned = 0;
   const seenSearchProducts = new Set<string>();
-  while (discovered < limit && pagesScanned < queries.length * 2) {
+  while (verified < limit && pagesScanned < queries.length * 2) {
     if (Date.now() >= deadlineAt) {
       deadlineReached = true;
       break;
@@ -432,7 +441,7 @@ export async function discoverAndCreateCjSupply(
     const pageNumber = page;
     let pageCompleted = true;
     for (const candidate of search.products.map((x) => ({ ...x, variantId: null as string | null }))) {
-      if (discovered >= limit || Date.now() >= deadlineAt) {
+      if (verified >= limit || Date.now() >= deadlineAt) {
         if (Date.now() >= deadlineAt) deadlineReached = true;
         pageCompleted = false;
         break;
@@ -572,68 +581,27 @@ export async function discoverAndCreateCjSupply(
         if (supplierInsert.error) throw new Error(supplierInsert.error.message);
         const supplierListingId = String(supplierInsert.data.id);
 
-        const listingSlug = slug(detail.title, candidate.id, variant.vid);
-        const shopPayload = {
-          product_id: productId,
-          supplier_listing_id: supplierListingId,
-          slug: listingSlug,
+        const intelligence = await persistCjSupplyIntelligence({
+          productId,
           title: detail.title,
-          description: `日本向けに厳選した商品です。\n\nCJdropshippingから仕入れ、在庫・日本向け送料を確認したうえで掲載しています。\n\n商品仕様：${detail.title}\nバリエーション：${variant.nameEn ?? "標準仕様"}\n\n※商品名・仕様は仕入先の商品情報を基にしています。対応機種・サイズなどはご注文前に商品画像・仕様をご確認ください。\n※仕入先の在庫・配送状況により、販売を停止する場合があります。`,
-          image_url: detail.imageUrl,
-          selling_price: salePrice,
-          currency: "JPY",
-          supplier_name: "cj",
-          supplier_product_id: candidate.id,
-          supplier_variant_id: variant.vid,
-          source_cost: cost,
-          shipping_cost: freight,
+          imageUrl: detail.imageUrl,
+          cost,
+          shippingCost: freight,
+          supplierListingId,
+          supplierProductId: candidate.id,
+          supplierVariantId: variant.vid,
           inventory: Math.floor(stock),
-          orderable: true,
-          tracking_available: true,
-          identity_method: "supply_discovered",
-          identity_confidence: 1,
-          published: false,
-          selection_reasons: [
-            "supply_first",
-            "live_cj_variant",
-            "live_inventory_gt_zero",
-            "live_japan_freight",
-            `fx_usdjpy_${fxRate.toFixed(4)}`,
-          ],
-          missing: [],
-          pipeline_stage: "SUPPLY_VERIFIED",
-          pipeline_status: "supply_verified",
-          pipeline_reason: "supply_first_verified_waiting_for_sales_test",
-          pipeline_updated_at: now,
-          updated_at: now,
-        };
-        const existingShop = await db
-          .from("shop_listings")
-          .select("id")
-          .eq("slug", listingSlug)
-          .limit(1)
-          .maybeSingle();
-        if (existingShop.error) throw new Error(existingShop.error.message);
-        const shopInsert = existingShop.data?.id
-          ? await db
-              .from("shop_listings")
-              .update(shopPayload)
-              .eq("id", existingShop.data.id)
-              .select("id")
-              .single()
-          : await db
-              .from("shop_listings")
-              .insert(shopPayload)
-              .select("id")
-              .single();
-
-        if (shopInsert.error) throw new Error(shopInsert.error.message);
-
+          query,
+          fxRate,
+          sellingPriceJpy: salePrice,
+        });
         discovered++;
+        verified++;
         items.push({
-          listingId: String(shopInsert.data.id),
           productId,
           supplierListingId,
+          offerId: intelligence.offerId,
+          intelligenceId: intelligence.intelligenceId,
           title: detail.title,
           supplierProductId: candidate.id,
           supplierVariantId: variant.vid,
@@ -642,6 +610,7 @@ export async function discoverAndCreateCjSupply(
           inventory: Math.floor(stock),
           sellingPriceJpy: salePrice,
           fxRate,
+          published: false,
         });
       } catch (error) {
         reject("error", { error: error instanceof Error ? error.message : String(error) });
@@ -657,7 +626,7 @@ export async function discoverAndCreateCjSupply(
         : { queryIndex, page: page + 1 });
     }
   }
-  await writeCatalogCursor(db, { queryIndex, page, discovered, rejected });
+  await writeCatalogCursor(db, { queryIndex, page, verified, rejected });
 
-  return { discovered, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
+  return { discovered, published: 0, verified, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
 }

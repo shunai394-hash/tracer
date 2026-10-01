@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
+import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
+import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
@@ -41,18 +43,50 @@ export async function GET(request: Request) {
 
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
-    // Supply-first is the primary autonomous sales path. The manual
-    // /api/intelligence/bestsellers endpoint already uses this path, but the
-    // scheduled pipeline previously skipped it entirely, leaving BASE at the
-    // first manually discovered item. Reuse the same live CJ gates here.
-    // Bound CJ discovery so the rest of this stage (and the cron_runs
-    // bookkeeping) finishes inside maxDuration; unbounded, the function was
-    // killed and left the lock held.
-    await discoverAndCreateCjSupply(20, {
+    // Discovery is not publication. Build Opportunity Intelligence first,
+    // then let the strict supply sales-test gate decide whether anything can publish.
+    const supplyFirst = await discoverAndCreateCjSupply(20, {
       deadlineAt: startedAt + 150_000,
     });
-    // Supply-first only verifies supplier availability.
-    // It never publishes directly; publication remains behind the sales-test gate.
+    await buildOpportunityIntelligence();
+    const supplySelected = await selectAndPublishSupplySalesTests(
+      supplyFirst.items.map((item) => String(item.productId ?? "")).filter(Boolean),
+      3,
+    );
+
+    if (cronRunId) {
+      await supabase.from("cron_runs").update({
+        status: "succeeded",
+        finished_at: new Date().toISOString(),
+        duration_ms: Date.now() - startedAt,
+        processed: supplyFirst.candidateCount,
+        failed: supplyFirst.rejected,
+        metadata: {
+          phase: "sales_test_publication",
+          mode: "supply_first_intelligence_gate",
+          candidateCount: supplyFirst.candidateCount,
+          discovered: supplyFirst.discovered,
+          verified: supplyFirst.verified,
+          published: supplySelected.published,
+          rejected: supplyFirst.rejected,
+        },
+      }).eq("id", cronRunId);
+    }
+
+    if (supplySelected.published > 0) {
+      return NextResponse.json({
+        ok: true,
+        phase: "sales_test_publication",
+        elapsedMs: Date.now() - startedAt,
+        mode: "supply_first_intelligence_gate",
+        supplyFirst,
+        supplySelected,
+        nextPhase: "base_publication",
+      });
+    }
+
+    // Keep the existing market-linked pipeline as the fallback when the
+    // supply-first source has no publishable candidate.
     const { data: readyRows, error: readyError } = await supabase
       .from("marketplace_bestsellers")
       .select("id")

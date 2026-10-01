@@ -25,14 +25,17 @@ export async function GET(request: Request) {
       deadlineAt: startedAt + DISCOVERY_BUDGET_MS,
     });
 
+    // Discovery is intentionally not publication. The intelligence pipeline
+    // will evaluate these product/offer/intelligence rows before any sales test.
     return NextResponse.json({
       ok: true,
       elapsedMs: Date.now() - startedAt,
       supplyFirst,
       publication: {
+        published: 0,
         base: false,
         newfind: false,
-        reason: "waiting_for_intelligence_and_sales_test_gate",
+        reason: "deferred_to_opportunity_intelligence_and_sales_test_gate",
       },
     });
   } catch (error) {

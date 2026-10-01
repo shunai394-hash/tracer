@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
+import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
 import { requireCronAuth } from "@/lib/security/cron-auth";
@@ -44,6 +45,11 @@ export async function POST(request: NextRequest) {
     const offset = Number.isInteger(body?.offset) && body.offset >= 0 ? body.offset : 0;
     const candidateIds = candidatePool.slice(offset, offset + BESTSELLER_CANDIDATE_BATCH_SIZE);
     const suppliers = await investigateDropshipForBestsellers(candidateIds);
+    // This endpoint can be invoked independently of the scheduled pipeline.
+    // Rebuild the authoritative Opportunity Intelligence snapshot before the
+    // publication gate so a stale/missing intelligence row can never be used
+    // as a reason to publish.
+    const opportunity = await buildOpportunityIntelligence();
     const selected = await selectAndPublishSalesTests(candidateIds, 3);
 
     const newfind = await Promise.all(

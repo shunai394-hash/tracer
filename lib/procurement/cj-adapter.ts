@@ -81,7 +81,9 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
     shippingRequiresDestination: true,
     orderPreflight: false,
     orderCreation: true,
-    payment: true,
+    // CJ order creation/status are implemented, but supplier-side payment
+    // completion is not yet verified end-to-end. Fail closed until it is.
+    payment: false,
     orderStatus: true,
     tracking: true,
     liveOrdering: true,

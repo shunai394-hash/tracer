@@ -12,6 +12,7 @@ import { persistReorderRecommendations } from "@/lib/ordering/persist-reorder";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
+import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import {
   promoteShopListingToNewfind,
@@ -280,22 +281,36 @@ export async function runIntelligencePipeline(): Promise<{
   steps.push(await runStep("demand_analyze", () => persistDemandIntelligence()));
   steps.push(await runStep("supply", () => researchLimitedSupply()));
 
-  // Supply-first verifies real CJ variants, stock, freight, and procurement readiness.
-  // It does not publish. Publication remains behind the intelligence + sales-test gate.
+  // Supply-first is discovery only. It creates canonical product/offer/intelligence
+  // evidence; publication is deferred until the same Opportunity Intelligence
+  // and strict sales-test gates have passed.
   const supplyFirstStep = await runStep(
     "supply_first",
     () => discoverAndCreateCjSupply(50),
   );
   steps.push(supplyFirstStep);
-  // Supply-first only verifies supplier-side availability.
-  // It never publishes directly to BASE or NEWFIND.
-  // Public publication remains behind intelligence, scoring, and the sales-test gate.
+
+  const supplyItems =
+    supplyFirstStep.result &&
+    typeof supplyFirstStep.result === "object" &&
+    Array.isArray((supplyFirstStep.result as { items?: unknown }).items)
+      ? ((supplyFirstStep.result as { items: Array<Record<string, unknown>> }).items)
+      : [];
 
   const intelligence = await runStep("intelligence", () =>
     buildOpportunityIntelligence(),
   );
   steps.push(intelligence);
   steps.push(await runStep("score", () => scoreProductIntelligence()));
+  const supplyProductIds = supplyItems
+    .map((item) => String(item.productId ?? ""))
+    .filter(Boolean);
+  steps.push(
+    await runStep("supply_sales_test_select", () =>
+      selectAndPublishSupplySalesTests(supplyProductIds, 3),
+    ),
+  );
+
   const salesTestStep = await runStep(
     "sales_test_select",
     () => selectAndPublishSalesTests(bestsellerIds, 3),

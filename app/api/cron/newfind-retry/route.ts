@@ -10,7 +10,11 @@ export async function GET(request: Request) {
     const authError = await requireAutomationAuth(request);
     if (authError) return authError;
 
-    const result = await retryPendingNewfindPromotions(50);
+    // Each delivery can perform multiple external requests and liveness checks.
+    // Keep one delivery per invocation so the 60s function ceiling cannot be
+    // consumed by a large retry batch. The workflow runs every 20 minutes and
+    // drains the queue incrementally.
+    const result = await retryPendingNewfindPromotions(1);
     return NextResponse.json({
       ok: true,
       phase: "newfind_retry",
