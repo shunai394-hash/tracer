@@ -59,7 +59,8 @@ export async function POST(request: Request) {
     const candidateIds = bestsellers.supplierCandidateIds.slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
     const suppliers = await investigateDropshipForBestsellers(candidateIds);
     const selected = await selectAndPublishSalesTests(candidateIds, 5);
-    const base = await publishPublishedListingsToBase(5);
+    // NEWFIND re-checks the Sales Test Gate per listing; BASE creation is left
+    // to the base-publish stage, which applies the same gate.
     const newfind = await Promise.all(
       selected.publishedListingIds.map((listingId) =>
         promoteShopListingToNewfind(listingId).catch((error) => ({
@@ -75,14 +76,13 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       elapsedMs: Date.now() - startedAt,
-      mode: "market_linked_fallback",
+      mode: "market_linked_sales_test",
       supplyFirst,
       bestsellers,
       suppliers,
       selected,
-      base,
       newfind,
-      salesReady: selected.published > 0 || base.published > 0,
+      salesReady: selected.published > 0,
     });
   } catch (error) {
     console.error("[TRACER BESTSELLERS ERROR]", error);

@@ -10,6 +10,8 @@ import {
   calculateCJFreight,
 } from "@/lib/sources/cj";
 import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/cj/variant-select";
+import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
+import { getSupplierCapabilities } from "@/lib/procurement/registry";
 import { persistCjSupplyIntelligence } from "@/lib/intelligence/persist-cj-supply-intelligence";
 
 function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
@@ -144,6 +146,27 @@ export async function discoverAndCreateCjSupply(
   items: Array<Record<string, unknown>>;
 }> {
   const db = createSupabaseAdminClient();
+
+  // Supply-first is only allowed to discover products that TRACER can
+  // procure autonomously. CJ currently fails the shared AUTO gate because
+  // payment completion is not yet verified end-to-end.
+  const autoProcurement = getAutoProcurementEligibility("cj");
+  if (!autoProcurement.eligible) {
+    return {
+      discovered: 0,
+      published: 0,
+      verified: 0,
+      rejected: 0,
+      candidateCount: 0,
+      eligibleCount: 0,
+      deadlineReached: false,
+      items: [],
+    };
+  }
+
+  // Mirror the adapter's real capability instead of asserting tracking.
+  const cjTrackingAvailable = getSupplierCapabilities("cj").tracking === true;
+
   const fx = await getObservedUsdToJpyRate();
   const fxRate = fx?.rate ?? null;
   if (!fxRate || !Number.isFinite(fxRate) || fxRate <= 0) {
@@ -158,7 +181,7 @@ export async function discoverAndCreateCjSupply(
 
   // Reuse previously discovered CJ IDs first. These rows are only candidates;
   // stock, variant and Japan freight are re-verified live before publication.
-  // Do not keep selecting the already-published winner. The first bootstrap
+  // Do not keep selecting the same existing listing. The first bootstrap
   // run proved the BASE path; subsequent runs must advance through the
   // remaining verified CJ supply candidates.
   const { data: existingListings } = await db
@@ -166,10 +189,10 @@ export async function discoverAndCreateCjSupply(
     .select("supplier_product_id,supplier_variant_id")
     .not("supplier_variant_id", "is", null);
 
-  const publishedProducts = new Set(
+  const existingProducts = new Set(
     (existingListings ?? []).map((row) => String(row.supplier_product_id ?? "")).filter(Boolean),
   );
-  const publishedVariants = new Set(
+  const existingVariants = new Set(
     (existingListings ?? []).map((row) => `${String(row.supplier_product_id ?? "")}:${String(row.supplier_variant_id ?? "")}`),
   );
 
@@ -197,7 +220,7 @@ export async function discoverAndCreateCjSupply(
   const seenSeedKeys = new Set<string>();
   const seeded = (seededRows ?? []).filter((row) => {
     const key = `${String(row.supplier_product_id)}:${String(row.supplier_variant_id)}`;
-    if (publishedVariants.has(key) || seenSeedKeys.has(key)) return false;
+    if (existingVariants.has(key) || seenSeedKeys.has(key)) return false;
     seenSeedKeys.add(key);
     return true;
   });
@@ -291,7 +314,7 @@ export async function discoverAndCreateCjSupply(
       // Reuse persisted variant/cost/inventory observations. Only image/title
       // and live Japan freight consume CJ requests for seeded rows.
       // Always re-check stock live: a persisted count may be days old and a
-      // published row must reflect current CJ stock.
+      // Every supply candidate must reflect current CJ stock.
       const stock = await fetchCJVariantStock(candidate.variantId);
 
       if (stock === null || stock <= 0) {
@@ -340,7 +363,7 @@ export async function discoverAndCreateCjSupply(
         order_method: "cj_api", api_available: true, identity_method: "supply_discovered",
         identity_status: "supply_discovered", identity_confidence: 1, configured: true,
         supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
-        orderable: true, price_confirmed: true, inventory_confirmed: true, tracking_available: false,
+        orderable: true, price_confirmed: true, inventory_confirmed: true, tracking_available: cjTrackingAvailable,
         fetched_at: new Date().toISOString(), metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate }
       }, seededCandidate.supplierListingId);
       if (supplierInsert.error) throw new Error(supplierInsert.error.message);
@@ -429,7 +452,7 @@ export async function discoverAndCreateCjSupply(
       }
       if (seenSearchProducts.has(candidate.id)) continue;
       seenSearchProducts.add(candidate.id);
-      if (publishedProducts.has(candidate.id)) continue;
+      if (existingProducts.has(candidate.id)) continue;
       const reject = (stage: string, extra?: Record<string, unknown>) => {
         rejected++;
         items.push({ rejectedStage: stage, supplierProductId: candidate.id, query: pageQuery, page: pageNumber, ...extra });
@@ -546,7 +569,7 @@ export async function discoverAndCreateCjSupply(
               orderable: true,
               price_confirmed: true,
               inventory_confirmed: true,
-              tracking_available: false,
+              tracking_available: cjTrackingAvailable,
               fetched_at: now,
               metadata: {
                 source: "cj_supply_first",

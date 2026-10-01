@@ -292,26 +292,27 @@ export async function executeSupplierPurchaseOrder(
     gate.blocked.length === 0 &&
     !gate.liveOrderingDisabled;
 
+  const refreshedMetadata: Record<string, unknown> = {
+    ...((po.metadata as Record<string, unknown>) ?? {}),
+    live_supplier_refresh: {
+      observed_at: new Date().toISOString(),
+      supplier: supplierName,
+      product_id: supplierProductId,
+      variant_id: supplierVariantId,
+      inventory: inventoryQty,
+      price: sourceCost,
+      shipping: shippingCost,
+      currency: sourceCurrency,
+    },
+    gate,
+  };
   const { error: refreshPersistError } = await supabase
     .from("purchase_orders")
     .update({
       unit_cost: sourceCost,
       shipping_cost: shippingCost,
       currency: sourceCurrency,
-      metadata: {
-        ...((po.metadata as Record<string, unknown>) ?? {}),
-        live_supplier_refresh: {
-          observed_at: new Date().toISOString(),
-          supplier: supplierName,
-          product_id: supplierProductId,
-          variant_id: supplierVariantId,
-          inventory: inventoryQty,
-          price: sourceCost,
-          shipping: shippingCost,
-          currency: sourceCurrency,
-        },
-        gate,
-      },
+      metadata: refreshedMetadata,
     })
     .eq("id", purchaseOrderId);
 
@@ -388,7 +389,10 @@ export async function executeSupplierPurchaseOrder(
         live_order: true,
         supplier_status: "created",
         supplier_synced_at: new Date().toISOString(),
-        status: "placed",
+        // An existing supplier order is not a paid one. Only
+        // executeVerifiedSupplierPurchaseOrder may move this to "placed"
+        // after the supplier reports payment.
+        status: "supplier_payment_pending",
       })
       .eq("id", purchaseOrderId);
 
@@ -600,9 +604,11 @@ export async function executeSupplierPurchaseOrder(
         live_order: true,
         supplier_status: "created",
         supplier_synced_at: new Date().toISOString(),
-        status: "placed",
+        // Order creation is not payment. executeVerifiedSupplierPurchaseOrder
+        // promotes this to "placed" only after the supplier confirms payment.
+        status: "supplier_payment_pending",
         metadata: {
-          ...((po.metadata as Record<string, unknown>) ?? {}),
+          ...refreshedMetadata,
           supplier_order: {
             supplier: supplierName,
             supplier_order_id: result.supplierOrderId,

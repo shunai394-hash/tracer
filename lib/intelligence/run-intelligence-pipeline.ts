@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 import { collectGoogleTrendsDemand } from "@/lib/intelligence/collect-google-trends";
 import { matchDemandProductsByCategory } from "@/lib/intelligence/match-demand-products";
@@ -20,7 +20,6 @@ import {
 } from "@/lib/integration/newfind";
 import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { MARKETPLACE_SOURCES } from "@/lib/market/collect-bestsellers";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import {
   GeminiConfigError,
@@ -227,26 +226,6 @@ async function syncShoppingDemandObservations(): Promise<unknown> {
   };
 }
 
-async function getNextMarketplaceSourceIndex(): Promise<number> {
-  const supabase = createSupabaseAdminClient();
-  const { data } = await supabase
-    .from("cron_runs")
-    .select("metadata")
-    .eq("job_name", "market-sourcing")
-    .order("started_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const previous = data?.metadata && typeof data.metadata === "object" && !Array.isArray(data.metadata)
-    ? Number((data.metadata as Record<string, unknown>).sourceIndex)
-    : NaN;
-
-  if (Number.isInteger(previous) && previous >= 0) {
-    return (previous + 1) % MARKETPLACE_SOURCES.length;
-  }
-  return 0;
-}
-
 async function inspectDemandObservations(): Promise<unknown> {
   const supabase = createSupabaseAdminClient();
   const { count, error } = await supabase
@@ -379,5 +358,3 @@ export async function runIntelligencePipeline(): Promise<{
     steps,
   };
 }
-
-

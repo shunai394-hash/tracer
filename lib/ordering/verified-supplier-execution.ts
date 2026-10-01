@@ -14,11 +14,50 @@ import {
  * This wrapper also re-checks existing/idempotent attempts, so an old attempt
  * cannot be promoted back to purchase_orders.status=placed solely from its ID.
  */
+// States that supplier sync sets after a paid order progresses.
+const POST_PAYMENT_STATUSES = new Set([
+  "processing",
+  "supplier_processing",
+  "shipping",
+  "shipped",
+  "delivered",
+  "received",
+]);
+
 export async function executeVerifiedSupplierPurchaseOrder(
   purchaseOrderId: string,
 ): Promise<ExecuteSupplierPurchaseOrderResult> {
   const result = await executeSupplierPurchaseOrder(purchaseOrderId);
   if (!result.supplierOrderId) return result;
+
+  const supabase = createSupabaseAdminClient();
+  const { data: current, error: currentError } = await supabase
+    .from("purchase_orders")
+    .select("status,metadata")
+    .eq("id", purchaseOrderId)
+    .maybeSingle();
+  if (currentError) throw new Error(currentError.message);
+
+  const metadata = (current?.metadata && typeof current.metadata === "object" && !Array.isArray(current.metadata)
+    ? current.metadata
+    : {}) as Record<string, unknown>;
+  const recordedPayment = metadata.supplier_payment as { confirmed?: unknown } | undefined;
+
+  // Payment already confirmed and the order has moved on (placed with
+  // confirmed payment, or a later fulfilment state set by supplier sync).
+  // Re-verifying on every autonomous run must never roll it back to "placed"
+  // or discard its recorded evidence.
+  const status = String(current?.status ?? "");
+  // Terminal outcomes recorded by supplier reconciliation stay terminal.
+  if (status === "failed" || status === "cancelled") {
+    return { ...result, succeeded: false, reason: `purchase_order_${status}` };
+  }
+  if (
+    POST_PAYMENT_STATUSES.has(status) ||
+    (status === "placed" && recordedPayment?.confirmed === true)
+  ) {
+    return { ...result, succeeded: true, reason: result.reason ?? "supplier_payment_already_confirmed" };
+  }
 
   const adapter = getSupplierAdapter(result.supplierName);
   if (!adapter) {
@@ -29,14 +68,13 @@ export async function executeVerifiedSupplierPurchaseOrder(
     };
   }
 
-  const supabase = createSupabaseAdminClient();
   let paymentConfirmed = false;
-  let status: string | null = null;
+  let supplierStatus: string | null = null;
 
   try {
     const supplierOrder = await adapter.getOrderStatus(result.supplierOrderId);
     paymentConfirmed = supplierOrder?.paymentConfirmed === true;
-    status = supplierOrder?.status ?? null;
+    supplierStatus = supplierOrder?.status ?? null;
   } catch (error) {
     await supabase
       .from("purchase_orders")
@@ -45,6 +83,7 @@ export async function executeVerifiedSupplierPurchaseOrder(
         supplier_status: "payment_verification_failed",
         supplier_synced_at: new Date().toISOString(),
         metadata: {
+          ...metadata,
           supplier_payment: {
             confirmed: false,
             verification_error: error instanceof Error ? error.message : String(error),
@@ -72,10 +111,11 @@ export async function executeVerifiedSupplierPurchaseOrder(
         supplier_synced_at: new Date().toISOString(),
         status: "supplier_payment_pending",
         metadata: {
+          ...metadata,
           supplier_payment: {
             confirmed: false,
             supplier_order_id: result.supplierOrderId,
-            supplier_status: status,
+            supplier_status: supplierStatus,
             verified_at: new Date().toISOString(),
           },
         },
@@ -87,7 +127,7 @@ export async function executeVerifiedSupplierPurchaseOrder(
       .update({
         succeeded: false,
         response_code: "SUPPLIER_PAYMENT_NOT_CONFIRMED",
-        response_message: `Supplier order exists but payment is not explicitly confirmed; status=${status ?? "unknown"}`,
+        response_message: `Supplier order exists but payment is not explicitly confirmed; status=${supplierStatus ?? "unknown"}`,
         state: "completed",
       })
       .eq("purchase_order_id", purchaseOrderId)
@@ -109,10 +149,11 @@ export async function executeVerifiedSupplierPurchaseOrder(
       supplier_synced_at: new Date().toISOString(),
       status: "placed",
       metadata: {
+        ...metadata,
         supplier_payment: {
           confirmed: true,
           supplier_order_id: result.supplierOrderId,
-          supplier_status: status,
+          supplier_status: supplierStatus,
           verified_at: new Date().toISOString(),
         },
       },
@@ -132,7 +173,7 @@ export async function executeVerifiedSupplierPurchaseOrder(
     .update({
       succeeded: true,
       response_code: "SUPPLIER_PAYMENT_CONFIRMED",
-      response_message: `Supplier payment confirmed; status=${status ?? "unknown"}`,
+      response_message: `Supplier payment confirmed; status=${supplierStatus ?? "unknown"}`,
       state: "completed",
     })
     .eq("purchase_order_id", purchaseOrderId)

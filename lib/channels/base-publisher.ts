@@ -2,6 +2,8 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createBaseItem, editBaseItem, addBaseItemImage, isBaseConfigured } from "@/lib/channels/base";
+import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
+import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -29,10 +31,14 @@ export async function publishPublishedListingsToBase(
   const { data: listings, error } = await supabase
     .from("shop_listings")
     .select(
-      "id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,shipping_cost",
+      "id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,shipping_cost,supplier_name,supplier_listing_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons",
     )
-    .eq("published", true)
-    .is("base_item_id", null)
+    // Existing BASE items stay in scope so their stock/visibility keep being
+    // reconciled (including hiding items TRACER has since unpublished).
+    // Only the creation of a NEW BASE item requires the Sales Test Gate.
+    .or("published.eq.true,base_item_id.not.is.null")
+    // Listings not yet on BASE first, so reconciliation cannot starve them.
+    .order("base_item_id", { ascending: true, nullsFirst: true })
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -42,6 +48,7 @@ export async function publishPublishedListingsToBase(
 
   for (const listing of listings ?? []) {
     const listingId = String(listing.id);
+    const hasSalesTestGate = hasPassedSalesTestGate(listing);
 
     // Existing BASE items must be actively reconciled even when TRACER has
     // since unpublished or blocked the listing. Otherwise an old BASE item
@@ -82,6 +89,79 @@ export async function publishPublishedListingsToBase(
         }).eq("id", listingId);
         results.push({ listingId, ok: false, error: message });
       }
+      continue;
+    }
+
+    // New BASE publication is downstream of the Sales Test Gate.
+    // Existing BASE items are handled by the reconciliation branch above.
+    if (!listing.base_item_id && !hasSalesTestGate) {
+      results.push({
+        listingId,
+        ok: false,
+        skipped: true,
+        error: "sales_test_gate_not_passed",
+      });
+      continue;
+    }
+
+    const autoProcurement = getAutoProcurementEligibility(
+      typeof listing.supplier_name === "string" ? listing.supplier_name : null,
+    );
+    if (!autoProcurement.eligible) {
+      let baseSyncError: string | null = null;
+      if (listing.base_item_id && listing.selling_price !== null) {
+        try {
+          await editBaseItem({
+            itemId: String(listing.base_item_id),
+            title: listing.title,
+            detail: listing.description ?? listing.title,
+            price: Number(listing.selling_price),
+            stock: 0,
+            visible: false,
+          });
+        } catch (error) {
+          baseSyncError = error instanceof Error ? error.message : String(error);
+        }
+      }
+
+      const now = new Date().toISOString();
+      const { error: blockError } = await supabase
+        .from("shop_listings")
+        .update({
+          published: false,
+          orderable: false,
+          base_publication_lease_until: null,
+          pipeline_stage: "BASE_PUBLICATION",
+          pipeline_status: "blocked",
+          pipeline_reason: "supplier_auto_procurement_capability_missing",
+          pipeline_error: baseSyncError,
+          pipeline_updated_at: now,
+          updated_at: now,
+        })
+        .eq("id", listingId);
+      if (blockError) throw new Error(blockError.message);
+
+      if (listing.supplier_listing_id) {
+        const { error: supplierBlockError } = await supabase
+          .from("supplier_listings")
+          .update({
+            orderable: false,
+            verification_status: "retryable",
+            verification_error: `supplier_auto_procurement_capability_missing:${autoProcurement.missing.join("|")}`,
+            fetched_at: now,
+          })
+          .eq("id", String(listing.supplier_listing_id));
+        if (supplierBlockError) throw new Error(supplierBlockError.message);
+      }
+
+      results.push({
+        listingId,
+        ok: false,
+        skipped: true,
+        error: baseSyncError
+          ? `supplier_auto_procurement_capability_missing:${autoProcurement.missing.join("|")}:base_hide_failed:${baseSyncError}`
+          : `supplier_auto_procurement_capability_missing:${autoProcurement.missing.join("|")}`,
+      });
       continue;
     }
 
@@ -342,7 +422,8 @@ export async function publishPublishedListingsToBase(
           base_last_error: null,
           pipeline_stage: "BASE_PUBLISHED",
           pipeline_status: "published",
-          pipeline_reason: "base_item_created",
+          // Keep the gate provenance; only the stage moves on.
+          pipeline_reason: hasSalesTestGate ? SALES_TEST_GATE_PASSED : listing.pipeline_reason,
           pipeline_error: null,
           pipeline_updated_at: new Date().toISOString(),
         })

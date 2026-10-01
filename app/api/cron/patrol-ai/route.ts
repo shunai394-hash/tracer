@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
+import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
+import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -16,6 +18,7 @@ type Snapshot = {
   shopListings: number;
   publishedListings: number;
   eligibleForBase: number;
+  autoProcurementEligibleListings: number;
   onBase: number;
   basePublished: number;
   orders: number;
@@ -27,17 +30,17 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
   const orderableSuppliersQuery = db.from("supplier_listings").select("*", { count: "exact", head: true }).eq("orderable", true);
   const shopListingsQuery = db.from("shop_listings").select("*", { count: "exact", head: true });
   const publishedListingsQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).eq("published", true);
-  const eligibleForBaseQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).eq("published", true).eq("orderable", true).gt("inventory", 0).not("image_url", "is", null).is("base_item_id", null);
+  const eligibilityListingsQuery = db.from("shop_listings").select("supplier_name,orderable,inventory,image_url").eq("published", true);
   const onBaseQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).not("base_item_id", "is", null);
   const basePublishedQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).not("base_item_id", "is", null).eq("base_publication_status", "published").eq("published", true);
   const ordersQuery = db.from("shop_orders").select("*", { count: "exact", head: true });
 
-  const [productsResult, supplierListingsResult, orderableSuppliersResult, shopListingsResult, publishedListingsResult, eligibleForBaseResult, onBaseResult, basePublishedResult, ordersResult] =
-    await Promise.all([productsQuery, supplierListingsQuery, orderableSuppliersQuery, shopListingsQuery, publishedListingsQuery, eligibleForBaseQuery, onBaseQuery, basePublishedQuery, ordersQuery]);
+  const [productsResult, supplierListingsResult, orderableSuppliersResult, shopListingsResult, publishedListingsResult, eligibilityListingsResult, onBaseResult, basePublishedResult, ordersResult] =
+    await Promise.all([productsQuery, supplierListingsQuery, orderableSuppliersQuery, shopListingsQuery, publishedListingsQuery, eligibilityListingsQuery, onBaseQuery, basePublishedQuery, ordersQuery]);
 
   const results = [
     ["products", productsResult], ["supplier_listings", supplierListingsResult], ["supplier_listings(orderable)", orderableSuppliersResult],
-    ["shop_listings", shopListingsResult], ["shop_listings(published)", publishedListingsResult], ["shop_listings(eligible)", eligibleForBaseResult],
+    ["shop_listings", shopListingsResult], ["shop_listings(published)", publishedListingsResult], ["shop_listings(eligibility)", eligibilityListingsResult],
     ["shop_listings(on_base)", onBaseResult], ["shop_listings(base_published)", basePublishedResult], ["shop_orders", ordersResult],
   ] as const;
 
@@ -45,26 +48,41 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
     if (result.error) throw new Error(`${label}: ${result.error.message}`);
   }
 
+  const eligibleRows = (eligibilityListingsResult.data ?? []).filter((row) => {
+    const inventory = Number(row.inventory);
+    return (
+      row.orderable === true &&
+      Number.isFinite(inventory) &&
+      inventory > 0 &&
+      row.image_url !== null &&
+      row.image_url !== "" &&
+      getAutoProcurementEligibility(typeof row.supplier_name === "string" ? row.supplier_name : null).eligible
+    );
+  });
+  const autoProcurementEligibleRows = (eligibilityListingsResult.data ?? []).filter((row) =>
+    getAutoProcurementEligibility(typeof row.supplier_name === "string" ? row.supplier_name : null).eligible
+  );
+
   return {
     products: productsResult.count ?? 0,
     supplierListings: supplierListingsResult.count ?? 0,
     orderableSuppliers: orderableSuppliersResult.count ?? 0,
     shopListings: shopListingsResult.count ?? 0,
     publishedListings: publishedListingsResult.count ?? 0,
-    eligibleForBase: eligibleForBaseResult.count ?? 0,
+    eligibleForBase: eligibleRows.length,
+    autoProcurementEligibleListings: autoProcurementEligibleRows.length,
     onBase: onBaseResult.count ?? 0,
     basePublished: basePublishedResult.count ?? 0,
     orders: ordersResult.count ?? 0,
   };
 }
 
-type RepairAction = "discover_supply" | "publish_base" | "recheck_pipeline";
+type RepairAction = "discover_supply" | "recheck_pipeline";
 
 async function aiDecide(before: Snapshot): Promise<{ action: RepairAction; reason: string; model: string }> {
   const apiKey = process.env.OPENAI_API_KEY ?? process.env.AI_API_KEY;
   const model = process.env.TRACER_PATROL_MODEL ?? "gpt-4o-mini";
   const fallback = (): { action: RepairAction; reason: string; model: string } => {
-    if (before.eligibleForBase > before.basePublished) return { action: "publish_base", reason: "BASE公開可能件数がBASE公開済み件数を上回っています。", model: "rule-fallback" };
     if (before.publishedListings === 0 || before.orderableSuppliers === 0) return { action: "discover_supply", reason: "公開済み商品または発注可能な仕入先がありません。", model: "rule-fallback" };
     return { action: "recheck_pipeline", reason: "主要件数は存在するため再監査します。", model: "rule-fallback" };
   };
@@ -79,7 +97,7 @@ async function aiDecide(before: Snapshot): Promise<{ action: RepairAction; reaso
         temperature: 0,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: "You are TRACER Patrol AI. Choose exactly one safe repair action from discover_supply, publish_base, recheck_pipeline. Never invent facts. The action must be reversible/safe and must not place paid supplier orders. Return JSON {action,reason}." },
+          { role: "system", content: "You are TRACER Patrol AI. Choose exactly one safe repair action from discover_supply, recheck_pipeline. Never invent facts. The action must be reversible/safe and must not place paid supplier orders. Return JSON {action,reason}." },
           { role: "user", content: JSON.stringify({ snapshot: before }) },
         ],
       }),
@@ -88,7 +106,7 @@ async function aiDecide(before: Snapshot): Promise<{ action: RepairAction; reaso
     if (!response.ok) throw new Error(`patrol AI HTTP ${response.status}`);
     const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
     const parsed = JSON.parse(payload.choices?.[0]?.message?.content ?? "{}") as { action?: string; reason?: string };
-    if (!["discover_supply", "publish_base", "recheck_pipeline"].includes(parsed.action ?? "")) throw new Error("patrol AI returned invalid action");
+    if (!["discover_supply", "recheck_pipeline"].includes(parsed.action ?? "")) throw new Error("patrol AI returned invalid action");
     return { action: parsed.action as RepairAction, reason: parsed.reason || "AIが安全な修復アクションを選択しました。", model };
   } catch (error) {
     const fallbackDecision = fallback();
@@ -156,6 +174,19 @@ export async function GET(request: Request) {
       actions.push({ action: "build_opportunity_intelligence", result: intelligence });
       const sales = await selectAndPublishSupplySalesTests(discoveredProductIds, 3);
       actions.push({ action: "supply_sales_test_select", result: sales });
+      // NEWFIND re-checks the Sales Test Gate per listing.
+      const newfind = await Promise.all(
+        sales.publishedListingIds.map((listingId) =>
+          promoteShopListingToNewfind(listingId).catch((error) => ({
+            configured: true,
+            sent: false,
+            eventId: `tracer-shop-listing:${listingId}`,
+            status: null,
+            detail: error instanceof Error ? error.message : String(error),
+          })),
+        ),
+      );
+      actions.push({ action: "newfind_promote", result: newfind });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       errors.push(message);
@@ -187,7 +218,6 @@ export async function GET(request: Request) {
     const after = await snapshot(db);
     const progress = {
       newPublishedListings: after.publishedListings - before.publishedListings,
-      newBaseItems: after.basePublished - before.basePublished,
       newOrders: after.orders - before.orders,
     };
 
@@ -208,7 +238,7 @@ export async function GET(request: Request) {
       errors,
       message: errors.length
         ? "巡回AIが異常を検知し、修復を実行したが未解決項目が残っています。"
-        : progress.newBaseItems > 0 || progress.newPublishedListings > 0
+        : progress.newPublishedListings > 0
           ? "巡回AIが異常を検知し、自動修復して進捗を確認しました。"
           : "巡回AIは実行済みですが、今回の巡回では公開可能な新規商品を確認できませんでした。",
     };
