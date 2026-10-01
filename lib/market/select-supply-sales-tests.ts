@@ -15,7 +15,7 @@ function num(value: unknown): number | null {
 
 function slugify(title: string, productId: string): string {
   const base = title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 54);
-  return \`\${base || "tracer-product"}-\${productId.slice(-8)}\`;
+  return (base || "tracer-product") + "-" + productId.slice(-8);
 }
 
 export type SupplySalesTestResult = {
@@ -152,7 +152,7 @@ export async function selectAndPublishSupplySalesTests(
   const publishedListingIds: string[] = [];
 
   for (const item of chosen) {
-    const title = String(item.base.normalized_title ?? \`TRACER product \${item.productId}\`);
+    const title = String(item.base.normalized_title ?? ("TRACER product " + item.productId));
     const slug = slugify(title, item.productId);
     const now = new Date().toISOString();
     const metadata = item.base.metadata && typeof item.base.metadata === "object" && !Array.isArray(item.base.metadata)
@@ -181,7 +181,7 @@ export async function selectAndPublishSupplySalesTests(
       contribution_profit: item.profit.contributionProfit,
       contribution_margin: item.profit.contributionMargin,
       published: true,
-      selection_reasons: ["supply_intelligence_gate_passed", \`selection_score_\${num(item.intelligence.selection_score)?.toFixed(1) ?? "0"}\`],
+      selection_reasons: ["supply_intelligence_gate_passed", "selection_score_" + (num(item.intelligence.selection_score)?.toFixed(1) ?? "0")],
       missing: [],
       published_at: now,
       pipeline_stage: "PUBLISHED",
