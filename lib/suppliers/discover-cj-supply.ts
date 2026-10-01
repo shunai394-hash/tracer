@@ -52,7 +52,7 @@ async function readCatalogCursor(db: ReturnType<typeof createSupabaseAdminClient
 
 async function writeCatalogCursor(
   db: ReturnType<typeof createSupabaseAdminClient>,
-  cursor: CatalogCursor & { published: number; rejected: number },
+  cursor: CatalogCursor & { verified: number; rejected: number },
 ): Promise<void> {
   const now = new Date().toISOString();
   const { error } = await db.from("cron_runs").insert({
@@ -60,7 +60,7 @@ async function writeCatalogCursor(
     status: "succeeded",
     started_at: now,
     finished_at: now,
-    processed: cursor.published,
+    processed: cursor.verified,
     failed: cursor.rejected,
     metadata: { queryIndex: cursor.queryIndex, page: cursor.page },
   });
@@ -153,7 +153,6 @@ export async function discoverAndCreateCjSupply(
   const queries = CATALOG_QUERIES;
   const items: Array<Record<string, unknown>> = [];
   let discovered = 0;
-  let published = 0;
   let verified = 0;
   let rejected = 0;
 
@@ -389,7 +388,7 @@ export async function discoverAndCreateCjSupply(
     }
   }
 
-  if (verified >= limit) return { discovered, published, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
+  if (verified >= limit) return { discovered, published: 0, verified, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
 
   // Seeded verification is only one source of candidates. If all seeded
   // variants fail live Japan-freight verification, continue into the live CJ
@@ -608,7 +607,7 @@ export async function discoverAndCreateCjSupply(
         : { queryIndex, page: page + 1 });
     }
   }
-  await writeCatalogCursor(db, { queryIndex, page, published, rejected });
+  await writeCatalogCursor(db, { queryIndex, page, verified, rejected });
 
   return { discovered, published: 0, verified, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
 }
