@@ -3,6 +3,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
+import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
+import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -136,6 +138,28 @@ export async function GET(request: Request) {
         errors.push(message);
         actions.push({ action: "discover_supply", ok: false, error: message });
       }
+    }
+
+    // Discovery never publishes. Rebuild Opportunity Intelligence for the
+    // discovered product IDs, then apply the strict supply sales-test gate.
+    try {
+      const discoveredProductIds = actions
+        .flatMap((action) => {
+          const result = action.result;
+          if (!result || typeof result !== "object") return [];
+          const items = (result as { items?: unknown }).items;
+          return Array.isArray(items) ? items
+            .map((item) => item && typeof item === "object" ? String((item as Record<string, unknown>).productId ?? "") : "")
+            .filter(Boolean) : [];
+        });
+      const intelligence = await buildOpportunityIntelligence();
+      actions.push({ action: "build_opportunity_intelligence", result: intelligence });
+      const sales = await selectAndPublishSupplySalesTests(discoveredProductIds, 3);
+      actions.push({ action: "supply_sales_test_select", result: sales });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(message);
+      actions.push({ action: "supply_sales_test_select", ok: false, error: message });
     }
 
     // Always run BASE reconciliation after discovery or when eligible supply
