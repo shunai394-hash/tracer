@@ -8,7 +8,7 @@ const GOOGLE_TRENDS_RSS =
 const SOURCE_NAME = "Google Trends";
 const SOURCE_TYPE = "search";
 const PROVIDER = "manual";
-const FETCH_TIMEOUT_MS = 15_000;
+const FETCH_TIMEOUT_MS = 5_000;
 
 type TrendItem = {
   title: string;
@@ -72,22 +72,20 @@ export async function collectGoogleTrendsDemand() {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Google Trends request failed: ${message}`);
+    return { sourceId: null, fetched: 0, inserted: 0, skipped: true, reason: "google_trends_timeout_or_network", error: message };
   } finally {
     clearTimeout(timeout);
   }
 
   if (!response.ok) {
-    throw new Error(
-      `Google Trends request failed: ${response.status} ${response.statusText}`,
-    );
+    return { sourceId: null, fetched: 0, inserted: 0, skipped: true, reason: `google_trends_http_${response.status}` };
   }
 
   const bytes = await response.arrayBuffer();
   const xml = new TextDecoder("utf-8").decode(bytes);
   const trends = extractItems(xml);
   if (trends.length === 0) {
-    throw new Error("Google Trends returned no trend items");
+    return { sourceId: null, fetched: 0, inserted: 0, skipped: true, reason: "google_trends_empty" };
   }
 
   const supabase = createSupabaseAdminClient();
