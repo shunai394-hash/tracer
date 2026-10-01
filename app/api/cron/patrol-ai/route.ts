@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
-import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
-import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
-import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
-import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
+import { runIntelligencePipeline } from "@/lib/intelligence/run-intelligence-pipeline";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -50,15 +47,14 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
 
   const eligibleRows = (eligibilityListingsResult.data ?? []).filter((row) => {
     const inventory = Number(row.inventory);
-    return (
-      row.orderable === true &&
+    return row.orderable === true &&
       Number.isFinite(inventory) &&
       inventory > 0 &&
       row.image_url !== null &&
       row.image_url !== "" &&
-      getAutoProcurementEligibility(typeof row.supplier_name === "string" ? row.supplier_name : null).eligible
-    );
+      getAutoProcurementEligibility(typeof row.supplier_name === "string" ? row.supplier_name : null).eligible;
   });
+
   const autoProcurementEligibleRows = (eligibilityListingsResult.data ?? []).filter((row) =>
     getAutoProcurementEligibility(typeof row.supplier_name === "string" ? row.supplier_name : null).eligible
   );
@@ -77,41 +73,35 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
   };
 }
 
-type RepairAction = "discover_supply" | "recheck_pipeline";
+async function runPatrol(db: ReturnType<typeof createSupabaseAdminClient>) {
+  const existing = await db
+    .from("cron_runs")
+    .select("id,started_at")
+    .eq("job_name", "patrol-ai")
+    .eq("status", "running")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-async function aiDecide(before: Snapshot): Promise<{ action: RepairAction; reason: string; model: string }> {
-  const apiKey = process.env.OPENAI_API_KEY ?? process.env.AI_API_KEY;
-  const model = process.env.TRACER_PATROL_MODEL ?? "gpt-4o-mini";
-  const fallback = (): { action: RepairAction; reason: string; model: string } => {
-    if (before.publishedListings === 0 || before.orderableSuppliers === 0) return { action: "discover_supply", reason: "公開済み商品または発注可能な仕入先がありません。", model: "rule-fallback" };
-    return { action: "recheck_pipeline", reason: "主要件数は存在するため再監査します。", model: "rule-fallback" };
-  };
-  if (!apiKey) return fallback();
-
-  try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: "You are TRACER Patrol AI. Choose exactly one safe repair action from discover_supply, recheck_pipeline. Never invent facts. The action must be reversible/safe and must not place paid supplier orders. Return JSON {action,reason}." },
-          { role: "user", content: JSON.stringify({ snapshot: before }) },
-        ],
-      }),
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!response.ok) throw new Error(`patrol AI HTTP ${response.status}`);
-    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const parsed = JSON.parse(payload.choices?.[0]?.message?.content ?? "{}") as { action?: string; reason?: string };
-    if (!["discover_supply", "recheck_pipeline"].includes(parsed.action ?? "")) throw new Error("patrol AI returned invalid action");
-    return { action: parsed.action as RepairAction, reason: parsed.reason || "AIが安全な修復アクションを選択しました。", model };
-  } catch (error) {
-    const fallbackDecision = fallback();
-    return { ...fallbackDecision, reason: `AI判断に失敗したため安全なルール判断へフォールバック: ${error instanceof Error ? error.message : String(error)}` };
+  if (existing.error) throw new Error(`patrol running check failed: ${existing.error.message}`);
+  if (existing.data?.id) {
+    return { alreadyRunning: true, cronId: String(existing.data.id), startedAt: existing.data.started_at };
   }
+
+  const { data: run, error: runError } = await db.from("cron_runs").insert({
+    job_name: "patrol-ai",
+    status: "running",
+    metadata: { actor: "patrol-ai", phase: "starting" },
+  }).select("id").single();
+
+  if (runError) {
+    if (runError.code === "23505") {
+      return { alreadyRunning: true, cronId: null, startedAt: null };
+    }
+    throw new Error(`patrol run creation failed: ${runError.message}`);
+  }
+
+  return { alreadyRunning: false, cronId: String(run.id), startedAt: null };
 }
 
 export async function GET(request: Request) {
@@ -123,79 +113,33 @@ export async function GET(request: Request) {
   let cronId: string | null = null;
 
   try {
-    const { data: run, error: runError } = await db.from("cron_runs").insert({
-      job_name: "patrol-ai",
-      status: "running",
-      metadata: { actor: "patrol-ai", phase: "starting" },
-    }).select("id").single();
-
-    if (runError) {
-      console.error("[TRACER PATROL AI] could not create run record", runError.message);
-    } else {
-      cronId = String(run.id);
+    const runState = await runPatrol(db);
+    if (runState.alreadyRunning) {
+      return NextResponse.json({
+        ok: true,
+        status: "already_running",
+        message: "別のAI巡回が実行中のため、この重複起動は処理せず終了しました。",
+        cronId: runState.cronId,
+      });
     }
+    cronId = runState.cronId;
 
     const before = await snapshot(db);
-    const aiDecision = await aiDecide(before);
-    const decision = aiDecision.action;
-    const actions: Array<Record<string, unknown>> = [];
-    const errors: string[] = [];
+    console.log("[TRACER PATROL AI START]", JSON.stringify({ before }));
 
-    if (decision === "discover_supply") {
-      try {
-        const result = await discoverAndCreateCjSupply(5, {
-          deadlineAt: startedAt + 150_000,
-        });
-        actions.push({
-          action: "discover_supply",
-          attempted: result.items?.length ?? 0,
-          result,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        errors.push(message);
-        actions.push({ action: "discover_supply", ok: false, error: message });
-      }
-    }
+    // The patrol must always execute the canonical full intelligence loop.
+    // AI patrol must not choose a shallow repair path that bypasses Market,
+    // Identity, Demand, Supply, Opportunity, and the Sales Test Gate.
+    const pipeline = await runIntelligencePipeline();
 
-    // Discovery never publishes. Rebuild Opportunity Intelligence for the
-    // discovered product IDs, then apply the strict supply sales-test gate.
-    try {
-      const discoveredProductIds = actions
-        .flatMap((action) => {
-          const result = action.result;
-          if (!result || typeof result !== "object") return [];
-          const items = (result as { items?: unknown }).items;
-          return Array.isArray(items) ? items
-            .map((item) => item && typeof item === "object" ? String((item as Record<string, unknown>).productId ?? "") : "")
-            .filter(Boolean) : [];
-        });
-      const intelligence = await buildOpportunityIntelligence();
-      actions.push({ action: "build_opportunity_intelligence", result: intelligence });
-      const sales = await selectAndPublishSupplySalesTests(discoveredProductIds, 3);
-      actions.push({ action: "supply_sales_test_select", result: sales });
-      // NEWFIND re-checks the Sales Test Gate per listing.
-      const newfind = await Promise.all(
-        sales.publishedListingIds.map((listingId) =>
-          promoteShopListingToNewfind(listingId).catch((error) => ({
-            configured: true,
-            sent: false,
-            eventId: `tracer-shop-listing:${listingId}`,
-            status: null,
-            detail: error instanceof Error ? error.message : String(error),
-          })),
-        ),
-      );
-      actions.push({ action: "newfind_promote", result: newfind });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      errors.push(message);
-      actions.push({ action: "supply_sales_test_select", ok: false, error: message });
-    }
+    const actions: Array<Record<string, unknown>> = [{
+      action: "run_full_intelligence_pipeline",
+      result: pipeline,
+    }];
+    const errors = pipeline.ok ? [] : pipeline.steps
+      .filter((step) => !step.ok && !step.skipped)
+      .map((step) => `${step.name}: ${step.error ?? "failed"}`);
 
-    // Always run BASE reconciliation after discovery or when eligible supply
-    // already exists. This is the actual repair step that turns verified supply
-    // into a public listing.
     try {
       const base = await publishPublishedListingsToBase(10);
       actions.push({
@@ -210,37 +154,35 @@ export async function GET(request: Request) {
         if (!item.ok && !item.skipped && item.error) errors.push(String(item.error));
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      errors.push(message);
-      actions.push({ action: "publish_base", ok: false, error: message });
+      errors.push(error instanceof Error ? error.message : String(error));
+      actions.push({ action: "publish_base", ok: false, error: errors.at(-1) });
     }
 
     const after = await snapshot(db);
     const progress = {
       newPublishedListings: after.publishedListings - before.publishedListings,
+      newBasePublished: after.basePublished - before.basePublished,
       newOrders: after.orders - before.orders,
+      testReady: pipeline.steps.find((step) => step.name === "test_ready")?.result ?? null,
     };
 
-    const status = errors.length > 0
-      ? (after.basePublished > before.basePublished || after.publishedListings > before.publishedListings ? "partial" : "failed")
-      : "succeeded";
-
+    const status = errors.length === 0 ? "succeeded" : "failed";
     const report = {
       ok: errors.length === 0,
       status,
       generatedAt: new Date().toISOString(),
       durationMs: Date.now() - startedAt,
-      decision,
+      decision: "full_intelligence_cycle",
       before,
       after,
       progress,
       actions,
       errors,
       message: errors.length
-        ? "巡回AIが異常を検知し、修復を実行したが未解決項目が残っています。"
+        ? "AI巡回でフルIntelligence Pipelineを実行しましたが、未解決エラーがあります。"
         : progress.newPublishedListings > 0
-          ? "巡回AIが異常を検知し、自動修復して進捗を確認しました。"
-          : "巡回AIは実行済みですが、今回の巡回では公開可能な新規商品を確認できませんでした。",
+          ? "AI巡回でフルIntelligence Pipelineを実行し、新規公開まで進みました。"
+          : "AI巡回でフルIntelligence Pipelineを実行しました。今回は新規公開条件を満たす商品はありませんでした。",
     };
 
     console.log("[TRACER PATROL AI REPORT]", JSON.stringify(report));
@@ -257,7 +199,7 @@ export async function GET(request: Request) {
       }).eq("id", cronId);
     }
 
-    return NextResponse.json(report, { status: errors.length && status === "failed" ? 500 : 200 });
+    return NextResponse.json(report, { status: errors.length ? 500 : 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[TRACER PATROL AI FATAL]", message);
