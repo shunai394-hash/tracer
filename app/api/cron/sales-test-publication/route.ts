@@ -171,7 +171,7 @@ export async function GET(request: Request) {
       mode: "market_linked_sales_test",
       candidateCount: candidateIds.length,
       decision,
-      newfind,
+      downstream,
       nextPhase: "downstream_delivery",
     });
   } catch (error) {
