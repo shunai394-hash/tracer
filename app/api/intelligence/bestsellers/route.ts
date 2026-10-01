@@ -3,6 +3,8 @@ import { requireCronAuth } from "@/lib/security/cron-auth";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
+import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
+import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
@@ -18,36 +20,36 @@ export async function POST(request: Request) {
   try {
     const startedAt = Date.now();
 
-    // Supply-first is now the primary path: a real CJ product with live
-    // variant/stock/freight evidence can become a TRACER-owned listing without
-    // pretending that it is identical to a marketplace product.
+    // Supply discovery is never a publication path. Evaluate its canonical
+    // product/offer/intelligence rows through the same opportunity gate first.
     const supplyFirst = await discoverAndCreateCjSupply(50);
-
-    if (supplyFirst.published > 0) {
+    await buildOpportunityIntelligence();
+    const supplySelected = await selectAndPublishSupplySalesTests(
+      supplyFirst.items.map((item) => String(item.productId ?? "")).filter(Boolean),
+      5,
+    );
+    const supplyNewfind = await Promise.all(
+      supplySelected.publishedListingIds.map((listingId) =>
+        promoteShopListingToNewfind(listingId).catch((error) => ({
+          configured: true,
+          sent: false,
+          eventId: `tracer-shop-listing:${listingId}`,
+          status: null,
+          detail: error instanceof Error ? error.message : String(error),
+        })),
+      ),
+    );
+    if (supplySelected.published > 0) {
       const base = await publishPublishedListingsToBase(50);
-      const listingIds = supplyFirst.items
-        .map((item) => String(item.listingId ?? ""))
-        .filter(Boolean);
-      const newfind = await Promise.all(
-        listingIds.map((listingId) =>
-          promoteShopListingToNewfind(listingId).catch((error) => ({
-            configured: true,
-            sent: false,
-            eventId: `tracer-shop-listing:${listingId}`,
-            status: null,
-            detail: error instanceof Error ? error.message : String(error),
-          })),
-        ),
-      );
-
       return NextResponse.json({
         ok: true,
         elapsedMs: Date.now() - startedAt,
         mode: "supply_first",
         supplyFirst,
+        supplySelected,
         base,
-        newfind,
-        salesReady: base.published > 0,
+        newfind: supplyNewfind,
+        salesReady: true,
       });
     }
 
