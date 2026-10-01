@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
+import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -219,6 +220,15 @@ export async function selectAndPublishSalesTests(
     const identityConfidence = asNumber(listing.identity_confidence);
     if (identityConfidence === null || identityConfidence < 0.88) {
       reasons.push("identity_confidence_low");
+    }
+
+    const autoProcurement = getAutoProcurementEligibility(
+      String(listing.supplier ?? ""),
+    );
+    if (!autoProcurement.eligible) {
+      reasons.push(
+        `supplier_auto_procurement_capability_missing:${autoProcurement.missing.join("|")}`,
+      );
     }
 
     // Every supplier requires a concrete variant identity before publication.
