@@ -3,14 +3,15 @@ import { runIntelligencePipeline } from "@/lib/intelligence/run-intelligence-pip
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function GET(request: Request) {
   try {
     const authError = await requireAutomationAuth(request);
     if (authError) return authError;
 
-    const result = await runIntelligencePipeline();
+    // Finish (and report) well before Vercel kills the function at 300s.
+    const result = await runIntelligencePipeline({ deadlineAt: Date.now() + 240_000 });
 
     return NextResponse.json({
       ok: true,

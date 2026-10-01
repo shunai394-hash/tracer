@@ -44,8 +44,11 @@ export async function GET(request: Request) {
     shop_listings_published_orderable: count(db, "shop_listings", (q) => q.eq("published", true).eq("orderable", true).gt("inventory", 0)),
     shop_listings_on_base: count(db, "shop_listings", (q) => q.not("base_item_id", "is", null)),
     shop_listings_on_base_published: count(db, "shop_listings", (q) => q.not("base_item_id", "is", null).eq("published", true).eq("base_publication_status", "published")),
+    // Durable provenance marker written by both Sales Test Gate paths.
     shop_listings_sales_test_gate_passed: count(db, "shop_listings", (q) =>
-      q.or("pipeline_reason.eq.sales_test_gate_passed,selection_reasons.cs.[\"sales_test_gate_passed\"]")),
+      q.filter("selection_reasons", "cs", JSON.stringify(["sales_test_gate_passed"]))),
+    shop_listings_reason_sales_test_gate_passed: count(db, "shop_listings", (q) =>
+      q.eq("pipeline_reason", "sales_test_gate_passed")),
     shop_listings_published_inventory_unknown: count(db, "shop_listings", (q) => q.eq("published", true).is("inventory", null)),
     shop_listings_published_not_orderable: count(db, "shop_listings", (q) => q.eq("published", true).eq("orderable", false)),
     newfind_deliveries: count(db, "newfind_promotion_deliveries"),
