@@ -7,6 +7,7 @@ import {
   type CJProductVariant,
 } from "@/lib/sources/cj/variant-select";
 import { firstCJImageUrl, parseCJStockData } from "@/lib/sources/cj/parse";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export { selectUnambiguousVariant, verifyVariantSelectionInvariants };
 export type { CJProductVariant };
@@ -102,26 +103,26 @@ let cachedToken: {
   expiresAt: number;
 } | null = null;
 
-let lastCJRequestAt = 0;
-let cjRequestChain: Promise<void> = Promise.resolve();
+const CJ_RATE_KEY = "cj-global-qps";
+const CJ_MIN_INTERVAL_MS = 1_100;
 
 async function waitForCJRateLimit(): Promise<void> {
-  let release!: () => void;
-  const previous = cjRequestChain;
-  cjRequestChain = new Promise<void>((resolve) => {
-    release = resolve;
+  // Vercel can run multiple serverless instances concurrently, so an
+  // in-memory mutex is not sufficient for CJ's 1 request/sec account limit.
+  // Reserve the next global slot in Supabase before every outbound CJ call.
+  const db = createSupabaseAdminClient();
+  const { data, error } = await db.rpc("acquire_integration_rate_slot", {
+    p_rate_key: CJ_RATE_KEY,
+    p_interval_ms: CJ_MIN_INTERVAL_MS,
   });
+  if (error) {
+    throw new CJRequestError(`CJ global rate limiter failed: ${error.message}`);
+  }
 
-  await previous;
-
-  const minIntervalMs = 1_100;
-  const waitMs = Math.max(0, minIntervalMs - (Date.now() - lastCJRequestAt));
+  const waitMs = Math.max(0, Number(data ?? 0));
   if (waitMs > 0) {
     await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
-
-  lastCJRequestAt = Date.now();
-  release();
 }
 
 async function fetchCJWithRateLimit(
