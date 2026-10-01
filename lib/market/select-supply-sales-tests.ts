@@ -95,7 +95,7 @@ export async function selectAndPublishSupplySalesTests(
       ["liveOrdering", supplierCapabilities.liveOrdering],
     ] as const;
     const missingCapabilities = required.filter(([, supported]) => !supported).map(([name]) => name);
-    if (missingCapabilities.length) reasons.push(\`supplier_capability_missing:\${missingCapabilities.join(",")}\`);
+    if (missingCapabilities.length) reasons.push(`supplier_capability_missing:${missingCapabilities.join(",")}`);
 
     if (listing.tracking_available !== true) reasons.push("tracking_unknown");
     if (listing.api_available !== true) reasons.push("supplier_api_unknown");
