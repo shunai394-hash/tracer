@@ -21,6 +21,7 @@ export type BasePublicationResult = {
 
 export async function publishPublishedListingsToBase(
   limit = 10,
+  listingIds?: string[],
 ): Promise<BasePublicationResult> {
   if (!isBaseConfigured()) {
     return { attempted: 0, published: 0, skipped: 0, failed: 0, results: [] };
