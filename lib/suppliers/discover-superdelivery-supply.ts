@@ -66,7 +66,7 @@ export async function discoverSuperDeliverySupply(
       const unique = Array.from(
         new Map(
           matches.map((item) => [
-            \`\${item.sdProductCode ?? ""}:\${item.setNo ?? ""}\`,
+            `${item.sdProductCode ?? ""}:${item.setNo ?? ""}`,
             item,
           ]),
         ).values(),
@@ -75,7 +75,7 @@ export async function discoverSuperDeliverySupply(
       if (unique.length !== 1) {
         blocked.push({
           bestsellerId,
-          reason: \`superdelivery_multiple_sets_for_jan:\${unique.length}\`,
+          reason: `superdelivery_multiple_sets_for_jan:${unique.length}`,
         });
         continue;
       }
@@ -176,7 +176,7 @@ export async function discoverSuperDeliverySupply(
       const message = error instanceof Error ? error.message : String(error);
       blocked.push({
         bestsellerId,
-        reason: \`superdelivery_lookup_failed:\${message}\`,
+        reason: `superdelivery_lookup_failed:${message}`,
       });
 
       await db
