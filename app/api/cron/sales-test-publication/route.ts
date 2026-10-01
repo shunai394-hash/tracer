@@ -6,6 +6,7 @@ import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportuni
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
+import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 
 export const runtime = "nodejs";
@@ -16,8 +17,13 @@ export const maxDuration = 300;
 // reported, not thrown, and the pending delivery row is retried by
 // /api/cron/newfind-retry.
 async function promoteGatePassedListings(listingIds: string[]) {
-  return Promise.all(
-    listingIds.map((listingId) =>
+  const base = await publishPublishedListingsToBase(10, listingIds);
+  const baseReady = base.results
+    .filter((result) => result.ok && result.baseItemId)
+    .map((result) => result.listingId);
+
+  const newfind = await Promise.all(
+    baseReady.map((listingId) =>
       promoteShopListingToNewfind(listingId).catch((error) => ({
         configured: true,
         sent: false,
@@ -28,6 +34,8 @@ async function promoteGatePassedListings(listingIds: string[]) {
       })),
     ),
   );
+
+  return { base, baseReady, newfind };
 }
 
 export async function GET(request: Request) {
@@ -90,7 +98,7 @@ export async function GET(request: Request) {
       ].filter(Boolean),
       3,
     );
-    const supplyNewfind = await promoteGatePassedListings(supplySelected.publishedListingIds);
+    const supplyDownstream = await promoteGatePassedListings(supplySelected.publishedListingIds);
 
     if (cronRunId) {
       await supabase.from("cron_runs").update({
@@ -119,7 +127,7 @@ export async function GET(request: Request) {
         mode: "supply_first_intelligence_gate",
         supplyFirst,
         supplySelected,
-        newfind: supplyNewfind,
+        downstream: supplyDownstream,
         nextPhase: "base_publication",
       });
     }
@@ -138,7 +146,7 @@ export async function GET(request: Request) {
 
     const candidateIds = (readyRows ?? []).map((row) => String(row.id));
     const decision = await selectAndPublishSalesTests(candidateIds, 10);
-    const newfind = await promoteGatePassedListings(decision.publishedListingIds);
+    const downstream = await promoteGatePassedListings(decision.publishedListingIds);
 
     if (cronRunId) {
       await supabase.from("cron_runs").update({
