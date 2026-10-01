@@ -103,12 +103,16 @@ async function request(): Promise<unknown> {
   return response.json();
 }
 
+export async function getSuperDeliveryCatalog(): Promise<SuperDeliveryProductSet[]> {
+  const payload = await request();
+  return extractItems(payload).map(normalizeItem);
+}
+
 export async function searchSuperDeliveryProducts(query: string): Promise<SuperDeliveryProductSet[]> {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return [];
-  const payload = await request();
-  return extractItems(payload)
-    .map(normalizeItem)
+  const items = await getSuperDeliveryCatalog();
+  return items
     .filter((item) => {
       const haystack = [
         item.title,
@@ -121,11 +125,20 @@ export async function searchSuperDeliveryProducts(query: string): Promise<SuperD
     .slice(0, 50);
 }
 
+export function findSuperDeliveryProductsByJan(
+  catalog: SuperDeliveryProductSet[],
+  jan: string,
+): SuperDeliveryProductSet[] {
+  const normalized = jan.trim();
+  if (!normalized) return [];
+  return catalog.filter((item) => String(item.janCode ?? "").trim() === normalized);
+}
+
 export async function getSuperDeliveryProduct(productCode: string): Promise<SuperDeliveryProductSet | null> {
   const code = productCode.trim();
   if (!code) return null;
-  const payload = await request();
-  return extractItems(payload)
-    .map(normalizeItem)
-    .find((item) => item.sdProductCode === code || item.makerProductCode === code) ?? null;
+  const catalog = await getSuperDeliveryCatalog();
+  return catalog.find(
+    (item) => item.sdProductCode === code || item.makerProductCode === code,
+  ) ?? null;
 }
