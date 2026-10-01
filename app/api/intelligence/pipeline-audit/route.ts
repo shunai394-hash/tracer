@@ -44,6 +44,17 @@ export async function GET(request: Request) {
     shop_listings_published_orderable: count(db, "shop_listings", (q) => q.eq("published", true).eq("orderable", true).gt("inventory", 0)),
     shop_listings_on_base: count(db, "shop_listings", (q) => q.not("base_item_id", "is", null)),
     shop_listings_on_base_published: count(db, "shop_listings", (q) => q.not("base_item_id", "is", null).eq("published", true).eq("base_publication_status", "published")),
+    shop_listings_sales_test_gate_passed: count(db, "shop_listings", (q) =>
+      q.or("pipeline_reason.eq.sales_test_gate_passed,selection_reasons.cs.[\"sales_test_gate_passed\"]")),
+    shop_listings_published_inventory_unknown: count(db, "shop_listings", (q) => q.eq("published", true).is("inventory", null)),
+    shop_listings_published_not_orderable: count(db, "shop_listings", (q) => q.eq("published", true).eq("orderable", false)),
+    newfind_deliveries: count(db, "newfind_promotion_deliveries"),
+    newfind_deliveries_processed: count(db, "newfind_promotion_deliveries", (q) => q.eq("status", "processed")),
+    newfind_deliveries_failed: count(db, "newfind_promotion_deliveries", (q) => q.eq("status", "failed")),
+    purchase_orders_supplier_payment_pending: count(db, "purchase_orders", (q) => q.eq("status", "supplier_payment_pending")),
+    purchase_orders_supplier_payment_verification_failed: count(db, "purchase_orders", (q) => q.eq("status", "supplier_payment_verification_failed")),
+    purchase_orders_supplier_payment_confirmed: count(db, "purchase_orders", (q) => q.eq("supplier_status", "paid")),
+    purchase_orders_failed: count(db, "purchase_orders", (q) => q.in("status", ["failed", "cancelled"])),
     shop_orders: count(db, "shop_orders"),
     purchase_orders: count(db, "purchase_orders"),
     supplier_order_attempts: count(db, "supplier_order_attempts"),
@@ -55,7 +66,7 @@ export async function GET(request: Request) {
 
   const [{ data: recentPublished }, { data: recentOrders }, { data: blockedReasons }] = await Promise.all([
     db.from("shop_listings")
-      .select("id,title,selling_price,inventory,orderable,published,base_item_id,base_publication_status,pipeline_reason,updated_at")
+      .select("id,slug,title,selling_price,inventory,orderable,published,base_item_id,base_publication_status,pipeline_reason,updated_at")
       .eq("published", true)
       .order("updated_at", { ascending: false })
       .limit(15),
@@ -67,6 +78,23 @@ export async function GET(request: Request) {
       .select("pipeline_reason")
       .eq("pipeline_status", "blocked")
       .limit(1000),
+  ]);
+
+  // Duplicate detection: one external object must map to one TRACER row.
+  const duplicates = async (table: string, column: string): Promise<number | string> => {
+    const { data, error } = await db.from(table).select(column).not(column, "is", null).limit(10000);
+    if (error) return `error: ${error.message}`;
+    const seen = new Map<string, number>();
+    for (const row of (data ?? []) as unknown as Array<Record<string, unknown>>) {
+      const key = String(row[column]);
+      seen.set(key, (seen.get(key) ?? 0) + 1);
+    }
+    return Array.from(seen.values()).filter((n) => n > 1).length;
+  };
+  const [duplicateBaseItems, duplicateSupplierOrders, duplicateNewfindDeliveries] = await Promise.all([
+    duplicates("shop_listings", "base_item_id"),
+    duplicates("purchase_orders", "supplier_order_id"),
+    duplicates("newfind_promotion_deliveries", "listing_id"),
   ]);
 
   const blocked: Record<string, number> = {};
@@ -85,6 +113,11 @@ export async function GET(request: Request) {
       deploymentId: process.env.VERCEL_DEPLOYMENT_ID ?? null,
     },
     counts,
+    duplicates: {
+      base_item_id: duplicateBaseItems,
+      supplier_order_id: duplicateSupplierOrders,
+      newfind_listing_id: duplicateNewfindDeliveries,
+    },
     shopListingBlockedReasons: blocked,
     recentPublished: recentPublished ?? [],
     recentOrders: recentOrders ?? [],

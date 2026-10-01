@@ -1,0 +1,80 @@
+name: TRACER Production Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Wait for the production deployment of this commit
+        run: |
+          set -euo pipefail
+          # Vercel builds after the push; poll until production reports this SHA.
+          for i in $(seq 1 40); do
+            token="$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 60 -H "Authorization: Bearer $token" https://tracer-self.vercel.app/api/intelligence/pipeline-audit | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            sleep 15
+          done
+          echo "Production did not reach $GITHUB_SHA"
+          exit 1
+
+      - name: Pages, APIs, cron auth and data audit
+        run: |
+          set -uo pipefail
+          BASE=https://tracer-self.vercel.app
+          failures=""
+          token() {
+            curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          expect() { # expect <label> <expected-code> <curl args...>
+            label="$1"; want="$2"; shift 2
+            code="$(curl -sS -o body.txt -w '%{http_code}' --max-time 300 "$@" || echo 000)"
+            if grep -qiE 'TypeError|ReferenceError|Application error|Internal Server Error' body.txt; then
+              echo "FAIL $label: HTTP $code with runtime error text"; failures="$failures $label"; return
+            fi
+            if [ "$code" = "$want" ]; then echo "PASS $label: HTTP $code"; else echo "FAIL $label: HTTP $code (want $want)"; head -c 400 body.txt; echo; failures="$failures $label"; fi
+          }
+
+          OIDC="$(token)"
+          curl -sS --max-time 60 -H "Authorization: Bearer $OIDC" "$BASE/api/intelligence/pipeline-audit" > audit.json
+          SLUG="$(python3 -c 'import json; d=json.load(open("audit.json")); r=d.get("recentPublished") or []; print(r[0]["slug"] if r else "")')"
+
+          expect top 200 "$BASE/"
+          expect shop 200 "$BASE/shop"
+          if [ -n "$SLUG" ]; then expect product_detail 200 "$BASE/shop/$SLUG"; else echo "FAIL product_detail: no published slug"; failures="$failures product_detail"; fi
+          expect cart 200 "$BASE/shop/cart"
+          expect checkout 200 "$BASE/shop/checkout"
+          expect api_health 200 "$BASE/api/health"
+          expect api_sources_status 200 "$BASE/api/sources/status"
+          # Cron endpoints must reject unauthenticated callers.
+          expect cron_requires_auth 401 "$BASE/api/cron/inventory-refresh"
+          expect cron_supply_first_requires_auth 401 "$BASE/api/cron/supply-first"
+          # Authenticated read-mostly stages.
+          expect cron_newfind_retry 200 -H "Authorization: Bearer $(token)" "$BASE/api/cron/newfind-retry"
+          expect cron_inventory_refresh 200 -H "Authorization: Bearer $(token)" "$BASE/api/cron/inventory-refresh"
+          expect cron_supplier_orders 200 -H "Authorization: Bearer $(token)" "$BASE/api/cron/supplier-orders"
+          expect cron_supplier_reconciliation 200 -H "Authorization: Bearer $(token)" "$BASE/api/cron/supplier-reconciliation"
+          expect cron_base_orders 200 -H "Authorization: Bearer $(token)" "$BASE/api/cron/base-orders"
+
+          echo "=== production data audit ==="
+          python3 - <<'PY'
+          import json
+          d = json.load(open("audit.json"))
+          print("deployment:", d.get("deployment"))
+          for k, v in (d.get("counts") or {}).items():
+              print(f"  {k}: {v}")
+          print("duplicates:", d.get("duplicates"))
+          print("blocked reasons:", d.get("shopListingBlockedReasons"))
+          PY
+
+          if [ -n "$failures" ]; then echo "Smoke failures:$failures"; exit 1; fi
