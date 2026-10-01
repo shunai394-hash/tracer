@@ -35,13 +35,6 @@ export async function GET(request: Request) {
         reason: "deferred_to_opportunity_intelligence_and_sales_test_gate",
       },
     });
-    return NextResponse.json({
-      ok: true,
-      elapsedMs: Date.now() - startedAt,
-      supplyFirst,
-      base,
-      newfind,
-    });
   } catch (error) {
     console.error("[TRACER SUPPLY-FIRST CRON ERROR]", error);
     return NextResponse.json(
