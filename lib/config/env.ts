@@ -24,6 +24,7 @@ export type FoundationStatus = {
   orosy: boolean;
   faire: boolean;
   dsersMcp: boolean;
+  superdelivery: boolean;
   printful: boolean;
   ecPulse: boolean;
   extension: boolean;
@@ -83,6 +84,7 @@ export function getFoundationStatus(): FoundationStatus {
     orosy: present(getOrosyConfig().apiKey),
     faire: present(readEnv("FAIRE_ACCESS_TOKEN")),
     dsersMcp: present(readEnv("DSERS_MCP_URL")) && present(readEnv("DSERS_MCP_ACCESS_TOKEN")),
+    superdelivery: present(readEnv("SUPERDELIVERY_API_AUTH_CODE")),
     printful: present(readEnv("PRINTFUL_ACCESS_TOKEN")),
     ecPulse: present(readEnv("EC_PULSE_API_KEY")),
     extension: present(readEnv("TRACER_EXTENSION_API_KEY")),
@@ -118,6 +120,16 @@ export function getSupabasePublicConfig() {
 
 export function getSupabaseServiceRoleKey() {
   return readEnv("SUPABASE_SERVICE_ROLE_KEY");
+}
+
+export function getSuperDeliveryConfig() {
+  return {
+    apiAuthCode: readEnv("SUPERDELIVERY_API_AUTH_CODE"),
+    baseUrl:
+      readEnv("SUPERDELIVERY_API_BASE_URL") ||
+      "https://www.superdelivery.com/q/merchandise/ProductSetSearch/ver1.0/g.json",
+    timeoutMs: Math.max(5_000, Number(readEnv("SUPERDELIVERY_API_TIMEOUT_MS")) || 20_000),
+  };
 }
 
 export function getDsersMcpConfig() {
@@ -178,6 +190,7 @@ export function isSupplierConfigured(supplierName: string): boolean {
   if (name === "orosy") return present(getOrosyConfig().apiKey);
   if (name === "faire") return present(readEnv("FAIRE_ACCESS_TOKEN"));
   if (name === "dsers") return present(readEnv("DSERS_MCP_ACCESS_TOKEN"));
+  if (name === "superdelivery") return present(readEnv("SUPERDELIVERY_API_AUTH_CODE"));
   if (name === "printful") return present(readEnv("PRINTFUL_ACCESS_TOKEN"));
   if (name === "tracer_internal") return true;
   return false;
