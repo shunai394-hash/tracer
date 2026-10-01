@@ -205,11 +205,12 @@ function offerProvider(offer: OfferRow): string {
   const metadata = asRecord(offer.metadata);
   if (typeof metadata.provider === "string") return metadata.provider;
   if (offer.seller_name === "CJdropshipping") return "cj";
+  if (offer.seller_name === "SUPER DELIVERY") return "superdelivery";
   return "unknown";
 }
 
 function isSourceOffer(offer: OfferRow): boolean {
-  return offerProvider(offer) === "cj" || offer.seller_name === "CJdropshipping";
+  return ["cj", "superdelivery"].includes(offerProvider(offer)) || offer.seller_name === "CJdropshipping" || offer.seller_name === "SUPER DELIVERY";
 }
 
 function offerCurrencyConfidence(offer: OfferRow): CurrencyConfidence {
