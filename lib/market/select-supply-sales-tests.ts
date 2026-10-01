@@ -79,6 +79,10 @@ export async function selectAndPublishSupplySalesTests(
       rejected.push({ productId, reasons });
       continue;
     }
+    if (!intelligence || !base || !listing) {
+      rejected.push({ productId, reasons: ["required_supply_intelligence_missing"] });
+      continue;
+    }
 
     const supplierCapabilities = getSupplierCapabilities(String(listing.supplier ?? ""));
     const required = [
