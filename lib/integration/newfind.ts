@@ -56,29 +56,54 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
   attempted: number;
   processed: number;
   failed: number;
+  /** Deliveries in the oldest-first window considered this run. */
+  windowSize: number;
 }> {
   const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
+  const batch = Math.max(1, Math.min(limit, 100));
   const { data, error } = await supabase
     .from("newfind_promotion_deliveries")
     .select("listing_id")
     .in("status", ["pending", "failed", "sent"])
     .order("updated_at", { ascending: true })
-    .limit(Math.max(1, Math.min(limit, 100)));
+    .limit(500);
 
   if (error) throw new Error(error.message);
 
+  // Deliveries recorded before the Sales Test Gate existed are kept as-is,
+  // but they must not occupy the head of the queue: a rejected row is never
+  // updated, so with an oldest-first window it would be retried forever and
+  // starve gate-passed listings. Pick only rows whose listing passes now.
+  const listingIds = Array.from(new Set((data ?? []).map((row) => String(row.listing_id))));
+  const eligible: string[] = [];
+  for (let i = 0; i < listingIds.length && eligible.length < batch; i += 100) {
+    const chunk = listingIds.slice(i, i + 100);
+    const { data: listings, error: listingError } = await supabase
+      .from("shop_listings")
+      .select("id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
+      .in("id", chunk)
+      .eq("published", true);
+    if (listingError) throw new Error(listingError.message);
+    const passed = new Set((listings ?? []).filter((row) => hasPassedSalesTestGate(row)).map((row) => String(row.id)));
+    for (const id of chunk) {
+      if (passed.has(id) && eligible.length < batch) eligible.push(id);
+    }
+  }
+
   let processed = 0;
   let failed = 0;
-  for (const row of data ?? []) {
-    const result = await promoteShopListingToNewfind(String(row.listing_id));
+  for (const listingId of eligible) {
+    // promoteShopListingToNewfind re-checks the gate itself.
+    const result = await promoteShopListingToNewfind(listingId);
     if (result.ackStatus === "processed") processed += 1;
     else if (!result.sent) failed += 1;
   }
 
   return {
-    attempted: data?.length ?? 0,
+    attempted: eligible.length,
     processed,
     failed,
+    windowSize: listingIds.length,
   };
 }
 
