@@ -1,8 +1,6 @@
 name: TRACER Autonomous Patrol AI
 
 on:
-  push:
-    branches: [main]
   schedule:
     - cron: "*/30 * * * *"
   workflow_dispatch:
