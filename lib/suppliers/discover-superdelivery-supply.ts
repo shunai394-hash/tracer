@@ -158,6 +158,50 @@ export async function discoverSuperDeliverySupply(
         : await db.from("supplier_listings").insert(payload);
 
       if (result.error) throw new Error(result.error.message);
+
+      // Feed the supplier offer into the canonical OI input. The API may not
+      // expose price/image for every account; those fields stay null rather
+      // than being inferred. OI will therefore remain fail-closed until the
+      // missing economic evidence is actually available.
+      const { data: existingOffer, error: offerLookupError } = await db
+        .from("product_offers")
+        .select("id")
+        .eq("product_id", String(candidate.product_id))
+        .eq("seller_name", "SUPER DELIVERY")
+        .eq("offer_url", supplierProductId)
+        .limit(1)
+        .maybeSingle();
+      if (offerLookupError) throw new Error(offerLookupError.message);
+
+      const offerPayload = {
+        product_id: String(candidate.product_id),
+        seller_name: "SUPER DELIVERY",
+        offer_url: supplierProductId,
+        image_url: item.imageUrl,
+        currency: "JPY",
+        price: item.price,
+        availability: item.stock === null ? "unknown" : item.stock > 0 ? "in_stock" : "out_of_stock",
+        shipping_price: null,
+        observed_at: now,
+        metadata: {
+          provider: "superdelivery",
+          supplier_product_id: supplierProductId,
+          supplier_variant_id: supplierVariantId,
+          jan,
+          sd_product_code: item.sdProductCode,
+          maker_product_code: item.makerProductCode,
+          set_no: item.setNo,
+          exhibit_state: item.exhibitState,
+          source: "superdelivery_product_set_search",
+        },
+        currency_confidence: item.price !== null ? "high" : "unknown",
+      };
+
+      const offerResult = existingOffer?.id
+        ? await db.from("product_offers").update(offerPayload).eq("id", existingOffer.id)
+        : await db.from("product_offers").insert(offerPayload);
+      if (offerResult.error) throw new Error(offerResult.error.message);
+
       persisted += 1;
 
       await db
