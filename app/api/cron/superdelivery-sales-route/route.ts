@@ -62,7 +62,7 @@ export async function GET(request: Request) {
     );
 
     // 4. BASE. Only Gate-passed listings are considered for a new BASE item.
-    const base = await publishPublishedListingsToBase(3);
+    const base = await publishPublishedListingsToBase(3, gate.publishedListingIds);
 
     // 5. NEWFIND. Only listings that are still Gate-passed AND have a BASE item
     // are promoted by this route. The NEWFIND function re-checks the Gate.
