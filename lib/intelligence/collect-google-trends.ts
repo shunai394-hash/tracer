@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -8,6 +8,7 @@ const GOOGLE_TRENDS_RSS =
 const SOURCE_NAME = "Google Trends";
 const SOURCE_TYPE = "search";
 const PROVIDER = "manual";
+const FETCH_TIMEOUT_MS = 15_000;
 
 type TrendItem = {
   title: string;
@@ -17,37 +18,24 @@ type TrendItem = {
 
 function parseTraffic(value: string | null): number | null {
   if (!value) return null;
-
   const normalized = value.trim().toLowerCase();
-
-  const match = normalized.match(
-    /^([\d,.]+)\s*([kmb])?\+?$/
-  );
-
+  const match = normalized.match(/^([\d,.]+)\s*([kmb])?\+?$/);
   if (!match) return null;
-
   const base = Number(match[1].replace(/,/g, ""));
-
   if (!Number.isFinite(base)) return null;
-
   const suffix = match[2];
-
   if (suffix === "k") return base * 1_000;
   if (suffix === "m") return base * 1_000_000;
   if (suffix === "b") return base * 1_000_000_000;
-
   return base;
 }
 
 function extractTag(xml: string, tag: string): string | null {
   const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
   const match = xml.match(
-    new RegExp(`<${escaped}[^>]*>([\\s\\S]*?)<\\/${escaped}>`, "i")
+    new RegExp(`<${escaped}[^>]*>([\\s\\S]*?)<\\/${escaped}>`, "i"),
   );
-
   if (!match) return null;
-
   return match[1]
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
     .replace(/<[^>]+>/g, "")
@@ -56,59 +44,53 @@ function extractTag(xml: string, tag: string): string | null {
 
 function extractItems(xml: string): TrendItem[] {
   const items: TrendItem[] = [];
-
-  const itemMatches = xml.match(
-    /<item\b[^>]*>[\s\S]*?<\/item>/gi
-  ) ?? [];
-
+  const itemMatches = xml.match(/<item\b[^>]*>[\s\S]*?<\/item>/gi) ?? [];
   for (const item of itemMatches) {
     const title = extractTag(item, "title");
-
     if (!title) continue;
-
-    const traffic = parseTraffic(
-      extractTag(item, "ht:approx_traffic")
-    );
-
+    const traffic = parseTraffic(extractTag(item, "ht:approx_traffic"));
     const publishedAt =
-      extractTag(item, "pubDate") ??
-      extractTag(item, "ht:picture");
-
-    items.push({
-      title,
-      traffic,
-      publishedAt,
-    });
+      extractTag(item, "pubDate") ?? extractTag(item, "ht:picture");
+    items.push({ title, traffic, publishedAt });
   }
-
   return items;
 }
 
 export async function collectGoogleTrendsDemand() {
-  const response = await fetch(GOOGLE_TRENDS_RSS, {
-    headers: {
-      "User-Agent": "TRACER/1.0 Demand Intelligence",
-      Accept: "application/rss+xml, application/xml, text/xml",
-    },
-    cache: "no-store",
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(GOOGLE_TRENDS_RSS, {
+      headers: {
+        "User-Agent": "TRACER/1.0 Demand Intelligence",
+        Accept: "application/rss+xml, application/xml, text/xml",
+      },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Google Trends request failed: ${message}`);
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     throw new Error(
-      `Google Trends request failed: ${response.status} ${response.statusText}`
+      `Google Trends request failed: ${response.status} ${response.statusText}`,
     );
   }
 
   const bytes = await response.arrayBuffer();
   const xml = new TextDecoder("utf-8").decode(bytes);
   const trends = extractItems(xml);
-
   if (trends.length === 0) {
     throw new Error("Google Trends returned no trend items");
   }
 
   const supabase = createSupabaseAdminClient();
-
   const sourceResult = await supabase
     .from("sources")
     .select("id")
@@ -117,12 +99,11 @@ export async function collectGoogleTrendsDemand() {
 
   if (sourceResult.error) {
     throw new Error(
-      `Failed to find Google Trends source: ${sourceResult.error.message}`
+      `Failed to find Google Trends source: ${sourceResult.error.message}`,
     );
   }
 
   let sourceId: string;
-
   if (sourceResult.data) {
     sourceId = sourceResult.data.id;
   } else {
@@ -136,58 +117,47 @@ export async function collectGoogleTrendsDemand() {
       })
       .select("id")
       .single();
-
     if (insertResult.error) {
       throw new Error(
-        `Failed to create Google Trends source: ${insertResult.error.message}`
+        `Failed to create Google Trends source: ${insertResult.error.message}`,
       );
     }
-
     sourceId = insertResult.data.id;
   }
 
-  let inserted = 0;
+  // Insert the feed in one PostgREST request. The old implementation issued
+  // one network/database request per trend item and could consume the patrol
+  // budget when Supabase was under load.
+  const observedAt = new Date().toISOString();
+  const rows = trends.map((trend) => ({
+    product_id: null,
+    source_id: sourceId,
+    signal_type: "search_volume",
+    value: trend.traffic,
+    unit: "searches_approx",
+    observed_at: observedAt,
+    metadata: {
+      query: trend.title,
+      original_query: trend.title,
+      country: "JP",
+      provider: "google_trends",
+      source_url: GOOGLE_TRENDS_RSS,
+      published_at: trend.publishedAt,
+    },
+  }));
+
+  const { error } = await supabase.from("demand_observations").insert(rows);
+  if (error) {
+    throw new Error(`Failed to insert Google Trends observations: ${error.message}`);
+  }
 
   for (const trend of trends) {
     console.log("[google-trends-title]", JSON.stringify(trend.title));
-    const { error } = await supabase
-      .from("demand_observations")
-      .insert({
-        product_id: null,
-        source_id: sourceId,
-        signal_type: "search_volume",
-        value: trend.traffic,
-        unit: "searches_approx",
-        observed_at: new Date().toISOString(),
-        metadata: {
-          query: trend.title,
-          original_query: trend.title,
-          country: "JP",
-          provider: "google_trends",
-          source_url: GOOGLE_TRENDS_RSS,
-          published_at: trend.publishedAt,
-        },
-      });
-
-    if (error) {
-      throw new Error(
-        `Failed to insert demand observation for "${trend.title}": ${error.message}`
-      );
-    }
-
-    inserted += 1;
   }
 
   return {
     sourceId,
     fetched: trends.length,
-    inserted,
+    inserted: rows.length,
   };
 }
-
-
-
-
-
-
-
