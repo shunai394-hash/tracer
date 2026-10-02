@@ -134,11 +134,10 @@ export function getCorecConfig() {
 
 export function getSuperDeliveryConfig() {
   return {
-    apiAuthCode: readEnv("SUPERDELIVERY_API_AUTH_CODE"),
     baseUrl:
       readEnv("SUPERDELIVERY_API_BASE_URL") ||
-      "https://www.superdelivery.com/q/merchandise/ProductSetSearch/ver1.0/g.json",
-    timeoutMs: Math.max(5_000, Number(readEnv("SUPERDELIVERY_API_TIMEOUT_MS")) || 20_000),
+      "https://www.superdelivery.com/p/do/psl/",
+    timeoutMs: Math.max(5_000, Number(readEnv("SUPERDELIVERY_API_TIMEOUT_MS")) || 15_000),
   };
 }
 
