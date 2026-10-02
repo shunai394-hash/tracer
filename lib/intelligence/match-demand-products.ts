@@ -57,7 +57,7 @@ function productMatchesQuery(query: string, productName: string, allProductNames
   const normalizedQuery = normalize(query);
   const normalizedProduct = normalize(productName);
   if (!normalizedQuery || !normalizedProduct) return false;
-  if (normalizedQuery === normalizedProduct || normalizedQuery.includes(normalizedProduct) || normalizedProduct.includes(normalizedQuery)) return true;
+  if (normalizedQuery === normalizedProduct) return true;
 
   const queryTokens = normalizedQuery.split(/[^\p{L}\p{N}]+/gu).map((token) => token.trim()).filter((token) => token.length >= 2);
   if (queryTokens.length === 0) return false;
@@ -82,8 +82,8 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     supabase.from("demand_observations").select("id, metadata, value, observed_at").is("product_id", null).in("signal_type", ["search_volume", "search_result_count"]).order("observed_at", { ascending: false }),
     supabase.from("product_intelligence").select("product_id, normalized_title"),
     supabase.from("demand_product_candidates").select("id, demand_observation_id"),
-    supabase.from("demand_cj_products").select("demand_product_candidate_id, product_id, identity_status, identity_confidence"),
-    supabase.from("product_offers").select("product_id, metadata, seller_name").eq("seller_name", "CJdropshipping"),
+    supabase.from("demand_cj_products").select("id, demand_product_candidate_id, product_id, identity_status, identity_confidence"),
+    supabase.from("product_offers").select("id, product_id, metadata, seller_name, observed_at").eq("seller_name", "CJdropshipping"),
   ]);
   if (demandResult.error) throw new Error(demandResult.error.message);
   if (productResult.error) throw new Error(productResult.error.message);
@@ -95,10 +95,14 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   const productRows = productResult.data ?? [];
   const allProductNames = productRows.map((product) => product.normalized_title);
 
-  // Strongest available supplier-side evidence: CJ offer metadata carries the
-  // exact originating demand_observation_id. Link that observation directly
-  // to the same product_id; do not infer identity from title alone.
-  const evidenceRows = new Map<string, { score: number; rationale: string }>();
+  const evidenceRows = new Map<string, {
+    score: number;
+    rationale: string;
+    evidenceType: string;
+    sourceId: string;
+    observedAt: string;
+  }>();
+
   for (const offer of sourceOfferResult.data ?? []) {
     const metadata = offer.metadata && typeof offer.metadata === "object" && !Array.isArray(offer.metadata)
       ? (offer.metadata as Record<string, unknown>)
@@ -108,20 +112,25 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     evidenceRows.set(`${observationId}:${offer.product_id}`, {
       score: 0.98,
       rationale: "Exact supplier discovery provenance: CJ offer metadata references the originating demand observation",
+      evidenceType: "supplier_demand_evidence",
+      sourceId: offer.id,
+      observedAt: offer.observed_at ?? new Date().toISOString(),
     });
   }
 
-  // Retain the candidate -> CJ product chain when a product_id is available.
   const observationByCandidate = new Map((candidateResult.data ?? []).map((candidate) => [candidate.id, candidate.demand_observation_id]));
   for (const cj of cjProductResult.data ?? []) {
-    if (!cj.product_id || cj.identity_status === "rejected_noise") continue;
+    if (!cj.product_id || cj.identity_status !== "linked") continue;
     const observationId = observationByCandidate.get(cj.demand_product_candidate_id);
     if (!observationId) continue;
     const confidence = Number(cj.identity_confidence ?? 0);
-    if (Number.isFinite(confidence) && confidence > 0 && confidence < 0.65) continue;
+    if (!Number.isFinite(confidence) || confidence < 0.88) continue;
     evidenceRows.set(`${observationId}:${cj.product_id}`, {
-      score: Number.isFinite(confidence) && confidence >= 0.88 ? 0.98 : 0.92,
-      rationale: `Demand evidence chain: observation -> candidate ${cj.demand_product_candidate_id} -> CJ product`,
+      score: confidence,
+      rationale: `Demand evidence chain: observation -> candidate ${cj.demand_product_candidate_id} -> verified linked CJ product`,
+      evidenceType: "supplier_demand_evidence",
+      sourceId: cj.id,
+      observedAt: new Date().toISOString(),
     });
   }
 
@@ -131,9 +140,12 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
       return {
         demand_observation_id: key.slice(0, separator),
         product_id: key.slice(separator + 1),
-        match_method: "supplier_demand_evidence",
+        match_method: value.evidenceType,
         match_score: value.score,
         rationale: value.rationale,
+        evidence_type: value.evidenceType,
+        source_id: value.sourceId,
+        observed_at: value.observedAt,
       };
     });
     const { error } = await supabase.from("demand_product_matches").upsert(rows, { onConflict: "demand_observation_id,product_id", ignoreDuplicates: true });
@@ -174,6 +186,9 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
         match_method: "keyword",
         match_score: 0.9,
         rationale: `Product intent query "${query}" matched "${product.normalized_title}" (${intent.reason})`,
+        evidence_type: "query_title_match",
+        source_id: demand.id,
+        observed_at: demand.observed_at,
       }, { onConflict: "demand_observation_id,product_id", ignoreDuplicates: true });
       if (error) throw new Error(`Failed to insert demand product match: ${error.message}`);
       rowMatched = true;
