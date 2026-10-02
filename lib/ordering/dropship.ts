@@ -5,6 +5,7 @@ import { getCJConfig, isSupplierConfigured, isSupplierLiveOrderingEnabled } from
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { executeVerifiedSupplierPurchaseOrder } from "@/lib/ordering/verified-supplier-execution";
+import { getSupplierMappingStatus } from "@/lib/procurement/supplier-mapping";
 import {
   evaluateDropshipOrderGate,
   type DropshipOrderGateResult,
@@ -116,6 +117,20 @@ export async function createDropshipPurchaseOrdersForShopOrder(
     const supplierName = String(shopListing.supplier_name ?? "").trim();
     const isTracerInternal = supplierName.toLowerCase() === "tracer_internal";
 
+    // External supplier fulfillment must use a fixed, verified mapping created
+    // by the admin mapping system. This prevents a customer order from falling
+    // back to a fresh supplier search or a stale shop_listings snapshot.
+    const mapping = isTracerInternal
+      ? null
+      : await getSupplierMappingStatus(supabase, String(shopListing.id));
+    if (!isTracerInternal && !mapping?.fullyAutomatable) {
+      skipped.push({
+        itemId: String(row.id),
+        reason: `supplier_mapping_not_automatable:${mapping?.reason ?? "missing"}`,
+      });
+      continue;
+    }
+
     let listing: Record<string, unknown> | null = null;
     if (isTracerInternal) {
       const internalProductId =
@@ -168,11 +183,13 @@ export async function createDropshipPurchaseOrdersForShopOrder(
         orderable: internalVariant.orderable === true && internalVariant.active === true,
       };
     } else {
-      const supplierListingId = row.supplier_listing_id
-        ? String(row.supplier_listing_id)
-        : shopListing.supplier_listing_id
-          ? String(shopListing.supplier_listing_id)
-          : null;
+      const supplierListingId = mapping?.supplierListingId
+        ? mapping.supplierListingId
+        : row.supplier_listing_id
+          ? String(row.supplier_listing_id)
+          : shopListing.supplier_listing_id
+            ? String(shopListing.supplier_listing_id)
+            : null;
       if (!supplierListingId) {
         skipped.push({ itemId: String(row.id), reason: "supplier_listing_snapshot_missing" });
         continue;
