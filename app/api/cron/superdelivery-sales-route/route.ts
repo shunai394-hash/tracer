@@ -9,11 +9,26 @@ import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 const JOB_NAME = "superdelivery-sales-route";
-const DISCOVERY_BATCH_SIZE = 25;
-const GATE_LIMIT = 3;
+const DISCOVERY_BATCH_SIZE = 5;
+const GATE_LIMIT = 2;
+const STAGE_BUDGETS_MS = { discovery: 12_000, intelligence: 8_000, gate: 6_000, base: 8_000, newfind: 5_000 } as const;
+
+async function withinBudget<T>(work: Promise<T>, budgetMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label}_time_budget_exceeded`)), budgetMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -24,7 +39,7 @@ export async function GET(request: Request) {
   let cronRunId: string | null = null;
 
   try {
-    await recoverStaleCronRun(db, JOB_NAME, maxDuration);
+    await recoverStaleCronRun(db, JOB_NAME, 60);
 
     const { data: cronRun, error: claimError } = await db
       .from("cron_runs")
@@ -55,10 +70,10 @@ export async function GET(request: Request) {
     // 1. SUPER DELIVERY -> TRACER. ProductSetSearch is fetched once and the
     // JAN matching itself is local, so discovery can safely drain a bounded
     // batch without multiplying supplier API calls.
-    const discovery = await discoverSuperDeliverySupply(DISCOVERY_BATCH_SIZE);
+    const discovery = await withinBudget(discoverSuperDeliverySupply(DISCOVERY_BATCH_SIZE), STAGE_BUDGETS_MS.discovery, "superdelivery_discovery");
 
     // 2. Recalculate the same opportunity evidence used by the Sales Test Gate.
-    await buildOpportunityIntelligence();
+    await withinBudget(buildOpportunityIntelligence(), STAGE_BUDGETS_MS.intelligence, "opportunity_intelligence");
 
     // 3. SALES TEST GATE. This function is the only code allowed to set
     // shop_listings.published=true.
@@ -68,7 +83,7 @@ export async function GET(request: Request) {
     );
 
     // 4. BASE. Only Gate-passed listings are considered for a new BASE item.
-    const base = await publishPublishedListingsToBase(GATE_LIMIT, gate.publishedListingIds);
+    const base = await withinBudget(\n      publishPublishedListingsToBase(GATE_LIMIT, gate.publishedListingIds),\n      STAGE_BUDGETS_MS.base,\n      "base_publication",\n    );
 
     // 5. NEWFIND. Only listings that are still Gate-passed AND have a BASE item
     // are promoted by this route. The NEWFIND function re-checks the Gate.
@@ -86,7 +101,7 @@ export async function GET(request: Request) {
     const newfind = [];
     for (const listingId of baseReadyListingIds) {
       try {
-        newfind.push(await promoteShopListingToNewfind(listingId));
+        newfind.push(await withinBudget(\n          promoteShopListingToNewfind(listingId),\n          STAGE_BUDGETS_MS.newfind,\n          "newfind_promotion",\n        ));
       } catch (error) {
         newfind.push({
           listingId,
