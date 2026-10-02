@@ -101,7 +101,20 @@ export default function SupplierMappingsPage() {
   }
 
   useEffect(() => {
-    load().catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
+    let cancelled = false;
+    void Promise.resolve().then(async () => {
+      if (cancelled) return;
+      try {
+        await load();
+      } catch (error) {
+        if (!cancelled) {
+          setMessage(error instanceof Error ? error.message : String(error));
+        }
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function login(event: React.FormEvent) {
