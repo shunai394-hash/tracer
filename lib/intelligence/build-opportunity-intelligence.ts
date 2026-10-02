@@ -1546,26 +1546,53 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
   let testReady = 0;
   let rejected = 0;
 
-  for (const item of computed) {
-    const result = await supabase
-      .from("opportunity_intelligence")
-      .upsert(item.payload, { onConflict: "product_id" })
-      .select("id")
-      .single();
-
-    if (result.error) {
-      throw new Error(
-        `Failed to upsert opportunity for ${item.productId}: ${result.error.message}`,
-      );
+  // Batched persistence. Writing each product sequentially (upsert, three
+  // forecast inserts, creative upsert, lifecycle event) cost ~5 DB round
+  // trips per product, so ~1,000 products could not finish inside the 300s
+  // patrol and TEST_READY was never produced. Rows are grouped by identical
+  // column sets so a bulk upsert never nulls a column a payload omitted.
+  const CHUNK = 200;
+  const idByProduct = new Map<string, string>();
+  const groups = new Map<string, typeof computed>();
+  // One row per product: a bulk upsert cannot touch the same key twice.
+  const uniqueComputed = Array.from(new Map(computed.map((item) => [item.productId, item])).values());
+  for (const item of uniqueComputed) {
+    const signature = Object.keys(item.payload).sort().join(",");
+    const group = groups.get(signature) ?? [];
+    group.push(item);
+    groups.set(signature, group);
+  }
+  for (const group of groups.values()) {
+    for (let i = 0; i < group.length; i += CHUNK) {
+      const chunk = group.slice(i, i + CHUNK);
+      const result = await supabase
+        .from("opportunity_intelligence")
+        .upsert(chunk.map((item) => item.payload), { onConflict: "product_id" })
+        .select("id, product_id");
+      if (result.error) {
+        throw new Error(
+          `Failed to upsert opportunities (${chunk.length}): ${result.error.message}`,
+        );
+      }
+      for (const row of result.data ?? []) {
+        idByProduct.set(String(row.product_id), String(row.id));
+      }
     }
+  }
 
+  const lifecycleEvents: Array<Record<string, unknown>> = [];
+  const forecastRows: Array<Record<string, unknown>> = [];
+  const creativeRows: Array<Record<string, unknown>> = [];
+  for (const item of uniqueComputed) {
+    const opportunityId = idByProduct.get(item.productId);
+    if (!opportunityId) continue;
     upserted += 1;
     if (item.state === "TEST_READY") testReady += 1;
     if (item.state === "REJECTED") rejected += 1;
 
-    if (result.data?.id && item.lifecycle !== item.previousLifecycle) {
-      await supabase.from("opportunity_lifecycle_events").insert({
-        opportunity_id: result.data.id,
+    if (item.lifecycle !== item.previousLifecycle) {
+      lifecycleEvents.push({
+        opportunity_id: opportunityId,
         from_status: item.previousLifecycle,
         to_status: item.lifecycle,
         reason: "intelligence_rebuild",
@@ -1575,52 +1602,51 @@ export async function buildOpportunityIntelligence(): Promise<OpportunityBuildRe
       });
     }
 
-    if (result.data?.id) {
-      const horizons = [
-        item.forecast.horizon7d,
-        item.forecast.horizon30d,
-        item.forecast.horizon90d,
-      ];
-      for (const horizon of horizons) {
-        const forecastInsert = await supabase.from("product_sales_forecasts").insert({
-          opportunity_id: result.data.id,
-          product_id: item.productId,
-          model_id: item.forecast.modelId,
-          horizon_days: horizon.days,
-          units: horizon.units,
-          units_low: horizon.unitsLow,
-          units_high: horizon.unitsHigh,
-          revenue: horizon.revenue,
-          contribution_profit: horizon.contributionProfit,
-          contribution_margin: horizon.contributionMargin,
-          confidence: item.forecast.confidence,
-          kind: item.forecast.kind,
-          evidence: item.forecast.evidence,
-        });
-
-        if (forecastInsert.error) {
-          throw new Error(
-            `Failed to persist forecast for ${item.productId}: ${forecastInsert.error.message}`,
-          );
-        }
-      }
+    for (const horizon of [item.forecast.horizon7d, item.forecast.horizon30d, item.forecast.horizon90d]) {
+      forecastRows.push({
+        opportunity_id: opportunityId,
+        product_id: item.productId,
+        model_id: item.forecast.modelId,
+        horizon_days: horizon.days,
+        units: horizon.units,
+        units_low: horizon.unitsLow,
+        units_high: horizon.unitsHigh,
+        revenue: horizon.revenue,
+        contribution_profit: horizon.contributionProfit,
+        contribution_margin: horizon.contributionMargin,
+        confidence: item.forecast.confidence,
+        kind: item.forecast.kind,
+        evidence: item.forecast.evidence,
+      });
     }
 
-    if (item.imageUrl && result.data?.id) {
-      await supabase.from("creative_variants").upsert(
-        {
-          opportunity_id: result.data.id,
-          product_id: item.productId,
-          variant_type: "source_image",
-          image_url: item.imageUrl,
-          metadata: {
-            cvr_assumption: false,
-            kind: "observed_source_image",
-          },
+    if (item.imageUrl) {
+      creativeRows.push({
+        opportunity_id: opportunityId,
+        product_id: item.productId,
+        variant_type: "source_image",
+        image_url: item.imageUrl,
+        metadata: {
+          cvr_assumption: false,
+          kind: "observed_source_image",
         },
-        { onConflict: "opportunity_id,variant_type" },
-      );
+      });
     }
+  }
+
+  for (let i = 0; i < lifecycleEvents.length; i += CHUNK) {
+    await supabase.from("opportunity_lifecycle_events").insert(lifecycleEvents.slice(i, i + CHUNK));
+  }
+  for (let i = 0; i < forecastRows.length; i += CHUNK * 3) {
+    const forecastInsert = await supabase.from("product_sales_forecasts").insert(forecastRows.slice(i, i + CHUNK * 3));
+    if (forecastInsert.error) {
+      throw new Error(`Failed to persist forecasts: ${forecastInsert.error.message}`);
+    }
+  }
+  for (let i = 0; i < creativeRows.length; i += CHUNK) {
+    await supabase
+      .from("creative_variants")
+      .upsert(creativeRows.slice(i, i + CHUNK), { onConflict: "opportunity_id,variant_type" });
   }
 
   const readyProductIds = new Set(
