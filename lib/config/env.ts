@@ -84,7 +84,7 @@ export function getFoundationStatus(): FoundationStatus {
     orosy: present(getOrosyConfig().apiKey),
     faire: present(readEnv("FAIRE_ACCESS_TOKEN")),
     dsersMcp: present(readEnv("DSERS_MCP_URL")) && present(readEnv("DSERS_MCP_ACCESS_TOKEN")),
-    superdelivery: present(readEnv("SUPERDELIVERY_API_AUTH_CODE")),
+    superdelivery: true,
     printful: present(readEnv("PRINTFUL_ACCESS_TOKEN")),
     ecPulse: present(readEnv("EC_PULSE_API_KEY")),
     extension: present(readEnv("TRACER_EXTENSION_API_KEY")),
