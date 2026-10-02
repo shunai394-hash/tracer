@@ -44,7 +44,7 @@
     },
     {
       "path": "/api/cron/newfind-retry",
-      "schedule": "*/20 * * * *"
+      "schedule": "45 12 * * *"
     },
     {
       "path": "/api/cron/supply-first",
