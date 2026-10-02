@@ -195,12 +195,13 @@ export async function createDropshipPurchaseOrdersForShopOrder(
         continue;
       }
 
+      const supplierCode = mapping?.supplierCode ?? supplierName;
       const { data: externalListing } = await supabase
         .from("supplier_listings")
         .select("*")
         .eq("id", supplierListingId)
         .eq("product_id", productId)
-        .eq("supplier", supplierName)
+        .eq("supplier", supplierCode)
         .maybeSingle();
 
       if (!externalListing) {
