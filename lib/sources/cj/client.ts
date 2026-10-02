@@ -1,6 +1,7 @@
 ﻿import "server-only";
 
 import { getCJConfig } from "@/lib/config/env";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   selectUnambiguousVariant,
   verifyVariantSelectionInvariants,
