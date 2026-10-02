@@ -57,7 +57,6 @@ function detectProductIntent(query: string): ProductIntent {
       return { isProduct: true, category, reason: `product_keyword:${matchedKeyword}` };
     }
   }
-
   return { isProduct: false, category: null, reason: "no_product_signal" };
 }
 
@@ -88,13 +87,8 @@ function productMatchesQuery(query: string, productName: string, allProductNames
   );
   if (isKnownProductTerm) return matchedTokens.length === 1;
 
-  // Japanese/Chinese/Korean product queries frequently contain a single
-  // meaningful token (e.g. a model, brand, or product name). Accept only
-  // distinctive CJK tokens and only when they resolve to a small candidate
-  // set; this avoids turning generic one-word trends into catalog-wide matches.
   const isCjk = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(token);
   if (!isCjk || token.length < 3) return false;
-
   const candidateCount = allProductNames.reduce(
     (count, name) => count + (normalize(name).includes(token) ? 1 : 0),
     0,
@@ -105,27 +99,68 @@ function productMatchesQuery(query: string, productName: string, allProductNames
 export async function matchDemandProductsByCategory(): Promise<DemandProductMatchResult> {
   const supabase = createSupabaseAdminClient();
 
-  const { data: demandRows, error: demandError } = await supabase
-    .from("demand_observations")
-    .select("id, metadata, value, observed_at")
-    .is("product_id", null)
-    .in("signal_type", ["search_volume", "search_result_count"])
-    .order("observed_at", { ascending: false });
+  const [{ data: demandRows, error: demandError }, { data: products, error: productError }, { data: candidates, error: candidateError }, { data: cjProducts, error: cjError }] = await Promise.all([
+    supabase
+      .from("demand_observations")
+      .select("id, metadata, value, observed_at")
+      .is("product_id", null)
+      .in("signal_type", ["search_volume", "search_result_count"])
+      .order("observed_at", { ascending: false }),
+    supabase.from("product_intelligence").select("product_id, normalized_title"),
+    supabase.from("demand_product_candidates").select("id, demand_observation_id"),
+    supabase.from("demand_cj_products").select("demand_product_candidate_id, product_id, identity_status, identity_confidence"),
+  ]);
   if (demandError) throw new Error(demandError.message);
-
-  const { data: products, error: productError } = await supabase
-    .from("product_intelligence")
-    .select("product_id, normalized_title");
   if (productError) throw new Error(productError.message);
+  if (candidateError) throw new Error(candidateError.message);
+  if (cjError) throw new Error(cjError.message);
 
   const productRows = products ?? [];
   const allProductNames = productRows.map((product) => product.normalized_title);
 
+  // Preserve the evidence chain created by demand discovery:
+  // demand observation -> candidate -> CJ product. This is a stronger match
+  // than free-form title similarity because the supplier discovery step
+  // already recorded the exact originating demand observation.
+  const observationByCandidate = new Map(
+    (candidates ?? []).map((candidate) => [candidate.id, candidate.demand_observation_id]),
+  );
+  const evidencePairs = new Map<string, { score: number; rationale: string }>();
+  for (const cj of cjProducts ?? []) {
+    if (!cj.product_id) continue;
+    const demandObservationId = observationByCandidate.get(cj.demand_product_candidate_id);
+    if (!demandObservationId) continue;
+    if (cj.identity_status === "rejected_noise") continue;
+    const confidence = typeof cj.identity_confidence === "number" ? cj.identity_confidence : Number(cj.identity_confidence ?? 0);
+    if (Number.isFinite(confidence) && confidence > 0 && confidence < 0.65) continue;
+    evidencePairs.set(`${demandObservationId}:${cj.product_id}`, {
+      score: Number.isFinite(confidence) && confidence >= 0.88 ? 0.98 : 0.92,
+      rationale: `Demand evidence chain matched: observation -> candidate ${cj.demand_product_candidate_id} -> CJ product`,
+    });
+  }
+
+  if (evidencePairs.size > 0) {
+    const rows = [...evidencePairs.entries()].map(([key, value]) => {
+      const [demandObservationId, productId] = key.split(":");
+      return {
+        demand_observation_id: demandObservationId,
+        product_id: productId,
+        match_method: "supplier_demand_evidence",
+        match_score: value.score,
+        rationale: value.rationale,
+      };
+    });
+    const { error } = await supabase
+      .from("demand_product_matches")
+      .upsert(rows, { onConflict: "demand_observation_id,product_id", ignoreDuplicates: true });
+    if (error) throw new Error(`Failed to persist supplier-backed demand matches: ${error.message}`);
+  }
+
   let processed = 0;
   let intentProduct = 0;
   let intentNonProduct = 0;
-  let matched = 0; // demand observations matched to >=1 product
-  let unmatched = 0; // product-intent observations with no catalog match
+  let matched = 0;
+  let unmatched = 0;
   let candidatesCreated = 0;
   let candidatesExisting = 0;
   let skippedInvalid = 0;
@@ -135,9 +170,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     const metadata = demand.metadata && typeof demand.metadata === "object" && !Array.isArray(demand.metadata)
       ? (demand.metadata as Record<string, unknown>)
       : {};
-
-    const invalid = metadata.invalid === true || metadata.invalid_reason === "unrecoverable_encoding";
-    if (invalid) {
+    if (metadata.invalid === true || metadata.invalid_reason === "unrecoverable_encoding") {
       skippedInvalid += 1;
       continue;
     }
@@ -169,7 +202,6 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     let rowMatched = false;
     for (const product of productRows) {
       if (!productMatchesQuery(query, product.normalized_title, allProductNames)) continue;
-
       const { error: insertError } = await supabase
         .from("demand_product_matches")
         .upsert(
@@ -197,9 +229,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
       .select("id, demand_observation_id, query")
       .eq("query", query)
       .maybeSingle();
-    if (candidateLookupError) {
-      throw new Error(`Failed to lookup demand product candidate: ${candidateLookupError.message}`);
-    }
+    if (candidateLookupError) throw new Error(`Failed to lookup demand product candidate: ${candidateLookupError.message}`);
     if (existingCandidate) {
       candidatesExisting += 1;
       continue;
@@ -226,14 +256,5 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     candidatesCreated += 1;
   }
 
-  return {
-    processed,
-    intentProduct,
-    intentNonProduct,
-    matched,
-    unmatched,
-    candidatesCreated,
-    candidatesExisting,
-    skippedInvalid,
-  };
+  return { processed, intentProduct, intentNonProduct, matched, unmatched, candidatesCreated, candidatesExisting, skippedInvalid };
 }
