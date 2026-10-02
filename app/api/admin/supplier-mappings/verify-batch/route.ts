@@ -1,3 +1,5 @@
+import "server-only";
+
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
@@ -7,7 +9,7 @@ import { initializeProcurement } from "@/lib/procurement/init";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const DEFAULT_BATCH_SIZE = 5;
+const DEFAULT_BATCH_SIZE = 10;
 const MAX_BATCH_SIZE = 10;
 
 async function runVerification(request: Request) {
