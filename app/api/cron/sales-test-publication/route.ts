@@ -3,7 +3,6 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
-import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
@@ -71,11 +70,10 @@ export async function GET(request: Request) {
 
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
-    // Discovery is not publication. Build Opportunity Intelligence first,
-    // then let the strict supply sales-test gate decide whether anything can publish.
-    const supplyFirst = await discoverAndCreateCjSupply(20, {
-      deadlineAt: startedAt + 150_000,
-    });
+    // Discovery is not publication. Supplier discovery is owned by its own
+    // scheduled source stage; this publication stage must stay bounded so it
+    // can reliably reach Opportunity Intelligence, the Sales Test Gate, BASE,
+    // and NEWFIND instead of timing out before downstream delivery.
     await buildOpportunityIntelligence();
 
     // Also reconsider supply verified by earlier supply-first runs: its
@@ -93,7 +91,6 @@ export async function GET(request: Request) {
 
     const supplySelected = await selectAndPublishSupplySalesTests(
       [
-        ...supplyFirst.items.map((item) => String(item.productId ?? "")),
         ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")),
       ].filter(Boolean),
       3,
@@ -105,16 +102,16 @@ export async function GET(request: Request) {
         status: "succeeded",
         finished_at: new Date().toISOString(),
         duration_ms: Date.now() - startedAt,
-        processed: supplyFirst.candidateCount,
-        failed: supplyFirst.rejected,
+        processed: supplySelected.considered,
+        failed: 0,
         metadata: {
           phase: "sales_test_publication",
           mode: "supply_first_intelligence_gate",
-          candidateCount: supplyFirst.candidateCount,
-          discovered: supplyFirst.discovered,
-          verified: supplyFirst.verified,
+          candidateCount: supplySelected.considered,
+          discovered: 0,
+          verified: verifiedSupply?.length ?? 0,
           published: supplySelected.published,
-          rejected: supplyFirst.rejected,
+          rejected: 0,
         },
       }).eq("id", cronRunId);
     }
@@ -125,7 +122,6 @@ export async function GET(request: Request) {
         phase: "sales_test_publication",
         elapsedMs: Date.now() - startedAt,
         mode: "supply_first_intelligence_gate",
-        supplyFirst,
         supplySelected,
         downstream: supplyDownstream,
         nextPhase: "base_publication",
