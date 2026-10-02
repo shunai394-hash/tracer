@@ -1,4 +1,6 @@
-create or replace view public.supplier_product_mapping_status as
+drop view if exists public.supplier_product_mapping_status;
+
+create view public.supplier_product_mapping_status as
 select
   spm.id,
   spm.shop_listing_id,
