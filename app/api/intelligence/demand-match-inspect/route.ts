@@ -1,9 +1,13 @@
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authError = await requireAutomationAuth(request);
+  if (authError) return authError;
+
   try {
     const supabase = createSupabaseAdminClient();
 

@@ -26,6 +26,8 @@ type DemandProductMatchResult = {
   ambiguousIdentifier: number;
   variantRejected: number;
   brandRejected: number;
+  geminiCalls: number;
+  intentDeferred: number;
   matchRows: number;
   byMethod: Record<string, number>;
   persisted: number;
@@ -93,17 +95,41 @@ function productMatchesQuery(query: string, productName: string, allProductNames
   return matchedTokens.length === 1 && candidateCount >= 1 && candidateCount <= 3;
 }
 
+type PagedResult<T> = { data: T[] | null; error: { message: string } | null };
+
+async function readAll<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  pageSize = 1000,
+  maxRows = 20_000,
+): Promise<PagedResult<T>> {
+  const rows: T[] = [];
+  for (let from = 0; from < maxRows; from += pageSize) {
+    const { data, error } = await page(from, from + pageSize - 1);
+    if (error) return { data: null, error };
+    rows.push(...(data ?? []));
+    if (!data || data.length < pageSize) break;
+  }
+  return { data: rows, error: null };
+}
+
+// Gemini intent classification is a network call per observation. Without a
+// cap a run over ~260 unclassified Google Trends rows cannot finish inside the
+// pipeline budget, so the step was deferred forever and nothing was matched.
+const MAX_GEMINI_CLASSIFICATIONS_PER_RUN = 10;
+
 export async function matchDemandProductsByCategory(): Promise<DemandProductMatchResult> {
   const supabase = createSupabaseAdminClient();
 
+  // Paged reads: PostgREST caps a plain select at 1000 rows, which silently
+  // dropped products (product_intelligence alone exceeds 1000 rows).
   const [demandResult, productResult, candidateResult, cjProductResult, sourceOfferResult, bestsellerResult, identifierResult] = await Promise.all([
-    supabase.from("demand_observations").select("id, metadata, value, observed_at").is("product_id", null).in("signal_type", ["search_volume", "search_result_count"]).order("observed_at", { ascending: false }),
-    supabase.from("product_intelligence").select("product_id, normalized_title"),
-    supabase.from("demand_product_candidates").select("id, demand_observation_id"),
-    supabase.from("demand_cj_products").select("id, demand_product_candidate_id, product_id, identity_status, identity_confidence"),
-    supabase.from("product_offers").select("id, product_id, metadata, seller_name, observed_at").eq("seller_name", "CJdropshipping"),
-    supabase.from("marketplace_bestsellers").select("product_id, jan, gtin, ean, upc, mpn, model, brand").not("product_id", "is", null),
-    supabase.from("product_identifiers").select("product_id, scheme, value").not("product_id", "is", null),
+    readAll((from, to) => supabase.from("demand_observations").select("id, metadata, value, observed_at").is("product_id", null).in("signal_type", ["search_volume", "search_result_count"]).order("observed_at", { ascending: false }).order("id").range(from, to)),
+    readAll((from, to) => supabase.from("product_intelligence").select("product_id, normalized_title").order("product_id").range(from, to)),
+    readAll((from, to) => supabase.from("demand_product_candidates").select("id, demand_observation_id").order("id").range(from, to)),
+    readAll((from, to) => supabase.from("demand_cj_products").select("id, demand_product_candidate_id, product_id, identity_status, identity_confidence").order("id").range(from, to)),
+    readAll((from, to) => supabase.from("product_offers").select("id, product_id, metadata, seller_name, observed_at").eq("seller_name", "CJdropshipping").order("id").range(from, to)),
+    readAll((from, to) => supabase.from("marketplace_bestsellers").select("product_id, jan, gtin, ean, upc, mpn, model, brand").not("product_id", "is", null).order("id").range(from, to)),
+    readAll((from, to) => supabase.from("product_identifiers").select("product_id, scheme, value").not("product_id", "is", null).order("id").range(from, to)),
   ]);
   if (demandResult.error) throw new Error(demandResult.error.message);
   if (productResult.error) throw new Error(productResult.error.message);
@@ -176,6 +202,8 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   let processed = 0, intentProduct = 0, intentNonProduct = 0, matched = 0, unmatched = 0;
   let candidatesCreated = 0, candidatesExisting = 0, skippedInvalid = 0;
   let exactMatches = 0, ambiguousIdentifier = 0, variantRejected = 0, brandRejected = 0;
+  let geminiCalls = 0, intentDeferred = 0;
+  const candidateObservationIds = new Set((candidateResult.data ?? []).map((row) => String(row.demand_observation_id)));
 
   for (const demand of demandRows) {
     processed += 1;
@@ -204,7 +232,15 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     }
 
     let intent = detectProductIntent(query);
+    // Observations that already produced a candidate were classified before;
+    // do not pay for another Gemini call on every run.
+    if (!intent.isProduct && intent.reason === "no_product_signal" && candidateObservationIds.has(demand.id)) {
+      intentNonProduct += 1;
+      continue;
+    }
     if (!intent.isProduct && intent.reason === "no_product_signal" && isGeminiConfigured()) {
+      if (geminiCalls >= MAX_GEMINI_CLASSIFICATIONS_PER_RUN) { intentDeferred += 1; continue; }
+      geminiCalls += 1;
       try {
         const aiIntent = await classifyDemandIntent(query);
         if (aiIntent.is_product_demand) intent = { isProduct: true, category: aiIntent.category ?? null, reason: `gemini:${aiIntent.reason}` };
@@ -267,7 +303,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
 
   return {
     processed, intentProduct, intentNonProduct, matched, unmatched, candidatesCreated, candidatesExisting, skippedInvalid,
-    exactMatches, ambiguousIdentifier, variantRejected, brandRejected,
+    exactMatches, ambiguousIdentifier, variantRejected, brandRejected, geminiCalls, intentDeferred,
     matchRows: rows.length,
     byMethod,
     persisted: persisted.written,

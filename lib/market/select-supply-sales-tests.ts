@@ -155,7 +155,8 @@ export async function selectAndPublishSupplySalesTests(
     if (profit.contributionProfit !== null && profit.contributionProfit <= 0) reasons.push("profit_not_positive");
 
     if (intelligence.selection_eligible !== true) reasons.push("intelligence_selection_ineligible");
-    if (!["TEST_READY", "SELLABLE"].includes(String(intelligence.sellability_state ?? ""))) reasons.push("sellability_not_ready");
+    // Only TEST_READY (all 12 sellability checks) may publish; SELLABLE skips supply/demand/shipping.
+    if (String(intelligence.sellability_state ?? "") !== "TEST_READY") reasons.push("sellability_not_ready");
     if (String(intelligence.filter_state ?? "") !== "PASS") reasons.push("intelligence_filter_not_pass");
     if (String(intelligence.profit_state ?? "") !== "PROFIT_OK") reasons.push("intelligence_profit_not_ok");
     if (num(intelligence.demand_score) === null) reasons.push("demand_evidence_missing");

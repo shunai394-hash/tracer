@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { NextResponse } from "next/server";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -76,6 +77,9 @@ async function waitForRun(
 }
 
 export async function POST(request: Request) {
+  const authError = await requireAutomationAuth(request);
+  if (authError) return authError;
+
   try {
     const token = process.env.APIFY_API_TOKEN?.trim();
 
