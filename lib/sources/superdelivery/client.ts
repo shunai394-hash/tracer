@@ -64,9 +64,15 @@ function findMakerCode(text: string): string | null {
   return match?.[1] ?? null;
 }
 
-function findTitle(text: string): string | null {
-  const match = text.match(/(?:商品ページ|TOP\s*>)?\s*([^<>]{3,180}?商品ページ)/i);
-  return match?.[1]?.trim() ?? null;
+function findTitle(html: string, text: string): string | null {
+  const title = html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i)?.[1];
+  if (title) {
+    const normalized = textFromHtml(title).replace(/\\s*商品ページ.*$/i, "").trim();
+    if (normalized) return normalized;
+  }
+  const janIndex = text.indexOf("JAN");
+  const prefix = janIndex > 0 ? text.slice(Math.max(0, janIndex - 220), janIndex) : text.slice(0, 220);
+  return prefix.trim() || null;
 }
 
 function findStock(text: string): number | null {
@@ -118,7 +124,7 @@ async function searchPublicProducts(jan: string): Promise<SuperDeliveryProductSe
       makerProductCode,
       sdProductCode,
       setNo: null,
-      title: findTitle(text),
+      title: findTitle(detailHtml, text),
       janCode: detailJan,
       stock: findStock(text),
       exhibitState: /SOLD\s*OUT|完売|在庫なし/i.test(text) ? 3 : 2,
