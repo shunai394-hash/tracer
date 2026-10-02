@@ -172,7 +172,19 @@ export async function executeSupplierPurchaseOrder(
     .limit(1)
     .maybeSingle();
 
-  const itemListingId = asString((item ?? {}).listing_id);
+  const { data: shopOrderItem } = po.shop_order_id
+    ? await supabase
+        .from("shop_order_items")
+        .select("*")
+        .eq("order_id", po.shop_order_id)
+        .eq("product_id", po.product_id)
+        .limit(1)
+        .maybeSingle()
+    : { data: null };
+
+  const itemRow = (item ?? {}) as Record<string, unknown>;
+  const shopOrderItemRow = (shopOrderItem ?? {}) as Record<string, unknown>;
+  const itemListingId = asString(shopOrderItemRow.listing_id);
   const isTracerInternal = supplierName.toLowerCase() === "tracer_internal";
   if (!isTracerInternal) {
     if (!itemListingId) {
@@ -241,7 +253,6 @@ export async function executeSupplierPurchaseOrder(
   const duplicateOrderExists = Boolean(duplicateAttempts?.length);
 
   const shopOrderRow = (shopOrder ?? {}) as Record<string, unknown>;
-  const itemRow = (item ?? {}) as Record<string, unknown>;
   const productId = asString(po.product_id);
   const supplierProductId = asString(po.supplier_product_id);
   const supplierVariantId = asString(po.supplier_variant_id) ?? asString(itemRow.supplier_variant_id ?? itemRow.cj_variant_id);
@@ -333,7 +344,7 @@ export async function executeSupplierPurchaseOrder(
     sourceCost,
     shippingCost,
     currency: sourceCurrency,
-    sellingPrice: asNumber(itemRow.unit_price),
+    sellingPrice: asNumber(shopOrderItemRow.unit_price),
     sourceFxRateToSelling: fxQuote,
     addressComplete: addressComplete(shopOrderRow),
     killSwitchBlocked: killSwitch.blocked,
