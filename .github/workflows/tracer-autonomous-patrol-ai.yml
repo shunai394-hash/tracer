@@ -1,8 +1,6 @@
 name: TRACER Autonomous Patrol AI
 
 on:
-  schedule:
-    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 permissions:
