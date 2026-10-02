@@ -31,8 +31,8 @@ function base64url(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64url");
 }
 
-function deriveKey(secret: string): Buffer {
-  return createHash("sha256").update(secret).digest();
+function deriveKey(secret: string): Uint8Array {
+  return new Uint8Array(createHash("sha256").update(secret).digest());
 }
 
 export function createCorecState(): string {
@@ -165,7 +165,7 @@ export async function decryptCorecToken(value: string): Promise<CorecToken> {
     ["decrypt"],
   );
   const plaintext = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: Buffer.from(ivPart, "base64url") },
+    { name: "AES-GCM", iv: new Uint8Array(Buffer.from(ivPart, "base64url")) },
     key,
     new Uint8Array(Buffer.from(ciphertextPart, "base64url")),
   );
