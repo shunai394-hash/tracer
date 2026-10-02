@@ -9,6 +9,8 @@ type MappingStatus = {
   supplierListingId: string | null;
   supplierAccountId: string | null;
   supplierCode: string | null;
+  supplierProductId: string | null;
+  supplierVariantId: string | null;
 };
 
 export async function getSupplierMappingStatus(
@@ -18,7 +20,7 @@ export async function getSupplierMappingStatus(
   const { data, error } = await db
     .from("supplier_product_mapping_status")
     .select(
-      "id,supplier_listing_id,supplier_account_id,supplier_code,fully_automatable,auto_order_enabled,auto_payment_enabled,auto_tracking_enabled,automation_status,mapping_verification_status",
+      "id,supplier_listing_id,supplier_account_id,supplier_code,supplier_product_id,supplier_variant_id,fully_automatable,auto_order_enabled,auto_payment_enabled,auto_tracking_enabled,automation_status,mapping_verification_status",
     )
     .eq("shop_listing_id", shopListingId)
     .order("priority", { ascending: true })
@@ -33,6 +35,8 @@ export async function getSupplierMappingStatus(
       supplierListingId: null,
       supplierAccountId: null,
       supplierCode: null,
+      supplierProductId: null,
+      supplierVariantId: null,
     };
   }
 
@@ -55,6 +59,8 @@ export async function getSupplierMappingStatus(
       supplierListingId: String(data.supplier_listing_id),
       supplierAccountId: data.supplier_account_id ? String(data.supplier_account_id) : null,
       supplierCode: data.supplier_code ? String(data.supplier_code) : null,
+      supplierProductId: data.supplier_product_id ? String(data.supplier_product_id) : null,
+      supplierVariantId: data.supplier_variant_id ? String(data.supplier_variant_id) : null,
     };
   }
 
@@ -72,5 +78,7 @@ export async function getSupplierMappingStatus(
     supplierListingId: String(data.supplier_listing_id),
     supplierAccountId: data.supplier_account_id ? String(data.supplier_account_id) : null,
     supplierCode: data.supplier_code ? String(data.supplier_code) : null,
+    supplierProductId: data.supplier_product_id ? String(data.supplier_product_id) : null,
+    supplierVariantId: data.supplier_variant_id ? String(data.supplier_variant_id) : null,
   };
 }
