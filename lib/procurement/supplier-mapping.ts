@@ -8,6 +8,7 @@ type MappingStatus = {
   mappingId: string | null;
   supplierListingId: string | null;
   supplierAccountId: string | null;
+  supplierCode: string | null;
 };
 
 export async function getSupplierMappingStatus(
@@ -17,7 +18,7 @@ export async function getSupplierMappingStatus(
   const { data, error } = await db
     .from("supplier_product_mapping_status")
     .select(
-      "id,supplier_listing_id,supplier_code,fully_automatable,auto_order_enabled,auto_payment_enabled,auto_tracking_enabled,automation_status,mapping_verification_status",
+      "id,supplier_listing_id,supplier_account_id,supplier_code,fully_automatable,auto_order_enabled,auto_payment_enabled,auto_tracking_enabled,automation_status,mapping_verification_status",
     )
     .eq("shop_listing_id", shopListingId)
     .order("priority", { ascending: true })
@@ -31,6 +32,7 @@ export async function getSupplierMappingStatus(
       mappingId: null,
       supplierListingId: null,
       supplierAccountId: null,
+      supplierCode: null,
     };
   }
 
@@ -41,6 +43,7 @@ export async function getSupplierMappingStatus(
       mappingId: null,
       supplierListingId: null,
       supplierAccountId: null,
+      supplierCode: null,
     };
   }
 
@@ -50,7 +53,8 @@ export async function getSupplierMappingStatus(
       reason: "fully_automatable",
       mappingId: String(data.id),
       supplierListingId: String(data.supplier_listing_id),
-      supplierAccountId: null,
+      supplierAccountId: data.supplier_account_id ? String(data.supplier_account_id) : null,
+      supplierCode: data.supplier_code ? String(data.supplier_code) : null,
     };
   }
 
@@ -66,6 +70,7 @@ export async function getSupplierMappingStatus(
     reason: reasons.join("|") || "supplier_mapping_capability_not_verified",
     mappingId: String(data.id),
     supplierListingId: String(data.supplier_listing_id),
-    supplierAccountId: null,
+    supplierAccountId: data.supplier_account_id ? String(data.supplier_account_id) : null,
+    supplierCode: data.supplier_code ? String(data.supplier_code) : null,
   };
 }
