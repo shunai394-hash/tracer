@@ -167,7 +167,7 @@ export async function decryptCorecToken(value: string): Promise<CorecToken> {
   const plaintext = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: Buffer.from(ivPart, "base64url") },
     key,
-    Buffer.from(ciphertextPart, "base64url"),
+    new Uint8Array(Buffer.from(ciphertextPart, "base64url")),
   );
   return JSON.parse(new TextDecoder().decode(plaintext)) as CorecToken;
 }
