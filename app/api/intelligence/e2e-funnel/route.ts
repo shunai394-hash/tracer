@@ -44,6 +44,7 @@ export async function GET(request: Request) {
   const [
     marketTotal,
     marketWithIdentifier,
+    marketWithIdentifierNotInvestigated,
     cjVerifiedOrderable,
     cjIdentifierGrade,
     cjSupplyDiscoveredOnly,
@@ -52,6 +53,7 @@ export async function GET(request: Request) {
   ] = await Promise.all([
     count(db, "marketplace_bestsellers"),
     count(db, "marketplace_bestsellers", (q) => q.or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null")),
+    count(db, "marketplace_bestsellers", (q) => q.eq("pipeline_status", "pending").or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null")),
     count(db, "supplier_listings", (q) => q.eq("supplier", "cj").eq("verification_status", "verified").eq("orderable", true)),
     count(db, "supplier_listings", (q) => q.eq("supplier", "cj").eq("identity_status", "linked").in("identity_method", IDENTIFIER_GRADE)),
     count(db, "supplier_listings", (q) => q.eq("supplier", "cj").eq("identity_method", "supply_discovered")),
@@ -145,7 +147,8 @@ export async function GET(request: Request) {
     count(db, "purchase_orders", (q) => q.eq("status", "supplier_payment_pending")),
     count(db, "purchase_orders", (q) => q.eq("status", "supplier_payment_verification_failed")),
     count(db, "purchase_orders", (q) => q.eq("supplier_status", "paid")),
-    count(db, "purchase_orders", (q) => q.eq("status", "placed").is("tracking_number", null)),
+    // shipped_at is set by supplier reconciliation once tracking exists.
+    count(db, "purchase_orders", (q) => q.eq("status", "placed").is("shipped_at", null)),
     count(db, "purchase_orders", (q) => q.in("status", ["shipped", "delivered"])),
   ]);
 
@@ -158,6 +161,22 @@ export async function GET(request: Request) {
     .eq("job_name", "patrol-ai")
     .order("started_at", { ascending: false })
     .limit(10);
+
+  // --- Loop activity over the last 24h --------------------------------------
+  const since = new Date(now - 86_400_000).toISOString();
+  const [{ data: patrolRuns }, { data: reverifyRuns }, { data: deliveries24h }] = await Promise.all([
+    db.from("cron_runs").select("status").eq("job_name", "patrol-ai").gte("started_at", since).limit(500),
+    db.from("cron_runs").select("processed,metadata").eq("job_name", "cj-identity-reverify-cursor").gte("started_at", since).limit(2000),
+    db.from("newfind_promotion_deliveries").select("status,attempts,updated_at").gte("updated_at", since).limit(2000),
+  ]);
+  const activity24h = {
+    patrolRuns: tally((patrolRuns ?? []).map((row) => row.status)),
+    identityChecked: (reverifyRuns ?? []).reduce((sum, row) => sum + (Number(row.processed) || 0), 0),
+    identityPromoted: (reverifyRuns ?? []).reduce((sum, row) => sum + (Number((row.metadata as Record<string, unknown> | null)?.promoted) || 0), 0),
+    newfindDeliveriesTouched: (deliveries24h ?? []).length,
+    newfindRetries: (deliveries24h ?? []).filter((row) => (Number(row.attempts) || 0) > 1).length,
+    newfindByStatus: tally((deliveries24h ?? []).map((row) => row.status)),
+  };
 
   return NextResponse.json({
     ok: true,
@@ -175,6 +194,7 @@ export async function GET(request: Request) {
       orders: { shopOrders, purchaseOrders, supplierOrders, supplierPaymentPending: paymentPending, supplierPaymentVerificationFailed: paymentFailed, supplierPaymentConfirmed: paymentConfirmed, shippedOrDelivered: shipped },
     },
     stalls: {
+      barcodeBestsellersNotInvestigated: marketWithIdentifierNotInvestigated,
       identityLinkedSupplyNotTestReady: linkedWithoutTestReady,
       testReadyLinkedSupplyWithoutListing: testReadyWithoutListing,
       gatePassedPublicNotOnBase: gatedNotOnBase.length,
@@ -183,6 +203,7 @@ export async function GET(request: Request) {
       placedSupplierOrdersWithoutTracking: placedWithoutTracking,
       baseNotOnNewfindSamples: baseNotOnNewfind,
     },
+    activity24h,
     cron: {
       running: (running ?? []).length,
       stale: stale.length,

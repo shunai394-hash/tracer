@@ -106,6 +106,23 @@ async function runPatrol(db: ReturnType<typeof createSupabaseAdminClient>) {
   return { alreadyRunning: false, cronId: String(run.id), startedAt: null };
 }
 
+async function withinBudget<T>(work: Promise<T>, deadlineAt: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label}_deferred_time_budget`)),
+          Math.max(1_000, deadlineAt - Date.now()),
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
@@ -137,7 +154,18 @@ export async function GET(request: Request) {
     // Identity, Demand, Supply, Opportunity, and the Sales Test Gate.
     // Leave room for BASE publication, NEWFIND rescue and the cron_runs
     // bookkeeping below; deferred stages resume on the next patrol.
-    const pipeline = await runIntelligencePipeline({ deadlineAt: startedAt + 200_000 });
+    const pipeline = await runIntelligencePipeline({
+      deadlineAt: startedAt + 200_000,
+      // Heartbeat: if Vercel still kills the function, the lock row shows the
+      // step that was running instead of an empty "starting" phase.
+      onStep: async (step) => {
+        if (!cronId) return;
+        const { error } = await db.from("cron_runs").update({
+          metadata: { actor: "patrol-ai", phase: step, elapsedMs: Date.now() - startedAt },
+        }).eq("id", cronId);
+        if (error) console.warn("[TRACER PATROL AI HEARTBEAT]", error.message);
+      },
+    });
 
     const actions: Array<Record<string, unknown>> = [{
       action: "run_full_intelligence_pipeline",
@@ -148,7 +176,9 @@ export async function GET(request: Request) {
       .map((step) => `${step.name}: ${step.error ?? "failed"}`);
 
     try {
-      const base = await publishPublishedListingsToBase(10);
+      // Existing BASE items are reconciled here too; never let that outlive
+      // the function budget.
+      const base = await withinBudget(publishPublishedListingsToBase(10), startedAt + 250_000, "publish_base");
       actions.push({
         action: "publish_base",
         attempted: base.attempted,
