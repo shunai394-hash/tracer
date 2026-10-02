@@ -76,7 +76,7 @@ class StepTimeoutError extends Error {
 
 // Reserve time for the cheap downstream stages (intelligence, Sales Test
 // Gate, NEWFIND) so an expensive discovery stage cannot starve them.
-const DOWNSTREAM_RESERVE_MS = 10_000;
+const DOWNSTREAM_RESERVE_MS = 20_000;
 
 async function runStep(
   name: string,
@@ -98,7 +98,7 @@ async function runStep(
   // single slow step (marketplace fetch, CJ fan-out) from running past 300s,
   // which is what kept killing patrol-ai and leaving its lock behind.
   const budgetMs = options.downstream
-    ? Math.min(1_500, Math.max(500, remaining - 500))
+    ? Math.min(4_000, Math.max(1_000, remaining - 1_000))
     : Math.max(1_000, remaining - DOWNSTREAM_RESERVE_MS);
   const startedAt = Date.now();
   await pipelineProgress?.(name);
