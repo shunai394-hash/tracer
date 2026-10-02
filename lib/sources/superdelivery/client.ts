@@ -65,9 +65,9 @@ function findMakerCode(text: string): string | null {
 }
 
 function findTitle(html: string, text: string): string | null {
-  const title = html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i)?.[1];
+  const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
   if (title) {
-    const normalized = textFromHtml(title).replace(/\\s*商品ページ.*$/i, "").trim();
+    const normalized = textFromHtml(title).replace(/\s*商品ページ.*$/i, "").trim();
     if (normalized) return normalized;
   }
   const janIndex = text.indexOf("JAN");
