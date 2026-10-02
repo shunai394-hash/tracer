@@ -155,7 +155,7 @@ export async function GET(request: Request) {
     // Leave room for BASE publication, NEWFIND rescue and the cron_runs
     // bookkeeping below; deferred stages resume on the next patrol.
     const pipeline = await runIntelligencePipeline({
-      deadlineAt: startedAt + 28_000,
+      deadlineAt: startedAt + 30_000,
       // Heartbeat: if Vercel still kills the function, the lock row shows the
       // step that was running instead of an empty "starting" phase.
       onStep: async (step) => {
