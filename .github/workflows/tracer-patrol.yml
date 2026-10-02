@@ -28,7 +28,7 @@ jobs:
             "$OIDC_URL" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           test -n "$OIDC_TOKEN"
 
-          curl --fail-with-body --silent --show-error --max-time 300 \
+          curl --fail-with-body --silent --show-error --max-time 55 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
             "https://tracer-self.vercel.app/api/cron/patrol-ai" | tee patrol-report.json
 
