@@ -8,6 +8,7 @@ import {
   isSupplierDryRunEnabled,
 } from "@/lib/config/env";
 import { getSupplierAdapter, getSupplierCapabilities } from "@/lib/procurement/registry";
+import { getSupplierMappingStatus } from "@/lib/procurement/supplier-mapping";
 import type { SupplierOrderInput } from "@/lib/procurement/types";
 import { initializeProcurement } from "@/lib/procurement/init";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
@@ -170,6 +171,65 @@ export async function executeSupplierPurchaseOrder(
     .eq("purchase_order_id", purchaseOrderId)
     .limit(1)
     .maybeSingle();
+
+  const itemListingId = asString((item ?? {}).listing_id);
+  const isTracerInternal = supplierName.toLowerCase() === "tracer_internal";
+  if (!isTracerInternal) {
+    if (!itemListingId) {
+      return {
+        purchaseOrderId,
+        supplierName,
+        attempted: false,
+        succeeded: false,
+        supplierOrderId: null,
+        reason: "shop_listing_identity_missing_for_mapping_recheck",
+        gate: null,
+      };
+    }
+
+    const mapping = await getSupplierMappingStatus(supabase, itemListingId);
+    if (!mapping.fullyAutomatable) {
+      return {
+        purchaseOrderId,
+        supplierName,
+        attempted: false,
+        succeeded: false,
+        supplierOrderId: null,
+        reason: `supplier_mapping_not_automatable_at_execution:${mapping.reason}`,
+        gate: null,
+      };
+    }
+
+    if (
+      mapping.supplierProductId &&
+      asString(po.supplier_product_id) !== mapping.supplierProductId
+    ) {
+      return {
+        purchaseOrderId,
+        supplierName,
+        attempted: false,
+        succeeded: false,
+        supplierOrderId: null,
+        reason: "supplier_product_mapping_snapshot_mismatch",
+        gate: null,
+      };
+    }
+
+    if (
+      mapping.supplierVariantId &&
+      asString(po.supplier_variant_id) !== mapping.supplierVariantId
+    ) {
+      return {
+        purchaseOrderId,
+        supplierName,
+        attempted: false,
+        succeeded: false,
+        supplierOrderId: null,
+        reason: "supplier_variant_mapping_snapshot_mismatch",
+        gate: null,
+      };
+    }
+  }
 
   const { data: duplicateAttempts } = await supabase
     .from("supplier_order_attempts")
