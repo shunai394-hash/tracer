@@ -31,8 +31,11 @@ function base64url(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64url");
 }
 
-function deriveKey(secret: string): Uint8Array {
-  return new Uint8Array(createHash("sha256").update(secret).digest());
+function deriveKey(secret: string): ArrayBuffer {
+  const digest = createHash("sha256").update(secret).digest();
+  const key = new ArrayBuffer(digest.length);
+  new Uint8Array(key).set(digest);
+  return key;
 }
 
 export function createCorecState(): string {
