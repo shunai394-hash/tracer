@@ -125,7 +125,7 @@ async function waitForLocalCJRateLimit(): Promise<void> {
   release();
 }
 
-async function waitForCJRateLimit(): Promise<void> {
+export async function waitForCJRateLimit(): Promise<void> {
   // Vercel can run multiple serverless instances concurrently. The old
   // in-memory limiter serialized requests only inside one instance, so two
   // concurrent instances could still violate CJ's global 1 QPS limit.
@@ -154,7 +154,7 @@ async function waitForCJRateLimit(): Promise<void> {
   await waitForLocalCJRateLimit();
 }
 
-async function fetchCJWithRateLimit(
+export async function fetchCJWithRateLimit(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> {

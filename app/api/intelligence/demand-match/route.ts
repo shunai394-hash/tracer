@@ -1,14 +1,21 @@
 import { NextResponse } from "next/server";
 import { matchDemandProductsByCategory } from "@/lib/intelligence/match-demand-products";
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
-export async function POST() {
+// Writes demand_product_matches / demand_product_candidates, so it requires
+// the same automation auth as the cron routes (it was previously open).
+export async function POST(request: Request) {
+  const authError = await requireAutomationAuth(request);
+  if (authError) return authError;
+
   try {
     const result = await matchDemandProductsByCategory();
 
     return NextResponse.json({
-      ok: true,
+      ok: result.persistErrors.length === 0,
       result,
     });
   } catch (error) {

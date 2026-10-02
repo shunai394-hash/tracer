@@ -1,6 +1,6 @@
 import "server-only";
 
-import { CJConfigError, CJRequestError } from "@/lib/sources/cj/client";
+import { CJConfigError, CJRequestError, fetchCJWithRateLimit, waitForCJRateLimit } from "@/lib/sources/cj/client";
 import { getCJConfig } from "@/lib/config/env";
 
 /**
@@ -62,7 +62,7 @@ async function getAccessTokenForOrder(): Promise<string> {
   const { apiKey } = getCJConfig();
   if (!apiKey) throw new CJConfigError();
 
-  const response = await fetch(
+  const response = await fetchCJWithRateLimit(
     "https://developers.cjdropshipping.com/api2.0/v1/authentication/getAccessToken",
     {
       method: "POST",
@@ -164,6 +164,9 @@ export async function createCJOrderV2(
   // Use balance payment so a live TRACER order does not stop at a payment page.
   body.payType = input.payType ?? 2;
 
+  // Order creation claims the shared CJ QPS slot but is never auto-retried,
+  // so a throttled or ambiguous response cannot create a duplicate order.
+  await waitForCJRateLimit();
   const response = await fetch(
     "https://developers.cjdropshipping.com/api2.0/v1/shopping/order/createOrderV2",
     {
@@ -217,7 +220,7 @@ export async function getCJTrackingInfo(trackNumber: string): Promise<CJTracking
   if (!normalized) return null;
   const token = await getAccessTokenForOrder();
   const params = new URLSearchParams({ trackNumber: normalized });
-  const response = await fetch(
+  const response = await fetchCJWithRateLimit(
     `https://developers.cjdropshipping.com/api2.0/v1/logistic/trackInfo?${params.toString()}`,
     {
       method: "GET",
@@ -267,7 +270,7 @@ export type CJOrderStatusResult = {
 export async function getCJOrderStatus(supplierOrderId: string): Promise<CJOrderStatusResult> {
   const token = await getAccessTokenForOrder();
   const params = new URLSearchParams({ orderId: supplierOrderId });
-  const response = await fetch(
+  const response = await fetchCJWithRateLimit(
     `https://developers.cjdropshipping.com/api2.0/v1/shopping/order/getOrderDetail?${params.toString()}`,
     {
       method: "GET",

@@ -91,6 +91,31 @@ jobs:
 
           if [ -n "$failures" ]; then echo "Smoke failures:$failures"; exit 1; fi
 
+      - name: Demand match precision (audit -> run matcher -> audit)
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE=https://tracer-self.vercel.app
+          token() {
+            curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          cat > summarize.py <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1], encoding="utf-8"))
+          keys = ["deployment", "counts", "readErrors", "matchMethods", "demandReasonCounts", "topSellabilityStates", "cjInventory", "cronLatest", "demandTrace", "productTrace", "falsePositiveCheck"]
+          print(json.dumps({k: d.get(k) for k in keys}, ensure_ascii=False, indent=1))
+          PY
+          echo "=== PRECISION AUDIT BEFORE ==="
+          curl -sS --max-time 60 -H "Authorization: Bearer $(token)" "$BASE/api/intelligence/match-precision-audit" > precision-before.json
+          python3 summarize.py precision-before.json || cat precision-before.json
+          echo "=== DEMAND MATCHER RUN ==="
+          curl -sS --max-time 300 -X POST -H "Authorization: Bearer $(token)" "$BASE/api/intelligence/demand-match" | tee demand-match.json
+          echo
+          echo "=== PRECISION AUDIT AFTER MATCHER ==="
+          curl -sS --max-time 60 -H "Authorization: Bearer $(token)" "$BASE/api/intelligence/match-precision-audit" > precision-after.json
+          python3 summarize.py precision-after.json || cat precision-after.json
+
       - name: Run autonomous AI patrol after production deploy
         shell: bash
         run: |
