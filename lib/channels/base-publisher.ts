@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createBaseItem, editBaseItem, addBaseItemImage, isBaseConfigured } from "@/lib/channels/base";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { getSupplierMappingStatus } from "@/lib/procurement/supplier-mapping";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -108,6 +109,59 @@ export async function publishPublishedListingsToBase(
         ok: false,
         skipped: true,
         error: "sales_test_gate_not_passed",
+      });
+      continue;
+    }
+
+    const mapping = await getSupplierMappingStatus(supabase, listing.id);
+
+    // BASE publication is only allowed when the exact BASE listing is fixed to
+    // a verified supplier product/variant whose order, payment, and tracking
+    // path has been explicitly proven. Supplier capability alone is not enough:
+    // the customer order must be able to follow the same fixed mapping without
+    // a second product search.
+    if (!mapping.fullyAutomatable) {
+      let baseSyncError: string | null = null;
+      if (listing.base_item_id && listing.selling_price !== null) {
+        try {
+          await editBaseItem({
+            itemId: String(listing.base_item_id),
+            title: listing.title,
+            detail: listing.description ?? listing.title,
+            price: Number(listing.selling_price),
+            stock: 0,
+            visible: false,
+          });
+        } catch (error) {
+          baseSyncError = error instanceof Error ? error.message : String(error);
+        }
+      }
+
+      const now = new Date().toISOString();
+      const reason = mapping.reason;
+      const { error: blockError } = await supabase
+        .from("shop_listings")
+        .update({
+          published: false,
+          orderable: false,
+          base_publication_lease_until: null,
+          pipeline_stage: "BASE_PUBLICATION",
+          pipeline_status: "blocked",
+          pipeline_reason: "supplier_product_mapping_not_fully_automatable",
+          pipeline_error: baseSyncError ?? reason,
+          pipeline_updated_at: now,
+          updated_at: now,
+        })
+        .eq("id", listingId);
+      if (blockError) throw new Error(blockError.message);
+
+      results.push({
+        listingId,
+        ok: false,
+        skipped: true,
+        error: baseSyncError
+          ? `supplier_product_mapping_not_fully_automatable:${reason}:base_hide_failed:${baseSyncError}`
+          : `supplier_product_mapping_not_fully_automatable:${reason}`,
       });
       continue;
     }

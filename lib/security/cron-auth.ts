@@ -132,7 +132,12 @@ export async function requireAutomationAuth(
   request: Request,
 ): Promise<NextResponse | null> {
   const authorization = request.headers.get("authorization");
+  const adminSession = request.headers.get("cookie")?.split(";").map((part) => part.trim()).find((part) => part.startsWith("tracer_admin_session="))?.slice("tracer_admin_session=".length);
   const cronSecret = process.env.CRON_SECRET;
+
+  if (cronSecret && adminSession === cronSecret) {
+    return null;
+  }
 
   if (cronSecret && authorization === `Bearer ${cronSecret}`) {
     return null;
