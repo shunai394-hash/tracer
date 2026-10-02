@@ -265,3 +265,4 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, status: "failed", error: message }, { status: 500 });
   }
 }
+// Production deployment sync marker: patrol implementation follows main.
