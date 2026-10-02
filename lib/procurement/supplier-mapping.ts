@@ -48,6 +48,8 @@ export async function getSupplierMappingStatus(
       supplierListingId: null,
       supplierAccountId: null,
       supplierCode: null,
+      supplierProductId: null,
+      supplierVariantId: null,
     };
   }
 
