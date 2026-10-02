@@ -1,6 +1,7 @@
 import "server-only";
 
-import { getSuperDeliveryConfig } from "@/lib/config/env";
+const PUBLIC_SEARCH_URL = "https://www.superdelivery.com/p/do/psl/";
+const REQUEST_TIMEOUT_MS = 15_000;
 
 export type SuperDeliveryProductSet = {
   makerProductCode: string | null;
@@ -12,6 +13,7 @@ export type SuperDeliveryProductSet = {
   exhibitState: number | null;
   price: number | null;
   imageUrl: string | null;
+  productUrl: string | null;
   raw: Record<string, unknown>;
 };
 
@@ -23,122 +25,138 @@ export class SuperDeliveryRequestError extends Error {
   readonly code = "SUPERDELIVERY_REQUEST_FAILED" as const;
 }
 
-function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
+function textFromHtml(value: string): string {
+  return value
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function stringValue(root: Record<string, unknown>, ...keys: string[]): string | null {
-  for (const key of keys) {
-    const value = root[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
-    if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  }
+function absoluteUrl(href: string): string {
+  return href.startsWith("http") ? href : `https://www.superdelivery.com${href}`;
+}
+
+function productLinks(html: string): string[] {
+  const links = new Set<string>();
+  const re = /href=["']([^"']*\/p\/r\/pd_p\/\d+\/?)["']/gi;
+  for (const match of html.matchAll(re)) links.add(absoluteUrl(match[1]));
+  return [...links];
+}
+
+function findJan(text: string): string | null {
+  const match = text.match(/(?:JAN(?:コード)?|JAN)\s*[：:]?\s*(\d{13})/i);
+  return match?.[1] ?? null;
+}
+
+function findSdCode(text: string): string | null {
+  const match = text.match(/SD品番\s*[：:]?\s*([A-Za-z0-9-]+)/i);
+  return match?.[1] ?? null;
+}
+
+function findMakerCode(text: string): string | null {
+  const match = text.match(/(?:メーカー品番|商品コード)\s*[：:]?\s*[〖「]?([A-Za-z0-9_-]+)[〗」]?/i);
+  return match?.[1] ?? null;
+}
+
+function findTitle(text: string): string | null {
+  const match = text.match(/(?:商品ページ|TOP\s*>)?\s*([^<>]{3,180}?商品ページ)/i);
+  return match?.[1]?.trim() ?? null;
+}
+
+function findStock(text: string): number | null {
+  if (/SOLD\s*OUT|完売|在庫なし/i.test(text)) return 0;
+  if (/在庫あり|在庫有り/i.test(text)) return 1;
   return null;
 }
 
-function numberValue(root: Record<string, unknown>, ...keys: string[]): number | null {
-  for (const key of keys) {
-    const value = root[key];
-    const parsed = typeof value === "number" ? value : Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
+function findImage(html: string): string | null {
+  const match = html.match(/<img[^>]+(?:src|data-src)=["']([^"']+)["']/i);
+  return match?.[1] ? absoluteUrl(match[1]) : null;
 }
 
-function extractItems(payload: unknown): unknown[] {
-  if (Array.isArray(payload)) return payload;
-  const root = record(payload);
-  for (const key of ["items", "products", "productSets", "product_set", "data", "result"]) {
-    if (Array.isArray(root[key])) return root[key];
-    const nested = record(root[key]);
-    for (const nestedKey of ["items", "products", "productSets", "data"]) {
-      if (Array.isArray(nested[nestedKey])) return nested[nestedKey];
-    }
-  }
-  return [];
-}
-
-function normalizeItem(value: unknown): SuperDeliveryProductSet {
-  const raw = record(value);
-  return {
-    makerProductCode: stringValue(raw, "makerProductCode", "maker_product_code", "makerCode"),
-    sdProductCode: stringValue(raw, "sdProductCode", "sd_product_code", "productCode"),
-    setNo: stringValue(raw, "setNo", "set_no", "setNumber"),
-    title: stringValue(raw, "productName", "name", "title", "product_name"),
-    janCode: stringValue(raw, "janCode", "jan_code", "JAN", "jan"),
-    stock: numberValue(raw, "stock", "stockCount", "quantity"),
-    exhibitState: numberValue(raw, "exhibitState", "exhibit_state"),
-    price: numberValue(raw, "price", "buyerPrice", "wholesalePrice", "wholesale_price"),
-    imageUrl: stringValue(raw, "imageUrl", "image_url", "image", "primaryImageUrl"),
-    raw,
-  };
-}
-
-function config() {
-  const value = getSuperDeliveryConfig();
-  if (!value.apiAuthCode) throw new SuperDeliveryConfigError("SUPER DELIVERY API auth code is not configured");
-  return value;
-}
-
-async function request(): Promise<unknown> {
-  const { apiAuthCode, baseUrl, timeoutMs } = config();
-  const params = new URLSearchParams({
-    apiAuthCode,
-    exhibitState: "2",
-    field: "stock,exhibitState,janCode",
-  });
-  const response = await fetch(
-    `${baseUrl}?${params.toString()}`,
-    {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-      signal: AbortSignal.timeout(timeoutMs),
+async function fetchText(url: string): Promise<string> {
+  const response = await fetch(url, {
+    headers: {
+      Accept: "text/html,application/xhtml+xml",
+      "User-Agent": "TRACER/1.0 (+public-product-discovery)",
     },
-  );
+    cache: "no-store",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
   if (!response.ok) {
-    throw new SuperDeliveryRequestError(`SUPER DELIVERY API HTTP ${response.status}`);
+    throw new SuperDeliveryRequestError(`SUPER DELIVERY public page HTTP ${response.status}`);
   }
-  return response.json();
+  return response.text();
+}
+
+async function searchPublicProducts(jan: string): Promise<SuperDeliveryProductSet[]> {
+  const normalized = jan.trim();
+  if (!/^\d{13}$/.test(normalized)) return [];
+
+  const url = new URL(PUBLIC_SEARCH_URL);
+  url.searchParams.set("word", normalized);
+
+  const html = await fetchText(url.toString());
+  const links = productLinks(html).slice(0, 5);
+  const results: SuperDeliveryProductSet[] = [];
+
+  for (const productUrl of links) {
+    const detailHtml = await fetchText(productUrl);
+    const text = textFromHtml(detailHtml);
+    const detailJan = findJan(text);
+    if (detailJan !== normalized) continue;
+
+    const sdProductCode = findSdCode(text);
+    const makerProductCode = findMakerCode(text);
+    results.push({
+      makerProductCode,
+      sdProductCode,
+      setNo: null,
+      title: findTitle(text),
+      janCode: detailJan,
+      stock: findStock(text),
+      exhibitState: /SOLD\s*OUT|完売|在庫なし/i.test(text) ? 3 : 2,
+      price: null,
+      imageUrl: findImage(detailHtml),
+      productUrl,
+      raw: {
+        source: "superdelivery_public_search",
+        observedText: text.slice(0, 4000),
+      },
+    });
+  }
+
+  return results;
 }
 
 export async function getSuperDeliveryCatalog(): Promise<SuperDeliveryProductSet[]> {
-  const payload = await request();
-  return extractItems(payload).map(normalizeItem);
+  return [];
 }
 
 export async function searchSuperDeliveryProducts(query: string): Promise<SuperDeliveryProductSet[]> {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return [];
-  const items = await getSuperDeliveryCatalog();
-  return items
-    .filter((item) => {
-      const haystack = [
-        item.title,
-        item.makerProductCode,
-        item.sdProductCode,
-        item.janCode,
-      ].filter(Boolean).join(" ").toLowerCase();
-      return haystack.includes(normalized) && item.stock !== null && item.stock > 0;
-    })
-    .slice(0, 50);
+  return searchPublicProducts(query);
 }
 
-export function findSuperDeliveryProductsByJan(
-  catalog: SuperDeliveryProductSet[],
+export async function findSuperDeliveryProductsByJan(
+  _catalog: SuperDeliveryProductSet[],
   jan: string,
-): SuperDeliveryProductSet[] {
-  const normalized = jan.trim();
-  if (!normalized) return [];
-  return catalog.filter((item) => String(item.janCode ?? "").trim() === normalized);
+): Promise<SuperDeliveryProductSet[]> {
+  return searchPublicProducts(jan);
 }
 
 export async function getSuperDeliveryProduct(productCode: string): Promise<SuperDeliveryProductSet | null> {
-  const code = productCode.trim();
-  if (!code) return null;
-  const catalog = await getSuperDeliveryCatalog();
-  return catalog.find(
-    (item) => item.sdProductCode === code || item.makerProductCode === code,
+  const normalized = productCode.trim();
+  if (!normalized) return null;
+  const results = await searchPublicProducts(normalized);
+  return results.find(
+    (item) =>
+      item.sdProductCode === normalized ||
+      item.makerProductCode === normalized,
   ) ?? null;
 }
