@@ -26,6 +26,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const shopListingId = url.searchParams.get("shopListingId");
   const supplierCode = url.searchParams.get("supplier");
+  const includeCandidates = url.searchParams.get("includeCandidates") === "1";
 
   let query = db
     .from("supplier_product_mapping_status")
@@ -39,7 +40,40 @@ export async function GET(request: Request) {
   const { data, error } = await query;
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
 
-  return NextResponse.json({ ok: true, mappings: data ?? [] });
+  if (!includeCandidates) {
+    return NextResponse.json({ ok: true, mappings: data ?? [] });
+  }
+
+  const [{ data: shopListings, error: shopError }, { data: supplierListings, error: supplierError }, { data: accounts, error: accountError }] =
+    await Promise.all([
+      db
+        .from("shop_listings")
+        .select("id,title,base_item_id,published,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,selling_price")
+        .or("published.eq.true,base_item_id.not.is.null")
+        .order("created_at", { ascending: false })
+        .limit(200),
+      db
+        .from("supplier_listings")
+        .select("id,supplier,title,external_id,sku,supplier_product_id,supplier_variant_id,cost,shipping_cost,inventory,orderable,price_confirmed,inventory_confirmed,tracking_available,verification_status,configured")
+        .eq("configured", true)
+        .eq("orderable", true)
+        .order("fetched_at", { ascending: false })
+        .limit(500),
+      db.from("supplier_accounts").select("*").order("code"),
+    ]);
+
+  if (shopError || supplierError || accountError) {
+    return NextResponse.json(
+      { ok: false, error: shopError?.message ?? supplierError?.message ?? accountError?.message },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    mappings: data ?? [],
+    candidates: { shopListings: shopListings ?? [], supplierListings: supplierListings ?? [], accounts: accounts ?? [] },
+  });
 }
 
 export async function POST(request: Request) {
