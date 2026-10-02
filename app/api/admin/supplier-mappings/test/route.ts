@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { getSupplierAdapter } from "@/lib/procurement/registry";
+import { initializeProcurement } from "@/lib/procurement/init";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -13,6 +14,7 @@ export async function POST(request: Request) {
   const id = new URL(request.url).searchParams.get("id");
   if (!id) return NextResponse.json({ ok: false, error: "id_required" }, { status: 422 });
 
+  initializeProcurement();
   const db = createSupabaseAdminClient();
   const { data: mapping, error } = await db
     .from("supplier_product_mappings")
