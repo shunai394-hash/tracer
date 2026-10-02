@@ -371,7 +371,7 @@ export async function runIntelligencePipeline(options: {
     })));
 
   const intelligenceBatchSize = 50;
-  const intelligenceBatchOffset = Math.floor(Date.now() / 60_000) % 20 * intelligenceBatchSize;
+  const intelligenceBatchOffset = Math.floor(Date.now() / 60_000) % 7 * intelligenceBatchSize;
   const intelligence = await runStep(
     "intelligence",
     () => buildOpportunityIntelligence({
