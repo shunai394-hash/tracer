@@ -8,7 +8,7 @@ import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { rescueUndeliveredGatePassedListings } from "@/lib/integration/newfind";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 type Snapshot = {
   products: number;
@@ -134,7 +134,7 @@ export async function GET(request: Request) {
   try {
     // A Vercel timeout can leave the singleton lock in `running` forever.
     // Reclaim only rows older than this route's maxDuration before acquiring it.
-    await recoverStaleCronRun(db, "patrol-ai", 300);
+    await recoverStaleCronRun(db, "patrol-ai", 90);
     const runState = await runPatrol(db);
     if (runState.alreadyRunning) {
       return NextResponse.json({
@@ -155,7 +155,7 @@ export async function GET(request: Request) {
     // Leave room for BASE publication, NEWFIND rescue and the cron_runs
     // bookkeeping below; deferred stages resume on the next patrol.
     const pipeline = await runIntelligencePipeline({
-      deadlineAt: startedAt + 200_000,
+      deadlineAt: startedAt + 28_000,
       // Heartbeat: if Vercel still kills the function, the lock row shows the
       // step that was running instead of an empty "starting" phase.
       onStep: async (step) => {
@@ -178,7 +178,7 @@ export async function GET(request: Request) {
     try {
       // Existing BASE items are reconciled here too; never let that outlive
       // the function budget.
-      const base = await withinBudget(publishPublishedListingsToBase(10), startedAt + 250_000, "publish_base");
+      const base = await withinBudget(publishPublishedListingsToBase(3), startedAt + 42_000, "publish_base");
       actions.push({
         action: "publish_base",
         attempted: base.attempted,
@@ -199,8 +199,8 @@ export async function GET(request: Request) {
     // (no delivery row, pending, failed or unacknowledged). Idempotent.
     try {
       const rescue = await rescueUndeliveredGatePassedListings({
-        limit: 3,
-        deadlineAt: startedAt + 270_000,
+        limit: 1,
+        deadlineAt: startedAt + 50_000,
       });
       actions.push({ action: "newfind_rescue", result: rescue });
     } catch (error) {
