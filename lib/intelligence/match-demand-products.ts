@@ -4,15 +4,13 @@ import { classifyDemandIntent } from "@/lib/intelligence/classify-demand-intent"
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
-  STRONG_MATCH_METHODS,
   buildIdentifierIndex,
-  encodeLegacyRationale,
   isStrongDemandMatch,
-  legacyMethodFor,
+  persistDemandMatches,
   readObservationIdentifiers,
   resolveExactIdentity,
   variantsCompatible,
-  type DemandMatchEvidence,
+  type DemandMatchRow as MatchRow,
 } from "@/lib/intelligence/demand-match-evidence";
 
 type DemandProductMatchResult = {
@@ -93,68 +91,6 @@ function productMatchesQuery(query: string, productName: string, allProductNames
   if (!isCjk || token.length < 3) return false;
   const candidateCount = allProductNames.reduce((count, name) => count + (normalize(name).includes(token) ? 1 : 0), 0);
   return matchedTokens.length === 1 && candidateCount >= 1 && candidateCount <= 3;
-}
-
-type MatchRow = {
-  demandObservationId: string;
-  productId: string;
-  score: number;
-  evidence: DemandMatchEvidence;
-};
-
-/**
- * Persist matches with their evidence. The 20260920170000 schema only allows
- * legacy match_method values and has no evidence columns, which made every
- * previous write fail (CHECK violation on "supplier_demand_evidence", then
- * unknown columns evidence_type/source_id/observed_at), so
- * demand_product_matches stayed at 0. Write the evidence schema first and,
- * if it is not migrated yet, fall back to the legacy columns with the full
- * evidence carried in the rationale. Errors are counted and returned, never
- * swallowed.
- */
-async function persistMatches(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
-  rows: MatchRow[],
-): Promise<{ written: number; schema: "evidence" | "legacy" | "none"; errors: string[] }> {
-  if (rows.length === 0) return { written: 0, schema: "none", errors: [] };
-  const errors: string[] = [];
-  const evidenceRows = rows.map((row) => ({
-    demand_observation_id: row.demandObservationId,
-    product_id: row.productId,
-    match_method: row.evidence.method,
-    match_score: row.score,
-    rationale: row.evidence.rationale,
-    evidence_type: STRONG_MATCH_METHODS.includes(row.evidence.method as (typeof STRONG_MATCH_METHODS)[number]) ? "identifier" : "weak",
-    evidence: row.evidence.facts,
-    source_id: row.evidence.sourceId,
-  }));
-  const modern = await supabase
-    .from("demand_product_matches")
-    .upsert(evidenceRows, { onConflict: "demand_observation_id,product_id" });
-  if (!modern.error) return { written: rows.length, schema: "evidence", errors };
-
-  // 42703 undefined column, PGRST204 column not in schema cache, 23514 CHECK.
-  const schemaMismatch = ["42703", "PGRST204", "23514"].includes(String(modern.error.code));
-  if (!schemaMismatch) {
-    errors.push(`${modern.error.code ?? "error"}: ${modern.error.message}`);
-    return { written: 0, schema: "evidence", errors };
-  }
-
-  const legacyRows = rows.map((row) => ({
-    demand_observation_id: row.demandObservationId,
-    product_id: row.productId,
-    match_method: legacyMethodFor(row.evidence.method),
-    match_score: row.score,
-    rationale: encodeLegacyRationale(row.evidence),
-  }));
-  const legacy = await supabase
-    .from("demand_product_matches")
-    .upsert(legacyRows, { onConflict: "demand_observation_id,product_id" });
-  if (legacy.error) {
-    errors.push(`legacy ${legacy.error.code ?? "error"}: ${legacy.error.message}`);
-    return { written: 0, schema: "legacy", errors };
-  }
-  return { written: rows.length, schema: "legacy", errors };
 }
 
 export async function matchDemandProductsByCategory(): Promise<DemandProductMatchResult> {
@@ -325,7 +261,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   }
 
   const rows = [...matchRows.values()];
-  const persisted = await persistMatches(supabase, rows);
+  const persisted = await persistDemandMatches(supabase, rows);
   const byMethod: Record<string, number> = {};
   for (const row of rows) byMethod[row.evidence.method] = (byMethod[row.evidence.method] ?? 0) + 1;
 

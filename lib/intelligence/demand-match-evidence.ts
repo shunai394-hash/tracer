@@ -272,3 +272,72 @@ export function buildIdentifierIndex(
   }
   return index;
 }
+
+// ---------------------------------------------------------------------------
+// Persistence. The 20260920170000 schema only allows legacy match_method
+// values and has no evidence columns, which made every earlier write fail
+// (CHECK violation on "supplier_demand_evidence", then unknown columns), so
+// demand_product_matches stayed at 0. Write the evidence schema first; if it
+// is not migrated yet, fall back to the legacy columns with the full evidence
+// carried in the rationale. Errors are returned, never swallowed or thrown.
+
+export type DemandMatchRow = {
+  demandObservationId: string;
+  productId: string;
+  score: number;
+  evidence: DemandMatchEvidence;
+};
+
+type UpsertError = { code?: string | null; message: string } | null;
+/** Structural subset of the supabase client used for persistence. */
+export type DemandMatchWriter = {
+  from(table: string): {
+    upsert(rows: Record<string, unknown>[], options: { onConflict: string }): PromiseLike<{ error: UpsertError }>;
+  };
+};
+
+const SCHEMA_MISMATCH_CODES = new Set(["42703", "PGRST204", "23514"]);
+
+export async function persistDemandMatches(
+  db: DemandMatchWriter,
+  rows: DemandMatchRow[],
+): Promise<{ written: number; schema: "evidence" | "legacy" | "none"; errors: string[] }> {
+  if (rows.length === 0) return { written: 0, schema: "none", errors: [] };
+  const errors: string[] = [];
+  const modern = await db.from("demand_product_matches").upsert(
+    rows.map((row) => ({
+      demand_observation_id: row.demandObservationId,
+      product_id: row.productId,
+      match_method: row.evidence.method,
+      match_score: row.score,
+      rationale: row.evidence.rationale,
+      evidence_type: STRONG.has(row.evidence.method) ? "identifier" : "weak",
+      evidence: row.evidence.facts,
+      source_id: row.evidence.sourceId,
+    })),
+    { onConflict: "demand_observation_id,product_id" },
+  );
+  if (!modern.error) return { written: rows.length, schema: "evidence", errors };
+
+  // 42703 undefined column, PGRST204 column not in schema cache, 23514 CHECK.
+  if (!SCHEMA_MISMATCH_CODES.has(String(modern.error.code))) {
+    errors.push(`${modern.error.code ?? "error"}: ${modern.error.message}`);
+    return { written: 0, schema: "evidence", errors };
+  }
+
+  const legacy = await db.from("demand_product_matches").upsert(
+    rows.map((row) => ({
+      demand_observation_id: row.demandObservationId,
+      product_id: row.productId,
+      match_method: legacyMethodFor(row.evidence.method),
+      match_score: row.score,
+      rationale: encodeLegacyRationale(row.evidence),
+    })),
+    { onConflict: "demand_observation_id,product_id" },
+  );
+  if (legacy.error) {
+    errors.push(`legacy ${legacy.error.code ?? "error"}: ${legacy.error.message}`);
+    return { written: 0, schema: "legacy", errors };
+  }
+  return { written: rows.length, schema: "legacy", errors };
+}
