@@ -78,6 +78,7 @@ export default function SupplierMappingsPage() {
   const [accountId, setAccountId] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [verifyingBatch, setVerifyingBatch] = useState(false);
 
   const selectedSupplier = suppliers.find((item) => item.id === supplierId);
   const matchingSuppliers = useMemo(
@@ -164,6 +165,33 @@ export default function SupplierMappingsPage() {
     }
   }
 
+  async function verifyBatch() {
+    setVerifyingBatch(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/admin/supplier-mappings/verify-batch?limit=10", {
+        method: "GET",
+        cache: "no-store",
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "一括検証に失敗しました");
+      setMessage(
+        "ライブ検証完了: " +
+          (data.succeeded ?? 0) +
+          "件成功 / " +
+          (data.failed ?? 0) +
+          "件失敗（処理 " +
+          (data.processed ?? 0) +
+          "件）",
+      );
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setVerifyingBatch(false);
+    }
+  }
+
   async function testMapping(id: string) {
     setBusy(true);
     setMessage("");
@@ -230,9 +258,14 @@ export default function SupplierMappingsPage() {
           <h1 className="mt-3 text-3xl text-zinc-50">仕入れ先・商品固定マッピング</h1>
           <p className="mt-3 text-sm text-zinc-400">BASE注文後に再検索せず、固定された仕入れ商品・variantへ発注するための管理画面。</p>
         </div>
-        <button onClick={() => fetch("/api/admin/login", { method: "DELETE" }).then(() => setLoggedIn(false))} className="rounded border border-white/15 px-4 py-2 text-sm text-zinc-300">
-          ログアウト
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => void verifyBatch()} disabled={busy || verifyingBatch} className="rounded bg-emerald-400 px-4 py-2 text-sm font-medium text-black disabled:opacity-40">
+            {verifyingBatch ? "10件を検証中…" : "10件一括ライブ検証"}
+          </button>
+          <button onClick={() => fetch("/api/admin/login", { method: "DELETE" }).then(() => setLoggedIn(false))} className="rounded border border-white/15 px-4 py-2 text-sm text-zinc-300">
+            ログアウト
+          </button>
+        </div>
       </div>
 
       {message ? <p className="mt-6 rounded border border-cyan-400/20 bg-cyan-400/5 p-4 text-sm text-cyan-200">{message}</p> : null}
