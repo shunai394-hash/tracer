@@ -370,7 +370,16 @@ export async function runIntelligencePipeline(options: {
       deadlineAt: pipelineDeadlineAt - DOWNSTREAM_RESERVE_MS,
     })));
 
-  const intelligence = await runStep("intelligence", () => buildOpportunityIntelligence(), { downstream: true });
+  const intelligenceBatchSize = 50;
+  const intelligenceBatchOffset = Math.floor(Date.now() / 60_000) % 20 * intelligenceBatchSize;
+  const intelligence = await runStep(
+    "intelligence",
+    () => buildOpportunityIntelligence({
+      batchSize: intelligenceBatchSize,
+      batchOffset: intelligenceBatchOffset,
+    }),
+    { downstream: true },
+  );
   steps.push(intelligence);
   steps.push(await runStep("score", () => scoreProductIntelligence(), { downstream: true }));
 
