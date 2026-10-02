@@ -65,6 +65,14 @@ function classifyFailure(error: unknown): {
 // time is recorded as deferred (skipped, retryable) and the next patrol
 // resumes from persisted cursors / due queues instead of repeating work.
 let pipelineDeadlineAt = Number.POSITIVE_INFINITY;
+let pipelineProgress: ((step: string) => Promise<void>) | null = null;
+
+class StepTimeoutError extends Error {
+  constructor(step: string, budgetMs: number) {
+    super(`${step} exceeded its ${budgetMs}ms patrol budget`);
+    this.name = "StepTimeoutError";
+  }
+}
 
 // Reserve time for the cheap downstream stages (intelligence, Sales Test
 // Gate, NEWFIND) so an expensive discovery stage cannot starve them.
@@ -86,8 +94,20 @@ async function runStep(
       result: { skipped: true, reason: "deferred_to_next_patrol_time_budget", remainingMs: Math.max(0, remaining) },
     };
   }
+  // Hard per-step budget. Checking only before a step starts cannot stop a
+  // single slow step (marketplace fetch, CJ fan-out) from running past 300s,
+  // which is what kept killing patrol-ai and leaving its lock behind.
+  const budgetMs = Math.max(1_000, options.downstream ? remaining - 2_000 : remaining - DOWNSTREAM_RESERVE_MS);
+  const startedAt = Date.now();
+  await pipelineProgress?.(name);
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const result = await fn();
+    const result = await Promise.race([
+      fn(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new StepTimeoutError(name, budgetMs)), budgetMs);
+      }),
+    ]);
     const skipped =
       result !== null &&
       typeof result === "object" &&
@@ -96,6 +116,16 @@ async function runStep(
 
     return { name, ok: true, skipped, result };
   } catch (error) {
+    if (error instanceof StepTimeoutError) {
+      console.warn(`[TRACER PIPELINE ${name}] deferred after ${Date.now() - startedAt}ms (budget ${budgetMs}ms)`);
+      return {
+        name,
+        ok: true,
+        skipped: true,
+        retryable: true,
+        result: { skipped: true, reason: "step_time_budget_exceeded_deferred", budgetMs, elapsedMs: Date.now() - startedAt },
+      };
+    }
     const classified = classifyFailure(error);
     console.error(`[TRACER PIPELINE ${name}]`, error);
     return {
@@ -108,6 +138,8 @@ async function runStep(
         ? { skipped: true, reason: "isolated_failure", retryable: classified.retryable }
         : undefined,
     };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -246,13 +278,18 @@ async function inspectDemandObservations(): Promise<unknown> {
   return { observations: count ?? 0, source: "demand_observations", note: "Demand rows are written by discovery; this step only verifies they remain queryable" };
 }
 
-export async function runIntelligencePipeline(options: { deadlineAt?: number } = {}): Promise<{
+export async function runIntelligencePipeline(options: {
+  deadlineAt?: number;
+  /** Called as each step starts so a killed run still shows where it stopped. */
+  onStep?: (step: string) => Promise<void>;
+} = {}): Promise<{
   ok: boolean;
   complete: boolean;
   steps: PipelineStepResult[];
 }> {
   const steps: PipelineStepResult[] = [];
   pipelineDeadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
+  pipelineProgress = options.onStep ?? null;
   const db = createSupabaseAdminClient();
 
   // Resume market discovery from the persisted cursor instead of re-reading
@@ -279,7 +316,24 @@ export async function runIntelligencePipeline(options: { deadlineAt?: number } =
       ? (bestsellerStep.result as { supplierCandidateIds: string[] }).supplierCandidateIds
       : [];
 
-  steps.push(await runStep("dropship", () => investigateDropshipForBestsellers(supplierCandidateIds)));
+  // Identity backlog: bestsellers that carry a barcode but were inserted by an
+  // earlier patrol were never investigated (only the current run's inserts
+  // were). Drain a few per patrol, oldest observations first.
+  steps.push(await runStep("dropship", async () => {
+    const { data: backlog, error: backlogError } = await db
+      .from("marketplace_bestsellers")
+      .select("id")
+      .eq("pipeline_status", "pending")
+      .or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null")
+      .order("fetched_at", { ascending: true })
+      .limit(3);
+    if (backlogError) throw new Error(backlogError.message);
+    const ids = Array.from(new Set([
+      ...supplierCandidateIds,
+      ...(backlog ?? []).map((row) => String(row.id)),
+    ]));
+    return investigateDropshipForBestsellers(ids);
+  }));
   steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand()));
   steps.push(await runStep("normalize", () => normalizeProductIntelligence()));
   steps.push(await runStep("identity", () => stampDemandCJIdentities()));
