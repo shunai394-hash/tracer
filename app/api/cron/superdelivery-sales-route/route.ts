@@ -12,6 +12,8 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const JOB_NAME = "superdelivery-sales-route";
+const DISCOVERY_BATCH_SIZE = 25;
+const GATE_LIMIT = 3;
 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -31,6 +33,8 @@ export async function GET(request: Request) {
         status: "running",
         metadata: {
           route: "SUPER_DELIVERY -> TRACER -> SALES_TEST_GATE -> BASE -> NEWFIND",
+          discoveryBatchSize: DISCOVERY_BATCH_SIZE,
+          gateLimit: GATE_LIMIT,
         },
       })
       .select("id")
@@ -48,8 +52,10 @@ export async function GET(request: Request) {
 
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
-    // 1. SUPER DELIVERY -> TRACER
-    const discovery = await discoverSuperDeliverySupply(2);
+    // 1. SUPER DELIVERY -> TRACER. ProductSetSearch is fetched once and the
+    // JAN matching itself is local, so discovery can safely drain a bounded
+    // batch without multiplying supplier API calls.
+    const discovery = await discoverSuperDeliverySupply(DISCOVERY_BATCH_SIZE);
 
     // 2. Recalculate the same opportunity evidence used by the Sales Test Gate.
     await buildOpportunityIntelligence();
@@ -58,11 +64,11 @@ export async function GET(request: Request) {
     // shop_listings.published=true.
     const gate = await selectAndPublishSupplySalesTests(
       discovery.gateCandidates,
-      3,
+      GATE_LIMIT,
     );
 
     // 4. BASE. Only Gate-passed listings are considered for a new BASE item.
-    const base = await publishPublishedListingsToBase(3, gate.publishedListingIds);
+    const base = await publishPublishedListingsToBase(GATE_LIMIT, gate.publishedListingIds);
 
     // 5. NEWFIND. Only listings that are still Gate-passed AND have a BASE item
     // are promoted by this route. The NEWFIND function re-checks the Gate.
