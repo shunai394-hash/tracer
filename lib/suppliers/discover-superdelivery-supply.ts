@@ -1,10 +1,17 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getSuperDeliveryCatalog, findSuperDeliveryProductsByJan } from "@/lib/sources/superdelivery/client";
+import {
+  getSuperDeliveryCatalog,
+  findSuperDeliveryProductsByJan,
+} from "@/lib/sources/superdelivery/client";
 
 const SUPPLIER = "superdelivery";
-const DEFAULT_BATCH_SIZE = 5;
+// ProductSetSearch is fetched once per patrol, so JAN matching is local and
+// cheap. Keep the candidate batch bounded, but large enough that the daily
+// patrol does not take months to drain the existing JAN backlog.
+const DEFAULT_BATCH_SIZE = 25;
+const MAX_BATCH_SIZE = 25;
 
 /**
  * SUPER DELIVERY -> TRACER supply bridge.
@@ -26,7 +33,7 @@ export async function discoverSuperDeliverySupply(
   blocked: Array<{ bestsellerId: string; reason: string }>;
 }> {
   const db = createSupabaseAdminClient();
-  const batch = Math.max(1, Math.min(limit, 5));
+  const batch = Math.max(1, Math.min(limit, MAX_BATCH_SIZE));
 
   const { data: candidates, error } = await db
     .from("marketplace_bestsellers")
@@ -181,7 +188,12 @@ export async function discoverSuperDeliverySupply(
         image_url: item.imageUrl,
         currency: "JPY",
         price: item.price,
-        availability: item.stock === null ? "unknown" : item.stock > 0 ? "in_stock" : "out_of_stock",
+        availability:
+          item.stock === null
+            ? "unknown"
+            : item.stock > 0
+              ? "in_stock"
+              : "out_of_stock",
         shipping_price: null,
         observed_at: now,
         metadata: {
@@ -199,7 +211,10 @@ export async function discoverSuperDeliverySupply(
       };
 
       const offerResult = existingOffer?.id
-        ? await db.from("product_offers").update(offerPayload).eq("id", existingOffer.id)
+        ? await db
+            .from("product_offers")
+            .update(offerPayload)
+            .eq("id", existingOffer.id)
         : await db.from("product_offers").insert(offerPayload);
       if (offerResult.error) throw new Error(offerResult.error.message);
 
