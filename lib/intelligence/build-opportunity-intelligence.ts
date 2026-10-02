@@ -6,6 +6,7 @@ import type {
   SellabilityState,
 } from "@/lib/domain/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isStrongDemandMatch } from "@/lib/intelligence/demand-match-evidence";
 import {
   assessCurrencyConfidence,
   verifyCurrencyConfidenceInvariants,
@@ -113,7 +114,24 @@ type DemandRow = {
 type MatchRow = {
   demand_observation_id: string;
   product_id: string;
+  match_method: string | null;
+  rationale: string | null;
 };
+
+type SupplierListingRow = {
+  product_id: string | null;
+  identity_method: string | null;
+  identity_status: string | null;
+  verification_status: string | null;
+  inventory_confirmed: boolean | null;
+  orderable: boolean | null;
+  inventory: number | null;
+  shipping_cost: number | string | null;
+};
+
+// Identifier-grade identity methods (lib/market/identifiers.ts
+// matchProductIdentity salesEligible=true). Title relevance is not identity.
+const IDENTIFIER_IDENTITY_METHODS = new Set(["asin", "jan", "gtin", "ean", "upc", "brand_mpn"]);
 
 type CjRow = {
   id: string;
@@ -284,7 +302,7 @@ export async function buildOpportunityIntelligence(options: { batchSize?: number
         "id, product_id, seller_name, image_url, currency, price, currency_confidence, availability, shipping_price, observed_at, metadata",
       )
       .order("observed_at", { ascending: false }),
-    supabase.from("demand_product_matches").select("demand_observation_id, product_id"),
+    supabase.from("demand_product_matches").select("demand_observation_id, product_id, match_method, rationale"),
     supabase
       .from("demand_observations")
       .select("id, product_id, signal_type, value, observed_at, metadata")
@@ -329,6 +347,22 @@ export async function buildOpportunityIntelligence(options: { batchSize?: number
   if (demandIntelResult.error) throw new Error(demandIntelResult.error.message);
   if (selectionSettingsResult.error) {
     throw new Error(selectionSettingsResult.error.message);
+  }
+
+  // Verified supply and identifier identity come from supplier_listings, the
+  // table the supplier verification job maintains. A product_offers row only
+  // proves a supplier search returned something.
+  const supplierListingsResult = await supabase
+    .from("supplier_listings")
+    .select("product_id, identity_method, identity_status, verification_status, inventory_confirmed, orderable, inventory, shipping_cost")
+    .not("product_id", "is", null);
+  if (supplierListingsResult.error) throw new Error(supplierListingsResult.error.message);
+  const listingsByProduct = new Map<string, SupplierListingRow[]>();
+  for (const listing of (supplierListingsResult.data ?? []) as SupplierListingRow[]) {
+    if (!listing.product_id) continue;
+    const list = listingsByProduct.get(listing.product_id) ?? [];
+    list.push(listing);
+    listingsByProduct.set(listing.product_id, list);
   }
 
   const selectionSettings = parseSelectionSettings(
@@ -411,8 +445,12 @@ export async function buildOpportunityIntelligence(options: { batchSize?: number
   }
 
   const demandById = new Map(demands.map((row) => [row.id, row]));
+  // Only identifier-grade matches bind demand to a product. Weak matches
+  // (title similarity, search provenance) stay in demand_product_matches for
+  // traceability but are not demand for this product.
   const matchesByProduct = new Map<string, DemandRow[]>();
   for (const match of matches) {
+    if (!isStrongDemandMatch(match)) continue;
     const demand = demandById.get(match.demand_observation_id);
     if (!demand) continue;
     const list = matchesByProduct.get(match.product_id) ?? [];
@@ -422,6 +460,9 @@ export async function buildOpportunityIntelligence(options: { batchSize?: number
 
   for (const demand of demands) {
     if (!demand.product_id) continue;
+    // Proxy rows (e.g. google_shopping "count_of_observed_product_results")
+    // are bound to an arbitrary first product of a query; not product demand.
+    if (asRecord(demand.metadata).proxy) continue;
     const list = matchesByProduct.get(demand.product_id) ?? [];
     if (!list.some((item) => item.id === demand.id)) {
       list.push(demand);
@@ -615,12 +656,22 @@ export async function buildOpportunityIntelligence(options: { batchSize?: number
     const identityUnconfirmed = relevance?.status === "identity_unconfirmed";
     const identityConfidence =
       asNumber(row.identity_confidence) ?? relevance?.score ?? null;
+    const productListings = listingsByProduct.get(row.product_id) ?? [];
+    // Identity must be proven by an identifier (JAN/GTIN/ASIN/brand+MPN)
+    // between the market product and a supplier listing; text relevance and
+    // product_intelligence.identity_confidence (often title relevance) are not
+    // enough on their own.
+    const identifierLinkedListings = productListings.filter((listing) =>
+      listing.identity_status === "linked" &&
+      IDENTIFIER_IDENTITY_METHODS.has(String(listing.identity_method ?? "")),
+    );
     const identityConfirmed =
       !rejectedByRelevance &&
       !identityRejected &&
       !identityUnconfirmed &&
       identityConfidence !== null &&
-      identityConfidence >= 0.65;
+      identityConfidence >= 0.65 &&
+      identifierLinkedListings.length > 0;
 
     const marketPrice = asNumber(marketOffer?.price);
     const sourceCost = asNumber(sourceOffer?.price);
@@ -662,12 +713,17 @@ export async function buildOpportunityIntelligence(options: { batchSize?: number
     const sourceAvailability =
       availabilityPositive(sourceOffer?.availability ?? null) ??
       availabilityPositive(productCj[0]?.sale_status ?? null);
-    const supplyAvailable =
-      sourceInventory !== undefined
-        ? sourceInventory > 0
-        : sourceAvailability === true
-          ? true
-          : sourceOffer !== null;
+    // Verified supply = an identifier-linked supplier listing that the
+    // verification job marked verified, with confirmed inventory > 0 and
+    // orderable. Unknown inventory or an unverified offer is never supply.
+    const verifiedSupplyListings = identifierLinkedListings.filter((listing) =>
+      listing.verification_status === "verified" &&
+      listing.inventory_confirmed === true &&
+      listing.orderable === true &&
+      typeof listing.inventory === "number" &&
+      listing.inventory > 0,
+    );
+    const supplyAvailable = verifiedSupplyListings.length > 0;
 
     const supplyScore = !sourceOffer
       ? null
@@ -761,14 +817,21 @@ export async function buildOpportunityIntelligence(options: { batchSize?: number
         profit.currencyConfidence === "high" ||
         profit.currencyConfidence === "medium",
       supplyAvailable: Boolean(supplyAvailable && sourceOffer),
-      shippingKnownOrExplicitUnknown: true,
+      // Shipping must be observed; an unknown shipping cost silently drops out
+      // of the margin, so it cannot count as accounted for.
+      shippingKnownOrExplicitUnknown: profit.calculable && !profit.shippingUnknown,
       marketPriceAvailable: marketPrice !== null,
       imageAvailable: Boolean(imageUrl),
       marginCalculable: profit.calculable,
       productPagePossible: Boolean(imageUrl && row.normalized_title),
       creativePossible: Boolean(imageUrl),
-      returnRiskAccounted: true,
-      demandSufficient: demand.score !== null && demand.confidence >= 0.25,
+      // The profit simulation reserves for returns/refunds only when it is
+      // calculable; otherwise return risk is not in the margin.
+      returnRiskAccounted: profit.calculable && profit.returnRefundReserve !== null,
+      // Demand must come from an observation bound to this exact product
+      // (identifier-grade match or product-bound, non-proxy signal), not
+      // from metadata demand_query/demand_value or a supplier search query.
+      demandSufficient: productDemand.length > 0 && demand.score !== null && demand.confidence >= 0.25,
     });
 
     const opportunity = scoreFromKnown([

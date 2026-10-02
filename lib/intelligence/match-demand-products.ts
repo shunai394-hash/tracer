@@ -3,6 +3,17 @@ import "server-only";
 import { classifyDemandIntent } from "@/lib/intelligence/classify-demand-intent";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import {
+  STRONG_MATCH_METHODS,
+  buildIdentifierIndex,
+  encodeLegacyRationale,
+  isStrongDemandMatch,
+  legacyMethodFor,
+  readObservationIdentifiers,
+  resolveExactIdentity,
+  variantsCompatible,
+  type DemandMatchEvidence,
+} from "@/lib/intelligence/demand-match-evidence";
 
 type DemandProductMatchResult = {
   processed: number;
@@ -13,6 +24,15 @@ type DemandProductMatchResult = {
   candidatesCreated: number;
   candidatesExisting: number;
   skippedInvalid: number;
+  exactMatches: number;
+  ambiguousIdentifier: number;
+  variantRejected: number;
+  brandRejected: number;
+  matchRows: number;
+  byMethod: Record<string, number>;
+  persisted: number;
+  persistSchema: "evidence" | "legacy" | "none";
+  persistErrors: string[];
 };
 
 type ProductIntent = { isProduct: boolean; category: string | null; reason: string };
@@ -40,7 +60,7 @@ function isBrokenText(value: string): boolean {
   return value.includes("\uFFFD") || /(?:繝ｻ繝ｻ繝ｻ|繝ｻ繝ｻ・ｽ)/.test(value);
 }
 
-function detectProductIntent(query: string): ProductIntent {
+export function detectProductIntent(query: string): ProductIntent {
   const normalized = normalize(query);
   if (!normalized) return { isProduct: false, category: null, reason: "empty_query" };
   if (NON_PRODUCT_PATTERNS.some((pattern) => pattern.test(normalized))) {
@@ -75,49 +95,128 @@ function productMatchesQuery(query: string, productName: string, allProductNames
   return matchedTokens.length === 1 && candidateCount >= 1 && candidateCount <= 3;
 }
 
+type MatchRow = {
+  demandObservationId: string;
+  productId: string;
+  score: number;
+  evidence: DemandMatchEvidence;
+};
+
+/**
+ * Persist matches with their evidence. The 20260920170000 schema only allows
+ * legacy match_method values and has no evidence columns, which made every
+ * previous write fail (CHECK violation on "supplier_demand_evidence", then
+ * unknown columns evidence_type/source_id/observed_at), so
+ * demand_product_matches stayed at 0. Write the evidence schema first and,
+ * if it is not migrated yet, fall back to the legacy columns with the full
+ * evidence carried in the rationale. Errors are counted and returned, never
+ * swallowed.
+ */
+async function persistMatches(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  rows: MatchRow[],
+): Promise<{ written: number; schema: "evidence" | "legacy" | "none"; errors: string[] }> {
+  if (rows.length === 0) return { written: 0, schema: "none", errors: [] };
+  const errors: string[] = [];
+  const evidenceRows = rows.map((row) => ({
+    demand_observation_id: row.demandObservationId,
+    product_id: row.productId,
+    match_method: row.evidence.method,
+    match_score: row.score,
+    rationale: row.evidence.rationale,
+    evidence_type: STRONG_MATCH_METHODS.includes(row.evidence.method as (typeof STRONG_MATCH_METHODS)[number]) ? "identifier" : "weak",
+    evidence: row.evidence.facts,
+    source_id: row.evidence.sourceId,
+  }));
+  const modern = await supabase
+    .from("demand_product_matches")
+    .upsert(evidenceRows, { onConflict: "demand_observation_id,product_id" });
+  if (!modern.error) return { written: rows.length, schema: "evidence", errors };
+
+  // 42703 undefined column, PGRST204 column not in schema cache, 23514 CHECK.
+  const schemaMismatch = ["42703", "PGRST204", "23514"].includes(String(modern.error.code));
+  if (!schemaMismatch) {
+    errors.push(`${modern.error.code ?? "error"}: ${modern.error.message}`);
+    return { written: 0, schema: "evidence", errors };
+  }
+
+  const legacyRows = rows.map((row) => ({
+    demand_observation_id: row.demandObservationId,
+    product_id: row.productId,
+    match_method: legacyMethodFor(row.evidence.method),
+    match_score: row.score,
+    rationale: encodeLegacyRationale(row.evidence),
+  }));
+  const legacy = await supabase
+    .from("demand_product_matches")
+    .upsert(legacyRows, { onConflict: "demand_observation_id,product_id" });
+  if (legacy.error) {
+    errors.push(`legacy ${legacy.error.code ?? "error"}: ${legacy.error.message}`);
+    return { written: 0, schema: "legacy", errors };
+  }
+  return { written: rows.length, schema: "legacy", errors };
+}
+
 export async function matchDemandProductsByCategory(): Promise<DemandProductMatchResult> {
   const supabase = createSupabaseAdminClient();
 
-  const [demandResult, productResult, candidateResult, cjProductResult, sourceOfferResult] = await Promise.all([
+  const [demandResult, productResult, candidateResult, cjProductResult, sourceOfferResult, bestsellerResult, identifierResult] = await Promise.all([
     supabase.from("demand_observations").select("id, metadata, value, observed_at").is("product_id", null).in("signal_type", ["search_volume", "search_result_count"]).order("observed_at", { ascending: false }),
     supabase.from("product_intelligence").select("product_id, normalized_title"),
     supabase.from("demand_product_candidates").select("id, demand_observation_id"),
     supabase.from("demand_cj_products").select("id, demand_product_candidate_id, product_id, identity_status, identity_confidence"),
     supabase.from("product_offers").select("id, product_id, metadata, seller_name, observed_at").eq("seller_name", "CJdropshipping"),
+    supabase.from("marketplace_bestsellers").select("product_id, jan, gtin, ean, upc, mpn, model, brand").not("product_id", "is", null),
+    supabase.from("product_identifiers").select("product_id, scheme, value").not("product_id", "is", null),
   ]);
   if (demandResult.error) throw new Error(demandResult.error.message);
   if (productResult.error) throw new Error(productResult.error.message);
   if (candidateResult.error) throw new Error(candidateResult.error.message);
   if (cjProductResult.error) throw new Error(cjProductResult.error.message);
   if (sourceOfferResult.error) throw new Error(sourceOfferResult.error.message);
+  if (bestsellerResult.error) throw new Error(bestsellerResult.error.message);
+  if (identifierResult.error) throw new Error(identifierResult.error.message);
 
   const demandRows = demandResult.data ?? [];
   const productRows = productResult.data ?? [];
   const allProductNames = productRows.map((product) => product.normalized_title);
 
-  const evidenceRows = new Map<string, {
-    score: number;
-    rationale: string;
-    evidenceType: string;
-    sourceId: string;
-    observedAt: string;
-  }>();
+  // Identifier index of market products. A key that maps to more than one
+  // product is ambiguous and never produces an exact match.
+  const identifierIndex = buildIdentifierIndex(bestsellerResult.data ?? [], identifierResult.data ?? []);
 
+  const matchRows = new Map<string, MatchRow>();
+  const keep = (row: MatchRow) => {
+    const key = `${row.demandObservationId}:${row.productId}`;
+    const existing = matchRows.get(key);
+    // Never let weaker evidence overwrite stronger evidence for the same pair.
+    if (existing && isStrongDemandMatch({ match_method: existing.evidence.method }) && !isStrongDemandMatch({ match_method: row.evidence.method })) return;
+    matchRows.set(key, row);
+  };
+
+  // Search provenance: CJ returned this product for the demand query. That is
+  // a topical association, not proof of identity -> weak.
   for (const offer of sourceOfferResult.data ?? []) {
     const metadata = offer.metadata && typeof offer.metadata === "object" && !Array.isArray(offer.metadata)
       ? (offer.metadata as Record<string, unknown>)
       : {};
     const observationId = typeof metadata.demand_observation_id === "string" ? metadata.demand_observation_id : null;
     if (!observationId || !offer.product_id) continue;
-    evidenceRows.set(`${observationId}:${offer.product_id}`, {
-      score: 0.98,
-      rationale: "Exact supplier discovery provenance: CJ offer metadata references the originating demand observation",
-      evidenceType: "supplier_demand_evidence",
-      sourceId: offer.id,
-      observedAt: offer.observed_at ?? new Date().toISOString(),
+    keep({
+      demandObservationId: observationId,
+      productId: offer.product_id,
+      score: 0.5,
+      evidence: {
+        method: "search_provenance",
+        rationale: "CJ offer was discovered by searching this demand query (supplier search provenance, not product identity)",
+        facts: { offer_id: offer.id, demand_query: metadata.demand_query ?? null },
+        sourceId: offer.id,
+      },
     });
   }
 
+  // demand_cj_products "linked" is assigned from query/title token relevance
+  // (assessDemandRelevance), i.e. text similarity -> weak.
   const observationByCandidate = new Map((candidateResult.data ?? []).map((candidate) => [candidate.id, candidate.demand_observation_id]));
   for (const cj of cjProductResult.data ?? []) {
     if (!cj.product_id || cj.identity_status !== "linked") continue;
@@ -125,35 +224,22 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     if (!observationId) continue;
     const confidence = Number(cj.identity_confidence ?? 0);
     if (!Number.isFinite(confidence) || confidence < 0.88) continue;
-    evidenceRows.set(`${observationId}:${cj.product_id}`, {
-      score: confidence,
-      rationale: `Demand evidence chain: observation -> candidate ${cj.demand_product_candidate_id} -> verified linked CJ product`,
-      evidenceType: "supplier_demand_evidence",
-      sourceId: cj.id,
-      observedAt: new Date().toISOString(),
+    keep({
+      demandObservationId: observationId,
+      productId: cj.product_id,
+      score: Math.min(confidence, 0.6),
+      evidence: {
+        method: "weak_text_similarity",
+        rationale: `Demand query relevance to CJ title (candidate ${cj.demand_product_candidate_id}); text relevance only`,
+        facts: { demand_cj_product_id: cj.id, relevance: confidence },
+        sourceId: cj.id,
+      },
     });
-  }
-
-  if (evidenceRows.size > 0) {
-    const rows = [...evidenceRows.entries()].map(([key, value]) => {
-      const separator = key.lastIndexOf(":");
-      return {
-        demand_observation_id: key.slice(0, separator),
-        product_id: key.slice(separator + 1),
-        match_method: value.evidenceType,
-        match_score: value.score,
-        rationale: value.rationale,
-        evidence_type: value.evidenceType,
-        source_id: value.sourceId,
-        observed_at: value.observedAt,
-      };
-    });
-    const { error } = await supabase.from("demand_product_matches").upsert(rows, { onConflict: "demand_observation_id,product_id", ignoreDuplicates: true });
-    if (error) throw new Error(`Failed to persist supplier-backed demand matches: ${error.message}`);
   }
 
   let processed = 0, intentProduct = 0, intentNonProduct = 0, matched = 0, unmatched = 0;
   let candidatesCreated = 0, candidatesExisting = 0, skippedInvalid = 0;
+  let exactMatches = 0, ambiguousIdentifier = 0, variantRejected = 0, brandRejected = 0;
 
   for (const demand of demandRows) {
     processed += 1;
@@ -164,6 +250,22 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
 
     const query = typeof metadata.query === "string" ? metadata.query.trim() : "";
     if (!query || isBrokenText(query)) { skippedInvalid += 1; continue; }
+
+    // 1-3. Identifier-grade evidence in the observation itself.
+    const decision = resolveExactIdentity(readObservationIdentifiers(metadata), identifierIndex);
+    if (decision.status === "ambiguous") ambiguousIdentifier += 1;
+    if (decision.status === "brand_conflict") brandRejected += 1;
+    if (decision.status === "exact") {
+      exactMatches += 1;
+      keep({
+        demandObservationId: demand.id,
+        productId: decision.productId,
+        score: 1,
+        evidence: { method: decision.method, rationale: `Observation identifier exactly and uniquely matches the product (${decision.method})`, facts: decision.facts, sourceId: demand.id },
+      });
+      matched += 1;
+      continue;
+    }
 
     let intent = detectProductIntent(query);
     if (!intent.isProduct && intent.reason === "no_product_signal" && isGeminiConfigured()) {
@@ -177,20 +279,25 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     if (!intent.isProduct) { intentNonProduct += 1; continue; }
     intentProduct += 1;
 
+    // 5-6. Title evidence: recorded as weak only, and never across a variant
+    // conflict ("iPhone 15 case" must not match "iPhone 15 Pro case").
     let rowMatched = false;
     for (const product of productRows) {
       if (!productMatchesQuery(query, product.normalized_title, allProductNames)) continue;
-      const { error } = await supabase.from("demand_product_matches").upsert({
-        demand_observation_id: demand.id,
-        product_id: product.product_id,
-        match_method: "keyword",
-        match_score: 0.9,
-        rationale: `Product intent query "${query}" matched "${product.normalized_title}" (${intent.reason})`,
-        evidence_type: "query_title_match",
-        source_id: demand.id,
-        observed_at: demand.observed_at,
-      }, { onConflict: "demand_observation_id,product_id", ignoreDuplicates: true });
-      if (error) throw new Error(`Failed to insert demand product match: ${error.message}`);
+      const variant = variantsCompatible(query, product.normalized_title);
+      if (!variant.compatible) { variantRejected += 1; continue; }
+      const exactTitle = normalize(query) === normalize(product.normalized_title);
+      keep({
+        demandObservationId: demand.id,
+        productId: product.product_id,
+        score: exactTitle ? 0.6 : 0.4,
+        evidence: {
+          method: exactTitle ? "normalized_title" : "weak_text_similarity",
+          rationale: `Query "${query}" ${exactTitle ? "equals" : "token-matches"} "${product.normalized_title}" (${intent.reason}); text evidence only`,
+          facts: { query, title: product.normalized_title, intent: intent.reason },
+          sourceId: demand.id,
+        },
+      });
       rowMatched = true;
     }
 
@@ -217,5 +324,18 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     candidatesCreated += 1;
   }
 
-  return { processed, intentProduct, intentNonProduct, matched, unmatched, candidatesCreated, candidatesExisting, skippedInvalid };
+  const rows = [...matchRows.values()];
+  const persisted = await persistMatches(supabase, rows);
+  const byMethod: Record<string, number> = {};
+  for (const row of rows) byMethod[row.evidence.method] = (byMethod[row.evidence.method] ?? 0) + 1;
+
+  return {
+    processed, intentProduct, intentNonProduct, matched, unmatched, candidatesCreated, candidatesExisting, skippedInvalid,
+    exactMatches, ambiguousIdentifier, variantRejected, brandRejected,
+    matchRows: rows.length,
+    byMethod,
+    persisted: persisted.written,
+    persistSchema: persisted.schema,
+    persistErrors: persisted.errors,
+  };
 }
