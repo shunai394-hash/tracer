@@ -245,14 +245,19 @@ function apparelLike(category: string | null, title: string): boolean {
   );
 }
 
-export async function buildOpportunityIntelligence(): Promise<OpportunityBuildResult> {
+export async function buildOpportunityIntelligence(options: { batchSize?: number; batchOffset?: number } = {}): Promise<OpportunityBuildResult> {
+  const batchSize = Math.max(1, Math.min(100, options.batchSize ?? 1000));
+  const batchOffset = Math.max(0, options.batchOffset ?? 0);
   const supabase = createSupabaseAdminClient();
 
-  const intelligenceResult = await supabase
+  let intelligenceQuery = supabase
     .from("product_intelligence")
     .select(
       "product_id, normalized_title, brand_name, category, seller_name, image_url, currency, current_price, identity_confidence, price_confidence, demand_signal, metadata, last_seen_at",
-    );
+    )
+    .order("product_id", { ascending: true })
+    .range(batchOffset, batchOffset + batchSize - 1);
+  const intelligenceResult = await intelligenceQuery;
 
   if (intelligenceResult.error) {
     throw new Error(intelligenceResult.error.message);
