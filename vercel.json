@@ -49,6 +49,10 @@
     {
       "path": "/api/cron/supply-first",
       "schedule": "50 12 * * *"
+    },
+    {
+      "path": "/api/admin/supplier-mappings/verify-batch?limit=10",
+      "schedule": "25 13 * * *"
     }
   ]
 }
