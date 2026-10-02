@@ -250,7 +250,7 @@ export async function buildOpportunityIntelligence(options: { batchSize?: number
   const batchOffset = Math.max(0, options.batchOffset ?? 0);
   const supabase = createSupabaseAdminClient();
 
-  let intelligenceQuery = supabase
+  const intelligenceQuery = supabase
     .from("product_intelligence")
     .select(
       "product_id, normalized_title, brand_name, category, seller_name, image_url, currency, current_price, identity_confidence, price_confidence, demand_signal, metadata, last_seen_at",
