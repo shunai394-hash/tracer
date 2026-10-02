@@ -122,6 +122,16 @@ export function getSupabaseServiceRoleKey() {
   return readEnv("SUPABASE_SERVICE_ROLE_KEY");
 }
 
+export function getCorecConfig() {
+  return {
+    clientId: readEnv("COREC_CLIENT_ID"),
+    clientSecret: readEnv("COREC_CLIENT_SECRET"),
+    redirectUri: readEnv("COREC_REDIRECT_URI"),
+    sessionSecret: readEnv("COREC_SESSION_SECRET"),
+    scope: readEnv("COREC_SCOPE") || "read_buyer_orders",
+  };
+}
+
 export function getSuperDeliveryConfig() {
   return {
     apiAuthCode: readEnv("SUPERDELIVERY_API_AUTH_CODE"),
