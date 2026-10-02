@@ -31,6 +31,13 @@ function base64url(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64url");
 }
 
+function decodeBase64url(value: string): ArrayBuffer {
+  const bytes = Buffer.from(value, "base64url");
+  const output = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(output).set(bytes);
+  return output;
+}
+
 function deriveKey(secret: string): ArrayBuffer {
   const digest = createHash("sha256").update(secret).digest();
   const key = new ArrayBuffer(digest.length);
@@ -168,9 +175,9 @@ export async function decryptCorecToken(value: string): Promise<CorecToken> {
     ["decrypt"],
   );
   const plaintext = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: new Uint8Array(Buffer.from(ivPart, "base64url")) },
+    { name: "AES-GCM", iv: decodeBase64url(ivPart) },
     key,
-    new Uint8Array(Buffer.from(ciphertextPart, "base64url")),
+    decodeBase64url(ciphertextPart),
   );
   return JSON.parse(new TextDecoder().decode(plaintext)) as CorecToken;
 }
