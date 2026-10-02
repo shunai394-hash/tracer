@@ -4,15 +4,10 @@ import {
   getCorecAuthorizationUrl,
 } from "@/lib/integrations/corec";
 import { getCorecConfig } from "@/lib/config/env";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
-  if (authError) return authError;
-
+export async function GET() {
   const config = getCorecConfig();
   if (!config.clientId || !config.clientSecret || !config.redirectUri || !config.sessionSecret) {
     return NextResponse.json(
