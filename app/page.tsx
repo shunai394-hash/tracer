@@ -59,15 +59,15 @@ export default function HomePage() {
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
                 href="/intelligence"
-                className="border border-cyan-400/50 bg-cyan-400/10 px-5 py-3 font-mono text-xs uppercase tracking-[0.18em] text-cyan-100 hover:bg-cyan-400/20"
+                className="border border-cyan-300 bg-cyan-300 px-5 py-3 font-mono text-xs uppercase tracking-[0.18em] text-zinc-950 transition hover:-translate-y-0.5 hover:bg-cyan-200"
               >
-                商機を見る
+                まず商機を見る →
               </Link>
               <Link
-                href="/shop"
-                className="border border-white/15 px-5 py-3 font-mono text-xs uppercase tracking-[0.18em] text-zinc-200 hover:border-white/30"
+                href="/chat"
+                className="border border-white/15 px-5 py-3 font-mono text-xs uppercase tracking-[0.18em] text-zinc-200 transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/[0.04]"
               >
-                販売テスト店舗
+                AIに聞く
               </Link>
             </div>
           </div>
@@ -93,6 +93,38 @@ export default function HomePage() {
                     {label}
                   </p>
                   <p className="mt-1 text-sm text-zinc-300">{value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto w-full max-w-6xl px-6 pt-10 pb-4">
+        <div className="border border-cyan-400/15 bg-cyan-400/[0.03] p-5 sm:p-6">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-300">
+                First session / 1 minute
+              </p>
+              <h2 className="mt-2 text-xl text-zinc-100 sm:text-2xl">
+                迷ったら、この順番だけで始める
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
+                AIに聞く → 確認済みの商機を見る → 条件が揃った商品だけ販売テストへ。
+                分からない数字は無理に埋めず、次の確認対象として残します。
+              </p>
+            </div>
+            <div className="grid shrink-0 grid-cols-3 gap-2 text-center">
+              {[
+                ["01", "Ask", "AIに聞く"],
+                ["02", "Check", "商機を確認"],
+                ["03", "Test", "販売テスト"],
+              ].map(([number, label, value]) => (
+                <div key={number} className="min-w-[88px] border border-white/10 bg-black/20 px-3 py-3">
+                  <p className="font-mono text-[10px] text-cyan-300">{number}</p>
+                  <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-zinc-600">{label}</p>
+                  <p className="mt-1 text-xs text-zinc-300">{value}</p>
                 </div>
               ))}
             </div>
