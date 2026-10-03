@@ -38,11 +38,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <TracerChat />
         <footer className="border-t border-white/10 bg-black/40">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-5 text-xs text-zinc-500">
-            <span>TRACER — AI Commerce Intelligence</span>
+            <span>TRACER — 世界で見つかる、新しい商品</span>
             <nav className="flex gap-4">
-              <a href="/extension" className="hover:text-zinc-200">Extension</a>
-              <a href="/privacy" className="hover:text-zinc-200">Privacy</a>
-              <a href="/terms" className="hover:text-zinc-200">Terms</a>
+              <a href="/extension" className="hover:text-zinc-200">見つけた商品を調べる</a>
+              <a href="/privacy" className="hover:text-zinc-200">プライバシー</a>
+              <a href="/terms" className="hover:text-zinc-200">利用規約</a>
             </nav>
           </div>
         </footer>
