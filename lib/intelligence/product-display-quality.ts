@@ -42,15 +42,64 @@ export type ProductDisplayQuality = {
   };
 };
 
-async function countRows(
+async function countRows(table: string): Promise<number> {
+  const supabase = createSupabaseAdminClient();
+  const { count, error } = await supabase
+    .from(table)
+    .select("id", { count: "exact", head: true });
+  if (error) throw new Error(`${table}: ${error.message}`);
+  return count ?? 0;
+}
+
+async function countWhere(
   table: string,
-  configure?: (query: ReturnType<ReturnType<typeof createSupabaseAdminClient>["from"]>) => ReturnType<ReturnType<typeof createSupabaseAdminClient>["from"]>,
+  column: string,
+  value: string | boolean,
 ): Promise<number> {
   const supabase = createSupabaseAdminClient();
-  let query = supabase.from(table).select("id", { count: "exact", head: true });
-  if (configure) query = configure(query);
-  const { count, error } = await query;
-  if (error) throw new Error(`${table}: ${error.message}`);
+  const { count, error } = await supabase
+    .from(table)
+    .select("id", { count: "exact", head: true })
+    .eq(column, value);
+  if (error) throw new Error(`${table}.${column}: ${error.message}`);
+  return count ?? 0;
+}
+
+async function countWhereIn(
+  table: string,
+  column: string,
+  values: string[],
+): Promise<number> {
+  const supabase = createSupabaseAdminClient();
+  const { count, error } = await supabase
+    .from(table)
+    .select("id", { count: "exact", head: true })
+    .in(column, values);
+  if (error) throw new Error(`${table}.${column}: ${error.message}`);
+  return count ?? 0;
+}
+
+async function countSupplierVerifiedOrderable(): Promise<number> {
+  const supabase = createSupabaseAdminClient();
+  const { count, error } = await supabase
+    .from("supplier_listings")
+    .select("id", { count: "exact", head: true })
+    .eq("identity_status", "linked")
+    .eq("verification_status", "verified")
+    .eq("inventory_confirmed", true)
+    .eq("orderable", true);
+  if (error) throw new Error(`supplier_listings verification: ${error.message}`);
+  return count ?? 0;
+}
+
+async function countPublishedBaseLinked(): Promise<number> {
+  const supabase = createSupabaseAdminClient();
+  const { count, error } = await supabase
+    .from("shop_listings")
+    .select("id", { count: "exact", head: true })
+    .eq("published", true)
+    .not("base_item_id", "is", null);
+  if (error) throw new Error(`shop_listings BASE link: ${error.message}`);
   return count ?? 0;
 }
 
@@ -74,22 +123,17 @@ export async function auditProductDisplayQuality(): Promise<ProductDisplayQualit
   ] = await Promise.all([
     countRows("demand_observations"),
     countRows("demand_product_matches"),
-    countRows("demand_product_candidates", (q) => q.eq("status", "new")),
-    countRows("demand_product_candidates", (q) => q.in("status", ["product_found", "offer_found"])),
-    countRows("demand_cj_products", (q) => q.eq("identity_status", "linked")),
-    countRows("supplier_listings", (q) => q.eq("identity_status", "linked")),
-    countRows("supplier_listings", (q) =>
-      q.eq("identity_status", "linked")
-        .eq("verification_status", "verified")
-        .eq("inventory_confirmed", true)
-        .eq("orderable", true),
-    ),
-    countRows("tracer_supply_catalog", (q) => q.eq("status", "ready").eq("orderable", true)),
-    countRows("tracer_supply_variants", (q) => q.eq("orderable", true).gt("inventory", 0)),
-    countRows("opportunity_intelligence", (q) => q.eq("sellability_state", "TEST_READY")),
+    countWhere("demand_product_candidates", "status", "new"),
+    countWhereIn("demand_product_candidates", "status", ["product_found", "offer_found"]),
+    countWhere("demand_cj_products", "identity_status", "linked"),
+    countWhere("supplier_listings", "identity_status", "linked"),
+    countSupplierVerifiedOrderable(),
+    countWhere("tracer_supply_catalog", "status", "ready"),
+    countWhere("tracer_supply_variants", "orderable", true),
+    countWhere("opportunity_intelligence", "sellability_state", "TEST_READY"),
     countRows("sales_tests"),
-    countRows("shop_listings", (q) => q.eq("published", true)),
-    countRows("shop_listings", (q) => q.eq("published", true).not("base_item_id", "is", null)),
+    countWhere("shop_listings", "published", true),
+    countPublishedBaseLinked(),
   ]);
 
   const reasons: string[] = [];
@@ -109,12 +153,12 @@ export async function auditProductDisplayQuality(): Promise<ProductDisplayQualit
   if (!supplyEvidence) reasons.push("verified_supply_not_ready");
   if (!economicsEvidence) reasons.push("test_ready_economics_not_ready");
   if (!testReadyEvidence) reasons.push("sales_test_not_created");
-  if (publishedListings === 0) reasons.push("no_published_product");
+  if (!publishedEvidence) reasons.push("no_published_product");
   if (publishedListings > 0 && baseLinkedPublished < publishedListings) {
     reasons.push("published_product_not_fully_linked_to_base");
   }
 
-  const safeToDisplay = publishedListings === 0 || (testReadyEvidence && publishedListings > 0);
+  const safeToDisplay = publishedListings === 0 || testReadyEvidence;
   const status: ProductDisplayQuality["status"] =
     !supabaseReady || !safeToDisplay
       ? "BLOCKED"
