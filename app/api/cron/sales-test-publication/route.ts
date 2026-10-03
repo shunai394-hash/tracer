@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
-import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
+import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
+import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
@@ -70,59 +71,18 @@ export async function GET(request: Request) {
 
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
-    // Discovery is not publication. Supplier discovery is owned by its own
-    // scheduled source stage; this publication stage must stay bounded so it
-    // can reliably reach Opportunity Intelligence, the Sales Test Gate, BASE,
-    // and NEWFIND instead of timing out before downstream delivery.
+    // Customer-facing publication is market/demand-first. Supply-first discovery
+    // creates procureable candidates, but without marketplace identity and demand
+    // evidence it cannot become TEST_READY. Run the canonical bestseller ->
+    // supplier identity investigation first, then rebuild intelligence and apply
+    // the single Sales Test Gate.
+    const bestsellers = await persistMarketplaceBestsellers();
+    const candidateIds = bestsellers.supplierCandidateIds.slice(0, 5).map(String);
+    const suppliers = await investigateDropshipForBestsellers(candidateIds);
+
     await buildOpportunityIntelligence();
 
-    // Also reconsider supply verified by earlier supply-first runs: its
-    // intelligence may only have become complete after that run finished.
-    const { data: verifiedSupply, error: verifiedSupplyError } = await supabase
-      .from("supplier_listings")
-      .select("product_id")
-      .eq("supplier", "cj")
-      .eq("verification_status", "verified")
-      .eq("orderable", true)
-      .not("product_id", "is", null)
-      .order("last_verified_at", { ascending: false, nullsFirst: false })
-      .limit(50);
-    if (verifiedSupplyError) throw new Error(verifiedSupplyError.message);
-
-    const supplySelected = await selectAndPublishSupplySalesTests(
-      [
-        ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")),
-      ].filter(Boolean),
-      3,
-    );
-    const supplyDownstream = await promoteGatePassedListings(supplySelected.publishedListingIds);
-
-    if (supplySelected.published > 0) {
-      return NextResponse.json({
-        ok: true,
-        phase: "sales_test_publication",
-        elapsedMs: Date.now() - startedAt,
-        mode: "supply_first_intelligence_gate",
-        supplySelected,
-        downstream: supplyDownstream,
-        nextPhase: "base_publication",
-      });
-    }
-
-    // Keep the existing market-linked pipeline as the fallback when the
-    // supply-first source has no publishable candidate.
-    const { data: readyRows, error: readyError } = await supabase
-      .from("marketplace_bestsellers")
-      .select("id")
-      .eq("pipeline_stage", "VARIANT_VERIFIED")
-      .eq("pipeline_status", "ready")
-      .order("fetched_at", { ascending: false })
-      .limit(10);
-
-    if (readyError) throw new Error(readyError.message);
-
-    const candidateIds = (readyRows ?? []).map((row) => String(row.id));
-    const decision = await selectAndPublishSalesTests(candidateIds, 10);
+    const decision = await selectAndPublishSalesTests(candidateIds, 5);
     const downstream = await promoteGatePassedListings(decision.publishedListingIds);
 
     if (cronRunId) {
@@ -135,24 +95,9 @@ export async function GET(request: Request) {
         metadata: {
           phase: "sales_test_publication",
           mode: "market_linked_sales_test",
-          considered: decision.considered,
-          published: decision.published,
-        },
-      }).eq("id", cronRunId);
-    }
-
-    if (cronRunId) {
-      await supabase.from("cron_runs").update({
-        status: "succeeded",
-        finished_at: new Date().toISOString(),
-        duration_ms: Date.now() - startedAt,
-        processed: supplySelected.considered + candidateIds.length,
-        failed: 0,
-        metadata: {
-          phase: "sales_test_publication",
-          mode: "market_linked_sales_test",
-          supplyConsidered: supplySelected.considered,
-          supplyPublished: supplySelected.published,
+          supplierProcessed: suppliers.processed,
+          supplierMatched: suppliers.matched,
+          supplierNoIdentifierOverlap: suppliers.noIdentifierOverlap,
           considered: decision.considered,
           published: decision.published,
         },
@@ -165,6 +110,8 @@ export async function GET(request: Request) {
       elapsedMs: Date.now() - startedAt,
       mode: "market_linked_sales_test",
       candidateCount: candidateIds.length,
+      bestsellers,
+      suppliers,
       decision,
       downstream,
       nextPhase: "downstream_delivery",
