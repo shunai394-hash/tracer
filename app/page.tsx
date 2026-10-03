@@ -1,40 +1,14 @@
 import Link from "next/link";
 import { CapabilityMap } from "@/components/capability-map";
 import { ConnectionPanel } from "@/components/connection-panel";
+import { QualityLoopPanel } from "@/components/quality-loop-panel";
 import { getFoundationStatus } from "@/lib/config/env";
 
 const actions = [
-  {
-    href: "/bestsellers",
-    label: "Bestsellers",
-    title: "売れ筋を見る",
-    copy: "市場ランキングから観測できた商品を確認する。",
-  },
-  {
-    href: "/intelligence",
-    label: "Opportunities",
-    title: "商機を見る",
-    copy: "需要・供給・利益など、実データが揃った候補を見る。",
-  },
-  {
-    href: "/shop",
-    label: "Sales test",
-    title: "販売テストを見る",
-    copy: "公開条件を満たした商品だけを店舗で確認する。",
-  },
-  {
-    href: "/extension",
-    label: "Extension",
-    title: "商品を取り込む",
-    copy: "Chrome Extensionから商品情報をTRACERへ送る。",
-  },
-] as const;
-
-const pipeline = [
-  ["01", "Observe", "Amazon / 楽天 / Yahoo の売れ筋を観測"],
-  ["02", "Identify", "ASIN / JAN 等で同一商品を確認"],
-  ["03", "Supply", "無在庫仕入先・価格・送料・追跡を確認"],
-  ["04", "Test", "条件が揃った商品だけ販売テストへ"],
+  { href: "/bestsellers", label: "Bestsellers", title: "売れ筋を見る", copy: "いま動いている市場を観測する。" },
+  { href: "/intelligence", label: "Opportunities", title: "商機を見る", copy: "需要・供給・利益まで確認できた候補を見る。" },
+  { href: "/shop", label: "Sales test", title: "試してみる", copy: "条件を満たした商品だけを見る。" },
+  { href: "/extension", label: "Extension", title: "商品を取り込む", copy: "気になる商品をTRACERへ送る。" },
 ] as const;
 
 export default function HomePage() {
@@ -42,130 +16,103 @@ export default function HomePage() {
 
   return (
     <main className="flex-1">
-      <section className="border-b border-cyan-500/10">
-        <div className="mx-auto grid w-full max-w-6xl gap-12 px-6 py-16 lg:grid-cols-[1.2fr_0.8fr] lg:items-end lg:py-24">
+      <section className="relative overflow-hidden border-b border-cyan-500/10">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_70%_25%,rgba(34,211,238,0.10),transparent_34%),radial-gradient(circle_at_20%_80%,rgba(34,211,238,0.05),transparent_30%)]" />
+        <div className="relative mx-auto grid w-full max-w-7xl gap-12 px-5 py-16 sm:px-6 lg:grid-cols-[1.25fr_0.75fr] lg:items-center lg:py-28">
           <div>
-            <p className="font-mono text-xs uppercase tracking-[0.35em] text-cyan-400">
-              World market scan / Commerce intelligence
-            </p>
-            <h1 className="mt-5 text-4xl leading-[1.08] tracking-tight text-zinc-50 sm:text-6xl">
-              売れている商品を観測し、
-              <span className="block text-cyan-200">販売テストまでつなぐ。</span>
+            <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-300">TRACER / AI Commerce Intelligence</p>
+            <h1 className="mt-5 max-w-4xl text-5xl font-medium leading-[0.98] tracking-[-0.045em] text-zinc-50 sm:text-7xl lg:text-[5.5rem]">
+              次に、
+              <span className="block text-cyan-200">試してみたい。</span>
             </h1>
-            <p className="mt-7 max-w-2xl text-base leading-8 text-zinc-400">
-              TRACER は、市場の売れ筋・商品識別・仕入条件・利益を一つのループで追跡する
-              AI Commerce Intelligence。推測で埋めず、確認できない値は unknown として扱います。
+            <p className="mt-7 max-w-2xl text-base leading-8 text-zinc-300 sm:text-lg">
+              TRACERは、市場の変化から商品を見つけ、同一商品・仕入・価格条件まで確かめ、販売テストにつなげるAIコマース基盤です。
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link
-                href="/intelligence"
-                className="border border-cyan-400/50 bg-cyan-400/10 px-5 py-3 font-mono text-xs uppercase tracking-[0.18em] text-cyan-100 hover:bg-cyan-400/20"
-              >
-                商機を見る
+              <Link href="/shop" className="inline-flex items-center bg-cyan-300 px-5 py-3.5 text-xs font-medium tracking-[0.08em] text-zinc-950 transition hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200">
+                商品を見る <span className="ml-2" aria-hidden="true">→</span>
               </Link>
-              <Link
-                href="/shop"
-                className="border border-white/15 px-5 py-3 font-mono text-xs uppercase tracking-[0.18em] text-zinc-200 hover:border-white/30"
-              >
-                販売テスト店舗
+              <Link href="/bestsellers" className="inline-flex items-center border border-white/15 px-5 py-3.5 text-xs text-zinc-200 transition hover:border-cyan-300/40 hover:text-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
+                市場を見る
               </Link>
+            </div>
+            <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-[11px] text-zinc-500">
+              <span><span className="mr-1.5 text-cyan-300">✓</span>確認できた情報を優先</span>
+              <span><span className="mr-1.5 text-cyan-300">✓</span>不明は推測で埋めない</span>
+              <span><span className="mr-1.5 text-cyan-300">✓</span>実測を次の選定へ戻す</span>
             </div>
           </div>
 
-          <div className="border border-cyan-500/15 bg-zinc-950/70 p-6">
-            <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-zinc-500">
-              Core rule
-            </p>
-            <p className="mt-4 text-xl leading-8 text-zinc-100">
+          <div className="border border-white/10 bg-zinc-950/75 p-6 shadow-2xl shadow-cyan-950/10 sm:p-7">
+            <div className="flex items-center justify-between border-b border-white/8 pb-4">
+              <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-zinc-500">One quality rule</p>
+              <span className="h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(103,232,249,0.8)]" aria-label="quality loop active" />
+            </div>
+            <p className="mt-6 text-2xl leading-9 tracking-tight text-zinc-100">
               「売れそう」ではなく、
-              <span className="text-cyan-200">「確認できた」</span>
-              から進める。
+              <span className="text-cyan-200">「確かめられた」</span>
+              ものを次へ。
             </p>
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              {[
-                ["Market", "売れ筋観測"],
-                ["Identity", "同一商品確認"],
-                ["Supply", "仕入条件確認"],
-                ["Test", "実販売観測"],
-              ].map(([label, value]) => (
-                <div key={label} className="border border-white/8 bg-black/30 p-3">
-                  <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-zinc-600">
-                    {label}
-                  </p>
-                  <p className="mt-1 text-sm text-zinc-300">{value}</p>
+            <div className="mt-7 grid grid-cols-2 gap-px overflow-hidden border border-white/8 bg-white/8">
+              {[['Market','市場'],['Identity','同一商品'],['Supply','仕入'],['Test','実測']].map(([label,value]) => (
+                <div key={label} className="bg-zinc-950 p-4">
+                  <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-zinc-600">{label}</p>
+                  <p className="mt-1.5 text-sm text-zinc-200">{value}</p>
                 </div>
               ))}
             </div>
+            <Link href="/intelligence" className="mt-6 block border-t border-white/8 pt-4 text-xs text-zinc-500 transition hover:text-cyan-200">
+              仕組みと商機を見る <span aria-hidden="true">→</span>
+            </Link>
           </div>
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-6xl px-6 py-14">
+      <section className="mx-auto w-full max-w-7xl px-5 py-16 sm:px-6 lg:py-20">
         <div className="flex items-end justify-between gap-6">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-400">
-              Navigate
-            </p>
-            <h2 className="mt-2 text-2xl text-zinc-100">今すぐ使う</h2>
+            <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-300/80">Start here</p>
+            <h2 className="mt-2 text-2xl tracking-tight text-zinc-100 sm:text-3xl">まず、ひとつ見る。</h2>
           </div>
-          <Link href="/dashboard" className="hidden text-xs text-zinc-500 hover:text-zinc-200 sm:block">
-            Dashboard →
-          </Link>
+          <Link href="/dashboard" className="hidden text-xs text-zinc-500 transition hover:text-zinc-200 sm:block">Dashboard →</Link>
         </div>
-
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {actions.map((action) => (
-            <Link
-              key={action.href}
-              href={action.href}
-              className="group border border-white/10 bg-zinc-950/50 p-5 hover:border-cyan-400/30 hover:bg-cyan-400/[0.03]"
-            >
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-400/70">
-                {action.label}
-              </p>
-              <h3 className="mt-3 text-lg text-zinc-100">{action.title}</h3>
+        <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {actions.map((action, index) => (
+            <Link key={action.href} href={action.href} className="group relative overflow-hidden border border-white/10 bg-zinc-950/55 p-5 transition duration-300 hover:-translate-y-1 hover:border-cyan-300/30 hover:bg-zinc-900/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
+              <span className="font-mono text-[10px] text-zinc-700">0{index + 1}</span>
+              <p className="mt-6 font-mono text-[9px] uppercase tracking-[0.2em] text-cyan-300/70">{action.label}</p>
+              <h3 className="mt-2 text-lg text-zinc-100">{action.title}</h3>
               <p className="mt-2 text-sm leading-6 text-zinc-500">{action.copy}</p>
-              <span className="mt-5 block text-xs text-zinc-600 group-hover:text-cyan-300">
-                Open →
-              </span>
+              <span className="mt-7 block text-xs text-zinc-600 transition group-hover:text-cyan-200">開く →</span>
             </Link>
           ))}
         </div>
       </section>
 
       <section className="border-y border-white/5 bg-black/20">
-        <div className="mx-auto w-full max-w-6xl px-6 py-14">
-          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber-300/80">
-            Intelligence loop
-          </p>
-          <h2 className="mt-2 text-2xl text-zinc-100">観測 → 確認 → 仕入 → テスト</h2>
-          <div className="mt-8 grid gap-3 md:grid-cols-4">
-            {pipeline.map(([number, title, copy]) => (
-              <article key={number} className="border border-white/8 p-5">
-                <p className="font-mono text-xs text-cyan-400">{number}</p>
-                <h3 className="mt-3 text-lg text-zinc-100">{title}</h3>
-                <p className="mt-2 text-sm leading-6 text-zinc-500">{copy}</p>
-              </article>
-            ))}
-          </div>
+        <div className="mx-auto w-full max-w-7xl px-5 py-16 sm:px-6 lg:py-20">
+          <QualityLoopPanel />
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-6xl px-6 py-14">
-        <CapabilityMap />
+      <section className="mx-auto w-full max-w-7xl px-5 py-16 sm:px-6 lg:py-20">
+        <div className="max-w-2xl">
+          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber-300/80">How it stays precise</p>
+          <h2 className="mt-2 text-2xl tracking-tight text-zinc-100 sm:text-3xl">速さより、確かさを積み上げる。</h2>
+          <p className="mt-4 text-sm leading-7 text-zinc-500">商品名だけで決めない。未確認の費用を利益に入れない。補助シグナルを売れ筋と取り違えない。販売テストは確認済み条件が揃ったものから始めます。</p>
+        </div>
+        <div className="mt-8"><CapabilityMap /></div>
       </section>
 
-      <section className="mx-auto grid w-full max-w-6xl gap-6 px-6 pb-20 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="border border-amber-400/15 bg-zinc-950/60 p-6">
-          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber-300/80">
-            Data discipline
-          </p>
-          <h2 className="mt-2 text-xl text-zinc-100">不明を不明のまま扱う</h2>
-          <ol className="mt-4 space-y-3 text-sm leading-6 text-zinc-400">
-            <li>1. 商品名だけの一致は同一商品と確定しない</li>
-            <li>2. 未確認の送料・手数料を 0 円として利益計算しない</li>
-            <li>3. Trends / SNS は補助情報で、売れ筋観測の代替にしない</li>
-            <li>4. 販売テストは確認済み条件が揃った商品から開始する</li>
+      <section className="mx-auto grid w-full max-w-7xl gap-6 px-5 pb-20 sm:px-6 lg:grid-cols-[1.15fr_0.85fr]">
+        <div className="border border-amber-400/15 bg-zinc-950/60 p-6 sm:p-8">
+          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber-300/80">Data discipline</p>
+          <h2 className="mt-2 text-xl text-zinc-100">不明を不明のまま扱う。</h2>
+          <ol className="mt-5 grid gap-3 text-sm leading-6 text-zinc-400 sm:grid-cols-2">
+            <li className="border-l border-cyan-300/30 pl-3">商品名だけの一致は同一商品と確定しない</li>
+            <li className="border-l border-cyan-300/30 pl-3">未確認の送料・手数料を0円として利益計算しない</li>
+            <li className="border-l border-cyan-300/30 pl-3">Trends / SNSは補助情報として扱う</li>
+            <li className="border-l border-cyan-300/30 pl-3">条件未達の商品は無理に公開しない</li>
           </ol>
         </div>
         <ConnectionPanel status={status} />
