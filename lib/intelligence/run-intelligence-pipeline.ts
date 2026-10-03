@@ -66,6 +66,10 @@ function classifyFailure(error: unknown): {
 // resumes from persisted cursors / due queues instead of repeating work.
 let pipelineDeadlineAt = Number.POSITIVE_INFINITY;
 let pipelineProgress: ((step: string) => Promise<void>) | null = null;
+// A timed-out step may still be finishing an in-flight network call because
+// Promise.race does not cancel the underlying promise. Once that happens,
+// never start another pipeline stage in the same invocation.
+let pipelineTimedOut = false;
 
 class StepTimeoutError extends Error {
   constructor(step: string, budgetMs: number) {
@@ -90,6 +94,15 @@ async function runStep(
     Math.max(MIN_STEP_REMAINING_MS, requestedBudget),
     Math.max(MIN_STEP_REMAINING_MS, remaining - MIN_STEP_REMAINING_MS),
   );
+  if (pipelineTimedOut) {
+    return {
+      name,
+      ok: true,
+      skipped: true,
+      retryable: true,
+      result: { skipped: true, reason: "previous_step_timeout_stops_pipeline" },
+    };
+  }
   if (remaining < MIN_STEP_REMAINING_MS || budgetMs < MIN_STEP_REMAINING_MS) {
     return {
       name,
@@ -123,7 +136,8 @@ async function runStep(
     return { name, ok: true, skipped, result };
   } catch (error) {
     if (error instanceof StepTimeoutError) {
-      console.warn(`[TRACER PIPELINE ${name}] deferred after ${Date.now() - startedAt}ms (budget ${budgetMs}ms)`);
+      pipelineTimedOut = true;
+      console.warn(`[TRACER PIPELINE ${name}] deferred after ${Date.now() - startedAt}ms (budget ${budgetMs}ms); stopping downstream stages`);
       return {
         name,
         ok: true,
@@ -296,6 +310,7 @@ export async function runIntelligencePipeline(options: {
   const steps: PipelineStepResult[] = [];
   pipelineDeadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
   pipelineProgress = options.onStep ?? null;
+  pipelineTimedOut = false;
   const db = createSupabaseAdminClient();
 
   // Demand matching runs first. It reads persisted demand/catalog evidence
