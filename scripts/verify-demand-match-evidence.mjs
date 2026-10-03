@@ -6,6 +6,7 @@ import {
   canonicalGtin,
   canonicalModel,
   canonicalBrand,
+  exactIdentityVariantCompatible,
   encodeLegacyRationale,
   isStrongDemandMatch,
   legacyMethodFor,
@@ -79,9 +80,9 @@ test("exact identity variant gate", "exact JAN does not override a conflicting d
   assert.equal(variantsCompatible("AirPods Pro 2", "AirPods Pro").compatible, false);
   assert.equal(isStrongDemandMatch({ match_method: d.method }), true);
   // Matcher gate: the exact identifier is strong in isolation, but the
-  // demand query/title contradiction must prevent it from being persisted
-  // as a strong demand match.
-  assert.equal(variantsCompatible("AirPods Pro 2", "AirPods Pro").compatible, false);
+  // demand query/title contradiction must prevent it from being accepted.
+  assert.equal(exactIdentityVariantCompatible("AirPods Pro 2", "AirPods Pro"), false);
+  assert.equal(exactIdentityVariantCompatible("AirPods Pro", "AirPods Pro"), true);
 });
 
 // 2. JAN mismatch negative
