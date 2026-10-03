@@ -282,6 +282,11 @@ export async function buildOpportunityIntelligence(options: { batchSize?: number
   }
 
   const intelligenceRows = (intelligenceResult.data ?? []) as IntelligenceRow[];
+  // Every per-product table below is scoped to this batch. Unscoped reads hit
+  // PostgREST's default 1000-row cap and silently dropped offers, matches and
+  // supplier listings of the batch's own products (false negatives).
+  const batchProductIds = intelligenceRows.map((row) => row.product_id);
+  const scopeIds = batchProductIds.length > 0 ? batchProductIds : ["00000000-0000-0000-0000-000000000000"];
 
   const [
     offersResult,
@@ -301,17 +306,20 @@ export async function buildOpportunityIntelligence(options: { batchSize?: number
       .select(
         "id, product_id, seller_name, image_url, currency, price, currency_confidence, availability, shipping_price, observed_at, metadata",
       )
+      .in("product_id", scopeIds)
       .order("observed_at", { ascending: false }),
-    supabase.from("demand_product_matches").select("demand_observation_id, product_id, match_method, rationale"),
+    supabase.from("demand_product_matches").select("demand_observation_id, product_id, match_method, rationale").in("product_id", scopeIds),
     supabase
       .from("demand_observations")
       .select("id, product_id, signal_type, value, observed_at, metadata")
+      .in("product_id", scopeIds)
       .order("observed_at", { ascending: false }),
     supabase
       .from("demand_cj_products")
       .select(
         "id, product_id, title, identity_status, identity_confidence, demand_product_candidate_id, inventory, sale_status",
-      ),
+      )
+      .in("product_id", scopeIds),
     supabase
       .from("demand_product_candidates")
       .select("id, query, category"),
@@ -355,7 +363,7 @@ export async function buildOpportunityIntelligence(options: { batchSize?: number
   const supplierListingsResult = await supabase
     .from("supplier_listings")
     .select("product_id, identity_method, identity_status, verification_status, inventory_confirmed, orderable, inventory, shipping_cost")
-    .not("product_id", "is", null);
+    .in("product_id", scopeIds);
   if (supplierListingsResult.error) throw new Error(supplierListingsResult.error.message);
   const listingsByProduct = new Map<string, SupplierListingRow[]>();
   for (const listing of (supplierListingsResult.data ?? []) as SupplierListingRow[]) {
@@ -376,6 +384,18 @@ export async function buildOpportunityIntelligence(options: { batchSize?: number
   const offers = (offersResult.data ?? []) as OfferRow[];
   const matches = (matchesResult.data ?? []) as MatchRow[];
   const demands = (demandResult.data ?? []) as DemandRow[];
+  // Observations linked through matches (product_id is null on those rows).
+  const boundIds = new Set(demands.map((row) => row.id));
+  const matchedObservationIds = Array.from(new Set(matches.map((m) => m.demand_observation_id))).filter((id) => !boundIds.has(id));
+  for (let i = 0; i < matchedObservationIds.length; i += 100) {
+    const { data, error } = await supabase
+      .from("demand_observations")
+      .select("id, product_id, signal_type, value, observed_at, metadata")
+      .in("id", matchedObservationIds.slice(i, i + 100));
+    if (error) throw new Error(error.message);
+    demands.push(...((data ?? []) as DemandRow[]));
+  }
+  demands.sort((a, b) => String(b.observed_at).localeCompare(String(a.observed_at)));
   const cjRows = (cjResult.data ?? []) as CjRow[];
   const candidates = (candidateResult.data ?? []) as CandidateRow[];
   const candidateById = new Map(candidates.map((row) => [row.id, row]));

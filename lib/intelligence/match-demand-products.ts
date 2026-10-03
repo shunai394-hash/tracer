@@ -4,15 +4,13 @@ import { classifyDemandIntent } from "@/lib/intelligence/classify-demand-intent"
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
-  STRONG_MATCH_METHODS,
   buildIdentifierIndex,
-  encodeLegacyRationale,
   isStrongDemandMatch,
-  legacyMethodFor,
+  persistDemandMatches,
   readObservationIdentifiers,
   resolveExactIdentity,
   variantsCompatible,
-  type DemandMatchEvidence,
+  type DemandMatchRow as MatchRow,
 } from "@/lib/intelligence/demand-match-evidence";
 
 type DemandProductMatchResult = {
@@ -28,6 +26,8 @@ type DemandProductMatchResult = {
   ambiguousIdentifier: number;
   variantRejected: number;
   brandRejected: number;
+  geminiCalls: number;
+  intentDeferred: number;
   matchRows: number;
   byMethod: Record<string, number>;
   persisted: number;
@@ -95,79 +95,41 @@ function productMatchesQuery(query: string, productName: string, allProductNames
   return matchedTokens.length === 1 && candidateCount >= 1 && candidateCount <= 3;
 }
 
-type MatchRow = {
-  demandObservationId: string;
-  productId: string;
-  score: number;
-  evidence: DemandMatchEvidence;
-};
+type PagedResult<T> = { data: T[] | null; error: { message: string } | null };
 
-/**
- * Persist matches with their evidence. The 20260920170000 schema only allows
- * legacy match_method values and has no evidence columns, which made every
- * previous write fail (CHECK violation on "supplier_demand_evidence", then
- * unknown columns evidence_type/source_id/observed_at), so
- * demand_product_matches stayed at 0. Write the evidence schema first and,
- * if it is not migrated yet, fall back to the legacy columns with the full
- * evidence carried in the rationale. Errors are counted and returned, never
- * swallowed.
- */
-async function persistMatches(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
-  rows: MatchRow[],
-): Promise<{ written: number; schema: "evidence" | "legacy" | "none"; errors: string[] }> {
-  if (rows.length === 0) return { written: 0, schema: "none", errors: [] };
-  const errors: string[] = [];
-  const evidenceRows = rows.map((row) => ({
-    demand_observation_id: row.demandObservationId,
-    product_id: row.productId,
-    match_method: row.evidence.method,
-    match_score: row.score,
-    rationale: row.evidence.rationale,
-    evidence_type: STRONG_MATCH_METHODS.includes(row.evidence.method as (typeof STRONG_MATCH_METHODS)[number]) ? "identifier" : "weak",
-    evidence: row.evidence.facts,
-    source_id: row.evidence.sourceId,
-  }));
-  const modern = await supabase
-    .from("demand_product_matches")
-    .upsert(evidenceRows, { onConflict: "demand_observation_id,product_id" });
-  if (!modern.error) return { written: rows.length, schema: "evidence", errors };
-
-  // 42703 undefined column, PGRST204 column not in schema cache, 23514 CHECK.
-  const schemaMismatch = ["42703", "PGRST204", "23514"].includes(String(modern.error.code));
-  if (!schemaMismatch) {
-    errors.push(`${modern.error.code ?? "error"}: ${modern.error.message}`);
-    return { written: 0, schema: "evidence", errors };
+async function readAll<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  pageSize = 1000,
+  maxRows = 20_000,
+): Promise<PagedResult<T>> {
+  const rows: T[] = [];
+  for (let from = 0; from < maxRows; from += pageSize) {
+    const { data, error } = await page(from, from + pageSize - 1);
+    if (error) return { data: null, error };
+    rows.push(...(data ?? []));
+    if (!data || data.length < pageSize) break;
   }
-
-  const legacyRows = rows.map((row) => ({
-    demand_observation_id: row.demandObservationId,
-    product_id: row.productId,
-    match_method: legacyMethodFor(row.evidence.method),
-    match_score: row.score,
-    rationale: encodeLegacyRationale(row.evidence),
-  }));
-  const legacy = await supabase
-    .from("demand_product_matches")
-    .upsert(legacyRows, { onConflict: "demand_observation_id,product_id" });
-  if (legacy.error) {
-    errors.push(`legacy ${legacy.error.code ?? "error"}: ${legacy.error.message}`);
-    return { written: 0, schema: "legacy", errors };
-  }
-  return { written: rows.length, schema: "legacy", errors };
+  return { data: rows, error: null };
 }
+
+// Gemini intent classification is a network call per observation. Without a
+// cap a run over ~260 unclassified Google Trends rows cannot finish inside the
+// pipeline budget, so the step was deferred forever and nothing was matched.
+const MAX_GEMINI_CLASSIFICATIONS_PER_RUN = 10;
 
 export async function matchDemandProductsByCategory(): Promise<DemandProductMatchResult> {
   const supabase = createSupabaseAdminClient();
 
+  // Paged reads: PostgREST caps a plain select at 1000 rows, which silently
+  // dropped products (product_intelligence alone exceeds 1000 rows).
   const [demandResult, productResult, candidateResult, cjProductResult, sourceOfferResult, bestsellerResult, identifierResult] = await Promise.all([
-    supabase.from("demand_observations").select("id, metadata, value, observed_at").is("product_id", null).in("signal_type", ["search_volume", "search_result_count"]).order("observed_at", { ascending: false }),
-    supabase.from("product_intelligence").select("product_id, normalized_title"),
-    supabase.from("demand_product_candidates").select("id, demand_observation_id"),
-    supabase.from("demand_cj_products").select("id, demand_product_candidate_id, product_id, identity_status, identity_confidence"),
-    supabase.from("product_offers").select("id, product_id, metadata, seller_name, observed_at").eq("seller_name", "CJdropshipping"),
-    supabase.from("marketplace_bestsellers").select("product_id, jan, gtin, ean, upc, mpn, model, brand").not("product_id", "is", null),
-    supabase.from("product_identifiers").select("product_id, scheme, value").not("product_id", "is", null),
+    readAll((from, to) => supabase.from("demand_observations").select("id, metadata, value, observed_at").is("product_id", null).in("signal_type", ["search_volume", "search_result_count"]).order("observed_at", { ascending: false }).order("id").range(from, to)),
+    readAll((from, to) => supabase.from("product_intelligence").select("product_id, normalized_title").order("product_id").range(from, to)),
+    readAll((from, to) => supabase.from("demand_product_candidates").select("id, demand_observation_id").order("id").range(from, to)),
+    readAll((from, to) => supabase.from("demand_cj_products").select("id, demand_product_candidate_id, product_id, identity_status, identity_confidence").order("id").range(from, to)),
+    readAll((from, to) => supabase.from("product_offers").select("id, product_id, metadata, seller_name, observed_at").eq("seller_name", "CJdropshipping").order("id").range(from, to)),
+    readAll((from, to) => supabase.from("marketplace_bestsellers").select("product_id, jan, gtin, ean, upc, mpn, model, brand").not("product_id", "is", null).order("id").range(from, to)),
+    readAll((from, to) => supabase.from("product_identifiers").select("product_id, scheme, value").not("product_id", "is", null).order("id").range(from, to)),
   ]);
   if (demandResult.error) throw new Error(demandResult.error.message);
   if (productResult.error) throw new Error(productResult.error.message);
@@ -240,6 +202,8 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   let processed = 0, intentProduct = 0, intentNonProduct = 0, matched = 0, unmatched = 0;
   let candidatesCreated = 0, candidatesExisting = 0, skippedInvalid = 0;
   let exactMatches = 0, ambiguousIdentifier = 0, variantRejected = 0, brandRejected = 0;
+  let geminiCalls = 0, intentDeferred = 0;
+  const candidateObservationIds = new Set((candidateResult.data ?? []).map((row) => String(row.demand_observation_id)));
 
   for (const demand of demandRows) {
     processed += 1;
@@ -268,7 +232,15 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     }
 
     let intent = detectProductIntent(query);
+    // Observations that already produced a candidate were classified before;
+    // do not pay for another Gemini call on every run.
+    if (!intent.isProduct && intent.reason === "no_product_signal" && candidateObservationIds.has(demand.id)) {
+      intentNonProduct += 1;
+      continue;
+    }
     if (!intent.isProduct && intent.reason === "no_product_signal" && isGeminiConfigured()) {
+      if (geminiCalls >= MAX_GEMINI_CLASSIFICATIONS_PER_RUN) { intentDeferred += 1; continue; }
+      geminiCalls += 1;
       try {
         const aiIntent = await classifyDemandIntent(query);
         if (aiIntent.is_product_demand) intent = { isProduct: true, category: aiIntent.category ?? null, reason: `gemini:${aiIntent.reason}` };
@@ -325,13 +297,13 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   }
 
   const rows = [...matchRows.values()];
-  const persisted = await persistMatches(supabase, rows);
+  const persisted = await persistDemandMatches(supabase, rows);
   const byMethod: Record<string, number> = {};
   for (const row of rows) byMethod[row.evidence.method] = (byMethod[row.evidence.method] ?? 0) + 1;
 
   return {
     processed, intentProduct, intentNonProduct, matched, unmatched, candidatesCreated, candidatesExisting, skippedInvalid,
-    exactMatches, ambiguousIdentifier, variantRejected, brandRejected,
+    exactMatches, ambiguousIdentifier, variantRejected, brandRejected, geminiCalls, intentDeferred,
     matchRows: rows.length,
     byMethod,
     persisted: persisted.written,
