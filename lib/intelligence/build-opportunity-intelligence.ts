@@ -612,7 +612,9 @@ export async function buildOpportunityIntelligence(options: { batchSize?: number
         : null;
 
     const rejectedByRelevance = relevance?.status === "rejected_noise";
-    const identityUnconfirmed = relevance?.status === "identity_unconfirmed";
+    const identityUnconfirmed =
+      relevance?.status === "identity_unconfirmed" ||
+      metadata.identity_status === "supply_discovered";
     const identityConfidence =
       asNumber(row.identity_confidence) ?? relevance?.score ?? null;
     const identityConfirmed =

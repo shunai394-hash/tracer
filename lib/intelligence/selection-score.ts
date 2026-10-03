@@ -223,6 +223,26 @@ export function verifySelectionInvariants(): {
     sourceCost: 3,
   });
 
+  const unconfirmedIdentity = evaluateSelection({
+    identityRejected: false,
+    identityUnconfirmed: true,
+    identityScore: 0,
+    demandScore: 80,
+    demandConfidence: 0.8,
+    marketGapScore: 70,
+    marketGapConfidence: 0.7,
+    profitScore: 80,
+    profitCalculable: true,
+    profitIncalculableReason: null,
+    forecastScore: 50,
+    forecastConfidence: 0.6,
+    searchFitScore: 70,
+    searchFitConfidence: 0.7,
+    sellabilityScore: 80,
+    sellabilityState: "WATCH",
+    sellingPrice: 4900,
+    sourceCost: 5.5,
+  });
   const cases = [
     {
       name: "unknown_profit_does_not_zero_selection",
@@ -237,6 +257,13 @@ export function verifySelectionInvariants(): {
       name: "rejected_identity_is_not_selectable",
       expected: true,
       actual: rejected.eligible === false && rejected.blocked.includes("identity_rejected"),
+    },
+    {
+      name: "unconfirmed_identity_is_not_selectable",
+      expected: true,
+      actual:
+        unconfirmedIdentity.eligible === false &&
+        unconfirmedIdentity.blocked.includes("identity_unconfirmed"),
     },
   ];
 
