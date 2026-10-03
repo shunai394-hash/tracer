@@ -273,21 +273,35 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
       rowMatched = true;
     }
 
-    if (rowMatched) { matched += 1; continue; }
-    unmatched += 1;
+    // Weak title/text evidence is traceability only. It must not terminate
+    // the flow: the same observation still needs a candidate so supplier
+    // research can resolve an identifier/model/variant.
+    if (rowMatched) matched += 1;
+    else unmatched += 1;
 
-    const { data: existingCandidate, error: candidateLookupError } = await supabase.from("demand_product_candidates").select("id, demand_observation_id, query").eq("query", query).maybeSingle();
+    // Candidate identity is scoped to BOTH the observation and query. A
+    // query-only lookup can collide across observations and make maybeSingle()
+    // fail or incorrectly reuse another observation's candidate.
+    const { data: existingCandidate, error: candidateLookupError } = await supabase
+      .from("demand_product_candidates")
+      .select("id")
+      .eq("demand_observation_id", demand.id)
+      .eq("query", query)
+      .maybeSingle();
     if (candidateLookupError) throw new Error(`Failed to lookup demand product candidate: ${candidateLookupError.message}`);
     if (existingCandidate) { candidatesExisting += 1; continue; }
 
     const source = typeof metadata.provider === "string" ? metadata.provider : "google_trends";
+    const rationale = rowMatched
+      ? `Weak demand match recorded for query ${JSON.stringify(query)}; candidate requires supplier/identity verification (${intent.reason})`
+      : `Product demand detected but no existing product matched: ${intent.reason}`;
     const { error: candidateInsertError } = await supabase.from("demand_product_candidates").insert({
       demand_observation_id: demand.id,
       query,
       category: intent.category,
       status: "new",
       source,
-      rationale: `Product demand detected but no existing product matched: ${intent.reason}`,
+      rationale,
     });
     if (candidateInsertError) {
       if (candidateInsertError.code === "23505") { candidatesExisting += 1; continue; }
