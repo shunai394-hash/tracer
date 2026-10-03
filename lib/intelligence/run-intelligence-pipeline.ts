@@ -249,30 +249,65 @@ async function syncShoppingDemandObservations(): Promise<unknown> {
   );
 
   let upserted = 0;
+  let schemaCompatibilityFallbacks = 0;
   for (const item of grouped.values()) {
     const key = `${item.query}|${item.observedAt.slice(0, 10)}`;
     if (existingKeys.has(key)) continue;
+
+    const metadata = {
+      query: item.query,
+      provider: "google_shopping",
+      source: "observations",
+      proxy: "count_of_observed_product_results",
+    };
+    const payload = {
+      product_id: item.productId,
+      source_id: item.sourceId,
+      signal_type: "search_result_count" as const,
+      value: item.count,
+      unit: "google_shopping_results_observed",
+      observed_at: item.observedAt,
+      metadata,
+    };
+
     const { error: insertError } = await supabase
       .from("demand_observations")
+      .insert(payload);
+    if (!insertError) {
+      upserted += 1;
+      continue;
+    }
+    if (insertError.code === "23505") continue;
+
+    // Production databases can temporarily lag the migration that introduces
+    // search_result_count. Do not turn a schema rollout race into a failed AI
+    // patrol: preserve the observed signal as `other` with an explicit marker.
+    // Once the migration is applied, the canonical signal_type is used again.
+    const isSignalTypeConstraint =
+      insertError.code === "23514" &&
+      /demand_observations_signal_type_check/i.test(insertError.message);
+    if (!isSignalTypeConstraint) throw new Error(insertError.message);
+
+    const { error: fallbackError } = await supabase
+      .from("demand_observations")
       .insert({
-        product_id: item.productId,
-        source_id: item.sourceId,
-        signal_type: "search_result_count",
-        value: item.count,
-        unit: "google_shopping_results_observed",
-        observed_at: item.observedAt,
-        metadata: {
-          query: item.query,
-          provider: "google_shopping",
-          source: "observations",
-          proxy: "count_of_observed_product_results",
-        },
+        ...payload,
+        signal_type: "other",
+        metadata: { ...metadata, original_signal_type: "search_result_count", schema_compatibility_fallback: true },
       });
-    if (insertError && insertError.code !== "23505") throw new Error(insertError.message);
-    if (!insertError) upserted += 1;
+    if (fallbackError && fallbackError.code !== "23505") throw new Error(fallbackError.message);
+    if (!fallbackError) {
+      upserted += 1;
+      schemaCompatibilityFallbacks += 1;
+    }
   }
 
-  return { source: "google_shopping_observations", grouped: grouped.size, upserted };
+  return {
+    source: "google_shopping_observations",
+    grouped: grouped.size,
+    upserted,
+    schemaCompatibilityFallbacks,
+  };
 }
 
 async function inspectDemandObservations(): Promise<unknown> {
