@@ -288,13 +288,13 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
       .eq("demand_observation_id", demand.id)
       .eq("query", query)
       .maybeSingle();
-    if (candidateLookupError) throw new Error(\`Failed to lookup demand product candidate: \${candidateLookupError.message}\`);
+    if (candidateLookupError) throw new Error(`Failed to lookup demand product candidate: ${candidateLookupError.message}`);
     if (existingCandidate) { candidatesExisting += 1; continue; }
 
     const source = typeof metadata.provider === "string" ? metadata.provider : "google_trends";
     const rationale = rowMatched
-      ? \`Weak demand match recorded for query \${JSON.stringify(query)}; candidate requires supplier/identity verification (\${intent.reason})\`
-      : \`Product demand detected but no existing product matched: \${intent.reason}\`;
+      ? `Weak demand match recorded for query ${JSON.stringify(query)}; candidate requires supplier/identity verification (${intent.reason})`
+      : `Product demand detected but no existing product matched: ${intent.reason}`;
     const { error: candidateInsertError } = await supabase.from("demand_product_candidates").insert({
       demand_observation_id: demand.id,
       query,
@@ -305,7 +305,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     });
     if (candidateInsertError) {
       if (candidateInsertError.code === "23505") { candidatesExisting += 1; continue; }
-      throw new Error(\`Failed to insert demand product candidate: \${candidateInsertError.message}\`);
+      throw new Error(`Failed to insert demand product candidate: ${candidateInsertError.message}`);
     }
     candidatesCreated += 1;
   }
