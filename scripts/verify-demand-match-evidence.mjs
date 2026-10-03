@@ -16,6 +16,7 @@ import {
   variantsCompatible,
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
+import { shouldCreateIdentityCandidate } from "../lib/intelligence/match-demand-products.ts";
 
 const results = [];
 const pending = [];
@@ -203,7 +204,25 @@ test("no candidate", "empty index", () => {
   assert.equal(resolveExactIdentity(readObservationIdentifiers({ jan: "4549995433944" }), buildIdentifierIndex([], [])).status, "none");
 });
 
-// 13. evidence persistence (fake client reproducing production schema states)
+// 13. candidate continuation: weak evidence must not short-circuit identity verification.
+test("weak match -> candidate", "product-intent weak title match still requires a candidate", () => {
+  assert.equal(shouldCreateIdentityCandidate({ isProductIntent: true, hasExactIdentity: false }), true);
+});
+test("weak match -> candidate", "exact identifier match does not require an unnecessary candidate", () => {
+  assert.equal(shouldCreateIdentityCandidate({ isProductIntent: true, hasExactIdentity: true }), false);
+});
+test("weak match -> candidate", "non-product observations do not create identity candidates", () => {
+  assert.equal(shouldCreateIdentityCandidate({ isProductIntent: false, hasExactIdentity: false }), false);
+});
+
+test("candidate idempotency invariant", "same observation/query remains candidate-eligible on repeated runs", () => {
+  const first = shouldCreateIdentityCandidate({ isProductIntent: true, hasExactIdentity: false });
+  const second = shouldCreateIdentityCandidate({ isProductIntent: true, hasExactIdentity: false });
+  assert.equal(first, true);
+  assert.equal(second, true);
+});
+
+// 14. evidence persistence (fake client reproducing production schema states)
 function fakeDb(behaviour) {
   const calls = [];
   return {
