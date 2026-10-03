@@ -220,15 +220,28 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     if (decision.status === "ambiguous") ambiguousIdentifier += 1;
     if (decision.status === "brand_conflict") brandRejected += 1;
     if (decision.status === "exact") {
-      exactMatches += 1;
-      keep({
-        demandObservationId: demand.id,
-        productId: decision.productId,
-        score: 1,
-        evidence: { method: decision.method, rationale: `Observation identifier exactly and uniquely matches the product (${decision.method})`, facts: decision.facts, sourceId: demand.id },
-      });
-      matched += 1;
-      continue;
+      const exactProductTitle = productRows.find((product) => String(product.product_id) === decision.productId)?.normalized_title ?? "";
+      const exactVariant = exactProductTitle ? variantsCompatible(query, exactProductTitle) : { compatible: true, conflicts: [] as string[] };
+      if (exactVariant.compatible) {
+        exactMatches += 1;
+        keep({
+          demandObservationId: demand.id,
+          productId: decision.productId,
+          score: 1,
+          evidence: {
+            method: decision.method,
+            rationale: `Observation identifier exactly and uniquely matches the product (${decision.method})`,
+            facts: { ...decision.facts, variant_checked: true },
+            sourceId: demand.id,
+          },
+        });
+        matched += 1;
+        continue;
+      }
+      // An identifier can be exact while the demand query names a different
+      // generation/tier/size/capacity/pack. Do not promote that contradiction
+      // to strong demand evidence; leave the observation on the candidate path.
+      variantRejected += 1;
     }
 
     let intent = detectProductIntent(query);
