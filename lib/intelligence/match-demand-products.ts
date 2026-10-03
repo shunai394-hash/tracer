@@ -6,6 +6,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   buildIdentifierIndex,
   isStrongDemandMatch,
+  exactIdentityVariantCompatible,
   persistDemandMatches,
   readObservationIdentifiers,
   resolveExactIdentity,
@@ -221,8 +222,8 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     if (decision.status === "brand_conflict") brandRejected += 1;
     if (decision.status === "exact") {
       const exactProductTitle = productRows.find((product) => String(product.product_id) === decision.productId)?.normalized_title ?? "";
-      const exactVariant = exactProductTitle ? variantsCompatible(query, exactProductTitle) : { compatible: true, conflicts: [] as string[] };
-      if (exactVariant.compatible) {
+      const exactVariantCompatible = exactIdentityVariantCompatible(query, exactProductTitle);
+      if (exactVariantCompatible) {
         exactMatches += 1;
         keep({
           demandObservationId: demand.id,
