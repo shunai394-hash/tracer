@@ -335,7 +335,9 @@ export async function selectAndPublishSalesTests(
         reasons.push("intelligence_selection_ineligible");
       }
       const sellabilityState = String(intelligence.sellability_state ?? "");
-      if (!["TEST_READY", "SELLABLE"].includes(sellabilityState)) {
+      // Only TEST_READY (all 12 sellability checks) may publish. SELLABLE
+      // skips supply, demand, shipping and return-risk checks.
+      if (sellabilityState !== "TEST_READY") {
         reasons.push("sellability_not_ready");
       }
       if (String(intelligence.filter_state ?? "") !== "PASS") {

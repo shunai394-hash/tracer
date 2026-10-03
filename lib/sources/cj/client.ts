@@ -1,6 +1,7 @@
 ﻿import "server-only";
 
 import { getCJConfig } from "@/lib/config/env";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   selectUnambiguousVariant,
   verifyVariantSelectionInvariants,
@@ -105,7 +106,7 @@ let cachedToken: {
 let lastCJRequestAt = 0;
 let cjRequestChain: Promise<void> = Promise.resolve();
 
-async function waitForCJRateLimit(): Promise<void> {
+async function waitForLocalCJRateLimit(): Promise<void> {
   let release!: () => void;
   const previous = cjRequestChain;
   cjRequestChain = new Promise<void>((resolve) => {
@@ -124,7 +125,36 @@ async function waitForCJRateLimit(): Promise<void> {
   release();
 }
 
-async function fetchCJWithRateLimit(
+export async function waitForCJRateLimit(): Promise<void> {
+  // Vercel can run multiple serverless instances concurrently. The old
+  // in-memory limiter serialized requests only inside one instance, so two
+  // concurrent instances could still violate CJ's global 1 QPS limit.
+  // Claim the next slot in Supabase first; fall back to the old local
+  // limiter only if the shared limiter is temporarily unavailable.
+  try {
+    const db = createSupabaseAdminClient();
+    const { data, error } = await db.rpc("claim_cj_api_slot", {
+      p_min_interval_ms: 1_100,
+    });
+    if (!error) {
+      const waitMs = Math.max(0, Number(data ?? 0));
+      if (waitMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+      }
+      return;
+    }
+    console.warn("[cj] shared QPS limiter unavailable; using local fallback", error.message);
+  } catch (error) {
+    console.warn(
+      "[cj] shared QPS limiter unavailable; using local fallback",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+
+  await waitForLocalCJRateLimit();
+}
+
+export async function fetchCJWithRateLimit(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> {

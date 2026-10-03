@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { rescueUndeliveredGatePassedListings, retryPendingNewfindPromotions } from "@/lib/integration/newfind";
+import { rescueUndeliveredGatePassedListings, retryPendingNewfindPromotions, withdrawUnpublishedNewfindPromotions } from "@/lib/integration/newfind";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
@@ -22,11 +22,17 @@ export async function GET(request: Request) {
       limit: 2,
       deadlineAt: startedAt + 40_000,
     });
+    // Withdraw NEWFIND promotions of listings TRACER no longer publishes.
+    // Opt-in (NEWFIND_WITHDRAW_RECONCILE=1); reports enabled:false otherwise.
+    const withdraw = Date.now() < startedAt + 45_000
+      ? await withdrawUnpublishedNewfindPromotions({ limit: 5 })
+      : { enabled: false, skipped: "time_budget" };
     return NextResponse.json({
       ok: true,
       phase: "newfind_retry",
       ...result,
       rescue,
+      withdraw,
     });
   } catch (error) {
     console.error("[TRACER NEWFIND RETRY CRON ERROR]", error);
