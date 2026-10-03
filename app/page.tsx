@@ -5,10 +5,10 @@ import { QualityLoopPanel } from "@/components/quality-loop-panel";
 import { getFoundationStatus } from "@/lib/config/env";
 
 const actions = [
-  { href: "/bestsellers", label: "Bestsellers", title: "売れ筋を見る", copy: "いま動いている市場を観測する。" },
-  { href: "/intelligence", label: "Opportunities", title: "商機を見る", copy: "需要・供給・利益まで確認できた候補を見る。" },
-  { href: "/shop", label: "Sales test", title: "試してみる", copy: "条件を満たした商品だけを見る。" },
-  { href: "/extension", label: "Extension", title: "商品を取り込む", copy: "気になる商品をTRACERへ送る。" },
+  { href: "/bestsellers", label: "WORLD NOW", title: "いま世界で動くもの", copy: "どこで、何が注目されているかを見る。" },
+  { href: "/shop", label: "NEW FIND", title: "知らなかった商品", copy: "まだ出会っていない「気になる」を探す。" },
+  { href: "/intelligence", label: "WHY THIS", title: "なぜ注目されている？", copy: "市場・供給・条件を確かめた情報を見る。" },
+  { href: "/extension", label: "BRING IT", title: "これ、気になる", copy: "見つけた商品をTRACERに送って調べる。" },
 ] as const;
 
 export default function HomePage() {
@@ -20,26 +20,31 @@ export default function HomePage() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_70%_25%,rgba(34,211,238,0.10),transparent_34%),radial-gradient(circle_at_20%_80%,rgba(34,211,238,0.05),transparent_30%)]" />
         <div className="relative mx-auto grid w-full max-w-7xl gap-12 px-5 py-16 sm:px-6 lg:grid-cols-[1.25fr_0.75fr] lg:items-center lg:py-28">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-300">TRACER / AI Commerce Intelligence</p>
+            <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-300">TRACER / WORLD PRODUCT DISCOVERY</p>
             <h1 className="mt-5 max-w-4xl text-5xl font-medium leading-[0.98] tracking-[-0.045em] text-zinc-50 sm:text-7xl lg:text-[5.5rem]">
-              次に、
-              <span className="block text-cyan-200">試してみたい。</span>
+              世界で今、
+              <span className="block text-cyan-200">見つかっているもの。</span>
             </h1>
             <p className="mt-7 max-w-2xl text-base leading-8 text-zinc-300 sm:text-lg">
-              TRACERは、市場の変化から商品を見つけ、同一商品・仕入・価格条件まで確かめ、販売テストにつなげるAIコマース基盤です。
+              海外で動き始めた商品、まだ知らない面白いものを見つける。TRACERのAIが世界を巡回し、確かめられたものを人の目に届く形にします。
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link href="/shop" className="inline-flex items-center bg-cyan-300 px-5 py-3.5 text-xs font-medium tracking-[0.08em] text-zinc-950 transition hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200">
-                商品を見る <span className="ml-2" aria-hidden="true">→</span>
+                見つける <span className="ml-2" aria-hidden="true">→</span>
               </Link>
               <Link href="/bestsellers" className="inline-flex items-center border border-white/15 px-5 py-3.5 text-xs text-zinc-200 transition hover:border-cyan-300/40 hover:text-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
-                市場を見る
+                世界の動きを見る
               </Link>
             </div>
             <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-[11px] text-zinc-500">
               <span><span className="mr-1.5 text-cyan-300">✓</span>確認できた情報を優先</span>
               <span><span className="mr-1.5 text-cyan-300">✓</span>不明は推測で埋めない</span>
               <span><span className="mr-1.5 text-cyan-300">✓</span>実測を次の選定へ戻す</span>
+            </div>
+          <div className="mt-8 grid max-w-2xl grid-cols-1 gap-2 text-xs text-zinc-400 sm:grid-cols-3">
+              <div className="border border-white/8 bg-white/[0.02] px-4 py-3">「こんなの知らなかった」</div>
+              <div className="border border-white/8 bg-white/[0.02] px-4 py-3">「今、これが動いてるんだ」</div>
+              <div className="border border-white/8 bg-white/[0.02] px-4 py-3">「ちょっと試したい」</div>
             </div>
           </div>
 
@@ -71,8 +76,9 @@ export default function HomePage() {
       <section className="mx-auto w-full max-w-7xl px-5 py-16 sm:px-6 lg:py-20">
         <div className="flex items-end justify-between gap-6">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-300/80">Start here</p>
-            <h2 className="mt-2 text-2xl tracking-tight text-zinc-100 sm:text-3xl">まず、ひとつ見る。</h2>
+            <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-300/80">DISCOVER SOMETHING NEW</p>
+            <h2 className="mt-2 text-2xl tracking-tight text-zinc-100 sm:text-3xl">今日は、何を見つける？</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-500">検索する前に、世界から届いた「気になる」をひとつ。知らなかった商品との出会いから始められます。</p>
           </div>
           <Link href="/dashboard" className="hidden text-xs text-zinc-500 transition hover:text-zinc-200 sm:block">Dashboard →</Link>
         </div>
