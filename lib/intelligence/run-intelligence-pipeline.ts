@@ -352,14 +352,14 @@ export async function runIntelligencePipeline(options: {
       .eq("pipeline_status", "pending")
       .or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null")
       .order("fetched_at", { ascending: true })
-      .limit(3);
+      .limit(2);
     if (backlogError) throw new Error(backlogError.message);
     const ids = Array.from(new Set([
       ...supplierCandidateIds,
       ...(backlog ?? []).map((row) => String(row.id)),
     ]));
     return investigateDropshipForBestsellers(ids);
-  }, { budgetMs: 40_000 }));
+  }, { budgetMs: 30_000 }));
   steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand(), { budgetMs: 5_000 }));
   steps.push(await runStep("normalize", () => normalizeProductIntelligence(), { budgetMs: 5_000 }));
   steps.push(await runStep("identity", () => stampDemandCJIdentities(), { budgetMs: 5_000 }));
