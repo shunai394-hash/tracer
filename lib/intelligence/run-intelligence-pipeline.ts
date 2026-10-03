@@ -74,18 +74,23 @@ class StepTimeoutError extends Error {
   }
 }
 
-// Reserve time for the cheap downstream stages (intelligence, Sales Test
-// Gate, NEWFIND) so an expensive discovery stage cannot starve them.
-const DOWNSTREAM_RESERVE_MS = 20_000;
+// Explicit per-stage budgets keep expensive discovery stages from starving
+// Opportunity Intelligence and the Sales Test Gate. The old downstream
+// default was only 4s, which made intelligence defer almost every time.
+const MIN_STEP_REMAINING_MS = 1_000;
 
 async function runStep(
   name: string,
   fn: () => Promise<unknown>,
-  options: { downstream?: boolean } = {},
+  options: { downstream?: boolean; budgetMs?: number } = {},
 ): Promise<PipelineStepResult> {
   const remaining = pipelineDeadlineAt - Date.now();
-  const required = options.downstream ? 5_000 : DOWNSTREAM_RESERVE_MS;
-  if (remaining < required) {
+  const requestedBudget = options.budgetMs ?? (options.downstream ? 10_000 : Math.max(1_000, remaining - MIN_STEP_REMAINING_MS));
+  const budgetMs = Math.min(
+    Math.max(MIN_STEP_REMAINING_MS, requestedBudget),
+    Math.max(MIN_STEP_REMAINING_MS, remaining - MIN_STEP_REMAINING_MS),
+  );
+  if (remaining < MIN_STEP_REMAINING_MS || budgetMs < MIN_STEP_REMAINING_MS) {
     return {
       name,
       ok: true,
@@ -97,9 +102,8 @@ async function runStep(
   // Hard per-step budget. Checking only before a step starts cannot stop a
   // single slow step (marketplace fetch, CJ fan-out) from running past 300s,
   // which is what kept killing patrol-ai and leaving its lock behind.
-  const budgetMs = options.downstream
-    ? Math.min(4_000, Math.max(1_000, remaining - 1_000))
-    : Math.max(1_000, remaining - DOWNSTREAM_RESERVE_MS);
+  // Explicit budgets below protect the expensive stages; downstream defaults
+  // remain short for cheap delivery/bookkeeping work.
   const startedAt = Date.now();
   await pipelineProgress?.(name);
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -294,6 +298,11 @@ export async function runIntelligencePipeline(options: {
   pipelineProgress = options.onStep ?? null;
   const db = createSupabaseAdminClient();
 
+  // Demand matching runs first. It reads persisted demand/catalog evidence
+  // and does not depend on the current marketplace fetch. Previously the
+  // marketplace stage could consume the budget before matching started.
+  steps.push(await runStep("match", () => matchDemandProductsByCategory(), { budgetMs: 25_000 }));
+
   // Resume market discovery from the persisted cursor instead of re-reading
   // marketplace 0 / item 0 on every patrol, and advance it afterwards.
   const bestsellerStep = await runStep("bestsellers", async () => {
@@ -305,7 +314,7 @@ export async function runIntelligencePipeline(options: {
     });
     const next = await writeMarketCursor(db, observation, "patrol-ai");
     return { ...observation, cursor, nextCursor: next };
-  });
+  }, { budgetMs: 25_000 });
   steps.push(bestsellerStep);
 
   const bestsellerIds =
@@ -317,12 +326,6 @@ export async function runIntelligencePipeline(options: {
     bestsellerStep.ok && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { supplierCandidateIds?: unknown }).supplierCandidateIds)
       ? (bestsellerStep.result as { supplierCandidateIds: string[] }).supplierCandidateIds
       : [];
-
-  // Demand matching runs before the network-bound discovery steps. After them
-  // it was always "deferred_to_next_patrol_time_budget" (dropship may use the
-  // whole non-reserved budget), so demand_product_matches never got written
-  // by any cron. It reads existing rows only and caps its Gemini calls.
-  steps.push(await runStep("match", () => matchDemandProductsByCategory()));
 
   // Identity backlog: bestsellers that carry a barcode but were inserted by an
   // earlier patrol were never investigated (only the current run's inserts
@@ -341,14 +344,14 @@ export async function runIntelligencePipeline(options: {
       ...(backlog ?? []).map((row) => String(row.id)),
     ]));
     return investigateDropshipForBestsellers(ids);
-  }));
-  steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand()));
-  steps.push(await runStep("normalize", () => normalizeProductIntelligence()));
-  steps.push(await runStep("identity", () => stampDemandCJIdentities()));
-  steps.push(await runStep("shopping_demand_sync", () => syncShoppingDemandObservations()));
-  steps.push(await runStep("demand", () => inspectDemandObservations()));
-  steps.push(await runStep("demand_analyze", () => persistDemandIntelligence()));
-  steps.push(await runStep("supply", () => researchLimitedSupply()));
+  }, { budgetMs: 40_000 }));
+  steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand(), { budgetMs: 5_000 }));
+  steps.push(await runStep("normalize", () => normalizeProductIntelligence(), { budgetMs: 5_000 }));
+  steps.push(await runStep("identity", () => stampDemandCJIdentities(), { budgetMs: 5_000 }));
+  steps.push(await runStep("shopping_demand_sync", () => syncShoppingDemandObservations(), { budgetMs: 4_000 }));
+  steps.push(await runStep("demand", () => inspectDemandObservations(), { budgetMs: 2_000 }));
+  steps.push(await runStep("demand_analyze", () => persistDemandIntelligence(), { budgetMs: 6_000 }));
+  steps.push(await runStep("supply", () => researchLimitedSupply(), { budgetMs: 18_000 }));
 
   // Supply-first is discovery only. It creates canonical product/offer/intelligence
   // evidence; publication is deferred until the same Opportunity Intelligence
@@ -358,7 +361,7 @@ export async function runIntelligencePipeline(options: {
   // required in the same invocation. Larger backlogs are drained by later patrols.
   const supplyFirstStep = await runStep("supply_first", () =>
     discoverAndCreateCjSupply(3, {
-      deadlineAt: Math.min(pipelineDeadlineAt - DOWNSTREAM_RESERVE_MS, Date.now() + 120_000),
+      deadlineAt: Math.min(pipelineDeadlineAt - 5_000, Date.now() + 18_000),
     }));
   steps.push(supplyFirstStep);
 
@@ -372,8 +375,8 @@ export async function runIntelligencePipeline(options: {
   steps.push(await runStep("identity_reverify", () =>
     reverifyCjSupplyIdentities({
       limit: 5,
-      deadlineAt: pipelineDeadlineAt - DOWNSTREAM_RESERVE_MS,
-    })));
+      deadlineAt: pipelineDeadlineAt - 1_000,
+    }), { budgetMs: 5_000 }));
 
   const intelligenceBatchSize = 50;
   const intelligenceBatchOffset = Math.floor(Date.now() / 60_000) % 7 * intelligenceBatchSize;
@@ -383,10 +386,10 @@ export async function runIntelligencePipeline(options: {
       batchSize: intelligenceBatchSize,
       batchOffset: intelligenceBatchOffset,
     }),
-    { downstream: true },
+    { downstream: true, budgetMs: 75_000 },
   );
   steps.push(intelligence);
-  steps.push(await runStep("score", () => scoreProductIntelligence(), { downstream: true }));
+  steps.push(await runStep("score", () => scoreProductIntelligence(), { downstream: true, budgetMs: 6_000 }));
 
   // Reconsider supply verified by earlier patrols too, so a deferred or
   // timed-out patrol does not strand verified supply before the gate.
@@ -407,11 +410,11 @@ export async function runIntelligencePipeline(options: {
   const supplySalesStep = await runStep(
     "supply_sales_test_select",
     () => selectAndPublishSupplySalesTests(supplyCandidateIds, 3),
-    { downstream: true },
+    { downstream: true, budgetMs: 6_000 },
   );
   steps.push(supplySalesStep);
 
-  const salesTestStep = await runStep("sales_test_select", () => selectAndPublishSalesTests(bestsellerIds, 3), { downstream: true });
+  const salesTestStep = await runStep("sales_test_select", () => selectAndPublishSalesTests(bestsellerIds, 3), { downstream: true, budgetMs: 6_000 });
   steps.push(salesTestStep);
 
   // Both Sales Test Gate paths deliver to NEWFIND (previously only the
@@ -424,19 +427,19 @@ export async function runIntelligencePipeline(options: {
         : [];
     });
     return Promise.all(ids.map((id) => promoteShopListingToNewfind(id)));
-  }, { downstream: true }));
+  }, { downstream: true, budgetMs: 6_000 }));
   // NEWFIND has its own scheduled retry worker. Keep patrol delivery bounded so
   // one slow downstream destination cannot consume the entire patrol timeout.
-  steps.push(await runStep("newfind_retry", () => retryPendingNewfindPromotions(1), { downstream: true }));
+  steps.push(await runStep("newfind_retry", () => retryPendingNewfindPromotions(1), { downstream: true, budgetMs: 4_000 }));
 
-  steps.push(await runStep("ordering", () => persistReorderRecommendations()));
+  steps.push(await runStep("ordering", () => persistReorderRecommendations(), { downstream: true, budgetMs: 4_000 }));
   steps.push(await runStep("test_ready", async () => {
     if (!intelligence.ok) {
       return { skipped: true, reason: "intelligence_step_failed", retryable: intelligence.retryable === true };
     }
     const result = intelligence.result as { testReady?: number } | undefined;
     return { testReady: result?.testReady ?? 0, note: "TEST_READY is produced only after the data quality gate" };
-  }));
+  }, { downstream: true, budgetMs: 2_000 }));
 
   const blockingFailed = steps.some((step) => !step.ok && !step.skipped);
   return { ok: !blockingFailed, complete: steps.every((step) => step.ok), steps };
