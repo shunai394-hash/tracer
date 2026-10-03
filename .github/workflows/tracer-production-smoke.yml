@@ -115,6 +115,46 @@ jobs:
           curl --fail-with-body -sS --max-time 60 -H "Authorization: Bearer $(token)" "$BASE/api/intelligence/match-precision-audit" > precision-after.json
           python3 summarize.py precision-after.json || cat precision-after.json
 
+          echo "=== SAME SCENARIO: IDEMPOTENCY RE-RUN ==="
+          curl --fail-with-body -sS --max-time 300 -X POST -H "Authorization: Bearer $(token)" "$BASE/api/intelligence/demand-match" > demand-match-rerun.json
+          curl --fail-with-body -sS --max-time 60 -H "Authorization: Bearer $(token)" "$BASE/api/intelligence/match-precision-audit" > precision-rerun.json
+          python3 - <<'PY'
+          import json, sys
+          before = json.load(open("precision-before.json", encoding="utf-8"))
+          after = json.load(open("precision-after.json", encoding="utf-8"))
+          rerun = json.load(open("precision-rerun.json", encoding="utf-8"))
+          first = json.load(open("demand-match.json", encoding="utf-8"))
+          second = json.load(open("demand-match-rerun.json", encoding="utf-8"))
+
+          def counts(d):
+              c = d.get("counts") or {}
+              return (
+                  c.get("demand_product_matches"),
+                  c.get("demand_product_candidates"),
+              )
+
+          print("first matcher:", json.dumps(first, ensure_ascii=False))
+          print("second matcher:", json.dumps(second, ensure_ascii=False))
+          print("counts before/after/rerun:", counts(before), counts(after), counts(rerun))
+
+          if counts(after) != counts(rerun):
+              print("FAIL idempotency: row counts changed on identical matcher rerun")
+              sys.exit(1)
+
+          after_fp = (after.get("falsePositiveCheck") or {})
+          rerun_fp = (rerun.get("falsePositiveCheck") or {})
+          if after_fp != rerun_fp:
+              print("FAIL idempotency: precision classification changed on identical matcher rerun")
+              sys.exit(1)
+
+          for label, result in (("first", first), ("second", second)):
+              if not result.get("ok") or result.get("persistErrors"):
+                  print(f"FAIL {label} matcher: unsuccessful or persistErrors present")
+                  sys.exit(1)
+
+          print("PASS one-scenario idempotency: matcher rerun preserved DB counts and precision classification")
+          PY
+
       - name: Run autonomous AI patrol after production deploy
         shell: bash
         run: |
