@@ -133,7 +133,13 @@ async function runStep(
       "skipped" in result &&
       (result as { skipped?: boolean }).skipped === true;
 
-    return { name, ok: true, skipped, result };
+    const retryable =
+      result !== null &&
+      typeof result === "object" &&
+      "retryable" in result &&
+      (result as { retryable?: boolean }).retryable === true;
+
+    return { name, ok: true, skipped, retryable, result };
   } catch (error) {
     if (error instanceof StepTimeoutError) {
       pipelineTimedOut = true;
@@ -502,6 +508,7 @@ export async function runIntelligencePipeline(options: {
   const blockingFailed = steps.some((step) => !step.ok && !step.skipped);
   const deferredStep = steps.find((step) => {
     if (!step.skipped) return false;
+    if (step.retryable === true) return true;
     const reason =
       step.result &&
       typeof step.result === "object" &&
@@ -510,7 +517,9 @@ export async function runIntelligencePipeline(options: {
         : "";
     return reason === "deferred_to_next_patrol_time_budget" ||
       reason === "step_time_budget_exceeded_deferred" ||
-      reason === "previous_step_timeout_stops_pipeline";
+      reason === "previous_step_timeout_stops_pipeline" ||
+      reason === "gemini_not_configured_candidate_resolution_blocked" ||
+      reason === "gemini_failed";
   });
   const incomplete = pipelineTimedOut || Boolean(deferredStep);
   return {
