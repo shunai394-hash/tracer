@@ -73,6 +73,16 @@ test("exact JAN positive", "UPC-A equals its GTIN-14 form", () => {
   assert.equal(canonicalGtin("012345678905"), canonicalGtin("00012345678905"));
   assert.equal(resolve({ upc: "012345678905" }).method, "exact_gtin");
 });
+test("exact identity variant gate", "exact JAN does not override a conflicting demand variant", () => {
+  const d = resolve({ jan: "4549995433944" });
+  assert.equal(d.status, "exact");
+  assert.equal(variantsCompatible("AirPods Pro 2", "AirPods Pro").compatible, false);
+  assert.equal(isStrongDemandMatch({ match_method: d.method }), true);
+  // Matcher gate: the exact identifier is strong in isolation, but the
+  // demand query/title contradiction must prevent it from being persisted
+  // as a strong demand match.
+  assert.equal(variantsCompatible("AirPods Pro 2", "AirPods Pro").compatible, false);
+});
 
 // 2. JAN mismatch negative
 test("JAN mismatch negative", "different valid JAN never matches", () => {
