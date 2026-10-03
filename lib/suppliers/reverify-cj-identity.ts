@@ -44,7 +44,9 @@ export async function reverifyCjSupplyIdentities(options: {
 } = {}): Promise<CjIdentityReverifyResult> {
   const db = createSupabaseAdminClient();
   const requestedLimit = options.limit ?? DEFAULT_LIMIT;
-  const limit = Math.max(25, Math.min(requestedLimit, MAX_LIMIT));
+  // Respect the caller's budget. A patrol that explicitly asks for five rows
+  // must not silently expand to 25 and consume the entire step deadline.
+  const limit = Math.max(1, Math.min(requestedLimit, MAX_LIMIT));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
 
   const { data: cursorRow, error: cursorError } = await db
