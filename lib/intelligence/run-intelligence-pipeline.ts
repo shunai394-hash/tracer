@@ -273,7 +273,6 @@ async function syncShoppingDemandObservations(): Promise<unknown> {
   );
 
   let upserted = 0;
-  let schemaCompatibilityFallbacks = 0;
   for (const item of grouped.values()) {
     const key = `${item.query}|${item.observedAt.slice(0, 10)}`;
     if (existingKeys.has(key)) continue;
@@ -303,38 +302,16 @@ async function syncShoppingDemandObservations(): Promise<unknown> {
     }
     if (insertError.code === "23505") continue;
 
-    // Only a known rollout mismatch may use the compatibility path.
-    // All unrelated database failures must remain visible.
-    const isSignalTypeConstraint =
-      insertError.code === "23514" &&
-      /demand_observations_signal_type_check/i.test(insertError.message);
-    if (!isSignalTypeConstraint) throw new Error(insertError.message);
-
-    const { error: fallbackError } = await supabase
-      .from("demand_observations")
-      .insert({
-        ...payload,
-        signal_type: "other",
-        metadata: {
-          ...metadata,
-          original_signal_type: "search_result_count",
-          schema_compatibility_fallback: true,
-        },
-      });
-    if (fallbackError && fallbackError.code !== "23505") {
-      throw new Error(fallbackError.message);
-    }
-    if (!fallbackError) {
-      upserted += 1;
-      schemaCompatibilityFallbacks += 1;
-    }
+    // Production supports search_result_count. Never downgrade this
+    // semantic signal to "other": a schema mismatch is a deployment/data
+    // contract failure and must remain visible.
+    throw new Error(insertError.message);
   }
 
   return {
     source: "google_shopping_observations",
     grouped: grouped.size,
     upserted,
-    schemaCompatibilityFallbacks,
   };
 }
 
