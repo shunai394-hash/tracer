@@ -178,11 +178,15 @@ async function researchLimitedSupply(): Promise<unknown> {
   if (!candidate) return { skipped: true, reason: "no_new_candidates" };
 
   if (!isGeminiConfigured()) {
+    // Candidate resolution is a mandatory part of the AI→MATCHER loop.
+    // Do not silently skip it and let a patrol look complete: the candidate
+    // must remain blocked until the configured AI query planner is available.
     return {
       skipped: true,
-      reason: "gemini_not_configured",
+      retryable: true,
+      reason: "gemini_not_configured_candidate_resolution_blocked",
       candidateId: candidate.id,
-      note: "CJ research uses Gemini for query ideation only; intelligence scoring continues without it",
+      note: "Candidate→supplier resolution is incomplete until Gemini query ideation is available",
     };
   }
 
