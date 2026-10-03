@@ -5,114 +5,164 @@ import { QualityLoopPanel } from "@/components/quality-loop-panel";
 import { getFoundationStatus } from "@/lib/config/env";
 
 const actions = [
-  { href: "/bestsellers", label: "Bestsellers", title: "売れ筋を見る", copy: "いま動いている市場を観測する。" },
-  { href: "/intelligence", label: "Opportunities", title: "商機を見る", copy: "需要・供給・利益まで確認できた候補を見る。" },
-  { href: "/shop", label: "Sales test", title: "試してみる", copy: "条件を満たした商品だけを見る。" },
-  { href: "/extension", label: "Extension", title: "商品を取り込む", copy: "気になる商品をTRACERへ送る。" },
+  { href: "/shop", eyebrow: "01 / Selection", title: "いま試せる商品", copy: "確認できた条件が揃った商品だけを見る。", accent: "商品を見る" },
+  { href: "/bestsellers", eyebrow: "02 / Market", title: "市場の動きを見る", copy: "いま注目されている変化から探す。", accent: "市場を見る" },
+  { href: "/intelligence", eyebrow: "03 / Discovery", title: "次の商機を探す", copy: "需要・商品・仕入条件を一つずつ確かめる。", accent: "商機を見る" },
+  { href: "/extension", eyebrow: "04 / Capture", title: "気になる商品を送る", copy: "見つけた商品をTRACERの確認へつなぐ。", accent: "取り込む" },
+] as const;
+
+const principles = [
+  ["01", "同じ商品か", "名前だけでは決めない。識別できる証拠を優先する。"],
+  ["02", "本当に仕入れられるか", "在庫・バリエーション・配送条件を確認する。"],
+  ["03", "販売できる条件か", "価格・利益・需要が揃うまで公開しない。"],
+  ["04", "結果を次へ返す", "実際の反応を次の選定と改善へ戻す。"],
 ] as const;
 
 export default function HomePage() {
   const status = getFoundationStatus();
 
   return (
-    <main className="flex-1">
-      <section className="relative overflow-hidden border-b border-cyan-500/10">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_70%_25%,rgba(34,211,238,0.10),transparent_34%),radial-gradient(circle_at_20%_80%,rgba(34,211,238,0.05),transparent_30%)]" />
-        <div className="relative mx-auto grid w-full max-w-7xl gap-12 px-5 py-16 sm:px-6 lg:grid-cols-[1.25fr_0.75fr] lg:items-center lg:py-28">
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-300">TRACER / AI Commerce Intelligence</p>
-            <h1 className="mt-5 max-w-4xl text-5xl font-medium leading-[0.98] tracking-[-0.045em] text-zinc-50 sm:text-7xl lg:text-[5.5rem]">
+    <main className="flex-1 bg-[#07090b]">
+      <section className="relative isolate overflow-hidden border-b border-white/8">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_72%_20%,rgba(34,211,238,0.12),transparent_28%),radial-gradient(circle_at_8%_88%,rgba(34,211,238,0.055),transparent_32%)]" />
+        <div className="pointer-events-none absolute right-[8%] top-24 hidden h-56 w-56 rounded-full border border-cyan-200/10 lg:block" />
+        <div className="pointer-events-none absolute right-[11%] top-32 hidden h-40 w-40 rounded-full border border-cyan-200/8 lg:block" />
+
+        <div className="relative mx-auto grid w-full max-w-[1400px] gap-14 px-5 py-16 sm:px-8 sm:py-20 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)] lg:items-center lg:px-10 lg:py-28">
+          <div className="max-w-4xl">
+            <div className="flex items-center gap-3 text-[10px] font-mono uppercase tracking-[0.34em] text-cyan-300/80">
+              <span className="h-px w-8 bg-cyan-300/50" aria-hidden="true" />
+              TRACER
+              <span className="text-zinc-700">AI commerce intelligence</span>
+            </div>
+            <h1 className="mt-7 text-[clamp(3.5rem,8vw,7.6rem)] font-medium leading-[0.88] tracking-[-0.065em] text-zinc-50">
               次に、
               <span className="block text-cyan-200">試してみたい。</span>
             </h1>
-            <p className="mt-7 max-w-2xl text-base leading-8 text-zinc-300 sm:text-lg">
-              TRACERは、市場の変化から商品を見つけ、同一商品・仕入・価格条件まで確かめ、販売テストにつなげるAIコマース基盤です。
+            <p className="mt-8 max-w-2xl text-[15px] leading-8 text-zinc-300 sm:text-lg sm:leading-9">
+              市場の変化から、実際に販売を試せる商品まで。<br className="hidden sm:block" />
+              TRACERは「気になる」を、確認できるところまで丁寧につなぎます。
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/shop" className="inline-flex items-center bg-cyan-300 px-5 py-3.5 text-xs font-medium tracking-[0.08em] text-zinc-950 transition hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200">
-                商品を見る <span className="ml-2" aria-hidden="true">→</span>
+
+            <div className="mt-9 flex flex-wrap gap-3">
+              <Link href="/shop" className="group inline-flex min-h-12 items-center bg-cyan-300 px-6 py-3.5 text-xs font-semibold tracking-[0.08em] text-zinc-950 transition duration-300 hover:-translate-y-0.5 hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200">
+                商品を見る
+                <span className="ml-4 transition-transform duration-300 group-hover:translate-x-1" aria-hidden="true">→</span>
               </Link>
-              <Link href="/bestsellers" className="inline-flex items-center border border-white/15 px-5 py-3.5 text-xs text-zinc-200 transition hover:border-cyan-300/40 hover:text-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
+              <Link href="/bestsellers" className="group inline-flex min-h-12 items-center border border-white/15 px-6 py-3.5 text-xs font-medium text-zinc-200 transition duration-300 hover:-translate-y-0.5 hover:border-cyan-300/40 hover:text-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
                 市場を見る
+                <span className="ml-4 text-zinc-600 transition-transform duration-300 group-hover:translate-x-1" aria-hidden="true">↗</span>
               </Link>
             </div>
-            <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-[11px] text-zinc-500">
-              <span><span className="mr-1.5 text-cyan-300">✓</span>確認できた情報を優先</span>
-              <span><span className="mr-1.5 text-cyan-300">✓</span>不明は推測で埋めない</span>
-              <span><span className="mr-1.5 text-cyan-300">✓</span>実測を次の選定へ戻す</span>
+
+            <div className="mt-10 flex flex-wrap gap-x-7 gap-y-3 border-t border-white/8 pt-5 text-[11px] text-zinc-500">
+              <span><span className="mr-2 text-cyan-300">✓</span>確認できた情報を優先</span>
+              <span><span className="mr-2 text-cyan-300">✓</span>不明は推測で埋めない</span>
+              <span><span className="mr-2 text-cyan-300">✓</span>実測を次へ返す</span>
             </div>
           </div>
 
-          <div className="border border-white/10 bg-zinc-950/75 p-6 shadow-2xl shadow-cyan-950/10 sm:p-7">
-            <div className="flex items-center justify-between border-b border-white/8 pb-4">
-              <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-zinc-500">One quality rule</p>
-              <span className="h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(103,232,249,0.8)]" aria-label="quality loop active" />
-            </div>
-            <p className="mt-6 text-2xl leading-9 tracking-tight text-zinc-100">
-              「売れそう」ではなく、
-              <span className="text-cyan-200">「確かめられた」</span>
-              ものを次へ。
-            </p>
-            <div className="mt-7 grid grid-cols-2 gap-px overflow-hidden border border-white/8 bg-white/8">
-              {[['Market','市場'],['Identity','同一商品'],['Supply','仕入'],['Test','実測']].map(([label,value]) => (
-                <div key={label} className="bg-zinc-950 p-4">
-                  <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-zinc-600">{label}</p>
-                  <p className="mt-1.5 text-sm text-zinc-200">{value}</p>
+          <div className="relative lg:justify-self-end lg:w-full lg:max-w-[440px]">
+            <div className="absolute -inset-4 border border-cyan-300/5" aria-hidden="true" />
+            <div className="relative border border-white/10 bg-[#0a0d10]/90 p-6 shadow-2xl shadow-cyan-950/20 backdrop-blur sm:p-8">
+              <div className="flex items-center justify-between border-b border-white/8 pb-5">
+                <div>
+                  <p className="text-[9px] font-mono uppercase tracking-[0.28em] text-zinc-600">TRACER standard</p>
+                  <p className="mt-1.5 text-sm text-zinc-200">公開する前に、確かめる。</p>
                 </div>
-              ))}
+                <span className="relative flex h-3 w-3" aria-label="quality loop">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300/30" />
+                  <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-300" />
+                </span>
+              </div>
+
+              <ol className="mt-6 space-y-1" aria-label="商品選定の流れ">
+                {[
+                  ["市場", "変化を見つける"],
+                  ["商品", "同じものか確かめる"],
+                  ["仕入", "在庫・価格・配送を確認"],
+                  ["販売", "条件が揃ったものだけ試す"],
+                  ["学習", "結果を次の選定へ戻す"],
+                ].map(([title, copy], index) => (
+                  <li key={title} className="group grid grid-cols-[36px_72px_1fr] items-center border-b border-white/6 py-4 last:border-0">
+                    <span className="font-mono text-[9px] text-zinc-700">0{index + 1}</span>
+                    <span className="text-xs font-medium text-cyan-100">{title}</span>
+                    <span className="text-xs text-zinc-500 transition group-hover:text-zinc-300">{copy}</span>
+                  </li>
+                ))}
+              </ol>
+
+              <div className="mt-5 border border-amber-300/10 bg-amber-300/[0.025] px-4 py-3">
+                <p className="text-[11px] leading-5 text-zinc-500">
+                  条件が足りない商品は、見栄えのために公開しません。確認できるまで次の循環へ戻します。
+                </p>
+              </div>
             </div>
-            <Link href="/intelligence" className="mt-6 block border-t border-white/8 pt-4 text-xs text-zinc-500 transition hover:text-cyan-200">
-              仕組みと商機を見る <span aria-hidden="true">→</span>
-            </Link>
           </div>
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-7xl px-5 py-16 sm:px-6 lg:py-20">
-        <div className="flex items-end justify-between gap-6">
+      <section className="mx-auto w-full max-w-[1400px] px-5 py-16 sm:px-8 lg:px-10 lg:py-24">
+        <div className="flex flex-col gap-5 border-b border-white/8 pb-8 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-300/80">Start here</p>
-            <h2 className="mt-2 text-2xl tracking-tight text-zinc-100 sm:text-3xl">まず、ひとつ見る。</h2>
+            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-cyan-300/70">Start with one</p>
+            <h2 className="mt-3 text-3xl tracking-[-0.035em] text-zinc-100 sm:text-4xl">まず、ひとつ見つける。</h2>
           </div>
-          <Link href="/dashboard" className="hidden text-xs text-zinc-500 transition hover:text-zinc-200 sm:block">Dashboard →</Link>
+          <p className="max-w-sm text-xs leading-6 text-zinc-600 sm:text-right">見る場所を増やすより、次の一歩が迷わないことを優先しています。</p>
         </div>
-        <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {actions.map((action, index) => (
-            <Link key={action.href} href={action.href} className="group relative overflow-hidden border border-white/10 bg-zinc-950/55 p-5 transition duration-300 hover:-translate-y-1 hover:border-cyan-300/30 hover:bg-zinc-900/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
-              <span className="font-mono text-[10px] text-zinc-700">0{index + 1}</span>
-              <p className="mt-6 font-mono text-[9px] uppercase tracking-[0.2em] text-cyan-300/70">{action.label}</p>
-              <h3 className="mt-2 text-lg text-zinc-100">{action.title}</h3>
-              <p className="mt-2 text-sm leading-6 text-zinc-500">{action.copy}</p>
-              <span className="mt-7 block text-xs text-zinc-600 transition group-hover:text-cyan-200">開く →</span>
+
+        <div className="mt-8 grid gap-px overflow-hidden border border-white/8 bg-white/8 sm:grid-cols-2 lg:grid-cols-4">
+          {actions.map((action) => (
+            <Link key={action.href} href={action.href} className="group relative min-h-[230px] bg-[#080b0e] p-6 transition duration-500 hover:-translate-y-1 hover:bg-[#0d1115] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-inset sm:p-7">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-zinc-600">{action.eyebrow}</span>
+                <span className="text-zinc-700 transition group-hover:translate-x-1 group-hover:text-cyan-200" aria-hidden="true">↗</span>
+              </div>
+              <div className="mt-16">
+                <h3 className="text-xl tracking-tight text-zinc-100">{action.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-zinc-500">{action.copy}</p>
+              </div>
+              <span className="absolute bottom-6 left-6 text-[10px] font-medium tracking-[0.12em] text-zinc-600 transition group-hover:text-cyan-200 sm:left-7">{action.accent} →</span>
             </Link>
           ))}
         </div>
       </section>
 
-      <section className="border-y border-white/5 bg-black/20">
-        <div className="mx-auto w-full max-w-7xl px-5 py-16 sm:px-6 lg:py-20">
+      <section className="border-y border-white/6 bg-black/20">
+        <div className="mx-auto w-full max-w-[1400px] px-5 py-16 sm:px-8 lg:px-10 lg:py-24">
           <QualityLoopPanel />
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-7xl px-5 py-16 sm:px-6 lg:py-20">
-        <div className="max-w-2xl">
-          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber-300/80">How it stays precise</p>
-          <h2 className="mt-2 text-2xl tracking-tight text-zinc-100 sm:text-3xl">速さより、確かさを積み上げる。</h2>
-          <p className="mt-4 text-sm leading-7 text-zinc-500">商品名だけで決めない。未確認の費用を利益に入れない。補助シグナルを売れ筋と取り違えない。販売テストは確認済み条件が揃ったものから始めます。</p>
+      <section className="mx-auto w-full max-w-[1400px] px-5 py-16 sm:px-8 lg:px-10 lg:py-24">
+        <div className="grid gap-12 lg:grid-cols-[0.7fr_1.3fr] lg:items-end">
+          <div>
+            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-amber-300/80">Why trust the selection</p>
+            <h2 className="mt-3 text-3xl leading-tight tracking-[-0.035em] text-zinc-100 sm:text-4xl">商品を増やす前に、<br />精度を上げる。</h2>
+            <p className="mt-5 max-w-md text-sm leading-7 text-zinc-500">「それっぽい」を大量に並べるのではなく、お客様が安心して次へ進める情報だけを積み上げます。</p>
+          </div>
+          <div className="grid gap-px overflow-hidden border border-white/8 bg-white/8 sm:grid-cols-2">
+            {principles.map(([number, title, copy]) => (
+              <article key={number} className="bg-[#080b0e] p-6 sm:p-7">
+                <span className="font-mono text-[10px] text-cyan-300/70">{number}</span>
+                <h3 className="mt-7 text-lg text-zinc-100">{title}</h3>
+                <p className="mt-2 text-sm leading-6 text-zinc-500">{copy}</p>
+              </article>
+            ))}
+          </div>
         </div>
-        <div className="mt-8"><CapabilityMap /></div>
+        <div className="mt-12"><CapabilityMap /></div>
       </section>
 
-      <section className="mx-auto grid w-full max-w-7xl gap-6 px-5 pb-20 sm:px-6 lg:grid-cols-[1.15fr_0.85fr]">
-        <div className="border border-amber-400/15 bg-zinc-950/60 p-6 sm:p-8">
-          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber-300/80">Data discipline</p>
-          <h2 className="mt-2 text-xl text-zinc-100">不明を不明のまま扱う。</h2>
-          <ol className="mt-5 grid gap-3 text-sm leading-6 text-zinc-400 sm:grid-cols-2">
-            <li className="border-l border-cyan-300/30 pl-3">商品名だけの一致は同一商品と確定しない</li>
-            <li className="border-l border-cyan-300/30 pl-3">未確認の送料・手数料を0円として利益計算しない</li>
-            <li className="border-l border-cyan-300/30 pl-3">Trends / SNSは補助情報として扱う</li>
-            <li className="border-l border-cyan-300/30 pl-3">条件未達の商品は無理に公開しない</li>
+      <section className="mx-auto grid w-full max-w-[1400px] gap-6 px-5 pb-20 sm:px-8 lg:grid-cols-[1.15fr_0.85fr] lg:px-10 lg:pb-28">
+        <div className="border border-amber-300/12 bg-[#0a0c0e] p-6 sm:p-8">
+          <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-amber-300/80">Data discipline</p>
+          <h2 className="mt-3 text-2xl tracking-tight text-zinc-100">わからないことを、わかったことにしない。</h2>
+          <ol className="mt-6 grid gap-4 text-sm leading-6 text-zinc-400 sm:grid-cols-2">
+            <li className="border-l border-cyan-300/30 pl-4">商品名だけの一致は、同一商品と確定しない。</li>
+            <li className="border-l border-cyan-300/30 pl-4">未確認の送料・手数料を、利益に入れない。</li>
+            <li className="border-l border-cyan-300/30 pl-4">Trends / SNSは、補助情報として扱う。</li>
+            <li className="border-l border-cyan-300/30 pl-4">条件未達の商品は、無理に公開しない。</li>
           </ol>
         </div>
         <ConnectionPanel status={status} />
