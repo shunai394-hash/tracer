@@ -273,10 +273,22 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
       rowMatched = true;
     }
 
-    if (rowMatched) { matched += 1; continue; }
-    unmatched += 1;
+    // Weak title/text evidence is traceability only. It must NOT terminate
+    // the flow: the same observation still needs a candidate so downstream
+    // supplier/identity investigation can resolve JAN/GTIN/MPN/model/variant.
+    // Exact identifier matches returned above and therefore do not reach here.
+    if (rowMatched) matched += 1;
+    else unmatched += 1;
 
-    const { data: existingCandidate, error: candidateLookupError } = await supabase.from("demand_product_candidates").select("id, demand_observation_id, query").eq("query", query).maybeSingle();
+    // Candidate uniqueness is scoped to the observation + query. A query can
+    // legitimately occur in multiple observations, so a query-only maybeSingle
+    // can suppress a required candidate for a later observation.
+    const { data: existingCandidate, error: candidateLookupError } = await supabase
+      .from("demand_product_candidates")
+      .select("id, demand_observation_id, query")
+      .eq("demand_observation_id", demand.id)
+      .eq("query", query)
+      .maybeSingle();
     if (candidateLookupError) throw new Error(`Failed to lookup demand product candidate: ${candidateLookupError.message}`);
     if (existingCandidate) { candidatesExisting += 1; continue; }
 
@@ -287,7 +299,9 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
       category: intent.category,
       status: "new",
       source,
-      rationale: `Product demand detected but no existing product matched: ${intent.reason}`,
+      rationale: rowMatched
+        ? `Product demand had weak title/text matches; candidate created for supplier/identity verification: ${intent.reason}`
+        : `Product demand detected but no existing product matched: ${intent.reason}`,
     });
     if (candidateInsertError) {
       if (candidateInsertError.code === "23505") { candidatesExisting += 1; continue; }
