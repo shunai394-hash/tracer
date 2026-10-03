@@ -4,7 +4,7 @@ import { collectGoogleTrendsDemand } from "@/lib/intelligence/collect-google-tre
 import { matchDemandProductsByCategory } from "@/lib/intelligence/match-demand-products";
 import { normalizeProductIntelligence } from "@/lib/intelligence/normalize-products";
 import { persistDemandCJProducts } from "@/lib/intelligence/persist-demand-cj-products";
-import { researchDemandCandidateWithCJ } from "@/lib/intelligence/research-demand-cj";
+import { recordCandidateResolutionEvidence, researchDemandCandidateWithCJ } from "@/lib/intelligence/research-demand-cj";
 import { scoreProductIntelligence } from "@/lib/intelligence/score-products";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { persistDemandIntelligence } from "@/lib/intelligence/persist-demand-intelligence";
@@ -187,6 +187,18 @@ async function researchLimitedSupply(): Promise<unknown> {
     // Candidate resolution is a mandatory part of the AI→MATCHER loop.
     // Do not silently skip it and let a patrol look complete: the candidate
     // must remain blocked until the configured AI query planner is available.
+    await recordCandidateResolutionEvidence({
+      candidateId: String(candidate.id),
+      fieldName: "candidate_resolution_blocked",
+      fieldValue: "gemini_not_configured",
+      evidenceClass: "actual",
+      confidence: 1,
+      metadata: {
+        stage: "query_ideation",
+        retryable: true,
+        reason: "gemini_not_configured_candidate_resolution_blocked",
+      },
+    });
     return {
       skipped: true,
       retryable: true,
@@ -203,6 +215,18 @@ async function researchLimitedSupply(): Promise<unknown> {
   } catch (error) {
     const classified = classifyFailure(error);
     if (classified.skippable) {
+      await recordCandidateResolutionEvidence({
+        candidateId: String(candidate.id),
+        fieldName: "candidate_resolution_failed",
+        fieldValue: "gemini_failed",
+        evidenceClass: "actual",
+        confidence: 1,
+        metadata: {
+          stage: "query_ideation",
+          retryable: classified.retryable,
+          error: classified.message,
+        },
+      });
       return {
         skipped: true,
         retryable: classified.retryable,
