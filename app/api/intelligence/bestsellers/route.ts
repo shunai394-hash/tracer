@@ -3,11 +3,9 @@ import { requireCronAuth } from "@/lib/security/cron-auth";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
-import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
-import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
 
 export const runtime = "nodejs";
@@ -20,16 +18,20 @@ export async function POST(request: Request) {
   try {
     const startedAt = Date.now();
 
-    // Supply discovery is never a publication path. Evaluate its canonical
-    // product/offer/intelligence rows through the same opportunity gate first.
-    const supplyFirst = await discoverAndCreateCjSupply(50);
+    // This route is the demand/market path. Supplier-only discovery belongs
+    // to /api/cron/supply-first and must not consume this short 60s window.
+    // Here we need marketplace evidence -> supplier identity -> intelligence ->
+    // Sales Test Gate, because that is the only route that can create a
+    // customer-facing listing without weakening identity or demand checks.
+    const bestsellers = await persistMarketplaceBestsellers();
+    const candidateIds = bestsellers.supplierCandidateIds
+      .slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
+    const suppliers = await investigateDropshipForBestsellers(candidateIds);
     await buildOpportunityIntelligence();
-    const supplySelected = await selectAndPublishSupplySalesTests(
-      supplyFirst.items.map((item) => String(item.productId ?? "")).filter(Boolean),
-      5,
-    );
-    const supplyNewfind = await Promise.all(
-      supplySelected.publishedListingIds.map((listingId) =>
+
+    const selected = await selectAndPublishSalesTests(candidateIds, 5);
+    const newfind = await Promise.all(
+      selected.publishedListingIds.map((listingId) =>
         promoteShopListingToNewfind(listingId).catch((error) => ({
           configured: true,
           sent: false,
@@ -39,9 +41,8 @@ export async function POST(request: Request) {
         })),
       ),
     );
-    if (supplySelected.published > 0) {
-      const base = await publishPublishedListingsToBase(50);
-      return NextResponse.json({
+
+    return NextResponse.json({
         ok: true,
         elapsedMs: Date.now() - startedAt,
         mode: "supply_first",
