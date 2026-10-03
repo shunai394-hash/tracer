@@ -18,6 +18,13 @@ const principles = [
   ["04", "結果を次へ返す", "実際の反応を次の選定と改善へ戻す。"],
 ] as const;
 
+const customerBenefits = [
+  ["探す", "市場・需要・商品候補を、同じ場所から辿れる。", "情報を集める前に、次に見るべき場所がわかる。"],
+  ["確かめる", "商品同一性、仕入、価格、配送、利益を順番に確認する。", "名前や雰囲気だけで判断せず、理由を持って進める。"],
+  ["決める", "条件が揃ったものだけを販売テストへ送る。", "「なぜこれを試すのか」を説明できる状態にする。"],
+  ["学ぶ", "販売結果を次の選定とAI循環へ戻す。", "一度見つけて終わりではなく、使うほど判断材料が増える。"],
+] as const;
+
 export default function HomePage() {
   const status = getFoundationStatus();
 
@@ -40,8 +47,8 @@ export default function HomePage() {
               <span className="block text-cyan-200">試してみたい。</span>
             </h1>
             <p className="mt-8 max-w-2xl text-[15px] leading-8 text-zinc-300 sm:text-lg sm:leading-9">
-              市場の変化から、実際に販売を試せる商品まで。<br className="hidden sm:block" />
-              TRACERは「気になる」を、確認できるところまで丁寧につなぎます。
+              探す、比べる、確かめるを一つにつなぐ。<br className="hidden sm:block" />
+              TRACERは「気になる商品」を、理由を持って試せるところまで丁寧につなぎます。
             </p>
 
             <div className="mt-9 flex flex-wrap gap-3">
@@ -102,7 +109,34 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-[1400px] px-5 py-16 sm:px-8 lg:px-10 lg:py-24">
+      <section className="mx-auto w-full max-w-[1400px] px-5 py-16 sm:px-8 lg:px-10 lg:py-24" aria-labelledby="benefit-heading">
+        <div className="grid gap-10 lg:grid-cols-[0.72fr_1.28fr] lg:items-start">
+          <div className="max-w-md">
+            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-cyan-300/70">Why TRACER</p>
+            <h2 id="benefit-heading" className="mt-3 text-3xl leading-tight tracking-[-0.04em] text-zinc-100 sm:text-4xl">
+              使う理由は、<br />「判断が前に進む」こと。
+            </h2>
+            <p className="mt-5 text-sm leading-7 text-zinc-500">
+              商品をたくさん見せるだけでは、次の一手は決まりません。TRACERは、発見から確認までをつなぎ、判断に必要な情報と理由を同じ流れで見せます。
+            </p>
+          </div>
+          <div className="grid gap-px overflow-hidden border border-white/8 bg-white/8 sm:grid-cols-2">
+            {customerBenefits.map(([title, copy, benefit], index) => (
+              <article key={title} className="group bg-[#080b0e] p-6 transition duration-300 hover:bg-[#0c1014] sm:p-7">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono tracking-[0.2em] text-cyan-300/70">0{index + 1}</span>
+                  <span className="h-px w-10 bg-white/10 transition-all duration-300 group-hover:w-16 group-hover:bg-cyan-300/40" aria-hidden="true" />
+                </div>
+                <h3 className="mt-8 text-xl text-zinc-100">{title}</h3>
+                <p className="mt-2 text-sm leading-6 text-zinc-400">{copy}</p>
+                <p className="mt-5 border-t border-white/7 pt-4 text-xs leading-5 text-zinc-600">{benefit}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto w-full max-w-[1400px] px-5 pb-16 sm:px-8 lg:px-10 lg:pb-24">
         <div className="flex flex-col gap-5 border-b border-white/8 pb-8 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-cyan-300/70">Start with one</p>
