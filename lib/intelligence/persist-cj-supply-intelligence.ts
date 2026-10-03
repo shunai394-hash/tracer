@@ -18,6 +18,8 @@ export type PersistCjSupplyIntelligenceArgs = {
   query: string;
   fxRate: number;
   sellingPriceJpy: number;
+  /** Supplier-declared variant barcode captured during discovery. */
+  variantBarcode?: string | null;
 };
 
 export type MarketplaceIdentity = {
@@ -32,40 +34,47 @@ export async function resolveMarketplaceIdentity(args: {
   db: ReturnType<typeof createSupabaseAdminClient>;
   supplierProductId: string;
   supplierVariantId: string;
+  /** Reuse a barcode already captured from the exact supplier variant. */
+  variantBarcode?: string | null;
 }): Promise<MarketplaceIdentity | null> {
-  let variants: Awaited<ReturnType<typeof fetchCJProductVariants>> = [];
-  try {
-    variants = await fetchCJProductVariants(args.supplierProductId, { countryCode: "JP" });
-  } catch (error) {
-    console.warn("[cj-supply-identity] variant barcode lookup failed", {
-      supplierProductId: args.supplierProductId,
-      supplierVariantId: args.supplierVariantId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
+  let barcode = typeof args.variantBarcode === "string" ? args.variantBarcode.trim() : "";
 
-  let variant = variants.find((item) => item.vid === args.supplierVariantId) ?? null;
-
-  // CJ can omit the barcode in product/variant/query while queryByVid still
-  // exposes the supplier-declared barcode. Recover that field before giving
-  // up. Never infer identity from pid, vid, SKU, title, image, or position.
-  if (!variant?.barcode) {
+  if (!barcode) {
+    let variants: Awaited<ReturnType<typeof fetchCJProductVariants>> = [];
     try {
-      const detailVariant = await fetchCJVariantByVid(args.supplierVariantId);
-      if (detailVariant?.vid === args.supplierVariantId && detailVariant.barcode) {
-        variant = { ...(variant ?? detailVariant), ...detailVariant };
-      }
+      variants = await fetchCJProductVariants(args.supplierProductId, { countryCode: "JP" });
     } catch (error) {
-      console.warn("[cj-supply-identity] queryByVid barcode lookup failed", {
+      console.warn("[cj-supply-identity] variant barcode lookup failed", {
         supplierProductId: args.supplierProductId,
         supplierVariantId: args.supplierVariantId,
         error: error instanceof Error ? error.message : String(error),
       });
+      return null;
     }
+
+    let variant = variants.find((item) => item.vid === args.supplierVariantId) ?? null;
+
+    // CJ can omit the barcode in product/variant/query while queryByVid still
+    // exposes the supplier-declared barcode. Recover that field before giving
+    // up. Never infer identity from pid, vid, SKU, title, image, or position.
+    if (!variant?.barcode) {
+      try {
+        const detailVariant = await fetchCJVariantByVid(args.supplierVariantId);
+        if (detailVariant?.vid === args.supplierVariantId && detailVariant.barcode) {
+          variant = { ...(variant ?? detailVariant), ...detailVariant };
+        }
+      } catch (error) {
+        console.warn("[cj-supply-identity] queryByVid barcode lookup failed", {
+          supplierProductId: args.supplierProductId,
+          supplierVariantId: args.supplierVariantId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    barcode = typeof variant?.barcode === "string" ? variant.barcode.trim() : "";
   }
 
-  const barcode = typeof variant?.barcode === "string" ? variant.barcode.trim() : "";
   if (!barcode) return null;
 
   const supplyIds = identifiersFromRecord({ gtin: barcode });
@@ -133,6 +142,7 @@ export async function persistCjSupplyIntelligence(
         db: supabase,
         supplierProductId: args.supplierProductId,
         supplierVariantId: args.supplierVariantId,
+        variantBarcode: args.variantBarcode,
       });
   const canonicalProductId = marketplaceIdentity?.productId ?? args.productId;
 
@@ -151,6 +161,7 @@ export async function persistCjSupplyIntelligence(
           identity_rationale: marketplaceIdentity.rationale,
           supplier_product_id: args.supplierProductId,
           supplier_variant_id: args.supplierVariantId,
+          variant_barcode: args.variantBarcode ?? null,
         },
       })
       .eq("id", args.supplierListingId);
@@ -174,6 +185,7 @@ export async function persistCjSupplyIntelligence(
       supplier_listing_id: args.supplierListingId,
       supplier_product_id: args.supplierProductId,
       supplier_variant_id: args.supplierVariantId,
+      variant_barcode: args.variantBarcode ?? null,
       inventory: args.inventory,
       query: args.query,
       fx_rate: args.fxRate,
@@ -209,9 +221,6 @@ export async function persistCjSupplyIntelligence(
     offerId = String(inserted.data.id);
   }
 
-  // A supply refresh must not erase demand/search/market evidence already
-  // produced for the canonical market product. Preserve existing intelligence
-  // fields and only refresh the supply-side facts here.
   const existingIntelligence = await supabase
     .from("product_intelligence")
     .select("normalized_title,brand_name,category,source_url,demand_signal,metadata")
@@ -237,7 +246,6 @@ export async function persistCjSupplyIntelligence(
         currency: "USD",
         current_price: args.cost,
         price_confidence: currencyAssessment.confidence === "high" ? 0.9 : currencyAssessment.confidence === "medium" ? 0.6 : 0.2,
-        // Unconfirmed marketplace identity carries no identity evidence.
         identity_confidence: marketplaceIdentity?.confidence ?? 0,
         demand_signal: existingIntelligence.data?.demand_signal ?? null,
         supply_signal: 1,
@@ -248,6 +256,7 @@ export async function persistCjSupplyIntelligence(
           supplier_listing_id: args.supplierListingId,
           supplier_product_id: args.supplierProductId,
           supplier_variant_id: args.supplierVariantId,
+          variant_barcode: args.variantBarcode ?? null,
           inventory: args.inventory,
           query: args.query,
           fx_rate: args.fxRate,
