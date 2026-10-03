@@ -23,6 +23,10 @@
       "schedule": "20 12 * * *"
     },
     {
+      "path": "/api/cron/demand-match",
+      "schedule": "17 12 * * *"
+    },
+    {
       "path": "/api/cron/intelligence",
       "schedule": "22 12 * * *"
     },
