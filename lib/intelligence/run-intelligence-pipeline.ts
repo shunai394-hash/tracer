@@ -457,5 +457,9 @@ export async function runIntelligencePipeline(options: {
   }, { downstream: true, budgetMs: 2_000 }));
 
   const blockingFailed = steps.some((step) => !step.ok && !step.skipped);
-  return { ok: !blockingFailed, complete: steps.every((step) => step.ok), steps };
+  return {
+    ok: !blockingFailed && !pipelineTimedOut,
+    complete: !pipelineTimedOut && steps.every((step) => step.ok),
+    steps,
+  };
 }
