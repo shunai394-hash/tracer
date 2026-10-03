@@ -95,6 +95,29 @@ export default function HomePage() {
         </div>
       </section>
 
+      <section className="border-y border-white/5 bg-zinc-950/30">
+        <div className="mx-auto grid w-full max-w-7xl gap-8 px-5 py-16 sm:px-6 lg:grid-cols-3 lg:py-20">
+          <div className="lg:col-span-1">
+            <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-300/80">WHY TRACER</p>
+            <h2 className="mt-3 text-2xl tracking-tight text-zinc-100 sm:text-3xl">使う理由は、商品そのものだけじゃない。</h2>
+            <p className="mt-4 text-sm leading-7 text-zinc-500">検索しても知らないものは出てこない。TRACERは「探す時間」と「見落とす可能性」を減らし、世界から届いた新しい選択肢を見せます。</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3 lg:col-span-2">
+            {[
+              ["01", "発見の得", "自分では検索しない商品に出会える。"],
+              ["02", "情報の得", "なぜ注目されているかを確認してから判断できる。"],
+              ["03", "時間の得", "世界を巡回する手間をAIに任せ、見ることに集中できる。"],
+            ].map(([number, title, copy]) => (
+              <div key={number} className="border border-white/10 bg-black/20 p-5">
+                <p className="font-mono text-[10px] text-cyan-300/70">{number}</p>
+                <h3 className="mt-5 text-lg text-zinc-100">{title}</h3>
+                <p className="mt-2 text-sm leading-6 text-zinc-500">{copy}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section className="border-y border-white/5 bg-black/20">
         <div className="mx-auto w-full max-w-7xl px-5 py-16 sm:px-6 lg:py-20">
           <QualityLoopPanel />

@@ -4,18 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const intelLinks = [
-  { href: "/", label: "World" },
-  { href: "/bestsellers", label: "Bestsellers" },
-  { href: "/intelligence", label: "Opportunities" },
-  { href: "/demand", label: "Demand" },
-  { href: "/shop", label: "Shop" },
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/chat", label: "Chat" },
-  { href: "/products", label: "Products" },
-  { href: "/orders", label: "Orders" },
-  { href: "/sources", label: "Sources" },
-  { href: "/settings", label: "Settings" },
-  { href: "/extension", label: "Extension" },
+  { href: "/", label: "発見" },
+  { href: "/bestsellers", label: "世界の動き" },
+  { href: "/shop", label: "商品" },
+  { href: "/intelligence", label: "なぜ注目？" },
+  { href: "/demand", label: "需要" },
+  { href: "/extension", label: "取り込む" },
+  { href: "/dashboard", label: "管理" },
+  { href: "/chat", label: "AIに聞く" },
+  { href: "/products", label: "商品データ" },
+  { href: "/orders", label: "注文" },
+  { href: "/sources", label: "情報源" },
+  { href: "/settings", label: "設定" },
 ] as const;
 
 const shopLinks = [
@@ -86,7 +86,7 @@ export function SiteHeader() {
               TRACER
             </span>
             <span className="hidden text-xs uppercase tracking-[0.22em] text-zinc-500 lg:inline">
-              AI Commerce Intelligence
+              WORLD PRODUCT DISCOVERY
             </span>
           </Link>
 
@@ -99,7 +99,7 @@ export function SiteHeader() {
         </div>
 
         <nav
-          aria-label="Main navigation"
+          aria-label="メインナビゲーション"
           className="-mx-1 mt-3 flex gap-4 overflow-x-auto pb-1 text-[11px] uppercase tracking-[0.13em]"
         >
           {intelLinks.map((link) => (

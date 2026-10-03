@@ -16,9 +16,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TRACER — AI Commerce Intelligence",
+  title: "TRACER — 世界で見つかる、新しい商品",
   description:
-    "Track products, brands, prices, demand, and supply across world markets.",
+    "世界で見つかる新しい商品を、AIが巡回して確かめる。気になるものを発見するためのTRACER。",
   icons: {
     icon: "/icon.svg",
     apple: "/icon.svg",

@@ -36,18 +36,18 @@ export default async function ShopPage() {
                 いま、試してみたいもの。
               </h1>
               <p className="mt-5 max-w-2xl text-sm leading-7 text-zinc-300 sm:text-base">
-                市場で注目され、商品としての条件まで確認できたものだけをセレクト。
-                「気になる」を、そのまま次の一歩へ。
+                市場で動きがあり、商品として確認できたものをセレクト。
+                「買う」より先に、まず「こんなの知らなかった」を見つける場所です。
               </p>
             </div>
             <Link
               href="/bestsellers"
               className="inline-flex w-fit items-center border border-cyan-300/25 bg-cyan-300/5 px-4 py-3 text-xs font-medium text-cyan-100 transition hover:border-cyan-300/50 hover:bg-cyan-300/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
             >
-              選定の背景を見る <span className="ml-2" aria-hidden="true">→</span>
+              なぜ選ばれた？ <span className="ml-2" aria-hidden="true">→</span>
             </Link>
           </div>
-          <div className="mt-8 flex flex-wrap gap-2" aria-label="商品選定の特徴">
+          <div className="mt-8 grid gap-2 sm:grid-cols-3" aria-label="TRACERで得られること">
             {[
               "市場シグナルを確認",
               "商品同一性を確認",
@@ -123,7 +123,7 @@ export default async function ShopPage() {
                     </div>
                   )}
                   <span className="absolute left-3 top-3 border border-white/10 bg-black/60 px-2 py-1 text-[9px] font-mono uppercase tracking-[0.16em] text-zinc-300 backdrop-blur">
-                    Selected
+                    TRACER SELECT
                   </span>
                 </div>
 
@@ -137,7 +137,7 @@ export default async function ShopPage() {
                   <div className="mt-auto pt-5">
                     <div className="flex items-end justify-between gap-3 border-t border-white/8 pt-4">
                       <div>
-                        <p className="text-[9px] font-mono uppercase tracking-[0.16em] text-zinc-600">Price</p>
+                        <p className="text-[9px] font-mono uppercase tracking-[0.16em] text-zinc-600">参考価格</p>
                         <p className="mt-1 text-lg font-medium tracking-tight text-zinc-100">
                           {formatMoney(listing.sellingPrice, listing.currency)}
                         </p>
