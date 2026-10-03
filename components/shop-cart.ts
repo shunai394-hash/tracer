@@ -57,10 +57,22 @@ export function useShopCart() {
     setItems(next);
   }
 
+  function setQuantity(listingId: string, qty: number) {
+    const next = qty <= 0
+      ? readCart().filter((row) => row.listingId !== listingId)
+      : readCart().map((row) => row.listingId === listingId ? { ...row, qty } : row);
+    writeCart(next);
+    setItems(next);
+  }
+
+  function remove(listingId: string) {
+    setQuantity(listingId, 0);
+  }
+
   function clear() {
     writeCart([]);
     setItems([]);
   }
 
-  return { items, add, clear };
+  return { items, add, setQuantity, remove, clear };
 }
