@@ -391,24 +391,6 @@ export async function runIntelligencePipeline(options: {
       ? (bestsellerStep.result as { supplierCandidateIds: string[] }).supplierCandidateIds
       : [];
 
-  // Identity backlog: bestsellers that carry a barcode but were inserted by an
-  // earlier patrol were never investigated (only the current run's inserts
-  // were). Drain a few per patrol, oldest observations first.
-  steps.push(await runStep("dropship", async () => {
-    const { data: backlog, error: backlogError } = await db
-      .from("marketplace_bestsellers")
-      .select("id")
-      .eq("pipeline_status", "pending")
-      .or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null")
-      .order("fetched_at", { ascending: true })
-      .limit(2);
-    if (backlogError) throw new Error(backlogError.message);
-    const ids = Array.from(new Set([
-      ...supplierCandidateIds,
-      ...(backlog ?? []).map((row) => String(row.id)),
-    ]));
-    return investigateDropshipForBestsellers(ids);
-  }, { budgetMs: 30_000 }));
   steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand(), { budgetMs: 5_000 }));
   steps.push(await runStep("normalize", () => normalizeProductIntelligence(), { budgetMs: 5_000 }));
   steps.push(await runStep("identity", () => stampDemandCJIdentities(), { budgetMs: 5_000 }));
@@ -504,6 +486,28 @@ export async function runIntelligencePipeline(options: {
     const result = intelligence.result as { testReady?: number } | undefined;
     return { testReady: result?.testReady ?? 0, note: "TEST_READY is produced only after the data quality gate" };
   }, { downstream: true, budgetMs: 2_000 }));
+
+  // Best-effort catalog enrichment runs after demand intelligence, Sales Test,
+  // and downstream delivery. Supplier/marketplace network latency must never
+  // starve the core AI cycle or publication gates.
+  // Identity backlog: bestsellers that carry a barcode but were inserted by an
+  // earlier patrol were never investigated (only the current run's inserts
+  // were). Drain a few per patrol, oldest observations first.
+  steps.push(await runStep("dropship", async () => {
+    const { data: backlog, error: backlogError } = await db
+      .from("marketplace_bestsellers")
+      .select("id")
+      .eq("pipeline_status", "pending")
+      .or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null")
+      .order("fetched_at", { ascending: true })
+      .limit(2);
+    if (backlogError) throw new Error(backlogError.message);
+    const ids = Array.from(new Set([
+      ...supplierCandidateIds,
+      ...(backlog ?? []).map((row) => String(row.id)),
+    ]));
+    return investigateDropshipForBestsellers(ids);
+  }, { budgetMs: 30_000 }));
 
   const blockingFailed = steps.some((step) => !step.ok && !step.skipped);
   const deferredStep = steps.find((step) => {
