@@ -177,10 +177,26 @@ export async function GET(request: Request) {
       .filter((step) => !step.ok && !step.skipped)
       .map((step) => `${step.name}: ${step.error ?? "failed"}`);
 
-    try {
-      // Existing BASE items are reconciled here too; never let that outlive
-      // the function budget.
-      const base = await withinBudget(publishPublishedListingsToBase(3), startedAt + 285_000, "publish_base");
+    if (!pipeline.complete) {
+      // Never publish or deliver downstream when the intelligence cycle did
+      // not complete. In particular, a timed-out stage may still have an
+      // in-flight request; advancing to BASE/NEWFIND would create a mixed-cycle
+      // decision and could publish on stale evidence.
+      actions.push({
+        action: "publish_base",
+        skipped: true,
+        reason: "intelligence_pipeline_incomplete",
+      });
+      actions.push({
+        action: "newfind_rescue",
+        skipped: true,
+        reason: "intelligence_pipeline_incomplete",
+      });
+    } else {
+      try {
+        // Existing BASE items are reconciled here too; never let that outlive
+        // the function budget.
+        const base = await withinBudget(publishPublishedListingsToBase(3), startedAt + 285_000, "publish_base");
       actions.push({
         action: "publish_base",
         attempted: base.attempted,
@@ -205,9 +221,10 @@ export async function GET(request: Request) {
         deadlineAt: startedAt + 295_000,
       });
       actions.push({ action: "newfind_rescue", result: rescue });
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
-      actions.push({ action: "newfind_rescue", ok: false, error: errors.at(-1) });
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+        actions.push({ action: "newfind_rescue", ok: false, error: errors.at(-1) });
+      }
     }
 
     const after = await snapshot(db);
