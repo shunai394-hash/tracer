@@ -56,7 +56,9 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
     .select("*")
     .eq("published", true)
     .order("published_at", { ascending: false })
-    .limit(3);
+    // The storefront is the discovery surface, not a 3-item preview.
+    // Keep the initial payload bounded while allowing the catalog to grow.
+    .limit(24);
 
   if (error) throw new Error(error.message);
   return (data ?? []).map((row) => mapListing(row as Record<string, unknown>));
