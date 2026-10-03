@@ -47,7 +47,21 @@ export default async function ShopPage() {
               選定の背景を見る <span className="ml-2" aria-hidden="true">→</span>
             </Link>
           </div>
-          <div className="mt-8 flex flex-wrap gap-2" aria-label="商品選定の特徴">
+
+          <div className="mt-9 grid max-w-4xl gap-px overflow-hidden border border-white/8 bg-white/8 sm:grid-cols-3" aria-label="TRACERで得られること">
+            {[
+              ["迷いを減らす", "なぜ候補になったかを確認できる"],
+              ["確認を揃える", "商品・仕入・価格・配送を順番に見る"],
+              ["次へ進める", "条件が揃った商品だけを試せる"],
+            ].map(([title, copy]) => (
+              <div key={title} className="bg-white/[0.025] px-4 py-4 sm:px-5">
+                <p className="text-xs font-medium text-zinc-200">{title}</p>
+                <p className="mt-1 text-[11px] leading-5 text-zinc-600">{copy}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-2" aria-label="商品選定の特徴">
             {[
               "市場シグナルを確認",
               "商品同一性を確認",
@@ -76,6 +90,18 @@ export default async function ShopPage() {
           <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-zinc-500">
             TRACERは、条件を満たさない商品を無理に並べません。市場の変化、商品同一性、仕入条件、利益条件をAI循環で再確認し、公開できる商品だけを追加します。
           </p>
+          <div className="mx-auto mt-8 grid max-w-2xl gap-px overflow-hidden border border-white/8 bg-white/8 text-left sm:grid-cols-3">
+            {[
+              ["市場", "いま何が動いているか"],
+              ["商機", "なぜ候補なのか"],
+              ["確認", "何が足りないのか"],
+            ].map(([title, copy]) => (
+              <div key={title} className="bg-white/[0.025] p-4">
+                <p className="text-xs font-medium text-zinc-200">{title}</p>
+                <p className="mt-1 text-[11px] leading-5 text-zinc-600">{copy}</p>
+              </div>
+            ))}
+          </div>
           <div className="mt-7 flex flex-wrap justify-center gap-3">
             <Link
               href="/bestsellers"
