@@ -340,7 +340,9 @@ export async function persistDemandMatches(
     return { written: 0, schema: "legacy", errors };
   }
   return { written: rows.length, schema: "legacy", errors };
-}/**
+}
+
+/**
  * An identifier can be exact while the demand query explicitly names a
  * different variant. Keep this gate separate and pure so the matcher and its
  * regression tests use the same rule.
