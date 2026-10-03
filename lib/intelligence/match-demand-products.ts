@@ -5,6 +5,7 @@ import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   buildIdentifierIndex,
+  exactIdentityVariantCompatible,
   isStrongDemandMatch,
   persistDemandMatches,
   readObservationIdentifiers,
@@ -142,6 +143,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   const demandRows = demandResult.data ?? [];
   const productRows = productResult.data ?? [];
   const allProductNames = productRows.map((product) => product.normalized_title);
+  const productTitleById = new Map(productRows.map((product) => [String(product.product_id), product.normalized_title]));
 
   // Identifier index of market products. A key that maps to more than one
   // product is ambiguous and never produces an exact match.
@@ -220,15 +222,28 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     if (decision.status === "ambiguous") ambiguousIdentifier += 1;
     if (decision.status === "brand_conflict") brandRejected += 1;
     if (decision.status === "exact") {
-      exactMatches += 1;
-      keep({
-        demandObservationId: demand.id,
-        productId: decision.productId,
-        score: 1,
-        evidence: { method: decision.method, rationale: `Observation identifier exactly and uniquely matches the product (${decision.method})`, facts: decision.facts, sourceId: demand.id },
-      });
-      matched += 1;
-      continue;
+      const exactProductTitle = productTitleById.get(decision.productId) ?? "";
+      const exactVariantCompatible = exactIdentityVariantCompatible(query, exactProductTitle);
+      if (exactVariantCompatible) {
+        exactMatches += 1;
+        keep({
+          demandObservationId: demand.id,
+          productId: decision.productId,
+          score: 1,
+          evidence: {
+            method: decision.method,
+            rationale: `Observation identifier exactly and uniquely matches the product (${decision.method})`,
+            facts: { ...decision.facts, variant_checked: true },
+            sourceId: demand.id,
+          },
+        });
+        matched += 1;
+        continue;
+      }
+      // An identifier can be exact while the demand query names a different
+      // generation/tier/size/capacity/pack. Do not promote that contradiction
+      // to strong demand evidence; leave the observation on the candidate path.
+      variantRejected += 1;
     }
 
     let intent = detectProductIntent(query);
