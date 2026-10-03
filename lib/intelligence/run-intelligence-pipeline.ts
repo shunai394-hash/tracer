@@ -305,7 +305,7 @@ export async function runIntelligencePipeline(options: {
     });
     const next = await writeMarketCursor(db, observation, "patrol-ai");
     return { ...observation, cursor, nextCursor: next };
-  });
+  }, { budgetMs: 25_000 });
   steps.push(bestsellerStep);
 
   const bestsellerIds =
