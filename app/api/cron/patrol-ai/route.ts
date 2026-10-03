@@ -173,11 +173,22 @@ export async function GET(request: Request) {
       action: "run_full_intelligence_pipeline",
       result: pipeline,
     }];
-    const errors = pipeline.ok ? [] : pipeline.steps
+    const errors = pipeline.steps
       .filter((step) => !step.ok && !step.skipped)
       .map((step) => `${step.name}: ${step.error ?? "failed"}`);
+    const deferredSteps = pipeline.steps
+      .filter((step) => step.skipped && step.retryable)
+      .map((step) => step.name);
 
     if (!pipeline.complete) {
+      // A deferred/incomplete cycle is not a successful patrol. Keep it visible
+      // to cron monitoring and operators so retries are observable instead of
+      // being reported as a green run merely because no hard exception escaped.
+      errors.push(
+        deferredSteps.length
+          ? `intelligence_pipeline_incomplete: deferred=${deferredSteps.join(",")}`
+          : "intelligence_pipeline_incomplete",
+      );
       // Never publish or deliver downstream when the intelligence cycle did
       // not complete. In particular, a timed-out stage may still have an
       // in-flight request; advancing to BASE/NEWFIND would create a mixed-cycle
