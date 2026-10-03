@@ -8,7 +8,7 @@ import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { rescueUndeliveredGatePassedListings } from "@/lib/integration/newfind";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 type Snapshot = {
   products: number;
@@ -155,7 +155,7 @@ export async function GET(request: Request) {
     // Leave room for BASE publication, NEWFIND rescue and the cron_runs
     // bookkeeping below; deferred stages resume on the next patrol.
     const pipeline = await runIntelligencePipeline({
-      deadlineAt: startedAt + 40_000,
+      deadlineAt: startedAt + 270_000,
       // Heartbeat: if Vercel still kills the function, the lock row shows the
       // step that was running instead of an empty "starting" phase.
       onStep: async (step) => {
@@ -178,7 +178,7 @@ export async function GET(request: Request) {
     try {
       // Existing BASE items are reconciled here too; never let that outlive
       // the function budget.
-      const base = await withinBudget(publishPublishedListingsToBase(3), startedAt + 48_000, "publish_base");
+      const base = await withinBudget(publishPublishedListingsToBase(3), startedAt + 285_000, "publish_base");
       actions.push({
         action: "publish_base",
         attempted: base.attempted,
@@ -200,7 +200,7 @@ export async function GET(request: Request) {
     try {
       const rescue = await rescueUndeliveredGatePassedListings({
         limit: 1,
-        deadlineAt: startedAt + 56_000,
+        deadlineAt: startedAt + 295_000,
       });
       actions.push({ action: "newfind_rescue", result: rescue });
     } catch (error) {
