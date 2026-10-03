@@ -26,6 +26,12 @@ function num(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
 /**
  * Re-check existing CJ supply that was discovered without marketplace
  * identity. Identity promotion remains evidence-gated: only a unique exact
@@ -37,10 +43,6 @@ export async function reverifyCjSupplyIdentities(options: {
   deadlineAt?: number;
 } = {}): Promise<CjIdentityReverifyResult> {
   const db = createSupabaseAdminClient();
-  // The patrol historically passed 5 here, which meant the resumable cursor
-  // could only advance five rows per invocation. Keep the actual traversal
-  // bounded by MAX_LIMIT while enforcing a useful minimum batch; processing
-  // remains 5-way concurrent below.
   const requestedLimit = options.limit ?? DEFAULT_LIMIT;
   const limit = Math.max(25, Math.min(requestedLimit, MAX_LIMIT));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
@@ -87,10 +89,15 @@ export async function reverifyCjSupplyIdentities(options: {
   const processRow = async (row: (typeof rows)[number]) => {
     const supplierListingId = String(row.id);
     try {
+      const listingMetadata = record(row.metadata);
+      const persistedBarcode = typeof listingMetadata.variant_barcode === "string"
+        ? listingMetadata.variant_barcode.trim()
+        : null;
       const identity = await resolveMarketplaceIdentity({
         db,
         supplierProductId: String(row.supplier_product_id),
         supplierVariantId: String(row.supplier_variant_id),
+        variantBarcode: persistedBarcode,
       });
       if (!identity) return { kind: "no_match" as const, supplierListingId };
 
@@ -99,7 +106,7 @@ export async function reverifyCjSupplyIdentities(options: {
         .select("image_url,metadata")
         .eq("product_id", String(row.product_id))
         .maybeSingle();
-      const metadata = (intelligence?.metadata ?? {}) as Record<string, unknown>;
+      const metadata = record(intelligence?.metadata);
       const cost = num(row.cost);
       const shippingCost = num(row.shipping_cost);
       const inventory = num(row.inventory);
@@ -123,6 +130,7 @@ export async function reverifyCjSupplyIdentities(options: {
         query: typeof metadata.query === "string" ? metadata.query : "identity_reverify",
         fxRate,
         sellingPriceJpy,
+        variantBarcode: persistedBarcode,
       }, { identity });
 
       return {
