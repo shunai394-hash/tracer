@@ -457,9 +457,22 @@ export async function runIntelligencePipeline(options: {
   }, { downstream: true, budgetMs: 2_000 }));
 
   const blockingFailed = steps.some((step) => !step.ok && !step.skipped);
+  const deferredStep = steps.find((step) => {
+    if (!step.skipped) return false;
+    const reason =
+      step.result &&
+      typeof step.result === "object" &&
+      "reason" in step.result
+        ? String((step.result as { reason?: unknown }).reason ?? "")
+        : "";
+    return reason === "deferred_to_next_patrol_time_budget" ||
+      reason === "step_time_budget_exceeded_deferred" ||
+      reason === "previous_step_timeout_stops_pipeline";
+  });
+  const incomplete = pipelineTimedOut || Boolean(deferredStep);
   return {
-    ok: !blockingFailed && !pipelineTimedOut,
-    complete: !pipelineTimedOut && steps.every((step) => step.ok),
+    ok: !blockingFailed && !incomplete,
+    complete: !incomplete && steps.every((step) => step.ok),
     steps,
   };
 }
