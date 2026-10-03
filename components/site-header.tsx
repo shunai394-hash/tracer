@@ -64,7 +64,7 @@ export function SiteHeader() {
               TRACER STORE
             </Link>
             <nav
-              aria-label="Store navigation"
+              aria-label="ストアナビゲーション"
               className="flex min-w-0 items-center gap-5 overflow-x-auto text-sm"
             >
               {shopLinks.map((link) => (
@@ -85,22 +85,22 @@ export function SiteHeader() {
             <span className="font-mono text-lg tracking-[0.35em] text-cyan-300">
               TRACER
             </span>
-            <span className="hidden text-xs uppercase tracking-[0.22em] text-zinc-500 lg:inline">
+            <span className="hidden text-xs tracking-[0.18em] text-zinc-500 lg:inline">
               WORLD PRODUCT DISCOVERY
             </span>
           </Link>
 
           <Link
             href="/shop"
-            className="shrink-0 border border-cyan-400/30 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-cyan-200 hover:bg-cyan-400/10"
+            className="shrink-0 border border-cyan-400/30 px-3 py-2 text-[10px] tracking-[0.12em] text-cyan-200 transition hover:bg-cyan-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
           >
-            Store
+            見つける
           </Link>
         </div>
 
         <nav
           aria-label="メインナビゲーション"
-          className="-mx-1 mt-3 flex gap-4 overflow-x-auto pb-1 text-[11px] uppercase tracking-[0.13em]"
+          className="-mx-1 mt-3 flex gap-4 overflow-x-auto pb-1 text-[11px] tracking-[0.08em]"
         >
           {intelLinks.map((link) => (
             <NavLink key={link.href} {...link} pathname={pathname} />
