@@ -56,6 +56,27 @@ jobs:
             i=$((i+1)); get "obs_$i.json" "$T/api/intelligence/demand-observation-inspect?id=$id"
           done < probe/obs_ids.txt
 
+      - name: NEWFIND-linked TRACER URLs liveness (all, liveness header -> no funnel write)
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 - <<'PY' > probe/nf_urls.txt
+          import json
+          d = json.load(open("probe/newfind_discovery_public.json"))
+          for p in d.get("products") or []:
+              if (p.get("discoverySource") or p.get("discovery_source")) == "tracer":
+                  print(p.get("productUrl") or p.get("product_url") or "")
+          PY
+          total=0; declare -A codes
+          while read -r u; do
+            [ -n "$u" ] || continue
+            total=$((total+1))
+            c="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -H 'x-tracer-liveness-check: 1' "$u" || echo 000)"
+            codes[$c]=$(( ${codes[$c]:-0} + 1 ))
+          done < probe/nf_urls.txt
+          echo "newfind tracer urls checked: $total"
+          for k in "${!codes[@]}"; do echo "  HTTP $k: ${codes[$k]}"; done
+
       - name: Summarize
         shell: bash
         run: |
