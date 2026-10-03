@@ -37,6 +37,19 @@ type DemandProductMatchResult = {
 
 type ProductIntent = { isProduct: boolean; category: string | null; reason: string };
 
+/**
+ * A product-intent observation without an exact identifier match must continue
+ * into identity verification, even when weak title/text evidence was found.
+ * This is deliberately independent of weak-match presence so a weak hit can
+ * never short-circuit candidate creation.
+ */
+export function shouldCreateIdentityCandidate(args: {
+  isProductIntent: boolean;
+  hasExactIdentity: boolean;
+}): boolean {
+  return args.isProductIntent && !args.hasExactIdentity;
+}
+
 const PRODUCT_CATEGORY_KEYWORDS: Record<string, string[]> = {
   "wireless earbuds": ["airpods", "air pods", "earbuds", "wireless earbuds", "true wireless", "bluetooth earbuds"],
   headphones: ["headphones", "wireless headphones", "noise cancelling", "noise-canceling"],
@@ -279,6 +292,8 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     // Exact identifier matches returned above and therefore do not reach here.
     if (rowMatched) matched += 1;
     else unmatched += 1;
+
+    if (!shouldCreateIdentityCandidate({ isProductIntent: intent.isProduct, hasExactIdentity: false })) continue;
 
     // Candidate uniqueness is scoped to the observation + query. A query can
     // legitimately occur in multiple observations, so a query-only maybeSingle
