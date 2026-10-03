@@ -213,13 +213,13 @@ export async function promoteShopListingToNewfind(
 
   const { data: existingDelivery, error: deliveryReadError } = await supabase
     .from("newfind_promotion_deliveries")
-    .select("status, ack_status, http_status, attempts, lease_until")
+    .select("status, ack_status, http_status, attempts, lease_until, event_id")
     .eq("listing_id", listingId)
     .maybeSingle();
 
   if (deliveryReadError) throw new Error(deliveryReadError.message);
 
-  if (existingDelivery?.status === "processed" && existingDelivery.ack_status === "processed") {
+  if (existingDelivery?.status === "processed" && (existingDelivery.ack_status === "processed" || existingDelivery.ack_status === "duplicate")) {
     return {
       configured: true,
       sent: true,
@@ -248,10 +248,20 @@ export async function promoteShopListingToNewfind(
     };
   }
 
+  // A listing that was withdrawn from NEWFIND and passed the gate again needs
+  // a new event id: NEWFIND dedupes on event_id and would answer "duplicate"
+  // for the original promotion, leaving the product withdrawn.
+  const sendEventId = currentStatus === "withdrawn"
+    ? `${eventId(listingId)}:republished:${now.getTime()}`
+    : typeof existingDelivery?.event_id === "string" && existingDelivery.event_id
+      ? existingDelivery.event_id
+      : id;
+
   let claimQuery = supabase
     .from("newfind_promotion_deliveries")
     .update({
       status: "sending",
+      event_id: sendEventId,
       lease_until: leaseUntil,
       attempts: (typeof existingDelivery?.attempts === "number" ? existingDelivery.attempts : 0) + 1,
       updated_at: now.toISOString(),
@@ -284,7 +294,7 @@ export async function promoteShopListingToNewfind(
 
 
 
-  let productUrl: string | null = null;
+  let marketUrl: string | null = null;
   let category: string | null = null;
   let brand: string | null = null;
   if (listing.bestseller_id) {
@@ -293,22 +303,21 @@ export async function promoteShopListingToNewfind(
       .select("product_url, category, brand, image_url")
       .eq("id", listing.bestseller_id)
       .maybeSingle();
-    productUrl = typeof bestseller?.product_url === "string" ? bestseller.product_url : null;
+    marketUrl = typeof bestseller?.product_url === "string" ? bestseller.product_url : null;
     category = typeof bestseller?.category === "string" ? bestseller.category : null;
     brand = typeof bestseller?.brand === "string" ? bestseller.brand : null;
   }
 
+  // NEWFIND shows product_url next to TRACER's price and image, so it must be
+  // TRACER's own live sales page. The marketplace page (another seller, other
+  // price) is sent separately as market_url and never as the product link.
   const tracerUrl = await resolveLiveTracerUrl(
     typeof listing.slug === "string" ? listing.slug : null,
   );
-
-  // Supply-first listings have no marketplace bestseller, so they never had a
-  // product_url and every delivery failed with product_url_missing. The live
-  // TRACER product page (verified 200 above) is the real public sales URL.
-  if (!productUrl && tracerUrl) productUrl = tracerUrl;
+  const productUrl = tracerUrl;
 
   if (!productUrl) {
-    const reason = "product_url_missing_newfind_requires_url";
+    const reason = "tracer_sales_url_not_live";
     await supabase.from("newfind_promotion_deliveries").update({
       status: "failed",
       last_error: reason,
@@ -328,7 +337,7 @@ export async function promoteShopListingToNewfind(
 
   const payload = {
     source: "tracer",
-    event_id: id,
+    event_id: sendEventId,
     event_type: "product_candidate",
     event_version: 1,
     occurred_at: new Date().toISOString(),
@@ -345,7 +354,15 @@ export async function promoteShopListingToNewfind(
       brand: brand || undefined,
       category: category || "other",
       discovery_reason: discoveryReason(listing),
-      tracer_url: tracerUrl ?? undefined,
+      tracer_url: tracerUrl,
+      sales_url: tracerUrl,
+      market_url: marketUrl ?? undefined,
+      // Publication attestation: NEWFIND only promotes TRACER products that
+      // are published and passed the Sales Test Gate (checked just above).
+      tracer_listing_id: listing.id,
+      tracer_product_id: listing.product_id ?? undefined,
+      tracer_published: true,
+      sales_test_gate: "passed",
       selection_score: selectionScore(listing),
       confidence: identityConfidence(listing),
       source_ref: listing.id,
@@ -357,7 +374,7 @@ export async function promoteShopListingToNewfind(
   const rawBody = JSON.stringify(payload);
   const timestamp = String(Math.floor(Date.now() / 1000));
   const signature = createHmac("sha256", cfg.webhookSecret)
-    .update(`${timestamp}.${id}.${rawBody}`, "utf8")
+    .update(`${timestamp}.${sendEventId}.${rawBody}`, "utf8")
     .digest("hex");
 
   const request = {
@@ -366,7 +383,7 @@ export async function promoteShopListingToNewfind(
       "content-type": "application/json",
       "X-Integration-Key": cfg.apiKey || "newfind-tracer",
       "X-Integration-Timestamp": timestamp,
-      "X-Integration-Id": id,
+      "X-Integration-Id": sendEventId,
       "X-Integration-Signature": signature,
     },
     body: rawBody,
@@ -434,7 +451,10 @@ export async function promoteShopListingToNewfind(
         : detail;
   } catch {}
 
-  const deliveryStatus = ackStatus === "processed"
+  // "duplicate" means NEWFIND already processed this event_id; treating it
+  // as "sent" made the retry cron re-send processed events forever.
+  const acknowledged = ackStatus === "processed" || ackStatus === "duplicate";
+  const deliveryStatus = acknowledged
     ? "processed"
     : response.ok
       ? "sent"
@@ -446,7 +466,7 @@ export async function promoteShopListingToNewfind(
     ack_status: ackStatus,
     last_error: response.ok ? null : detail,
     last_attempt_at: new Date().toISOString(),
-    processed_at: ackStatus === "processed" ? new Date().toISOString() : null,
+    processed_at: acknowledged ? new Date().toISOString() : null,
     lease_until: null,
     updated_at: new Date().toISOString(),
   }).eq("listing_id", listingId);
@@ -537,7 +557,7 @@ export async function rescueUndeliveredGatePassedListings(options: {
       .in("listing_id", ids.slice(i, i + 100));
     if (deliveryError) throw new Error(deliveryError.message);
     for (const row of data ?? []) {
-      const processed = row.status === "processed" && row.ack_status === "processed";
+      const processed = row.status === "processed" && (row.ack_status === "processed" || row.ack_status === "duplicate");
       deliveries.set(String(row.listing_id), processed ? "processed" : String(row.status ?? "pending"));
     }
   }
@@ -564,6 +584,141 @@ export async function rescueUndeliveredGatePassedListings(options: {
     }));
     if (delivery.ackStatus === "processed") result.processed += 1;
     else result.stillFailing.push({ listingId, detail: delivery.detail });
+  }
+  return result;
+}
+
+export type NewfindWithdrawResult = {
+  enabled: boolean;
+  configured: boolean;
+  /** Processed deliveries examined. */
+  examined: number;
+  /** Of those, listings that are no longer published + gate-passed. */
+  stale: number;
+  withdrawn: number;
+  failed: Array<{ listingId: string; detail: string }>;
+};
+
+/**
+ * NEWFIND keeps promoting a product after TRACER unpublishes it, because the
+ * bridge only ever sent product_candidate. Send product_withdrawn for
+ * processed deliveries whose listing is no longer published and gate-passed.
+ * NEWFIND moves its matching TRACER-sourced discovery product out of
+ * "approved" (to "pending"; nothing is deleted). Opt-in via
+ * NEWFIND_WITHDRAW_RECONCILE=1 because it changes existing NEWFIND rows.
+ */
+export async function withdrawUnpublishedNewfindPromotions(options: { limit?: number } = {}): Promise<NewfindWithdrawResult> {
+  const cfg = getNewfindConfig();
+  const result: NewfindWithdrawResult = {
+    enabled: process.env.NEWFIND_WITHDRAW_RECONCILE?.trim() === "1",
+    configured: Boolean(cfg.apiUrl && cfg.webhookSecret),
+    examined: 0,
+    stale: 0,
+    withdrawn: 0,
+    failed: [],
+  };
+  if (!result.enabled || !result.configured) return result;
+
+  const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
+  const limit = Math.max(1, Math.min(options.limit ?? 10, 50));
+  const { data: deliveries, error } = await supabase
+    .from("newfind_promotion_deliveries")
+    .select("listing_id, event_id")
+    .eq("status", "processed")
+    .order("updated_at", { ascending: true })
+    .limit(200);
+  if (error) throw new Error(error.message);
+  result.examined = deliveries?.length ?? 0;
+  if (!deliveries || deliveries.length === 0) return result;
+
+  const { data: listings, error: listingError } = await supabase
+    .from("shop_listings")
+    .select("id, slug, bestseller_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
+    .in("id", deliveries.map((row) => String(row.listing_id)));
+  if (listingError) throw new Error(listingError.message);
+  const listingById = new Map((listings ?? []).map((row) => [String(row.id), row]));
+  const stale = deliveries.filter((row) => {
+    const listing = listingById.get(String(row.listing_id));
+    return !listing || listing.published !== true || !hasPassedSalesTestGate(listing);
+  });
+  result.stale = stale.length;
+
+  const origin = tracerSiteOrigin();
+  for (const delivery of stale.slice(0, limit)) {
+    const listingId = String(delivery.listing_id);
+    const listing = listingById.get(listingId);
+    // Every URL this listing could have been promoted under: the TRACER page
+    // (current payloads) and the marketplace page (pre-fix payloads).
+    const productUrls: string[] = [];
+    if (origin && typeof listing?.slug === "string" && listing.slug) {
+      productUrls.push(`${origin}/shop/${encodeURIComponent(listing.slug)}`);
+    }
+    if (listing?.bestseller_id) {
+      const { data: bestseller } = await supabase
+        .from("marketplace_bestsellers")
+        .select("product_url")
+        .eq("id", listing.bestseller_id)
+        .maybeSingle();
+      if (typeof bestseller?.product_url === "string" && bestseller.product_url) productUrls.push(bestseller.product_url);
+    }
+    if (productUrls.length === 0) {
+      result.failed.push({ listingId, detail: "withdraw_product_url_unknown" });
+      continue;
+    }
+
+    const withdrawEventId = `tracer-shop-listing-withdrawn:${String(delivery.event_id)}`;
+    const rawBody = JSON.stringify({
+      source: "tracer",
+      event_id: withdrawEventId,
+      event_type: "product_withdrawn",
+      event_version: 1,
+      occurred_at: new Date().toISOString(),
+      payload: {
+        source: "tracer",
+        tracer_listing_id: listingId,
+        promotion_event_id: delivery.event_id,
+        product_urls: productUrls,
+        reason: !listing ? "listing_deleted" : listing.published !== true ? "tracer_unpublished" : "sales_test_gate_not_passed",
+      },
+    });
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = createHmac("sha256", cfg.webhookSecret)
+      .update(`${timestamp}.${withdrawEventId}.${rawBody}`, "utf8")
+      .digest("hex");
+    try {
+      const response = await fetch(buildUrl(cfg.apiUrl), {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-Integration-Key": cfg.apiKey || "newfind-tracer",
+          "X-Integration-Timestamp": timestamp,
+          "X-Integration-Id": withdrawEventId,
+          "X-Integration-Signature": signature,
+        },
+        body: rawBody,
+        cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
+      });
+      const text = await response.text();
+      let ack: string | null = null;
+      try { ack = (JSON.parse(text) as { status?: string }).status ?? null; } catch {}
+      if (response.ok && (ack === "processed" || ack === "duplicate")) {
+        const { error: updateError } = await supabase.from("newfind_promotion_deliveries").update({
+          status: "withdrawn",
+          ack_status: "withdrawn",
+          http_status: response.status,
+          last_error: null,
+          last_attempt_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq("listing_id", listingId).eq("status", "processed");
+        if (updateError) result.failed.push({ listingId, detail: `withdrawn_but_not_recorded: ${updateError.message}` });
+        else result.withdrawn += 1;
+      } else {
+        result.failed.push({ listingId, detail: `http_${response.status}: ${text.slice(0, 200)}` });
+      }
+    } catch (sendError) {
+      result.failed.push({ listingId, detail: sendError instanceof Error ? sendError.message : String(sendError) });
+    }
   }
   return result;
 }
