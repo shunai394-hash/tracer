@@ -407,9 +407,6 @@ main > section:first-of-type ol li:hover > span:first-child::after {
   }
 }
 
-.tracer-specimen-orbit-a,
-.tracer-specimen-orbit-b,
-.tracer-specimen-core { animation: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
