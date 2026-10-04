@@ -136,16 +136,19 @@ export default function HomePage() {
         <div className="pointer-events-none absolute inset-x-[7.2vw] top-0 hidden h-px bg-gradient-to-r from-transparent via-cyan-300/20 to-transparent lg:block" aria-hidden="true" />
         <div className="mx-auto grid max-w-[1600px] lg:grid-cols-[7.2vw_minmax(0,1fr)_7.2vw]">
           <div className="hidden border-r border-white/5 lg:block" />
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4">
-            {evidence.map(([number, label, title, copy], index) => (
-              <article key={number} className={`group relative border-b border-white/8 p-6 transition-colors duration-500 hover:bg-white/[0.025] sm:p-8 lg:border-b-0 lg:border-r lg:border-white/8 xl:p-10 tracer-reveal tracer-reveal-delay-${(index % 3) + 1}`}>
-                <span className="font-mono text-[9px] tracking-[0.2em] text-cyan-300/55">{number}</span>
-                <p className="mt-7 font-mono text-[8px] tracking-[0.22em] text-zinc-600">{label}</p>
-                <h2 className="mt-2 text-lg tracking-[-0.02em] text-zinc-100">{title}</h2>
-                <p className="mt-2 text-xs leading-5 text-zinc-600">{copy}</p>
-                <span className="absolute bottom-0 left-6 h-px w-0 bg-cyan-300/60 transition-all duration-700 group-hover:w-[calc(100%-3rem)] sm:left-8 lg:left-10" aria-hidden="true" />
-              </article>
-            ))}
+          <div>
+            <h2 id="evidence-heading" className="sr-only">TRACERの検証基準</h2>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4">
+              {evidence.map(([number, label, title, copy], index) => (
+                <article key={number} className={`group relative border-b border-white/8 p-6 transition-colors duration-500 hover:bg-white/[0.025] sm:p-8 lg:border-b-0 lg:border-r lg:border-white/8 xl:p-10 tracer-reveal tracer-reveal-delay-${(index % 3) + 1}`}>
+                  <span className="font-mono text-[9px] tracking-[0.2em] text-cyan-300/55">{number}</span>
+                  <p className="mt-7 font-mono text-[8px] tracking-[0.22em] text-zinc-600">{label}</p>
+                  <h3 className="mt-2 text-lg tracking-[-0.02em] text-zinc-100">{title}</h3>
+                  <p className="mt-2 text-xs leading-5 text-zinc-600">{copy}</p>
+                  <span className="absolute bottom-0 left-6 h-px w-0 bg-cyan-300/60 transition-all duration-700 group-hover:w-[calc(100%-3rem)] sm:left-8 lg:left-10" aria-hidden="true" />
+                </article>
+              ))}
+            </div>
           </div>
           <div className="hidden border-l border-white/5 lg:block" />
         </div>
@@ -167,7 +170,7 @@ export default function HomePage() {
               <Link key={route.href} href={route.href} className={`group relative min-h-[280px] border-b border-white/8 bg-[#080b0e] p-6 transition duration-700 hover:-translate-y-1 hover:bg-[#0b1014] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-inset sm:p-8 lg:border-b-0 lg:border-r last:lg:border-r-0 tracer-reveal tracer-reveal-delay-${(index % 3) + 1}`}>
                 <div className="flex items-center justify-between">
                   <span className="font-mono text-[9px] tracking-[0.18em] text-zinc-600">{route.number}</span>
-                  <span className="text-zinc-700 transition duration-500 group-hover:-translate-y-1 group-hover:translate-x-1 group-hover:text-cyan-200">{route.arrow}</span>
+                  <span className="text-zinc-700 transition duration-500 group-hover:-translate-y-1 group-hover:translate-x-1 group-hover:text-cyan-200" aria-hidden="true">{route.arrow}</span>
                 </div>
                 <div className="mt-20">
                   <p className="font-mono text-[8px] tracking-[0.22em] text-cyan-300/55">{route.label}</p>
