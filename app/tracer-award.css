@@ -1,0 +1,193 @@
+/* TRACER AWARD PASS 01
+   Direction: editorial precision over dashboard decoration.
+   Rules: hierarchy first, motion second, ornament last. */
+
+main.flex-1 > section:first-child {
+  isolation: isolate;
+  background:
+    radial-gradient(70% 90% at 76% 48%, rgba(103, 232, 249, 0.055), transparent 58%),
+    linear-gradient(112deg, #05070a 0%, #06090d 52%, #05070a 100%);
+}
+
+main.flex-1 > section:first-child::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent 0 7.2vw, rgba(255,255,255,.035) 7.2vw calc(7.2vw + 1px), transparent calc(7.2vw + 1px) calc(100% - 7.2vw - 1px), rgba(255,255,255,.035) calc(100% - 7.2vw) calc(100% - 7.2vw + 1px), transparent calc(100% - 7.2vw + 1px)),
+    radial-gradient(circle at var(--award-x, 78%) var(--award-y, 42%), rgba(103,232,249,.13), transparent 0 9%, rgba(103,232,249,.035) 17%, transparent 31%);
+  animation: tracer-award-breathe 9s ease-in-out infinite alternate;
+}
+
+main.flex-1 > section:first-child::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+  left: 7.2vw;
+  right: 7.2vw;
+  top: 18%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(103,232,249,.16) 28%, rgba(255,255,255,.08) 62%, transparent);
+  transform-origin: left center;
+  animation: tracer-award-scan 11s cubic-bezier(.4,0,.2,1) infinite;
+}
+
+main.flex-1 > section:first-child h1 {
+  position: relative;
+  z-index: 2;
+  max-width: 8ch;
+  text-wrap: balance;
+  text-shadow: 0 1px 0 rgba(255,255,255,.04), 0 24px 90px rgba(0,0,0,.55);
+}
+
+main.flex-1 > section:first-child h1 span {
+  position: relative;
+  display: inline-block;
+  text-shadow: 0 0 46px rgba(103,232,249,.08);
+}
+
+main.flex-1 > section:first-child h1 span::after {
+  content: "";
+  position: absolute;
+  left: .18em;
+  right: -.05em;
+  bottom: -.09em;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(103,232,249,.8), rgba(103,232,249,.08), transparent);
+  transform: scaleX(.2);
+  transform-origin: left center;
+  animation: tracer-award-line 1.4s .55s cubic-bezier(.22,1,.36,1) forwards;
+}
+
+main.flex-1 > section:first-child .tracer-specimen {
+  border-color: rgba(255,255,255,.1);
+  box-shadow: inset 0 0 80px rgba(103,232,249,.025), 0 40px 100px rgba(0,0,0,.34);
+  transform: translate(-50%, -50%) perspective(900px) rotateX(7deg) rotateY(-8deg);
+  transition: transform 900ms cubic-bezier(.22,1,.36,1), border-color 500ms ease;
+}
+
+main.flex-1 > section:first-child:hover .tracer-specimen {
+  transform: translate(-50%, -50%) perspective(900px) rotateX(3deg) rotateY(-3deg) scale(1.015);
+  border-color: rgba(103,232,249,.16);
+}
+
+main.flex-1 > section:first-child .tracer-specimen-core {
+  width: 11px;
+  height: 11px;
+}
+
+main.flex-1 > section:nth-child(2) article {
+  min-height: 220px;
+  background: linear-gradient(160deg, rgba(255,255,255,.018), rgba(255,255,255,.006));
+}
+
+main.flex-1 > section:nth-child(2) article::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(240px 180px at 0 0, rgba(103,232,249,.055), transparent 72%);
+  transition: opacity 500ms ease;
+}
+
+main.flex-1 > section:nth-child(2) article:hover::before { opacity: 1; }
+
+main.flex-1 > section:nth-child(3) a {
+  overflow: hidden;
+  isolation: isolate;
+}
+
+main.flex-1 > section:nth-child(3) a::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background:
+    linear-gradient(135deg, rgba(103,232,249,.07), transparent 42%),
+    radial-gradient(circle at 85% 15%, rgba(255,255,255,.05), transparent 28%);
+  opacity: 0;
+  transform: scale(1.08);
+  transition: opacity 650ms ease, transform 900ms cubic-bezier(.22,1,.36,1);
+}
+
+main.flex-1 > section:nth-child(3) a:hover::before { opacity: 1; transform: scale(1); }
+
+main.flex-1 > section:nth-child(3) a h3 { transition: transform 650ms cubic-bezier(.22,1,.36,1), color 450ms ease; }
+main.flex-1 > section:nth-child(3) a:hover h3 { transform: translateX(5px); color: #ecfeff; }
+
+main.flex-1 > section:nth-child(4) {
+  background:
+    linear-gradient(180deg, rgba(103,232,249,.012), transparent 34%),
+    #06080b;
+}
+
+main.flex-1 > section:nth-child(4) .border-cyan-300\/15 {
+  box-shadow: 0 30px 120px rgba(0,0,0,.34), inset 0 1px rgba(255,255,255,.035);
+}
+
+main.flex-1 > section:nth-child(5) {
+  position: relative;
+  background: linear-gradient(180deg, #06080b 0%, #05070a 100%);
+}
+
+main.flex-1 > section:nth-child(5)::after {
+  content: "QUALITY IS A DECISION";
+  position: absolute;
+  right: 7.2vw;
+  top: 50%;
+  writing-mode: vertical-rl;
+  font: 8px/1 var(--font-geist-mono), monospace;
+  letter-spacing: .28em;
+  color: rgba(161,161,170,.17);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+main.flex-1 > section:nth-child(6) > div > div:nth-child(2) > div:first-child,
+main.flex-1 > section:nth-child(6) .tracer-glass {
+  box-shadow: inset 0 1px rgba(255,255,255,.045), 0 24px 90px rgba(0,0,0,.24);
+}
+
+@keyframes tracer-award-breathe {
+  from { opacity: .82; transform: scale(1); }
+  to { opacity: 1; transform: scale(1.025); }
+}
+
+@keyframes tracer-award-scan {
+  0%, 12% { transform: scaleX(0); opacity: 0; }
+  22% { opacity: 1; }
+  42% { transform: scaleX(1); opacity: .55; }
+  64%, 100% { transform: scaleX(1); opacity: 0; }
+}
+
+@keyframes tracer-award-line {
+  to { transform: scaleX(1); }
+}
+
+@media (max-width: 1023px) {
+  main.flex-1 > section:first-child::before {
+    background:
+      radial-gradient(circle at 78% 32%, rgba(103,232,249,.1), transparent 28%),
+      linear-gradient(90deg, transparent 6%, rgba(255,255,255,.035) 6% calc(6% + 1px), transparent calc(6% + 1px) 94%, rgba(255,255,255,.035) 94% calc(94% + 1px), transparent calc(94% + 1px));
+  }
+
+  main.flex-1 > section:nth-child(5)::after { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  main.flex-1 > section:first-child::before,
+  main.flex-1 > section:first-child::after,
+  main.flex-1 > section:first-child h1 span::after {
+    animation: none;
+  }
+
+  main.flex-1 > section:first-child .tracer-specimen,
+  main.flex-1 > section:nth-child(3) a h3 {
+    transition: none;
+    transform: none;
+  }
+}
