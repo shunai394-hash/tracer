@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { listPublishedShopListings } from "@/lib/shop/store";
 import { formatMoney } from "@/lib/intelligence/format-display";
@@ -49,7 +50,7 @@ export default async function ShopPage() {
             <p className="mt-3 text-sm leading-6 text-zinc-300">市場 → 商品 → 仕入 → 販売条件。順番に確かめてから、ここへ。</p>
             <Link
               href="/bestsellers"
-              className="mt-5 inline-flex items-center text-xs font-medium text-cyan-200 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+              className="group mt-5 inline-flex items-center text-xs font-medium text-cyan-200 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
             >
               選定の背景を見る <span className="ml-2 transition-transform group-hover:translate-x-0.5" aria-hidden="true">→</span>
             </Link>
@@ -62,7 +63,7 @@ export default async function ShopPage() {
             ["02", "確認を揃える", "商品・仕入・価格・配送を順番に見る"],
             ["03", "次へ進める", "条件が揃った商品だけを試せる"],
           ].map(([number, title, copy]) => (
-            <div key={number} className="bg-white/[0.025] px-4 py-5 sm:px-5">
+            <div key={number} className="bg-white/[0.025] px-4 py-5 transition-colors duration-300 hover:bg-white/[0.04] sm:px-5">
               <p className="text-[9px] font-mono tracking-[0.16em] text-cyan-300/60">{number}</p>
               <p className="mt-2 text-xs font-medium text-zinc-200">{title}</p>
               <p className="mt-1 text-[11px] leading-5 text-zinc-500">{copy}</p>
@@ -120,8 +121,14 @@ export default async function ShopPage() {
               >
                 <div className="relative overflow-hidden bg-zinc-900">
                   {listing.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={listing.imageUrl} alt={listing.title} loading="lazy" className="aspect-[4/3] h-auto w-full object-cover transition duration-700 motion-safe:group-hover:scale-[1.04]" />
+                    <Image
+                      src={listing.imageUrl}
+                      alt={listing.title}
+                      width={800}
+                      height={600}
+                      unoptimized
+                      className="aspect-[4/3] h-auto w-full object-cover transition duration-700 motion-safe:group-hover:scale-[1.04]"
+                    />
                   ) : (
                     <div className="flex aspect-[4/3] items-center justify-center border-b border-white/8 text-[10px] font-mono uppercase tracking-[0.18em] text-zinc-600">Image coming soon</div>
                   )}
