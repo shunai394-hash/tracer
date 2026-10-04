@@ -23,6 +23,17 @@ const shopLinks = [
   { href: "/shop/checkout", label: "購入手続き" },
 ] as const;
 
+function SignalMark() {
+  return (
+    <span className="relative flex h-5 w-5 items-end gap-[2px]" aria-hidden="true">
+      <span className="h-2 w-px bg-cyan-300/45" />
+      <span className="h-3.5 w-px bg-cyan-300/70" />
+      <span className="h-5 w-px bg-cyan-200" />
+      <span className="absolute -right-0.5 top-0 h-1.5 w-1.5 rounded-full bg-cyan-200 shadow-[0_0_12px_rgba(103,232,249,0.9)]" />
+    </span>
+  );
+}
+
 function NavLink({ href, label, pathname, meta }: { href: string; label: string; pathname: string; meta?: string }) {
   const active = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 
@@ -55,6 +66,7 @@ export function SiteHeader() {
         <div className="mx-auto max-w-[1440px] px-5 sm:px-8 lg:px-10">
           <div className="flex min-h-14 items-center justify-between gap-5">
             <Link href="/shop" className="group flex shrink-0 items-center gap-3" aria-label="TRACER Store home">
+              <SignalMark />
               <span className="font-mono text-[15px] tracking-[0.28em] text-zinc-100 transition-colors group-hover:text-cyan-200">TRACER</span>
               <span className="h-3 w-px bg-white/15" aria-hidden="true" />
               <span className="text-[9px] tracking-[0.22em] text-zinc-600">STORE</span>
@@ -73,6 +85,7 @@ export function SiteHeader() {
       <div className="mx-auto max-w-[1440px] px-5 sm:px-8 lg:px-10">
         <div className="flex min-h-16 items-center justify-between gap-6">
           <Link href="/" className="group flex shrink-0 items-center gap-3" aria-label="TRACER home">
+            <SignalMark />
             <span className="relative font-mono text-[17px] tracking-[0.32em] text-cyan-300 transition-colors group-hover:text-cyan-100">TRACER</span>
             <span className="hidden h-4 w-px bg-white/10 sm:block" aria-hidden="true" />
             <span className="hidden text-[9px] tracking-[0.2em] text-zinc-600 sm:block">AI COMMERCE INTELLIGENCE</span>
@@ -80,7 +93,7 @@ export function SiteHeader() {
 
           <div className="flex items-center gap-3 sm:gap-5">
             <span className="hidden items-center gap-2 text-[8px] font-mono tracking-[0.18em] text-zinc-600 lg:flex" aria-label="TRACER system status">
-              <span className="h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.8)]" aria-hidden="true" />
+              <span className="tracer-signal-pulse h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.8)]" aria-hidden="true" />
               INTELLIGENCE ONLINE
             </span>
             <Link
