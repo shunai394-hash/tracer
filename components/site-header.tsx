@@ -48,12 +48,13 @@ function NavLink({ href, label, pathname, meta }: { href: string; label: string;
       {active && <span className="h-1 w-1 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(103,232,249,0.9)]" aria-hidden="true" />}
       <span>{label}</span>
       {meta && <span className="hidden text-[7px] tracking-[0.18em] text-zinc-700 transition-colors group-hover:text-zinc-500 xl:inline">{meta}</span>}
-      <span
-        className={`absolute inset-x-0 -bottom-px h-px origin-left bg-cyan-300 transition-transform duration-300 ${active ? "scale-x-100" : "scale-x-0 group-hover:scale-x-100"}`}
-        aria-hidden="true"
-      />
+      <span className={`absolute inset-x-0 -bottom-px h-px origin-left bg-cyan-300 transition-transform duration-300 ${active ? "scale-x-100" : "scale-x-0 group-hover:scale-x-100"}`} aria-hidden="true" />
     </Link>
   );
+}
+
+function AccountLink({ pathname }: { pathname: string }) {
+  return <NavLink href="/mypage" label="マイページ" pathname={pathname} meta="ACCOUNT" />;
 }
 
 export function SiteHeader() {
@@ -73,6 +74,7 @@ export function SiteHeader() {
             </Link>
             <nav aria-label="Store navigation" className="flex min-w-0 items-center gap-5 overflow-x-auto">
               {shopLinks.map((link) => <NavLink key={link.href} {...link} pathname={pathname} />)}
+              <AccountLink pathname={pathname} />
             </nav>
           </div>
         </div>
@@ -96,10 +98,8 @@ export function SiteHeader() {
               <span className="tracer-signal-pulse h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.8)]" aria-hidden="true" />
               INTELLIGENCE ONLINE
             </span>
-            <Link
-              href="/shop"
-              className="group inline-flex min-h-10 items-center gap-3 border border-cyan-300/25 bg-cyan-300/[0.035] px-4 text-[9px] font-semibold tracking-[0.16em] text-cyan-100 transition duration-300 hover:-translate-y-px hover:border-cyan-200/60 hover:bg-cyan-200/[0.08] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-200"
-            >
+            <Link href="/mypage" className="hidden text-[9px] font-semibold tracking-[0.14em] text-zinc-400 transition hover:text-cyan-200 sm:inline-flex">マイページ</Link>
+            <Link href="/shop" className="group inline-flex min-h-10 items-center gap-3 border border-cyan-300/25 bg-cyan-300/[0.035] px-4 text-[9px] font-semibold tracking-[0.16em] text-cyan-100 transition duration-300 hover:-translate-y-px hover:border-cyan-200/60 hover:bg-cyan-200/[0.08] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-200">
               商品を見る
               <span className="transition-transform duration-300 group-hover:translate-x-0.5" aria-hidden="true">↗</span>
             </Link>
@@ -112,6 +112,7 @@ export function SiteHeader() {
           </nav>
           <nav aria-label="Operations navigation" className="hidden shrink-0 items-center gap-4 border-l border-white/8 pl-5 lg:flex">
             {utilityLinks.map((link) => <NavLink key={link.href} {...link} pathname={pathname} />)}
+            <AccountLink pathname={pathname} />
           </nav>
         </div>
       </div>
