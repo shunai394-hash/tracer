@@ -32,6 +32,7 @@ export async function GET(request: Request) {
     const orders = (data ?? []).map((row) => {
       const record = row as Record<string, unknown>;
       const total = record.total ?? record.total_amount ?? record.grand_total ?? null;
+      const shippingAddress = record.shipping_address;
       return {
         id: String(record.id ?? ""),
         createdAt: record.created_at ? String(record.created_at) : null,
@@ -39,7 +40,9 @@ export async function GET(request: Request) {
         paymentStatus: String(record.payment_status ?? "unknown"),
         total: total === null ? null : Number(total),
         currency: record.currency ? String(record.currency) : null,
-        shippingAddress: record.shipping_address ? String(record.shipping_address) : null,
+        // Never return the customer's address to the browser. The UI only needs to know
+        // whether a shipping address exists; the actual address remains server-side.
+        hasShippingAddress: typeof shippingAddress === "string" ? shippingAddress.trim().length > 0 : Boolean(shippingAddress),
       };
     });
 
