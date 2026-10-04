@@ -3,6 +3,7 @@ import type Stripe from "stripe";
 import { constructStripeEvent } from "@/lib/payments/stripe/client";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createDropshipPurchaseOrdersForShopOrder } from "@/lib/ordering/dropship";
+import { executeVerifiedSupplierPurchaseOrder } from "@/lib/ordering/verified-supplier-execution";
 import { recordShopFunnelEvent } from "@/lib/shop/store";
 
 export const runtime = "nodejs";
@@ -117,7 +118,25 @@ async function handleCheckoutCompleted(
   }
 
   try {
-    await createDropshipPurchaseOrdersForShopOrder(shopOrderId);
+    // Payment confirmation is the trigger point for dropship fulfillment.
+    // Create the immutable PO snapshot from the exact published listing, then
+    // immediately run the same verified supplier execution path used by the
+    // autonomous recovery job. The execution path remains fail-closed when
+    // CJ live/auto ordering is disabled, and is idempotent when enabled.
+    const procurement = await createDropshipPurchaseOrdersForShopOrder(shopOrderId);
+    for (const purchaseOrderId of procurement.purchaseOrderIds) {
+      const execution = await executeVerifiedSupplierPurchaseOrder(purchaseOrderId);
+      if (!execution.succeeded) {
+        console.warn("[TRACER POST-PAYMENT SUPPLIER EXECUTION BLOCKED]", {
+          shopOrderId,
+          purchaseOrderId,
+          supplier: execution.supplierName,
+          reason: execution.reason,
+          gate: execution.gate,
+        });
+      }
+    }
+
     const { error: fulfillmentStateError } = await supabase
       .from("shop_orders")
       .update({ order_status: "fulfillment_pending" })
