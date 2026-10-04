@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useShopCart } from "@/components/shop-cart";
 import { formatMoney } from "@/lib/intelligence/format-display";
@@ -45,7 +46,7 @@ export function CheckoutForm() {
   }
 
   if (cart.items.length === 0) {
-    return <div className="relative overflow-hidden border border-white/10 bg-[#0a0d10] px-6 py-16 text-center sm:px-10"><div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/30 to-transparent" aria-hidden="true" /><span className="mx-auto flex h-12 w-12 items-center justify-center border border-cyan-300/20 text-lg text-cyan-200" aria-hidden="true">＋</span><p className="mt-6 text-[9px] font-mono uppercase tracking-[0.3em] text-zinc-700">Nothing to check out</p><h2 className="mt-3 text-xl text-zinc-100">カートは空です。</h2><p className="mx-auto mt-3 max-w-md text-sm leading-6 text-zinc-500">購入する商品を選んでから、こちらへ戻ってきてください。</p><a href="/shop" className="mt-7 inline-flex min-h-11 items-center bg-cyan-300 px-6 text-xs font-semibold tracking-[0.08em] text-zinc-950 transition duration-300 hover:-translate-y-0.5 hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200">商品を見る <span className="ml-4" aria-hidden="true">→</span></a></div>;
+    return <div className="relative overflow-hidden border border-white/10 bg-[#0a0d10] px-6 py-16 text-center sm:px-10"><div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/30 to-transparent" aria-hidden="true" /><span className="mx-auto flex h-12 w-12 items-center justify-center border border-cyan-300/20 text-lg text-cyan-200" aria-hidden="true">＋</span><p className="mt-6 text-[9px] font-mono uppercase tracking-[0.3em] text-zinc-700">Nothing to check out</p><h2 className="mt-3 text-xl text-zinc-100">カートは空です。</h2><p className="mx-auto mt-3 max-w-md text-sm leading-6 text-zinc-500">購入する商品を選んでから、こちらへ戻ってきてください。</p><Link href="/shop" className="mt-7 inline-flex min-h-11 items-center bg-cyan-300 px-6 text-xs font-semibold tracking-[0.08em] text-zinc-950 transition duration-300 hover:-translate-y-0.5 hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200">商品を見る <span className="ml-4" aria-hidden="true">→</span></Link></div>;
   }
 
   const fieldClass = "mt-2 w-full border border-white/10 bg-[#07090b] px-4 py-3.5 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-700 hover:border-white/20 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/10";

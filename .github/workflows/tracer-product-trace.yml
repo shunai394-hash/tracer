@@ -10,8 +10,16 @@ on:
       ids:
         description: "Comma-separated product ids (max 20)"
         required: true
+      run_supply_first:
+        description: "Run /api/cron/supply-first (live CJ verification + intelligence, no publication)"
+        type: boolean
+        default: true
       run_intelligence:
         description: "Run /api/cron/intelligence between the two traces"
+        type: boolean
+        default: false
+      run_sales_test_publication:
+        description: "Run /api/cron/sales-test-publication (formal Sales Test Gate)"
         type: boolean
         default: true
 
@@ -29,6 +37,8 @@ jobs:
         env:
           IDS: ${{ inputs.ids }}
           RUN_INTELLIGENCE: ${{ inputs.run_intelligence }}
+          RUN_SUPPLY_FIRST: ${{ inputs.run_supply_first }}
+          RUN_SALES_TEST: ${{ inputs.run_sales_test_publication }}
         run: |
           set -uo pipefail
           BASE=https://tracer-self.vercel.app
@@ -60,6 +70,20 @@ jobs:
           echo "=== TRACE BEFORE ==="
           curl -sS --max-time 60 -H "Authorization: Bearer $(token)" "$BASE/api/intelligence/product-trace?ids=$IDS" > before.json
           python3 summarize.py before.json || cat before.json
+          if [ "$RUN_SUPPLY_FIRST" = "true" ]; then
+            echo "=== FORMAL SUPPLY-FIRST CRON ==="
+            curl -sS --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/supply-first" > supply.json
+            python3 -c '
+          import json
+          d = json.load(open("supply.json"))
+          s = d.get("supplyFirst") or {}
+          print("ok:", d.get("ok"), "verified:", s.get("verified"), "rejected:", s.get("rejected"), "error:", d.get("error"))
+          for i in s.get("items") or []:
+              print("  item:", {k: i.get(k) for k in ("productId", "supplierVariantId", "rejectedStage", "sellingPriceJpy", "inventory", "freightUsd", "error") if i.get(k) is not None})
+          print("opportunityIntelligence:", d.get("opportunityIntelligence"))
+          print("publication:", d.get("publication"))
+          ' || cat supply.json
+          fi
           if [ "$RUN_INTELLIGENCE" = "true" ]; then
             echo "=== FORMAL INTELLIGENCE CRON ==="
             curl -sS --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/intelligence" > cron.json
@@ -72,6 +96,20 @@ jobs:
               keep = {k: r.get(k) for k in ("skipped", "reason", "processed", "upserted", "testReady", "published", "considered", "productIds", "matched", "persisted") if k in r}
               print(" ", s.get("name"), "ok=" + str(s.get("ok")), keep, s.get("error") or "")
           ' || cat cron.json
+          fi
+          if [ "$RUN_SALES_TEST" = "true" ]; then
+            echo "=== FORMAL SALES-TEST-PUBLICATION CRON ==="
+            curl -sS --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/sales-test-publication" > sales.json
+            python3 -c '
+          import json
+          d = json.load(open("sales.json"))
+          s = d.get("supplySelected") or {}
+          print("ok:", d.get("ok"), "mode:", d.get("mode"), "skipped:", d.get("skipped"), "reason:", d.get("reason"), "error:", d.get("error"))
+          print("supply gate: considered", s.get("considered"), "published", s.get("published"), s.get("publishedListingIds"))
+          print("downstream:", d.get("downstream"))
+          ' || cat sales.json
+          fi
+          if [ "$RUN_SUPPLY_FIRST" = "true" ] || [ "$RUN_INTELLIGENCE" = "true" ] || [ "$RUN_SALES_TEST" = "true" ]; then
             echo "=== TRACE AFTER ==="
             curl -sS --max-time 60 -H "Authorization: Bearer $(token)" "$BASE/api/intelligence/product-trace?ids=$IDS" > after.json
             python3 summarize.py after.json || cat after.json

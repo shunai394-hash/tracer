@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
+import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
@@ -25,12 +26,22 @@ export async function GET(request: Request) {
       deadlineAt: startedAt + DISCOVERY_BUDGET_MS,
     });
 
-    // Discovery is intentionally not publication. The intelligence pipeline
-    // will evaluate these product/offer/intelligence rows before any sales test.
+    // Discovery is intentionally not publication. Verified products get their
+    // Opportunity Intelligence computed now (same computation as the
+    // pipeline); the Sales Test Gate still decides publication later.
+    const verifiedProductIds = (supplyFirst.items ?? [])
+      .map((item) => (item && typeof item === "object" && "productId" in item ? String((item as { productId?: unknown }).productId ?? "") : ""))
+      .filter(Boolean);
+    const opportunityIntelligence = verifiedProductIds.length > 0 && Date.now() - startedAt < 240_000
+      ? await buildOpportunityIntelligence({ productIds: verifiedProductIds })
+          .then((result) => ({ productIds: verifiedProductIds, processed: result.processed, testReady: result.testReady }))
+          .catch((error) => ({ productIds: verifiedProductIds, error: error instanceof Error ? error.message : String(error) }))
+      : { skipped: true, reason: verifiedProductIds.length > 0 ? "time_budget" : "no_verified_products" };
     return NextResponse.json({
       ok: true,
       elapsedMs: Date.now() - startedAt,
       supplyFirst,
+      opportunityIntelligence,
       publication: {
         published: 0,
         base: false,

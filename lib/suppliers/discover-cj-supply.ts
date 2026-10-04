@@ -13,6 +13,7 @@ import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/c
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { getSupplierCapabilities } from "@/lib/procurement/registry";
 import { persistCjSupplyIntelligence } from "@/lib/intelligence/persist-cj-supply-intelligence";
+import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
 
 function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
   const landed = (costUsd + shippingUsd) * fx;
@@ -184,16 +185,25 @@ export async function discoverAndCreateCjSupply(
   // Do not keep selecting the same existing listing. The first bootstrap
   // run proved the BASE path; subsequent runs must advance through the
   // remaining verified CJ supply candidates.
+  // Only variants already sold through the Sales Test Gate are skipped
+  // (inventory-refresh maintains those). Variants that merely have a shop
+  // listing created outside the gate (e.g. CATALOG_TEST, or a listing blocked
+  // for revalidation) still need live verification, offers and
+  // product_intelligence, otherwise Opportunity Intelligence can never
+  // evaluate them. Verification never publishes.
   const { data: existingListings } = await db
     .from("shop_listings")
-    .select("supplier_product_id,supplier_variant_id")
+    .select("supplier_product_id,supplier_variant_id,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons")
     .not("supplier_variant_id", "is", null);
+  const gatePassedListings = (existingListings ?? []).filter((row) => hasPassedSalesTestGate(row));
 
+  // Live catalog discovery (new products) still skips every listed CJ
+  // product, so it can never create a second product row for one.
   const existingProducts = new Set(
     (existingListings ?? []).map((row) => String(row.supplier_product_id ?? "")).filter(Boolean),
   );
   const existingVariants = new Set(
-    (existingListings ?? []).map((row) => `${String(row.supplier_product_id ?? "")}:${String(row.supplier_variant_id ?? "")}`),
+    gatePassedListings.map((row) => `${String(row.supplier_product_id ?? "")}:${String(row.supplier_variant_id ?? "")}`),
   );
 
   // Select only rows that are actually due, in the database. The previous
@@ -206,7 +216,7 @@ export async function discoverAndCreateCjSupply(
   const nowIso = new Date().toISOString();
   const { data: seededRows, error: seededError } = await db
     .from("supplier_listings")
-    .select("id,title,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,next_verification_at,verification_attempts")
+    .select("id,product_id,title,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,next_verification_at,verification_attempts")
     .eq("supplier", "cj")
     .not("supplier_product_id", "is", null)
     .not("supplier_variant_id", "is", null)
@@ -217,8 +227,31 @@ export async function discoverAndCreateCjSupply(
     .limit(500);
   if (seededError) throw new Error(`supply-first candidate query failed: ${seededError.message}`);
 
+  // Listed-but-not-gate-passed variants (e.g. CATALOG_TEST) go first: their
+  // listing exists, so verification + intelligence is what they are missing.
+  // Same due conditions and the same live checks as every other row.
+  const listedVariantIds = Array.from(new Set(
+    (existingListings ?? [])
+      .filter((row) => !hasPassedSalesTestGate(row))
+      .map((row) => String(row.supplier_variant_id ?? ""))
+      .filter(Boolean),
+  )).slice(0, 100);
+  let listedRows: typeof seededRows = [];
+  if (listedVariantIds.length > 0) {
+    const { data, error } = await db
+      .from("supplier_listings")
+      .select("id,product_id,title,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,next_verification_at,verification_attempts")
+      .eq("supplier", "cj")
+      .in("supplier_variant_id", listedVariantIds)
+      .in("verification_status", ["unverified", "retryable"])
+      .or(`next_verification_at.is.null,next_verification_at.lte.${nowIso}`)
+      .limit(100);
+    if (error) throw new Error(`supply-first listed candidate query failed: ${error.message}`);
+    listedRows = data ?? [];
+  }
+
   const seenSeedKeys = new Set<string>();
-  const seeded = (seededRows ?? []).filter((row) => {
+  const seeded = [...(listedRows ?? []), ...(seededRows ?? [])].filter((row) => {
     const key = `${String(row.supplier_product_id)}:${String(row.supplier_variant_id)}`;
     if (existingVariants.has(key) || seenSeedKeys.has(key)) return false;
     seenSeedKeys.add(key);
@@ -238,6 +271,7 @@ export async function discoverAndCreateCjSupply(
     priceConfirmed: row.price_confirmed === true,
     seededTitle: String(row.title ?? ""),
     supplierListingId: String(row.id),
+    existingProductId: row.product_id ? String(row.product_id) : null,
     attempts: Number(row.verification_attempts ?? 0),
   }));
 
@@ -350,7 +384,11 @@ export async function discoverAndCreateCjSupply(
       }
       const salePrice = yenPrice(cost, freight, fxRate);
       const sourceRef = `cj:${candidate.id}:${candidate.variantId}`;
-      const existingProduct = await db.from("products").select("id").eq("identity_key", sourceRef).limit(1).maybeSingle();
+      // Keep the product this supplier listing already belongs to (a listed
+      // product must not be split into a second product row).
+      const existingProduct = seededCandidate.existingProductId
+        ? { data: { id: seededCandidate.existingProductId }, error: null }
+        : await db.from("products").select("id").eq("identity_key", sourceRef).limit(1).maybeSingle();
       if (existingProduct.error) throw new Error(existingProduct.error.message);
       const productInsert = existingProduct.data?.id
         ? await db.from("products").update({ canonical_name: detail.title }).eq("id", existingProduct.data.id).select("id").single()

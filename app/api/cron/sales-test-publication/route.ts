@@ -89,6 +89,11 @@ export async function GET(request: Request) {
       .limit(50);
     if (verifiedSupplyError) throw new Error(verifiedSupplyError.message);
 
+    // The sweep above only reaches the first page of product_intelligence;
+    // the gate's own candidates must have current intelligence too.
+    const verifiedSupplyIds = Array.from(new Set((verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)));
+    if (verifiedSupplyIds.length > 0) await buildOpportunityIntelligence({ productIds: verifiedSupplyIds });
+
     const supplySelected = await selectAndPublishSupplySalesTests(
       [
         ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")),

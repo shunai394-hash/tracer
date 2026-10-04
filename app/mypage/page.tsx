@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
@@ -91,7 +92,7 @@ export default function MyPage() {
               <span className="font-mono text-[10px] text-zinc-600">{orders.length} orders</span>
             </div>
             {loading ? <p className="mt-8 text-sm text-zinc-600">注文履歴を読み込んでいます…</p> : orders.length === 0 ? (
-              <div className="mt-8 border border-dashed border-white/8 px-5 py-12 text-center"><p className="text-sm text-zinc-400">まだ注文はありません。</p><a href="/shop" className="mt-4 inline-block text-xs text-cyan-200 hover:text-white">商品を見る →</a></div>
+              <div className="mt-8 border border-dashed border-white/8 px-5 py-12 text-center"><p className="text-sm text-zinc-400">まだ注文はありません。</p><Link href="/shop" className="mt-4 inline-block text-xs text-cyan-200 hover:text-white">商品を見る →</Link></div>
             ) : (
               <div className="mt-7 space-y-3">{orders.map((order) => <article key={order.id} className="border border-white/8 p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><p className="font-mono text-[10px] text-zinc-600">#{order.id}</p><p className="text-xs text-zinc-500">{order.createdAt ? new Date(order.createdAt).toLocaleString("ja-JP") : "—"}</p></div><div className="mt-4 flex flex-wrap gap-2 text-[10px] font-mono"><span className="border border-white/8 px-2 py-1 text-zinc-400">ORDER {order.status}</span><span className="border border-white/8 px-2 py-1 text-zinc-400">PAYMENT {order.paymentStatus}</span></div>{order.hasShippingAddress ? <p className="mt-4 text-xs leading-5 text-zinc-600">配送先登録済み</p> : null}</article>)}</div>
             )}
