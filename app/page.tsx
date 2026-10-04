@@ -119,11 +119,24 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="hidden border-l border-white/5 lg:block" />
+          <div className="relative hidden border-l border-white/5 lg:block">
+            <div className="tracer-specimen absolute bottom-[12%] right-[8%] top-[20%] left-[8%]" aria-hidden="true">
+              <div className="tracer-specimen-orbit tracer-specimen-orbit-a" />
+              <div className="tracer-specimen-orbit tracer-specimen-orbit-b" />
+              <div className="tracer-specimen-crosshair" />
+              <div className="tracer-specimen-core" />
+              <span className="tracer-specimen-label tracer-specimen-label-a">SIGNAL / 01</span>
+              <span className="tracer-specimen-label tracer-specimen-label-b">EVIDENCE FIRST</span>
+              <span className="tracer-specimen-label tracer-specimen-label-c">TRACE → TEST</span>
+              <span className="tracer-specimen-axis tracer-specimen-axis-x" />
+              <span className="tracer-specimen-axis tracer-specimen-axis-y" />
+            </div>
+          </div>
         </div>
       </section>
 
-      <section className="border-b border-white/8 bg-[#07090c]" aria-labelledby="evidence-heading">
+      <section className="relative border-b border-white/8 bg-[#07090c]" aria-labelledby="evidence-heading">
+        <div className="pointer-events-none absolute inset-x-[7.2vw] top-0 hidden h-px bg-gradient-to-r from-transparent via-cyan-300/20 to-transparent lg:block" aria-hidden="true" />
         <div className="mx-auto grid max-w-[1600px] lg:grid-cols-[7.2vw_minmax(0,1fr)_7.2vw]">
           <div className="hidden border-r border-white/5 lg:block" />
           <div className="grid sm:grid-cols-2 lg:grid-cols-4">
