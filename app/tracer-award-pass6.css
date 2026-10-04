@@ -1,0 +1,64 @@
+/* TRACER AWARD PASS 06 — account surfaces and trust-state polish. */
+
+main:has(section[aria-labelledby="login-heading"]) {
+  background:
+    radial-gradient(55% 70% at 50% 42%, rgba(103,232,249,.035), transparent 68%),
+    #05070a;
+}
+
+main:has(section[aria-labelledby="login-heading"]) section[aria-labelledby="login-heading"] {
+  overflow: hidden;
+  box-shadow: inset 0 1px rgba(255,255,255,.045), 0 35px 120px rgba(0,0,0,.38), 0 0 90px rgba(103,232,249,.025);
+}
+
+main:has(section[aria-labelledby="login-heading"]) section[aria-labelledby="login-heading"]::before {
+  content: "SECURE ACCESS / 01";
+  position: absolute;
+  right: 1.5rem;
+  top: 1.25rem;
+  font: 7px/1 var(--font-geist-mono), monospace;
+  letter-spacing: .24em;
+  color: rgba(161,161,170,.22);
+  pointer-events: none;
+}
+
+main:has(section[aria-labelledby="login-heading"]) button:first-of-type {
+  position: relative;
+  box-shadow: inset 0 1px rgba(255,255,255,.7), 0 16px 45px rgba(0,0,0,.2);
+}
+
+main:has(section[aria-labelledby="login-heading"]) input {
+  caret-color: #a5f3fc;
+}
+
+main:has(section[aria-labelledby="login-heading"]) input::selection {
+  background: rgba(103,232,249,.2);
+}
+
+main:has(section[aria-labelledby="login-heading"]) section[aria-labelledby="login-heading"] > button:last-child {
+  min-height: 40px;
+}
+
+main:has(section[aria-labelledby="orders-heading"]) {
+  background:
+    radial-gradient(55% 55% at 85% 0%, rgba(103,232,249,.035), transparent 70%),
+    #05070a;
+}
+
+main:has(section[aria-labelledby="orders-heading"]) article {
+  transition: border-color 450ms ease, background-color 450ms ease, transform 450ms cubic-bezier(.22,1,.36,1);
+}
+
+main:has(section[aria-labelledby="orders-heading"]) article:hover {
+  border-color: rgba(103,232,249,.14);
+  background: rgba(255,255,255,.012);
+  transform: translateY(-1px);
+}
+
+@media (hover: none) {
+  main:has(section[aria-labelledby="orders-heading"]) article:hover { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  main:has(section[aria-labelledby="orders-heading"]) article { transition: none; }
+}
