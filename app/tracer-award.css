@@ -166,6 +166,42 @@ main.flex-1 > section:nth-child(3) a {
   will-change: transform;
 }
 
+/* PASS 03 — tactile depth, low-cost rendering, and non-hover device safety. */
+main.flex-1 > section:nth-child(n+2) {
+  content-visibility: auto;
+  contain-intrinsic-size: 520px;
+}
+
+main.flex-1 > section:first-child .tracer-specimen {
+  background:
+    radial-gradient(circle at 50% 48%, rgba(165,243,252,.055), transparent 10%),
+    radial-gradient(circle at 50% 50%, rgba(103,232,249,.055), transparent 34%),
+    conic-gradient(from 18deg at 50% 50%, transparent 0 24deg, rgba(103,232,249,.045) 25deg 26deg, transparent 27deg 112deg, rgba(251,191,36,.04) 113deg 114deg, transparent 115deg 228deg, rgba(103,232,249,.04) 229deg 230deg, transparent 231deg),
+    linear-gradient(135deg, rgba(255,255,255,.025), transparent 48%);
+}
+
+main.flex-1 > section:first-child .tracer-specimen-label {
+  transition: color 400ms ease, opacity 400ms ease;
+}
+
+main.flex-1 > section:first-child:hover .tracer-specimen-label-a { color: rgba(165,243,252,.9); }
+main.flex-1 > section:first-child:hover .tracer-specimen-label-b,
+main.flex-1 > section:first-child:hover .tracer-specimen-label-c { opacity: .85; }
+
+main.flex-1 > section:nth-child(2) article,
+main.flex-1 > section:nth-child(3) a {
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+@media (hover: none) {
+  main.flex-1 > section:first-child:hover .tracer-specimen {
+    transform: translate(-50%, -50%) perspective(900px) rotateX(7deg) rotateY(-8deg);
+  }
+
+  main.flex-1 > section:nth-child(3) a:hover h3 { transform: none; }
+}
+
 /* Navigation is part of the art direction: quieter chrome, clearer destination. */
 header.sticky {
   box-shadow: 0 12px 40px rgba(0,0,0,.12);
