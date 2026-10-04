@@ -263,18 +263,31 @@ function apparelLike(category: string | null, title: string): boolean {
   );
 }
 
-export async function buildOpportunityIntelligence(options: { batchSize?: number; batchOffset?: number } = {}): Promise<OpportunityBuildResult> {
+export async function buildOpportunityIntelligence(options: {
+  batchSize?: number;
+  batchOffset?: number;
+  /**
+   * Evaluate exactly these products (same computation, same gates). Used for
+   * products that a page-by-page sweep would not reach in time, e.g. listed
+   * supply that has no opportunity_intelligence row yet.
+   */
+  productIds?: string[];
+} = {}): Promise<OpportunityBuildResult> {
   const batchSize = Math.max(1, Math.min(100, options.batchSize ?? 1000));
   const batchOffset = Math.max(0, options.batchOffset ?? 0);
   const supabase = createSupabaseAdminClient();
+  const targetIds = Array.from(new Set((options.productIds ?? []).filter(Boolean))).slice(0, 100);
 
-  const intelligenceQuery = supabase
+  const intelligenceSelect = supabase
     .from("product_intelligence")
     .select(
       "product_id, normalized_title, brand_name, category, seller_name, image_url, currency, current_price, identity_confidence, price_confidence, demand_signal, metadata, last_seen_at",
-    )
-    .order("product_id", { ascending: true })
-    .range(batchOffset, batchOffset + batchSize - 1);
+    );
+  const intelligenceQuery = options.productIds
+    ? intelligenceSelect.in("product_id", targetIds.length > 0 ? targetIds : ["00000000-0000-0000-0000-000000000000"])
+    : intelligenceSelect
+      .order("product_id", { ascending: true })
+      .range(batchOffset, batchOffset + batchSize - 1);
   const intelligenceResult = await intelligenceQuery;
 
   if (intelligenceResult.error) {

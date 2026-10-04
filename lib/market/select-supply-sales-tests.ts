@@ -30,7 +30,9 @@ export type SupplySalesTestResult = {
 export async function selectAndPublishSupplySalesTests(
   productIds: string[],
   limit = 3,
-): Promise<SupplySalesTestResult> {
+  /** Evaluate the same gate and report reasons without publishing anything. */
+  options: { dryRun?: boolean } = {},
+): Promise<SupplySalesTestResult & { eligibleProductIds?: string[] }> {
   const supabase = createSupabaseAdminClient();
   if (productIds.length === 0 || limit <= 0) {
     return { published: 0, publishedListingIds: [], considered: 0, rejected: [] };
@@ -182,6 +184,15 @@ export async function selectAndPublishSupplySalesTests(
   }
 
   eligible.sort((a, b) => b.quality - a.quality);
+  if (options.dryRun) {
+    return {
+      published: 0,
+      publishedListingIds: [],
+      considered: uniqueProductIds.length,
+      rejected: rejected.slice(0, 50),
+      eligibleProductIds: eligible.map((item) => item.productId),
+    };
+  }
   const chosen = eligible.slice(0, limit);
   const publishedListingIds: string[] = [];
 
@@ -230,8 +241,29 @@ export async function selectAndPublishSupplySalesTests(
 
     const existing = await supabase.from("shop_listings").select("id").eq("slug", slug).maybeSingle();
     if (existing.error) throw new Error(existing.error.message);
-    const result = existing.data?.id
-      ? await supabase.from("shop_listings").update(payload).eq("id", existing.data.id).select("id").single()
+    // A product may already have a listing created outside this gate (e.g. a
+    // CATALOG_TEST listing). Passing the gate converts that listing in place,
+    // keeping its slug/URL, instead of creating a second listing.
+    let existingId = existing.data?.id ? String(existing.data.id) : null;
+    let keepSlug = false;
+    if (!existingId) {
+      const byProduct = await supabase
+        .from("shop_listings")
+        .select("id")
+        .eq("product_id", item.productId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (byProduct.error) throw new Error(byProduct.error.message);
+      if (byProduct.data?.id) {
+        existingId = String(byProduct.data.id);
+        keepSlug = true;
+      }
+    }
+    const { slug: _slug, ...payloadWithoutSlug } = payload;
+    void _slug;
+    const result = existingId
+      ? await supabase.from("shop_listings").update(keepSlug ? payloadWithoutSlug : payload).eq("id", existingId).select("id").single()
       : await supabase.from("shop_listings").insert(payload).select("id").single();
     if (result.error) throw new Error(result.error.message);
     if (result.data?.id) publishedListingIds.push(String(result.data.id));
