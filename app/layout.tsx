@@ -6,6 +6,7 @@ import { TracerChat } from "@/components/tracer-chat";
 import "./globals.css";
 import "./tracer-award.css";
 import "./tracer-award-pass4.css";
+import "./tracer-award-pass5.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
