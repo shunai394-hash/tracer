@@ -1,0 +1,177 @@
+/* TRACER AWARD PASS 04 — signature-system refinement.
+   Goal: make the interface feel authored, not decorated.
+   Preserve content hierarchy; sharpen rhythm, focus, mobile composition, and tactile feedback. */
+
+html {
+  scroll-behavior: smooth;
+  background: #05070a;
+}
+
+::selection {
+  background: rgba(103, 232, 249, .22);
+  color: #f4feff;
+}
+
+main.flex-1 {
+  isolation: isolate;
+}
+
+main.flex-1 > section {
+  position: relative;
+}
+
+/* A quiet measurement layer gives the long page a continuous editorial grid. */
+main.flex-1 > section:not(:first-child)::after {
+  content: "";
+  position: absolute;
+  inset: 0 7.2vw;
+  pointer-events: none;
+  border-left: 1px solid rgba(255,255,255,.018);
+  border-right: 1px solid rgba(255,255,255,.018);
+  opacity: .7;
+}
+
+/* The mobile hero previously lost the signature specimen entirely. Replace it with
+   a lightweight typographic/radial signature rather than a desktop-only void. */
+@media (max-width: 1023px) {
+  main.flex-1 > section:first-child {
+    overflow: clip;
+  }
+
+  main.flex-1 > section:first-child::marker { display: none; }
+
+  main.flex-1 > section:first-child > div:first-child::after {
+    content: "SIGNAL  /  EVIDENCE  /  TEST";
+    position: absolute;
+    right: 1.5rem;
+    bottom: 2.2rem;
+    width: 11rem;
+    height: 11rem;
+    border: 1px solid rgba(103,232,249,.10);
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    font: 7px/1.9 var(--font-geist-mono), monospace;
+    letter-spacing: .24em;
+    color: rgba(165,243,252,.32);
+    background:
+      radial-gradient(circle, rgba(103,232,249,.055), transparent 58%),
+      conic-gradient(from 30deg, transparent 0 42deg, rgba(103,232,249,.12) 43deg 44deg, transparent 45deg 150deg, rgba(251,191,36,.08) 151deg 152deg, transparent 153deg);
+    box-shadow: inset 0 0 60px rgba(103,232,249,.025), 0 30px 90px rgba(0,0,0,.28);
+    animation: tracer-pass4-orbit 16s linear infinite;
+    pointer-events: none;
+  }
+}
+
+/* Make primary actions feel like physical controls without turning the site into a UI kit. */
+a.group:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 1px solid rgba(165,243,252,.95);
+  outline-offset: 4px;
+  box-shadow: 0 0 0 5px rgba(103,232,249,.08);
+}
+
+main.flex-1 > section:nth-child(3) a {
+  box-shadow: inset 0 1px rgba(255,255,255,.025);
+}
+
+main.flex-1 > section:nth-child(3) a::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -35%;
+  width: 22%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.06), transparent);
+  transform: skewX(-18deg);
+  opacity: 0;
+  transition: left 900ms cubic-bezier(.22,1,.36,1), opacity 450ms ease;
+  pointer-events: none;
+}
+
+main.flex-1 > section:nth-child(3) a:hover::after {
+  left: 125%;
+  opacity: 1;
+}
+
+/* Improve dense list rhythm and prevent hover states from looking like generic cards. */
+main.flex-1 > section:nth-child(5) .group {
+  position: relative;
+}
+
+main.flex-1 > section:nth-child(5) .group::before {
+  content: "";
+  width: 2px;
+  height: 0;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  background: rgba(103,232,249,.7);
+  transform: translateY(-50%);
+  transition: height 450ms cubic-bezier(.22,1,.36,1);
+}
+
+main.flex-1 > section:nth-child(5) .group:hover::before {
+  height: 52%;
+}
+
+/* Connection/status areas should read as instruments, not ordinary panels. */
+main.flex-1 > section:last-child {
+  background:
+    radial-gradient(60% 80% at 80% 50%, rgba(103,232,249,.025), transparent 70%),
+    #05070a;
+}
+
+main.flex-1 > section:last-child > div {
+  position: relative;
+}
+
+/* Keep the page calm when the pointer is not available. */
+@media (hover: none) {
+  main.flex-1 > section:nth-child(3) a::after,
+  main.flex-1 > section:nth-child(5) .group::before {
+    display: none;
+  }
+}
+
+@keyframes tracer-pass4-orbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 639px) {
+  main.flex-1 > section:not(:first-child)::after {
+    inset: 0 1rem;
+  }
+
+  main.flex-1 > section:first-child > div:first-child::after {
+    width: 8.5rem;
+    height: 8.5rem;
+    right: -1rem;
+    bottom: 1.4rem;
+    font-size: 6px;
+    opacity: .7;
+  }
+
+  main.flex-1 > section:nth-child(3) a {
+    box-shadow: inset 0 1px rgba(255,255,255,.03), 0 16px 50px rgba(0,0,0,.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  main.flex-1 > section:first-child > div:first-child::after { animation: none; }
+}
+
+@media print {
+  main.flex-1 > section:first-child::before,
+  main.flex-1 > section:first-child::after,
+  main.flex-1 > section:first-child > div:first-child::after,
+  main.flex-1 > section:not(:first-child)::after {
+    display: none !important;
+  }
+}
