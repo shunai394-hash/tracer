@@ -348,6 +348,37 @@ async function inspectDemandObservations(): Promise<unknown> {
   return { observations: count ?? 0, source: "demand_observations", note: "Demand rows are written by discovery; this step only verifies they remain queryable" };
 }
 
+/**
+ * Product ids of published shop listings that have no opportunity
+ * intelligence, or intelligence older than 24h. Oldest first, bounded.
+ */
+async function listedProductsNeedingIntelligence(
+  db: ReturnType<typeof createSupabaseAdminClient>,
+  limit: number,
+): Promise<string[]> {
+  const { data: listed, error } = await db
+    .from("shop_listings")
+    .select("product_id")
+    .eq("published", true)
+    .not("product_id", "is", null)
+    .limit(500);
+  if (error) throw new Error(error.message);
+  const ids = Array.from(new Set((listed ?? []).map((row) => String(row.product_id))));
+  if (ids.length === 0) return [];
+  const fresh = new Set<string>();
+  const staleBefore = new Date(Date.now() - 24 * 3_600_000).toISOString();
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error: oiError } = await db
+      .from("opportunity_intelligence")
+      .select("product_id, updated_at")
+      .in("product_id", ids.slice(i, i + 100))
+      .gte("updated_at", staleBefore);
+    if (oiError) throw new Error(oiError.message);
+    for (const row of data ?? []) fresh.add(String(row.product_id));
+  }
+  return ids.filter((id) => !fresh.has(id)).slice(0, limit);
+}
+
 export async function runIntelligencePipeline(options: {
   deadlineAt?: number;
   /** Called as each step starts so a killed run still shows where it stopped. */
@@ -425,8 +456,29 @@ export async function runIntelligencePipeline(options: {
       deadlineAt: pipelineDeadlineAt - 1_000,
     }), { budgetMs: 5_000 }));
 
+  // Rotate over every product_intelligence page. The previous fixed
+  // "% 7" rotation only ever reached the first 350 rows (ordered by
+  // product_id), so most products never got opportunity_intelligence.
   const intelligenceBatchSize = 50;
-  const intelligenceBatchOffset = Math.floor(Date.now() / 60_000) % 7 * intelligenceBatchSize;
+  const { count: intelligenceRowCount } = await db
+    .from("product_intelligence")
+    .select("product_id", { count: "exact", head: true });
+  const intelligencePages = Math.max(1, Math.ceil((intelligenceRowCount ?? 0) / intelligenceBatchSize));
+  const intelligenceBatchOffset = (Math.floor(Date.now() / 60_000) % intelligencePages) * intelligenceBatchSize;
+  // Products already listed in the shop (e.g. CATALOG_TEST listings) must be
+  // evaluated by the same Opportunity Intelligence before the Sales Test Gate
+  // can judge them. The page-by-page sweep can take many patrols to reach a
+  // given product, so listed products without (fresh) intelligence go first.
+  // This only computes intelligence; publication still requires the gate.
+  const listedProductIds = await listedProductsNeedingIntelligence(db, 20);
+  steps.push(await runStep(
+    "intelligence_listed",
+    async () => listedProductIds.length > 0
+      ? { productIds: listedProductIds, ...(await buildOpportunityIntelligence({ productIds: listedProductIds })) }
+      : { skipped: true, reason: "no_listed_product_without_intelligence" },
+    { downstream: true, budgetMs: 30_000 },
+  ));
+
   const intelligence = await runStep(
     "intelligence",
     () => buildOpportunityIntelligence({
@@ -451,6 +503,7 @@ export async function runIntelligencePipeline(options: {
     .order("last_verified_at", { ascending: false, nullsFirst: false })
     .limit(50);
   const supplyCandidateIds = Array.from(new Set([
+    ...listedProductIds,
     ...supplyProductIds,
     ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
   ]));
