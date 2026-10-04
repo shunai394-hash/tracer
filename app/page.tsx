@@ -133,7 +133,7 @@ export default function HomePage() {
                 <p className="mt-7 font-mono text-[8px] tracking-[0.22em] text-zinc-600">{label}</p>
                 <h2 className="mt-2 text-lg tracking-[-0.02em] text-zinc-100">{title}</h2>
                 <p className="mt-2 text-xs leading-5 text-zinc-600">{copy}</p>
-                <span className="absolute bottom-0 left-6 h-px w-0 bg-cyan-300/60 transition-all duration-700 group-hover:w-[calc(100%-3rem)] sm:left-8 group-hover:sm:w-[calc(100%-4rem)] lg:left-10" aria-hidden="true" />
+                <span className="absolute bottom-0 left-6 h-px w-0 bg-cyan-300/60 transition-all duration-700 group-hover:w-[calc(100%-3rem)] sm:left-8 lg:left-10" aria-hidden="true" />
               </article>
             ))}
           </div>
