@@ -85,6 +85,43 @@ body::after {
   mix-blend-mode: soft-light;
 }
 
+/* TRACER signature: a restrained signal field rather than a generic dashboard glow. */
+main > section:first-of-type::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
+  width: min(72vw, 760px);
+  aspect-ratio: 1;
+  right: clamp(-230px, -8vw, -60px);
+  top: 50%;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  opacity: 0.72;
+  background:
+    radial-gradient(circle at center, rgba(103, 232, 249, 0.09) 0 1px, transparent 1.5px),
+    repeating-radial-gradient(circle at center, transparent 0 62px, rgba(103, 232, 249, 0.055) 63px 64px),
+    conic-gradient(from 15deg, transparent 0deg 42deg, rgba(103, 232, 249, 0.14) 43deg 44deg, transparent 45deg 136deg, rgba(103, 232, 249, 0.08) 137deg 138deg, transparent 139deg 270deg, rgba(251, 191, 36, 0.08) 271deg 272deg, transparent 273deg);
+  mask-image: radial-gradient(circle, black 0 57%, transparent 78%);
+  animation: tracer-signal-drift 15s ease-in-out infinite;
+}
+
+main > section:first-of-type::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
+  width: min(54vw, 560px);
+  height: 1px;
+  right: clamp(2rem, 10vw, 9rem);
+  top: 50%;
+  opacity: 0.28;
+  background: linear-gradient(90deg, transparent, rgba(103, 232, 249, 0.7), transparent);
+  filter: blur(0.2px);
+  transform-origin: center;
+  animation: tracer-signal-scan 8s linear infinite;
+}
+
 .tracer-reveal {
   animation: tracer-reveal 720ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -146,6 +183,21 @@ body::after {
 @keyframes tracer-line-draw {
   from { opacity: 0; transform: scaleX(0); }
   to { opacity: 1; transform: scaleX(1); }
+}
+
+@media (max-width: 767px) {
+  main > section:first-of-type::before {
+    width: 520px;
+    right: -330px;
+    top: 40%;
+    opacity: 0.5;
+  }
+
+  main > section:first-of-type::after {
+    right: -10%;
+    width: 80%;
+    opacity: 0.16;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
