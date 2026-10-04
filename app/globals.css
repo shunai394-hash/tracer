@@ -240,6 +240,125 @@ main > section:first-of-type ol li:hover > span:first-child::after {
   display: none;
 }
 
+.tracer-specimen {
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.07);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(103,232,249,0.075), transparent 23%),
+    linear-gradient(135deg, rgba(255,255,255,0.025), transparent 48%);
+  isolation: isolate;
+}
+.tracer-specimen::before,
+.tracer-specimen::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  inset: 11%;
+  border: 1px solid rgba(103,232,249,0.06);
+  border-radius: 50%;
+}
+.tracer-specimen::after {
+  inset: 28%;
+  border-color: rgba(103,232,249,0.09);
+}
+.tracer-specimen-orbit {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 62%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(103,232,249,0.13);
+  border-radius: 50%;
+}
+.tracer-specimen-orbit::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(165,243,252,0.95);
+  box-shadow: 0 0 18px rgba(103,232,249,0.8);
+}
+.tracer-specimen-orbit-a {
+  animation: tracer-orbit 18s linear infinite;
+}
+.tracer-specimen-orbit-b {
+  width: 38%;
+  border-color: rgba(251,191,36,0.11);
+  transform: translate(-50%, -50%) rotate(58deg);
+  animation: tracer-orbit-reverse 13s linear infinite;
+}
+.tracer-specimen-orbit-b::after {
+  background: rgba(253,230,138,0.9);
+  box-shadow: 0 0 16px rgba(251,191,36,0.55);
+}
+.tracer-specimen-crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 72%;
+  height: 72%;
+  transform: translate(-50%, -50%);
+  background:
+    linear-gradient(rgba(103,232,249,0.12), rgba(103,232,249,0.12)) center / 1px 100% no-repeat,
+    linear-gradient(90deg, rgba(103,232,249,0.12), rgba(103,232,249,0.12)) center / 100% 1px no-repeat;
+}
+.tracer-specimen-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(165,243,252,0.95);
+  border-radius: 50%;
+  background: #071015;
+  box-shadow: 0 0 0 7px rgba(103,232,249,0.035), 0 0 32px rgba(103,232,249,0.32);
+  animation: tracer-core-pulse 4s ease-in-out infinite;
+}
+.tracer-specimen-label {
+  position: absolute;
+  z-index: 2;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  letter-spacing: 0.18em;
+  color: rgba(161,161,170,0.55);
+  white-space: nowrap;
+}
+.tracer-specimen-label-a { left: 8%; top: 8%; color: rgba(103,232,249,0.65); }
+.tracer-specimen-label-b { right: 8%; top: 8%; }
+.tracer-specimen-label-c { left: 8%; bottom: 8%; }
+.tracer-specimen-axis {
+  position: absolute;
+  z-index: 2;
+  background: rgba(255,255,255,0.09);
+}
+.tracer-specimen-axis-x {
+  right: 8%;
+  bottom: 8%;
+  width: 22%;
+  height: 1px;
+}
+.tracer-specimen-axis-y {
+  right: 8%;
+  bottom: 8%;
+  width: 1px;
+  height: 22%;
+}
+@keyframes tracer-orbit {
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+@keyframes tracer-orbit-reverse {
+  to { transform: translate(-50%, -50%) rotate(-302deg); }
+}
+@keyframes tracer-core-pulse {
+  0%, 100% { box-shadow: 0 0 0 7px rgba(103,232,249,0.035), 0 0 32px rgba(103,232,249,0.22); }
+  50% { box-shadow: 0 0 0 12px rgba(103,232,249,0.018), 0 0 42px rgba(103,232,249,0.42); }
+}
+
 @keyframes tracer-reveal {
   from { opacity: 0; transform: translateY(14px); }
   to { opacity: 1; transform: translateY(0); }
@@ -287,6 +406,10 @@ main > section:first-of-type ol li:hover > span:first-child::after {
     backdrop-filter: blur(12px);
   }
 }
+
+.tracer-specimen-orbit-a,
+.tracer-specimen-orbit-b,
+.tracer-specimen-core { animation: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
