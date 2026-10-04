@@ -78,60 +78,57 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="relative hidden border-l border-white/5 lg:block">
-              <div className="absolute inset-x-0 top-[19%] bottom-[16%] p-10 xl:p-14">
-                <div className="flex h-full flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between border-b border-white/8 pb-4">
-                      <span className="font-mono text-[8px] tracking-[0.25em] text-zinc-600">TRACER / FIELD NOTE</span>
-                      <span className="flex items-center gap-2 font-mono text-[8px] tracking-[0.16em] text-cyan-200/60">
-                        <i className="h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_12px_rgba(103,232,249,.8)]" />
-                        LIVE
-                      </span>
+            <div className="relative hidden overflow-hidden border-l border-white/5 lg:block">
+              <div className="absolute inset-0 opacity-70">
+                <div className="tracer-specimen absolute left-1/2 top-1/2 h-[min(34vw,520px)] w-[min(34vw,520px)] -translate-x-1/2 -translate-y-1/2" aria-hidden="true">
+                  <div className="tracer-specimen-orbit tracer-specimen-orbit-a" />
+                  <div className="tracer-specimen-orbit tracer-specimen-orbit-b" />
+                  <div className="tracer-specimen-crosshair" />
+                  <div className="tracer-specimen-core" />
+                  <span className="tracer-specimen-label tracer-specimen-label-a">SIGNAL / 01</span>
+                  <span className="tracer-specimen-label tracer-specimen-label-b">EVIDENCE FIRST</span>
+                  <span className="tracer-specimen-label tracer-specimen-label-c">TRACE → TEST</span>
+                  <span className="tracer-specimen-axis tracer-specimen-axis-x" />
+                  <span className="tracer-specimen-axis tracer-specimen-axis-y" />
+                </div>
+              </div>
+              <div className="relative z-10 flex h-full flex-col justify-between p-10 xl:p-14">
+                <div>
+                  <div className="flex items-center justify-between border-b border-white/8 pb-4">
+                    <span className="font-mono text-[8px] tracking-[0.25em] text-zinc-600">TRACER / FIELD NOTE</span>
+                    <span className="flex items-center gap-2 font-mono text-[8px] tracking-[0.16em] text-cyan-200/60">
+                      <i className="h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_12px_rgba(103,232,249,.8)]" />
+                      LIVE
+                    </span>
+                  </div>
+                  <div className="mt-12 max-w-sm">
+                    <p className="font-mono text-[9px] tracking-[0.24em] text-zinc-600">THE QUESTION</p>
+                    <p className="mt-5 text-2xl leading-[1.2] tracking-[-0.035em] text-zinc-100">
+                      「売れそう」から、<br />
+                      <span className="text-cyan-200">「試せる」へ。</span>
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <div className="grid grid-cols-2 border border-white/8 bg-[#05070a]/45 backdrop-blur-sm">
+                    <div className="border-r border-white/8 p-4">
+                      <p className="font-mono text-[7px] tracking-[0.18em] text-zinc-700">STANDARD</p>
+                      <p className="mt-2 text-xs text-zinc-300">証拠を先に。</p>
                     </div>
-
-                    <div className="mt-12">
-                      <p className="font-mono text-[9px] tracking-[0.24em] text-zinc-600">THE QUESTION</p>
-                      <p className="mt-5 max-w-sm text-2xl leading-[1.2] tracking-[-0.035em] text-zinc-100">
-                        「売れそう」から、<br />
-                        <span className="text-cyan-200">「試せる」へ。</span>
-                      </p>
+                    <div className="p-4">
+                      <p className="font-mono text-[7px] tracking-[0.18em] text-zinc-700">UNKNOWN</p>
+                      <p className="mt-2 text-xs text-zinc-300">推測で埋めない。</p>
                     </div>
                   </div>
-
-                  <div>
-                    <div className="grid grid-cols-2 border border-white/8">
-                      <div className="border-r border-white/8 p-4">
-                        <p className="font-mono text-[7px] tracking-[0.18em] text-zinc-700">STANDARD</p>
-                        <p className="mt-2 text-xs text-zinc-300">証拠を先に。</p>
-                      </div>
-                      <div className="p-4">
-                        <p className="font-mono text-[7px] tracking-[0.18em] text-zinc-700">UNKNOWN</p>
-                        <p className="mt-2 text-xs text-zinc-300">推測で埋めない。</p>
-                      </div>
-                    </div>
-                    <div className="mt-3 flex justify-between font-mono text-[7px] tracking-[0.16em] text-zinc-700">
-                      <span>34.7024° N</span><span>135.4959° E</span>
-                    </div>
+                  <div className="mt-3 flex justify-between font-mono text-[7px] tracking-[0.16em] text-zinc-700">
+                    <span>34.7024° N</span><span>135.4959° E</span>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="relative hidden border-l border-white/5 lg:block">
-            <div className="tracer-specimen absolute bottom-[12%] right-[8%] top-[20%] left-[8%]" aria-hidden="true">
-              <div className="tracer-specimen-orbit tracer-specimen-orbit-a" />
-              <div className="tracer-specimen-orbit tracer-specimen-orbit-b" />
-              <div className="tracer-specimen-crosshair" />
-              <div className="tracer-specimen-core" />
-              <span className="tracer-specimen-label tracer-specimen-label-a">SIGNAL / 01</span>
-              <span className="tracer-specimen-label tracer-specimen-label-b">EVIDENCE FIRST</span>
-              <span className="tracer-specimen-label tracer-specimen-label-c">TRACE → TEST</span>
-              <span className="tracer-specimen-axis tracer-specimen-axis-x" />
-              <span className="tracer-specimen-axis tracer-specimen-axis-y" />
-            </div>
-          </div>
+          <div className="hidden border-l border-white/5 lg:block" />
         </div>
       </section>
 
