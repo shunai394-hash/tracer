@@ -1,0 +1,68 @@
+/* TRACER AWARD PASS 05 — chrome, navigation and finishing polish. */
+
+header.sticky {
+  backdrop-filter: blur(24px) saturate(125%);
+  -webkit-backdrop-filter: blur(24px) saturate(125%);
+}
+
+header.sticky::after {
+  content: "";
+  position: absolute;
+  inset: auto 7.2vw -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(103,232,249,.13) 32%, rgba(255,255,255,.06) 68%, transparent);
+  pointer-events: none;
+}
+
+header.sticky nav a {
+  min-height: 32px;
+}
+
+header.sticky nav a:focus-visible {
+  outline-offset: 2px;
+}
+
+header.sticky a[href="/shop"] {
+  box-shadow: inset 0 0 0 1px rgba(103,232,249,.025), 0 8px 28px rgba(0,0,0,.14);
+}
+
+header.sticky a[href="/shop"]:hover {
+  box-shadow: inset 0 0 24px rgba(103,232,249,.045), 0 10px 34px rgba(0,0,0,.2);
+}
+
+.tracer-nav-scroll {
+  scrollbar-width: none;
+  mask-image: linear-gradient(90deg, transparent, black 10px, black calc(100% - 10px), transparent);
+}
+
+.tracer-nav-scroll::-webkit-scrollbar { display: none; }
+
+footer {
+  overflow: hidden;
+}
+
+footer .mx-auto {
+  position: relative;
+}
+
+footer .mx-auto::before {
+  content: "FIELD / SIGNAL / TEST";
+  position: absolute;
+  right: 0;
+  top: 0;
+  font: 7px/1 var(--font-geist-mono), monospace;
+  letter-spacing: .28em;
+  color: rgba(161,161,170,.15);
+  transform: translateY(-2px);
+  pointer-events: none;
+}
+
+@media (max-width: 639px) {
+  header.sticky::after { inset-inline: 1rem; }
+  footer .mx-auto::before { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  header.sticky a,
+  footer a { transition: none !important; }
+}
