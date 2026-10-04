@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import { listPublishedShopListings } from "@/lib/shop/store";
 import { formatMoney } from "@/lib/intelligence/format-display";
@@ -121,14 +120,8 @@ export default async function ShopPage() {
               >
                 <div className="relative overflow-hidden bg-zinc-900">
                   {listing.imageUrl ? (
-                    <Image
-                      src={listing.imageUrl}
-                      alt={listing.title}
-                      width={800}
-                      height={600}
-                      unoptimized
-                      className="aspect-[4/3] h-auto w-full object-cover transition duration-700 motion-safe:group-hover:scale-[1.04]"
-                    />
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={listing.imageUrl} alt={listing.title} loading="lazy" className="aspect-[4/3] h-auto w-full object-cover transition duration-700 motion-safe:group-hover:scale-[1.04]" />
                   ) : (
                     <div className="flex aspect-[4/3] items-center justify-center border-b border-white/8 text-[10px] font-mono uppercase tracking-[0.18em] text-zinc-600">Image coming soon</div>
                   )}
