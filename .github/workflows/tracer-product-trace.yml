@@ -57,13 +57,13 @@ jobs:
               print("  offers:", [(o.get("seller_name"), o.get("price"), o.get("currency")) for o in p.get("offers") or []])
               for l in p.get("supplier_listings") or []:
                   print("  supplier:", l.get("supplier"), l.get("supplier_product_id"), l.get("supplier_variant_id"), "| identity:", l.get("identity_method"), l.get("identity_status"), l.get("identity_confidence"),
-                        "| verify:", l.get("verification_status"), "| inv:", l.get("inventory"), l.get("inventory_confirmed"), "| orderable:", l.get("orderable"), "| cost:", l.get("cost"), l.get("currency"), "ship:", l.get("shipping_cost"), "| tracking:", l.get("tracking_available"))
+                        "| verify:", l.get("verification_status"), "| inv:", l.get("inventory"), l.get("inventory_confirmed"), "| orderable:", l.get("orderable"), "| cost:", l.get("cost"), l.get("currency"), "ship:", l.get("shipping_cost"), "| tracking:", l.get("tracking_available"), "| next_verify:", l.get("next_verification_at"), "attempts:", l.get("verification_attempts"), "err:", l.get("verification_error"), "| listing_id:", l.get("id"))
               print("  demand_matches:", p.get("demand_matches"))
               print("  opportunity_intelligence:", {k: oi.get(k) for k in ("sellability_state", "lifecycle_status", "demand_score", "selection_eligible", "overall_confidence", "filter_state", "profit_state", "profit_calculable", "latest_test_status", "updated_at")} if oi else None)
               if oi: print("  oi.missing:", (oi.get("metadata") or {}).get("missing"))
               print("  sales_tests:", p.get("sales_tests"))
               for s in p.get("shop_listings") or []:
-                  print("  shop_listing:", s.get("id"), s.get("published"), s.get("pipeline_stage"), s.get("pipeline_reason"), "| gate_passed:", s.get("sales_test_gate_passed"), "| base:", s.get("base_item_id"))
+                  print("  shop_listing:", s.get("id"), "variant:", s.get("supplier_name"), s.get("supplier_product_id"), s.get("supplier_variant_id"), "sl:", s.get("supplier_listing_id"), "|", s.get("published"), s.get("pipeline_stage"), s.get("pipeline_reason"), "| gate_passed:", s.get("sales_test_gate_passed"), "| base:", s.get("base_item_id"))
               print("  newfind:", p.get("newfind"))
               print("  gate_dry_run:", p.get("gate_dry_run"))
           PY
