@@ -37,21 +37,21 @@ export default function HomePage() {
 
         <div className="relative mx-auto grid w-full max-w-[1400px] gap-14 px-5 py-16 sm:px-8 sm:py-20 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)] lg:items-center lg:px-10 lg:py-28">
           <div className="max-w-4xl">
-            <div className="flex items-center gap-3 text-[10px] font-mono uppercase tracking-[0.34em] text-cyan-300/80">
+            <div className="tracer-reveal flex items-center gap-3 text-[10px] font-mono uppercase tracking-[0.34em] text-cyan-300/80">
               <span className="h-px w-8 bg-cyan-300/50" aria-hidden="true" />
               TRACER
               <span className="text-zinc-700">AI commerce intelligence</span>
             </div>
-            <h1 className="mt-7 text-[clamp(3.5rem,8vw,7.6rem)] font-medium leading-[0.88] tracking-[-0.065em] text-zinc-50">
+            <h1 className="tracer-reveal tracer-reveal-delay-1 mt-7 text-[clamp(3.5rem,8vw,7.6rem)] font-medium leading-[0.88] tracking-[-0.065em] text-zinc-50">
               次に、
               <span className="block text-cyan-200">試してみたい。</span>
             </h1>
-            <p className="mt-8 max-w-2xl text-[15px] leading-8 text-zinc-300 sm:text-lg sm:leading-9">
+            <p className="tracer-reveal tracer-reveal-delay-2 mt-8 max-w-2xl text-[15px] leading-8 text-zinc-300 sm:text-lg sm:leading-9">
               探す、比べる、確かめるを一つにつなぐ。<br className="hidden sm:block" />
               TRACERは「気になる商品」を、理由を持って試せるところまで丁寧につなぎます。
             </p>
 
-            <div className="mt-9 flex flex-wrap gap-3">
+            <div className="tracer-reveal tracer-reveal-delay-3 mt-9 flex flex-wrap gap-3">
               <Link href="/shop" className="group inline-flex min-h-12 items-center bg-cyan-300 px-6 py-3.5 text-xs font-semibold tracking-[0.08em] text-zinc-950 transition duration-300 hover:-translate-y-0.5 hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200">
                 商品を見る
                 <span className="ml-4 transition-transform duration-300 group-hover:translate-x-1" aria-hidden="true">→</span>
@@ -62,14 +62,14 @@ export default function HomePage() {
               </Link>
             </div>
 
-            <div className="mt-10 flex flex-wrap gap-x-7 gap-y-3 border-t border-white/8 pt-5 text-[11px] text-zinc-500">
+            <div className="tracer-reveal tracer-reveal-delay-3 mt-10 flex flex-wrap gap-x-7 gap-y-3 border-t border-white/8 pt-5 text-[11px] text-zinc-500">
               <span><span className="mr-2 text-cyan-300">✓</span>確認できた情報を優先</span>
               <span><span className="mr-2 text-cyan-300">✓</span>不明は推測で埋めない</span>
               <span><span className="mr-2 text-cyan-300">✓</span>実測を次へ返す</span>
             </div>
           </div>
 
-          <div className="relative lg:justify-self-end lg:w-full lg:max-w-[440px]">
+          <div className="tracer-reveal tracer-reveal-delay-2 relative lg:justify-self-end lg:w-full lg:max-w-[440px]">
             <div className="absolute -inset-4 border border-cyan-300/5" aria-hidden="true" />
             <div className="relative border border-white/10 bg-[#0a0d10]/90 p-6 shadow-2xl shadow-cyan-950/20 backdrop-blur sm:p-8">
               <div className="flex items-center justify-between border-b border-white/8 pb-5">
@@ -103,6 +103,15 @@ export default function HomePage() {
                 <p className="text-[11px] leading-5 text-zinc-500">
                   条件が足りない商品は、見栄えのために公開しません。確認できるまで次の循環へ戻します。
                 </p>
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-px overflow-hidden border border-white/6 bg-white/6" aria-label="TRACER signal readout">
+                {[["EVIDENCE", "01"], ["GATE", "READY"], ["LOOP", "LIVE"]].map(([label, value]) => (
+                  <div key={label} className="bg-[#080b0e] px-3 py-2.5">
+                    <p className="font-mono text-[7px] tracking-[0.16em] text-zinc-700">{label}</p>
+                    <p className="mt-1 font-mono text-[9px] text-cyan-200/75">{value}</p>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -146,8 +155,8 @@ export default function HomePage() {
         </div>
 
         <div className="mt-8 grid gap-px overflow-hidden border border-white/8 bg-white/8 sm:grid-cols-2 lg:grid-cols-4">
-          {actions.map((action) => (
-            <Link key={action.href} href={action.href} className="group relative min-h-[230px] bg-[#080b0e] p-6 transition duration-500 hover:-translate-y-1 hover:bg-[#0d1115] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-inset sm:p-7">
+          {actions.map((action, index) => (
+            <Link key={action.href} href={action.href} className={`group relative min-h-[230px] bg-[#080b0e] p-6 transition duration-500 hover:-translate-y-1 hover:bg-[#0d1115] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-inset sm:p-7 tracer-reveal tracer-reveal-delay-${(index % 3) + 1}`}>
               <div className="flex items-center justify-between">
                 <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-zinc-600">{action.eyebrow}</span>
                 <span className="text-zinc-700 transition group-hover:translate-x-1 group-hover:text-cyan-200" aria-hidden="true">↗</span>
@@ -176,8 +185,8 @@ export default function HomePage() {
             <p className="mt-5 max-w-md text-sm leading-7 text-zinc-500">「それっぽい」を大量に並べるのではなく、お客様が安心して次へ進める情報だけを積み上げます。</p>
           </div>
           <div className="grid gap-px overflow-hidden border border-white/8 bg-white/8 sm:grid-cols-2">
-            {principles.map(([number, title, copy]) => (
-              <article key={number} className="bg-[#080b0e] p-6 sm:p-7">
+            {principles.map(([number, title, copy], index) => (
+              <article key={number} className={`bg-[#080b0e] p-6 sm:p-7 tracer-reveal tracer-reveal-delay-${(index % 3) + 1}`}>
                 <span className="font-mono text-[10px] text-cyan-300/70">{number}</span>
                 <h3 className="mt-7 text-lg text-zinc-100">{title}</h3>
                 <p className="mt-2 text-sm leading-6 text-zinc-500">{copy}</p>
