@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { SiteHeader } from "@/components/site-header";
 import { TracerChat } from "@/components/tracer-chat";
 import "./globals.css";
+import "./tracer-award.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
