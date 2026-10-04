@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useShopCart } from "@/components/shop-cart";
+import { formatMoney } from "@/lib/intelligence/format-display";
 
 export function CheckoutForm() {
   const cart = useShopCart();
@@ -55,15 +56,20 @@ export function CheckoutForm() {
 
   if (cart.items.length === 0) {
     return (
-      <div className="border border-white/10 bg-[#0a0d10] px-6 py-14 text-center">
-        <h2 className="text-xl text-zinc-100">カートは空です。</h2>
+      <div className="relative overflow-hidden border border-white/10 bg-[#0a0d10] px-6 py-16 text-center">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/30 to-transparent" aria-hidden="true" />
+        <p className="text-[9px] font-mono uppercase tracking-[0.3em] text-zinc-700">Nothing to check out</p>
+        <h2 className="mt-3 text-xl text-zinc-100">カートは空です。</h2>
         <p className="mt-3 text-sm text-zinc-500">購入する商品を先に選んでください。</p>
+        <a href="/shop" className="mt-7 inline-flex min-h-11 items-center bg-cyan-300 px-6 text-xs font-semibold tracking-[0.08em] text-zinc-950 transition hover:-translate-y-0.5 hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200">商品を見る →</a>
       </div>
     );
   }
 
   const fieldClass = "mt-2 w-full border border-white/10 bg-[#07090b] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-700 hover:border-white/20 focus:border-cyan-300/60 focus:ring-1 focus:ring-cyan-300/20";
   const sectionClass = "border border-white/10 bg-[#0a0d10] p-5 sm:p-7";
+  const total = cart.items.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
+  const currency = cart.items[0]?.currency ?? null;
 
   return (
     <form
@@ -74,6 +80,10 @@ export function CheckoutForm() {
       }}
     >
       <div className="space-y-5">
+        <div className="flex items-center gap-2 border border-white/8 bg-[#0a0d10] px-4 py-3 text-[9px] font-mono uppercase tracking-[0.2em] text-zinc-600 sm:px-5" aria-label="購入手続きの進行状況">
+          <span className="text-cyan-200/80">01 Contact</span><span className="h-px flex-1 bg-white/10" /><span>02 Shipping</span><span className="h-px flex-1 bg-white/10" /><span>03 Payment</span><span className="h-px flex-1 bg-white/10" /><span>04 Final</span>
+        </div>
+
         <section className={sectionClass} aria-labelledby="contact-heading">
           <div className="flex items-start justify-between gap-6">
             <div><p className="text-[10px] font-mono uppercase tracking-[0.22em] text-zinc-600">01 / Contact</p><h2 id="contact-heading" className="mt-2 text-lg text-zinc-100">連絡先</h2></div>
@@ -113,19 +123,23 @@ export function CheckoutForm() {
       </div>
 
       <aside className="border border-cyan-300/15 bg-[#0a0d10] p-6 lg:sticky lg:top-24" aria-label="注文確認">
-        <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-cyan-300/60">Final check</p>
+        <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-cyan-300/60">04 / Final check</p>
         <h2 className="mt-3 text-xl tracking-[-0.03em] text-zinc-100">確認して、次へ。</h2>
         <div className="mt-6 space-y-3 border-y border-white/8 py-5">
           {cart.items.map((item) => (
             <div key={item.listingId} className="flex gap-3 text-xs">
               <span className="min-w-0 flex-1 leading-5 text-zinc-400">{item.title} × {item.qty}</span>
-              <span className="text-zinc-200">{item.currency} {item.unitPrice * item.qty}</span>
+              <span className="shrink-0 text-zinc-200">{formatMoney(item.unitPrice * item.qty, item.currency)}</span>
             </div>
           ))}
         </div>
-        <p className="mt-5 text-xs leading-5 text-zinc-600">カード決済の場合、次にStripeの安全な決済画面へ移動します。</p>
-        <button type="submit" disabled={busy} aria-busy={busy} className="group mt-6 flex min-h-12 w-full items-center justify-between bg-cyan-300 px-5 text-xs font-semibold tracking-[0.08em] text-zinc-950 transition hover:-translate-y-0.5 hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 disabled:cursor-wait disabled:opacity-50 disabled:hover:translate-y-0">
-          {busy ? "注文を処理しています…" : "注文を確定する"}<span className="text-lg transition-transform group-hover:translate-x-1" aria-hidden="true">→</span>
+        <div className="mt-5 flex items-end justify-between">
+          <span className="text-xs text-zinc-600">合計</span>
+          <span className="text-2xl tracking-[-0.03em] text-zinc-50">{formatMoney(total, currency)}</span>
+        </div>
+        <p className="mt-4 text-xs leading-5 text-zinc-600">カード決済の場合、次にStripeの安全な決済画面へ移動します。</p>
+        <button type="submit" disabled={busy} aria-busy={busy} className="group mt-6 flex min-h-12 w-full items-center justify-between bg-cyan-300 px-5 text-xs font-semibold tracking-[0.08em] text-zinc-950 transition duration-300 hover:-translate-y-0.5 hover:bg-cyan-200 hover:shadow-[0_12px_40px_rgba(34,211,238,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 disabled:cursor-wait disabled:opacity-50 disabled:hover:translate-y-0">
+          {busy ? "注文を処理しています…" : "注文を確定する"}<span className="text-lg transition-transform duration-300 group-hover:translate-x-1" aria-hidden="true">→</span>
         </button>
         {error ? <p role="alert" className="mt-4 border border-amber-300/15 bg-amber-300/[0.025] p-3 text-xs leading-5 text-amber-200">{error}</p> : null}
         <p className="mt-4 text-center text-[10px] tracking-[0.08em] text-zinc-700">TRACER · VERIFIED COMMERCE FLOW</p>
