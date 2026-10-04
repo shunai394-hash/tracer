@@ -1,6 +1,13 @@
 import { CheckoutForm } from "@/components/checkout-form";
 
 export default function CheckoutPage() {
+  const steps = [
+    ["01", "Contact"],
+    ["02", "Shipping"],
+    ["03", "Payment"],
+    ["04", "Confirm"],
+  ] as const;
+
   return (
     <main className="flex-1 bg-[#07090b]">
       <section className="relative overflow-hidden border-b border-white/8">
@@ -24,12 +31,7 @@ export default function CheckoutPage() {
             </div>
           </div>
           <div className="tracer-reveal tracer-reveal-delay-3 mt-10 grid max-w-2xl grid-cols-4 gap-2" aria-label="購入手続きの進行状況">
-            {[
-              ["01", "Contact"],
-              ["02", "Shipping"],
-              ["03", "Payment"],
-              ["04", "Confirm"],
-            ].map(([number, label]) => (
+            {steps.map(([number, label]) => (
               <div key={label} className="space-y-2">
                 <div className="h-px bg-cyan-300/70" />
                 <div className="flex items-center gap-2 text-[9px] font-mono uppercase tracking-[0.14em]">
