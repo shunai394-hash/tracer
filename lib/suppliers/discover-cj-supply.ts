@@ -552,6 +552,7 @@ export async function discoverAndCreateCjSupply(
         }
 
         const salePrice = yenPrice(cost, freight, fxRate);
+        const variantBarcode = typeof variant.barcode === "string" ? variant.barcode : null;
         const sourceRef = `cj:${candidate.id}:${variant.vid}`;
         const identityKey = sourceRef;
         const now = new Date().toISOString();
@@ -609,6 +610,7 @@ export async function discoverAndCreateCjSupply(
               supplier_product_id: candidate.id,
               supplier_variant_id: variant.vid,
               cj_variant_id: variant.vid,
+              gtin: variantBarcode,
               orderable: true,
               price_confirmed: true,
               inventory_confirmed: true,
@@ -641,6 +643,7 @@ export async function discoverAndCreateCjSupply(
           query,
           fxRate,
           sellingPriceJpy: salePrice,
+          variantBarcode,
         });
         discovered++;
         verified++;
