@@ -77,7 +77,9 @@ export async function resolveMarketplaceIdentity(args: {
   if (!barcode) return null;
   const supplyIds = identifiersFromRecord({ gtin: barcode });
   if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc) return null;
-  // A marketplace snapshot can contain many rows for the same canonical product.\n  // Identity cardinality must therefore be measured by canonical product_id, not snapshot row id.\n  const matchesByProduct = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
+  // A marketplace snapshot can contain many rows for the same canonical product.
+  // Identity cardinality must therefore be measured by canonical product_id, not snapshot row id.
+  const matchesByProduct = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
   for (const value of barcodeCandidates(barcode)) {
     const clauses = ["jan", "gtin", "ean", "upc"].map((column) => `${column}.eq.${value}`);
     const { data: bestsellers, error } = await args.db.from("marketplace_bestsellers").select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand,fetched_at").or(clauses.join(",")).limit(50);
@@ -106,9 +108,17 @@ export async function resolveMarketplaceIdentity(args: {
       }
     }
   }
-  if (matchesByKey.size !== 1) return null;
-  return [...matchesByKey.values()][0];
+  if (matchesByProduct.size !== 1) return null;
+  const match = [...matchesByProduct.values()][0];
+  return {
+    bestsellerId: match.bestsellerId,
+    productId: match.productId,
+    method: match.method,
+    confidence: match.confidence,
+    rationale: match.rationale,
+  };
 }
+
 export async function persistCjSupplyIntelligence(
   args: PersistCjSupplyIntelligenceArgs,
   options: { identity?: MarketplaceIdentity | null } = {},
