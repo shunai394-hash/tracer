@@ -1,0 +1,183 @@
+/* Award Pass 13 — art direction, interaction restraint, and responsive polish.
+   Intent: make TRACER feel authored rather than assembled from dashboard patterns. */
+
+:root {
+  --tracer-ink: #05070a;
+  --tracer-paper: #f4f4f5;
+  --tracer-muted: rgba(161,161,170,.58);
+  --tracer-line: rgba(255,255,255,.075);
+  --tracer-signal: #a5f3fc;
+  --tracer-ease: cubic-bezier(.22,1,.36,1);
+}
+
+/* Keep the visual field atmospheric, not noisy. */
+body::before {
+  opacity: .72;
+  background-size: 64px 64px;
+  mask-image: linear-gradient(180deg, rgba(0,0,0,.55), transparent 76%);
+}
+
+body::after { opacity: .012; }
+
+/* Header: quiet, precise, and visually separated from the signal field. */
+header.sticky {
+  isolation: isolate;
+  border-bottom-color: rgba(255,255,255,.09);
+  box-shadow: 0 1px 0 rgba(165,243,252,.025), 0 16px 48px rgba(0,0,0,.14);
+}
+
+header.sticky > div { position: relative; }
+header.sticky > div::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(165,243,252,.16) 22%, rgba(165,243,252,.04) 72%, transparent);
+}
+
+/* Home hero: introduce a deliberate typographic interruption. */
+main > section:first-of-type h1 {
+  text-wrap: balance;
+  max-width: 8.6ch;
+}
+
+main > section:first-of-type h1 span {
+  position: relative;
+  display: inline-block;
+}
+
+main > section:first-of-type h1 span::after {
+  content: "";
+  position: absolute;
+  left: .14em;
+  right: -.08em;
+  bottom: -.11em;
+  height: 1px;
+  transform: scaleX(.2);
+  transform-origin: left;
+  background: linear-gradient(90deg, rgba(165,243,252,.9), transparent);
+  transition: transform 900ms var(--tracer-ease), opacity 500ms ease;
+  opacity: .5;
+}
+
+main > section:first-of-type:hover h1 span::after,
+main > section:first-of-type:focus-within h1 span::after {
+  transform: scaleX(1);
+  opacity: .85;
+}
+
+/* Make the right-hand specimen feel like a physical instrument. */
+.tracer-specimen {
+  filter: drop-shadow(0 30px 80px rgba(0,0,0,.3));
+}
+
+.tracer-specimen::before {
+  content: "FIELD / 01";
+  position: absolute;
+  right: 0;
+  top: -28px;
+  font: 7px/1 var(--font-geist-mono), monospace;
+  letter-spacing: .24em;
+  color: rgba(161,161,170,.38);
+}
+
+/* Route cards become editorial panels instead of four equal dashboard tiles. */
+main > section:nth-of-type(3) > div:nth-child(2) > div:last-child {
+  border-color: rgba(255,255,255,.1);
+  box-shadow: 0 30px 90px rgba(0,0,0,.16);
+}
+
+main > section:nth-of-type(3) > div:nth-child(2) > div:last-child > a {
+  min-height: 310px;
+  isolation: isolate;
+  overflow: hidden;
+  transition: transform 700ms var(--tracer-ease), background-color 500ms ease, border-color 500ms ease;
+}
+
+main > section:nth-of-type(3) > div:nth-child(2) > div:last-child > a::before {
+  content: attr(href);
+  position: absolute;
+  right: 22px;
+  bottom: 17px;
+  z-index: -1;
+  font: 8px/1 var(--font-geist-mono), monospace;
+  letter-spacing: .14em;
+  color: rgba(161,161,170,.055);
+  transition: color 500ms ease, transform 700ms var(--tracer-ease);
+}
+
+main > section:nth-of-type(3) > div:nth-child(2) > div:last-child > a:hover::before {
+  color: rgba(165,243,252,.12);
+  transform: translate(-8px,-4px);
+}
+
+main > section:nth-of-type(3) > div:nth-child(2) > div:last-child > a:hover {
+  transform: translateY(-5px);
+}
+
+/* Stronger keyboard affordance without making the visual language louder. */
+a:focus-visible, button:focus-visible {
+  outline: 1px solid rgba(165,243,252,.92);
+  outline-offset: 4px;
+  box-shadow: 0 0 0 4px rgba(165,243,252,.06);
+}
+
+/* Touch targets: preserve the art direction while meeting practical mobile use. */
+@media (max-width: 767px) {
+  main > section:first-of-type {
+    min-height: calc(100svh - 72px);
+  }
+
+  main > section:first-of-type h1 {
+    max-width: 7.2ch;
+    font-size: clamp(3.75rem, 18vw, 6.2rem);
+    line-height: .84;
+  }
+
+  main > section:first-of-type .tracer-reveal-delay-2 {
+    margin-top: 32px;
+  }
+
+  main > section:first-of-type a {
+    min-height: 48px;
+  }
+
+  main > section:nth-of-type(3) > div:nth-child(2) > div:last-child {
+    box-shadow: 0 22px 60px rgba(0,0,0,.2);
+  }
+
+  main > section:nth-of-type(3) > div:nth-child(2) > div:last-child > a {
+    min-height: 240px;
+  }
+
+  main > section:nth-of-type(3) > div:nth-child(2) > div:last-child > a::before {
+    right: 16px;
+    bottom: 14px;
+    font-size: 7px;
+  }
+}
+
+@media (min-width: 1440px) {
+  main > section:first-of-type h1 {
+    max-width: 7.8ch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  main > section:first-of-type h1 span::after,
+  main > section:nth-of-type(3) > div:nth-child(2) > div:last-child > a,
+  main > section:nth-of-type(3) > div:nth-child(2) > div:last-child > a::before {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  header.sticky > div::after,
+  main > section:first-of-type h1 span::after,
+  main > section:nth-of-type(3) > div:nth-child(2) > div:last-child > a::before {
+    display: none;
+  }
+}
