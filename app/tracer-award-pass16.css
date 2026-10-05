@@ -144,3 +144,27 @@ footer::after {
   footer::after,
   #main-content::before { display: none; }
 }
+
+/* Pass 16.1 — remove decorative drift and strengthen focus, reading measure, and touch ergonomics. */
+:where(a,button,input,select,textarea):focus-visible{
+  outline:2px solid rgba(165,243,252,.72);
+  outline-offset:3px;
+}
+main :where(a,button)[aria-disabled="true"]{
+  cursor:not-allowed;
+  filter:saturate(.45);
+}
+main :where(input,select,textarea)::placeholder{
+  color:rgba(161,161,170,.42);
+}
+main :where(.max-w-md,.max-w-lg,.max-w-xl,.max-w-2xl,.max-w-3xl,.max-w-4xl){
+  text-wrap:pretty;
+}
+@media(max-width:767px){
+  main :where(button,[role="button"]){
+    min-height:44px;
+  }
+  main :where(input,select,textarea){
+    min-height:44px;
+  }
+}
