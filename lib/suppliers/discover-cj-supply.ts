@@ -396,7 +396,7 @@ export async function discoverAndCreateCjSupply(
       if (productInsert.error) throw new Error(productInsert.error.message);
       const productId = String(productInsert.data.id);
       const supplierInsert = await upsertSupplierListing(db, {
-        supplier: "cj", external_id: candidate.variantId, sku: null, title: detail.title, product_id: productId,
+        supplier: "cj", external_id: candidate.variantId, sku: null, title: detail.title, product_id: productId,\n        gtin: typeof (await Promise.resolve(undefined)) === "string" ? null : null,
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
         order_method: "cj_api", api_available: true, identity_method: "supply_discovered",
         identity_status: "supply_discovered", identity_confidence: 1, configured: true,
