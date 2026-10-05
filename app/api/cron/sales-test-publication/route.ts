@@ -98,7 +98,7 @@ export async function GET(request: Request) {
       [
         ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")),
       ].filter(Boolean),
-      3,
+      10,
     );
     const supplyDownstream = await promoteGatePassedListings(supplySelected.publishedListingIds);
 
