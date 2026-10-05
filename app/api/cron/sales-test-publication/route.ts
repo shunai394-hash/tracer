@@ -135,22 +135,6 @@ export async function GET(request: Request) {
         status: "succeeded",
         finished_at: new Date().toISOString(),
         duration_ms: Date.now() - startedAt,
-        processed: candidateIds.length,
-        failed: 0,
-        metadata: {
-          phase: "sales_test_publication",
-          mode: "market_linked_sales_test",
-          considered: decision.considered,
-          published: decision.published,
-        },
-      }).eq("id", cronRunId);
-    }
-
-    if (cronRunId) {
-      await supabase.from("cron_runs").update({
-        status: "succeeded",
-        finished_at: new Date().toISOString(),
-        duration_ms: Date.now() - startedAt,
         processed: supplySelected.considered + candidateIds.length,
         failed: 0,
         metadata: {
