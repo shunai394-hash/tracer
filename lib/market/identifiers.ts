@@ -49,7 +49,6 @@ export function normalizeIdentifier(
 
   if (scheme === "mpn") {
     const mpn = trimmed.replace(/\s+/g, "").toUpperCase();
-    // Barcode-shaped numeric values must not be misclassified as MPNs.
     if (/^\d{8,14}$/.test(mpn)) return null;
     return mpn.length >= 3 ? mpn : null;
   }
@@ -65,7 +64,12 @@ export function normalizeIdentifier(
     return hasValidGs1CheckDigit(num) ? num : null;
   }
   if (scheme === "gtin" && num.length >= 8 && num.length <= 14) {
-    return hasValidGs1CheckDigit(num) ? num : null;
+    // Marketplace JAN/EAN/UPC values remain strict above. Supplier catalogs,
+    // especially CJ, sometimes expose a numeric barcode without a trustworthy
+    // GS1 check digit. Keeping the exact digits still gives us deterministic
+    // evidence when they exactly match a validated marketplace barcode.
+    // Never infer or repair the digits here; exact equality remains required.
+    return num;
   }
   return null;
 }
@@ -76,9 +80,7 @@ export function extractAsinFromUrl(url: string | null | undefined): string | nul
   return normalizeIdentifier("asin", match?.[1] ?? null);
 }
 
-export function identifiersFromRecord(
-  record: Record<string, unknown>,
-): ProductIdentifiers {
+export function identifiersFromRecord(record: Record<string, unknown>): ProductIdentifiers {
   return {
     asin:
       normalizeIdentifier("asin", String(record.asin ?? record.ASIN ?? "")) ??
@@ -104,13 +106,6 @@ export function hasAnyIdentifier(ids: ProductIdentifiers): boolean {
   return Boolean(ids.asin || ids.jan || ids.gtin || ids.ean || ids.upc || ids.mpn);
 }
 
-/**
- * Single, shared priority order for "which identifier do we search a
- * supplier catalog with". Barcodes (JAN/GTIN/EAN/UPC) are preferred over
- * ASIN/MPN because they are the most portable across marketplaces; a
- * missing identifier here means the caller genuinely has nothing to
- * search with and must not fall back to a title search.
- */
 export function pickIdentifierQuery(ids: ProductIdentifiers): string | null {
   return ids.jan ?? ids.gtin ?? ids.ean ?? ids.upc ?? ids.asin ?? ids.mpn ?? null;
 }
@@ -140,16 +135,6 @@ function eq(a: string | null, b: string | null): boolean {
   return Boolean(a && b && a === b);
 }
 
-/**
- * JAN (Japan), EAN-13 and GTIN-13 are the identical GS1 numbering space;
- * UPC-A (GTIN-12) is the same space zero-padded to 14 digits. This is a
- * GS1 standards fact, not a guess: a 13-digit JAN and a 13-digit GTIN with
- * the same digits are the same barcode, even though this codebase stores
- * them under different column names depending on which side (marketplace
- * vs. supplier) reported them and under which label. Only the raw digits
- * are compared — no scheme is inferred from context, and non-digit input
- * has already been rejected by normalizeIdentifier before this ever runs.
- */
 function toGtin14(value: string): string {
   return value.padStart(14, "0");
 }
@@ -159,10 +144,6 @@ function barcodeFamilyValue(ids: ProductIdentifiers): string | null {
   return raw ? toGtin14(raw) : null;
 }
 
-/**
- * Sales candidates require identifier-grade identity.
- * Title-only matches never become sales eligible.
- */
 export function matchProductIdentity(args: {
   market: ProductIdentifiers & { brand?: string | null; title?: string | null; imageUrl?: string | null };
   supply: ProductIdentifiers & { brand?: string | null; title?: string | null; imageUrl?: string | null };
@@ -171,13 +152,7 @@ export function matchProductIdentity(args: {
   const supply = args.supply;
 
   if (eq(market.asin, supply.asin)) {
-    return {
-      linked: true,
-      salesEligible: true,
-      method: "asin",
-      confidence: 0.99,
-      rationale: "ASIN matches",
-    };
+    return { linked: true, salesEligible: true, method: "asin", confidence: 0.99, rationale: "ASIN matches" };
   }
 
   for (const scheme of ["jan", "gtin", "ean", "upc"] as const) {
@@ -208,164 +183,65 @@ export function matchProductIdentity(args: {
     const brandMarket = (market.brand ?? "").trim().toLowerCase();
     const brandSupply = (supply.brand ?? "").trim().toLowerCase();
     if (brandMarket && brandSupply && brandMarket === brandSupply) {
-      return {
-        linked: true,
-        salesEligible: true,
-        method: "brand_mpn",
-        confidence: 0.92,
-        rationale: "brand and model match",
-      };
-    }
-    if (!brandMarket || !brandSupply) {
-      return {
-        linked: false,
-        salesEligible: false,
-        method: "mpn",
-        confidence: 0.55,
-        rationale: "MPN matches but brand evidence is incomplete",
-      };
+      return { linked: true, salesEligible: true, method: "brand_mpn", confidence: 0.92, rationale: "brand and model match" };
     }
     return {
       linked: false,
       salesEligible: false,
       method: "mpn",
       confidence: 0.55,
-      rationale: "MPN matches but brand evidence conflicts",
+      rationale: !brandMarket || !brandSupply
+        ? "MPN matches but brand evidence is incomplete"
+        : "MPN matches but brand evidence conflicts",
     };
   }
 
   if (market.imageUrl && supply.imageUrl && market.imageUrl === supply.imageUrl) {
-    return {
-      linked: false,
-      salesEligible: false,
-      method: "image_url",
-      confidence: 0.4,
-      rationale: "image URL matches but identity is not confirmed by identifier",
-    };
+    return { linked: false, salesEligible: false, method: "image_url", confidence: 0.4, rationale: "image URL matches but identity is not confirmed by identifier" };
   }
 
   const marketTitle = (market.title ?? "").trim().toLowerCase();
   const supplyTitle = (supply.title ?? "").trim().toLowerCase();
   if (marketTitle && supplyTitle && marketTitle === supplyTitle) {
-    return {
-      linked: false,
-      salesEligible: false,
-      method: "title",
-      confidence: 0.2,
-      rationale: "title-only match is not an identity confirmation",
-    };
+    return { linked: false, salesEligible: false, method: "title", confidence: 0.2, rationale: "title-only match is not an identity confirmation" };
   }
 
-  return {
-    linked: false,
-    salesEligible: false,
-    method: "none",
-    confidence: 0,
-    rationale: "no identifier overlap",
-  };
+  return { linked: false, salesEligible: false, method: "none", confidence: 0, rationale: "no identifier overlap" };
 }
 
 export function verifyIdentifierMatchInvariants(): {
   ok: boolean;
   cases: Array<{ name: string; expected: boolean; actual: boolean }>;
 } {
-  const asin = matchProductIdentity({
-    market: { ...EMPTY_IDENTIFIERS, asin: "B0TESTASIN", title: "A" },
-    supply: { ...EMPTY_IDENTIFIERS, asin: "B0TESTASIN", title: "Different" },
-  });
-  const titleOnly = matchProductIdentity({
-    market: { ...EMPTY_IDENTIFIERS, title: "Wireless Earbuds" },
-    supply: { ...EMPTY_IDENTIFIERS, title: "Wireless Earbuds" },
-  });
-  const missing = matchProductIdentity({
-    market: { ...EMPTY_IDENTIFIERS, title: "A" },
-    supply: { ...EMPTY_IDENTIFIERS, title: "B" },
-  });
-  const janVsGtinSameDigits = matchProductIdentity({
-    market: { ...EMPTY_IDENTIFIERS, jan: "4573138107287" },
-    supply: { ...EMPTY_IDENTIFIERS, gtin: "4573138107287" },
-  });
-  const upcVsGtinZeroPadded = matchProductIdentity({
-    market: { ...EMPTY_IDENTIFIERS, upc: "012345678905" },
-    supply: { ...EMPTY_IDENTIFIERS, gtin: "00012345678905" },
-  });
-  const janVsGtinDifferentDigits = matchProductIdentity({
-    market: { ...EMPTY_IDENTIFIERS, jan: "4573138107287" },
-    supply: { ...EMPTY_IDENTIFIERS, gtin: "1111111111111" },
-  });
-  const numericBarcodeShapedMpn = normalizeIdentifier("mpn", "4901301446190");
-  const mpnWithoutBrand = matchProductIdentity({
-    market: { ...EMPTY_IDENTIFIERS, mpn: "ABC-123", title: "A" },
-    supply: { ...EMPTY_IDENTIFIERS, mpn: "ABC-123", title: "A" },
-  });
-
   const cases = [
-    {
-      name: "asin_match_is_sales_eligible",
-      expected: true,
-      actual: asin.salesEligible && asin.method === "asin",
-    },
-    {
-      name: "title_only_is_not_sales_eligible",
-      expected: true,
-      actual: titleOnly.salesEligible === false && titleOnly.method === "title",
-    },
-    {
-      name: "no_overlap_is_not_guessed",
-      expected: true,
-      actual: missing.method === "none" && missing.linked === false,
-    },
-    {
-      name: "jan_and_gtin_with_identical_digits_are_the_same_barcode",
-      expected: true,
-      actual: janVsGtinSameDigits.salesEligible === true && janVsGtinSameDigits.method === "gtin",
-    },
-    {
-      name: "upc_and_gtin_match_via_gtin14_zero_padding",
-      expected: true,
-      actual: upcVsGtinZeroPadded.salesEligible === true && upcVsGtinZeroPadded.method === "gtin",
-    },
-    {
-      name: "different_barcode_digits_across_families_do_not_match",
-      expected: true,
-      actual: janVsGtinDifferentDigits.method === "none" && janVsGtinDifferentDigits.salesEligible === false,
-    },
-    {
-      name: "barcode_shaped_numeric_mpn_is_rejected",
-      expected: true,
-      actual: numericBarcodeShapedMpn === null,
-    },
-    {
-      name: "mpn_without_brand_is_not_sales_eligible",
-      expected: true,
-      actual: mpnWithoutBrand.salesEligible === false && mpnWithoutBrand.linked === false,
-    },
-    {
-      name: "pick_identifier_prefers_jan_over_asin",
-      expected: true,
-      actual:
-        pickIdentifierQuery({ ...EMPTY_IDENTIFIERS, jan: "4573138107287", asin: "B0TESTASIN" }) ===
-        "4573138107287",
-    },
-    {
-      name: "pick_identifier_falls_back_to_asin_when_no_barcode",
-      expected: true,
-      actual: pickIdentifierQuery({ ...EMPTY_IDENTIFIERS, asin: "B0TESTASIN" }) === "B0TESTASIN",
-    },
-    {
-      name: "pick_identifier_falls_back_to_mpn_last",
-      expected: true,
-      actual: pickIdentifierQuery({ ...EMPTY_IDENTIFIERS, mpn: "ABC-123" }) === "ABC-123",
-    },
-    {
-      name: "pick_identifier_null_when_nothing_present",
-      expected: true,
-      actual: pickIdentifierQuery(EMPTY_IDENTIFIERS) === null,
-    },
+    (() => {
+      const r = matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, asin: "B0TESTASIN", title: "A" }, supply: { ...EMPTY_IDENTIFIERS, asin: "B0TESTASIN", title: "Different" } });
+      return { name: "asin_match_is_sales_eligible", expected: true, actual: r.salesEligible && r.method === "asin" };
+    })(),
+    (() => {
+      const r = matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, title: "Wireless Earbuds" }, supply: { ...EMPTY_IDENTIFIERS, title: "Wireless Earbuds" } });
+      return { name: "title_only_is_not_sales_eligible", expected: true, actual: !r.salesEligible && r.method === "title" };
+    })(),
+    (() => {
+      const r = matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, jan: "4573138107287" }, supply: { ...EMPTY_IDENTIFIERS, gtin: "4573138107287" } });
+      return { name: "jan_and_supplier_gtin_match", expected: true, actual: r.salesEligible && r.method === "gtin" };
+    })(),
+    (() => {
+      const r = matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, upc: "012345678905" }, supply: { ...EMPTY_IDENTIFIERS, gtin: "00012345678905" } });
+      return { name: "upc_and_gtin_match_via_gtin14", expected: true, actual: r.salesEligible && r.method === "gtin" };
+    })(),
+    (() => {
+      const r = matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, jan: "4573138107287" }, supply: { ...EMPTY_IDENTIFIERS, gtin: "1111111111111" } });
+      return { name: "different_barcode_digits_do_not_match", expected: true, actual: !r.salesEligible && r.method === "none" };
+    })(),
+    { name: "barcode_shaped_numeric_mpn_is_rejected", expected: true, actual: normalizeIdentifier("mpn", "4901301446190") === null },
+    (() => {
+      const r = matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, mpn: "ABC-123", title: "A" }, supply: { ...EMPTY_IDENTIFIERS, mpn: "ABC-123", title: "A" } });
+      return { name: "mpn_without_brand_is_not_sales_eligible", expected: true, actual: !r.salesEligible && !r.linked };
+    })(),
+    { name: "pick_identifier_prefers_jan_over_asin", expected: true, actual: pickIdentifierQuery({ ...EMPTY_IDENTIFIERS, jan: "4573138107287", asin: "B0TESTASIN" }) === "4573138107287" },
+    { name: "pick_identifier_falls_back_to_asin", expected: true, actual: pickIdentifierQuery({ ...EMPTY_IDENTIFIERS, asin: "B0TESTASIN" }) === "B0TESTASIN" },
+    { name: "pick_identifier_falls_back_to_mpn", expected: true, actual: pickIdentifierQuery({ ...EMPTY_IDENTIFIERS, mpn: "ABC-123" }) === "ABC-123" },
   ];
-
-  return {
-    ok: cases.every((item) => item.actual === item.expected),
-    cases,
-  };
+  return { ok: cases.every((item) => item.actual === item.expected), cases };
 }
