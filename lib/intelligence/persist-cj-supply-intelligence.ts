@@ -40,19 +40,23 @@ async function readSupplierBarcode(args: {
   supplierVariantId: string;
   variantBarcode?: string | null;
 }): Promise<string> {
+  const isPlausibleBarcode = (value: string) => value.length >= 8 && value.length <= 14;
   const supplied = normalizeBarcode(args.variantBarcode);
-  if (supplied) return supplied;
+  if (isPlausibleBarcode(supplied)) return supplied;
   try {
     const variants = await fetchCJProductVariants(args.supplierProductId, { countryCode: "JP" });
     const variant = variants.find((item) => item.vid === args.supplierVariantId);
     const direct = normalizeBarcode(variant?.barcode);
-    if (direct) return direct;
+    if (isPlausibleBarcode(direct)) return direct;
   } catch (error) {
     console.warn("[cj-supply-identity] variant barcode lookup failed", { supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, error: error instanceof Error ? error.message : String(error) });
   }
   try {
     const detailVariant = await fetchCJVariantByVid(args.supplierVariantId);
-    if (detailVariant?.vid === args.supplierVariantId) return normalizeBarcode(detailVariant.barcode);
+    if (detailVariant?.vid === args.supplierVariantId) {
+      const barcode = normalizeBarcode(detailVariant.barcode);
+      if (isPlausibleBarcode(barcode)) return barcode;
+    }
   } catch (error) {
     console.warn("[cj-supply-identity] queryByVid barcode lookup failed", { supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, error: error instanceof Error ? error.message : String(error) });
   }
