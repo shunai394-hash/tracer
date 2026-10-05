@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { initializeProcurement } from "@/lib/procurement/init";
 import { getSupplierCapabilities } from "@/lib/procurement/registry";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
@@ -30,13 +31,17 @@ export type SupplySalesTestResult = {
 export async function selectAndPublishSupplySalesTests(
   productIds: string[],
   limit = 3,
-  /** Evaluate the same gate and report reasons without publishing anything. */
   options: { dryRun?: boolean } = {},
 ): Promise<SupplySalesTestResult & { eligibleProductIds?: string[] }> {
   const supabase = createSupabaseAdminClient();
   if (productIds.length === 0 || limit <= 0) {
     return { published: 0, publishedListingIds: [], considered: 0, rejected: [] };
   }
+
+  // Supplier capability lookup is fail-closed. Initialize the adapters before
+  // the first direct capability check; getAutoProcurementEligibility() also
+  // initializes, but it is intentionally called after this check below.
+  initializeProcurement();
 
   const uniqueProductIds = Array.from(new Set(productIds));
   const { data: intelligenceRows, error: intelligenceError } = await supabase
@@ -55,10 +60,6 @@ export async function selectAndPublishSupplySalesTests(
     .from("supplier_listings")
     .select("*")
     .in("product_id", uniqueProductIds)
-    // All suppliers share the same strict Sales Test Gate. Supplier-specific
-    // capability checks below decide whether the candidate can actually pass.
-    // supplier_listings has no updated_at column; fetched_at is the latest
-    // live supplier observation.
     .order("fetched_at", { ascending: false, nullsFirst: false });
   if (listingError) throw new Error(listingError.message);
 
@@ -104,8 +105,6 @@ export async function selectAndPublishSupplySalesTests(
     const missingCapabilities = required.filter(([, supported]) => !supported).map(([name]) => name);
     if (missingCapabilities.length) reasons.push(`supplier_capability_missing:${missingCapabilities.join(",")}`);
 
-    // Same shared AUTO gate as the market-linked sales test, so both
-    // publication paths agree on what "automatically procurable" means.
     const autoProcurement = getAutoProcurementEligibility(String(listing.supplier ?? ""));
     if (!autoProcurement.eligible) {
       reasons.push(`supplier_auto_procurement_capability_missing:${autoProcurement.missing.join("|")}`);
@@ -116,16 +115,7 @@ export async function selectAndPublishSupplySalesTests(
 
     if (listing.identity_status !== "linked") reasons.push("identity_not_confirmed");
     const identityMethod = String(listing.identity_method ?? "").trim().toLowerCase();
-    const identifierGradeMethods = new Set([
-      "asin",
-      "jan",
-      "gtin",
-      "ean",
-      "upc",
-      "mpn",
-      "brand_mpn",
-      "tracer_catalog",
-    ]);
+    const identifierGradeMethods = new Set(["asin", "jan", "gtin", "ean", "upc", "mpn", "brand_mpn", "tracer_catalog"]);
     if (!identifierGradeMethods.has(identityMethod)) reasons.push("identity_not_confirmed");
     if (num(listing.identity_confidence) === null || (num(listing.identity_confidence) ?? 0) < 0.88) reasons.push("identity_confidence_low");
 
@@ -157,7 +147,6 @@ export async function selectAndPublishSupplySalesTests(
     if (profit.contributionProfit !== null && profit.contributionProfit <= 0) reasons.push("profit_not_positive");
 
     if (intelligence.selection_eligible !== true) reasons.push("intelligence_selection_ineligible");
-    // Only TEST_READY (all 12 sellability checks) may publish; SELLABLE skips supply/demand/shipping.
     if (String(intelligence.sellability_state ?? "") !== "TEST_READY") reasons.push("sellability_not_ready");
     if (String(intelligence.filter_state ?? "") !== "PASS") reasons.push("intelligence_filter_not_pass");
     if (String(intelligence.profit_state ?? "") !== "PROFIT_OK") reasons.push("intelligence_profit_not_ok");
@@ -185,13 +174,7 @@ export async function selectAndPublishSupplySalesTests(
 
   eligible.sort((a, b) => b.quality - a.quality);
   if (options.dryRun) {
-    return {
-      published: 0,
-      publishedListingIds: [],
-      considered: uniqueProductIds.length,
-      rejected: rejected.slice(0, 50),
-      eligibleProductIds: eligible.map((item) => item.productId),
-    };
+    return { published: 0, publishedListingIds: [], considered: uniqueProductIds.length, rejected: rejected.slice(0, 50), eligibleProductIds: eligible.map((item) => item.productId) };
   }
   const chosen = eligible.slice(0, limit);
   const publishedListingIds: string[] = [];
@@ -200,9 +183,7 @@ export async function selectAndPublishSupplySalesTests(
     const title = String(item.base.normalized_title ?? ("TRACER product " + item.productId));
     const slug = slugify(title, item.productId);
     const now = new Date().toISOString();
-    const metadata = item.base.metadata && typeof item.base.metadata === "object" && !Array.isArray(item.base.metadata)
-      ? item.base.metadata as Record<string, unknown>
-      : {};
+    const metadata = item.base.metadata && typeof item.base.metadata === "object" && !Array.isArray(item.base.metadata) ? item.base.metadata as Record<string, unknown> : {};
     const payload = {
       product_id: item.productId,
       bestseller_id: null,
@@ -229,8 +210,6 @@ export async function selectAndPublishSupplySalesTests(
       selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:supply", "supply_intelligence_gate_passed", "selection_score_" + (num(item.intelligence.selection_score)?.toFixed(1) ?? "0")],
       missing: [],
       published_at: now,
-      // Both sales-test paths share one provenance marker; BASE creation and
-      // NEWFIND delivery accept only this reason.
       pipeline_stage: "PUBLISHED",
       pipeline_status: "published",
       pipeline_reason: SALES_TEST_GATE_PASSED,
@@ -241,24 +220,12 @@ export async function selectAndPublishSupplySalesTests(
 
     const existing = await supabase.from("shop_listings").select("id").eq("slug", slug).maybeSingle();
     if (existing.error) throw new Error(existing.error.message);
-    // A product may already have a listing created outside this gate (e.g. a
-    // CATALOG_TEST listing). Passing the gate converts that listing in place,
-    // keeping its slug/URL, instead of creating a second listing.
     let existingId = existing.data?.id ? String(existing.data.id) : null;
     let keepSlug = false;
     if (!existingId) {
-      const byProduct = await supabase
-        .from("shop_listings")
-        .select("id")
-        .eq("product_id", item.productId)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const byProduct = await supabase.from("shop_listings").select("id").eq("product_id", item.productId).order("updated_at", { ascending: false }).limit(1).maybeSingle();
       if (byProduct.error) throw new Error(byProduct.error.message);
-      if (byProduct.data?.id) {
-        existingId = String(byProduct.data.id);
-        keepSlug = true;
-      }
+      if (byProduct.data?.id) { existingId = String(byProduct.data.id); keepSlug = true; }
     }
     const { slug: _slug, ...payloadWithoutSlug } = payload;
     void _slug;
@@ -269,10 +236,5 @@ export async function selectAndPublishSupplySalesTests(
     if (result.data?.id) publishedListingIds.push(String(result.data.id));
   }
 
-  return {
-    published: publishedListingIds.length,
-    publishedListingIds,
-    considered: uniqueProductIds.length,
-    rejected: rejected.slice(0, 50),
-  };
+  return { published: publishedListingIds.length, publishedListingIds, considered: uniqueProductIds.length, rejected: rejected.slice(0, 50) };
 }
