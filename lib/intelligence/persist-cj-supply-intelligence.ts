@@ -77,17 +77,33 @@ export async function resolveMarketplaceIdentity(args: {
   if (!barcode) return null;
   const supplyIds = identifiersFromRecord({ gtin: barcode });
   if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc) return null;
-  const matchesByKey = new Map<string, MarketplaceIdentity>();
+  // A marketplace snapshot can contain many rows for the same canonical product.\n  // Identity cardinality must therefore be measured by canonical product_id, not snapshot row id.\n  const matchesByProduct = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
   for (const value of barcodeCandidates(barcode)) {
     const clauses = ["jan", "gtin", "ean", "upc"].map((column) => `${column}.eq.${value}`);
-    const { data: bestsellers, error } = await args.db.from("marketplace_bestsellers").select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand").or(clauses.join(",")).limit(50);
+    const { data: bestsellers, error } = await args.db.from("marketplace_bestsellers").select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand,fetched_at").or(clauses.join(",")).limit(50);
     if (error) throw new Error(`CJ marketplace identity lookup failed: ${error.message}`);
     for (const row of bestsellers ?? []) {
       if (typeof row.product_id !== "string" || !row.product_id.trim()) continue;
       const marketIds = identifiersFromRecord(row as Record<string, unknown>);
       const identity = matchProductIdentity({ market: { ...marketIds, brand: typeof row.brand === "string" ? row.brand : null, title: typeof row.title === "string" ? row.title : null }, supply: { ...supplyIds, title: null, brand: null } });
       if (!identity.salesEligible || !["gtin", "jan", "ean", "upc"].includes(identity.method)) continue;
-      matchesByKey.set(String(row.id), { bestsellerId: String(row.id), productId: String(row.product_id), method: identity.method as MarketplaceIdentity["method"], confidence: identity.confidence, rationale: identity.rationale });
+      const productId = String(row.product_id);
+      const candidate = {
+        bestsellerId: String(row.id),
+        productId,
+        method: identity.method as MarketplaceIdentity["method"],
+        confidence: identity.confidence,
+        rationale: identity.rationale,
+        fetchedAt: typeof row.fetched_at === "string" ? row.fetched_at : "",
+      };
+      const current = matchesByProduct.get(productId);
+      if (
+        !current ||
+        candidate.confidence > current.confidence ||
+        (candidate.confidence === current.confidence && candidate.fetchedAt > current.fetchedAt)
+      ) {
+        matchesByProduct.set(productId, candidate);
+      }
     }
   }
   if (matchesByKey.size !== 1) return null;
