@@ -17,6 +17,7 @@ import "./tracer-award-pass12.css";
 import "./tracer-award-pass13.css";
 import "./tracer-award-pass14.css";
 import "./tracer-award-pass15.css";
+import "./tracer-award-pass16.css";
 import "./tracer-editorial-pass2.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
