@@ -111,8 +111,13 @@ export async function resolveMarketplaceIdentity(args: {
   if (matchesByProduct.size !== 1) return null;
   const [match] = matchesByProduct.values();
   if (!match) return null;
-  const { fetchedAt: _fetchedAt, ...identity } = match;
-  return identity;
+  return {
+    bestsellerId: match.bestsellerId,
+    productId: match.productId,
+    method: match.method,
+    confidence: match.confidence,
+    rationale: match.rationale,
+  };
 }
 export async function persistCjSupplyIntelligence(
   args: PersistCjSupplyIntelligenceArgs,
