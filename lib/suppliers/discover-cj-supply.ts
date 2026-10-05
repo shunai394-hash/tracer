@@ -383,6 +383,9 @@ export async function discoverAndCreateCjSupply(
         continue;
       }
       const salePrice = yenPrice(cost, freight, fxRate);
+      const seededVariants = await fetchCJProductVariants(candidate.id, { countryCode: "JP" });
+      const seededVariant = seededVariants.find((item) => item.vid === candidate.variantId);
+      const variantBarcode = typeof seededVariant?.barcode === "string" ? seededVariant.barcode : null;
       const sourceRef = `cj:${candidate.id}:${candidate.variantId}`;
       // Keep the product this supplier listing already belongs to (a listed
       // product must not be split into a second product row).
@@ -396,11 +399,12 @@ export async function discoverAndCreateCjSupply(
       if (productInsert.error) throw new Error(productInsert.error.message);
       const productId = String(productInsert.data.id);
       const supplierInsert = await upsertSupplierListing(db, {
-        supplier: "cj", external_id: candidate.variantId, sku: null, title: detail.title, product_id: productId,\n        gtin: typeof (await Promise.resolve(undefined)) === "string" ? null : null,
+        supplier: "cj", external_id: candidate.variantId, sku: null, title: detail.title, product_id: productId,
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
         order_method: "cj_api", api_available: true, identity_method: "supply_discovered",
         identity_status: "supply_discovered", identity_confidence: 1, configured: true,
         supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
+        gtin: variantBarcode,
         orderable: true, price_confirmed: true, inventory_confirmed: true, tracking_available: cjTrackingAvailable,
         fetched_at: new Date().toISOString(), metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate }
       }, seededCandidate.supplierListingId);
@@ -422,6 +426,7 @@ export async function discoverAndCreateCjSupply(
         query,
         fxRate,
         sellingPriceJpy: salePrice,
+        variantBarcode,
       });
       discovered++;
       verified++;
