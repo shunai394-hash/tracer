@@ -17,6 +17,7 @@ import {
   variantsCompatible,
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
+import { marketplaceBarcodeCandidates } from "../lib/market/identifiers.ts";
 
 const results = [];
 const pending = [];
@@ -31,6 +32,23 @@ function test(group, name, fn) {
     record(false, error instanceof Error ? error.message : String(error));
   }
 }
+
+test("barcode candidates", "UPC expands to GTIN-14 with a leading zero", () => {
+  assert.deepEqual(marketplaceBarcodeCandidates("012345678905"), ["012345678905", "00012345678905"]);
+});
+test("barcode candidates", "EAN-13 expands to GTIN-14 without changing digits", () => {
+  assert.deepEqual(marketplaceBarcodeCandidates("4573138107287"), ["4573138107287", "04573138107287"]);
+});
+test("barcode candidates", "GTIN-14 with nonzero indicator is never shortened", () => {
+  assert.deepEqual(marketplaceBarcodeCandidates("14573138107284"), ["14573138107284"]);
+});
+test("barcode candidates", "leading-zero GTIN-14 may include its 13-digit form", () => {
+  assert.deepEqual(marketplaceBarcodeCandidates("04573138107287"), ["04573138107287", "4573138107287"]);
+});
+test("barcode candidates", "punctuation is normalized and empty input stays empty", () => {
+  assert.deepEqual(marketplaceBarcodeCandidates("  0123-4567 8905 "), ["012345678905", "00012345678905"]);
+  assert.deepEqual(marketplaceBarcodeCandidates(" -- "), []);
+});
 
 // Market product fixtures (JANs carry valid check digits).
 const index = buildIdentifierIndex(

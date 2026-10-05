@@ -172,8 +172,17 @@ export async function reverifyCjSupplyIdentities(options: {
     }
   }
 
-  const lastProcessedId = processed > 0 ? String(selectedRows[processed - 1]?.id) : afterId;
-  result.nextCursor = processed < selectedRows.length ? lastProcessedId : selectedRows.length < limit ? null : lastProcessedId;
+  // If a row failed transiently, rewind to just before it so the next run
+  // retries that row instead of permanently skipping it with the cursor.
+  const firstErrorIndex = selectedRows.findIndex((row) =>
+    result.errors.some((item) => item.supplierListingId === String(row.id)),
+  );
+  const lastProcessedId = firstErrorIndex >= 0
+    ? firstErrorIndex === 0 ? afterId : String(selectedRows[firstErrorIndex - 1]?.id)
+    : processed > 0 ? String(selectedRows[processed - 1]?.id) : afterId;
+  result.nextCursor = firstErrorIndex >= 0
+    ? lastProcessedId
+    : processed < selectedRows.length ? lastProcessedId : selectedRows.length < limit ? null : lastProcessedId;
 
   const now = new Date().toISOString();
   await db.from("cron_runs").insert({

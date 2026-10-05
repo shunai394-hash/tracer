@@ -3,7 +3,7 @@ import "server-only";
 import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
-import { identifiersFromRecord, matchProductIdentity } from "@/lib/market/identifiers";
+import { identifiersFromRecord, marketplaceBarcodeCandidates, matchProductIdentity } from "@/lib/market/identifiers";
 
 export type PersistCjSupplyIntelligenceArgs = {
   productId: string;
@@ -34,36 +34,38 @@ function normalizeBarcode(value: unknown): string {
   return typeof value === "string" ? value.trim().replace(/[^0-9]/g, "") : "";
 }
 
-function barcodeCandidates(value: string): string[] {
-  const digits = normalizeBarcode(value);
-  if (!digits) return [];
-  const candidates = new Set<string>([digits]);
-  if (digits.length === 12 || digits.length === 13) candidates.add(digits.padStart(14, "0"));
-  if (digits.length === 14) candidates.add(digits.slice(1));
-  return [...candidates];
-}
 
 async function readSupplierBarcode(args: {
   supplierProductId: string;
   supplierVariantId: string;
   variantBarcode?: string | null;
 }): Promise<string> {
+  const isPlausibleBarcode = (value: string) => value.length >= 8 && value.length <= 14;
+  const lookupErrors: string[] = [];
   const supplied = normalizeBarcode(args.variantBarcode);
-  if (supplied) return supplied;
+  if (isPlausibleBarcode(supplied)) return supplied;
   try {
     const variants = await fetchCJProductVariants(args.supplierProductId, { countryCode: "JP" });
     const variant = variants.find((item) => item.vid === args.supplierVariantId);
     const direct = normalizeBarcode(variant?.barcode);
-    if (direct) return direct;
+    if (isPlausibleBarcode(direct)) return direct;
   } catch (error) {
-    console.warn("[cj-supply-identity] variant barcode lookup failed", { supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, error: error instanceof Error ? error.message : String(error) });
+    const message = error instanceof Error ? error.message : String(error);
+    lookupErrors.push(`variant barcode lookup: ${message}`);
+    console.warn("[cj-supply-identity] variant barcode lookup failed", { supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, error: message });
   }
   try {
     const detailVariant = await fetchCJVariantByVid(args.supplierVariantId);
-    if (detailVariant?.vid === args.supplierVariantId) return normalizeBarcode(detailVariant.barcode);
+    if (detailVariant?.vid === args.supplierVariantId) {
+      const barcode = normalizeBarcode(detailVariant.barcode);
+      if (isPlausibleBarcode(barcode)) return barcode;
+    }
   } catch (error) {
-    console.warn("[cj-supply-identity] queryByVid barcode lookup failed", { supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, error: error instanceof Error ? error.message : String(error) });
+    const message = error instanceof Error ? error.message : String(error);
+    lookupErrors.push(`queryByVid barcode lookup: ${message}`);
+    console.warn("[cj-supply-identity] queryByVid barcode lookup failed", { supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, error: message });
   }
+  if (lookupErrors.length) throw new Error(`CJ variant barcode lookup failed: ${lookupErrors.join("; ")}`);
   return "";
 }
 
@@ -77,11 +79,15 @@ export async function resolveMarketplaceIdentity(args: {
   if (!barcode) return null;
   const supplyIds = identifiersFromRecord({ gtin: barcode });
   if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc) return null;
-  // A marketplace snapshot can contain many rows for the same canonical product.\n  // Identity cardinality must therefore be measured by canonical product_id, not snapshot row id.\n  const matchesByProduct = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
-  for (const value of barcodeCandidates(barcode)) {
+  // A marketplace snapshot can contain many rows for the same canonical product.
+  // Identity cardinality must therefore be measured by canonical product_id, not snapshot row id.
+  const matchesByProduct = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
+  for (const value of marketplaceBarcodeCandidates(barcode)) {
     const clauses = ["jan", "gtin", "ean", "upc"].map((column) => `${column}.eq.${value}`);
-    const { data: bestsellers, error } = await args.db.from("marketplace_bestsellers").select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand,fetched_at").or(clauses.join(",")).limit(50);
+    // Fetch one beyond the processing cap so a truncated result can never be mistaken for a unique identity.
+    const { data: bestsellers, error } = await args.db.from("marketplace_bestsellers").select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand,fetched_at").or(clauses.join(",")).limit(51);
     if (error) throw new Error(`CJ marketplace identity lookup failed: ${error.message}`);
+    if ((bestsellers?.length ?? 0) > 50) return null;
     for (const row of bestsellers ?? []) {
       if (typeof row.product_id !== "string" || !row.product_id.trim()) continue;
       const marketIds = identifiersFromRecord(row as Record<string, unknown>);
@@ -106,8 +112,16 @@ export async function resolveMarketplaceIdentity(args: {
       }
     }
   }
-  if (matchesByKey.size !== 1) return null;
-  return [...matchesByKey.values()][0];
+  if (matchesByProduct.size !== 1) return null;
+  const [match] = matchesByProduct.values();
+  if (!match) return null;
+  return {
+    bestsellerId: match.bestsellerId,
+    productId: match.productId,
+    method: match.method,
+    confidence: match.confidence,
+    rationale: match.rationale,
+  };
 }
 export async function persistCjSupplyIntelligence(
   args: PersistCjSupplyIntelligenceArgs,

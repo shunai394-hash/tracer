@@ -22,6 +22,16 @@ function digits(value: string): string {
   return value.replace(/\D/g, "");
 }
 
+/** Candidate forms for exact marketplace barcode lookup. Never strip a meaningful GTIN-14 indicator digit. */
+export function marketplaceBarcodeCandidates(value: string): string[] {
+  const normalized = digits(value.trim());
+  if (!normalized) return [];
+  const candidates = new Set<string>([normalized]);
+  if (normalized.length === 12 || normalized.length === 13) candidates.add(normalized.padStart(14, "0"));
+  if (normalized.length === 14 && normalized.startsWith("0")) candidates.add(normalized.slice(1));
+  return [...candidates];
+}
+
 function hasValidGs1CheckDigit(value: string): boolean {
   if (!/^\d{8,14}$/.test(value)) return false;
   const body = value.slice(0, -1);
