@@ -1,5 +1,6 @@
 ﻿import "server-only";
 
+import { initializeProcurement } from "@/lib/procurement/init";
 import { FAIL_CLOSED_SUPPLIER_CAPABILITIES, type SupplierCapabilities, type TracerSupplierAdapter } from "@/lib/procurement/types";
 
 const adapters = new Map<string, TracerSupplierAdapter>();
@@ -19,15 +20,18 @@ function normalizeSupplierName(value: string): string {
 export function getSupplierAdapter(
   supplierName: string,
 ): TracerSupplierAdapter | null {
+  initializeProcurement();
   return adapters.get(normalizeSupplierName(supplierName)) ?? null;
 }
 
 export function listSupplierAdapters(): string[] {
+  initializeProcurement();
   return Array.from(adapters.keys());
 }
 
 export function getSupplierCapabilities(
   supplierName: string,
 ): SupplierCapabilities {
+  initializeProcurement();
   return getSupplierAdapter(supplierName)?.capabilities ?? FAIL_CLOSED_SUPPLIER_CAPABILITIES;
 }
