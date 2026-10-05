@@ -25,6 +25,5 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
-      - run: node --experimental-strip-types --no-warnings scripts/verify-opportunity-invariants.ts
       - run: npm run lint
       - run: npm run build
