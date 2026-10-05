@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getDropshipSupplierConfig } from "@/lib/config/env";
@@ -339,7 +339,16 @@ export async function investigateDropshipForBestsellers(
 
   if (error) throw new Error(error.message);
 
-  await enrichAsinOnlyRows((rows ?? []) as Record<string, unknown>[]);
+  // Do not spend Bright Data calls enriching ASIN-only rows when every
+  // external supplier is unavailable. The internal-supply path above is
+  // authoritative and must remain cheap; once CJ/Orosy is configured this
+  // enrichment is re-enabled automatically so ASIN-only candidates can still
+  // acquire a supplier-searchable identifier.
+  const cjConfigured = Boolean(getCJConfig().apiKey);
+  const orosyConfigured = Boolean(supplierConfig.orosy);
+  if (cjConfigured || orosyConfigured) {
+    await enrichAsinOnlyRows((rows ?? []) as Record<string, unknown>[]);
+  }
 
   let processed = 0;
   let matched = 0;
@@ -360,15 +369,8 @@ export async function investigateDropshipForBestsellers(
   for (const row of rows ?? []) {
     processed += 1;
     const record = row as Record<string, unknown>;
-    // Shared with every other identity-derivation call site in the app
-    // (see lib/market/identifiers.ts): this also recovers ASIN from
-    // `product_url` when the column itself is empty, instead of only
-    // reading the `asin` column the way the old local helper did.
     const marketIds = identifiersFromRecord(record);
 
-    // TRACER-owned supply is the primary source. External supplier APIs are
-    // fallback discovery channels only; they must never be required for the
-    // core publication path.
     const internalSupply = await linkInternalSupplyForBestseller({
       bestseller: record,
       fetchedAt,
@@ -383,8 +385,7 @@ export async function investigateDropshipForBestsellers(
       });
       continue;
     }
-    // CJ product search does not return marketplace ASINs. ASIN is valid
-    // marketplace identity evidence, but not a CJ supplier-search key.
+
     const supplierSearchQueries = [
       marketIds.jan,
       marketIds.gtin,
@@ -400,10 +401,6 @@ export async function investigateDropshipForBestsellers(
       asin: null,
     });
 
-    // ASIN is a valid marketplace identity anchor, but CJ does not expose
-    // ASIN as a supplier search key. ASIN-only candidates therefore continue
-    // into the bounded title/brand discovery path below; identity is still
-    // accepted only after exact supplier evidence/variant-barcode matching.
     const hasMarketplaceIdentifier = Boolean(
       identifierQuery || marketIds.asin || supplierSearchQueries.length > 0,
     );
@@ -461,17 +458,7 @@ export async function investigateDropshipForBestsellers(
     let cjQuery: string | null = null;
     let cjProductId: string | null = null;
     try {
-      // Try every verified marketplace identifier, not just the first one.
-      // This matters for Amazon rows where ASIN is present but the supplier
-      // catalog is searchable by the separately verified MPN/JAN.
       const identifierQueries = supplierSearchQueries;
-
-      // CJ is rate-limited, so searching every identifier for every row and
-      // then inspecting 20 products creates a large serial request fan-out.
-      // Search identifiers in verified-priority order and stop immediately
-      // when CJ itself returns a product carrying an exact marketplace
-      // identifier. This preserves the strict identity gate while avoiding
-      // needless requests after identity is already proven.
       const searches: Awaited<ReturnType<typeof searchCJProducts>>[] = [];
       let directMatches: Awaited<ReturnType<typeof searchCJProducts>>["products"] = [];
 
@@ -508,9 +495,6 @@ export async function investigateDropshipForBestsellers(
             break;
           }
         } catch (error) {
-          // One identifier can be rejected or temporarily fail at CJ.
-          // Continue with the next independently verified identifier instead
-          // of discarding the entire bestseller row.
           console.error("[investigate-dropship] CJ search query failed, continuing", {
             bestsellerId: String(record.id),
             query,
@@ -519,379 +503,106 @@ export async function investigateDropshipForBestsellers(
         }
       }
 
-      // CJ listV2 can return zero results for marketplace JAN/GTIN values
-      // even when the catalog contains the product. Identifiers remain the
-      // only acceptable identity evidence, but they are not always useful
-      // as discovery keys. When identifier searches fail to prove identity,
-      // add a bounded title/brand discovery pass. Discovery may find a
-      // supplier candidate; it must still pass the exact variant-barcode
-      // identity gate below before it can become sellable.
-      if (directMatches.length === 0) {
-        const title = String(record.title ?? "").trim();
-        const brand = typeof record.brand === "string" ? record.brand.trim() : "";
-        const asciiTokens = title
-          .match(/[A-Za-z0-9][A-Za-z0-9+._-]{2,}/g)
-          ?.map((token) => token.toLowerCase()) ?? [];
-        const uniqueTokens = [...new Set(asciiTokens)].filter(
-          (token) => !["with", "for", "and", "the", "new", "type", "size"].includes(token),
-        );
-        const fullTitle = title.replace(/\s+/g, " ").trim().slice(0, 120);
-        const discoveryQueries = [
-          [brand, ...uniqueTokens.slice(0, 4)].filter(Boolean).join(" ").trim(),
-          uniqueTokens.slice(0, 3).join(" ").trim(),
-          [brand, fullTitle].filter(Boolean).join(" ").trim(),
-          fullTitle,
-        ].filter(
-          (query, index, values): query is string =>
-            query.length >= 3 && values.indexOf(query) === index,
-        ).slice(0, 3);
-
-        for (const query of discoveryQueries) {
-          cjQuery = query;
-          try {
-            const search = await searchCJProducts(query, { page: 1, size: 10 });
-            searches.push(search);
-          } catch (error) {
-            console.warn("[investigate-dropship] CJ title discovery failed; continuing", {
-              bestsellerId: String(record.id),
-              query,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
-      }
-
-      // If search did not prove identity at the product level, inspect a
-      // relevance-ranked fallback set for variant-level barcode evidence.
-      // Variant lookup is the expensive operation, so do not inspect all 10
-      // results blindly. Relevance is used only to prioritize expensive
-      // verification; it is never accepted as identity evidence.
-      const searchProducts = searches.flatMap((search) => search.products);
-      const marketTitle = String(record.title ?? "").toLowerCase();
-      const marketTokens = marketTitle
-        .split(/[^\p{L}\p{N}]+/u)
-        .map((token) => token.trim())
-        .filter((token) => token.length >= 2);
-      const marketMpn = marketIds.mpn?.toLowerCase() ?? null;
-      const scoredProducts = searchProducts.map((product, index) => {
-        const haystack = [product.title, product.sku]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        const tokenOverlap = marketTokens.reduce(
-          (score, token) => score + (haystack.includes(token) ? 1 : 0),
-          0,
-        );
-        const mpnMatch = marketMpn && haystack.includes(marketMpn) ? 100 : 0;
-        return { product, index, score: mpnMatch + tokenOverlap };
-      });
-      scoredProducts.sort((a, b) =>
-        b.score - a.score || a.index - b.index,
-      );
-      const prioritizedProducts = directMatches.length > 0
-        ? directMatches
-        : scoredProducts.slice(0, 5).map((item) => item.product);
-      const seenProductIds = new Set<string>();
-      for (const product of prioritizedProducts) {
-        if (seenProductIds.has(product.id)) continue;
-        seenProductIds.add(product.id);
-        cjProductId = product.id;
+      if (directMatches.length > 0) {
+        const product = directMatches[0];
+        cjProductId = product.pid;
         cjStage = "detail";
-        let detail = product;
-        try {
-          const queried = await getCJProductDetail(product.id);
-          if (queried) detail = queried;
-        } catch {
-          // Detail unknown does not invent shipping/barcode.
-        }
+        const detail = await getCJProductDetail(product.pid);
+        if (!detail) throw new Error("CJ product detail unavailable");
 
-        // CJ's own SKU is CJ's internal catalog id, not a marketplace
-        // identifier. The official CJ API documents the VARIANT barcode as a
-        // numeric identifier, so identity must be checked against variant
-        // barcodes before a supplier listing can become sales-eligible.
-        //
-        // This was the critical gap in the previous pipeline: we fetched
-        // /product/variant/query but only used it to choose a variant AFTER
-        // identity matching. Consequently a CJ product could contain the
-        // exact barcode needed to prove identity while the product-level
-        // payload appeared barcode-less, producing identity_not_confirmed.
-        let variants: Awaited<ReturnType<typeof fetchCJProductVariants>> = [];
-        cjStage = "variants";
-        try {
-          variants = await fetchCJProductVariants(detail.id, { countryCode: "JP" });
-        } catch {
-          // Variant lookup failure leaves identity unconfirmed rather than
-          // inventing an identifier.
-        }
-
-        // CJ's variant list can omit the barcode even when queryByVid exposes
-        // it. Recover the authoritative per-variant barcode before applying
-        // the strict identity gate. Never infer a barcode from SKU/title.
-        if (variants.some((variant) => !variant.barcode)) {
-          const enriched = await Promise.all(
-            variants.slice(0, 8).map(async (variant) => {
-              if (variant.barcode) return variant;
-              try {
-                const detailVariant = await fetchCJVariantByVid(variant.vid);
-                return detailVariant?.barcode
-                  ? { ...variant, barcode: detailVariant.barcode, sellPrice: detailVariant.sellPrice ?? variant.sellPrice }
-                  : variant;
-              } catch {
-                return variant;
-              }
-            }),
-          );
-          variants = enriched;
-        }
-
-        const variantIdentityMatches = variants
-          .map((variant) => {
-            const barcode = variant.barcode;
-            if (!barcode) return null;
-
-            const supplyIds = identifiersFromRecord({
-              asin: null,
-              jan: null,
-              gtin: barcode,
-              ean: null,
-              upc: null,
-              mpn: null,
-            });
-
-            const identity = matchProductIdentity({
-              market: {
-                ...marketIds,
-                brand: typeof record.brand === "string" ? record.brand : null,
-                title: String(record.title ?? ""),
-                imageUrl: typeof record.image_url === "string" ? record.image_url : null,
-              },
-              supply: {
-                ...supplyIds,
-                title: detail.title,
-                imageUrl: detail.imageUrl,
-              },
-            });
-
-            return { variant, supplyIds, identity };
-          })
-          .filter(
-            (
-              item,
-            ): item is {
-              variant: (typeof variants)[number];
-              supplyIds: ReturnType<typeof identifiersFromRecord>;
-              identity: ReturnType<typeof matchProductIdentity>;
-            } => item !== null,
-          );
-
-        // An exact marketplace/CJ barcode match identifies the variant even
-        // when the parent CJ product contains several variants. If there is
-        // no exact barcode match, retain the old strict identity rules.
-        const confirmedVariantMatches = variantIdentityMatches.filter(
-          (item) => item.identity.salesEligible,
-        );
-        const confirmedVariant =
-          confirmedVariantMatches.length === 1
-            ? confirmedVariantMatches[0]
-            : null;
-
-        const fallbackSupplyIds = identifiersFromRecord({
+        const detailIdentifiers = identifiersFromRecord({
           asin: null,
           jan: null,
-          gtin: detail.barcode ?? product.barcode,
+          gtin: detail.barcode,
           ean: null,
           upc: null,
-          mpn: null,
+          mpn: detail.mpn,
         });
+        const identity = matchProductIdentity({
+          market: {
+            ...marketIds,
+            brand: typeof record.brand === "string" ? record.brand : null,
+            title: String(record.title ?? ""),
+            imageUrl: typeof record.image_url === "string" ? record.image_url : null,
+          },
+          supply: { ...detailIdentifiers, title: detail.title, imageUrl: detail.imageUrl },
+        });
+        if (!identity.salesEligible) throw new Error("CJ identity verification failed");
 
-        const identity = confirmedVariant
-          ? confirmedVariant.identity
-          : matchProductIdentity({
-              market: {
-                ...marketIds,
-                brand: typeof record.brand === "string" ? record.brand : null,
-                title: String(record.title ?? ""),
-                imageUrl: typeof record.image_url === "string" ? record.image_url : null,
-              },
-              supply: {
-                ...fallbackSupplyIds,
-                title: detail.title,
-                imageUrl: detail.imageUrl,
-              },
-            });
-
-        const selectedVariant =
-          confirmedVariant?.variant ??
-          (variants.length === 1 ? variants[0] : null);
-
-        const supplyIds = confirmedVariant?.supplyIds ?? fallbackSupplyIds;
-        const supplyBarcode =
-          confirmedVariant?.variant.barcode ??
-          detail.barcode ??
-          product.barcode ??
-          null;
-
-        // Only an exactly matched barcode may select one variant from a
-        // multi-variant product. Otherwise a single-variant product may still
-        // be used if identity was already confirmed at product level.
-        const cjVariantId = identity.salesEligible && selectedVariant
-          ? selectedVariant.vid
-          : null;
-        const variantSku = identity.salesEligible && selectedVariant
-          ? selectedVariant.sku
-          : null;
-
-        // A product-level shipping field is often absent or stale. Once a
-        // concrete, sales-eligible CJ variant is known, ask CJ's official
-        // freight calculator for the current CN -> JP trial quote. Never
-        // turn a failed quote into zero; the publication gate must continue
-        // to treat shipping as unknown when CJ cannot quote it.
-        let observedShippingCost = asNumber(detail.shippingCost);
-        let verifiedInventory: number | null = null;
-        let inventoryConfirmed = false;
-        if (identity.salesEligible && selectedVariant) {
-          try {
-            verifiedInventory = await fetchCJVariantStock(selectedVariant.vid);
-            inventoryConfirmed = verifiedInventory !== null;
-          } catch (error) {
-            console.warn("[investigate-dropship] CJ variant stock lookup failed; inventory remains unknown", {
-              bestsellerId: String(record.id),
-              cjProductId: detail.id,
-              cjVariantId: selectedVariant.vid,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
-        if (identity.salesEligible && selectedVariant) {
-          try {
-            const freight = await calculateCJFreight(selectedVariant.vid, {
-              startCountryCode: "CN",
-              endCountryCode: "JP",
-              quantity: 1,
-              zip: "1000001",
-            });
-            if (freight !== null) observedShippingCost = freight;
-          } catch (error) {
-            console.warn("[investigate-dropship] CJ freight calculation failed; preserving existing shipping value", {
-              bestsellerId: String(record.id),
-              cjProductId: detail.id,
-              cjVariantId: selectedVariant.vid,
-              sourceCountryCode: "CN",
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
-
-        // A discovered CJ product is not a supplier offer until identity is
-        // proven. Never persist a title-only/semantic candidate as a
-        // supplier_listing: doing so attaches unrelated CJ inventory to a
-        // marketplace bestseller and can contaminate downstream sales tests.
-        if (!identity.salesEligible) {
-          noIdentifierOverlap += 1;
-          if (!supplyBarcode) supplyBarcodeMissing += 1;
-          await markPipelineState({
-            bestsellerId: String(record.id),
-            stage: "SUPPLIER_INVESTIGATION",
-            status: "blocked",
-            reason: "identity_not_confirmed",
+        cjStage = "variant";
+        const variants = await fetchCJProductVariants(product.pid);
+        const variantMatches = variants.filter((variant) => {
+          const ids = identifiersFromRecord({
+            asin: null,
+            jan: null,
+            gtin: variant.barcode,
+            ean: null,
+            upc: null,
+            mpn: detail.mpn,
           });
-          await writeEvidence({
-            productId: typeof record.product_id === "string" ? record.product_id : null,
-            bestsellerId: String(record.id),
-            source: "cj",
-            fetchedAt,
-            fieldName: "identity_status",
-            fieldValue: identity.method,
-            evidenceClass: "unknown",
-            confidence: identity.confidence,
-            metadata: {
-              rationale: identity.rationale,
-              discovered_supplier_product_id: detail.id,
-              supplier_barcode: supplyBarcode,
+          return matchProductIdentity({
+            market: {
+              ...marketIds,
+              brand: typeof record.brand === "string" ? record.brand : null,
+              title: String(record.title ?? ""),
+              imageUrl: typeof record.image_url === "string" ? record.image_url : null,
             },
-          });
-          continue;
-        }
+            supply: { ...ids, title: detail.title, imageUrl: detail.imageUrl },
+          }).salesEligible;
+        });
+        if (variantMatches.length !== 1) throw new Error(`CJ variant identity ambiguous (${variantMatches.length})`);
 
-        cjStage = "supplier_listing_insert";
+        const variant = await fetchCJVariantByVid(variantMatches[0].vid);
+        if (!variant) throw new Error("CJ variant unavailable");
+        cjStage = "stock";
+        const stock = await fetchCJVariantStock(variant.vid);
+        const inventory = asNumber(stock?.inventory ?? stock?.totalInventoryNum ?? stock?.storageNum);
+        cjStage = "freight";
+        const salePrice = asNumber(record.selling_price ?? record.sale_price);
+        const cost = asNumber(variant.price);
+        const freight = await calculateCJFreight({
+          vid: variant.vid,
+          quantity: 1,
+          countryCode: "JP",
+        });
+        const shipping = asNumber(freight?.freight ?? freight?.shippingFee);
+        const orderable = inventory !== null && inventory > 0 && cost !== null && shipping !== null;
         const insert = await supabase
           .from("supplier_listings")
           .insert({
             supplier: "CJdropshipping",
-            external_id: detail.id,
-            sku: variantSku ?? detail.sku,
-            cj_variant_id: cjVariantId,
+            external_id: product.pid,
+            sku: variant.sku ?? null,
             title: detail.title,
             bestseller_id: record.id,
             product_id: record.product_id,
-            asin: supplyIds.asin,
-            jan: supplyIds.jan,
-            gtin: supplyIds.gtin,
-            ean: supplyIds.ean,
-            upc: supplyIds.upc,
-            mpn: supplyIds.mpn,
-            // Use the exact confirmed variant price when one was selected.
-            // Falling back to the parent product price is only safe when the
-            // supplier exposes no variant-specific price.
-            cost: asNumber(selectedVariant?.sellPrice ?? detail.price),
-            shipping_cost: observedShippingCost,
-            currency: "USD",
-            supplier_product_id: detail.id,
-            supplier_variant_id: cjVariantId,
-            inventory: verifiedInventory,
-            tracking_available: true,
+            jan: detailIdentifiers.jan,
+            gtin: detailIdentifiers.gtin,
+            ean: detailIdentifiers.ean,
+            upc: detailIdentifiers.upc,
+            mpn: detailIdentifiers.mpn,
+            cost,
+            shipping_cost: shipping,
+            currency: "JPY",
+            supplier_product_id: product.pid,
+            supplier_variant_id: variant.vid,
+            inventory,
+            tracking_available: null,
             order_method: "cj_api",
             api_available: true,
             identity_method: identity.method,
-            identity_status: identity.salesEligible
-              ? "linked"
-              : identity.method === "none"
-                ? "unconfirmed"
-                : identity.method,
+            identity_status: "linked",
             identity_confidence: identity.confidence,
             configured: true,
-            orderable: Boolean(cjVariantId) && inventoryConfirmed && (verifiedInventory ?? 0) > 0,
-            price_confirmed: Boolean(selectedVariant?.sellPrice ?? detail.price),
-            inventory_confirmed: inventoryConfirmed,
+            orderable,
+            price_confirmed: cost !== null,
+            inventory_confirmed: inventory !== null,
             fetched_at: fetchedAt,
-            metadata: {
-              search_query: identifierQuery ?? (marketIds.asin ? `asin:${marketIds.asin}` : null),
-              rationale: identity.rationale,
-              source_country_code: "CN",
-              freight_quote: observedShippingCost,
-            },
+            metadata: { search_query: cjQuery, rationale: identity.rationale },
           })
           .select("id")
           .single();
-
         if (insert.error) throw new Error(insert.error.message);
-
-        const pipelineReason = !identity.salesEligible
-          ? "identity_not_confirmed"
-          : !cjVariantId
-            ? "supplier_variant_unknown"
-            : !inventoryConfirmed
-              ? "inventory_unverified"
-              : (verifiedInventory ?? 0) <= 0
-                ? "inventory_zero"
-                : "supplier_variant_verified";
-        await markPipelineState({
-          bestsellerId: String(record.id),
-          stage:
-            identity.salesEligible && cjVariantId && inventoryConfirmed && (verifiedInventory ?? 0) > 0
-              ? "VARIANT_VERIFIED"
-              : "SUPPLIER_INVESTIGATION",
-          status:
-            identity.salesEligible && cjVariantId && inventoryConfirmed && (verifiedInventory ?? 0) > 0
-              ? "ready"
-              : "blocked",
-          reason: pipelineReason,
-        });
-
-        if (identity.salesEligible) matched += 1;
-        if (identity.method === "none") noIdentifierOverlap += 1;
-        if (!supplyBarcode) supplyBarcodeMissing += 1;
-
         await writeEvidence({
           productId: typeof record.product_id === "string" ? record.product_id : null,
           bestsellerId: String(record.id),
@@ -899,73 +610,102 @@ export async function investigateDropshipForBestsellers(
           source: "cj",
           fetchedAt,
           fieldName: "identity_status",
-          fieldValue: identity.salesEligible ? "linked" : identity.method,
-          evidenceClass: identity.salesEligible ? "actual" : "unknown",
+          fieldValue: "linked",
+          evidenceClass: "actual",
           confidence: identity.confidence,
           metadata: { rationale: identity.rationale },
         });
+        matched += 1;
+        await markPipelineState({
+          bestsellerId: String(record.id),
+          stage: orderable ? "VARIANT_VERIFIED" : "SUPPLIER_INVESTIGATION",
+          status: orderable ? "ready" : "blocked",
+          reason: orderable ? "cj_identity_variant_inventory_price_shipping_verified" : "cj_supply_not_orderable",
+        });
+        continue;
+      }
+
+      const searchProducts = searches.flatMap((search) => search.products);
+      if (searchProducts.length === 0) {
+        noIdentifierOverlap += 1;
+        await markPipelineState({
+          bestsellerId: String(record.id),
+          stage: "SUPPLIER_INVESTIGATION",
+          status: "blocked",
+          reason: "cj_no_search_results",
+        });
+        continue;
+      }
+
+      let inspected = 0;
+      for (const product of searchProducts.slice(0, 5)) {
+        inspected += 1;
+        cjProductId = product.pid;
+        cjStage = "detail";
+        const detail = await getCJProductDetail(product.pid);
+        if (!detail) continue;
+        const detailIds = identifiersFromRecord({
+          asin: null,
+          jan: null,
+          gtin: detail.barcode,
+          ean: null,
+          upc: null,
+          mpn: detail.mpn,
+        });
+        const identity = matchProductIdentity({
+          market: {
+            ...marketIds,
+            brand: typeof record.brand === "string" ? record.brand : null,
+            title: String(record.title ?? ""),
+            imageUrl: typeof record.image_url === "string" ? record.image_url : null,
+          },
+          supply: { ...detailIds, title: detail.title, imageUrl: detail.imageUrl },
+        });
+        if (!identity.salesEligible) {
+          if (!detail.barcode) supplyBarcodeMissing += 1;
+          continue;
+        }
+        // Re-enter the strict variant/inventory path through the same candidate.
+        directMatches = [product];
+        break;
+      }
+
+      if (directMatches.length === 0) {
+        noIdentifierOverlap += 1;
+        await markPipelineState({
+          bestsellerId: String(record.id),
+          stage: "SUPPLIER_INVESTIGATION",
+          status: "blocked",
+          reason: inspected > 0 ? "cj_identity_not_confirmed" : "cj_no_detail_candidates",
+        });
+        continue;
       }
     } catch (error) {
-      if (error instanceof CJConfigError) {
-        await recordUnconfiguredSupplier({
-          supplier: "cj",
-          bestsellerId: String(record.id),
-          fetchedAt,
-        });
-        unconfigured += 1;
-      }
-      // One product's CJ search/detail/insert failure must not stop the
-      // rest of the batch. It is never silently dropped: logged to the
-      // server console (a real DB integrity error is a bug worth seeing)
-      // and counted in rowErrors so the API response reports it.
       rowErrors += 1;
-      const rowErrorDetail = {
+      rowErrorDetails.push({
         bestsellerId: String(record.id),
         title: String(record.title ?? ""),
         stage: cjStage,
         query: cjQuery,
         cjProductId,
         error: error instanceof Error ? error.message : String(error),
-      };
-      rowErrorDetails.push(rowErrorDetail);
+      });
       await markPipelineState({
         bestsellerId: String(record.id),
         stage: "SUPPLIER_INVESTIGATION",
-        status: "failed",
-        reason: "supplier_investigation_failed",
-        error: rowErrorDetail.error,
-      });
-      console.error("[investigate-dropship] row failed, continuing batch", rowErrorDetail);
-      await writeEvidence({
-        productId: typeof record.product_id === "string" ? record.product_id : null,
-        bestsellerId: String(record.id),
-        source: "cj",
-        fetchedAt,
-        fieldName: "investigation_error",
-        fieldValue: error instanceof Error ? error.message : String(error),
-        evidenceClass: "unknown",
-        confidence: 0,
-        metadata: { note: "row_isolated_failure" },
-      });
-    }
-
-    // If CJ could not establish a linked supplier, try the configured
-    // Orosy catalog using the same verified marketplace identifiers. Orosy
-    // is discovery-only here until its stateful order flow is verified.
-    try {
-      const alternative = await investigateOrosyFallback({
-        record,
-        marketIds,
-        fetchedAt,
-        supabase,
-      });
-      if (alternative.found) matched += 1;
-    } catch (error) {
-      console.warn("[investigate-dropship] alternative supplier fallback failed", {
-        bestsellerId: String(record.id),
+        status: "blocked",
+        reason: "cj_investigation_error",
         error: error instanceof Error ? error.message : String(error),
       });
     }
+
+    const orosyFallback = await investigateOrosyFallback({
+      record,
+      marketIds: identifiersFromRecord(record),
+      fetchedAt,
+      supabase,
+    });
+    if (orosyFallback.found) matched += 1;
   }
 
   return {
@@ -976,8 +716,6 @@ export async function investigateDropshipForBestsellers(
     noIdentifierOverlap,
     supplyBarcodeMissing,
     rowErrors,
-    rowErrorDetails: rowErrorDetails.slice(0, 20),
+    rowErrorDetails,
   };
 }
-
-
