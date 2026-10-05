@@ -1,13 +1,10 @@
 /**
- * Single shared "current batch" size for the bestseller pipeline.
+ * Shared current bestseller intake size.
  *
- * Supplier investigation is intentionally one row at a time because CJ
- * product/detail/JP-variant/stock/freight verification is serialized by the
- * supplier API rate limit. The goal of this batch is to get a real,
- * sales-eligible product through the full chain, not to create a large
- * unverified backlog.
- *
- * The later sales-test and BASE cron stages run automatically from vercel.json
- * after supplier investigation.
+ * Supplier verification is still serialized per product because CJ
+ * product/variant/stock/freight calls are rate-limited. We deliberately
+ * increase the queue width so one slow candidate cannot starve the pipeline.
+ * Only candidates that pass the existing identity, supply, intelligence,
+ * profit and sales-test gates can become public.
  */
-export const BESTSELLER_CANDIDATE_BATCH_SIZE = 10;
+export const BESTSELLER_CANDIDATE_BATCH_SIZE = 20;
