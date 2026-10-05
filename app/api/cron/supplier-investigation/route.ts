@@ -13,6 +13,27 @@ export const maxDuration = 300;
 const INVESTIGATION_BUDGET_MS = 200_000;
 const IDENTIFIER_FILTER = "jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null,mpn.not.is.null,asin.not.is.null";
 
+function identityPriority(row: Record<string, unknown>): number {
+  let score = 0;
+  if (typeof row.jan === "string" && row.jan.trim()) score += 100;
+  if (typeof row.gtin === "string" && row.gtin.trim()) score += 95;
+  if (typeof row.ean === "string" && row.ean.trim()) score += 90;
+  if (typeof row.upc === "string" && row.upc.trim()) score += 85;
+  if (typeof row.mpn === "string" && row.mpn.trim()) score += 70;
+  if (typeof row.asin === "string" && row.asin.trim()) score += 45;
+  return score;
+}
+
+function prioritizeRows<T extends Record<string, unknown>>(rows: T[]): T[] {
+  return rows.slice().sort((a, b) => {
+    const priority = identityPriority(b) - identityPriority(a);
+    if (priority !== 0) return priority;
+    return String(b.fetched_at ?? b.pipeline_updated_at ?? "").localeCompare(
+      String(a.fetched_at ?? a.pipeline_updated_at ?? ""),
+    );
+  });
+}
+
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
@@ -46,13 +67,9 @@ export async function GET(request: Request) {
 
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
-    // Do not make ASIN/MPN candidates invisible to the queue. ASIN-only rows
-    // are enriched by investigate-dropship before supplier search, and MPN is
-    // a valid strict identity key. The old filter silently excluded both.
-    // Pull a wider queue, then rank candidates by the strength of the
-    // identity evidence we can actually use against supplier catalogs. A
-    // pure "newest first" queue repeatedly spent the entire budget on weak
-    // title/ASIN rows while exact JAN/GTIN candidates waited behind them.
+    // Pull a wider queue, then spend the limited supplier-call budget on the
+    // strongest strict identity evidence first. ASIN/MPN are intentionally
+    // retained because investigate-dropship can enrich them before matching.
     const queuePoolSize = Math.max(BESTSELLER_CANDIDATE_BATCH_SIZE * 5, 50);
     const { data: freshRows, error: freshError } = await supabase
       .from("marketplace_bestsellers")
@@ -64,24 +81,9 @@ export async function GET(request: Request) {
 
     if (freshError) throw new Error(freshError.message);
 
-    const identityPriority = (row: Record<string, unknown>): number => {
-      let score = 0;
-      if (typeof row.jan === "string" && row.jan.trim()) score += 100;
-      if (typeof row.gtin === "string" && row.gtin.trim()) score += 95;
-      if (typeof row.ean === "string" && row.ean.trim()) score += 90;
-      if (typeof row.upc === "string" && row.upc.trim()) score += 85;
-      if (typeof row.mpn === "string" && row.mpn.trim()) score += 70;
-      if (typeof row.asin === "string" && row.asin.trim()) score += 45;
-      return score;
-    };
-
-    let candidateIds = (freshRows ?? [])
-      .slice()
-      .sort((a, b) => {
-        const priority = identityPriority(b as Record<string, unknown>) - identityPriority(a as Record<string, unknown>);
-        if (priority !== 0) return priority;
-        return String(b.fetched_at ?? "").localeCompare(String(a.fetched_at ?? ""));
-      })
+    let candidateIds = prioritizeRows(
+      (freshRows ?? []) as unknown as Record<string, unknown>[],
+    )
       .slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE)
       .map((row) => String(row.id));
 
@@ -90,16 +92,24 @@ export async function GET(request: Request) {
       const retryBefore = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       const { data: retryRows, error: retryError } = await supabase
         .from("marketplace_bestsellers")
-        .select("id")
+        .select("id,jan,gtin,ean,upc,mpn,asin,pipeline_updated_at")
         .eq("pipeline_status", "blocked")
         .lt("pipeline_updated_at", retryBefore)
         .or(IDENTIFIER_FILTER)
         .order("pipeline_updated_at", { ascending: true })
-        .limit(retrySlots);
+        .limit(Math.max(retrySlots * 5, 20));
 
       if (retryError) throw new Error(retryError.message);
 
-      candidateIds = [...candidateIds, ...(retryRows ?? []).map((row) => String(row.id))]
+      // Blocked rows used to be retried oldest-first regardless of identity
+      // quality. That could repeatedly consume the whole budget on ASIN-only
+      // rows. Keep retry fairness, but prefer rows that can actually establish
+      // strict supplier identity.
+      const prioritizedRetries = prioritizeRows(
+        (retryRows ?? []) as unknown as Record<string, unknown>[],
+      ).slice(0, retrySlots);
+
+      candidateIds = [...candidateIds, ...prioritizedRetries.map((row) => String(row.id))]
         .filter((id, index, ids) => ids.indexOf(id) === index);
     }
 
@@ -142,9 +152,9 @@ export async function GET(request: Request) {
       });
     }
 
-    // Investigate one bestseller at a time and stop at a deadline: each row
-    // fans out into many rate-limited CJ calls, and a batch that overran
-    // maxDuration was killed mid-flight (504) and left the lock held.
+    // Investigate one bestseller at a time and stop at a deadline. Supplier
+    // adapters fan out into rate-limited calls, so a hard budget prevents a
+    // 504 from killing the cron mid-flight and leaving the lock stale.
     const result = {
       processed: 0,
       matched: 0,
@@ -156,11 +166,13 @@ export async function GET(request: Request) {
       rowErrorDetails: [] as Awaited<ReturnType<typeof investigateDropshipForBestsellers>>["rowErrorDetails"],
       deferred: 0,
     };
+
     for (const [index, candidateId] of externalCandidateIds.entries()) {
       if (Date.now() - startedAt >= INVESTIGATION_BUDGET_MS) {
         result.deferred = externalCandidateIds.length - index;
         break;
       }
+
       const row = await investigateDropshipForBestsellers([candidateId]);
       result.processed += row.processed;
       result.matched += row.matched;
