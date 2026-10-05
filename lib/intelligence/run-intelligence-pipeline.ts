@@ -452,9 +452,9 @@ export async function runIntelligencePipeline(options: {
   // barcodes observed since. Unique exact barcode matches only.
   steps.push(await runStep("identity_reverify", () =>
     reverifyCjSupplyIdentities({
-      limit: 5,
+      limit: 25,
       deadlineAt: pipelineDeadlineAt - 1_000,
-    }), { budgetMs: 5_000 }));
+    }), { budgetMs: 25_000 }));
 
   // Rotate over every product_intelligence page. The previous fixed
   // "% 7" rotation only ever reached the first 350 rows (ordered by
