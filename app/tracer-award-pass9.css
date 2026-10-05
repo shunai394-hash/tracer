@@ -1,0 +1,237 @@
+/* TRACER AWARD PASS 09 — restraint, responsive composition, motion discipline.
+   Gate: the interface should feel authored at every viewport, never merely styled. */
+
+:root {
+  --tracer-ink: #e8eef4;
+  --tracer-muted-ink: rgba(161,161,170,.62);
+  --tracer-accent-soft: rgba(165,243,252,.12);
+  --tracer-ease-premium: cubic-bezier(.16,1,.3,1);
+}
+
+/* The global atmosphere is a signature, not a wallpaper. Keep it subordinate to content. */
+body::before {
+  opacity: .72;
+}
+
+body::after {
+  opacity: .012;
+}
+
+/* Editorial pages: establish a deliberate rhythm between index, statement and evidence. */
+.tracer-editorial-page .tracer-editorial-index {
+  min-height: 24px;
+  align-items: center;
+}
+
+.tracer-editorial-page .tracer-editorial-hero-grid {
+  min-height: min(68svh, 760px);
+  align-items: end;
+}
+
+.tracer-editorial-page .tracer-editorial-note {
+  max-width: 31ch;
+}
+
+.tracer-editorial-page .tracer-lede {
+  max-width: 54ch;
+}
+
+/* Make the primary reading column feel intentional on large screens. */
+@media (min-width: 1100px) {
+  .tracer-editorial-page .tracer-editorial-hero-grid > div:first-child {
+    padding-bottom: 1.25rem;
+  }
+
+  .tracer-editorial-page .tracer-editorial-note {
+    margin-bottom: 1.25rem;
+  }
+}
+
+/* Hover should reveal depth, not move the reading surface underneath the cursor. */
+@media (hover: hover) and (pointer: fine) {
+  .tracer-market-row:hover,
+  .tracer-demand-row:hover {
+    padding-left: .5rem;
+    padding-right: .5rem;
+  }
+
+  .tracer-editorial-page .tracer-footer-tool a:hover {
+    transform: translateX(3px);
+  }
+}
+
+.tracer-editorial-page .tracer-footer-tool a {
+  transition: transform .5s var(--tracer-ease-premium), color .3s ease;
+}
+
+/* Product/object surfaces: preserve a crisp resting state and a single deliberate lift. */
+@media (hover: hover) and (pointer: fine) {
+  .tracer-editorial-page article[class*="group"]:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 20px 56px rgba(0,0,0,.16);
+  }
+}
+
+/* Don't use the decorative specimen as a layout dependency. Content always survives without it. */
+@media (max-width: 900px) {
+  .tracer-specimen {
+    opacity: .72;
+  }
+}
+
+@media (max-width: 767px) {
+  .tracer-editorial-page {
+    min-height: calc(100svh - 88px);
+    padding-bottom: 3.5rem;
+  }
+
+  .tracer-editorial-page::after {
+    left: 1.25rem;
+    opacity: .7;
+  }
+
+  .tracer-editorial-index {
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .tracer-editorial-index span:nth-child(2) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tracer-editorial-hero-grid {
+    grid-template-columns: 1fr;
+    gap: 3rem;
+    min-height: auto;
+    padding: 4rem 0 3.5rem;
+  }
+
+  .tracer-editorial-hero h1 {
+    max-width: 8.5ch;
+    font-size: clamp(3rem, 15vw, 5.4rem);
+    line-height: .88;
+    letter-spacing: -.065em;
+  }
+
+  .tracer-lede {
+    max-width: 38ch;
+    margin-top: 1.6rem;
+    font-size: .88rem;
+    line-height: 1.85;
+  }
+
+  .tracer-editorial-note {
+    max-width: 30ch;
+  }
+
+  .tracer-editorial-scan {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .tracer-editorial-scan span:nth-child(3) {
+    border-left: 0;
+  }
+
+  .tracer-section-frame,
+  .tracer-content-section,
+  .tracer-market-list,
+  .tracer-demand-list {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+
+  .tracer-section-heading {
+    align-items: start;
+    flex-direction: column;
+    gap: .75rem;
+  }
+
+  .tracer-section-heading h2 {
+    font-size: 1.65rem;
+  }
+
+  .tracer-market-row {
+    grid-template-columns: 32px minmax(0,1fr);
+    gap: .9rem;
+  }
+
+  .tracer-market-row > :last-child {
+    grid-column: 2;
+    margin-top: .2rem;
+  }
+
+  .tracer-row-data {
+    gap: .6rem .8rem;
+  }
+
+  .tracer-footer-tool {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 3.5rem;
+  }
+
+  /* Keep the homepage visual language, but remove the least useful mass rather than content. */
+  .tracer-specimen {
+    display: none;
+  }
+
+  main > section:first-of-type::before {
+    opacity: .3;
+  }
+
+  main > section:first-of-type::after {
+    opacity: .08;
+  }
+}
+
+/* Very small phones: preserve hierarchy instead of shrinking everything uniformly. */
+@media (max-width: 390px) {
+  .tracer-editorial-hero h1,
+  main > section:first-child h1 {
+    font-size: clamp(2.75rem, 14.5vw, 4.2rem);
+  }
+
+  .tracer-kicker {
+    letter-spacing: .24em;
+  }
+
+  .tracer-editorial-note strong {
+    font-size: 1.12rem;
+  }
+}
+
+/* Wide displays should gain breathing room, not oversized type. */
+@media (min-width: 1800px) {
+  .tracer-editorial-page .tracer-editorial-hero h1 {
+    font-size: clamp(6rem, 6.5vw, 8.5rem);
+  }
+}
+
+/* Motion audit: animated atmosphere is disabled where it cannot add meaning. */
+@media (prefers-reduced-motion: reduce) {
+  body::before,
+  body::after,
+  main > section:first-of-type::before,
+  main > section:first-of-type::after,
+  .tracer-specimen,
+  .tracer-specimen-core,
+  .tracer-specimen-orbit,
+  .tracer-reveal,
+  .tracer-signal-pulse,
+  .tracer-signal-scan,
+  .tracer-signal-drift {
+    animation: none !important;
+  }
+}
+
+/* High contrast: decorative lines must never overpower semantic content. */
+@media (forced-colors: active) {
+  .tracer-editorial-page::before,
+  .tracer-editorial-page::after,
+  .tracer-specimen,
+  .tracer-editorial-rule {
+    forced-color-adjust: auto;
+  }
+}
