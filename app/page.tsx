@@ -96,10 +96,7 @@ export default function HomePage() {
                 <div>
                   <div className="flex items-center justify-between border-b border-white/8 pb-4">
                     <span className="font-mono text-[8px] tracking-[0.25em] text-zinc-600">TRACER / FIELD NOTE</span>
-                    <span className="flex items-center gap-2 font-mono text-[8px] tracking-[0.16em] text-cyan-200/60">
-                      <i className="h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_12px_rgba(103,232,249,.8)]" />
-                      LIVE
-                    </span>
+                    <span className="font-mono text-[8px] tracking-[0.16em] text-cyan-200/60">EVIDENCE MODE</span>
                   </div>
                   <div className="mt-12 max-w-sm">
                     <p className="font-mono text-[9px] tracking-[0.24em] text-zinc-600">THE QUESTION</p>
@@ -121,7 +118,7 @@ export default function HomePage() {
                     </div>
                   </div>
                   <div className="mt-3 flex justify-between font-mono text-[7px] tracking-[0.16em] text-zinc-700">
-                    <span>34.7024° N</span><span>135.4959° E</span>
+                    <span>OBSERVE</span><span>VERIFY → TEST</span>
                   </div>
                 </div>
               </div>
