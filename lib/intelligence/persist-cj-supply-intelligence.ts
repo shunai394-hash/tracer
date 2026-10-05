@@ -30,100 +30,69 @@ export type MarketplaceIdentity = {
   rationale: string;
 };
 
+function normalizeBarcode(value: unknown): string {
+  return typeof value === "string" ? value.trim().replace(/[^0-9]/g, "") : "";
+}
+
+function barcodeCandidates(value: string): string[] {
+  const digits = normalizeBarcode(value);
+  if (!digits) return [];
+  const candidates = new Set<string>([digits]);
+  if (digits.length === 12 || digits.length === 13) candidates.add(digits.padStart(14, "0"));
+  if (digits.length === 14) candidates.add(digits.slice(1));
+  return [...candidates];
+}
+
+async function readSupplierBarcode(args: {
+  supplierProductId: string;
+  supplierVariantId: string;
+  variantBarcode?: string | null;
+}): Promise<string> {
+  const supplied = normalizeBarcode(args.variantBarcode);
+  if (supplied) return supplied;
+  try {
+    const variants = await fetchCJProductVariants(args.supplierProductId, { countryCode: "JP" });
+    const variant = variants.find((item) => item.vid === args.supplierVariantId);
+    const direct = normalizeBarcode(variant?.barcode);
+    if (direct) return direct;
+  } catch (error) {
+    console.warn("[cj-supply-identity] variant barcode lookup failed", { supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, error: error instanceof Error ? error.message : String(error) });
+  }
+  try {
+    const detailVariant = await fetchCJVariantByVid(args.supplierVariantId);
+    if (detailVariant?.vid === args.supplierVariantId) return normalizeBarcode(detailVariant.barcode);
+  } catch (error) {
+    console.warn("[cj-supply-identity] queryByVid barcode lookup failed", { supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, error: error instanceof Error ? error.message : String(error) });
+  }
+  return "";
+}
+
 export async function resolveMarketplaceIdentity(args: {
   db: ReturnType<typeof createSupabaseAdminClient>;
   supplierProductId: string;
   supplierVariantId: string;
-  /** Reuse a barcode already captured from the exact supplier variant. */
   variantBarcode?: string | null;
 }): Promise<MarketplaceIdentity | null> {
-  let barcode = typeof args.variantBarcode === "string" ? args.variantBarcode.trim() : "";
-
-  if (!barcode) {
-    let variants: Awaited<ReturnType<typeof fetchCJProductVariants>> = [];
-    try {
-      variants = await fetchCJProductVariants(args.supplierProductId, { countryCode: "JP" });
-    } catch (error) {
-      console.warn("[cj-supply-identity] variant barcode lookup failed", {
-        supplierProductId: args.supplierProductId,
-        supplierVariantId: args.supplierVariantId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return null;
-    }
-
-    let variant = variants.find((item) => item.vid === args.supplierVariantId) ?? null;
-
-    // CJ can omit the barcode in product/variant/query while queryByVid still
-    // exposes the supplier-declared barcode. Recover that field before giving
-    // up. Never infer identity from pid, vid, SKU, title, image, or position.
-    if (!variant?.barcode) {
-      try {
-        const detailVariant = await fetchCJVariantByVid(args.supplierVariantId);
-        if (detailVariant?.vid === args.supplierVariantId && detailVariant.barcode) {
-          variant = { ...(variant ?? detailVariant), ...detailVariant };
-        }
-      } catch (error) {
-        console.warn("[cj-supply-identity] queryByVid barcode lookup failed", {
-          supplierProductId: args.supplierProductId,
-          supplierVariantId: args.supplierVariantId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-
-    barcode = typeof variant?.barcode === "string" ? variant.barcode.trim() : "";
-  }
-
+  const barcode = await readSupplierBarcode(args);
   if (!barcode) return null;
-
   const supplyIds = identifiersFromRecord({ gtin: barcode });
   if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc) return null;
-
-  const digits = barcode.replace(/\D/g, "");
-  if (!digits) return null;
-  const variantsToQuery = new Set([digits]);
-  if (digits.length === 12 || digits.length === 13) variantsToQuery.add(digits.padStart(14, "0"));
-  if (digits.length === 14) variantsToQuery.add(digits.slice(1));
-
-  const clauses = [...variantsToQuery].flatMap((value) =>
-    ["jan", "gtin", "ean", "upc"].map((column) => `${column}.eq.${value}`),
-  );
-  const { data: bestsellers, error } = await args.db
-    .from("marketplace_bestsellers")
-    .select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand")
-    .or(clauses.join(","))
-    .limit(50);
-  if (error) throw new Error(`CJ marketplace identity lookup failed: ${error.message}`);
-
-  const matches = (bestsellers ?? [])
-    .filter((row) => typeof row.product_id === "string" && row.product_id.trim())
-    .map((row) => {
+  const matchesByKey = new Map<string, MarketplaceIdentity>();
+  for (const value of barcodeCandidates(barcode)) {
+    const clauses = ["jan", "gtin", "ean", "upc"].map((column) => `${column}.eq.${value}`);
+    const { data: bestsellers, error } = await args.db.from("marketplace_bestsellers").select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand").or(clauses.join(",")).limit(50);
+    if (error) throw new Error(`CJ marketplace identity lookup failed: ${error.message}`);
+    for (const row of bestsellers ?? []) {
+      if (typeof row.product_id !== "string" || !row.product_id.trim()) continue;
       const marketIds = identifiersFromRecord(row as Record<string, unknown>);
-      const identity = matchProductIdentity({
-        market: {
-          ...marketIds,
-          brand: typeof row.brand === "string" ? row.brand : null,
-          title: typeof row.title === "string" ? row.title : null,
-        },
-        supply: { ...supplyIds, title: null, brand: null },
-      });
-      return { row, identity };
-    })
-    .filter((item) => item.identity.salesEligible && ["gtin", "jan", "ean", "upc"].includes(item.identity.method))
-    .map((item) => ({
-      bestsellerId: String(item.row.id),
-      productId: String(item.row.product_id),
-      method: item.identity.method as MarketplaceIdentity["method"],
-      confidence: item.identity.confidence,
-      rationale: item.identity.rationale,
-    }));
-
-  // Never choose arbitrarily when a barcode maps to multiple market records.
-  if (matches.length !== 1) return null;
-  return matches[0];
+      const identity = matchProductIdentity({ market: { ...marketIds, brand: typeof row.brand === "string" ? row.brand : null, title: typeof row.title === "string" ? row.title : null }, supply: { ...supplyIds, title: null, brand: null } });
+      if (!identity.salesEligible || !["gtin", "jan", "ean", "upc"].includes(identity.method)) continue;
+      matchesByKey.set(String(row.id), { bestsellerId: String(row.id), productId: String(row.product_id), method: identity.method as MarketplaceIdentity["method"], confidence: identity.confidence, rationale: identity.rationale });
+    }
+  }
+  if (matchesByKey.size !== 1) return null;
+  return [...matchesByKey.values()][0];
 }
-
 export async function persistCjSupplyIntelligence(
   args: PersistCjSupplyIntelligenceArgs,
   options: { identity?: MarketplaceIdentity | null } = {},
