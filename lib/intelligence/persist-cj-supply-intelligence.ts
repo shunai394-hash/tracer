@@ -82,8 +82,10 @@ export async function resolveMarketplaceIdentity(args: {
   const matchesByProduct = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
   for (const value of barcodeCandidates(barcode)) {
     const clauses = ["jan", "gtin", "ean", "upc"].map((column) => `${column}.eq.${value}`);
-    const { data: bestsellers, error } = await args.db.from("marketplace_bestsellers").select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand,fetched_at").or(clauses.join(",")).limit(50);
+    // Fetch one beyond the processing cap so a truncated result can never be mistaken for a unique identity.
+    const { data: bestsellers, error } = await args.db.from("marketplace_bestsellers").select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand,fetched_at").or(clauses.join(",")).limit(51);
     if (error) throw new Error(`CJ marketplace identity lookup failed: ${error.message}`);
+    if ((bestsellers?.length ?? 0) > 50) return null;
     for (const row of bestsellers ?? []) {
       if (typeof row.product_id !== "string" || !row.product_id.trim()) continue;
       const marketIds = identifiersFromRecord(row as Record<string, unknown>);
