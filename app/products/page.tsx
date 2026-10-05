@@ -24,6 +24,13 @@ type ShopLink = {
   currency: string | null;
 };
 
+type GatePulse = {
+  verifiedSupply: number;
+  identityLinked: number;
+  opportunityReady: number;
+  published: number;
+};
+
 export default async function ProductsPage() {
   let products: Array<{
     product_id: string;
@@ -34,11 +41,12 @@ export default async function ProductsPage() {
   }> = [];
   let reorders: Awaited<ReturnType<typeof listReorderRecommendations>> = [];
   let shopLinks: ShopLink[] = [];
+  let gate: GatePulse = { verifiedSupply: 0, identityLinked: 0, opportunityReady: 0, published: 0 };
   let error: string | null = null;
 
   try {
     const supabase = createSupabaseAdminClient();
-    const [productResult, listingResult] = await Promise.all([
+    const [productResult, listingResult, supplyCount, identityCount, readyCount] = await Promise.all([
       supabase
         .from("product_intelligence")
         .select("product_id, normalized_title, brand_name, current_price, currency")
@@ -49,13 +57,40 @@ export default async function ProductsPage() {
         .select("id,product_id,slug,title,published,pipeline_stage,pipeline_status,supplier_name,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,selling_price,currency")
         .order("updated_at", { ascending: false })
         .limit(200),
+      supabase
+        .from("supplier_listings")
+        .select("id", { count: "exact", head: true })
+        .eq("orderable", true)
+        .eq("inventory_confirmed", true)
+        .gt("inventory", 0),
+      supabase
+        .from("supplier_listings")
+        .select("id", { count: "exact", head: true })
+        .eq("identity_status", "linked")
+        .gte("identity_confidence", 0.88),
+      supabase
+        .from("opportunity_intelligence")
+        .select("product_id", { count: "exact", head: true })
+        .eq("sellability_state", "TEST_READY")
+        .eq("selection_eligible", true)
+        .eq("filter_state", "PASS")
+        .eq("profit_state", "PROFIT_OK"),
     ]);
 
     if (productResult.error) throw new Error(productResult.error.message);
     if (listingResult.error) throw new Error(listingResult.error.message);
+    if (supplyCount.error) throw new Error(supplyCount.error.message);
+    if (identityCount.error) throw new Error(identityCount.error.message);
+    if (readyCount.error) throw new Error(readyCount.error.message);
 
     products = productResult.data ?? [];
     shopLinks = (listingResult.data ?? []) as ShopLink[];
+    gate = {
+      verifiedSupply: supplyCount.count ?? 0,
+      identityLinked: identityCount.count ?? 0,
+      opportunityReady: readyCount.count ?? 0,
+      published: shopLinks.filter((listing) => listing.published === true).length,
+    };
 
     try {
       reorders = await listReorderRecommendations(100);
@@ -76,30 +111,44 @@ export default async function ProductsPage() {
     listingByProduct.set(listing.product_id, rows);
   }
 
-  const publishedCount = shopLinks.filter((listing) => listing.published === true).length;
-  const linkedCount = shopLinks.filter(
-    (listing) => listing.supplier_product_id && listing.supplier_variant_id,
-  ).length;
-
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-16">
-      <div className="flex flex-wrap items-end justify-between gap-5">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-[0.35em] text-cyan-400">Products / Operations</p>
-          <h1 className="mt-3 text-3xl text-zinc-50">商品管理</h1>
-          <p className="mt-4 max-w-3xl text-sm leading-6 text-zinc-400">
-            Product実体と販売掲載を同じ画面で追跡します。掲載商品はsupplier product / variant / 在庫 / 注文可否まで確認できる状態を管理対象とします。
+    <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-14 sm:py-16">
+      <header className="flex flex-col gap-7 border-b border-white/8 pb-9 lg:flex-row lg:items-end lg:justify-between">
+        <div className="max-w-3xl">
+          <p className="font-mono text-[9px] uppercase tracking-[0.38em] text-cyan-300/80">Products / Publication Control</p>
+          <h1 className="mt-3 text-4xl font-medium tracking-[-0.04em] text-zinc-50 sm:text-5xl">商品管理</h1>
+          <p className="mt-5 text-sm leading-7 text-zinc-400">
+            商品・供給・掲載を一つの運用面に統合。公開状態だけでなく、Sales Test Gate がどこで止まっているかまで追跡します。
           </p>
         </div>
-        <Link href="/dashboard" className="border border-white/10 px-4 py-2 text-xs text-zinc-300 transition hover:border-cyan-300/30 hover:text-cyan-100">
-          運用ダッシュボード ↗
+        <Link href="/dashboard" className="inline-flex w-fit border border-white/10 px-4 py-2.5 font-mono text-[9px] tracking-[.18em] text-zinc-300 transition hover:border-cyan-300/30 hover:text-cyan-100">
+          OPERATIONS DASHBOARD ↗
         </Link>
-      </div>
+      </header>
 
-      <section className="mt-10 grid gap-px border border-white/8 bg-white/8 sm:grid-cols-3">
-        <div className="bg-[#080b0e] p-5"><p className="font-mono text-[8px] tracking-[.2em] text-zinc-600">PRODUCTS</p><p className="mt-2 text-2xl text-zinc-100">{products.length}</p></div>
-        <div className="bg-[#080b0e] p-5"><p className="font-mono text-[8px] tracking-[.2em] text-zinc-600">PUBLISHED LISTINGS</p><p className="mt-2 text-2xl text-cyan-200">{publishedCount}</p></div>
-        <div className="bg-[#080b0e] p-5"><p className="font-mono text-[8px] tracking-[.2em] text-zinc-600">SUPPLIER + VARIANT LINKED</p><p className="mt-2 text-2xl text-zinc-100">{linkedCount}</p></div>
+      <section className="mt-8 grid gap-px border border-white/8 bg-white/8 md:grid-cols-4">
+        {[
+          ["VERIFIED SUPPLY", gate.verifiedSupply, "在庫・注文可"],
+          ["IDENTITY LINKED", gate.identityLinked, "識別子確認済み"],
+          ["TEST READY", gate.opportunityReady, "公開ゲート到達"],
+          ["PUBLISHED", gate.published, "ストア掲載中"],
+        ].map(([label, value, note]) => (
+          <div key={String(label)} className="bg-[#080b0e] p-5 sm:p-6">
+            <p className="font-mono text-[8px] tracking-[.22em] text-zinc-600">{label}</p>
+            <p className="mt-2 text-3xl font-light tracking-[-0.04em] text-zinc-100">{value}</p>
+            <p className="mt-2 text-[10px] text-zinc-600">{note}</p>
+          </div>
+        ))}
+      </section>
+
+      <section className="mt-6 overflow-hidden border border-cyan-400/10 bg-[radial-gradient(circle_at_10%_0%,rgba(34,211,238,.08),transparent_35%)]">
+        <div className="flex flex-col gap-4 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="font-mono text-[8px] tracking-[.22em] text-cyan-300/70">PUBLICATION PATH</p>
+            <p className="mt-2 text-sm text-zinc-200">供給確認 → 識別子 → 需要 / 市場 / 利益 → TEST_READY → Sales Test Gate → 公開</p>
+          </div>
+          <div className="font-mono text-[9px] tracking-[.16em] text-zinc-600">NO GATE BYPASS</div>
+        </div>
       </section>
 
       {error ? <p className="mt-8 text-sm text-amber-300">{error}</p> : null}
@@ -115,16 +164,16 @@ export default async function ProductsPage() {
             const reorder = reorders.find((item) => item.productId === product.product_id);
             const listings = listingByProduct.get(product.product_id) ?? [];
             return (
-              <article key={product.product_id} className="border border-white/8 bg-[#080b0e] p-5 sm:p-6">
+              <article key={product.product_id} className="group border border-white/8 bg-[#080b0e] p-5 transition-colors hover:border-white/14 sm:p-6">
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-zinc-100">{product.normalized_title}</p>
-                    <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-600">
-                      {product.brand_name ?? "no brand"}
-                      {product.current_price !== null && product.currency ? ` / ${product.currency} ${product.current_price}` : " / price unknown"}
+                    <p className="text-sm font-medium tracking-[-0.01em] text-zinc-100">{product.normalized_title}</p>
+                    <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.16em] text-zinc-600">
+                      {product.brand_name ?? "NO BRAND"}
+                      {product.current_price !== null && product.currency ? ` / ${product.currency} ${product.current_price}` : " / PRICE UNKNOWN"}
                     </p>
                   </div>
-                  <span className="font-mono text-[9px] tracking-[.15em] text-zinc-700">{product.product_id}</span>
+                  <span className="font-mono text-[8px] tracking-[.15em] text-zinc-700">{product.product_id}</span>
                 </div>
 
                 {reorder ? (
@@ -138,12 +187,10 @@ export default async function ProductsPage() {
                 <div className="mt-5 border-t border-white/6 pt-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="font-mono text-[9px] tracking-[.2em] text-zinc-600">SHOP / SUPPLIER LINKAGE</p>
-                    <span className="text-[9px] text-zinc-700">{listings.length} listing{listings.length === 1 ? "" : "s"}</span>
+                    <span className="font-mono text-[8px] tracking-[.15em] text-zinc-700">{listings.length} LISTING{listings.length === 1 ? "" : "S"}</span>
                   </div>
                   {listings.length === 0 ? (
-                    <p className="mt-3 border border-dashed border-white/8 px-4 py-4 text-xs text-zinc-600">
-                      掲載なし。Sales Test Gate / 供給確認の完了待ち。
-                    </p>
+                    <p className="mt-3 border border-dashed border-white/8 px-4 py-4 text-xs text-zinc-600">掲載なし。Sales Test Gate / 供給確認の完了待ち。</p>
                   ) : (
                     <div className="mt-3 space-y-2">
                       {listings.map((listing) => {
@@ -159,7 +206,7 @@ export default async function ProductsPage() {
                                 </div>
                                 <p className="mt-2 text-sm text-zinc-200">{listing.title}</p>
                               </div>
-                              <Link href={`/shop/${listing.slug}`} className="shrink-0 text-[9px] font-mono tracking-[.15em] text-zinc-500 hover:text-cyan-200">STORE ↗</Link>
+                              <Link href={`/shop/${listing.slug}`} className="shrink-0 font-mono text-[9px] tracking-[.15em] text-zinc-500 hover:text-cyan-200">STORE ↗</Link>
                             </div>
                             <div className="mt-4 grid gap-2 text-[10px] sm:grid-cols-2 xl:grid-cols-5">
                               <div><span className="text-zinc-700">SUPPLIER</span><p className={supplierLinked ? "text-cyan-200" : "text-zinc-500"}>{listing.supplier_name ?? "—"}</p></div>
