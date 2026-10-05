@@ -39,7 +39,9 @@ function barcodeCandidates(value: string): string[] {
   if (!digits) return [];
   const candidates = new Set<string>([digits]);
   if (digits.length === 12 || digits.length === 13) candidates.add(digits.padStart(14, "0"));
-  if (digits.length === 14) candidates.add(digits.slice(1));
+  // Only a leading-zero GTIN-14 can be safely reduced to a 13-digit form.
+  // Non-zero indicator digits are meaningful and must never be stripped.
+  if (digits.length === 14 && digits.startsWith("0")) candidates.add(digits.slice(1));
   return [...candidates];
 }
 
