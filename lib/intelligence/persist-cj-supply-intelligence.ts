@@ -41,6 +41,7 @@ async function readSupplierBarcode(args: {
   variantBarcode?: string | null;
 }): Promise<string> {
   const isPlausibleBarcode = (value: string) => value.length >= 8 && value.length <= 14;
+  const lookupErrors: string[] = [];
   const supplied = normalizeBarcode(args.variantBarcode);
   if (isPlausibleBarcode(supplied)) return supplied;
   try {
@@ -49,7 +50,9 @@ async function readSupplierBarcode(args: {
     const direct = normalizeBarcode(variant?.barcode);
     if (isPlausibleBarcode(direct)) return direct;
   } catch (error) {
-    console.warn("[cj-supply-identity] variant barcode lookup failed", { supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, error: error instanceof Error ? error.message : String(error) });
+    const message = error instanceof Error ? error.message : String(error);
+    lookupErrors.push(`variant barcode lookup: ${message}`);
+    console.warn("[cj-supply-identity] variant barcode lookup failed", { supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, error: message });
   }
   try {
     const detailVariant = await fetchCJVariantByVid(args.supplierVariantId);
@@ -58,8 +61,11 @@ async function readSupplierBarcode(args: {
       if (isPlausibleBarcode(barcode)) return barcode;
     }
   } catch (error) {
-    console.warn("[cj-supply-identity] queryByVid barcode lookup failed", { supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, error: error instanceof Error ? error.message : String(error) });
+    const message = error instanceof Error ? error.message : String(error);
+    lookupErrors.push(`queryByVid barcode lookup: ${message}`);
+    console.warn("[cj-supply-identity] queryByVid barcode lookup failed", { supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, error: message });
   }
+  if (lookupErrors.length) throw new Error(`CJ variant barcode lookup failed: ${lookupErrors.join("; ")}`);
   return "";
 }
 
