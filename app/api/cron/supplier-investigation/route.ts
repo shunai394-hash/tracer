@@ -49,17 +49,41 @@ export async function GET(request: Request) {
     // Do not make ASIN/MPN candidates invisible to the queue. ASIN-only rows
     // are enriched by investigate-dropship before supplier search, and MPN is
     // a valid strict identity key. The old filter silently excluded both.
+    // Pull a wider queue, then rank candidates by the strength of the
+    // identity evidence we can actually use against supplier catalogs. A
+    // pure "newest first" queue repeatedly spent the entire budget on weak
+    // title/ASIN rows while exact JAN/GTIN candidates waited behind them.
+    const queuePoolSize = Math.max(BESTSELLER_CANDIDATE_BATCH_SIZE * 5, 50);
     const { data: freshRows, error: freshError } = await supabase
       .from("marketplace_bestsellers")
-      .select("id")
+      .select("id,jan,gtin,ean,upc,mpn,asin,fetched_at")
       .in("pipeline_status", ["pending", "failed"])
       .or(IDENTIFIER_FILTER)
       .order("fetched_at", { ascending: false })
-      .limit(BESTSELLER_CANDIDATE_BATCH_SIZE);
+      .limit(queuePoolSize);
 
     if (freshError) throw new Error(freshError.message);
 
-    let candidateIds = (freshRows ?? []).map((row) => String(row.id));
+    const identityPriority = (row: Record<string, unknown>): number => {
+      let score = 0;
+      if (typeof row.jan === "string" && row.jan.trim()) score += 100;
+      if (typeof row.gtin === "string" && row.gtin.trim()) score += 95;
+      if (typeof row.ean === "string" && row.ean.trim()) score += 90;
+      if (typeof row.upc === "string" && row.upc.trim()) score += 85;
+      if (typeof row.mpn === "string" && row.mpn.trim()) score += 70;
+      if (typeof row.asin === "string" && row.asin.trim()) score += 45;
+      return score;
+    };
+
+    let candidateIds = (freshRows ?? [])
+      .slice()
+      .sort((a, b) => {
+        const priority = identityPriority(b as Record<string, unknown>) - identityPriority(a as Record<string, unknown>);
+        if (priority !== 0) return priority;
+        return String(b.fetched_at ?? "").localeCompare(String(a.fetched_at ?? ""));
+      })
+      .slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE)
+      .map((row) => String(row.id));
 
     if (candidateIds.length < BESTSELLER_CANDIDATE_BATCH_SIZE) {
       const retrySlots = BESTSELLER_CANDIDATE_BATCH_SIZE - candidateIds.length;
