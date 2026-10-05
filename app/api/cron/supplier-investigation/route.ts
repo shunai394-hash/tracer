@@ -11,6 +11,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const INVESTIGATION_BUDGET_MS = 200_000;
+const IDENTIFIER_FILTER = "jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null,mpn.not.is.null,asin.not.is.null";
 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -45,11 +46,14 @@ export async function GET(request: Request) {
 
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
+    // Do not make ASIN/MPN candidates invisible to the queue. ASIN-only rows
+    // are enriched by investigate-dropship before supplier search, and MPN is
+    // a valid strict identity key. The old filter silently excluded both.
     const { data: freshRows, error: freshError } = await supabase
       .from("marketplace_bestsellers")
       .select("id")
       .in("pipeline_status", ["pending", "failed"])
-      .or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null")
+      .or(IDENTIFIER_FILTER)
       .order("fetched_at", { ascending: false })
       .limit(BESTSELLER_CANDIDATE_BATCH_SIZE);
 
@@ -65,7 +69,7 @@ export async function GET(request: Request) {
         .select("id")
         .eq("pipeline_status", "blocked")
         .lt("pipeline_updated_at", retryBefore)
-        .or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null,mpn.not.is.null,asin.not.is.null")
+        .or(IDENTIFIER_FILTER)
         .order("pipeline_updated_at", { ascending: true })
         .limit(retrySlots);
 
