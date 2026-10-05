@@ -1,0 +1,75 @@
+/* Award Pass 15 — legibility, compositional silence, and accessibility polish.
+   The award bar is not “more effects”; every detail must earn its place. */
+
+/* Raise low-contrast supporting copy without changing the authored dark field. */
+footer > div > div:first-child > p:last-child {
+  color: rgba(228,228,231,.64) !important;
+}
+
+footer nav {
+  color: rgba(228,228,231,.62) !important;
+}
+
+footer nav a {
+  color: rgba(228,228,231,.72) !important;
+}
+
+footer nav a:hover,
+footer nav a:focus-visible {
+  color: var(--tracer-signal) !important;
+}
+
+/* The skip link should feel native to the system rather than like browser chrome. */
+body > a[href="#main-content"] {
+  border: 1px solid rgba(165,243,252,.42);
+  border-radius: 999px;
+  letter-spacing: .08em;
+  box-shadow: 0 16px 50px rgba(0,0,0,.3);
+}
+
+/* Editorial surfaces: create a quiet baseline and reveal depth only on intent. */
+main section {
+  scroll-margin-top: 96px;
+}
+
+main section > * {
+  max-width: 100%;
+}
+
+/* Keep long Japanese/English labels from becoming accidental layout collisions. */
+main a,
+main button,
+footer a {
+  overflow-wrap: anywhere;
+}
+
+/* Never let animation become the only indication of state. */
+[aria-current="page"] {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 7px;
+}
+
+/* Small screens: prioritize reading rhythm over decorative density. */
+@media (max-width: 767px) {
+  main section {
+    scroll-margin-top: 80px;
+  }
+
+  footer > div > div:first-child > p:last-child {
+    max-width: 34rem;
+    line-height: 1.8 !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (forced-colors: active) {
+  body > a[href="#main-content"] {
+    border: 1px solid CanvasText;
+    box-shadow: none;
+  }
+}
