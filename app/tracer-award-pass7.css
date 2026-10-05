@@ -1,0 +1,242 @@
+/* TRACER AWARD PASS 07 — composition, accessibility, responsive polish.
+   Target: award-caliber interaction design without sacrificing operational clarity.
+   Principle: fewer effects, stronger hierarchy, zero ambiguity at interaction points. */
+
+:root {
+  --tracer-cyan: #a5f3fc;
+  --tracer-line: rgba(255,255,255,.075);
+  --tracer-muted: rgba(161,161,170,.56);
+  --tracer-ease: cubic-bezier(.22,1,.36,1);
+}
+
+/* Keep the visual language coherent across every surface, not only the landing page. */
+body {
+  letter-spacing: -.006em;
+}
+
+main {
+  text-wrap: pretty;
+}
+
+main h1,
+main h2,
+main h3 {
+  text-wrap: balance;
+}
+
+/* A stronger reading measure prevents beautiful layouts from becoming tiring. */
+main p {
+  max-width: 72ch;
+}
+
+/* Interactive elements get one consistent tactile language. */
+a,
+button {
+  transition-timing-function: var(--tracer-ease);
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 1px solid var(--tracer-cyan);
+  outline-offset: 4px;
+  box-shadow: 0 0 0 4px rgba(103,232,249,.07);
+}
+
+/* Header: establish a clear visual hierarchy between identity, discovery and operations. */
+header.sticky {
+  border-bottom-color: rgba(255,255,255,.085);
+  background: color-mix(in srgb, #07090b 90%, transparent);
+}
+
+header.sticky nav[aria-label="Main navigation"] a,
+header.sticky nav[aria-label="Operations navigation"] a,
+header.sticky nav[aria-label="Store navigation"] a {
+  position: relative;
+  min-height: 34px;
+}
+
+header.sticky a[aria-current="page"] {
+  color: #ecfeff;
+}
+
+header.sticky a[aria-current="page"]::after {
+  box-shadow: 0 0 12px rgba(103,232,249,.35);
+}
+
+/* Editorial surfaces: give rows a stronger scan path and a deliberate active edge. */
+.tracer-market-row,
+.tracer-demand-row {
+  position: relative;
+}
+
+.tracer-market-row::before,
+.tracer-demand-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 18%;
+  bottom: 18%;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(103,232,249,.55), transparent);
+  opacity: 0;
+  transform: scaleY(.4);
+  transition: opacity .45s ease, transform .65s var(--tracer-ease);
+}
+
+.tracer-market-row:hover::before,
+.tracer-demand-row:hover::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+/* Product cards should read as objects, not generic SaaS tiles. */
+article[class*="group"],
+.tracer-editorial-page article {
+  transition:
+    border-color .45s ease,
+    background-color .45s ease,
+    transform .65s var(--tracer-ease),
+    box-shadow .65s var(--tracer-ease);
+}
+
+@media (hover:hover) {
+  article[class*="group"]:hover {
+    box-shadow: 0 24px 70px rgba(0,0,0,.18);
+  }
+}
+
+/* Status language: visual state must remain understandable without color alone. */
+[data-status="success"],
+[data-status="ready"] {
+  box-shadow: inset 2px 0 rgba(103,232,249,.7);
+}
+
+[data-status="warning"],
+[data-status="pending"] {
+  box-shadow: inset 2px 0 rgba(251,191,36,.7);
+}
+
+[data-status="error"],
+[data-status="blocked"] {
+  box-shadow: inset 2px 0 rgba(248,113,113,.7);
+}
+
+/* Empty states are editorial decisions, not dead ends. */
+.tracer-empty {
+  position: relative;
+  overflow: hidden;
+}
+
+.tracer-empty::before {
+  content: "NO SIGNAL / YET";
+  position: absolute;
+  right: 1.25rem;
+  top: 1.25rem;
+  font: 7px/1 var(--font-geist-mono), monospace;
+  letter-spacing: .22em;
+  color: rgba(161,161,170,.16);
+}
+
+.tracer-empty::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -180px;
+  width: 420px;
+  height: 260px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(103,232,249,.055), transparent 68%);
+  pointer-events: none;
+}
+
+/* Tables and dense operational surfaces need breathing room at wide widths. */
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+th {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  letter-spacing: .16em;
+  font-weight: 400;
+  text-transform: uppercase;
+}
+
+td {
+  line-height: 1.55;
+}
+
+/* Never let horizontal navigation look broken on narrow screens. */
+@media (max-width: 767px) {
+  header.sticky {
+    backdrop-filter: blur(18px) saturate(120%);
+    -webkit-backdrop-filter: blur(18px) saturate(120%);
+  }
+
+  header.sticky .tracer-nav-scroll {
+    mask-image: linear-gradient(90deg, transparent, black 14px, black calc(100% - 14px), transparent);
+  }
+
+  header.sticky nav[aria-label="Main navigation"],
+  header.sticky nav[aria-label="Store navigation"] {
+    gap: 1.1rem;
+  }
+
+  main p {
+    max-width: none;
+  }
+
+  .tracer-market-row::before,
+  .tracer-demand-row::before {
+    display: none;
+  }
+
+  .tracer-empty::before {
+    display: none;
+  }
+}
+
+/* High-density desktop: preserve negative space instead of endlessly widening content. */
+@media (min-width: 1600px) {
+  main .tracer-editorial-hero,
+  main .tracer-editorial-hero-grid,
+  main .tracer-content-section,
+  main .tracer-market-list,
+  main .tracer-demand-list {
+    max-width: 1440px;
+  }
+}
+
+/* Motion is a reward, never a requirement. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .tracer-market-row::before,
+  .tracer-demand-row::before {
+    display: none;
+  }
+}
+
+/* Forced-colors/high-contrast environments must retain interaction visibility. */
+@media (forced-colors: active) {
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: 2px solid CanvasText;
+    box-shadow: none;
+  }
+}
