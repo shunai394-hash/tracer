@@ -104,7 +104,10 @@ async function markVerification(
   }).eq("id", id);
   // A failed write would leave the row at the head of the due queue and
   // stall traversal, so surface it instead of dropping it.
-  if (error) console.error("[supply-first] verification state write failed", { id, error: error.message });
+  if (error) {
+    console.error("[supply-first] verification state write failed", { id, error: error.message });
+    throw new Error(`supply-first verification state write failed for ${id}: ${error.message}`);
+  }
 }
 
 async function upsertSupplierListing(
