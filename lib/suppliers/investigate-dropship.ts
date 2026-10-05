@@ -454,6 +454,23 @@ export async function investigateDropshipForBestsellers(
         status: "blocked",
         reason: "cj_not_configured",
       });
+
+      // CJ being unavailable must not suppress an independently configured
+      // alternative supplier. Try Orosy before giving up on this bestseller.
+      try {
+        const alternative = await investigateOrosyFallback({
+          record,
+          marketIds,
+          fetchedAt,
+          supabase,
+        });
+        if (alternative.found) matched += 1;
+      } catch (error) {
+        console.warn("[investigate-dropship] Orosy fallback failed after CJ config miss", {
+          bestsellerId: String(record.id),
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       continue;
     }
 
