@@ -9,6 +9,7 @@ import "./tracer-award-pass4.css";
 import "./tracer-award-pass5.css";
 import "./tracer-award-pass6.css";
 import "./tracer-award-pass7.css";
+import "./tracer-award-pass8.css";
 import "./tracer-editorial-pass2.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
