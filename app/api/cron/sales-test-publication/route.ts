@@ -70,14 +70,9 @@ export async function GET(request: Request) {
 
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
-    // Discovery is not publication. Supplier discovery is owned by its own
-    // scheduled source stage; this publication stage must stay bounded so it
-    // can reliably reach Opportunity Intelligence, the Sales Test Gate, BASE,
-    // and NEWFIND instead of timing out before downstream delivery.
-    await buildOpportunityIntelligence();
-
-    // Also reconsider supply verified by earlier supply-first runs: its
-    // intelligence may only have become complete after that run finished.
+    // Publication must be bounded around the candidates that can actually
+    // reach the Sales Test Gate. A 1000-row intelligence sweep is wasteful and
+    // can consume the 300s function budget before the publication decision.
     const { data: verifiedSupply, error: verifiedSupplyError } = await supabase
       .from("supplier_listings")
       .select("product_id")
@@ -89,17 +84,14 @@ export async function GET(request: Request) {
       .limit(50);
     if (verifiedSupplyError) throw new Error(verifiedSupplyError.message);
 
-    // The sweep above only reaches the first page of product_intelligence;
-    // the gate's own candidates must have current intelligence too.
-    const verifiedSupplyIds = Array.from(new Set((verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)));
-    if (verifiedSupplyIds.length > 0) await buildOpportunityIntelligence({ productIds: verifiedSupplyIds });
-
-    const supplySelected = await selectAndPublishSupplySalesTests(
-      [
-        ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")),
-      ].filter(Boolean),
-      10,
+    const verifiedSupplyIds = Array.from(
+      new Set((verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)),
     );
+    if (verifiedSupplyIds.length > 0) {
+      await buildOpportunityIntelligence({ productIds: verifiedSupplyIds });
+    }
+
+    const supplySelected = await selectAndPublishSupplySalesTests(verifiedSupplyIds, 10);
     const supplyDownstream = await promoteGatePassedListings(supplySelected.publishedListingIds);
 
     if (supplySelected.published > 0) {
@@ -131,18 +123,27 @@ export async function GET(request: Request) {
     }
 
     // Keep the existing market-linked pipeline as the fallback when the
-    // supply-first source has no publishable candidate.
+    // supply-first source has no publishable candidate. Build OI specifically
+    // for those ready rows before evaluating the shared Sales Test Gate.
     const { data: readyRows, error: readyError } = await supabase
       .from("marketplace_bestsellers")
-      .select("id")
+      .select("id,product_id")
       .eq("pipeline_stage", "VARIANT_VERIFIED")
       .eq("pipeline_status", "ready")
+      .not("product_id", "is", null)
       .order("fetched_at", { ascending: false })
       .limit(10);
 
     if (readyError) throw new Error(readyError.message);
 
     const candidateIds = (readyRows ?? []).map((row) => String(row.id));
+    const marketProductIds = Array.from(
+      new Set((readyRows ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)),
+    );
+    if (marketProductIds.length > 0) {
+      await buildOpportunityIntelligence({ productIds: marketProductIds });
+    }
+
     const decision = await selectAndPublishSalesTests(candidateIds, 10);
     const downstream = await promoteGatePassedListings(decision.publishedListingIds);
 
