@@ -54,12 +54,6 @@ async function readPersistableBarcode(supplierProductId: string, supplierVariant
   }
 }
 
-/**
- * Re-check existing CJ supply that was discovered without marketplace
- * identity. Identity promotion remains evidence-gated: only a unique exact
- * CJ variant barcode -> marketplace JAN/GTIN/EAN/UPC match is accepted.
- * Traversal is resumable through a persisted id cursor.
- */
 export async function reverifyCjSupplyIdentities(options: {
   limit?: number;
   deadlineAt?: number;
@@ -124,17 +118,16 @@ export async function reverifyCjSupplyIdentities(options: {
       });
       if (!identity) {
         if (variantBarcode) {
-          await db.from("supplier_listings").update({
-            metadata: { ...listingMetadata, variant_barcode: variantBarcode },
-          }).eq("id", supplierListingId);
+          await db.from("supplier_listings").update({ metadata: { ...listingMetadata, variant_barcode: variantBarcode } }).eq("id", supplierListingId);
         }
         return { kind: "no_match" as const, supplierListingId };
       }
 
+      const canonicalProductId = identity.productId;
       const { data: intelligence } = await db
         .from("product_intelligence")
         .select("image_url,metadata")
-        .eq("product_id", String(row.product_id))
+        .eq("product_id", canonicalProductId)
         .maybeSingle();
       const metadata = record(intelligence?.metadata);
       const cost = num(row.cost);
@@ -145,15 +138,13 @@ export async function reverifyCjSupplyIdentities(options: {
       const imageUrl = typeof intelligence?.image_url === "string" ? intelligence.image_url : "";
       if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) {
         if (variantBarcode) {
-          await db.from("supplier_listings").update({
-            metadata: { ...listingMetadata, variant_barcode: variantBarcode },
-          }).eq("id", supplierListingId);
+          await db.from("supplier_listings").update({ metadata: { ...listingMetadata, variant_barcode: variantBarcode } }).eq("id", supplierListingId);
         }
         return { kind: "missing_economics" as const, supplierListingId };
       }
 
       await persistCjSupplyIntelligence({
-        productId: String(row.product_id),
+        productId: canonicalProductId,
         title: String(row.title ?? ""),
         imageUrl,
         cost,
@@ -168,18 +159,9 @@ export async function reverifyCjSupplyIdentities(options: {
         variantBarcode,
       }, { identity });
 
-      return {
-        kind: "promoted" as const,
-        supplierListingId,
-        bestsellerId: identity.bestsellerId,
-        method: identity.method,
-      };
+      return { kind: "promoted" as const, supplierListingId, bestsellerId: identity.bestsellerId, method: identity.method };
     } catch (rowError) {
-      return {
-        kind: "error" as const,
-        supplierListingId,
-        error: rowError instanceof Error ? rowError.message : String(rowError),
-      };
+      return { kind: "error" as const, supplierListingId, error: rowError instanceof Error ? rowError.message : String(rowError) };
     }
   };
 
@@ -216,12 +198,7 @@ export async function reverifyCjSupplyIdentities(options: {
     finished_at: now,
     processed: result.checked,
     failed: result.errors.length,
-    metadata: {
-      afterId: result.nextCursor,
-      promoted: result.promoted,
-      noUniqueBarcodeMatch: result.noUniqueBarcodeMatch,
-      missingEconomics: result.missingEconomics,
-    },
+    metadata: { afterId: result.nextCursor, promoted: result.promoted, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics },
   });
   return result;
 }
