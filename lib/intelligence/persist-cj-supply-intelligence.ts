@@ -3,7 +3,7 @@ import "server-only";
 import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
-import { identifiersFromRecord, matchProductIdentity } from "@/lib/market/identifiers";
+import { identifiersFromRecord, marketplaceBarcodeCandidates, matchProductIdentity } from "@/lib/market/identifiers";
 
 export type PersistCjSupplyIntelligenceArgs = {
   productId: string;
@@ -34,16 +34,6 @@ function normalizeBarcode(value: unknown): string {
   return typeof value === "string" ? value.trim().replace(/[^0-9]/g, "") : "";
 }
 
-function barcodeCandidates(value: string): string[] {
-  const digits = normalizeBarcode(value);
-  if (!digits) return [];
-  const candidates = new Set<string>([digits]);
-  if (digits.length === 12 || digits.length === 13) candidates.add(digits.padStart(14, "0"));
-  // Only a leading-zero GTIN-14 can be safely reduced to a 13-digit form.
-  // Non-zero indicator digits are meaningful and must never be stripped.
-  if (digits.length === 14 && digits.startsWith("0")) candidates.add(digits.slice(1));
-  return [...candidates];
-}
 
 async function readSupplierBarcode(args: {
   supplierProductId: string;
@@ -82,7 +72,7 @@ export async function resolveMarketplaceIdentity(args: {
   // A marketplace snapshot can contain many rows for the same canonical product.
   // Identity cardinality must therefore be measured by canonical product_id, not snapshot row id.
   const matchesByProduct = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
-  for (const value of barcodeCandidates(barcode)) {
+  for (const value of marketplaceBarcodeCandidates(barcode)) {
     const clauses = ["jan", "gtin", "ean", "upc"].map((column) => `${column}.eq.${value}`);
     // Fetch one beyond the processing cap so a truncated result can never be mistaken for a unique identity.
     const { data: bestsellers, error } = await args.db.from("marketplace_bestsellers").select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand,fetched_at").or(clauses.join(",")).limit(51);
