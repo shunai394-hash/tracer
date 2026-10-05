@@ -338,7 +338,8 @@ export async function buildOpportunityIntelligence(options: {
       .select("id, query, category"),
     supabase
       .from("opportunity_intelligence")
-      .select("id, product_id, first_test_ready_at, latest_test_status, lifecycle_status, proposed_test_price, created_at, first_discovered_at"),
+      .select("id, product_id, first_test_ready_at, latest_test_status, lifecycle_status, proposed_test_price, created_at, first_discovered_at")
+      .in("product_id", scopeIds),
     supabase
       .from("sales_tests")
       .select("id, opportunity_id, status, started_at, completed_at"),
