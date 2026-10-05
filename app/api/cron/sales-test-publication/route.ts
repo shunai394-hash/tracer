@@ -103,6 +103,22 @@ export async function GET(request: Request) {
     const supplyDownstream = await promoteGatePassedListings(supplySelected.publishedListingIds);
 
     if (supplySelected.published > 0) {
+      if (cronRunId) {
+        await supabase.from("cron_runs").update({
+          status: "succeeded",
+          finished_at: new Date().toISOString(),
+          duration_ms: Date.now() - startedAt,
+          processed: supplySelected.considered,
+          failed: 0,
+          metadata: {
+            phase: "sales_test_publication",
+            mode: "supply_first_intelligence_gate",
+            considered: supplySelected.considered,
+            published: supplySelected.published,
+          },
+        }).eq("id", cronRunId);
+      }
+
       return NextResponse.json({
         ok: true,
         phase: "sales_test_publication",
