@@ -5,6 +5,7 @@ import {
   persistCjSupplyIntelligence,
   resolveMarketplaceIdentity,
 } from "@/lib/intelligence/persist-cj-supply-intelligence";
+import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
 
 const CURSOR_JOB = "cj-identity-reverify-cursor";
 const DEFAULT_LIMIT = 25;
@@ -32,6 +33,27 @@ function record(value: unknown): Record<string, unknown> {
     : {};
 }
 
+async function readPersistableBarcode(supplierProductId: string, supplierVariantId: string, persistedBarcode: string | null): Promise<string | null> {
+  const supplied = typeof persistedBarcode === "string" ? persistedBarcode.trim().replace(/[^0-9]/g, "") : "";
+  if (supplied) return supplied;
+  try {
+    const variants = await fetchCJProductVariants(supplierProductId, { countryCode: "JP" });
+    const variant = variants.find((item) => item.vid === supplierVariantId);
+    const barcode = typeof variant?.barcode === "string" ? variant.barcode.trim().replace(/[^0-9]/g, "") : "";
+    if (barcode) return barcode;
+  } catch (error) {
+    console.warn("[cj-identity-reverify] variant barcode lookup failed", { supplierProductId, supplierVariantId, error: error instanceof Error ? error.message : String(error) });
+  }
+  try {
+    const variant = await fetchCJVariantByVid(supplierVariantId);
+    const barcode = typeof variant?.barcode === "string" ? variant.barcode.trim().replace(/[^0-9]/g, "") : "";
+    return barcode || null;
+  } catch (error) {
+    console.warn("[cj-identity-reverify] queryByVid barcode lookup failed", { supplierProductId, supplierVariantId, error: error instanceof Error ? error.message : String(error) });
+    return null;
+  }
+}
+
 /**
  * Re-check existing CJ supply that was discovered without marketplace
  * identity. Identity promotion remains evidence-gated: only a unique exact
@@ -44,8 +66,6 @@ export async function reverifyCjSupplyIdentities(options: {
 } = {}): Promise<CjIdentityReverifyResult> {
   const db = createSupabaseAdminClient();
   const requestedLimit = options.limit ?? DEFAULT_LIMIT;
-  // Respect the caller's budget. A patrol that explicitly asks for five rows
-  // must not silently expand to 25 and consume the entire step deadline.
   const limit = Math.max(1, Math.min(requestedLimit, MAX_LIMIT));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
 
@@ -95,13 +115,21 @@ export async function reverifyCjSupplyIdentities(options: {
       const persistedBarcode = typeof listingMetadata.variant_barcode === "string"
         ? listingMetadata.variant_barcode.trim()
         : null;
+      const variantBarcode = await readPersistableBarcode(String(row.supplier_product_id), String(row.supplier_variant_id), persistedBarcode);
       const identity = await resolveMarketplaceIdentity({
         db,
         supplierProductId: String(row.supplier_product_id),
         supplierVariantId: String(row.supplier_variant_id),
-        variantBarcode: persistedBarcode,
+        variantBarcode,
       });
-      if (!identity) return { kind: "no_match" as const, supplierListingId };
+      if (!identity) {
+        if (variantBarcode) {
+          await db.from("supplier_listings").update({
+            metadata: { ...listingMetadata, variant_barcode: variantBarcode },
+          }).eq("id", supplierListingId);
+        }
+        return { kind: "no_match" as const, supplierListingId };
+      }
 
       const { data: intelligence } = await db
         .from("product_intelligence")
@@ -116,6 +144,11 @@ export async function reverifyCjSupplyIdentities(options: {
       const sellingPriceJpy = num(metadata.selling_price_jpy);
       const imageUrl = typeof intelligence?.image_url === "string" ? intelligence.image_url : "";
       if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) {
+        if (variantBarcode) {
+          await db.from("supplier_listings").update({
+            metadata: { ...listingMetadata, variant_barcode: variantBarcode },
+          }).eq("id", supplierListingId);
+        }
         return { kind: "missing_economics" as const, supplierListingId };
       }
 
@@ -132,7 +165,7 @@ export async function reverifyCjSupplyIdentities(options: {
         query: typeof metadata.query === "string" ? metadata.query : "identity_reverify",
         fxRate,
         sellingPriceJpy,
-        variantBarcode: persistedBarcode,
+        variantBarcode,
       }, { identity });
 
       return {
