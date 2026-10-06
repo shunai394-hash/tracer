@@ -26,22 +26,6 @@ export function womenProductPriority(args: {
   // Priority, not a relevance bypass: the candidate must already pass
   // demand relevance. This keeps unrelated products out.
   return { isWomenFocused: tier !== "none", bonus, tier };
-}): { isWomenFocused: boolean; bonus: number } {
-  const haystack = [args.title, args.category, args.query]
-    .filter(Boolean)
-    .join(" ")
-    .normalize("NFKC")
-    .toLowerCase();
-
-  const isWomenFocused = WOMEN_FOCUSED_PATTERNS.some((pattern) =>
-    pattern.test(haystack),
-  );
-
-  // Priority, not a relevance bypass: the candidate must already pass
-  // demand relevance. This keeps unrelated women's products out.
-  return { isWomenFocused, bonus: isWomenFocused ? 8 : 0 };
-}
-
 export function verifyWomenPriorityInvariants(): {
   ok: boolean;
   cases: Array<{ name: string; actual: boolean }>;
