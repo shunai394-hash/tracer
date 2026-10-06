@@ -15,6 +15,10 @@
       "schedule": "10 12 * * *"
     },
     {
+      "path": "/api/cron/shopify-publish",
+      "schedule": "13 12 * * *"
+    },
+    {
       "path": "/api/cron/inventory-refresh",
       "schedule": "15 12 * * *"
     },
@@ -37,6 +41,10 @@
     {
       "path": "/api/cron/dropship-execution",
       "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/cron/shopify-orders",
+      "schedule": "33 12 * * *"
     },
     {
       "path": "/api/cron/supplier-reconciliation",
