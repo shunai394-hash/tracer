@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
+import { reverifyCjSupplyIdentities } from "@/lib/suppliers/reverify-cj-identity";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
@@ -84,6 +85,16 @@ export async function GET(request: Request) {
       .limit(50);
     if (verifiedSupplyError) throw new Error(verifiedSupplyError.message);
 
+    // Identity is the hard blocker for the existing CJ supply backlog. Run
+    // barcode/marketplace re-verification before OI and the Sales Test Gate so
+    // a time-budgeted intelligence patrol cannot starve this critical stage.
+    // The reverify function is strict: it links only exact identifier-grade
+    // marketplace matches and never fabricates identity from title similarity.
+    const identityReverify = await reverifyCjSupplyIdentities({
+      limit: 50,
+      deadlineAt: Math.min(Date.now() + 90_000, startedAt + maxDuration - 30_000),
+    });
+
     const verifiedSupplyIds = Array.from(
       new Set((verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)),
     );
@@ -105,6 +116,7 @@ export async function GET(request: Request) {
           metadata: {
             phase: "sales_test_publication",
             mode: "supply_first_intelligence_gate",
+            identityReverify,
             considered: supplySelected.considered,
             published: supplySelected.published,
           },
@@ -116,6 +128,7 @@ export async function GET(request: Request) {
         phase: "sales_test_publication",
         elapsedMs: Date.now() - startedAt,
         mode: "supply_first_intelligence_gate",
+        identityReverify,
         supplySelected,
         downstream: supplyDownstream,
         nextPhase: "base_publication",
@@ -157,6 +170,7 @@ export async function GET(request: Request) {
         metadata: {
           phase: "sales_test_publication",
           mode: "market_linked_sales_test",
+          identityReverify,
           supplyConsidered: supplySelected.considered,
           supplyPublished: supplySelected.published,
           considered: decision.considered,
@@ -170,6 +184,7 @@ export async function GET(request: Request) {
       phase: "sales_test_publication",
       elapsedMs: Date.now() - startedAt,
       mode: "market_linked_sales_test",
+      identityReverify,
       candidateCount: candidateIds.length,
       decision,
       downstream,
