@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 import { getCJConfig } from "@/lib/config/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -353,9 +353,13 @@ export async function fetchCJVariantByVid(vid: string): Promise<CJProductVariant
         ? null
         : String(row.variantSellPrice),
     barcode:
-      row.barcode === undefined || row.barcode === null
-        ? null
-        : String(row.barcode).replace(/\D/g, "") || null,
+      [row.barcode, row.variantBarcode, row.variantBarCode, row.productBarCode]
+        .find((value) => value !== undefined && value !== null && String(value).trim())
+        ? String(
+            [row.barcode, row.variantBarcode, row.variantBarCode, row.productBarCode]
+              .find((value) => value !== undefined && value !== null && String(value).trim()),
+          ).replace(/\D/g, "") || null
+        : null,
     inventory: null,
   };
 }
