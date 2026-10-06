@@ -21,6 +21,9 @@ for (const listing of published ?? []) {
   if (listing.orderable !== true) violations.push(`${id}:published_not_orderable`);
 }
 
+const shopifyReady = (published ?? []).filter((listing) => Boolean(listing.shopify_product_id) && listing.shopify_sync_status === "synced");
+const shopifyPending = (published ?? []).filter((listing) => !listing.shopify_product_id || listing.shopify_sync_status !== "synced");
+
 const { count: gateCount, error: gateError } = await db
   .from("shop_listings")
   .select("id", { count: "exact", head: true })
@@ -34,6 +37,8 @@ console.log(JSON.stringify({
   ok: violations.length === 0,
   publishedCount: published?.length ?? 0,
   canonicalGateCount: gateCount ?? 0,
+  shopifyReadyCount: shopifyReady.length,
+  shopifyPendingCount: shopifyPending.length,
   violations,
 }, null, 2));
 
