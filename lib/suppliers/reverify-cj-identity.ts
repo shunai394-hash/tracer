@@ -76,11 +76,14 @@ export async function reverifyCjSupplyIdentities(options: {
     ? String((cursorRow?.metadata as Record<string, unknown>).afterId)
     : null;
 
+  // Retryable supply rows are still valid identity-reverification candidates.
+  // Excluding them stranded a large portion of CJ supply after transient API
+  // failures, so the cursor must cover verified, unverified, and retryable rows.
   let query = db
     .from("supplier_listings")
     .select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata")
     .eq("supplier", "cj")
-    .in("verification_status", ["verified", "unverified"])
+    .in("verification_status", ["verified", "unverified", "retryable"])
     .eq("orderable", true)
     .eq("identity_method", "supply_discovered")
     .not("supplier_variant_id", "is", null)
