@@ -9,6 +9,8 @@ const checks = [
   ["Shopify storefront store", "lib/shop/store.ts", "shopify_sync_status"],
   ["Shopify storefront publication filter", "lib/shop/store.ts", "shopify_product_id"],
   ["Shopify storefront UI", "app/shop/page.tsx", "SHOPIFY LIVE"],
+  ["Shopify channel cron", "app/api/cron/shopify-publish/route.ts", "isShopifyConfigured"],
+  ["Shopify readiness audit", "scripts/shopify-channel-audit.ts", "SHOPIFY_ADMIN_ACCESS_TOKEN"],
   ["BASE publisher", "lib/channels/base-publisher.ts", "hasPassedSalesTestGate"],
   ["Supply sales selector", "lib/market/select-supply-sales-tests.ts", "evaluateSalesTestGate"],
   ["Market sales selector", "lib/market/select-sales-tests.ts", "SALES_TEST_GATE_PASSED"],
