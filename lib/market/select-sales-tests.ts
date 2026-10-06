@@ -8,6 +8,7 @@ import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { getSupplierCapabilities } from "@/lib/procurement/registry";
+import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -117,6 +118,7 @@ export async function selectAndPublishSalesTests(
 
     if (bestseller.rank === null) reasons.push("rank_unknown");
     if (!bestseller.title) reasons.push("title_unknown");
+    if (!isJapaneseProductTitle(bestseller.title)) reasons.push("japanese_product_title_required");
     if (!bestseller.image_url) reasons.push("image_unknown");
     if (!validHttpUrl(bestseller.image_url)) reasons.push("image_url_invalid");
 
