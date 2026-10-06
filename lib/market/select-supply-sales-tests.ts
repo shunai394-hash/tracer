@@ -21,6 +21,24 @@ function slugify(title: string, productId: string): string {
   return (base || "tracer-product") + "-" + productId.slice(-8);
 }
 
+function listingQuality(row: Record<string, unknown>): number {
+  const identity = num(row.identity_confidence) ?? 0;
+  const inventory = Math.max(0, num(row.inventory) ?? 0);
+  return (
+    (row.identity_status === "linked" ? 1000 : 0) +
+    (row.identity_method ? 100 : 0) +
+    identity * 100 +
+    (row.price_confirmed === true ? 100 : 0) +
+    (row.inventory_confirmed === true ? 100 : 0) +
+    (row.orderable === true ? 100 : 0) +
+    (row.tracking_available === true ? 50 : 0) +
+    (row.api_available === true ? 50 : 0) +
+    (row.supplier_product_id ? 25 : 0) +
+    (row.supplier_variant_id ? 25 : 0) +
+    Math.min(inventory, 1000) / 1000
+  );
+}
+
 export type SupplySalesTestResult = {
   published: number;
   publishedListingIds: string[];
@@ -38,9 +56,6 @@ export async function selectAndPublishSupplySalesTests(
     return { published: 0, publishedListingIds: [], considered: 0, rejected: [] };
   }
 
-  // Supplier capability lookup is fail-closed. Initialize the adapters before
-  // the first direct capability check; getAutoProcurementEligibility() also
-  // initializes, but it is intentionally called after this check below.
   initializeProcurement();
 
   const uniqueProductIds = Array.from(new Set(productIds));
@@ -68,7 +83,11 @@ export async function selectAndPublishSupplySalesTests(
   const listingByProduct = new Map<string, Record<string, unknown>>();
   for (const row of listings ?? []) {
     const key = String(row.product_id);
-    if (!listingByProduct.has(key)) listingByProduct.set(key, row as Record<string, unknown>);
+    const candidate = row as Record<string, unknown>;
+    const current = listingByProduct.get(key);
+    if (!current || listingQuality(candidate) > listingQuality(current)) {
+      listingByProduct.set(key, candidate);
+    }
   }
 
   const rejected: Array<{ productId: string; reasons: string[] }> = [];
