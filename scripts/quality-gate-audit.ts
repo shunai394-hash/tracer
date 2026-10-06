@@ -23,6 +23,9 @@ const checks = [
   ["Market sales selector", "lib/market/select-sales-tests.ts", "SALES_TEST_GATE_PASSED"],
   ["CJ identity reverify", "lib/suppliers/reverify-cj-identity.ts", "variantBarcode"],
   ["CJ womens recovery priority", "lib/suppliers/reverify-cj-identity.ts", "womensSelected"],
+  ["CJ womens signal precision", "lib/suppliers/reverify-cj-identity.ts", "audience_focus"],
+  ["CJ identifier-first recovery", "lib/suppliers/reverify-cj-identity.ts", "identifierFirst"],
+  ["CJ identity resolver listing identifiers", "lib/intelligence/persist-cj-supply-intelligence.ts", "supplierIdentifiers"],
   ["CJ womens signal precision", "lib/suppliers/reverify-cj-identity.ts", "pore strip"],
   ["CJ identity recovery twice daily", "vercel.json", "8 18 * * *"],
 ] as const;
