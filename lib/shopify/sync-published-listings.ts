@@ -87,13 +87,13 @@ export async function syncPublishedListingsToShopify(limit = 10): Promise<Shopif
       if (price === null || price <= 0) throw new Error("selling_price_invalid");
       if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) throw new Error("image_url_invalid");
       const productInput = { title: row.title, descriptionHtml: html(row.description), handle: row.shopify_handle || row.slug, price, sku: sku(row) };
-      const existing = row.shopify_product_id
+      const existing = (await findByHandle(productInput.handle)) ?? (row.shopify_product_id
         ? { id: row.shopify_product_id, handle: row.shopify_handle || row.slug, vendor: "TRACER", tags: ["TRACER"], variants: { nodes: [{ id: row.shopify_variant_id || "", sku: null, price: null }] } }
-        : await findByHandle(productInput.handle);
+        : null);
       if (existing && existing.vendor && existing.vendor !== "TRACER" && !existing.tags.includes("TRACER")) throw new Error("shopify_handle_owned_by_non_tracer_product");
       const product = existing
-        ? await updateShopifyProduct({ productId: existing.id, title: productInput.title, descriptionHtml: productInput.descriptionHtml, handle: productInput.handle, price: productInput.price, variantId: existing.variants.nodes[0]?.id || null, sku: productInput.sku })
-        : await createShopifyProduct(productInput);
+        ? await updateShopifyProduct({ productId: existing.id, title: productInput.title, descriptionHtml: productInput.descriptionHtml, handle: productInput.handle, price: productInput.price, variantId: existing.variants.nodes[0]?.id || null, sku: productInput.sku, imageUrl: existing.media?.nodes?.length ? null : row.image_url })
+        : await createShopifyProduct({ ...productInput, imageUrl: row.image_url });
       const variant = product.variants?.nodes?.[0];
       const { error: updateError } = await supabase.from("shop_listings").update({ shopify_product_id: product.id, shopify_variant_id: variant?.id ?? null, shopify_handle: product.handle, shopify_synced_at: new Date().toISOString(), shopify_sync_status: "synced", shopify_sync_error: null }).eq("id", row.id);
       if (updateError) throw new Error(updateError.message);
