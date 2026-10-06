@@ -26,6 +26,16 @@ function slugify(title: string, id: string): string {
   return `${base || "item"}-${id.slice(0, 8)}`;
 }
 
+function validHttpUrl(value: unknown): boolean {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export type SalesTestSelection = {
   published: number;
   publishedListingIds: string[];
@@ -45,11 +55,6 @@ export async function selectAndPublishSalesTests(
   const fetchedAt = new Date().toISOString();
   const fxQuote = await getObservedUsdToJpyRate();
 
-  // Must be the exact same candidate set investigate-dropship.ts just
-  // investigated (same ordering key and limit — see candidate-batch.ts),
-  // or the supplier_listings rows that stage just wrote will never be
-  // found here and every candidate falls through as identity_not_confirmed
-  // even when a linked listing genuinely exists for it.
   const { data: bestsellers, error } = bestsellerIds.length === 0
     ? { data: [], error: null }
     : await supabase
@@ -90,11 +95,6 @@ export async function selectAndPublishSalesTests(
     isInternalSupply: boolean;
   }> = [];
 
-  // Publication gate fields are loaded together with the scores so the persisted gate is authoritative in production.
-  // Use the intelligence pipeline's persisted, multi-source scores rather than
-  // keyword guessing against free text. This keeps sales selection aligned with
-  // demand, search-fit, market-gap, competition and creative intelligence that
-  // was already calculated for the same product.
   const productIds = (bestsellers ?? [])
     .map((row) => String((row as Record<string, unknown>).product_id ?? ""))
     .filter(Boolean);
@@ -117,6 +117,7 @@ export async function selectAndPublishSalesTests(
     if (bestseller.rank === null) reasons.push("rank_unknown");
     if (!bestseller.title) reasons.push("title_unknown");
     if (!bestseller.image_url) reasons.push("image_unknown");
+    if (!validHttpUrl(bestseller.image_url)) reasons.push("image_url_invalid");
 
     const { data: internalCatalog, error: internalError } = await supabase
       .from("tracer_supply_catalog")
@@ -131,7 +132,6 @@ export async function selectAndPublishSalesTests(
 
     let listing: Record<string, unknown> | undefined;
     let isInternalSupply = false;
-    let internalCatalogVariant: Record<string, unknown> | null = null;
     if (internalCatalog) {
       const { data: catalogVariant, error: catalogVariantError } = await supabase
         .from("tracer_supply_variants")
@@ -143,7 +143,7 @@ export async function selectAndPublishSalesTests(
         .limit(1)
         .maybeSingle();
       if (catalogVariantError) throw new Error(catalogVariantError.message);
-      internalCatalogVariant = (catalogVariant ?? null) as Record<string, unknown> | null;
+      const internalCatalogVariant = (catalogVariant ?? null) as Record<string, unknown> | null;
       isInternalSupply = true;
       listing = {
         id: internalCatalog.id,
@@ -189,10 +189,7 @@ export async function selectAndPublishSalesTests(
       rejected.push({ id: String(bestseller.id), reasons });
       continue;
     }
-    // Publication is allowed only when the supplier can execute the complete
-    // autonomous procurement lifecycle. Keep this gate identical in meaning
-    // to supplier-execution.ts so a listing can never be public while its
-    // eventual purchase path is known to be non-automatable.
+
     const supplierCapabilities = getSupplierCapabilities(String(listing.supplier ?? ""));
     const requiredCapabilities = [
       ["variant", supplierCapabilities.variant],
@@ -213,6 +210,8 @@ export async function selectAndPublishSalesTests(
     if (listing.cost === null) reasons.push("source_cost_unknown");
     if (isInternalSupply && asNumber(listing.catalog_sale_price) === null) reasons.push("selling_price_unknown");
     if (!isInternalSupply && bestseller.price === null) reasons.push("selling_price_unknown");
+    if (isInternalSupply && (asNumber(listing.catalog_sale_price) ?? 0) <= 0) reasons.push("selling_price_invalid");
+    if (!isInternalSupply && (asNumber(bestseller.price) ?? 0) <= 0) reasons.push("selling_price_invalid");
     if (listing.shipping_cost === null) reasons.push("shipping_unknown");
     if (listing.tracking_available !== true) reasons.push("tracking_unknown");
     if (listing.api_available !== true) reasons.push("supplier_api_unknown");
@@ -222,10 +221,6 @@ export async function selectAndPublishSalesTests(
       reasons.push("inventory_zero");
     }
 
-    // Defense in depth: historical supplier rows may predate the current
-    // identity implementation. Publication is allowed only for an
-    // identifier-grade method, even if an old row was incorrectly marked
-    // linked. Title/image/none are never sales identity evidence.
     const identityMethod = String(listing.identity_method ?? "");
     const identifierGradeMethods = new Set([
       "tracer_catalog",
@@ -237,43 +232,25 @@ export async function selectAndPublishSalesTests(
       "mpn",
       "brand_mpn",
     ]);
-    if (!identifierGradeMethods.has(identityMethod)) {
-      reasons.push("identity_not_confirmed");
-    }
+    if (!identifierGradeMethods.has(identityMethod)) reasons.push("identity_not_confirmed");
     const identityConfidence = asNumber(listing.identity_confidence);
-    if (identityConfidence === null || identityConfidence < 0.88) {
-      reasons.push("identity_confidence_low");
-    }
+    if (identityConfidence === null || identityConfidence < 0.88) reasons.push("identity_confidence_low");
 
-    const autoProcurement = getAutoProcurementEligibility(
-      String(listing.supplier ?? ""),
-    );
+    const autoProcurement = getAutoProcurementEligibility(String(listing.supplier ?? ""));
     if (!autoProcurement.eligible) {
-      reasons.push(
-        `supplier_auto_procurement_capability_missing:${autoProcurement.missing.join("|")}`,
-      );
+      reasons.push(`supplier_auto_procurement_capability_missing:${autoProcurement.missing.join("|")}`);
     }
 
-    // Every supplier requires a concrete variant identity before publication.
-    // Legacy CJ rows may still carry cj_variant_id, so retain that fallback only
-    // for backward compatibility; new suppliers use supplier_variant_id.
     if (!isInternalSupply &&
       typeof listing.supplier_variant_id !== "string" &&
-      !(
-        String(listing.supplier ?? "").toLowerCase() === "cjdropshipping" &&
-        typeof listing.cj_variant_id === "string"
-      )
+      !(String(listing.supplier ?? "").toLowerCase() === "cjdropshipping" && typeof listing.cj_variant_id === "string")
     ) {
       reasons.push("supplier_variant_unknown");
     }
 
     const profit = simulateContributionProfit({
-      sellingPrice: isInternalSupply
-        ? asNumber(listing.catalog_sale_price)
-        : asNumber(bestseller.price),
-      sellingCurrency: isInternalSupply
-        ? (typeof listing.currency === "string" ? listing.currency : null)
-        : (typeof bestseller.currency === "string" ? bestseller.currency : null),
+      sellingPrice: isInternalSupply ? asNumber(listing.catalog_sale_price) : asNumber(bestseller.price),
+      sellingCurrency: isInternalSupply ? (typeof listing.currency === "string" ? listing.currency : null) : (typeof bestseller.currency === "string" ? bestseller.currency : null),
       sellingProvider: isInternalSupply ? "tracer_internal" : String(bestseller.source ?? "marketplace"),
       sourceCost: asNumber(listing.cost),
       sourceCurrency: typeof listing.currency === "string" ? listing.currency : null,
@@ -282,34 +259,21 @@ export async function selectAndPublishSalesTests(
       domesticShipping: null,
       shippingCurrency: typeof listing.currency === "string" ? listing.currency : null,
       sourceFxRateToSelling:
-        typeof bestseller.currency === "string" &&
-        typeof listing.currency === "string" &&
-        bestseller.currency.trim().toUpperCase() === "JPY" &&
-        listing.currency.trim().toUpperCase() === "USD"
+        typeof bestseller.currency === "string" && typeof listing.currency === "string" && bestseller.currency.trim().toUpperCase() === "JPY" && listing.currency.trim().toUpperCase() === "USD"
           ? fxQuote?.rate ?? null
           : null,
       sourceFxRateSource:
-        typeof bestseller.currency === "string" &&
-        typeof listing.currency === "string" &&
-        bestseller.currency.trim().toUpperCase() === "JPY" &&
-        listing.currency.trim().toUpperCase() === "USD"
+        typeof bestseller.currency === "string" && typeof listing.currency === "string" && bestseller.currency.trim().toUpperCase() === "JPY" && listing.currency.trim().toUpperCase() === "USD"
           ? fxQuote?.source ?? null
           : null,
     });
 
     if (!profit.calculable) reasons.push(profit.incalculableReason ?? "profit_unknown");
     if (profit.shippingUnknown) reasons.push("shipping_unknown");
-    if (profit.contributionProfit !== null && profit.contributionProfit <= 0) {
-      reasons.push("profit_not_positive");
-    }
+    if (profit.contributionProfit !== null && profit.contributionProfit <= 0) reasons.push("profit_not_positive");
 
     if (reasons.length > 0) {
-      await markPipeline(
-        String(bestseller.id),
-        "SALES_TEST",
-        "blocked",
-        reasons.join(","),
-      );
+      await markPipeline(String(bestseller.id), "SALES_TEST", "blocked", reasons.join(","));
       rejected.push({ id: String(bestseller.id), reasons });
       continue;
     }
@@ -318,10 +282,7 @@ export async function selectAndPublishSalesTests(
     const reviews = asNumber(bestseller.review_count) ?? 0;
     const inventory = asNumber(listing.inventory) ?? 0;
     const margin = profit.contributionMargin ?? 0;
-    const rankScore =
-      rank !== null && rank > 0
-        ? Math.max(0, Math.min(100, 100 - Math.log10(rank) * 20))
-        : 0;
+    const rankScore = rank !== null && rank > 0 ? Math.max(0, Math.min(100, 100 - Math.log10(rank) * 20)) : 0;
     const reviewScore = Math.min(100, Math.log10(Math.max(1, reviews) + 1) * 25);
     const marginScore = Math.max(0, Math.min(100, margin));
     const inventoryScore = Math.min(100, Math.log10(Math.max(1, inventory) + 1) * 30);
@@ -331,34 +292,16 @@ export async function selectAndPublishSalesTests(
     if (!intelligence) {
       reasons.push("opportunity_intelligence_missing");
     } else {
-      if (intelligence.selection_eligible !== true) {
-        reasons.push("intelligence_selection_ineligible");
-      }
+      if (intelligence.selection_eligible !== true) reasons.push("intelligence_selection_ineligible");
       const sellabilityState = String(intelligence.sellability_state ?? "");
-      // Only TEST_READY (all 12 sellability checks) may publish. SELLABLE
-      // skips supply, demand, shipping and return-risk checks.
-      if (sellabilityState !== "TEST_READY") {
-        reasons.push("sellability_not_ready");
-      }
-      if (String(intelligence.filter_state ?? "") !== "PASS") {
-        reasons.push("intelligence_filter_not_pass");
-      }
-      if (String(intelligence.profit_state ?? "") !== "PROFIT_OK") {
-        reasons.push("intelligence_profit_not_ok");
-      }
-      if (asNumber(intelligence.demand_score) === null) {
-        reasons.push("demand_evidence_missing");
-      }
-      if (asNumber(intelligence.search_fit_score) === null) {
-        reasons.push("search_fit_evidence_missing");
-      }
-      if (asNumber(intelligence.market_gap_score) === null) {
-        reasons.push("market_gap_evidence_missing");
-      }
+      if (sellabilityState !== "TEST_READY") reasons.push("sellability_not_ready");
+      if (String(intelligence.filter_state ?? "") !== "PASS") reasons.push("intelligence_filter_not_pass");
+      if (String(intelligence.profit_state ?? "") !== "PROFIT_OK") reasons.push("intelligence_profit_not_ok");
+      if (asNumber(intelligence.demand_score) === null) reasons.push("demand_evidence_missing");
+      if (asNumber(intelligence.search_fit_score) === null) reasons.push("search_fit_evidence_missing");
+      if (asNumber(intelligence.market_gap_score) === null) reasons.push("market_gap_evidence_missing");
       const intelligenceConfidence = asNumber(intelligence.overall_confidence);
-      if (intelligenceConfidence === null || intelligenceConfidence < 0.6) {
-        reasons.push("intelligence_confidence_low");
-      }
+      if (intelligenceConfidence === null || intelligenceConfidence < 0.6) reasons.push("intelligence_confidence_low");
     }
     if (reasons.length > 0) {
       await markPipeline(String(bestseller.id), "SALES_TEST", "blocked", reasons.join(","));
@@ -373,23 +316,10 @@ export async function selectAndPublishSalesTests(
     const selectionScore = asNumber(intelligence?.selection_score) ?? 0;
     const intelligenceConfidence = asNumber(intelligence?.overall_confidence) ?? 0;
 
-    // Precision-first weighting: the persisted opportunity model is now the
-    // demand/market intelligence source of truth. A candidate without that
-    // evidence remains selectable only when the other hard gates pass, but it
-    // receives no fabricated demand/pain bonus.
     const qualityScore =
-      rankScore * 0.10 +
-      reviewScore * 0.05 +
-      marginScore * 0.20 +
-      inventoryScore * 0.05 +
-      identityScore * 0.10 +
-      trackingScore * 0.10 +
-      demandScore * 0.15 +
-      searchFitScore * 0.10 +
-      marketGapScore * 0.05 +
-      competitionScore * 0.05 +
-      creativeScore * 0.025 +
-      selectionScore * 0.025 +
+      rankScore * 0.10 + reviewScore * 0.05 + marginScore * 0.20 + inventoryScore * 0.05 +
+      identityScore * 0.10 + trackingScore * 0.10 + demandScore * 0.15 + searchFitScore * 0.10 +
+      marketGapScore * 0.05 + competitionScore * 0.05 + creativeScore * 0.025 + selectionScore * 0.025 +
       intelligenceConfidence * 100 * 0.025;
 
     eligible.push({
@@ -399,25 +329,16 @@ export async function selectAndPublishSalesTests(
       qualityScore,
       isInternalSupply,
       reasons: [
-        `quality_score_${qualityScore.toFixed(1)}`,
-        `demand_score_${demandScore.toFixed(1)}`,
-        `search_fit_score_${searchFitScore.toFixed(1)}`,
-        `market_gap_score_${marketGapScore.toFixed(1)}`,
-        `competition_score_${competitionScore.toFixed(1)}`,
-        `selection_score_${selectionScore.toFixed(1)}`,
-        `intelligence_confidence_${intelligenceConfidence.toFixed(2)}`,
-        `marketplace_rank_${String(bestseller.rank)}`,
-        `identity_${String(listing.identity_method)}`,
-        `margin_${margin.toFixed(1)}pct`,
-        `inventory_${String(inventory)}`,
-        `supplier_${String(listing.supplier)}`,
+        `quality_score_${qualityScore.toFixed(1)}`, `demand_score_${demandScore.toFixed(1)}`,
+        `search_fit_score_${searchFitScore.toFixed(1)}`, `market_gap_score_${marketGapScore.toFixed(1)}`,
+        `competition_score_${competitionScore.toFixed(1)}`, `selection_score_${selectionScore.toFixed(1)}`,
+        `intelligence_confidence_${intelligenceConfidence.toFixed(2)}`, `marketplace_rank_${String(bestseller.rank)}`,
+        `identity_${String(listing.identity_method)}`, `margin_${margin.toFixed(1)}pct`,
+        `inventory_${String(inventory)}`, `supplier_${String(listing.supplier)}`,
       ],
     });
   }
 
-  // Rank is useful, but it is not sufficient for a high-quality sourcing
-  // decision. Persisted opportunity intelligence now materially affects the
-  // score while the existing hard supplier/identity/profit gates remain intact.
   eligible.sort((a, b) => {
     if (b.qualityScore !== a.qualityScore) return b.qualityScore - a.qualityScore;
     const rankA = asNumber(a.bestseller.rank) ?? Number.POSITIVE_INFINITY;
@@ -428,16 +349,10 @@ export async function selectAndPublishSalesTests(
   const chosenIds = new Set(chosen.map((item) => String(item.bestseller.id)));
   for (const item of eligible) {
     const id = String(item.bestseller.id);
-    if (!chosenIds.has(id)) {
-      await markPipeline(id, "SALES_TEST", "blocked", "sales_test_limit");
-    }
+    if (!chosenIds.has(id)) await markPipeline(id, "SALES_TEST", "blocked", "sales_test_limit");
   }
   let published = 0;
 
-  // Publishing a new sales-test candidate must not unpublish the existing
-  // catalog. Market observation and sourcing decisions are independent:
-  // a sourcing run that finds zero eligible candidates is not permission to
-  // erase products that were already public.
   for (const item of chosen) {
     const productId = String(item.bestseller.product_id ?? "");
     if (!productId) continue;
@@ -492,24 +407,13 @@ export async function selectAndPublishSalesTests(
     }
 
     if (upsert.error) {
-      await markPipeline(
-        String(item.bestseller.id),
-        "PRODUCT_CREATED",
-        "failed",
-        "shop_listing_upsert_failed",
-        upsert.error.message,
-      );
+      await markPipeline(String(item.bestseller.id), "PRODUCT_CREATED", "failed", "shop_listing_upsert_failed", upsert.error.message);
       throw new Error(upsert.error.message);
     }
     if (upsert.data?.id) publishedListingIds.push(String(upsert.data.id));
     published += 1;
 
-    await markPipeline(
-      String(item.bestseller.id),
-      "PUBLISHED",
-      "published",
-      "shop_listing_created",
-    );
+    await markPipeline(String(item.bestseller.id), "PUBLISHED", "published", "shop_listing_created");
 
     await writeEvidence({
       productId,
@@ -526,10 +430,5 @@ export async function selectAndPublishSalesTests(
     });
   }
 
-  return {
-    published,
-    publishedListingIds,
-    considered: (bestsellers ?? []).length,
-    rejected: rejected.slice(0, 20),
-  };
+  return { published, publishedListingIds, considered: (bestsellers ?? []).length, rejected: rejected.slice(0, 20) };
 }
