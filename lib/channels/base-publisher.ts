@@ -52,6 +52,41 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     // passed and the currently observed supply is sellable. Automatic purchasing
     // is evaluated separately at order time; it must never suppress a valid
     // storefront listing here.
+    if (listing.tracking_available !== true) {
+      await supabase.from("shop_listings").update({
+        published: false,
+        orderable: false,
+        base_publication_status: listing.base_item_id ? "published" : "blocked",
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "blocked",
+        pipeline_reason: "tracking_unavailable",
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      if (listing.base_item_id) {
+        try {
+          await editBaseItem({ itemId: String(listing.base_item_id), title: listing.title, detail: listing.description ?? listing.title, price: Number(listing.selling_price ?? 0), stock: 0, visible: false });
+        } catch (error) {
+          results.push({ listingId, ok: false, error: error instanceof Error ? error.message : String(error) });
+          continue;
+        }
+      }
+      results.push({ listingId, ok: false, skipped: true, error: "tracking_unavailable" });
+      continue;
+    }
+
+    if (!listing.supplier_product_id || !listing.supplier_variant_id) {
+      await supabase.from("shop_listings").update({
+        published: false,
+        orderable: false,
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "blocked",
+        pipeline_reason: "supplier_variant_identity_missing",
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      results.push({ listingId, ok: false, skipped: true, error: "supplier_variant_identity_missing" });
+      continue;
+    }
+
     const price = Number(listing.selling_price);
     if (!Number.isFinite(price) || price <= 0) {
       await supabase.from("shop_listings").update({ pipeline_stage: "BASE_PUBLICATION", pipeline_status: "blocked", pipeline_reason: "selling_price_invalid", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
