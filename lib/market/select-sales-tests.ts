@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
@@ -316,11 +317,15 @@ export async function selectAndPublishSalesTests(
     const selectionScore = asNumber(intelligence?.selection_score) ?? 0;
     const intelligenceConfidence = asNumber(intelligence?.overall_confidence) ?? 0;
 
+    const womenBonus = womenProductPriority({
+      title: String(bestseller.title ?? ""),
+      category: String((bestseller as Record<string, unknown>).category ?? ""),
+    }).bonus;
     const qualityScore =
       rankScore * 0.10 + reviewScore * 0.05 + marginScore * 0.20 + inventoryScore * 0.05 +
       identityScore * 0.10 + trackingScore * 0.10 + demandScore * 0.15 + searchFitScore * 0.10 +
       marketGapScore * 0.05 + competitionScore * 0.05 + creativeScore * 0.025 + selectionScore * 0.025 +
-      intelligenceConfidence * 100 * 0.025;
+      intelligenceConfidence * 100 * 0.025 + womenBonus;
 
     eligible.push({
       bestseller,
@@ -329,7 +334,7 @@ export async function selectAndPublishSalesTests(
       qualityScore,
       isInternalSupply,
       reasons: [
-        `quality_score_${qualityScore.toFixed(1)}`, `demand_score_${demandScore.toFixed(1)}`,
+        `quality_score_${qualityScore.toFixed(1)}`, `women_priority_${womenBonus}`, `demand_score_${demandScore.toFixed(1)}`,
         `search_fit_score_${searchFitScore.toFixed(1)}`, `market_gap_score_${marketGapScore.toFixed(1)}`,
         `competition_score_${competitionScore.toFixed(1)}`, `selection_score_${selectionScore.toFixed(1)}`,
         `intelligence_confidence_${intelligenceConfidence.toFixed(2)}`, `marketplace_rank_${String(bestseller.rank)}`,
