@@ -76,16 +76,33 @@ export async function resolveMarketplaceIdentity(args: {
   if (!barcode) return null;
   const supplyIds = identifiersFromRecord({ gtin: barcode });
   if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc) return null;
+
+  // Keep exactly one candidate per canonical marketplace product. Multiple
+  // marketplace snapshots of the same product must never become competing identities.
   const matchesByProduct = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
+
   for (const value of barcodeCandidates(barcode)) {
     const clauses = ["jan", "gtin", "ean", "upc"].map((column) => `${column}.eq.${value}`);
-    const { data: bestsellers, error } = await args.db.from("marketplace_bestsellers").select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand,fetched_at").or(clauses.join(",")).limit(50);
+    const { data: bestsellers, error } = await args.db
+      .from("marketplace_bestsellers")
+      .select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand,fetched_at")
+      .or(clauses.join(","))
+      .limit(50);
     if (error) throw new Error(`CJ marketplace identity lookup failed: ${error.message}`);
+
     for (const row of bestsellers ?? []) {
       if (typeof row.product_id !== "string" || !row.product_id.trim()) continue;
       const marketIds = identifiersFromRecord(row as Record<string, unknown>);
-      const identity = matchProductIdentity({ market: { ...marketIds, brand: typeof row.brand === "string" ? row.brand : null, title: typeof row.title === "string" ? row.title : null }, supply: { ...supplyIds, title: null, brand: null } });
+      const identity = matchProductIdentity({
+        market: {
+          ...marketIds,
+          brand: typeof row.brand === "string" ? row.brand : null,
+          title: typeof row.title === "string" ? row.title : null,
+        },
+        supply: { ...supplyIds, title: null, brand: null },
+      });
       if (!identity.salesEligible || !["gtin", "jan", "ean", "upc"].includes(identity.method)) continue;
+
       const productId = String(row.product_id);
       const candidate = {
         bestsellerId: String(row.id),
@@ -101,9 +118,16 @@ export async function resolveMarketplaceIdentity(args: {
       }
     }
   }
+
   if (matchesByProduct.size !== 1) return null;
   const match = [...matchesByProduct.values()][0];
-  return { bestsellerId: match.bestsellerId, productId: match.productId, method: match.method, confidence: match.confidence, rationale: match.rationale };
+  return {
+    bestsellerId: match.bestsellerId,
+    productId: match.productId,
+    method: match.method,
+    confidence: match.confidence,
+    rationale: match.rationale,
+  };
 }
 
 export async function persistCjSupplyIntelligence(
