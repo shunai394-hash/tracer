@@ -22,10 +22,28 @@ export type SalesTestGateInput = {
   requireRank?: boolean;
 };
 
+const NON_PHYSICAL_TITLE_PATTERNS = [
+  /商品券/i,
+  /デジタルギフト/i,
+  /ギフトカード/i,
+  /gift\s*card/i,
+  /e[-\s]?gift/i,
+  /voucher/i,
+  /coupon/i,
+  /download/i,
+  /digital\s+(gift|product)/i,
+];
+
+function isNonPhysicalProductTitle(title: string | null): boolean {
+  if (!title) return false;
+  return NON_PHYSICAL_TITLE_PATTERNS.some((pattern) => pattern.test(title));
+}
+
 export function evaluateSalesTestGate(input: SalesTestGateInput): { eligible: boolean; reasons: string[] } {
   const reasons: string[] = [];
   if ((input.requireRank ?? true) && input.rank === null) reasons.push("rank_unknown");
   if (!input.title) reasons.push("title_unknown");
+  if (isNonPhysicalProductTitle(input.title)) reasons.push("non_physical_product");
   if (input.sellingPrice === null) reasons.push("selling_price_unknown");
   else if (!Number.isFinite(input.sellingPrice) || input.sellingPrice <= 0) reasons.push("selling_price_invalid");
   if (!input.identityLinked || input.identityMethod === "title") reasons.push("identity_not_confirmed");
@@ -54,6 +72,7 @@ export function verifySalesTestGateInvariants(): { ok: boolean; cases: Array<{ n
   const supplyInventoryBlocked = evaluateSalesTestGate({ ...supplyReadyInput(), inventory: 0, requireRank: false });
   const invalidPrice = evaluateSalesTestGate({ ...supplyReadyInput(), sellingPrice: 0, requireRank: false });
   const invalidEconomics = evaluateSalesTestGate({ ...supplyReadyInput(), sourceCost: -1, shippingCost: -1, requireRank: false });
+  const giftCard = evaluateSalesTestGate({ ...supplyReadyInput(), title: "Amazon Gift Card", requireRank: false });
   const cases = [
     { name: "complete_observed_product_is_eligible", expected: true, actual: ready.eligible },
     { name: "title_only_identity_is_not_eligible", expected: true, actual: titleOnly.eligible === false && titleOnly.reasons.includes("identity_not_confirmed") },
@@ -61,6 +80,7 @@ export function verifySalesTestGateInvariants(): { ok: boolean; cases: Array<{ n
     { name: "supply_zero_inventory_is_blocked", expected: true, actual: supplyInventoryBlocked.eligible === false && supplyInventoryBlocked.reasons.includes("inventory_zero") },
     { name: "zero_price_is_blocked", expected: true, actual: invalidPrice.eligible === false && invalidPrice.reasons.includes("selling_price_invalid") },
     { name: "negative_economics_are_blocked", expected: true, actual: invalidEconomics.eligible === false && invalidEconomics.reasons.includes("source_cost_invalid") && invalidEconomics.reasons.includes("shipping_invalid") },
+    { name: "gift_card_is_blocked", expected: true, actual: giftCard.eligible === false && giftCard.reasons.includes("non_physical_product") },
   ];
   return { ok: cases.every((item) => item.actual === item.expected), cases };
 }
