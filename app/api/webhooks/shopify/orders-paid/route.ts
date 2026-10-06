@@ -18,6 +18,20 @@ export async function POST(request: Request) {
   if (!webhookId) {
     return NextResponse.json({ ok: false, error: "missing_webhook_id" }, { status: 400 });
   }
+  if (topic !== "orders/paid") {
+    return NextResponse.json({ ok: false, error: "unsupported_webhook_topic" }, { status: 400 });
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(rawBody) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return NextResponse.json({ ok: false, error: "invalid_webhook_payload" }, { status: 400 });
+    }
+    payload = parsed as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ ok: false, error: "invalid_webhook_json" }, { status: 400 });
+  }
 
   const supabase = createSupabaseAdminClient();
   const { error: insertError } = await supabase
@@ -26,7 +40,7 @@ export async function POST(request: Request) {
       shopify_event_id: webhookId,
       topic,
       shopify_order_id: orderId,
-      payload: JSON.parse(rawBody) as Record<string, unknown>,
+      payload,
     });
 
   if (insertError?.code === "23505") {
