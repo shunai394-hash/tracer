@@ -102,7 +102,7 @@ export async function reverifyCjSupplyIdentities(options: {
     nextCursor: null,
   };
 
-  const processRow = async (row: (typeof rows)[number]) => {
+  const processRow = async (row: NonNullable<typeof rows>[number]) => {
     const supplierListingId = String(row.id);
     try {
       const listingMetadata = record(row.metadata);
