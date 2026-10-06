@@ -5,7 +5,7 @@ import { initializeProcurement } from "@/lib/procurement/init";
 import { getSupplierCapabilities } from "@/lib/procurement/registry";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
-import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { evaluateSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -130,21 +130,11 @@ export async function selectAndPublishSupplySalesTests(
     }
 
     if (typeof base.image_url !== "string" || !base.image_url.trim()) reasons.push("image_unknown");
-    if (listing.price_confirmed !== true) reasons.push("price_unconfirmed");
 
-    if (listing.identity_status !== "linked") reasons.push("identity_not_confirmed");
     const identityMethod = String(listing.identity_method ?? "").trim().toLowerCase();
     const identifierGradeMethods = new Set(["asin", "jan", "gtin", "ean", "upc", "mpn", "brand_mpn", "tracer_catalog"]);
-    if (!identifierGradeMethods.has(identityMethod)) reasons.push("identity_not_confirmed");
+    if (listing.identity_status !== "linked" || !identifierGradeMethods.has(identityMethod)) reasons.push("identity_not_confirmed");
     if (num(listing.identity_confidence) === null || (num(listing.identity_confidence) ?? 0) < 0.88) reasons.push("identity_confidence_low");
-
-    if (listing.tracking_available !== true) reasons.push("tracking_unknown");
-    if (listing.api_available !== true) reasons.push("supplier_api_unknown");
-    if (listing.orderable !== true) reasons.push("supplier_not_orderable");
-    if (listing.inventory_confirmed !== true) reasons.push("inventory_unknown");
-    if ((num(listing.inventory) ?? 0) <= 0) reasons.push("inventory_zero");
-    if (typeof listing.supplier_product_id !== "string" || !listing.supplier_product_id) reasons.push("supplier_product_unknown");
-    if (typeof listing.supplier_variant_id !== "string" || !listing.supplier_variant_id) reasons.push("supplier_variant_unknown");
 
     const metadata = base.metadata && typeof base.metadata === "object" && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const sellingPrice = num(metadata.selling_price_jpy);
@@ -161,9 +151,31 @@ export async function selectAndPublishSupplySalesTests(
       domesticShipping: null,
       shippingCurrency: typeof listing.currency === "string" ? listing.currency : "USD",
     });
-    if (!profit.calculable) reasons.push(profit.incalculableReason ?? "profit_unknown");
-    if (profit.shippingUnknown) reasons.push("shipping_unknown");
-    if (profit.contributionProfit !== null && profit.contributionProfit <= 0) reasons.push("profit_not_positive");
+
+    const gate = evaluateSalesTestGate({
+      rank: null,
+      title: typeof base.normalized_title === "string" ? base.normalized_title : null,
+      sellingPrice,
+      identityLinked: listing.identity_status === "linked" && identifierGradeMethods.has(identityMethod),
+      identityMethod,
+      identityConfidence: num(listing.identity_confidence),
+      sourceCost: num(listing.cost),
+      shippingCost: num(listing.shipping_cost),
+      trackingAvailable: listing.tracking_available === true,
+      apiAvailable: listing.api_available === true,
+      profitCalculable: profit.calculable,
+      shippingUnknown: profit.shippingUnknown,
+      contributionProfit: profit.contributionProfit,
+      currencyMismatch: profit.currencyMismatch,
+      priceConfirmed: listing.price_confirmed === true,
+      inventoryConfirmed: listing.inventory_confirmed === true,
+      inventory: num(listing.inventory),
+      orderable: listing.orderable === true,
+      supplierProductId: typeof listing.supplier_product_id === "string" ? listing.supplier_product_id : null,
+      supplierVariantId: typeof listing.supplier_variant_id === "string" ? listing.supplier_variant_id : null,
+      requireRank: false,
+    });
+    if (!gate.eligible) reasons.push(...gate.reasons);
 
     if (intelligence.selection_eligible !== true) reasons.push("intelligence_selection_ineligible");
     if (String(intelligence.sellability_state ?? "") !== "TEST_READY") reasons.push("sellability_not_ready");
@@ -175,7 +187,7 @@ export async function selectAndPublishSupplySalesTests(
     if (num(intelligence.overall_confidence) === null || (num(intelligence.overall_confidence) ?? 0) < 0.6) reasons.push("intelligence_confidence_low");
 
     if (reasons.length) {
-      rejected.push({ productId, reasons });
+      rejected.push({ productId, reasons: Array.from(new Set(reasons)) });
       continue;
     }
 
