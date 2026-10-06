@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { verifySalesTestGateInvariants } from "@/lib/market/sales-test-gate";
+import { verifyWomenPriorityInvariants } from "@/lib/intelligence/womens-priority";
 
 const root = process.cwd();
 const checks = [
@@ -26,6 +27,9 @@ const checks = [
   ["CJ womens recovery prioritizes unverified", "lib/suppliers/reverify-cj-identity.ts", "womenUnverifiedCandidates"],
   ["CJ womens variant recovery", "lib/suppliers/repair-cj-variants.ts", "repairCjMissingWomenVariants"],
   ["CJ womens variant recovery cron", "app/api/cron/cj-variant-repair/route.ts", "requireAutomationAuth"],
+  ["Women-focused CJ selection", "lib/intelligence/cj-selection.ts", "womenProductPriority"],
+  ["Women-focused supplier selection", "lib/intelligence/supplier-selection.ts", "womenProductPriority"],
+  ["Women-focused catalog discovery", "lib/suppliers/discover-cj-supply.ts", ""women fashion""],
   ["CJ identifier-first recovery", "lib/suppliers/reverify-cj-identity.ts", "identifierFirst"],
   ["CJ identity resolver listing identifiers", "lib/intelligence/persist-cj-supply-intelligence.ts", "supplierIdentifiers"],
   ["CJ barcode candidate safety", "lib/intelligence/persist-cj-supply-intelligence.ts", "barcodeCandidates"],
@@ -36,6 +40,8 @@ const checks = [
 
 const failures: string[] = [];
 const invariant = verifySalesTestGateInvariants();
+const womenInvariant = verifyWomenPriorityInvariants();
+if (!womenInvariant.ok) failures.push(`women-priority invariants failed: ${JSON.stringify(womenInvariant.cases)}`);
 if (!invariant.ok) failures.push(`sales-test-gate invariants failed: ${JSON.stringify(invariant.cases)}`);
 for (const [name, relativePath, required] of checks) {
   const path = resolve(root, relativePath);
