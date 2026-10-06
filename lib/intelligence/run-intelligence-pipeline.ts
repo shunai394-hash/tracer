@@ -424,7 +424,14 @@ export async function runIntelligencePipeline(options: {
       : [];
 
   steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand(), { budgetMs: 5_000 }));
-  steps.push(await runStep("normalize", () => normalizeProductIntelligence(), { budgetMs: 5_000 }));
+  const normalizeWindowSize = 200;
+  const normalizeProductCount = await db
+    .from("products")
+    .select("id", { count: "exact", head: true });
+  if (normalizeProductCount.error) throw new Error(`Failed to count products for normalization: ${normalizeProductCount.error.message}`);
+  const normalizePages = Math.max(1, Math.ceil((normalizeProductCount.count ?? 0) / normalizeWindowSize));
+  const normalizeOffset = (Math.floor(Date.now() / 60_000) % normalizePages) * normalizeWindowSize;
+  steps.push(await runStep("normalize", () => normalizeProductIntelligence({ limit: normalizeWindowSize, offset: normalizeOffset }), { budgetMs: 10_000 }));
   steps.push(await runStep("identity", () => stampDemandCJIdentities(), { budgetMs: 5_000 }));
   steps.push(await runStep("shopping_demand_sync", () => syncShoppingDemandObservations(), { budgetMs: 4_000 }));
   steps.push(await runStep("demand", () => inspectDemandObservations(), { budgetMs: 2_000 }));
