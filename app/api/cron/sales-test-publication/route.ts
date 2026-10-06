@@ -15,9 +15,10 @@ export const maxDuration = 300;
 async function promoteGatePassedListings(listingIds: string[]) {
   const shopify = await syncPublishedListingsToShopify(listingIds);
   const base = await publishPublishedListingsToBase(10, listingIds);
-  const baseReady = base.results.filter((result) => result.ok && result.baseItemId).map((result) => result.listingId);
+  // NEWFIND is an independent promotion channel. BASE is optional and must not
+  // become a hidden prerequisite for distributing a gate-passed TRACER product.
   const newfind = await Promise.all(
-    baseReady.map((listingId) => promoteShopListingToNewfind(listingId).catch((error) => ({
+    listingIds.map((listingId) => promoteShopListingToNewfind(listingId).catch((error) => ({
       configured: true,
       sent: false,
       eventId: `tracer-shop-listing:${listingId}`,
@@ -26,7 +27,7 @@ async function promoteGatePassedListings(listingIds: string[]) {
       detail: error instanceof Error ? error.message : String(error),
     }))),
   );
-  return { shopify, base, baseReady, newfind };
+  return { shopify, base, baseReady: base.results.filter((result) => result.ok && result.baseItemId).map((result) => result.listingId), newfind };
 }
 
 export async function GET(request: Request) {
