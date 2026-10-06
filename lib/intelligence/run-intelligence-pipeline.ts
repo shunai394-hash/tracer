@@ -424,6 +424,16 @@ export async function runIntelligencePipeline(options: {
       : [];
 
   steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand(), { budgetMs: 5_000 }));
+
+  // Identity linking is a publication-critical path. Run it before the
+  // rotating normalization/intelligence work so a slow normalization batch
+  // cannot starve exact supplier->marketplace barcode verification.
+  steps.push(await runStep("identity_reverify", () =>
+    reverifyCjSupplyIdentities({
+      limit: 25,
+      deadlineAt: Math.min(pipelineDeadlineAt - 1_000, Date.now() + 20_000),
+    }), { budgetMs: 20_000 }));
+
   const normalizeWindowSize = 200;
   const normalizeProductCount = await db
     .from("products")
@@ -454,14 +464,6 @@ export async function runIntelligencePipeline(options: {
     supplyFirstStep.result && typeof supplyFirstStep.result === "object" && Array.isArray((supplyFirstStep.result as { items?: unknown }).items)
       ? ((supplyFirstStep.result as { items: Array<Record<string, unknown>> }).items)
       : [];
-
-  // Identity re-verification of existing CJ supply against marketplace
-  // barcodes observed since. Unique exact barcode matches only.
-  steps.push(await runStep("identity_reverify", () =>
-    reverifyCjSupplyIdentities({
-      limit: 25,
-      deadlineAt: pipelineDeadlineAt - 1_000,
-    }), { budgetMs: 25_000 }));
 
   // Rotate over every product_intelligence page. The previous fixed
   // "% 7" rotation only ever reached the first 350 rows (ordered by
