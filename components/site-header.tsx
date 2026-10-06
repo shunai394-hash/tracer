@@ -103,7 +103,7 @@ export function SiteHeader() {
               <span className="tracer-signal-pulse h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.8)]" aria-hidden="true" />
               TRACER SYSTEM
             </span>
-            <Link href="/mypage" className="hidden text-[9px] font-semibold tracking-[0.14em] text-zinc-400 transition hover:text-cyan-200 sm:inline-flex">マイページ</Link>
+            <Link href="/login" className="hidden min-h-10 items-center border border-white/10 px-3 text-[9px] font-semibold tracking-[0.14em] text-zinc-300 transition hover:border-cyan-300/40 hover:text-cyan-200 sm:inline-flex">Googleでログイン</Link>
             <Link href="/shop" className="group hidden min-h-10 items-center gap-3 border border-cyan-300/25 bg-cyan-300/[0.035] px-4 text-[9px] font-semibold tracking-[0.16em] text-cyan-100 transition duration-300 hover:-translate-y-px hover:border-cyan-200/60 hover:bg-cyan-200/[0.08] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-200 sm:inline-flex">
               商品を見る
               <span className="transition-transform duration-300 group-hover:translate-x-0.5" aria-hidden="true">↗</span>
