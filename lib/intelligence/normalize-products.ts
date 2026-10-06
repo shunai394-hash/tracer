@@ -76,17 +76,24 @@ const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 300;
 
 /**
- * Batch normalization with a bounded product window. The previous patrol
- * loaded every product, every related observation, every brand and every
- * intelligence row before doing any downstream identity/supply work. With
- * ~1,300 products that routinely exhausted the 5s patrol budget and stopped
- * the entire publication pipeline. A rotating bounded window keeps each
- * patrol responsive while repeated patrols cover the complete catalog.
+ * Batch normalization with a bounded rotating product window. The previous
+ * patrol loaded every product and its related rows before doing downstream
+ * identity/supply work, which routinely exhausted the 5s patrol budget.
+ * When no offset is supplied, patrols rotate through the full catalog by
+ * minute so repeated runs eventually cover every product without starving
+ * the publication pipeline.
  */
 export async function normalizeProductIntelligence(options: { limit?: number; offset?: number } = {}): Promise<NormalizeResult> {
   const supabase = createSupabaseAdminClient();
   const limit = Math.max(1, Math.min(options.limit ?? DEFAULT_LIMIT, MAX_LIMIT));
-  const offset = Math.max(0, Math.floor(options.offset ?? 0));
+
+  let offset = options.offset == null ? 0 : Math.max(0, Math.floor(options.offset));
+  if (options.offset == null) {
+    const countResult = await supabase.from("products").select("id", { count: "exact", head: true });
+    if (countResult.error) throw new Error(`Failed to count products for normalization: ${countResult.error.message}`);
+    const pages = Math.max(1, Math.ceil((countResult.count ?? 0) / limit));
+    offset = (Math.floor(Date.now() / 60_000) % pages) * limit;
+  }
 
   const productsResult = await supabase
     .from("products")
