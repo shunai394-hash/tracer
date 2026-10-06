@@ -1,0 +1,2 @@
+Production verification trigger for publication-pipeline round 1.
+Target commit: ffd175f960f2bda145d428e6b6693babb61f3f8a
