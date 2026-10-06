@@ -1,0 +1,45 @@
+name: TRACER Sales Test Patrol
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_intelligence:
+        description: "Run intelligence cron before Sales Test Gate"
+        type: boolean
+        default: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  patrol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Run production intelligence and Sales Test Gate
+        shell: bash
+        env:
+          RUN_INTELLIGENCE: ${{ inputs.run_intelligence }}
+        run: |
+          set -uo pipefail
+          BASE=https://tracer-self.vercel.app
+          token() {
+            curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          if [ "$RUN_INTELLIGENCE" = "true" ]; then
+            echo "=== INTELLIGENCE ==="
+            curl -sS --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/intelligence" > intelligence.json
+            python3 - <<'PY'
+          import json
+          d=json.load(open("intelligence.json"))
+          print(json.dumps(d, ensure_ascii=False, indent=2)[:30000])
+          PY
+          fi
+          echo "=== SALES TEST PUBLICATION ==="
+          curl -sS --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/sales-test-publication" > sales.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open("sales.json"))
+          print(json.dumps(d, ensure_ascii=False, indent=2)[:50000])
+          PY
