@@ -29,7 +29,7 @@ const checks = [
   ["CJ womens variant recovery cron", "app/api/cron/cj-variant-repair/route.ts", "requireAutomationAuth"],
   ["Women-focused CJ selection", "lib/intelligence/cj-selection.ts", "womenProductPriority"],
   ["Women-focused supplier selection", "lib/intelligence/supplier-selection.ts", "womenProductPriority"],
-  ["Women-focused catalog discovery", "lib/suppliers/discover-cj-supply.ts", ""women fashion""],
+  ["Women-focused catalog discovery", "lib/suppliers/discover-cj-supply.ts", "women fashion"],
   ["CJ identifier-first recovery", "lib/suppliers/reverify-cj-identity.ts", "identifierFirst"],
   ["CJ identity resolver listing identifiers", "lib/intelligence/persist-cj-supply-intelligence.ts", "supplierIdentifiers"],
   ["CJ barcode candidate safety", "lib/intelligence/persist-cj-supply-intelligence.ts", "barcodeCandidates"],
