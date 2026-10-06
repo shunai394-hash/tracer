@@ -63,23 +63,27 @@ export async function reverifyCjSupplyIdentities(options: {
   const limit = Math.max(1, Math.min(requestedLimit, MAX_LIMIT));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
 
-  const { data: cursorRow, error: cursorError } = await db
-    .from("cron_runs")
-    .select("metadata")
-    .eq("job_name", CURSOR_JOB)
-    .order("started_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (cursorError) throw new Error(`identity reverify cursor read failed: ${cursorError.message}`);
+  // Identity evidence can change after a supplier API retry (especially after
+  // the CJ barcode-field compatibility fix). A one-way UUID cursor would make
+  // a transient no-match permanent. Use a deterministic time-rotating window
+  // instead, so every retryable supply row is revisited over successive patrols.
+  const { count: candidateCount, error: countError } = await db
+    .from("supplier_listings")
+    .select("id", { count: "exact", head: true })
+    .eq("supplier", "cj")
+    .in("verification_status", ["verified", "unverified", "retryable"])
+    .eq("orderable", true)
+    .eq("identity_method", "supply_discovered")
+    .not("supplier_variant_id", "is", null)
+    .not("product_id", "is", null);
+  if (countError) throw new Error(`identity reverify candidate count failed: ${countError.message}`);
 
-  const afterId = typeof (cursorRow?.metadata as Record<string, unknown> | undefined)?.afterId === "string"
-    ? String((cursorRow?.metadata as Record<string, unknown>).afterId)
-    : null;
+  const total = candidateCount ?? 0;
+  const windowOffset = total > limit
+    ? (Math.floor(Date.now() / 60_000) * limit) % total
+    : 0;
 
-  // Retryable supply rows are still valid identity-reverification candidates.
-  // Excluding them stranded a large portion of CJ supply after transient API
-  // failures, so the cursor must cover verified, unverified, and retryable rows.
-  let query = db
+  const { data: rows, error } = await db
     .from("supplier_listings")
     .select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata")
     .eq("supplier", "cj")
@@ -89,10 +93,7 @@ export async function reverifyCjSupplyIdentities(options: {
     .not("supplier_variant_id", "is", null)
     .not("product_id", "is", null)
     .order("id", { ascending: true })
-    .limit(limit);
-  if (afterId) query = query.gt("id", afterId);
-
-  const { data: rows, error } = await query;
+    .range(windowOffset, Math.min(total - 1, windowOffset + limit - 1));
   if (error) throw new Error(`identity reverify candidate query failed: ${error.message}`);
 
   const result: CjIdentityReverifyResult = {
@@ -102,7 +103,7 @@ export async function reverifyCjSupplyIdentities(options: {
     missingEconomics: 0,
     errors: [],
     promotedListings: [],
-    nextCursor: null,
+    nextCursor: total > 0 ? String(rows?.at(-1)?.id ?? null) : null,
   };
 
   const processRow = async (row: NonNullable<typeof rows>[number]) => {
@@ -190,9 +191,6 @@ export async function reverifyCjSupplyIdentities(options: {
     }
   }
 
-  const lastProcessedId = processed > 0 ? String(selectedRows[processed - 1]?.id) : afterId;
-  result.nextCursor = processed < selectedRows.length ? lastProcessedId : selectedRows.length < limit ? null : lastProcessedId;
-
   const now = new Date().toISOString();
   await db.from("cron_runs").insert({
     job_name: CURSOR_JOB,
@@ -201,7 +199,14 @@ export async function reverifyCjSupplyIdentities(options: {
     finished_at: now,
     processed: result.checked,
     failed: result.errors.length,
-    metadata: { afterId: result.nextCursor, promoted: result.promoted, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics },
+    metadata: {
+      rotationOffset: windowOffset,
+      candidateCount: total,
+      promoted: result.promoted,
+      noUniqueBarcodeMatch: result.noUniqueBarcodeMatch,
+      missingEconomics: result.missingEconomics,
+      nextCursor: result.nextCursor,
+    },
   });
   return result;
 }
