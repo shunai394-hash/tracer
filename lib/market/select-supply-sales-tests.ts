@@ -94,7 +94,22 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     eligible.push({ productId, listing, base, intelligence, profit, quality });
   }
 
-  eligible.sort((a, b) => b.quality - a.quality);
+  eligible.sort((a, b) => {
+    const womenA = womenProductPriority({
+      title: typeof a.base.normalized_title === "string" ? a.base.normalized_title : "",
+      category: a.base.metadata && typeof a.base.metadata === "object" && !Array.isArray(a.base.metadata) && typeof (a.base.metadata as Record<string, unknown>).category === "string"
+        ? String((a.base.metadata as Record<string, unknown>).category)
+        : null,
+    });
+    const womenB = womenProductPriority({
+      title: typeof b.base.normalized_title === "string" ? b.base.normalized_title : "",
+      category: b.base.metadata && typeof b.base.metadata === "object" && !Array.isArray(b.base.metadata) && typeof (b.base.metadata as Record<string, unknown>).category === "string"
+        ? String((b.base.metadata as Record<string, unknown>).category)
+        : null,
+    });
+    if (womenB.bonus !== womenA.bonus) return womenB.bonus - womenA.bonus;
+    return b.quality - a.quality;
+  });
   if (options.dryRun) return { published: 0, publishedListingIds: [], considered: uniqueProductIds.length, rejected: rejected.slice(0, 50), eligibleProductIds: eligible.map((item) => item.productId) };
   const chosen = eligible.slice(0, limit); const publishedListingIds: string[] = [];
   for (const item of chosen) {
