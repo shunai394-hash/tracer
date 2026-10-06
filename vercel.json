@@ -4,6 +4,7 @@
   "crons": [
     {"path":"/api/cron/market-sourcing","schedule":"0 12 * * *"},
     {"path":"/api/cron/supplier-investigation","schedule":"5 12 * * *"},
+    {"path":"/api/cron/cj-identity-reverify","schedule":"8 12 * * *"},
     {"path":"/api/cron/sales-test-publication","schedule":"10 12 * * *"},
     {"path":"/api/cron/shopify-publish","schedule":"13 12 * * *"},
     {"path":"/api/cron/inventory-refresh","schedule":"15 12 * * *"},
