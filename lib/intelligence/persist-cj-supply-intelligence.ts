@@ -19,6 +19,12 @@ export type PersistCjSupplyIntelligenceArgs = {
   fxRate: number;
   sellingPriceJpy: number;
   variantBarcode?: string | null;
+  supplierIdentifiers?: {
+    gtin?: string | null;
+    jan?: string | null;
+    ean?: string | null;
+    upc?: string | null;
+  } | null;
 };
 
 export type MarketplaceIdentity = {
@@ -71,17 +77,33 @@ export async function resolveMarketplaceIdentity(args: {
   supplierProductId: string;
   supplierVariantId: string;
   variantBarcode?: string | null;
+  supplierIdentifiers?: {
+    gtin?: string | null;
+    jan?: string | null;
+    ean?: string | null;
+    upc?: string | null;
+  } | null;
 }): Promise<MarketplaceIdentity | null> {
-  const barcode = await readSupplierBarcode(args);
-  if (!barcode) return null;
-  const supplyIds = identifiersFromRecord({ gtin: barcode });
+  const suppliedIds = identifiersFromRecord({
+    gtin: args.supplierIdentifiers?.gtin,
+    jan: args.supplierIdentifiers?.jan,
+    ean: args.supplierIdentifiers?.ean,
+    upc: args.supplierIdentifiers?.upc,
+  });
+  const barcode = Object.values(suppliedIds).find((value) => typeof value === "string" && value.trim())
+    ?? await readSupplierBarcode(args);
+  const supplyIds = identifiersFromRecord({ ...suppliedIds, gtin: barcode || suppliedIds.gtin });
   if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc) return null;
 
   // Keep exactly one candidate per canonical marketplace product. Multiple
   // marketplace snapshots of the same product must never become competing identities.
   const matchesByProduct = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
+  const lookupValues = new Set<string>();
+  for (const value of [supplyIds.gtin, supplyIds.jan, supplyIds.ean, supplyIds.upc]) {
+    if (value) barcodeCandidates(value).forEach((candidate) => lookupValues.add(candidate));
+  }
 
-  for (const value of barcodeCandidates(barcode)) {
+  for (const value of lookupValues) {
     const clauses = ["jan", "gtin", "ean", "upc"].map((column) => `${column}.eq.${value}`);
     const { data: bestsellers, error } = await args.db
       .from("marketplace_bestsellers")
@@ -140,7 +162,7 @@ export async function persistCjSupplyIntelligence(
 
   const marketplaceIdentity = options.identity !== undefined
     ? options.identity
-    : await resolveMarketplaceIdentity({ db: supabase, supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, variantBarcode: args.variantBarcode });
+    : await resolveMarketplaceIdentity({ db: supabase, supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, variantBarcode: args.variantBarcode, supplierIdentifiers: args.supplierIdentifiers });
   const canonicalProductId = marketplaceIdentity?.productId ?? args.productId;
 
   let existingListingMetadata: Record<string, unknown> = {};
@@ -153,8 +175,8 @@ export async function persistCjSupplyIntelligence(
   const verifiedMetadata = {
     ...existingListingMetadata,
     source: "cj_supply_first",
-    identity_source: marketplaceIdentity ? "cj_variant_barcode_to_marketplace_bestseller" : "cj_variant_barcode",
-    identity_rationale: marketplaceIdentity?.rationale ?? "CJ variant evidence persisted; marketplace identity not yet confirmed",
+    identity_source: marketplaceIdentity ? "cj_variant_or_listing_identifier_to_marketplace_bestseller" : "cj_variant_evidence",
+    identity_rationale: marketplaceIdentity?.rationale ?? "CJ variant/listing identifier evidence persisted; marketplace identity not yet confirmed",
     supplier_product_id: args.supplierProductId,
     supplier_variant_id: args.supplierVariantId,
     variant_barcode: args.variantBarcode ?? existingListingMetadata.variant_barcode ?? null,
@@ -226,7 +248,7 @@ export async function persistCjSupplyIntelligence(
     offerId = String(updated.data.id);
   } else {
     const inserted = await supabase.from("product_offers").insert(offerPayload).select("id").single();
-    if (inserted.error) throw new Error(inserted.error.message);
+    if (inserted.error) throw new Error(existingOffer.error?.message ?? "CJ offer insert failed");
     offerId = String(inserted.data.id);
   }
 
