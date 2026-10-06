@@ -8,6 +8,7 @@ export type ShopifyProduct = {
   handle: string;
   status?: string | null;
   variants?: { nodes: Array<{ id: string; sku: string | null; price: string | null }> };
+  media?: { nodes: Array<{ mediaContentType: string; alt: string | null; preview?: { image?: { url: string } | null } | null }> };
 };
 
 type GraphQLError = { message: string };
@@ -59,7 +60,7 @@ export async function createShopifyProduct(input: { title: string; descriptionHt
   }>(
     `mutation ProductCreate($input: ProductInput!, $media: [CreateMediaInput!]) {
       productCreate(product: $input, media: $media) {
-        product { id handle status variants(first: 10) { nodes { id sku price } } }
+        product { id handle status variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType alt preview { image { url } } } } }
         userErrors { field message }
       }
     }`,
@@ -92,7 +93,7 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   }>(
     `mutation ProductUpdate($input: ProductInput!, $media: [CreateMediaInput!]) {
       productUpdate(product: $input, media: $media) {
-        product { id handle status variants(first: 10) { nodes { id sku price } } }
+        product { id handle status variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType alt preview { image { url } } } } }
         userErrors { field message }
       }
     }`,
