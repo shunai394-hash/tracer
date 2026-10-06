@@ -304,3 +304,88 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
 
   return { configured: true, sent: response.ok, eventId: sendEventId, status: response.status, ackStatus, detail };
 }
+
+
+export type NewfindRescueResult = {
+  candidates: number;
+  onBase: number;
+  alreadyProcessed: number;
+  undelivered: { missing: number; pending: number; failed: number; sent: number; sending: number };
+  attempted: number;
+  processed: number;
+  stillFailing: Array<{ listingId: string; detail: string }>;
+};
+
+/** Rescue only listings that still pass the canonical Sales Test Gate. */
+export async function rescueUndeliveredGatePassedListings(options: {
+  limit?: number;
+  deadlineAt?: number;
+} = {}): Promise<NewfindRescueResult> {
+  const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
+  const limit = Math.max(1, Math.min(options.limit ?? 5, 50));
+  const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
+  const columns = "id, base_item_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, updated_at";
+
+  const [byReason, byMarker] = await Promise.all([
+    supabase.from("shop_listings").select(columns).eq("published", true).eq("pipeline_reason", SALES_TEST_GATE_PASSED).limit(500),
+    supabase.from("shop_listings").select(columns).eq("published", true).filter("selection_reasons", "cs", JSON.stringify([SALES_TEST_GATE_PASSED])).limit(500),
+  ]);
+  if (byReason.error) throw new Error(byReason.error.message);
+  if (byMarker.error) throw new Error(byMarker.error.message);
+
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const row of [...(byReason.data ?? []), ...(byMarker.data ?? [])]) byId.set(String(row.id), row as Record<string, unknown>);
+  const gated = Array.from(byId.values())
+    .filter((row) => hasPassedSalesTestGate(row))
+    .sort((a, b) =>
+      Number(Boolean(b.base_item_id)) - Number(Boolean(a.base_item_id)) ||
+      String(a.updated_at ?? "").localeCompare(String(b.updated_at ?? "")),
+    );
+
+  const result: NewfindRescueResult = {
+    candidates: gated.length,
+    onBase: gated.filter((row) => row.base_item_id).length,
+    alreadyProcessed: 0,
+    undelivered: { missing: 0, pending: 0, failed: 0, sent: 0, sending: 0 },
+    attempted: 0,
+    processed: 0,
+    stillFailing: [],
+  };
+  if (!gated.length) return result;
+
+  const ids = gated.map((row) => String(row.id));
+  const deliveries = new Map<string, string>();
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await supabase.from("newfind_promotion_deliveries").select("listing_id,status,ack_status").in("listing_id", ids.slice(i, i + 100));
+    if (error) throw new Error(error.message);
+    for (const row of data ?? []) {
+      const processed = row.status === "processed" && (row.ack_status === "processed" || row.ack_status === "duplicate");
+      deliveries.set(String(row.listing_id), processed ? "processed" : String(row.status ?? "pending"));
+    }
+  }
+
+  const targets: string[] = [];
+  for (const id of ids) {
+    const status = deliveries.get(id) ?? "missing";
+    if (status === "processed") {
+      result.alreadyProcessed += 1;
+      continue;
+    }
+    const bucket = status in result.undelivered ? status as keyof NewfindRescueResult["undelivered"] : "pending";
+    result.undelivered[bucket] += 1;
+    targets.push(id);
+  }
+
+  for (const listingId of targets.slice(0, limit)) {
+    if (Date.now() >= deadlineAt) break;
+    result.attempted += 1;
+    const delivery = await promoteShopListingToNewfind(listingId).catch((error) => ({
+      sent: false,
+      ackStatus: null,
+      detail: error instanceof Error ? error.message : String(error),
+    }));
+    if (delivery.ackStatus === "processed" || delivery.ackStatus === "duplicate") result.processed += 1;
+    else result.stillFailing.push({ listingId, detail: delivery.detail });
+  }
+  return result;
+}
