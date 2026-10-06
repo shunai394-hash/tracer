@@ -154,12 +154,11 @@ export type SalesTestGateRow = {
   selection_reasons?: unknown;
 };
 
+/** Gate provenance is a persisted state machine, not a free-form marker. */
 export function hasPassedSalesTestGate(row: SalesTestGateRow): boolean {
   if (row.published !== true) return false;
-  if (Array.isArray(row.selection_reasons) && row.selection_reasons.includes(SALES_TEST_GATE_PASSED)) return true;
-  return (
-    (row.pipeline_stage === "PUBLISHED" || row.pipeline_stage === "BASE_PUBLISHED") &&
-    row.pipeline_status === "published" &&
-    row.pipeline_reason === SALES_TEST_GATE_PASSED
-  );
+  if (row.pipeline_status !== "published") return false;
+  if (row.pipeline_stage !== "PUBLISHED" && row.pipeline_stage !== "BASE_PUBLISHED") return false;
+  if (row.pipeline_reason !== SALES_TEST_GATE_PASSED) return false;
+  return Array.isArray(row.selection_reasons) && row.selection_reasons.includes(SALES_TEST_GATE_PASSED);
 }
