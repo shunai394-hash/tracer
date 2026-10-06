@@ -20,6 +20,11 @@
     {"path":"/api/cron/newfind-retry","schedule":"45 12 * * *"},
     {"path":"/api/cron/supply-first","schedule":"50 12 * * *"},
     {"path":"/api/cron/patrol-ai","schedule":"55 12 * * *"},
-    {"path":"/api/cron/cj-identity-reverify","schedule":"8 18 * * *"}
+    {"path":"/api/cron/cj-identity-reverify","schedule":"8 18 * * *"},
+    {"path":"/api/cron/sales-test-publication","schedule":"10 18 * * *"},
+    {"path":"/api/cron/shopify-publish","schedule":"13 18 * * *"},
+    {"path":"/api/cron/demand-match","schedule":"17 18 * * *"},
+    {"path":"/api/cron/intelligence","schedule":"22 18 * * *"},
+    {"path":"/api/cron/patrol-ai","schedule":"55 18 * * *"}
   ]
 }
