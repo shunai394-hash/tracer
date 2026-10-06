@@ -57,7 +57,7 @@ export async function createShopifyProduct(input: { title: string; descriptionHt
   const data = await shopifyGraphQL<{
     productCreate: { product: ShopifyProduct | null; userErrors: Array<{ field?: string[]; message: string }> };
   }>(
-    `mutation ProductCreate($input: ProductInput!) {
+    `mutation ProductCreate($input: ProductInput!, $media: [CreateMediaInput!]) {
       productCreate(product: $input) {
         product { id handle status variants(first: 10) { nodes { id sku price } } }
         userErrors { field message }
@@ -90,7 +90,7 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   const productData = await shopifyGraphQL<{
     productUpdate: { product: ShopifyProduct | null; userErrors: Array<{ field?: string[]; message: string }> };
   }>(
-    `mutation ProductUpdate($input: ProductInput!) {
+    `mutation ProductUpdate($input: ProductInput!, $media: [CreateMediaInput!]) {
       productUpdate(product: $input) {
         product { id handle status variants(first: 10) { nodes { id sku price } } }
         userErrors { field message }
