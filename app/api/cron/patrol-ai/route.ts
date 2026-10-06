@@ -29,7 +29,7 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
   const orderableSuppliersQuery = db.from("supplier_listings").select("*", { count: "exact", head: true }).eq("orderable", true);
   const shopListingsQuery = db.from("shop_listings").select("*", { count: "exact", head: true });
   const publishedListingsQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).eq("published", true);
-  const eligibilityListingsQuery = db.from("shop_listings").select("supplier_name,orderable,inventory,image_url").eq("published", true);
+  const eligibilityListingsQuery = db.from("shop_listings").select("supplier_name,orderable,inventory,image_url,tracking_available,pipeline_reason,pipeline_stage,pipeline_status").eq("published", true);
   const onBaseQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).not("base_item_id", "is", null);
   const basePublishedQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).not("base_item_id", "is", null).eq("base_publication_status", "published").eq("published", true);
   const ordersQuery = db.from("shop_orders").select("*", { count: "exact", head: true });
@@ -54,7 +54,10 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
       inventory > 0 &&
       row.image_url !== null &&
       row.image_url !== "" &&
-      getAutoProcurementEligibility(typeof row.supplier_name === "string" ? row.supplier_name : null).eligible;
+      row.tracking_available === true &&
+      row.pipeline_stage === "PUBLISHED" &&
+      row.pipeline_status === "published" &&
+      row.pipeline_reason === "sales_test_gate_passed";
   });
 
   const autoProcurementEligibleRows = (eligibilityListingsResult.data ?? []).filter((row) =>
