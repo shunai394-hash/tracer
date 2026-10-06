@@ -69,7 +69,7 @@ export function getFoundationStatus(): FoundationStatus {
     brightData: present(readEnv("BRIGHTDATA_API_TOKEN")),
     cj: present(readEnv("CJ_API_KEY")),
     brightDataMcp: present(readEnv("BRIGHTDATA_MCP_API_KEY")),
-    shopify: present(readEnv("SHOPIFY_ACCESS_TOKEN")),
+    shopify: present(readEnv("SHOPIFY_STORE_DOMAIN")) && present(readEnv("SHOPIFY_ADMIN_ACCESS_TOKEN")),
     metaAds: present(readEnv("META_ACCESS_TOKEN")),
     newfindInbound: (() => {
       const config = getNewfindConfig();
