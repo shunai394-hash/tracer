@@ -35,6 +35,7 @@ type ShopifyProductNode = {
   vendor: string | null;
   tags: string[];
   variants: { nodes: Array<{ id: string; sku: string | null; price: string | null }> };
+  media?: { nodes: Array<{ mediaContentType: string; preview?: { image?: { url: string } | null } | null }> };
 };
 
 function asNumber(value: unknown): number | null {
@@ -54,7 +55,7 @@ function sku(listing: Listing): string {
 
 async function findByHandle(handle: string): Promise<ShopifyProductNode | null> {
   const data = await shopifyGraphQL<{ products: { nodes: ShopifyProductNode[] } }>(
-    `query ProductByHandle($query: String!) { products(first: 1, query: $query) { nodes { id handle status vendor tags variants(first: 10) { nodes { id sku price } } } } }`,
+    `query ProductByHandle($query: String!) { products(first: 1, query: $query) { nodes { id handle status vendor tags variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType preview { image { url } } } } } } }`,
     { query: `handle:${handle}` },
   );
   return data.products.nodes[0] ?? null;
