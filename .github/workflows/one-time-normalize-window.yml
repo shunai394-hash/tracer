@@ -1,0 +1,42 @@
+name: one-time-normalize-window
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-time-normalize-window.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Patch pipeline normalization call
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('lib/intelligence/run-intelligence-pipeline.ts')
+          s = p.read_text()
+          old = 'steps.push(await runStep("normalize", () => normalizeProductIntelligence(), { budgetMs: 5_000 }));'
+          new = '''const normalizeWindowSize = 200;\n  const normalizeProductCount = await db\n    .from("products")\n    .select("id", { count: "exact", head: true });\n  if (normalizeProductCount.error) throw new Error(`Failed to count products for normalization: ${normalizeProductCount.error.message}`);\n  const normalizePages = Math.max(1, Math.ceil((normalizeProductCount.count ?? 0) / normalizeWindowSize));\n  const normalizeOffset = (Math.floor(Date.now() / 60_000) % normalizePages) * normalizeWindowSize;\n  steps.push(await runStep("normalize", () => normalizeProductIntelligence({ limit: normalizeWindowSize, offset: normalizeOffset }), { budgetMs: 10_000 }));'''
+          if old not in s:
+              raise SystemExit('expected normalize call not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+      - name: Commit pipeline patch
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/intelligence/run-intelligence-pipeline.ts
+          git commit -m 'fix(intelligence): rotate normalization window' || exit 0
+          git push
+      - name: Remove one-time workflow
+        shell: bash
+        run: |
+          git rm .github/workflows/one-time-normalize-window.yml
+          git commit -m 'chore(ci): remove one-time normalization workflow'
+          git push
