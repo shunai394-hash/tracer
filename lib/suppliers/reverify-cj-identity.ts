@@ -13,18 +13,27 @@ const MAX_LIMIT = 50;
 const CONCURRENCY = 5;
 
 const WOMENS_PRODUCT_PATTERNS = [
-  /skincare|skin care|serum|moisturizer|face cream|sunscreen|toner|essence|retinol|niacinamide|acne patch|pore strip|facial mask/i,
-  /beauty|cosmetic case|cosmetic bag|makeup|lipstick|lip gloss|lip tint|blush|mascara|eyelash|eyeliner|highlighter/i,
-  /gua sha|face roller|led beauty mask|cleansing brush|makeup brush|beauty device|nail lamp|nail drill/i,
-  /hair care|haircare|hair brush|scalp massager|hair oil|heatless curls|hair dryer|hair curler|curling iron|hair straightener|hair clip|hair claw/i,
-  /women'?s (?:dress|clothing|fashion|bag|shoes|accessory)|womens (?:dress|clothing|fashion|bag|shoes|accessory)|women'?s|womens|sports bra|bralette|shapewear/i,
-  /handbag|crossbody bag|tote bag|jewelry|earrings?|necklace|bracelet|hair accessory/i,
-  /period|menstrual|menstrual cup|period underwear|ovulation|pregnancy test|pelvic floor/i,
+  /skincare|skin care|serum|moisturizer|moisturiser|face cream|sunscreen|sun screen|toner|essence|retinol|niacinamide|acne patch|pore strip|facial mask|cleansing/i,
+  /beauty|cosmetic case|cosmetic bag|makeup|lipstick|lip gloss|lip tint|blush|mascara|eyelash|eyeliner|highlighter|contour|concealer/i,
+  /gua sha|face roller|led beauty mask|cleansing brush|makeup brush|beauty device|nail lamp|nail drill|nail art|manicure|pedicure/i,
+  /hair care|haircare|hair brush|scalp massager|hair oil|heatless curls|hair dryer|hair curler|curling iron|hair straightener|hair clip|hair claw|hair removal/i,
+  /women'?s (?:dress|clothing|fashion|bag|shoes|accessory)|womens (?:dress|clothing|fashion|bag|shoes|accessory)|women'?s|womens|ladies|female|sports bra|bralette|shapewear/i,
+  /handbag|crossbody bag|tote bag|jewelry|earrings?|necklace|bracelet|hair accessory|anklet|ring jewelry/i,
+  /period|menstrual|menstrual cup|period underwear|ovulation|pregnancy test|pelvic floor|intimate care/i,
   /bra organizer|makeup organizer|cosmetic bag|jewelry organizer|closet organizer|shoe organizer|portable garment steamer/i,
+  /beauty storage|vanity organizer|cosmetic storage|purse organizer|underwear organizer|lingerie/i,
 ];
 
-function isWomensProductTitle(title: unknown): boolean {
-  return typeof title === "string" && WOMENS_PRODUCT_PATTERNS.some((pattern) => pattern.test(title));
+function isWomensProductTitle(title: unknown, metadata?: unknown): boolean {
+  const record = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata as Record<string, unknown> : {};
+  const searchable = [
+    typeof title === "string" ? title : "",
+    typeof record.category === "string" ? record.category : "",
+    typeof record.query === "string" ? record.query : "",
+    typeof record.tags === "string" ? record.tags : "",
+    Array.isArray(record.tags) ? record.tags.filter((value): value is string => typeof value === "string").join(" ") : "",
+  ].join(" ");
+  return WOMENS_PRODUCT_PATTERNS.some((pattern) => pattern.test(searchable));
 }
 
 export type CjIdentityReverifyResult = {
@@ -92,7 +101,7 @@ export async function reverifyCjSupplyIdentities(options: {
   const total = candidateCount ?? 0;
   const { data: rows, error } = await db
     .from("supplier_listings")
-    .select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata")
+    .select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc")
     .eq("supplier", "cj")
     .in("verification_status", ["verified", "unverified", "retryable"])
     .eq("orderable", true)
@@ -103,8 +112,8 @@ export async function reverifyCjSupplyIdentities(options: {
   if (error) throw new Error(`identity reverify candidate query failed: ${error.message}`);
 
   const allRows = rows ?? [];
-  const womensRows = allRows.filter((row) => isWomensProductTitle(row.title));
-  const otherRows = allRows.filter((row) => !isWomensProductTitle(row.title));
+  const womensRows = allRows.filter((row) => isWomensProductTitle(row.title, row.metadata));
+  const otherRows = allRows.filter((row) => !isWomensProductTitle(row.title, row.metadata));
   const womensOffset = womensRows.length > limit
     ? (Math.floor(Date.now() / 60_000) * limit) % womensRows.length
     : 0;
@@ -143,6 +152,12 @@ export async function reverifyCjSupplyIdentities(options: {
         supplierProductId: String(row.supplier_product_id),
         supplierVariantId: String(row.supplier_variant_id),
         variantBarcode,
+        supplierIdentifiers: {
+          gtin: row.gtin,
+          jan: row.jan,
+          ean: row.ean,
+          upc: row.upc,
+        },
       });
       if (!identity) {
         if (variantBarcode) {
@@ -185,6 +200,7 @@ export async function reverifyCjSupplyIdentities(options: {
         fxRate,
         sellingPriceJpy,
         variantBarcode,
+        supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc },
       }, { identity });
 
       return { kind: "promoted" as const, supplierListingId, bestsellerId: identity.bestsellerId, method: identity.method };
@@ -193,13 +209,11 @@ export async function reverifyCjSupplyIdentities(options: {
     }
   };
 
-  let processed = 0;
   for (let offset = 0; offset < selectedRows.length; offset += CONCURRENCY) {
     if (Date.now() >= deadlineAt) break;
     const batch = selectedRows.slice(offset, offset + CONCURRENCY);
     const results = await Promise.all(batch.map(processRow));
     for (const item of results) {
-      processed += 1;
       result.checked += 1;
       if (item.kind === "promoted") {
         result.promoted += 1;
@@ -231,6 +245,7 @@ export async function reverifyCjSupplyIdentities(options: {
       noUniqueBarcodeMatch: result.noUniqueBarcodeMatch,
       missingEconomics: result.missingEconomics,
       nextCursor: result.nextCursor,
+      identifierFirst: true,
     },
   });
   return result;
