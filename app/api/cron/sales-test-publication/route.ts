@@ -52,11 +52,13 @@ export async function GET(request: Request) {
 
     // Identity re-verification now runs as its own cron. This publication job
     // consumes only canonical linked supply and never treats supply_discovered
-    // as a substitute for identifier-grade marketplace identity.
+    // as a substitute for identifier-grade marketplace identity. Supplier is
+    // deliberately not CJ-only: Japanese catalog supply (for example Orosy)
+    // must be eligible for the same canonical publication gate.
     const { data: verifiedSupply, error: verifiedSupplyError } = await supabase
       .from("supplier_listings")
       .select("product_id")
-      .eq("supplier", "cj")
+      .in("supplier", ["orosy", "cj"])
       .eq("verification_status", "verified")
       .eq("identity_status", "linked")
       .eq("orderable", true)
