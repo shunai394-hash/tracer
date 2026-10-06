@@ -12,6 +12,21 @@ const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 50;
 const CONCURRENCY = 5;
 
+const WOMENS_PRODUCT_PATTERNS = [
+  /skincare|skin care|serum|moisturizer|face cream|sunscreen|toner|essence|retinol|niacinamide|acne patch|pore|facial mask/i,
+  /beauty|cosmetic|makeup|lipstick|lip gloss|lip tint|blush|mascara|eyelash|eyeliner|highlighter/i,
+  /gua sha|face roller|led mask|cleansing brush|makeup brush|beauty device|nail lamp|nail drill/i,
+  /hair care|haircare|hair brush|scalp massager|hair oil|heatless curls|hair dryer|hair curler|curling iron|straightener|hair clip|hair claw/i,
+  /women'?s|womens|women|dress|skirt|cardigan|blouse|bodysuit|leggings|activewear|sports bra|bralette|shapewear/i,
+  /handbag|crossbody bag|tote bag|jewelry|earrings?|necklace|bracelet|hair accessory/i,
+  /period|menstrual|menstrual cup|period underwear|ovulation|pregnancy test|pelvic floor/i,
+  /bra organizer|makeup organizer|cosmetic bag|jewelry organizer|closet organizer|shoe organizer|portable steamer/i,
+];
+
+function isWomensProductTitle(title: unknown): boolean {
+  return typeof title === "string" && WOMENS_PRODUCT_PATTERNS.some((pattern) => pattern.test(title));
+}
+
 export type CjIdentityReverifyResult = {
   checked: number;
   promoted: number;
@@ -63,10 +78,6 @@ export async function reverifyCjSupplyIdentities(options: {
   const limit = Math.max(1, Math.min(requestedLimit, MAX_LIMIT));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
 
-  // Identity evidence can change after a supplier API retry (especially after
-  // the CJ barcode-field compatibility fix). A one-way UUID cursor would make
-  // a transient no-match permanent. Use a deterministic time-rotating window
-  // instead, so every retryable supply row is revisited over successive patrols.
   const { count: candidateCount, error: countError } = await db
     .from("supplier_listings")
     .select("id", { count: "exact", head: true })
@@ -79,10 +90,10 @@ export async function reverifyCjSupplyIdentities(options: {
   if (countError) throw new Error(`identity reverify candidate count failed: ${countError.message}`);
 
   const total = candidateCount ?? 0;
-  const windowOffset = total > limit
-    ? (Math.floor(Date.now() / 60_000) * limit) % total
-    : 0;
 
+  // Women's product recovery is a business priority, but this is only a
+  // selection preference. Identity still has to be resolved from identifier-
+  // grade evidence before a listing can become publishable.
   const { data: rows, error } = await db
     .from("supplier_listings")
     .select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata")
@@ -92,9 +103,26 @@ export async function reverifyCjSupplyIdentities(options: {
     .eq("identity_method", "supply_discovered")
     .not("supplier_variant_id", "is", null)
     .not("product_id", "is", null)
-    .order("id", { ascending: true })
-    .range(windowOffset, Math.min(total - 1, windowOffset + limit - 1));
+    .order("id", { ascending: true });
   if (error) throw new Error(`identity reverify candidate query failed: ${error.message}`);
+
+  const allRows = rows ?? [];
+  const womensRows = allRows.filter((row) => isWomensProductTitle(row.title));
+  const otherRows = allRows.filter((row) => !isWomensProductTitle(row.title));
+  const womensOffset = womensRows.length > limit
+    ? (Math.floor(Date.now() / 60_000) * limit) % womensRows.length
+    : 0;
+  const selectedWomens = womensRows.length > 0
+    ? Array.from({ length: Math.min(limit, womensRows.length) }, (_, index) => womensRows[(womensOffset + index) % womensRows.length])
+    : [];
+  const remaining = Math.max(0, limit - selectedWomens.length);
+  const otherOffset = otherRows.length > remaining
+    ? (Math.floor(Date.now() / 60_000) * remaining) % otherRows.length
+    : 0;
+  const selectedOther = remaining > 0 && otherRows.length > 0
+    ? Array.from({ length: Math.min(remaining, otherRows.length) }, (_, index) => otherRows[(otherOffset + index) % otherRows.length])
+    : [];
+  const selectedRows = [...selectedWomens, ...selectedOther];
 
   const result: CjIdentityReverifyResult = {
     checked: 0,
@@ -103,7 +131,7 @@ export async function reverifyCjSupplyIdentities(options: {
     missingEconomics: 0,
     errors: [],
     promotedListings: [],
-    nextCursor: total > 0 ? String(rows?.at(-1)?.id ?? null) : null,
+    nextCursor: total > 0 ? String(selectedRows.at(-1)?.id ?? null) : null,
   };
 
   const processRow = async (row: NonNullable<typeof rows>[number]) => {
@@ -169,7 +197,6 @@ export async function reverifyCjSupplyIdentities(options: {
     }
   };
 
-  const selectedRows = rows ?? [];
   let processed = 0;
   for (let offset = 0; offset < selectedRows.length; offset += CONCURRENCY) {
     if (Date.now() >= deadlineAt) break;
@@ -200,8 +227,10 @@ export async function reverifyCjSupplyIdentities(options: {
     processed: result.checked,
     failed: result.errors.length,
     metadata: {
-      rotationOffset: windowOffset,
+      rotationOffset: womensOffset,
       candidateCount: total,
+      womensCandidates: womensRows.length,
+      womensSelected: selectedWomens.length,
       promoted: result.promoted,
       noUniqueBarcodeMatch: result.noUniqueBarcodeMatch,
       missingEconomics: result.missingEconomics,
