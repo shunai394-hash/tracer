@@ -24,11 +24,14 @@ const checks = [
   ["CJ identity reverify", "lib/suppliers/reverify-cj-identity.ts", "variantBarcode"],
   ["CJ womens recovery priority", "lib/suppliers/reverify-cj-identity.ts", "womensSelected"],
   ["CJ womens recovery prioritizes unverified", "lib/suppliers/reverify-cj-identity.ts", "womenUnverifiedCandidates"],
+  ["CJ womens variant recovery", "lib/suppliers/repair-cj-variants.ts", "repairCjMissingWomenVariants"],
+  ["CJ womens variant recovery cron", "app/api/cron/cj-variant-repair/route.ts", "requireAutomationAuth"],
   ["CJ identifier-first recovery", "lib/suppliers/reverify-cj-identity.ts", "identifierFirst"],
   ["CJ identity resolver listing identifiers", "lib/intelligence/persist-cj-supply-intelligence.ts", "supplierIdentifiers"],
-  ["CJ barcode candidate safety", "lib/intelligence/persist-cj-supply-intelligence.ts", "marketplaceBarcodeCandidates"],
-  ["CJ identity lookup truncation safety", "lib/intelligence/persist-cj-supply-intelligence.ts", ".limit(51)"],
-  ["CJ identity recovery twice daily", "vercel.json", "8 18 * * *"],
+  ["CJ barcode candidate safety", "lib/intelligence/persist-cj-supply-intelligence.ts", "barcodeCandidates"],
+  ["CJ identity lookup truncation safety", "lib/intelligence/persist-cj-supply-intelligence.ts", ".limit(50)"],
+  ["CJ variant recovery twice daily", "vercel.json", "7 18 *  * *"],
+  ["CJ identity recovery twice daily", "vercel.json", "9 18 *  * *"],
 ] as const;
 
 const failures: string[] = [];
