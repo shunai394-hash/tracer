@@ -35,7 +35,7 @@ export default async function ShopPage() {
           <div className="grid gap-px overflow-hidden border border-white/8 bg-white/8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {listings.map((listing, index) => <Link key={listing.id} href={`/shop/${listing.slug}`} className="group flex h-full flex-col bg-[#080b0e] transition duration-500 hover:-translate-y-1 hover:bg-[#0b1014] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-inset">
               <div className="relative overflow-hidden bg-zinc-900">
-                {listing.imageUrl ? <img src={listing.imageUrl} alt="" loading={index < 4 ? "eager" : "lazy"} decoding="async" className="aspect-[4/3] h-auto w-full object-cover transition duration-700 motion-safe:group-hover:scale-[1.04]" /> : <div className="flex aspect-[4/3] items-center justify-center text-[9px] font-mono tracking-[.18em] text-zinc-600">IMAGE COMING SOON</div>}
+                {listing.imageUrl ? <img src={listing.imageUrl} alt={listing.title} loading={index < 4 ? "eager" : "lazy"} decoding="async" className="aspect-[4/3] h-auto w-full object-cover transition duration-700 motion-safe:group-hover:scale-[1.04]" /> : <div className="flex aspect-[4/3] items-center justify-center text-[9px] font-mono tracking-[.18em] text-zinc-600">IMAGE COMING SOON</div>}
                 <span className="absolute left-3 top-3 border border-cyan-300/20 bg-black/75 px-2 py-1 text-[8px] font-mono tracking-[.15em] text-cyan-100">SHOPIFY LIVE</span>
                 <span className="absolute right-3 bottom-3 font-mono text-[8px] tracking-[.16em] text-white/45">{String(index + 1).padStart(2, "0")}</span>
               </div>
