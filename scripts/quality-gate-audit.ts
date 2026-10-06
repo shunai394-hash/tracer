@@ -6,6 +6,7 @@ const root = process.cwd();
 const checks = [
   ["Shopify legacy sync", "lib/shopify/sync.ts", "hasPassedSalesTestGate"],
   ["Shopify canonical sync", "lib/shopify/sync-published-listings.ts", "hasPassedSalesTestGate"],
+  ["Shopify sync live-stock guard", "lib/shopify/sync-published-listings.ts", "Number(row.inventory) > 0"],
   ["Shopify storefront store", "lib/shop/store.ts", "shopify_sync_status"],
   ["Shopify storefront publication filter", "lib/shop/store.ts", "shopify_product_id"],
   ["Shopify storefront inventory filter", "lib/shop/store.ts", '.gt("inventory", 0)'],
@@ -14,6 +15,7 @@ const checks = [
   ["Shopify storefront UI", "app/shop/page.tsx", "SHOPIFY LIVE"],
   ["Shopify product detail", "app/shop/[slug]/page.tsx", "AddToCartButton"],
   ["Shopify channel cron", "app/api/cron/shopify-publish/route.ts", "isShopifyConfigured"],
+  ["Shopify catalog audit endpoint", "app/api/admin/shopify/catalog/route.ts", "storefrontContract"],
   ["Shopify readiness audit", "scripts/shopify-channel-audit.ts", "SHOPIFY_ADMIN_ACCESS_TOKEN"],
   ["BASE publisher", "lib/channels/base-publisher.ts", "hasPassedSalesTestGate"],
   ["Supply sales selector", "lib/market/select-supply-sales-tests.ts", "evaluateSalesTestGate"],
