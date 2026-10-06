@@ -7,6 +7,7 @@ import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibilit
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { evaluateSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
+import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -60,6 +61,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const autoProcurement = getAutoProcurementEligibility(String(listing.supplier ?? ""));
     if (!autoProcurement.eligible) reasons.push(`supplier_auto_procurement_capability_missing:${autoProcurement.missing.join("|")}`);
     if (!validHttpUrl(base.image_url)) reasons.push("image_url_invalid");
+    if (!isJapaneseProductTitle(base.normalized_title)) reasons.push("japanese_product_title_required");
 
     const identityMethod = String(listing.identity_method ?? "").trim().toLowerCase();
     const identifierGradeMethods = new Set(["asin", "jan", "gtin", "ean", "upc", "mpn", "brand_mpn", "tracer_catalog"]);
