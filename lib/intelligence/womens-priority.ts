@@ -1,5 +1,3 @@
-import "server-only";
-
 const WOMEN_FOCUSED_PATTERNS = [
   /beauty|skincare|skin care|serum|moisturizer|sunscreen|cosmetic|makeup|lipstick|lip gloss|blush|mascara|eyelash|eyeliner|nail art/i,
   /hair care|haircare|hair brush|scalp massager|hair oil|heatless curls|hair dryer|hair curler|curling iron|hair straightener|hair clip|hair claw|hair removal/i,
