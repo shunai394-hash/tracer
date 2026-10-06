@@ -22,9 +22,10 @@ function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
 }
 
 const CATALOG_QUERIES = [
-  "beauty", "home storage", "kitchen", "pet", "women", "phone accessories",
-  "bathroom", "office", "car accessories", "jewelry", "baby", "outdoor",
-  "fitness", "lighting", "garden", "bag",
+  "beauty", "skincare", "hair care", "women fashion", "women accessories", "jewelry",
+  "makeup", "home organization", "bathroom organization", "wellness", "period care",
+  "handbag", "hair accessories", "kitchen", "pet", "phone accessories", "car accessories",
+  "office", "outdoor", "fitness", "lighting", "garden",
 ];
 const MAX_CATALOG_PAGES = 50;
 const CATALOG_CURSOR_JOB = "supply-first-catalog-cursor";
