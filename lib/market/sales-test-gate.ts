@@ -30,33 +30,20 @@ export function evaluateSalesTestGate(input: SalesTestGateInput): {
   if ((input.requireRank ?? true) && input.rank === null) reasons.push("rank_unknown");
   if (!input.title) reasons.push("title_unknown");
   if (input.sellingPrice === null) reasons.push("selling_price_unknown");
-  if (!input.identityLinked || input.identityMethod === "title") {
-    reasons.push("identity_not_confirmed");
-  }
-  if (input.identityConfidence !== undefined && (input.identityConfidence === null || input.identityConfidence < 0.88)) {
-    reasons.push("identity_confidence_low");
-  }
+  if (!input.identityLinked || input.identityMethod === "title") reasons.push("identity_not_confirmed");
+  if (input.identityConfidence !== undefined && (input.identityConfidence === null || input.identityConfidence < 0.88)) reasons.push("identity_confidence_low");
   if (input.sourceCost === null) reasons.push("source_cost_unknown");
-  if (input.shippingCost === null || input.shippingUnknown) {
-    reasons.push("shipping_unknown");
-  }
+  if (input.shippingCost === null || input.shippingUnknown) reasons.push("shipping_unknown");
   if (input.trackingAvailable !== true) reasons.push("tracking_unknown");
   if (input.apiAvailable !== true) reasons.push("supplier_api_unknown");
   if (!input.profitCalculable || input.currencyMismatch) reasons.push("profit_unknown");
-  if (input.contributionProfit !== null && input.contributionProfit <= 0) {
-    reasons.push("profit_not_positive");
-  }
-
-  // When these fields are supplied, they are mandatory supply-side evidence.
-  // Keeping them optional preserves compatibility with the marketplace path,
-  // while making the supply path use exactly the same canonical gate.
+  if (input.contributionProfit !== null && input.contributionProfit <= 0) reasons.push("profit_not_positive");
   if (input.priceConfirmed !== undefined && input.priceConfirmed !== true) reasons.push("price_unconfirmed");
   if (input.inventoryConfirmed !== undefined && input.inventoryConfirmed !== true) reasons.push("inventory_unknown");
   if (input.inventory !== undefined && (input.inventory === null || input.inventory <= 0)) reasons.push("inventory_zero");
   if (input.orderable !== undefined && input.orderable !== true) reasons.push("supplier_not_orderable");
   if (input.supplierProductId !== undefined && !input.supplierProductId) reasons.push("supplier_product_unknown");
   if (input.supplierVariantId !== undefined && !input.supplierVariantId) reasons.push("supplier_variant_unknown");
-
   return { eligible: reasons.length === 0, reasons };
 }
 
@@ -92,6 +79,7 @@ export function verifySalesTestGateInvariants(): {
     profitCalculable: true,
     shippingUnknown: false,
     contributionProfit: 8,
+    currencyMismatch: false,
   });
   const supplyReady = evaluateSalesTestGate({
     rank: null,
@@ -124,19 +112,11 @@ export function verifySalesTestGateInvariants(): {
 
   const cases = [
     { name: "complete_observed_product_is_eligible", expected: true, actual: ready.eligible },
-    {
-      name: "title_only_identity_is_not_eligible",
-      expected: true,
-      actual: titleOnly.eligible === false && titleOnly.reasons.includes("identity_not_confirmed"),
-    },
+    { name: "title_only_identity_is_not_eligible", expected: true, actual: titleOnly.eligible === false && titleOnly.reasons.includes("identity_not_confirmed") },
     { name: "supply_ready_is_eligible_without_market_rank", expected: true, actual: supplyReady.eligible },
     { name: "supply_zero_inventory_is_blocked", expected: true, actual: supplyInventoryBlocked.eligible === false && supplyInventoryBlocked.reasons.includes("inventory_zero") },
   ];
-
-  return {
-    ok: cases.every((item) => item.actual === item.expected),
-    cases,
-  };
+  return { ok: cases.every((item) => item.actual === item.expected), cases };
 }
 
 function supplyReadyInput(): SalesTestGateInput {
@@ -164,12 +144,6 @@ function supplyReadyInput(): SalesTestGateInput {
   };
 }
 
-// The Sales Test Gate is the only automated path allowed to set
-// shop_listings.published = true. Every listing it publishes carries this
-// marker twice: in pipeline_reason (with stage PUBLISHED / status published)
-// and in selection_reasons. Downstream stages may legitimately move the
-// pipeline_* columns on (e.g. BASE_PUBLISHED), so selection_reasons is the
-// durable proof; new BASE items and NEWFIND delivery require it.
 export const SALES_TEST_GATE_PASSED = "sales_test_gate_passed";
 
 export type SalesTestGateRow = {
@@ -180,12 +154,9 @@ export type SalesTestGateRow = {
   selection_reasons?: unknown;
 };
 
-/** True only for a listing the Sales Test Gate published and that is still public. */
 export function hasPassedSalesTestGate(row: SalesTestGateRow): boolean {
   if (row.published !== true) return false;
-  if (Array.isArray(row.selection_reasons) && row.selection_reasons.includes(SALES_TEST_GATE_PASSED)) {
-    return true;
-  }
+  if (Array.isArray(row.selection_reasons) && row.selection_reasons.includes(SALES_TEST_GATE_PASSED)) return true;
   return (
     (row.pipeline_stage === "PUBLISHED" || row.pipeline_stage === "BASE_PUBLISHED") &&
     row.pipeline_status === "published" &&
