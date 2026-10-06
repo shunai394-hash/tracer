@@ -6,6 +6,7 @@ import { getSupplierCapabilities } from "@/lib/procurement/registry";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { evaluateSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -85,7 +86,11 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (num(intelligence.overall_confidence) === null || (num(intelligence.overall_confidence) ?? 0) < 0.6) reasons.push("intelligence_confidence_low");
     if (reasons.length) { rejected.push({ productId, reasons: Array.from(new Set(reasons)) }); continue; }
 
-    const quality = (num(intelligence.selection_score) ?? 0) * 0.45 + (num(intelligence.demand_score) ?? 0) * 0.2 + (num(intelligence.search_fit_score) ?? 0) * 0.1 + (num(intelligence.market_gap_score) ?? 0) * 0.1 + (num(intelligence.competition_score) ?? 0) * 0.05 + (num(intelligence.creative_score) ?? 0) * 0.05 + (num(intelligence.overall_confidence) ?? 0) * 100 * 0.05;
+    const womenBonus = womenProductPriority({
+      title: typeof base.normalized_title === "string" ? base.normalized_title : "",
+      category: typeof metadata.category === "string" ? metadata.category : null,
+    }).bonus;
+    const quality = (num(intelligence.selection_score) ?? 0) * 0.45 + (num(intelligence.demand_score) ?? 0) * 0.2 + (num(intelligence.search_fit_score) ?? 0) * 0.1 + (num(intelligence.market_gap_score) ?? 0) * 0.1 + (num(intelligence.competition_score) ?? 0) * 0.05 + (num(intelligence.creative_score) ?? 0) * 0.05 + (num(intelligence.overall_confidence) ?? 0) * 100 * 0.05 + womenBonus;
     eligible.push({ productId, listing, base, intelligence, profit, quality });
   }
 
