@@ -162,7 +162,10 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         await editBaseItem({ itemId: baseItemId, title: listing.title, detail: listing.description ?? listing.title, price, stock: availableInventory, visible: true });
       } else {
         const created = await createBaseItem({ title: listing.title, detail: listing.description ?? listing.title, price, stock: availableInventory, visible: true });
-        baseItemId = String(created.id);
+        baseItemId = String(created.item_id ?? created.item?.item_id ?? "");
+        if (!baseItemId) throw new Error("BASE create response missing item_id");
+        const { error: persistIdError } = await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_publication_status: "creating", base_publication_lease_until: leaseUntil }).eq("id", listingId);
+        if (persistIdError) throw new Error(persistIdError.message);
       }
       if (listing.image_url) await addBaseItemImage({ itemId: baseItemId, imageNo: 1, imageUrl: listing.image_url });
       await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_published_at: new Date().toISOString(), base_publication_status: "published", base_publication_lease_until: leaseUntil, base_last_error: null, pipeline_stage: "BASE_PUBLISHED", pipeline_status: "published", pipeline_reason: "sales_test_gate_passed", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
