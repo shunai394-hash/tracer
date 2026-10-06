@@ -20,6 +20,9 @@ type Listing = {
   selection_reasons: unknown;
   supplier_product_id: string | null;
   supplier_variant_id: string | null;
+  inventory: number | null;
+  orderable: boolean;
+  tracking_available: boolean;
   shopify_product_id: string | null;
   shopify_variant_id: string | null;
   shopify_handle: string | null;
@@ -59,14 +62,14 @@ async function findByHandle(handle: string): Promise<ShopifyProductNode | null> 
 
 export type ShopifySyncResult = { configured: boolean; considered: number; synced: number; failed: number; listingIds: string[]; errors: Array<{ listingId: string; error: string }> };
 
-/** Shopify is downstream-only: canonical Sales Test Gate provenance is mandatory. */
+/** Shopify is downstream-only: canonical Sales Test Gate plus live fulfillment evidence are mandatory. */
 export async function syncPublishedListingsToShopify(limit = 10): Promise<ShopifySyncResult> {
   if (!isShopifyConfigured()) return { configured: false, considered: 0, synced: 0, failed: 0, listingIds: [], errors: [] };
 
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("shop_listings")
-    .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_product_id,supplier_variant_id,shopify_product_id,shopify_variant_id,shopify_handle")
+    .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,shopify_product_id,shopify_variant_id,shopify_handle")
     .eq("published", true)
     .eq("pipeline_stage", "PUBLISHED")
     .eq("pipeline_status", "published")
@@ -74,7 +77,7 @@ export async function syncPublishedListingsToShopify(limit = 10): Promise<Shopif
     .limit(limit);
   if (error) throw new Error(error.message);
 
-  const candidates = ((data ?? []) as Listing[]).filter(hasPassedSalesTestGate);
+  const candidates = ((data ?? []) as Listing[]).filter((row) => hasPassedSalesTestGate(row) && row.orderable === true && row.tracking_available === true && Number(row.inventory) > 0);
   const results: ShopifySyncResult = { configured: true, considered: candidates.length, synced: 0, failed: 0, listingIds: [], errors: [] };
 
   for (const row of candidates) {
@@ -86,9 +89,7 @@ export async function syncPublishedListingsToShopify(limit = 10): Promise<Shopif
       const existing = row.shopify_product_id
         ? { id: row.shopify_product_id, handle: row.shopify_handle || row.slug, vendor: "TRACER", tags: ["TRACER"], variants: { nodes: [{ id: row.shopify_variant_id || "", sku: null, price: null }] } }
         : await findByHandle(productInput.handle);
-      if (existing && existing.vendor && existing.vendor !== "TRACER" && !existing.tags.includes("TRACER")) {
-        throw new Error("shopify_handle_owned_by_non_tracer_product");
-      }
+      if (existing && existing.vendor && existing.vendor !== "TRACER" && !existing.tags.includes("TRACER")) throw new Error("shopify_handle_owned_by_non_tracer_product");
       const product = existing
         ? await updateShopifyProduct({ productId: existing.id, title: productInput.title, descriptionHtml: productInput.descriptionHtml, handle: productInput.handle, price: productInput.price, variantId: existing.variants.nodes[0]?.id || null, sku: productInput.sku })
         : await createShopifyProduct(productInput);
