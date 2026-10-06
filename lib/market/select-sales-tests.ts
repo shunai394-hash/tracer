@@ -345,6 +345,9 @@ export async function selectAndPublishSalesTests(
   }
 
   eligible.sort((a, b) => {
+    const womenA = womenProductPriority({ title: String(a.bestseller.title ?? ""), category: String(a.bestseller.category ?? "") });
+    const womenB = womenProductPriority({ title: String(b.bestseller.title ?? ""), category: String(b.bestseller.category ?? "") });
+    if (womenB.bonus !== womenA.bonus) return womenB.bonus - womenA.bonus;
     if (b.qualityScore !== a.qualityScore) return b.qualityScore - a.qualityScore;
     const rankA = asNumber(a.bestseller.rank) ?? Number.POSITIVE_INFINITY;
     const rankB = asNumber(b.bestseller.rank) ?? Number.POSITIVE_INFINITY;
