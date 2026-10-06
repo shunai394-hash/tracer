@@ -11,6 +11,10 @@ function asNumber(value: unknown): number | null {
   return null;
 }
 
+function asBoolean(value: unknown): boolean {
+  return value === true;
+}
+
 export type ShopListing = {
   id: string;
   slug: string;
@@ -19,6 +23,9 @@ export type ShopListing = {
   imageUrl: string | null;
   sellingPrice: number | null;
   currency: string | null;
+  inventory: number;
+  orderable: boolean;
+  trackingAvailable: boolean;
   selectionReasons: string[];
   productId: string;
   bestsellerId: string | null;
@@ -40,6 +47,9 @@ function mapListing(row: Record<string, unknown>): ShopListing {
     imageUrl: typeof row.image_url === "string" ? row.image_url : null,
     sellingPrice: asNumber(row.selling_price),
     currency: typeof row.currency === "string" ? row.currency : null,
+    inventory: Math.max(0, Math.floor(asNumber(row.inventory) ?? 0)),
+    orderable: asBoolean(row.orderable),
+    trackingAvailable: asBoolean(row.tracking_available),
     selectionReasons: Array.isArray(row.selection_reasons)
       ? row.selection_reasons.map(String)
       : [],
@@ -55,17 +65,21 @@ function mapListing(row: Record<string, unknown>): ShopListing {
   };
 }
 
+const STOREFRONT_SELECT = "*";
+
 export async function listPublishedShopListings(): Promise<ShopListing[]> {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("shop_listings")
-    .select("*")
+    .select(STOREFRONT_SELECT)
     .eq("published", true)
     .not("shopify_product_id", "is", null)
     .eq("shopify_sync_status", "synced")
+    .eq("orderable", true)
+    .gt("inventory", 0)
+    .eq("tracking_available", true)
+    .gt("selling_price", 0)
     .order("published_at", { ascending: false })
-    // The storefront is the discovery surface, not a preview. Shopify is
-    // downstream: never present a TRACER-only row as a Shopify product.
     .limit(48);
 
   if (error) throw new Error(error.message);
@@ -76,11 +90,15 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("shop_listings")
-    .select("*")
+    .select(STOREFRONT_SELECT)
     .eq("slug", slug)
     .eq("published", true)
     .not("shopify_product_id", "is", null)
     .eq("shopify_sync_status", "synced")
+    .eq("orderable", true)
+    .gt("inventory", 0)
+    .eq("tracking_available", true)
+    .gt("selling_price", 0)
     .maybeSingle();
 
   if (error) throw new Error(error.message);
@@ -125,7 +143,11 @@ export async function placeShopOrder(args: {
     .in("id", listingIds)
     .eq("published", true)
     .not("shopify_product_id", "is", null)
-    .eq("shopify_sync_status", "synced");
+    .eq("shopify_sync_status", "synced")
+    .eq("orderable", true)
+    .gt("inventory", 0)
+    .eq("tracking_available", true)
+    .gt("selling_price", 0);
 
   if (error) throw new Error(error.message);
   if (!listings || listings.length === 0) throw new Error("published Shopify listing not found");
@@ -138,9 +160,11 @@ export async function placeShopOrder(args: {
     const listing = listings.find((row) => row.id === item.listingId) as Record<string, unknown> | undefined;
     if (!listing) throw new Error("listing is not published");
     if (listing.orderable !== true) throw new Error("listing is not currently orderable");
+    const inventory = asNumber(listing.inventory) ?? 0;
+    if (inventory < item.qty) throw new Error("requested quantity exceeds current inventory");
     if (!Number.isFinite(item.qty) || item.qty <= 0) throw new Error("quantity must be greater than zero");
     const unitPrice = asNumber(listing.selling_price);
-    if (unitPrice === null) throw new Error("selling price unknown");
+    if (unitPrice === null || unitPrice <= 0) throw new Error("selling price unknown");
     if (currency && listing.currency && currency !== listing.currency) throw new Error("currency mismatch");
     currency = typeof listing.currency === "string" ? listing.currency : currency;
     subtotal += unitPrice * item.qty;

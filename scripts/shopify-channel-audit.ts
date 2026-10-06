@@ -10,6 +10,7 @@ const checks = {
 const result = {
   ok: checks.configured,
   channel: "shopify",
+  storefrontContract: "published + gate-passed + synced + in-stock + orderable + trackable",
   checks: {
     storeDomain: checks.storeDomain,
     adminAccessToken: checks.adminAccessToken,
@@ -17,6 +18,7 @@ const result = {
     configured: checks.configured,
   },
   requiredForCatalogSync: ["SHOPIFY_STORE_DOMAIN", "SHOPIFY_ADMIN_ACCESS_TOKEN"],
+  secretValuesPrinted: false,
 };
 
 console.log(JSON.stringify(result, null, 2));
