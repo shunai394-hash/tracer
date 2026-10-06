@@ -1,4 +1,5 @@
 import { assessDemandRelevance } from "@/lib/intelligence/identity-confidence";
+import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 
 export type CJSelectionRow = {
   title: string;
@@ -52,6 +53,8 @@ export function scoreDemandCJSelection(args: {
   }
 
   let score = relevance.score * 80;
+  const womenPriority = womenProductPriority({ title, category: args.row.product_type, query: args.demandQuery });
+  score += womenPriority.bonus;
 
   if (args.row.image_url) score += 5;
   if (args.row.sku) score += 5;
