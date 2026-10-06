@@ -8,8 +8,8 @@
     {"path":"/api/cron/sales-test-publication","schedule":"10 12 * * *"},
     {"path":"/api/cron/shopify-publish","schedule":"13 12 * * *"},
     {"path":"/api/cron/inventory-refresh","schedule":"15 12 * * *"},
-    {"path":"/api/cron/superdelivery-sales-route","schedule":"20 12 * * *"},
     {"path":"/api/cron/demand-match","schedule":"17 12 * * *"},
+    {"path":"/api/cron/superdelivery-sales-route","schedule":"20 12 * * *"},
     {"path":"/api/cron/intelligence","schedule":"22 12 * * *"},
     {"path":"/api/cron/base-orders","schedule":"25 12 * * *"},
     {"path":"/api/cron/dropship-execution","schedule":"30 12 * * *"},
@@ -25,6 +25,9 @@
     {"path":"/api/cron/shopify-publish","schedule":"13 18 * * *"},
     {"path":"/api/cron/demand-match","schedule":"17 18 * * *"},
     {"path":"/api/cron/intelligence","schedule":"22 18 * * *"},
-    {"path":"/api/cron/patrol-ai","schedule":"55 18 * * *"}
+    {"path":"/api/cron/supply-first","schedule":"47 18 * * *"},
+    {"path":"/api/cron/demand-match","schedule":"52 18 * * *"},
+    {"path":"/api/cron/intelligence","schedule":"57 18 * * *"},
+    {"path":"/api/cron/patrol-ai","schedule":"59 18 * * *"}
   ]
 }
