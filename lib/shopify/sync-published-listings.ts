@@ -29,6 +29,8 @@ type ShopifyProductNode = {
   id: string;
   handle: string;
   status: string | null;
+  vendor: string | null;
+  tags: string[];
   variants: { nodes: Array<{ id: string; sku: string | null; price: string | null }> };
 };
 
@@ -49,7 +51,7 @@ function sku(listing: Listing): string {
 
 async function findByHandle(handle: string): Promise<ShopifyProductNode | null> {
   const data = await shopifyGraphQL<{ products: { nodes: ShopifyProductNode[] } }>(
-    `query ProductByHandle($query: String!) { products(first: 1, query: $query) { nodes { id handle status variants(first: 10) { nodes { id sku price } } } } }`,
+    `query ProductByHandle($query: String!) { products(first: 1, query: $query) { nodes { id handle status vendor tags variants(first: 10) { nodes { id sku price } } } } }`,
     { query: `handle:${handle}` },
   );
   return data.products.nodes[0] ?? null;
@@ -79,10 +81,14 @@ export async function syncPublishedListingsToShopify(limit = 10): Promise<Shopif
     try {
       const price = asNumber(row.selling_price);
       if (price === null || price <= 0) throw new Error("selling_price_invalid");
+      if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) throw new Error("image_url_invalid");
       const productInput = { title: row.title, descriptionHtml: html(row.description), handle: row.shopify_handle || row.slug, price, sku: sku(row) };
       const existing = row.shopify_product_id
-        ? { id: row.shopify_product_id, handle: row.shopify_handle || row.slug, variants: { nodes: [{ id: row.shopify_variant_id || "", sku: null, price: null }] } }
+        ? { id: row.shopify_product_id, handle: row.shopify_handle || row.slug, vendor: "TRACER", tags: ["TRACER"], variants: { nodes: [{ id: row.shopify_variant_id || "", sku: null, price: null }] } }
         : await findByHandle(productInput.handle);
+      if (existing && existing.vendor && existing.vendor !== "TRACER" && !existing.tags.includes("TRACER")) {
+        throw new Error("shopify_handle_owned_by_non_tracer_product");
+      }
       const product = existing
         ? await updateShopifyProduct({ productId: existing.id, title: productInput.title, descriptionHtml: productInput.descriptionHtml, handle: productInput.handle, price: productInput.price, variantId: existing.variants.nodes[0]?.id || null, sku: productInput.sku })
         : await createShopifyProduct(productInput);
