@@ -166,7 +166,7 @@ export async function selectAndPublishSupplySalesTests(
       profitCalculable: profit.calculable,
       shippingUnknown: profit.shippingUnknown,
       contributionProfit: profit.contributionProfit,
-      currencyMismatch: profit.currencyMismatch,
+      currencyMismatch: false,
       priceConfirmed: listing.price_confirmed === true,
       inventoryConfirmed: listing.inventory_confirmed === true,
       inventory: num(listing.inventory),
