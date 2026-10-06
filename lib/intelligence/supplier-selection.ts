@@ -1,4 +1,5 @@
 ﻿import { assessDemandRelevance } from "@/lib/intelligence/identity-confidence";
+import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 
 export type SupplierSelectionRow = {
   title: string;
@@ -56,6 +57,8 @@ export function scoreDemandSupplierSelection(args: {
   }
 
   let score = relevance.score * 80;
+  const womenPriority = womenProductPriority({ title, category: null, query: args.demandQuery });
+  score += womenPriority.bonus;
 
   if (args.row.image_url) score += 5;
   if (args.row.sku) score += 5;
