@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { rescueUndeliveredGatePassedListings, retryPendingNewfindPromotions, withdrawUnpublishedNewfindPromotions } from "@/lib/integration/newfind";
+import { retryPendingNewfindPromotions } from "@/lib/integration/newfind";
+import { rescueUndeliveredGatePassedListings, withdrawUnpublishedNewfindPromotions } from "@/lib/integration/newfind-reconcile";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
