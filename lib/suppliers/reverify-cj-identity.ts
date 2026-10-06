@@ -13,14 +13,14 @@ const MAX_LIMIT = 50;
 const CONCURRENCY = 5;
 
 const WOMENS_PRODUCT_PATTERNS = [
-  /skincare|skin care|serum|moisturizer|face cream|sunscreen|toner|essence|retinol|niacinamide|acne patch|pore|facial mask/i,
-  /beauty|cosmetic|makeup|lipstick|lip gloss|lip tint|blush|mascara|eyelash|eyeliner|highlighter/i,
-  /gua sha|face roller|led mask|cleansing brush|makeup brush|beauty device|nail lamp|nail drill/i,
-  /hair care|haircare|hair brush|scalp massager|hair oil|heatless curls|hair dryer|hair curler|curling iron|straightener|hair clip|hair claw/i,
-  /women'?s|womens|women|dress|skirt|cardigan|blouse|bodysuit|leggings|activewear|sports bra|bralette|shapewear/i,
+  /skincare|skin care|serum|moisturizer|face cream|sunscreen|toner|essence|retinol|niacinamide|acne patch|pore strip|facial mask/i,
+  /beauty|cosmetic case|cosmetic bag|makeup|lipstick|lip gloss|lip tint|blush|mascara|eyelash|eyeliner|highlighter/i,
+  /gua sha|face roller|led beauty mask|cleansing brush|makeup brush|beauty device|nail lamp|nail drill/i,
+  /hair care|haircare|hair brush|scalp massager|hair oil|heatless curls|hair dryer|hair curler|curling iron|hair straightener|hair clip|hair claw/i,
+  /women'?s (?:dress|clothing|fashion|bag|shoes|accessory)|womens (?:dress|clothing|fashion|bag|shoes|accessory)|women'?s|womens|sports bra|bralette|shapewear/i,
   /handbag|crossbody bag|tote bag|jewelry|earrings?|necklace|bracelet|hair accessory/i,
   /period|menstrual|menstrual cup|period underwear|ovulation|pregnancy test|pelvic floor/i,
-  /bra organizer|makeup organizer|cosmetic bag|jewelry organizer|closet organizer|shoe organizer|portable steamer/i,
+  /bra organizer|makeup organizer|cosmetic bag|jewelry organizer|closet organizer|shoe organizer|portable garment steamer/i,
 ];
 
 function isWomensProductTitle(title: unknown): boolean {
@@ -90,10 +90,6 @@ export async function reverifyCjSupplyIdentities(options: {
   if (countError) throw new Error(`identity reverify candidate count failed: ${countError.message}`);
 
   const total = candidateCount ?? 0;
-
-  // Women's product recovery is a business priority, but this is only a
-  // selection preference. Identity still has to be resolved from identifier-
-  // grade evidence before a listing can become publishable.
   const { data: rows, error } = await db
     .from("supplier_listings")
     .select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata")
