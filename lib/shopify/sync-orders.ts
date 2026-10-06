@@ -56,6 +56,11 @@ function fullAddress(address: ShopifyOrder["shippingAddress"]): string {
   ].filter(Boolean).join(" ");
 }
 
+function finitePositiveNumber(value: unknown): number | null {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyncResult> {
   if (!isShopifyConfigured()) {
     return { configured: false, fetched: 0, imported: 0, skipped: 0, failed: 0, orderIds: [], errors: [] };
@@ -111,6 +116,7 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
   );
 
   for (const order of orders) {
+    let insertedOrderId: string | null = null;
     try {
       if (order.displayFinancialStatus !== "PAID") {
         result.skipped += 1;
@@ -133,9 +139,10 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
       const customerName = order.shippingAddress?.name || order.email || "Shopify customer";
       const customerEmail = order.email || "shopify-order@invalid.local";
       const phone = order.shippingAddress?.phone || order.phone || null;
-      const total = Number(order.totalPriceSet.shopMoney.amount);
-      if (!Number.isFinite(total)) throw new Error("shopify_total_invalid");
+      const total = finitePositiveNumber(order.totalPriceSet.shopMoney.amount);
+      if (total === null) throw new Error("shopify_total_invalid");
       if (!address) throw new Error("shopify_shipping_address_missing");
+      if (!order.lineItems.nodes.length) throw new Error("shopify_line_items_missing");
 
       const mappedItems = order.lineItems.nodes.map((item) => {
         const listing = item.variant?.id ? listingByVariant.get(item.variant.id) : undefined;
@@ -144,6 +151,18 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
       const unmapped = mappedItems.filter(({ listing }) => !listing);
       if (unmapped.length) {
         throw new Error(`shopify_variant_not_mapped:${unmapped.map(({ item }) => item.variant?.sku || item.id).join(",")}`);
+      }
+
+      for (const { item } of mappedItems) {
+        if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+          throw new Error(`shopify_line_item_quantity_invalid:${item.id}`);
+        }
+        if (finitePositiveNumber(item.originalUnitPriceSet.shopMoney.amount) === null) {
+          throw new Error(`shopify_line_item_price_invalid:${item.id}`);
+        }
+        if (!item.originalUnitPriceSet.shopMoney.currencyCode) {
+          throw new Error(`shopify_line_item_currency_missing:${item.id}`);
+        }
       }
 
       const primaryListing = mappedItems[0]?.listing;
@@ -179,6 +198,7 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         .select("id")
         .single();
       if (inserted.error || !inserted.data) throw new Error(inserted.error?.message ?? "shop_order_insert_failed");
+      insertedOrderId = String(inserted.data.id);
 
       const itemRows = mappedItems.map(({ item, listing }) => ({
         order_id: inserted.data.id,
@@ -190,11 +210,18 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         currency: item.originalUnitPriceSet.shopMoney.currencyCode,
       }));
       const itemInsert = await supabase.from("shop_order_items").insert(itemRows);
-      if (itemInsert.error) throw new Error(itemInsert.error.message);
+      if (itemInsert.error) {
+        await supabase.from("shop_orders").delete().eq("id", inserted.data.id).eq("shopify_order_id", order.id);
+        insertedOrderId = null;
+        throw new Error(`shop_order_items_insert_failed:${itemInsert.error.message}`);
+      }
 
       result.imported += 1;
-      result.orderIds.push(String(inserted.data.id));
+      result.orderIds.push(inserted.data.id);
     } catch (error) {
+      if (insertedOrderId) {
+        await supabase.from("shop_orders").delete().eq("id", insertedOrderId).eq("shopify_order_id", order.id);
+      }
       result.failed += 1;
       result.errors.push({
         shopifyOrderId: order.id,
