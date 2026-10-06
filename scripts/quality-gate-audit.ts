@@ -17,10 +17,14 @@ const checks = [
   ["Shopify channel cron", "app/api/cron/shopify-publish/route.ts", "isShopifyConfigured"],
   ["Shopify catalog audit endpoint", "app/api/admin/shopify/catalog/route.ts", "storefrontContract"],
   ["Shopify readiness audit", "scripts/shopify-channel-audit.ts", "SHOPIFY_ADMIN_ACCESS_TOKEN"],
+  ["Shopify readiness womens telemetry", "app/api/admin/shopify/readiness/route.ts", "womensCanonicalReady"],
   ["BASE publisher", "lib/channels/base-publisher.ts", "hasPassedSalesTestGate"],
   ["Supply sales selector", "lib/market/select-supply-sales-tests.ts", "evaluateSalesTestGate"],
   ["Market sales selector", "lib/market/select-sales-tests.ts", "SALES_TEST_GATE_PASSED"],
   ["CJ identity reverify", "lib/suppliers/reverify-cj-identity.ts", "variantBarcode"],
+  ["CJ womens recovery priority", "lib/suppliers/reverify-cj-identity.ts", "womensSelected"],
+  ["CJ womens signal precision", "lib/suppliers/reverify-cj-identity.ts", "pore strip"],
+  ["CJ identity recovery twice daily", "vercel.json", "8 18 * * *"],
 ] as const;
 
 const failures: string[] = [];
