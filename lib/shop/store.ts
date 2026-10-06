@@ -26,6 +26,9 @@ export type ShopListing = {
   supplierName: string | null;
   supplierProductId: string | null;
   supplierVariantId: string | null;
+  shopifyProductId: string | null;
+  shopifyHandle: string | null;
+  shopifySyncStatus: string | null;
 };
 
 function mapListing(row: Record<string, unknown>): ShopListing {
@@ -46,6 +49,9 @@ function mapListing(row: Record<string, unknown>): ShopListing {
     supplierName: typeof row.supplier_name === "string" ? row.supplier_name : null,
     supplierProductId: row.supplier_product_id ? String(row.supplier_product_id) : null,
     supplierVariantId: row.supplier_variant_id ? String(row.supplier_variant_id) : null,
+    shopifyProductId: row.shopify_product_id ? String(row.shopify_product_id) : null,
+    shopifyHandle: typeof row.shopify_handle === "string" ? row.shopify_handle : null,
+    shopifySyncStatus: typeof row.shopify_sync_status === "string" ? row.shopify_sync_status : null,
   };
 }
 
@@ -55,24 +61,26 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
     .from("shop_listings")
     .select("*")
     .eq("published", true)
+    .not("shopify_product_id", "is", null)
+    .eq("shopify_sync_status", "synced")
     .order("published_at", { ascending: false })
-    // The storefront is the discovery surface, not a 3-item preview.
-    // Keep the initial payload bounded while allowing the catalog to grow.
-    .limit(24);
+    // The storefront is the discovery surface, not a preview. Shopify is
+    // downstream: never present a TRACER-only row as a Shopify product.
+    .limit(48);
 
   if (error) throw new Error(error.message);
   return (data ?? []).map((row) => mapListing(row as Record<string, unknown>));
 }
 
-export async function getShopListingBySlug(
-  slug: string,
-): Promise<ShopListing | null> {
+export async function getShopListingBySlug(slug: string): Promise<ShopListing | null> {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("shop_listings")
     .select("*")
     .eq("slug", slug)
     .eq("published", true)
+    .not("shopify_product_id", "is", null)
+    .eq("shopify_sync_status", "synced")
     .maybeSingle();
 
   if (error) throw new Error(error.message);
@@ -108,54 +116,37 @@ export async function placeShopOrder(args: {
   notes?: string;
 }): Promise<{ orderId: string }> {
   const supabase = createSupabaseAdminClient();
-  if (args.items.length === 0) {
-    throw new Error("cart is empty");
-  }
+  if (args.items.length === 0) throw new Error("cart is empty");
 
   const listingIds = args.items.map((item) => item.listingId);
   const { data: listings, error } = await supabase
     .from("shop_listings")
     .select("*")
     .in("id", listingIds)
-    .eq("published", true);
+    .eq("published", true)
+    .not("shopify_product_id", "is", null)
+    .eq("shopify_sync_status", "synced");
 
   if (error) throw new Error(error.message);
-  if (!listings || listings.length === 0) {
-    throw new Error("published listing not found");
-  }
+  if (!listings || listings.length === 0) throw new Error("published Shopify listing not found");
 
   let subtotal = 0;
   let currency: string | null = null;
-  const lines: Array<{
-    listing: Record<string, unknown>;
-    qty: number;
-    unitPrice: number | null;
-  }> = [];
+  const lines: Array<{ listing: Record<string, unknown>; qty: number; unitPrice: number | null }> = [];
 
   for (const item of args.items) {
-    const listing = listings.find((row) => row.id === item.listingId) as
-      | Record<string, unknown>
-      | undefined;
+    const listing = listings.find((row) => row.id === item.listingId) as Record<string, unknown> | undefined;
     if (!listing) throw new Error("listing is not published");
-    if (listing.orderable !== true) {
-      throw new Error("listing is not currently orderable");
-    }
-    if (!Number.isFinite(item.qty) || item.qty <= 0) {
-      throw new Error("quantity must be greater than zero");
-    }
+    if (listing.orderable !== true) throw new Error("listing is not currently orderable");
+    if (!Number.isFinite(item.qty) || item.qty <= 0) throw new Error("quantity must be greater than zero");
     const unitPrice = asNumber(listing.selling_price);
     if (unitPrice === null) throw new Error("selling price unknown");
-    if (currency && listing.currency && currency !== listing.currency) {
-      throw new Error("currency mismatch");
-    }
+    if (currency && listing.currency && currency !== listing.currency) throw new Error("currency mismatch");
     currency = typeof listing.currency === "string" ? listing.currency : currency;
     subtotal += unitPrice * item.qty;
     lines.push({ listing, qty: item.qty, unitPrice });
   }
 
-  // Every payment method starts unconfirmed. Stripe card payments are
-  // promoted to paid by the webhook; COD/bank transfer require a separate
-  // confirmed-payment workflow before procurement is authorized.
   const { data: order, error: orderError } = await supabase
     .from("shop_orders")
     .insert({
@@ -201,11 +192,6 @@ export async function placeShopOrder(args: {
       currency,
     });
     if (itemInsert.error) throw new Error(itemInsert.error.message);
-
-    // "purchase" means payment-confirmed purchase, so it must never fire
-    // at order creation time for an unconfirmed payment method. The Stripe
-    // webhook records it after confirmed payment; non-card payment methods
-    // need their own confirmed-payment workflow before this event is emitted.
   }
 
   return { orderId: String(order.id) };
