@@ -90,7 +90,7 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
   if (existingOffer.error) throw new Error(existingOffer.error.message);
   let offerId: string;
   if (existingOffer.data?.id) { const updated = await supabase.from("product_offers").update(offerPayload).eq("id", existingOffer.data.id).select("id").single(); if (updated.error) throw new Error(updated.error.message); offerId = String(updated.data.id); }
-  else { const inserted = await supabase.from("product_offers").insert(offerPayload).select("id").single(); if (inserted.error) throw new Error(existingOffer.error?.message ?? "CJ offer insert failed"); offerId = String(inserted.data.id); }
+  else { const inserted = await supabase.from("product_offers").insert(offerPayload).select("id").single(); if (inserted.error) throw new Error(inserted.error.message || "CJ offer insert failed"); offerId = String(inserted.data.id); }
   const existingIntelligence = await supabase.from("product_intelligence").select("normalized_title,brand_name,category,source_url,demand_signal,metadata").eq("product_id", canonicalProductId).maybeSingle();
   if (existingIntelligence.error) throw new Error(existingIntelligence.error.message);
   const existingMetadata = existingIntelligence.data?.metadata && typeof existingIntelligence.data.metadata === "object" ? existingIntelligence.data.metadata as Record<string, unknown> : {};
