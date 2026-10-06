@@ -53,17 +53,17 @@ export function verifyShopifyWebhookHmac(rawBody: string, hmacHeader: string | n
 
 const TRACER_TAGS = ["TRACER", "tracer-sales-test-gate"];
 
-export async function createShopifyProduct(input: { title: string; descriptionHtml: string; handle: string; price: number; sku: string }): Promise<ShopifyProduct> {
+export async function createShopifyProduct(input: { title: string; descriptionHtml: string; handle: string; price: number; sku: string; imageUrl?: string | null }): Promise<ShopifyProduct> {
   const data = await shopifyGraphQL<{
     productCreate: { product: ShopifyProduct | null; userErrors: Array<{ field?: string[]; message: string }> };
   }>(
     `mutation ProductCreate($input: ProductInput!, $media: [CreateMediaInput!]) {
-      productCreate(product: $input) {
+      productCreate(product: $input, media: $media) {
         product { id handle status variants(first: 10) { nodes { id sku price } } }
         userErrors { field message }
       }
     }`,
-    { input: { title: input.title, descriptionHtml: input.descriptionHtml, handle: input.handle, status: "ACTIVE", vendor: "TRACER", productType: "TRACER Selection", tags: TRACER_TAGS } },
+    { input: { title: input.title, descriptionHtml: input.descriptionHtml, handle: input.handle, status: "ACTIVE", vendor: "TRACER", productType: "TRACER Selection", tags: TRACER_TAGS }, media: input.imageUrl ? [{ originalSource: input.imageUrl, alt: input.title, mediaContentType: "IMAGE" }] : [] },
   );
   if (data.productCreate.userErrors.length) throw new Error(data.productCreate.userErrors.map((error) => error.message).join("; "));
   const product = data.productCreate.product;
@@ -86,17 +86,17 @@ export async function createShopifyProduct(input: { title: string; descriptionHt
   return { ...product, variants: { nodes: variantData.productVariantsBulkUpdate.productVariants } };
 }
 
-export async function updateShopifyProduct(input: { productId: string; title: string; descriptionHtml: string; handle: string; price: number; variantId?: string | null; sku: string }): Promise<ShopifyProduct> {
+export async function updateShopifyProduct(input: { productId: string; title: string; descriptionHtml: string; handle: string; price: number; variantId?: string | null; sku: string; imageUrl?: string | null }): Promise<ShopifyProduct> {
   const productData = await shopifyGraphQL<{
     productUpdate: { product: ShopifyProduct | null; userErrors: Array<{ field?: string[]; message: string }> };
   }>(
     `mutation ProductUpdate($input: ProductInput!, $media: [CreateMediaInput!]) {
-      productUpdate(product: $input) {
+      productUpdate(product: $input, media: $media) {
         product { id handle status variants(first: 10) { nodes { id sku price } } }
         userErrors { field message }
       }
     }`,
-    { input: { id: input.productId, title: input.title, descriptionHtml: input.descriptionHtml, handle: input.handle, status: "ACTIVE", vendor: "TRACER", productType: "TRACER Selection", tags: TRACER_TAGS } },
+    { input: { id: input.productId, title: input.title, descriptionHtml: input.descriptionHtml, handle: input.handle, status: "ACTIVE", vendor: "TRACER", productType: "TRACER Selection", tags: TRACER_TAGS }, media: input.imageUrl ? [{ originalSource: input.imageUrl, alt: input.title, mediaContentType: "IMAGE" }] : [] },
   );
   if (productData.productUpdate.userErrors.length) throw new Error(productData.productUpdate.userErrors.map((error) => error.message).join("; "));
   const product = productData.productUpdate.product;
