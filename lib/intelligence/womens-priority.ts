@@ -26,6 +26,8 @@ export function womenProductPriority(args: {
   // Priority, not a relevance bypass: the candidate must already pass
   // demand relevance. This keeps unrelated products out.
   return { isWomenFocused: tier !== "none", bonus, tier };
+}
+
 export function verifyWomenPriorityInvariants(): {
   ok: boolean;
   cases: Array<{ name: string; actual: boolean }>;
