@@ -63,9 +63,23 @@ export default async function ShopProductPage({
 
   const hasEvidence = evidence.length > 0;
   const marketplaceLabel = bestseller?.marketplace ?? "TRACER";
+  const productJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: listing.title,
+    description: listing.description ?? undefined,
+    image: listing.imageUrl ? [listing.imageUrl] : undefined,
+    offers: listing.sellingPrice && listing.currency ? {
+      "@type": "Offer",
+      price: listing.sellingPrice,
+      priceCurrency: listing.currency,
+      availability: listing.inventory > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+      url: `/shop/${listing.slug}`,
+    } : undefined,
+  };
 
   return (
-    <main className="relative mx-auto w-full max-w-7xl flex-1 px-5 py-8 sm:px-6 sm:py-12">
+    <main className="relative mx-auto w-full max-w-7xl flex-1 px-5 py-8 sm:px-6 sm:py-12">\n      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }} />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[34rem] overflow-hidden" aria-hidden="true">
         <div className="absolute -left-40 top-12 h-80 w-80 rounded-full bg-cyan-400/[0.06] blur-3xl" />
         <div className="absolute right-0 top-0 h-72 w-72 rounded-full bg-amber-300/[0.04] blur-3xl" />
