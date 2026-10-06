@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
-type NormalizeResult = { processed: number; created: number; updated: number; skipped: number };
+type NormalizeResult = { processed: number; created: number; updated: number; skipped: number; limit: number; offset: number };
 type ProductRow = { id: string; canonical_name: string; brand_id: string | null };
 type ObservationRow = {
   id: string;
@@ -72,25 +72,35 @@ function priceConfidence(price: number | null, currency: string | null, sourceUr
 }
 
 const CHUNK = 100;
+const DEFAULT_LIMIT = 200;
+const MAX_LIMIT = 300;
 
 /**
- * Batch implementation of normalization. The previous implementation did
- * product -> observation -> brand -> intelligence -> upsert sequentially,
- * producing thousands of round trips and routinely exhausting the 5s patrol
- * budget before downstream identity/supply/gates could run.
+ * Batch normalization with a bounded product window. The previous patrol
+ * loaded every product, every related observation, every brand and every
+ * intelligence row before doing any downstream identity/supply work. With
+ * ~1,300 products that routinely exhausted the 5s patrol budget and stopped
+ * the entire publication pipeline. A rotating bounded window keeps each
+ * patrol responsive while repeated patrols cover the complete catalog.
  */
-export async function normalizeProductIntelligence(): Promise<NormalizeResult> {
+export async function normalizeProductIntelligence(options: { limit?: number; offset?: number } = {}): Promise<NormalizeResult> {
   const supabase = createSupabaseAdminClient();
+  const limit = Math.max(1, Math.min(options.limit ?? DEFAULT_LIMIT, MAX_LIMIT));
+  const offset = Math.max(0, Math.floor(options.offset ?? 0));
 
-  const productsResult = await supabase.from("products").select("id, canonical_name, brand_id");
+  const productsResult = await supabase
+    .from("products")
+    .select("id, canonical_name, brand_id")
+    .order("id", { ascending: true })
+    .range(offset, offset + limit - 1);
   if (productsResult.error) throw new Error(`Failed to load products: ${productsResult.error.message}`);
   const products = (productsResult.data ?? []) as ProductRow[];
-  if (products.length === 0) return { processed: 0, created: 0, updated: 0, skipped: 0 };
+  if (products.length === 0) return { processed: 0, created: 0, updated: 0, skipped: 0, limit, offset };
 
   const productIds = products.map((product) => product.id);
   const observationMap = new Map<string, ObservationRow>();
-  for (let offset = 0; offset < productIds.length; offset += 500) {
-    const ids = productIds.slice(offset, offset + 500);
+  for (let batchOffset = 0; batchOffset < productIds.length; batchOffset += 500) {
+    const ids = productIds.slice(batchOffset, batchOffset + 500);
     const result = await supabase
       .from("observations")
       .select("id,product_id,source_url,normalized_data,raw_data,confidence,observed_at,captured_at")
@@ -105,18 +115,18 @@ export async function normalizeProductIntelligence(): Promise<NormalizeResult> {
 
   const brandIds = Array.from(new Set(products.map((product) => product.brand_id).filter((id): id is string => Boolean(id))));
   const brands = new Map<string, BrandRow>();
-  for (let offset = 0; offset < brandIds.length; offset += 500) {
-    const result = await supabase.from("brands").select("id,name").in("id", brandIds.slice(offset, offset + 500));
+  for (let batchOffset = 0; batchOffset < brandIds.length; batchOffset += 500) {
+    const result = await supabase.from("brands").select("id,name").in("id", brandIds.slice(batchOffset, batchOffset + 500));
     if (result.error) throw new Error(`Failed to load brands: ${result.error.message}`);
     for (const row of (result.data ?? []) as BrandRow[]) brands.set(row.id, row);
   }
 
   const existing = new Map<string, IntelligenceRow>();
-  for (let offset = 0; offset < productIds.length; offset += 500) {
+  for (let batchOffset = 0; batchOffset < productIds.length; batchOffset += 500) {
     const result = await supabase
       .from("product_intelligence")
       .select("product_id,demand_signal,supply_signal,trend_signal,opportunity_score,status,metadata")
-      .in("product_id", productIds.slice(offset, offset + 500));
+      .in("product_id", productIds.slice(batchOffset, batchOffset + 500));
     if (result.error) throw new Error(`Failed to load intelligence: ${result.error.message}`);
     for (const row of (result.data ?? []) as IntelligenceRow[]) existing.set(String(row.product_id), row);
   }
@@ -174,10 +184,10 @@ export async function normalizeProductIntelligence(): Promise<NormalizeResult> {
     if (previous) updated += 1; else created += 1;
   }
 
-  for (let offset = 0; offset < payloads.length; offset += CHUNK) {
-    const result = await supabase.from("product_intelligence").upsert(payloads.slice(offset, offset + CHUNK), { onConflict: "product_id" });
+  for (let batchOffset = 0; batchOffset < payloads.length; batchOffset += CHUNK) {
+    const result = await supabase.from("product_intelligence").upsert(payloads.slice(batchOffset, batchOffset + CHUNK), { onConflict: "product_id" });
     if (result.error) throw new Error(`Failed to normalize product intelligence batch: ${result.error.message}`);
   }
 
-  return { processed: payloads.length, created, updated, skipped };
+  return { processed: payloads.length, created, updated, skipped, limit, offset };
 }
