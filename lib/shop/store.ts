@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -83,7 +84,14 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
     .limit(48);
 
   if (error) throw new Error(error.message);
-  return (data ?? []).map((row) => mapListing(row as Record<string, unknown>));
+  return (data ?? [])
+    .map((row) => {
+      const listing = mapListing(row as Record<string, unknown>);
+      const priority = womenProductPriority({ title: listing.title, category: listing.description });
+      return { listing, womenBonus: priority.bonus };
+    })
+    .sort((a, b) => b.womenBonus - a.womenBonus)
+    .map(({ listing }) => listing);
 }
 
 export async function getShopListingBySlug(slug: string): Promise<ShopListing | null> {
