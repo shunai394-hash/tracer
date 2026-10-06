@@ -19,6 +19,7 @@
     {"path":"/api/cron/supplier-orders","schedule":"40 12 * * *"},
     {"path":"/api/cron/newfind-retry","schedule":"45 12 * * *"},
     {"path":"/api/cron/supply-first","schedule":"50 12 * * *"},
-    {"path":"/api/cron/patrol-ai","schedule":"55 12 * * *"}
+    {"path":"/api/cron/patrol-ai","schedule":"55 12 * * *"},
+    {"path":"/api/cron/cj-identity-reverify","schedule":"8 18 * * *"}
   ]
 }
