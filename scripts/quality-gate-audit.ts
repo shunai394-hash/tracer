@@ -30,8 +30,8 @@ const checks = [
   ["CJ identity resolver listing identifiers", "lib/intelligence/persist-cj-supply-intelligence.ts", "supplierIdentifiers"],
   ["CJ barcode candidate safety", "lib/intelligence/persist-cj-supply-intelligence.ts", "barcodeCandidates"],
   ["CJ identity lookup truncation safety", "lib/intelligence/persist-cj-supply-intelligence.ts", ".limit(50)"],
-  ["CJ variant recovery twice daily", "vercel.json", "7 18 *  * *"],
-  ["CJ identity recovery twice daily", "vercel.json", "9 18 *  * *"],
+  ["CJ variant recovery twice daily", "vercel.json", "7 18 * * *"],
+  ["CJ identity recovery twice daily", "vercel.json", "9 18 * * *"],
 ] as const;
 
 const failures: string[] = [];
