@@ -139,6 +139,7 @@ export function SiteHeader() {
             <nav aria-label="Mobile operations navigation" className="grid grid-cols-2 gap-x-5 border-y border-white/[0.07]">
               {utilityLinks.map((link) => <Link key={link.href} href={link.href} onClick={closeMenu} className="flex min-h-12 items-center justify-between border-b border-white/[0.05] text-[10px] tracking-[0.14em] text-zinc-500 transition hover:text-cyan-100"><span>{link.label}</span><span className="text-zinc-700">↗</span></Link>)}
               <Link href="/mypage" onClick={closeMenu} className="flex min-h-12 items-center justify-between border-b border-white/[0.05] text-[10px] tracking-[0.14em] text-zinc-500 transition hover:text-cyan-100"><span>マイページ</span><span className="text-zinc-700">↗</span></Link>
+                <Link href="/login" onClick={closeMenu} className="col-span-2 flex min-h-14 items-center justify-between border-b border-cyan-300/15 bg-cyan-300/[0.035] px-4 text-[10px] font-semibold tracking-[0.14em] text-cyan-100 transition hover:bg-cyan-300/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-200"><span>Googleでログイン</span><span aria-hidden="true">↗</span></Link>
               <Link href="/shop" onClick={closeMenu} className="flex min-h-12 items-center justify-between border-b border-white/[0.05] text-[10px] tracking-[0.14em] text-cyan-200 transition hover:text-cyan-100"><span>商品を見る</span><span>↗</span></Link>
             </nav>
           </div>
