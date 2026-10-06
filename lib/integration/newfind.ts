@@ -131,7 +131,7 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
   let failed = 0;
   for (const listingId of eligible) {
     const result = await promoteShopListingToNewfind(listingId);
-    if (result.ackStatus === "processed") processed += 1;
+    if (result.ackStatus === "processed" || result.ackStatus === "duplicate") processed += 1;
     else if (!result.sent) failed += 1;
   }
 
@@ -156,9 +156,10 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     return { configured: Boolean(cfg.apiUrl && cfg.webhookSecret), sent: false, eventId: id, status: null, ackStatus: null, detail: "sales_test_gate_not_passed" };
   }
 
-  await supabase
+  const { error: deliveryUpsertError } = await supabase
     .from("newfind_promotion_deliveries")
     .upsert({ listing_id: listingId, event_id: id, status: "pending", attempts: 0 }, { onConflict: "listing_id", ignoreDuplicates: true });
+  if (deliveryUpsertError) throw new Error(deliveryUpsertError.message);
 
   if (!cfg.apiUrl || !cfg.webhookSecret) {
     return { configured: false, sent: false, eventId: id, status: null, ackStatus: null, detail: "newfind_bridge_not_configured" };
