@@ -18,11 +18,12 @@ type GraphQLResponse<T> = {
 };
 
 function shopifyEndpoint(): string {
-  const { storeDomain, apiVersion } = getShopifyConfig();
+  const { storeDomain } = getShopifyConfig();
+  const apiVersion = process.env.SHOPIFY_API_VERSION?.trim() || "2026-07";
   const domain = storeDomain
     .trim()
-    .replace(/^https?:\\/\\//, "")
-    .replace(/\\/$/, "");
+    .replace(/^https?:\/\//, "")
+    .replace(/\/$/, "");
   if (!domain) throw new Error("SHOPIFY_STORE_DOMAIN is not configured");
   return `https://${domain}/admin/api/${apiVersion}/graphql.json`;
 }
@@ -50,9 +51,7 @@ export async function shopifyGraphQL<T>(
   });
 
   const payload = (await response.json()) as GraphQLResponse<T>;
-  if (!response.ok) {
-    throw new Error(`Shopify Admin API HTTP ${response.status}`);
-  }
+  if (!response.ok) throw new Error(`Shopify Admin API HTTP ${response.status}`);
   if (payload.errors?.length) {
     throw new Error(payload.errors.map((error) => error.message).join("; "));
   }
@@ -108,7 +107,6 @@ export async function createShopifyProduct(input: {
   }
   const product = data.productCreate.product;
   if (!product) throw new Error("Shopify productCreate returned no product");
-
   const variant = product.variants?.nodes?.[0];
   if (!variant) throw new Error("Shopify productCreate returned no variant");
 
@@ -179,7 +177,6 @@ export async function updateShopifyProduct(input: {
   }
   const product = productData.productUpdate.product;
   if (!product) throw new Error("Shopify productUpdate returned no product");
-
   const variantId = input.variantId ?? product.variants?.nodes?.[0]?.id;
   if (!variantId) throw new Error("Shopify product has no variant");
 
