@@ -23,28 +23,26 @@ const checks = [
   ["Market sales selector", "lib/market/select-sales-tests.ts", "SALES_TEST_GATE_PASSED"],
   ["CJ identity reverify", "lib/suppliers/reverify-cj-identity.ts", "variantBarcode"],
   ["CJ womens recovery priority", "lib/suppliers/reverify-cj-identity.ts", "womensSelected"],
-  ["CJ womens signal precision", "lib/suppliers/reverify-cj-identity.ts", "audience_focus"],
+  ["CJ womens recovery prioritizes unverified", "lib/suppliers/reverify-cj-identity.ts", "womenUnverifiedCandidates"],
   ["CJ identifier-first recovery", "lib/suppliers/reverify-cj-identity.ts", "identifierFirst"],
   ["CJ identity resolver listing identifiers", "lib/intelligence/persist-cj-supply-intelligence.ts", "supplierIdentifiers"],
-  ["CJ womens signal precision", "lib/suppliers/reverify-cj-identity.ts", "pore strip"],
+  ["CJ barcode candidate safety", "lib/intelligence/persist-cj-supply-intelligence.ts", "marketplaceBarcodeCandidates"],
+  ["CJ identity lookup truncation safety", "lib/intelligence/persist-cj-supply-intelligence.ts", ".limit(51)"],
   ["CJ identity recovery twice daily", "vercel.json", "8 18 * * *"],
 ] as const;
 
 const failures: string[] = [];
 const invariant = verifySalesTestGateInvariants();
 if (!invariant.ok) failures.push(`sales-test-gate invariants failed: ${JSON.stringify(invariant.cases)}`);
-
 for (const [name, relativePath, required] of checks) {
   const path = resolve(root, relativePath);
   const source = readFileSync(path, "utf8");
   if (!source.includes(required)) failures.push(`${name}: missing required guard ${required}`);
 }
-
 if (failures.length) {
   console.error("TRACER QUALITY GATE AUDIT: FAIL");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
-
 console.log("TRACER QUALITY GATE AUDIT: PASS");
 console.log(`Checked ${checks.length} critical publication/downstream paths plus ${invariant.cases.length} gate invariants.`);
