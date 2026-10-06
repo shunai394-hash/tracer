@@ -129,6 +129,33 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
 
     const leaseUntil = new Date(Date.now() + 2 * 60_000).toISOString();
+
+    // Claim a new BASE publication atomically before creating the remote item.
+    // This prevents overlapping cron invocations from creating duplicate BASE
+    // products for the same TRACER listing.
+    if (!listing.base_item_id) {
+      const { data: claimed, error: claimError } = await supabase
+        .from("shop_listings")
+        .update({
+          base_publication_status: "creating",
+          base_publication_lease_until: leaseUntil,
+          pipeline_stage: "BASE_PUBLICATION",
+          pipeline_status: "publishing",
+          pipeline_reason: "sales_test_gate_passed",
+          pipeline_updated_at: new Date().toISOString(),
+        })
+        .eq("id", listingId)
+        .eq("published", true)
+        .or("base_publication_status.is.null,base_publication_status.eq.failed")
+        .select("id")
+        .maybeSingle();
+      if (claimError) throw new Error(claimError.message);
+      if (!claimed) {
+        results.push({ listingId, ok: false, skipped: true, error: "base_publication_claim_lost" });
+        continue;
+      }
+    }
+
     try {
       let baseItemId = listing.base_item_id ? String(listing.base_item_id) : null;
       if (baseItemId) {
