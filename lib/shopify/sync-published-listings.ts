@@ -88,7 +88,7 @@ export async function syncPublishedListingsToShopify(limit = 10): Promise<Shopif
       if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) throw new Error("image_url_invalid");
       const productInput = { title: row.title, descriptionHtml: html(row.description), handle: row.shopify_handle || row.slug, price, sku: sku(row) };
       const existing = (await findByHandle(productInput.handle)) ?? (row.shopify_product_id
-        ? { id: row.shopify_product_id, handle: row.shopify_handle || row.slug, vendor: "TRACER", tags: ["TRACER"], variants: { nodes: [{ id: row.shopify_variant_id || "", sku: null, price: null }] } }
+        ? { id: row.shopify_product_id, handle: row.shopify_handle || row.slug, vendor: "TRACER", tags: ["TRACER"], variants: { nodes: [{ id: row.shopify_variant_id || "", sku: null, price: null }] }, media: { nodes: [] } }
         : null);
       if (existing && existing.vendor && existing.vendor !== "TRACER" && !existing.tags.includes("TRACER")) throw new Error("shopify_handle_owned_by_non_tracer_product");
       const product = existing
