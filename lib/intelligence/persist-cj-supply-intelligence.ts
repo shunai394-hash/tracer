@@ -18,7 +18,6 @@ export type PersistCjSupplyIntelligenceArgs = {
   query: string;
   fxRate: number;
   sellingPriceJpy: number;
-  /** Supplier-declared variant barcode captured during discovery. */
   variantBarcode?: string | null;
 };
 
@@ -121,73 +120,45 @@ export async function persistCjSupplyIntelligence(
   const canonicalProductId = marketplaceIdentity?.productId ?? args.productId;
 
   let existingListingMetadata: Record<string, unknown> = {};
-  const existingListing = await supabase
-    .from("supplier_listings")
-    .select("metadata")
-    .eq("id", args.supplierListingId)
-    .maybeSingle();
+  const existingListing = await supabase.from("supplier_listings").select("metadata").eq("id", args.supplierListingId).maybeSingle();
   if (existingListing.error) throw new Error(`CJ supplier listing read failed: ${existingListing.error.message}`);
   if (existingListing.data?.metadata && typeof existingListing.data.metadata === "object" && !Array.isArray(existingListing.data.metadata)) {
     existingListingMetadata = existingListing.data.metadata as Record<string, unknown>;
   }
 
-  if (marketplaceIdentity) {
-    const verifiedMetadata = {
-      ...existingListingMetadata,
-      source: "cj_supply_first",
-      identity_source: "cj_variant_barcode_to_marketplace_bestseller",
-      identity_rationale: marketplaceIdentity.rationale,
-      supplier_product_id: args.supplierProductId,
-      supplier_variant_id: args.supplierVariantId,
-      variant_barcode: args.variantBarcode ?? existingListingMetadata.variant_barcode ?? null,
-    };
-    const { error } = await supabase
-      .from("supplier_listings")
-      .update({
+  const verifiedMetadata = {
+    ...existingListingMetadata,
+    source: "cj_supply_first",
+    identity_source: marketplaceIdentity ? "cj_variant_barcode_to_marketplace_bestseller" : "cj_variant_barcode",
+    identity_rationale: marketplaceIdentity?.rationale ?? "CJ variant evidence persisted; marketplace identity not yet confirmed",
+    supplier_product_id: args.supplierProductId,
+    supplier_variant_id: args.supplierVariantId,
+    variant_barcode: args.variantBarcode ?? existingListingMetadata.variant_barcode ?? null,
+  };
+  const { error: evidenceError } = await supabase
+    .from("supplier_listings")
+    .update({
+      ...(marketplaceIdentity ? {
         bestseller_id: marketplaceIdentity.bestsellerId,
         product_id: canonicalProductId,
         identity_method: marketplaceIdentity.method,
         identity_status: "linked",
         identity_confidence: marketplaceIdentity.confidence,
-        cost: args.cost,
-        shipping_cost: args.shippingCost,
-        inventory: args.inventory,
-        price_confirmed: Number.isFinite(args.cost) && args.cost >= 0,
-        inventory_confirmed: Number.isFinite(args.inventory) && args.inventory >= 0,
-        orderable: args.inventory > 0,
-        tracking_available: true,
-        api_available: true,
-        verification_status: "verified",
-        fetched_at: now,
-        metadata: verifiedMetadata,
-      })
-      .eq("id", args.supplierListingId);
-    if (error) throw new Error(`CJ supplier identity promotion failed: ${error.message}`);
-  } else if (args.variantBarcode) {
-    const { error } = await supabase
-      .from("supplier_listings")
-      .update({
-        cost: args.cost,
-        shipping_cost: args.shippingCost,
-        inventory: args.inventory,
-        price_confirmed: Number.isFinite(args.cost) && args.cost >= 0,
-        inventory_confirmed: Number.isFinite(args.inventory) && args.inventory >= 0,
-        orderable: args.inventory > 0,
-        tracking_available: true,
-        api_available: true,
-        verification_status: "verified",
-        fetched_at: now,
-        metadata: {
-          ...existingListingMetadata,
-          source: "cj_supply_first",
-          supplier_product_id: args.supplierProductId,
-          supplier_variant_id: args.supplierVariantId,
-          variant_barcode: args.variantBarcode,
-        },
-      })
-      .eq("id", args.supplierListingId);
-    if (error) throw new Error(`CJ supplier evidence persistence failed: ${error.message}`);
-  }
+      } : {}),
+      cost: args.cost,
+      shipping_cost: args.shippingCost,
+      inventory: args.inventory,
+      price_confirmed: Number.isFinite(args.cost) && args.cost >= 0,
+      inventory_confirmed: Number.isFinite(args.inventory) && args.inventory >= 0,
+      orderable: args.inventory > 0,
+      tracking_available: true,
+      api_available: true,
+      verification_status: "verified",
+      fetched_at: now,
+      metadata: verifiedMetadata,
+    })
+    .eq("id", args.supplierListingId);
+  if (evidenceError) throw new Error(`CJ supplier evidence persistence failed: ${evidenceError.message}`);
 
   const offerPayload = {
     product_id: canonicalProductId,
