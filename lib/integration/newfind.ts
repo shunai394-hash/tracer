@@ -216,8 +216,8 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
   const productUrl = tracerUrl;
   if (!productUrl) {
     const reason = "tracer_sales_url_not_live";
-    await supabase.from("newfind_promotion_deliveries").update({ status: "failed", last_error: reason, last_attempt_at: new Date().toISOString(), lease_until: null, updated_at: new Date().toISOString() }).eq("listing_id", listingId);
-    return { configured: true, sent: false, eventId: id, status: null, ackStatus: null, detail: reason };
+    await supabase.from("newfind_promotion_deliveries").update({ status: "failed", last_error: reason, last_attempt_at: new Date().toISOString(), lease_until: null, updated_at: new Date().toISOString() }).eq("listing_id", listingId).eq("status", "sending").eq("event_id", sendEventId);
+    return { configured: true, sent: false, eventId: sendEventId, status: null, ackStatus: null, detail: reason };
   }
 
   const payload = {
@@ -284,8 +284,8 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
   }
 
   if (!response) {
-    await supabase.from("newfind_promotion_deliveries").update({ status: "failed", last_error: lastError instanceof Error ? lastError.message : "newfind_request_failed", last_attempt_at: new Date().toISOString(), lease_until: null, updated_at: new Date().toISOString() }).eq("listing_id", listingId);
-    return { configured: true, sent: false, eventId: id, status: null, ackStatus: null, detail: lastError instanceof Error ? `newfind_request_failed: ${lastError.message}` : "newfind_request_failed" };
+    await supabase.from("newfind_promotion_deliveries").update({ status: "failed", last_error: lastError instanceof Error ? lastError.message : "newfind_request_failed", last_attempt_at: new Date().toISOString(), lease_until: null, updated_at: new Date().toISOString() }).eq("listing_id", listingId).eq("status", "sending").eq("event_id", sendEventId);
+    return { configured: true, sent: false, eventId: sendEventId, status: null, ackStatus: null, detail: lastError instanceof Error ? `newfind_request_failed: ${lastError.message}` : "newfind_request_failed" };
   }
 
   const text = await response.text();
@@ -300,7 +300,7 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
   const acknowledged = ackStatus === "processed" || ackStatus === "duplicate";
   const deliveryStatus = acknowledged ? "processed" : response.ok ? "sent" : "failed";
 
-  await supabase.from("newfind_promotion_deliveries").update({ status: deliveryStatus, http_status: response.status, ack_status: ackStatus, last_error: response.ok ? null : detail, last_attempt_at: new Date().toISOString(), processed_at: acknowledged ? new Date().toISOString() : null, lease_until: null, updated_at: new Date().toISOString() }).eq("listing_id", listingId);
+  await supabase.from("newfind_promotion_deliveries").update({ status: deliveryStatus, http_status: response.status, ack_status: ackStatus, last_error: response.ok ? null : detail, last_attempt_at: new Date().toISOString(), processed_at: acknowledged ? new Date().toISOString() : null, lease_until: null, updated_at: new Date().toISOString() }).eq("listing_id", listingId).eq("status", "sending").eq("event_id", sendEventId);
 
-  return { configured: true, sent: response.ok, eventId: id, status: response.status, ackStatus, detail };
+  return { configured: true, sent: response.ok, eventId: sendEventId, status: response.status, ackStatus, detail };
 }
