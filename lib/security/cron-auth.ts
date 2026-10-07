@@ -66,9 +66,9 @@ async function verifyGitHubOidcToken(token: string): Promise<boolean> {
     if (claims.iss !== "https://token.actions.githubusercontent.com") return false;
     if (
       !(
-        claims.aud === "https://tracer-self.vercel.app" ||
+        claims.aud === "https://tracer-naito3087.vercel.app" ||
         (Array.isArray(claims.aud) &&
-          claims.aud.includes("https://tracer-self.vercel.app"))
+          claims.aud.includes("https://tracer-naito3087.vercel.app"))
       )
     ) return false;
     if (!claims.exp || claims.exp <= now) return false;
