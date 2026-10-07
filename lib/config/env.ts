@@ -24,7 +24,6 @@ export type FoundationStatus = {
   orosy: boolean;
   faire: boolean;
   dsersMcp: boolean;
-  superdelivery: boolean;
   printful: boolean;
   ecPulse: boolean;
   extension: boolean;
