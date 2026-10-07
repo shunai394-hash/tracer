@@ -98,7 +98,7 @@ async function findByHandle(handle: string): Promise<ShopifyProductNode | null> 
 export type ShopifySyncResult = { configured: boolean; considered: number; synced: number; failed: number; listingIds: string[]; errors: Array<{ listingId: string; error: string }> };
 
 /** Shopify is downstream-only: canonical Sales Test Gate plus live fulfillment evidence are mandatory. */
-export async function syncPublishedListingsToShopify(limit = 50, listingIds?: string[]): Promise<ShopifySyncResult> {
+export async function syncPublishedListingsToShopify(limit = 250, listingIds?: string[]): Promise<ShopifySyncResult> {
   if (!isShopifyConfigured()) {
     const message = "shopify_not_configured: SHOPIFY_STORE_DOMAIN and SHOPIFY_ADMIN_ACCESS_TOKEN are required in production";
     return { configured: false, considered: 0, synced: 0, failed: 1, listingIds: [], errors: [{ listingId: "SYSTEM", error: message }] };
