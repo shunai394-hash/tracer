@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getCJConfig, isSupplierConfigured, isSupplierLiveOrderingEnabled } from "@/lib/config/env";
+import { isSupplierConfigured, isSupplierLiveOrderingEnabled } from "@/lib/config/env";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { executeVerifiedSupplierPurchaseOrder } from "@/lib/ordering/verified-supplier-execution";
@@ -203,9 +203,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
     const actualVariant =
       typeof listingRow.supplier_variant_id === "string"
         ? listingRow.supplier_variant_id
-        : typeof listingRow.cj_variant_id === "string"
-          ? listingRow.cj_variant_id
-          : null;
+        : null;
     if (expectedVariant && actualVariant && expectedVariant !== actualVariant) {
       skipped.push({ itemId: String(row.id), reason: "supplier_variant_snapshot_mismatch" });
       continue;
@@ -225,7 +223,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
         : null;
 
     const gate = evaluateDropshipOrderGate({
-      vid: typeof listingRow.supplier_variant_id === "string" ? listingRow.supplier_variant_id : (typeof listingRow.cj_variant_id === "string" ? listingRow.cj_variant_id : null),
+      vid: typeof listingRow.supplier_variant_id === "string" ? listingRow.supplier_variant_id : null,
       quantity: asNumber(row.qty),
       sourceCost: asNumber(listingRow.cost),
       shippingCost: asNumber(listingRow.shipping_cost),
@@ -234,9 +232,9 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       sourceFxRateToSelling: fxQuote,
       addressComplete: addrComplete,
       killSwitchBlocked: killSwitch.blocked,
-      supplierConfigured: isSupplierConfigured(String(shopListing.supplier_name ?? "CJdropshipping")),
-      cjConfigured: Boolean(getCJConfig().apiKey),
-      liveOrderingEnabled: isSupplierLiveOrderingEnabled(String(shopListing.supplier_name ?? "CJdropshipping")),
+      supplierConfigured: isSupplierConfigured(String(shopListing.supplier_name ?? "").trim()),
+      cjConfigured: false,
+      liveOrderingEnabled: isSupplierLiveOrderingEnabled(String(shopListing.supplier_name ?? "").trim()),
       inventoryQty: typeof listingRow.inventory === "number" ? listingRow.inventory : null,
       duplicateOrderExists: false,
     });
@@ -255,7 +253,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
           product_id: productId,
           shop_order_id: shopOrderId,
           fulfillment_kind: "dropship_customer_order",
-          supplier_name: String(shopListing.supplier_name ?? listingRow.supplier ?? "CJdropshipping"),
+          supplier_name: String(shopListing.supplier_name ?? listingRow.supplier ?? "").trim(),
           supplier_product_id:
             typeof listingRow.supplier_product_id === "string"
               ? listingRow.supplier_product_id
