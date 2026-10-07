@@ -49,6 +49,20 @@ export function getOrosyConfig() {
   };
 }
 
+export function getCJConfig() {
+  return {
+    apiKey: readEnv("CJ_API_KEY"),
+  };
+}
+
+export function isCJLiveOrderingEnabled(): boolean {
+  return readEnv("CJ_LIVE_ORDERING") === "1";
+}
+
+export function isCJAutoOrderingEnabled(): boolean {
+  return readEnv("CJ_AUTO_ORDERING") === "1";
+}
+
 export function getNewfindConfig() {
   return {
     webhookSecret: readEnv("NEWFIND_WEBHOOK_SECRET"),
