@@ -92,7 +92,7 @@ async function syncListingRows(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
 ): Promise<ShopifySyncResult> {
   const candidates = rows.filter((row) =>
-    (hasPassedSalesTestGate(row) || (row.published === false && row.pipeline_stage === "SELECTED" && row.pipeline_status === "selected")) &&
+    hasPassedSalesTestGate(row) &&
     row.orderable === true &&
     row.tracking_available === true &&
     !/^(cj|cjdropshipping)$/i.test(String(row.supplier_name ?? "").trim()) &&
