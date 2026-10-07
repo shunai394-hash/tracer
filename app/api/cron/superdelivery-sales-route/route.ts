@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
-import { discoverSuperDeliverySupply } from "@/lib/suppliers/discover-superdelivery-supply";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
