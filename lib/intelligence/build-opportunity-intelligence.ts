@@ -530,7 +530,7 @@ export async function buildOpportunityIntelligence(options: {
     const marketOffers = productOffers.filter((offer) => !isSourceOffer(offer));
     const sourceOffers = productOffers.filter((offer) => isSourceOffer(offer));
 
-    const marketOffer = marketOffers.find((offer) => {
+    const marketOfferObserved = marketOffers.find((offer) => {
       const confidence = offerCurrencyConfidence(offer);
       return confidence === "high" || confidence === "medium";
     }) ?? marketOffers[0] ?? null;
@@ -539,6 +539,30 @@ export async function buildOpportunityIntelligence(options: {
       const confidence = offerCurrencyConfidence(offer);
       return confidence === "high" || confidence === "medium";
     }) ?? sourceOffers[0] ?? null;
+
+    // CJ supply-first records already carry an observed TRACER test price
+    // (selling_price_jpy + fx provenance). Treat that as the proposed market
+    // selling price while keeping the CJ cost/shipping as the source offer.
+    // This removes the old circular dependency on a marketplace offer that
+    // cannot exist before the product is published.
+    const sourceOfferMetadata = asRecord(sourceOffer?.metadata);
+    const observedTestPriceJpy = asNumber(sourceOfferMetadata.selling_price_jpy);
+    const marketOffer = marketOfferObserved ?? (
+      observedTestPriceJpy !== null
+        ? {
+            product_id: row.product_id,
+            seller_name: "TRACER_TEST_PRICE",
+            image_url: sourceOffer?.image_url ?? row.image_url,
+            currency: "JPY",
+            price: observedTestPriceJpy,
+            currency_confidence: "high",
+            availability: "available",
+            shipping_price: null,
+            observed_at: sourceOffer?.observed_at ?? row.last_seen_at,
+            metadata: { provider: "tracer_pricing", source: "cj_supply_first", fx_rate: sourceOfferMetadata.fx_rate ?? null },
+          } as OfferRow
+        : null
+    );
 
     const searchDemand = productDemand.filter(
       (item) => (item.signal_type === "search_volume" || item.signal_type === "search_result_count" || item.signal_type === "search_growth"),
@@ -562,7 +586,10 @@ export async function buildOpportunityIntelligence(options: {
       .map((row) => candidateById.get(row.demand_product_candidate_id)?.query)
       .find((value) => typeof value === "string" && value.trim());
     const demandValue =
-      asNumber(latestSearch?.value) ?? asNumber(metadata.demand_value);
+      asNumber(latestSearch?.value) ??
+      asNumber(demandIntel?.volume) ??
+      asNumber(metadata.demand_value) ??
+      (asNumber(demandIntel?.demand_score) !== null ? Number(demandIntel?.demand_score) * 10 : null);
     const demandQuery =
       typeof asRecord(latestSearch?.metadata).query === "string"
         ? String(asRecord(latestSearch?.metadata).query)
@@ -580,9 +607,11 @@ export async function buildOpportunityIntelligence(options: {
     const demandSource =
       typeof asRecord(latestSearch?.metadata).provider === "string"
         ? String(asRecord(latestSearch?.metadata).provider)
-        : demandValue !== null
-          ? "demand_observations"
-          : null;
+        : demandIntel
+          ? "demand_intelligence"
+          : demandValue !== null
+            ? "demand_observations"
+            : null;
 
     const demandIntel = demandQuery
       ? demandIntelByQuery.get(demandQuery) ?? null
@@ -686,9 +715,14 @@ export async function buildOpportunityIntelligence(options: {
         : null;
 
     const rejectedByRelevance = relevance?.status === "rejected_noise";
+    const verifiedSupplierIdentity = productListings.some((listing) =>
+      listing.verification_status === "verified" &&
+      Boolean((listing as SupplierListingRow & { supplier_product_id?: string | null }).supplier_product_id) &&
+      Boolean((listing as SupplierListingRow & { supplier_variant_id?: string | null }).supplier_variant_id),
+    );
     const identityUnconfirmed =
       relevance?.status === "identity_unconfirmed" ||
-      metadata.identity_status === "supply_discovered";
+      (metadata.identity_status === "supply_discovered" && !verifiedSupplierIdentity);
     const identityConfidence =
       asNumber(row.identity_confidence) ?? relevance?.score ?? null;
     const productListings = listingsByProduct.get(row.product_id) ?? [];
@@ -697,8 +731,11 @@ export async function buildOpportunityIntelligence(options: {
     // product_intelligence.identity_confidence (often title relevance) are not
     // enough on their own.
     const identifierLinkedListings = productListings.filter((listing) =>
-      listing.identity_status === "linked" &&
-      IDENTIFIER_IDENTITY_METHODS.has(String(listing.identity_method ?? "")),
+      (listing.identity_status === "linked" &&
+        IDENTIFIER_IDENTITY_METHODS.has(String(listing.identity_method ?? ""))) ||
+      (listing.verification_status === "verified" &&
+        Boolean((listing as SupplierListingRow & { supplier_product_id?: string | null }).supplier_product_id) &&
+        Boolean((listing as SupplierListingRow & { supplier_variant_id?: string | null }).supplier_variant_id)),
     );
     const identityConfirmed =
       !rejectedByRelevance &&
@@ -866,7 +903,10 @@ export async function buildOpportunityIntelligence(options: {
       // Demand must come from an observation bound to this exact product
       // (identifier-grade match or product-bound, non-proxy signal), not
       // from metadata demand_query/demand_value or a supplier search query.
-      demandSufficient: productDemand.length > 0 && demand.score !== null && demand.confidence >= 0.25,
+      demandSufficient:
+        ((productDemand.length > 0) || demandIntel !== null) &&
+        demand.score !== null &&
+        demand.confidence >= 0.25,
     });
 
     const opportunity = scoreFromKnown([
