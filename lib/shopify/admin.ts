@@ -182,6 +182,83 @@ export async function ensureShopifyProductPublished(productId: string): Promise<
   return { publicationId, published: true };
 }
 
+
+export async function setShopifyVariantInventory(input: { variantId: string; quantity: number; reference?: string }): Promise<void> {
+  const quantity = Math.max(0, Math.floor(input.quantity));
+  const current = await shopifyGraphQL<{
+    productVariant: {
+      inventoryItem: {
+        id: string;
+        inventoryLevels: {
+          nodes: Array<{
+            location: { id: string; name: string };
+            quantities: Array<{ name: string; quantity: number }>;
+          }>;
+        };
+      };
+    } | null;
+  }>(
+    `query VariantInventoryLevels($id: ID!) {
+      productVariant(id: $id) {
+        inventoryItem {
+          id
+          inventoryLevels(first: 50) {
+            nodes {
+              location { id name }
+              quantities(names: ["available"]) { name quantity }
+            }
+          }
+        }
+      }
+    }`,
+    { id: input.variantId },
+  );
+
+  const variant = current.productVariant;
+  if (!variant) throw new Error("shopify_variant_not_found_for_inventory_sync");
+  const configuredLocation = process.env.SHOPIFY_INVENTORY_LOCATION_ID?.trim();
+  const level = variant.inventoryItem.inventoryLevels.nodes.find((node) =>
+    configuredLocation ? node.location.id === configuredLocation : true,
+  );
+  if (!level) {
+    throw new Error("shopify_inventory_location_not_found");
+  }
+
+  const currentAvailable = level.quantities.find((q) => q.name === "available")?.quantity ?? 0;
+  const idempotencyKey = crypto.randomUUID();
+  const referenceDocumentUri = input.reference?.trim() || `tracer://shopify-inventory-sync/${variant.inventoryItem.id}/${idempotencyKey}`;
+
+  const result = await shopifyGraphQL<{
+    inventorySetQuantities: {
+      userErrors: Array<{ field?: string[]; message: string }>;
+    };
+  }>(
+    `mutation InventorySetQuantities($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
+      inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
+        userErrors { field message }
+      }
+    }`,
+    {
+      input: {
+        name: "available",
+        reason: "correction",
+        referenceDocumentUri,
+        quantities: [{
+          inventoryItemId: variant.inventoryItem.id,
+          locationId: level.location.id,
+          quantity,
+          changeFromQuantity: currentAvailable,
+        }],
+      },
+      idempotencyKey,
+    },
+  );
+
+  if (result.inventorySetQuantities.userErrors.length) {
+    throw new Error(result.inventorySetQuantities.userErrors.map((error) => error.message).join("; "));
+  }
+}
+
 export async function unpublishShopifyProduct(productId: string): Promise<ShopifyPublicationState> {
   const publicationId = await getOnlineStorePublicationId();
   const current = await shopifyGraphQL<{
