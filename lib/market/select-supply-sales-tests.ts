@@ -1,13 +1,9 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { initializeProcurement } from "@/lib/procurement/init";
-import { getSupplierCapabilities } from "@/lib/procurement/registry";
-import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { evaluateSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
-import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -32,7 +28,6 @@ export type SupplySalesTestResult = { published: number; publishedListingIds: st
 export async function selectAndPublishSupplySalesTests(productIds: string[], limit = 3, options: { dryRun?: boolean } = {}): Promise<SupplySalesTestResult & { eligibleProductIds?: string[] }> {
   const supabase = createSupabaseAdminClient();
   if (productIds.length === 0 || limit <= 0) return { published: 0, publishedListingIds: [], selectedListingIds: [], considered: 0, rejected: [] };
-  initializeProcurement();
   const uniqueProductIds = Array.from(new Set(productIds));
   const { data: intelligenceRows, error: intelligenceError } = await supabase.from("opportunity_intelligence").select("product_id,demand_score,search_fit_score,market_gap_score,competition_score,creative_score,selection_score,overall_confidence,selection_eligible,sellability_state,filter_state,profit_state,recommendation_summary,why_now").in("product_id", uniqueProductIds);
   if (intelligenceError) throw new Error(intelligenceError.message);
@@ -54,14 +49,11 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (reasons.length > 0) { rejected.push({ productId, reasons }); continue; }
     if (!intelligence || !base || !listing) { rejected.push({ productId, reasons: ["required_supply_intelligence_missing"] }); continue; }
 
-    const supplierCapabilities = getSupplierCapabilities(String(listing.supplier ?? ""));
-    const required = [["variant", supplierCapabilities.variant], ["inventory", supplierCapabilities.inventory], ["price", supplierCapabilities.price], ["shipping", supplierCapabilities.shipping], ["orderCreation", supplierCapabilities.orderCreation], ["payment", supplierCapabilities.payment], ["liveOrdering", supplierCapabilities.liveOrdering]] as const;
-    const missingCapabilities = required.filter(([, supported]) => !supported).map(([name]) => name);
-    if (missingCapabilities.length) reasons.push(`supplier_capability_missing:${missingCapabilities.join(",")}`);
-    const autoProcurement = getAutoProcurementEligibility(String(listing.supplier ?? ""));
-    if (!autoProcurement.eligible) reasons.push(`supplier_auto_procurement_capability_missing:${autoProcurement.missing.join("|")}`);
+    // Publication eligibility is intentionally separate from automatic procurement.
+    // A verified, orderable supplier listing may be published when its observed
+    // supply/economics pass the Sales Test Gate. Payment automation is checked
+    // later, immediately before any supplier order is created.
     if (!validHttpUrl(base.image_url)) reasons.push("image_url_invalid");
-    if (!isJapaneseProductTitle(base.normalized_title)) reasons.push("japanese_product_title_required");
 
     const identityMethod = String(listing.identity_method ?? "").trim().toLowerCase();
     const identifierGradeMethods = new Set(["asin", "jan", "gtin", "ean", "upc", "mpn", "brand_mpn", "tracer_catalog"]);
