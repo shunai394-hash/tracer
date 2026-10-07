@@ -106,6 +106,7 @@ export async function syncPublishedListingsToShopify(limit = 50, listingIds?: st
     .from("shop_listings")
     .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shopify_product_id,shopify_variant_id,shopify_handle")
     .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected)")
+    .order("shopify_product_id", { ascending: true, nullsFirst: true })
     .order("pipeline_updated_at", { ascending: false })
     .limit(limit);
   if (error) throw new Error(error.message);
