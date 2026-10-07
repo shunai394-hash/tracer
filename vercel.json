@@ -10,7 +10,6 @@
     {"path":"/api/cron/shopify-publish","schedule":"14 12 * * *"},
     {"path":"/api/cron/inventory-refresh","schedule":"15 12 * * *"},
     {"path":"/api/cron/demand-match","schedule":"17 12 * * *"},
-    {"path":"/api/cron/superdelivery-sales-route","schedule":"20 12 * * *"},
     {"path":"/api/cron/intelligence","schedule":"22 12 * * *"},
     {"path":"/api/cron/base-orders","schedule":"25 12 * * *"},
     {"path":"/api/cron/dropship-execution","schedule":"30 12 * * *"},
