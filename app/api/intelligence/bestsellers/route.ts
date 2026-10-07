@@ -5,6 +5,7 @@ import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-d
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
+import { syncPublishedListingsToShopify } from "@/lib/shopify/sync";
 import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
 
 export const runtime = "nodejs";
@@ -34,8 +35,9 @@ export async function POST(request: Request) {
     const selected = await selectAndPublishSalesTests(candidateIds, 5);
 
     // 5. NEWFIND receives only listings that actually passed the Sales Test Gate.
+    const shopify = await syncPublishedListingsToShopify(selected.selectedListingIds);
     const newfind = await Promise.all(
-      selected.publishedListingIds.map((listingId) =>
+      shopify.listingIds.map((listingId) =>
         promoteShopListingToNewfind(listingId).catch((error) => ({
           configured: true,
           sent: false,
@@ -54,8 +56,9 @@ export async function POST(request: Request) {
       suppliers,
       opportunity,
       selected,
+      shopify,
       newfind,
-      salesReady: selected.published > 0,
+      salesReady: shopify.listingIds.length > 0,
     });
   } catch (error) {
     console.error("[TRACER BESTSELLERS ERROR]", error);
