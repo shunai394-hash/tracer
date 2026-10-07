@@ -224,7 +224,7 @@ export async function setShopifyVariantInventory(input: { variantId: string; qua
 
   const currentAvailable = level.quantities.find((q) => q.name === "available")?.quantity ?? 0;
   const referenceDocumentUri = input.reference?.trim() || `tracer://shopify-inventory-sync/${variant.inventoryItem.id}`;
-  const idempotencyKey = crypto.createHash("sha256").update(referenceDocumentUri).digest("hex").slice(0, 64);
+  const idempotencyKey = crypto.createHash("sha256").update(`${referenceDocumentUri}:${level.location.id}:${quantity}`).digest("hex").slice(0, 64);
 
   const result = await shopifyGraphQL<{
     inventorySetQuantities: {
