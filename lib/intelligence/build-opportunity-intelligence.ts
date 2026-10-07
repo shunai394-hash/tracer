@@ -227,7 +227,7 @@ function offerProvider(offer: OfferRow): string {
 }
 
 function isSourceOffer(offer: OfferRow): boolean {
-  return ["cj", "superdelivery"].includes(offerProvider(offer)) || offer.seller_name === "CJdropshipping" || offer.seller_name === "SUPER DELIVERY";
+  return offerProvider(offer) === "cj" || offer.seller_name === "CJdropshipping";
 }
 
 function offerCurrencyConfidence(offer: OfferRow): CurrencyConfidence {
