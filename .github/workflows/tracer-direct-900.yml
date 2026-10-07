@@ -1,0 +1,48 @@
+name: TRACER Direct 900 Gate Runner
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/tracer-direct-900.yml"
+      - "scripts/direct-900-gate.ts"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tracer-direct-900
+  cancel-in-progress: false
+
+jobs:
+  direct-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pull production environment through Vercel OIDC
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERCEL_OIDC_TOKEN="$(curl --fail-with-body --silent --show-error             -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Fvercel.com" |
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          npx vercel@latest pull --yes --environment=production --scope=naito3087 --project=tracer
+
+      - name: Run current source against production DB
+        run: |
+          set -euo pipefail
+          npx --yes dotenv-cli -e .env.production.local -- npx --yes tsx scripts/direct-900-gate.ts
