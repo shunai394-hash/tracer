@@ -6,8 +6,6 @@ import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
-import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
-import { getSupplierCapabilities } from "@/lib/procurement/registry";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 
 function asNumber(value: unknown): number | null {
@@ -195,26 +193,9 @@ export async function selectAndPublishSalesTests(
       continue;
     }
 
-    const supplierCapabilities = getSupplierCapabilities(String(listing.supplier ?? ""));
-    const requiredCapabilities = [
-      ["variant", supplierCapabilities.variant],
-      ["inventory", supplierCapabilities.inventory],
-      ["price", supplierCapabilities.price],
-      ["shipping", supplierCapabilities.shipping],
-      ["orderPreflight", supplierCapabilities.orderPreflight],
-      ["orderCreation", supplierCapabilities.orderCreation],
-      ["payment", supplierCapabilities.payment],
-      ["orderStatus", supplierCapabilities.orderStatus],
-      ["tracking", supplierCapabilities.tracking],
-      ["liveOrdering", supplierCapabilities.liveOrdering],
-    ] as const;
-    const missingSupplierCapabilities = requiredCapabilities
-      .filter(([, supported]) => !supported)
-      .map(([name]) => name);
-    if (missingSupplierCapabilities.length > 0) {
-      reasons.push(`supplier_capability_missing:${missingSupplierCapabilities.join(",")}`);
-    }
-
+    // Publication and procurement are separate concerns. The Sales Test Gate
+    // proves the listing can be sold; payment/automatic procurement is checked
+    // only when an actual supplier order is created.
     if (listing.cost === null) reasons.push("source_cost_unknown");
     if (isInternalSupply && asNumber(listing.catalog_sale_price) === null) reasons.push("selling_price_unknown");
     if (!isInternalSupply && bestseller.price === null) reasons.push("selling_price_unknown");
@@ -243,11 +224,6 @@ export async function selectAndPublishSalesTests(
     if (!identifierGradeMethods.has(identityMethod)) reasons.push("identity_not_confirmed");
     const identityConfidence = asNumber(listing.identity_confidence);
     if (identityConfidence === null || identityConfidence < 0.88) reasons.push("identity_confidence_low");
-
-    const autoProcurement = getAutoProcurementEligibility(String(listing.supplier ?? ""));
-    if (!autoProcurement.eligible) {
-      reasons.push(`supplier_auto_procurement_capability_missing:${autoProcurement.missing.join("|")}`);
-    }
 
     if (!isInternalSupply && typeof listing.supplier_variant_id !== "string") {
       reasons.push("supplier_variant_unknown");
