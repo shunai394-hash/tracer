@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, shopifyGraphQL, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
+import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
 import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
@@ -213,8 +213,15 @@ async function syncListingRows(
           })
         : await createShopifyProduct({ ...productInput, imageUrl: row.image_url });
 
-      const publication = await ensureShopifyProductPublished(product.id);
       const variant = product.variants?.nodes?.[0];
+      if (!variant?.id) throw new Error("shopify_variant_missing_for_inventory_sync");
+      await setShopifyVariantInventory({
+        variantId: variant.id,
+        quantity: Number(row.inventory),
+        reference: `tracer://shop-listing/${row.id}`,
+      });
+
+      const publication = await ensureShopifyProductPublished(product.id);
       const { error: updateError } = await supabase.from("shop_listings").update({
         shopify_product_id: product.id,
         shopify_variant_id: variant?.id ?? null,
