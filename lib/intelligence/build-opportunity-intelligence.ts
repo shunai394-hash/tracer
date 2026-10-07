@@ -550,6 +550,7 @@ export async function buildOpportunityIntelligence(options: {
     const marketOffer = marketOfferObserved ?? (
       observedTestPriceJpy !== null
         ? {
+            id: `tracer-test-price-${row.product_id}`,
             product_id: row.product_id,
             seller_name: "TRACER_TEST_PRICE",
             image_url: sourceOffer?.image_url ?? row.image_url,
@@ -585,11 +586,6 @@ export async function buildOpportunityIntelligence(options: {
     const candidateQuery = productCj
       .map((row) => candidateById.get(row.demand_product_candidate_id)?.query)
       .find((value) => typeof value === "string" && value.trim());
-    const demandValue =
-      asNumber(latestSearch?.value) ??
-      asNumber(demandIntel?.volume) ??
-      asNumber(metadata.demand_value) ??
-      (asNumber(demandIntel?.demand_score) !== null ? Number(demandIntel?.demand_score) * 10 : null);
     const demandQuery =
       typeof asRecord(latestSearch?.metadata).query === "string"
         ? String(asRecord(latestSearch?.metadata).query)
@@ -600,6 +596,12 @@ export async function buildOpportunityIntelligence(options: {
             : typeof offerDemandQuery === "string"
               ? String(offerDemandQuery)
               : null;
+    const demandIntel = demandQuery ? demandIntelByQuery.get(demandQuery) ?? null : null;
+    const demandValue =
+      asNumber(latestSearch?.value) ??
+      asNumber(demandIntel?.volume) ??
+      asNumber(metadata.demand_value) ??
+      (asNumber(demandIntel?.demand_score) !== null ? Number(demandIntel?.demand_score) * 10 : null);
     const demandCountry =
       typeof asRecord(latestSearch?.metadata).country === "string"
         ? String(asRecord(latestSearch?.metadata).country)
@@ -613,9 +615,6 @@ export async function buildOpportunityIntelligence(options: {
             ? "demand_observations"
             : null;
 
-    const demandIntel = demandQuery
-      ? demandIntelByQuery.get(demandQuery) ?? null
-      : null;
     const demandVelocity7d = asNumber(demandIntel?.velocity_7d);
     const demandVelocity14d = asNumber(demandIntel?.velocity_14d);
     const demandVelocity30d = asNumber(demandIntel?.velocity_30d);
@@ -702,6 +701,7 @@ export async function buildOpportunityIntelligence(options: {
         ? true
         : metadata.identity_status === "rejected_noise";
 
+    const productListings = listingsByProduct.get(row.product_id) ?? [];
     const relevance =
       demandQuery && row.normalized_title
         ? assessDemandRelevance({
@@ -725,7 +725,6 @@ export async function buildOpportunityIntelligence(options: {
       (metadata.identity_status === "supply_discovered" && !verifiedSupplierIdentity);
     const identityConfidence =
       asNumber(row.identity_confidence) ?? relevance?.score ?? null;
-    const productListings = listingsByProduct.get(row.product_id) ?? [];
     // Identity must be proven by an identifier (JAN/GTIN/ASIN/brand+MPN)
     // between the market product and a supplier listing; text relevance and
     // product_intelligence.identity_confidence (often title relevance) are not
