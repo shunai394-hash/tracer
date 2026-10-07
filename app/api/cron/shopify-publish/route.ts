@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await syncPublishedListingsToShopify(200);
+    const result = await syncPublishedListingsToShopify(150);
     return NextResponse.json({
       ok: result.failed === 0,
       phase: "shopify_channel_sync",
