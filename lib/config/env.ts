@@ -130,15 +130,6 @@ export function getCorecConfig() {
   };
 }
 
-export function getSuperDeliveryConfig() {
-  return {
-    baseUrl:
-      readEnv("SUPERDELIVERY_API_BASE_URL") ||
-      "https://www.superdelivery.com/p/do/psl/",
-    timeoutMs: Math.max(5_000, Number(readEnv("SUPERDELIVERY_API_TIMEOUT_MS")) || 15_000),
-  };
-}
-
 export function getDsersMcpConfig() {
   return {
     endpoint: readEnv("DSERS_MCP_URL") || "https://ai.dsers.com/mcp",
