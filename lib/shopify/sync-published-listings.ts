@@ -218,7 +218,6 @@ async function syncListingRows(
         shopify_synced_at: new Date().toISOString(),
         shopify_sync_status: "synced",
         shopify_sync_error: null,
-        shopify_status: publication.published ? "published" : "blocked",
         ...(publication.published ? {
           published: true,
           pipeline_stage: "PUBLISHED",
