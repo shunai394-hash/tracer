@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 18
     steps:
-      - name: Identity reverify -> Intelligence -> Sales Test
+      - name: Identity -> Intelligence -> Sales Test -> Order Control
         shell: bash
         run: |
           set -euo pipefail
@@ -52,3 +52,4 @@ jobs:
           call "/api/cron/cj-identity-reverify" 300 identity.json
           call "/api/cron/intelligence" 300 intelligence.json
           call "/api/cron/sales-test-publication" 300 sales.json
+          call "/api/cron/dropship-execution" 300 dropship.json
