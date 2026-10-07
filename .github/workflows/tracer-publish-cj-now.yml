@@ -17,13 +17,6 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Deploy TRACER to production
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          set -euo pipefail
-          npx --yes vercel@58.0.0 link --yes --project tracer --scope shunai394-9704s-projects
-          npx --yes vercel@58.0.0 deploy --prod --yes
       - name: Wait for production deployment
         run: sleep 20
       - name: Reverify CJ identities and publish canonical products
