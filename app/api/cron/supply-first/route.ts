@@ -13,7 +13,7 @@ export const maxDuration = 300;
 // It must NOT publish to BASE or deliver to NEWFIND.
 // Public sales require the downstream intelligence + sales-test gate.
 const DISCOVERY_BUDGET_MS = 180_000;
-const DISCOVERY_BATCH_SIZE = 5;
+const DISCOVERY_BATCH_SIZE = 10;
 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
