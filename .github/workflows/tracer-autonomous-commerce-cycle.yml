@@ -1,6 +1,8 @@
 name: TRACER Autonomous Commerce Cycle
 
 on:
+  push:
+    branches: ["main"]
   schedule:
     - cron: "*/30 * * * *"
   workflow_dispatch:
@@ -49,6 +51,6 @@ jobs:
             test "$code" -lt 300
           }
 
-          call "/api/cron/intelligence" 300 intelligence.json
+          echo "Waiting for the production deployment to pick up the main commit..."\n          sleep 90\n          call "/api/cron/orosy-bulk-import" 300 orosy.json\n          call "/api/cron/intelligence" 300 intelligence.json
           call "/api/cron/sales-test-publication" 300 sales.json
           call "/api/cron/dropship-execution" 300 dropship.json
