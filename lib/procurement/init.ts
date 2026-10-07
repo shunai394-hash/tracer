@@ -21,7 +21,6 @@ export function initializeProcurement(): void {
   registerSupplierAdapter(faireSupplierAdapter);
   registerSupplierAdapter(dsersSupplierAdapter);
   registerSupplierAdapter(tracerInternalSupplierAdapter);
-  registerSupplierAdapter(superDeliverySupplierAdapter);
   initialized = true;
 }
 
