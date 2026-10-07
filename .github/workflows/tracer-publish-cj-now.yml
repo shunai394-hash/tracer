@@ -57,3 +57,5 @@ jobs:
           d=json.load(open("funnel.json"))
           print(json.dumps(d, ensure_ascii=False, indent=2)[:30000])
           PY
+
+# Production deploy is now handled by the deterministic Vercel CLI workflow.
