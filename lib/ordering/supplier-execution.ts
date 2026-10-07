@@ -184,7 +184,7 @@ export async function executeSupplierPurchaseOrder(
   const itemRow = (item ?? {}) as Record<string, unknown>;
   const productId = asString(po.product_id);
   const supplierProductId = asString(po.supplier_product_id);
-  const supplierVariantId = asString(po.supplier_variant_id) ?? asString(itemRow.supplier_variant_id ?? itemRow.cj_variant_id);
+  const supplierVariantId = asString(po.supplier_variant_id) ?? asString(itemRow.supplier_variant_id);
 
   if (!supplierProductId || !supplierVariantId) {
     return {
