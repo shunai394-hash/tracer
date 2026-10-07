@@ -1,0 +1,38 @@
+name: TRACER Reach 500 Now
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  reach-500:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Run supply discovery and Sales Test Gate repeatedly
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE=https://tracer-self.vercel.app
+          token() {
+            curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+
+          for cycle in $(seq 1 8); do
+            echo "===== CYCLE $cycle / 8: SUPPLY DISCOVERY ====="
+            T="$(token)"
+            curl --fail-with-body --silent --show-error --max-time 300               -H "Authorization: Bearer $T"               "$BASE/api/cron/supply-first" | tee "supply-$cycle.json" || true
+
+            echo "===== CYCLE $cycle / 8: SALES TEST GATE ====="
+            T="$(token)"
+            curl --fail-with-body --silent --show-error --max-time 300               -H "Authorization: Bearer $T"               "$BASE/api/cron/sales-test-publication" | tee "sales-$cycle.json" || true
+
+            echo "===== CYCLE $cycle / 8: PRODUCTION AUDIT ====="
+            T="$(token)"
+            curl --fail-with-body --silent --show-error --max-time 60               -H "Authorization: Bearer $T"               "$BASE/api/intelligence/pipeline-audit" | tee "audit-$cycle.json" || true
+          done
