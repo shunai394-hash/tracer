@@ -84,7 +84,6 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     });
     const gate = evaluateSalesTestGate({ rank: null, title: typeof base.normalized_title === "string" ? base.normalized_title : null, sellingPrice, identityLinked: supplierVerifiedIdentity || (listing.identity_status === "linked" && identifierGradeMethods.has(identityMethod)), identityMethod, identityConfidence: num(listing.identity_confidence), sourceCost, shippingCost, trackingAvailable: listing.tracking_available === true, apiAvailable: listing.api_available === true, profitCalculable: profit.calculable, shippingUnknown: profit.shippingUnknown, contributionProfit: profit.contributionProfit, currencyMismatch: false, priceConfirmed: listing.price_confirmed === true, inventoryConfirmed: listing.inventory_confirmed === true, inventory: num(listing.inventory), orderable: listing.orderable === true, supplierProductId: typeof listing.supplier_product_id === "string" ? listing.supplier_product_id : null, supplierVariantId: typeof listing.supplier_variant_id === "string" ? listing.supplier_variant_id : null, requireRank: false });
     if (!gate.eligible) reasons.push(...gate.reasons);
-    if (intelligence.selection_eligible !== true) reasons.push("intelligence_selection_ineligible");
     const supplySalesTestReady =
       supplierVerifiedIdentity &&
       profit.calculable &&
