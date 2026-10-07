@@ -30,7 +30,7 @@ jobs:
 
           curl --fail-with-body --silent --show-error --max-time 55 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
-            "https://tracer-self.vercel.app/api/cron/patrol-ai" | tee patrol-report.json
+            "https://tracer-naito3087.vercel.app/api/cron/patrol-ai" | tee patrol-report.json
 
           python3 - <<'PY'
           import json
