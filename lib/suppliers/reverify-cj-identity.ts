@@ -5,7 +5,7 @@ import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
 
 const CURSOR_JOB = "cj-identity-reverify-cursor";
 const DEFAULT_LIMIT = 25;
-const MAX_LIMIT = 50;
+const MAX_LIMIT = 100;
 const CONCURRENCY = 5;
 const WOMENS_PRODUCT_PATTERNS = [
   /skincare|skin care|serum|moisturizer|moisturiser|face cream|sunscreen|toner|essence|retinol|niacinamide|acne patch|pore strip|facial mask|cleansing/i,
