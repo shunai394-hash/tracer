@@ -98,10 +98,12 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
       if (String(intelligence.filter_state ?? "") !== "PASS") reasons.push("intelligence_filter_not_pass");
       if (String(intelligence.profit_state ?? "") !== "PROFIT_OK") reasons.push("intelligence_profit_not_ok");
     }
-    if (num(intelligence.demand_score) === null) reasons.push("demand_evidence_missing");
-    if (num(intelligence.search_fit_score) === null) reasons.push("search_fit_evidence_missing");
-    if (num(intelligence.market_gap_score) === null) reasons.push("market_gap_evidence_missing");
-    if (num(intelligence.overall_confidence) === null || (num(intelligence.overall_confidence) ?? 0) < 0.6) reasons.push("intelligence_confidence_low");
+    if (!supplySalesTestReady) {
+      if (num(intelligence.demand_score) === null) reasons.push("demand_evidence_missing");
+      if (num(intelligence.search_fit_score) === null) reasons.push("search_fit_evidence_missing");
+      if (num(intelligence.market_gap_score) === null) reasons.push("market_gap_evidence_missing");
+      if (num(intelligence.overall_confidence) === null || (num(intelligence.overall_confidence) ?? 0) < 0.6) reasons.push("intelligence_confidence_low");
+    }
     if (reasons.length) { rejected.push({ productId, reasons: Array.from(new Set(reasons)) }); continue; }
 
     const womenBonus = womenProductPriority({
