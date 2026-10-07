@@ -61,7 +61,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const listingMetadata = record(row.metadata);
       const persistedBarcode = typeof listingMetadata.variant_barcode === "string" ? listingMetadata.variant_barcode.trim() : null;
       const variantBarcode = await readPersistableBarcode(String(row.supplier_product_id), String(row.supplier_variant_id), persistedBarcode);
-      const identity = await resolveMarketplaceIdentity({ db, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc } });
+      const identity = await resolveMarketplaceIdentity({ db, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } });
       if (!identity) { if (variantBarcode) await db.from("supplier_listings").update({ metadata: { ...listingMetadata, variant_barcode: variantBarcode } }).eq("id", supplierListingId); return { kind: "no_match" as const, supplierListingId }; }
       const canonicalProductId = identity.productId;
       const { data: intelligence } = await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle();
