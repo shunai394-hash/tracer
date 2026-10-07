@@ -197,7 +197,6 @@ export function isSupplierConfigured(supplierName: string): boolean {
   if (name === "orosy") return present(getOrosyConfig().apiKey);
   if (name === "faire") return present(readEnv("FAIRE_ACCESS_TOKEN"));
   if (name === "dsers") return present(readEnv("DSERS_MCP_ACCESS_TOKEN"));
-  if (name === "superdelivery") return false;
   if (name === "printful") return present(readEnv("PRINTFUL_ACCESS_TOKEN"));
   if (name === "tracer_internal") return true;
   return false;
