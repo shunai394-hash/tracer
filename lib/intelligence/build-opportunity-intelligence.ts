@@ -740,9 +740,14 @@ export async function buildOpportunityIntelligence(options: {
       !rejectedByRelevance &&
       !identityRejected &&
       !identityUnconfirmed &&
-      identityConfidence !== null &&
-      identityConfidence >= 0.65 &&
-      identifierLinkedListings.length > 0;
+      (
+        verifiedSupplierIdentity ||
+        (
+          identityConfidence !== null &&
+          identityConfidence >= 0.65 &&
+          identifierLinkedListings.length > 0
+        )
+      );
 
     const marketPrice = asNumber(marketOffer?.price);
     const sourceCost = asNumber(sourceOffer?.price);
