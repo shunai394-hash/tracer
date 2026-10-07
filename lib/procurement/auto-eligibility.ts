@@ -14,8 +14,11 @@ export const AUTO_PROCUREMENT_REQUIRED_CAPABILITIES = [
   "inventory",
   "price",
   "shipping",
+  "orderPreflight",
   "orderCreation",
   "payment",
+  "orderStatus",
+  "tracking",
   "liveOrdering",
 ] as const;
 
