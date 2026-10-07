@@ -118,7 +118,16 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     return b.quality - a.quality;
   });
   if (options.dryRun) return { published: 0, publishedListingIds: [], selectedListingIds: [], considered: uniqueProductIds.length, rejected: rejected.slice(0, 50), eligibleProductIds: eligible.map((item) => item.productId) };
-  const chosen = eligible.slice(0, limit); const publishedListingIds: string[] = []; const selectedListingIds: string[] = [];
+  const eligibleProductIds = eligible.map((item) => item.productId);
+  const { data: liveListings, error: liveListingsError } = await supabase
+    .from("shop_listings")
+    .select("product_id")
+    .in("product_id", eligibleProductIds)
+    .eq("published", true)
+    .in("pipeline_status", ["published"]);
+  if (liveListingsError) throw new Error(liveListingsError.message);
+  const liveProductIds = new Set((liveListings ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean));
+  const chosen = eligible.filter((item) => !liveProductIds.has(item.productId)).slice(0, limit); const publishedListingIds: string[] = []; const selectedListingIds: string[] = [];
   for (const item of chosen) {
     const title = String(item.base.normalized_title ?? ("TRACER product " + item.productId)); const slug = slugify(title, item.productId); const now = new Date().toISOString();
     const metadata = item.base.metadata && typeof item.base.metadata === "object" && !Array.isArray(item.base.metadata) ? item.base.metadata as Record<string, unknown> : {};
