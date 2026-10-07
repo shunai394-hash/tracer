@@ -49,7 +49,6 @@ jobs:
             test "$code" -lt 300
           }
 
-          call "/api/cron/cj-identity-reverify" 300 identity.json
           call "/api/cron/intelligence" 300 intelligence.json
           call "/api/cron/sales-test-publication" 300 sales.json
           call "/api/cron/dropship-execution" 300 dropship.json
