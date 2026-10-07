@@ -13,7 +13,6 @@ export type FoundationStatus = {
   supabaseServiceRole: boolean;
   gemini: boolean;
   brightData: boolean;
-  cj: boolean;
   brightDataMcp: boolean;
   shopify: boolean;
   metaAds: boolean;
@@ -66,7 +65,6 @@ export function getFoundationStatus(): FoundationStatus {
     supabaseServiceRole: present(readEnv("SUPABASE_SERVICE_ROLE_KEY")),
     gemini: present(readEnv("GEMINI_API_KEY")),
     brightData: present(readEnv("BRIGHTDATA_API_TOKEN")),
-    cj: present(readEnv("CJ_API_KEY")),
     brightDataMcp: present(readEnv("BRIGHTDATA_MCP_API_KEY")),
     shopify: present(readEnv("SHOPIFY_STORE_DOMAIN")) && present(readEnv("SHOPIFY_ADMIN_ACCESS_TOKEN")),
     metaAds: present(readEnv("META_ACCESS_TOKEN")),
@@ -151,12 +149,6 @@ export function getPrintfulConfig() {
   };
 }
 
-export function getCJConfig() {
-  return {
-    apiKey: readEnv("CJ_API_KEY"),
-  };
-}
-
 export function getECPulseConfig() {
   return {
     apiUrl: readEnv("EC_PULSE_API_URL"),
@@ -172,7 +164,6 @@ export function getExtensionConfig() {
 
 export function getDropshipSupplierConfig() {
   return {
-    cj: present(readEnv("CJ_API_KEY")),
     hypersku: present(readEnv("HYPERSKU_API_KEY")),
     dsers: present(readEnv("DSERS_API_KEY")),
     zendrop: present(readEnv("ZENDROP_API_KEY")),
@@ -184,7 +175,7 @@ export function getDropshipSupplierConfig() {
 
 export function isSupplierConfigured(supplierName: string): boolean {
   const name = supplierName.trim().toLowerCase();
-  if (name === "cj" || name === "cjdropshipping") return present(readEnv("CJ_API_KEY"));
+  if (name === "cj" || name === "cjdropshipping") return false;
   if (name === "orosy") return present(getOrosyConfig().apiKey);
   if (name === "faire") return present(readEnv("FAIRE_ACCESS_TOKEN"));
   if (name === "dsers") return present(readEnv("DSERS_MCP_ACCESS_TOKEN"));
@@ -193,24 +184,16 @@ export function isSupplierConfigured(supplierName: string): boolean {
   return false;
 }
 
-export function isCJLiveOrderingEnabled(): boolean {
-  return readEnv("CJ_LIVE_ORDERING") === "1";
-}
-
-export function isCJAutoOrderingEnabled(): boolean {
-  return readEnv("CJ_AUTO_ORDERING") === "1";
-}
-
 export function isSupplierLiveOrderingEnabled(supplierName: string): boolean {
   const key = supplierName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").toUpperCase();
-  if (key === "CJ" || key === "CJDROPSHIPPING") return isCJLiveOrderingEnabled();
+  if (key === "CJ" || key === "CJDROPSHIPPING") return false;
   if (key === "TRACER_INTERNAL") return readEnv("TRACER_INTERNAL_LIVE_ORDERING") === "1";
   return readEnv(`${key}_LIVE_ORDERING`) === "1";
 }
 
 export function isSupplierAutoOrderingEnabled(supplierName: string): boolean {
   const key = supplierName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").toUpperCase();
-  if (key === "CJ" || key === "CJDROPSHIPPING") return isCJAutoOrderingEnabled();
+  if (key === "CJ" || key === "CJDROPSHIPPING") return false;
   if (key === "TRACER_INTERNAL") return readEnv("TRACER_INTERNAL_AUTO_ORDERING") === "1";
   return readEnv(`${key}_AUTO_ORDERING`) === "1";
 }
