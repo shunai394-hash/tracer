@@ -92,7 +92,7 @@ export const orosySupplierAdapter: TracerSupplierAdapter = {
     price: true,
     shipping: true,
     shippingRequiresDestination: true,
-    orderPreflight: false,
+    orderPreflight: true,
     orderCreation: false,
     payment: false,
     orderStatus: true,
@@ -221,7 +221,17 @@ export const orosySupplierAdapter: TracerSupplierAdapter = {
   },
 
   async createOrder(input: SupplierOrderInput): Promise<SupplierOrderResult> {
-    void input;
+    const validation = await this.validateOrderInput?.(input);
+    if (!validation?.valid) {
+      return {
+        succeeded: false,
+        supplierOrderId: null,
+        responseCode: validation?.responseCode ?? "OROSY_ORDER_PREFLIGHT_FAILED",
+        responseMessage: validation?.responseMessage ?? "Orosy order preflight failed.",
+        trackingNumber: null,
+        raw: validation ?? null,
+      };
+    }
     return {
       succeeded: false,
       supplierOrderId: null,
