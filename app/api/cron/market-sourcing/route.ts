@@ -11,7 +11,7 @@ export const maxDuration = 60;
 // Process a meaningful slice on every patrol. The workflow repeats this stage
 // several times so one hourly patrol can traverse multiple marketplace pages
 // instead of advancing only a few rows and appearing to stall at one product.
-const MARKET_SOURCING_BATCH_SIZE = 10;
+const MARKET_SOURCING_BATCH_SIZE = 50;
 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
