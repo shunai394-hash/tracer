@@ -203,7 +203,6 @@ export async function discoverAndCreateCjSupply(
   // the rest of the table was never read.
   // Ordering by next_verification_at (nulls first) makes that column the
   // traversal cursor: each checked row moves to the back of the queue.
-  const nowIso = new Date().toISOString();
   // Re-process verified CJ supply that has not yet passed the Sales Test Gate.
   // Previously this queue only admitted unverified/retryable rows, which meant
   // the 646 already-verified CJ offers became permanently invisible to the
