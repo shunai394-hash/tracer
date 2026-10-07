@@ -123,11 +123,14 @@ async function investigateOrosyFallback(args: {
         const variationMatches = detail.variations
           .map((variation) => {
             const supplyIds = identifiersFromRecord({
+              // Orosy exposes JAN at variation level. Do not copy JAN into
+              // GTIN/EAN/UPC: those are different identifier namespaces and
+              // doing so can create false-positive cross-market identity.
               asin: null,
               jan: variation.jan,
-              gtin: variation.jan,
-              ean: variation.jan,
-              upc: variation.jan,
+              gtin: null,
+              ean: null,
+              upc: null,
               mpn: detail.productNumber,
             });
             const identity = matchProductIdentity({
