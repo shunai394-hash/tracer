@@ -1,5 +1,6 @@
 name: TRACER Publish CJ Products Now
 
+# Production publication trigger: verified supplier sales tests -> Shopify.
 on:
   push:
     branches: [main]
