@@ -56,4 +56,8 @@ jobs:
           call "/api/cron/orosy-bulk-import" 300 orosy.json
           call "/api/cron/intelligence" 300 intelligence.json
           call "/api/cron/sales-test-publication" 300 sales.json
+          # Reconcile the existing catalog too: Japanese copy is canonical before
+          # either downstream storefront is allowed to remain published.
+          call "/api/cron/shopify-publish" 300 shopify-reconcile.json
+          call "/api/cron/base-publish" 300 base-reconcile.json
           call "/api/cron/dropship-execution" 300 dropship.json
