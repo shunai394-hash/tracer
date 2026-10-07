@@ -12,13 +12,14 @@ import { syncPublishedListingsToShopify } from "@/lib/shopify/sync";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-async function promoteGatePassedListings(listingIds: string[]) {
-  const shopify = await syncPublishedListingsToShopify(listingIds);
-  const base = await publishPublishedListingsToBase(10, listingIds);
+async function promoteGatePassedListings(selectedListingIds: string[]) {
+  const shopify = await syncPublishedListingsToShopify(selectedListingIds);
+  const publishedListingIds = shopify.listingIds;
+  const base = await publishPublishedListingsToBase(10, publishedListingIds);
   // NEWFIND is an independent promotion channel. BASE is optional and must not
   // become a hidden prerequisite for distributing a gate-passed TRACER product.
   const newfind = await Promise.all(
-    listingIds.map((listingId) => promoteShopListingToNewfind(listingId).catch((error) => ({
+    publishedListingIds.map((listingId) => promoteShopListingToNewfind(listingId).catch((error) => ({
       configured: true,
       sent: false,
       eventId: `tracer-shop-listing:${listingId}`,
@@ -27,7 +28,7 @@ async function promoteGatePassedListings(listingIds: string[]) {
       detail: error instanceof Error ? error.message : String(error),
     }))),
   );
-  return { shopify, base, baseReady: base.results.filter((result) => result.ok && result.baseItemId).map((result) => result.listingId), newfind };
+  return { shopify, publishedListingIds, base, baseReady: base.results.filter((result) => result.ok && result.baseItemId).map((result) => result.listingId), newfind };
 }
 
 export async function GET(request: Request) {
@@ -58,7 +59,7 @@ export async function GET(request: Request) {
     const { data: verifiedSupply, error: verifiedSupplyError } = await supabase
       .from("supplier_listings")
       .select("product_id")
-      .in("supplier", ["orosy", "cj"])
+.neq("supplier", "cj").neq("supplier", "cjdropshipping").neq("supplier", "superdelivery")
       .eq("verification_status", "verified")
       .eq("identity_status", "linked")
       .eq("orderable", true)
@@ -73,7 +74,7 @@ export async function GET(request: Request) {
     if (verifiedSupplyIds.length > 0) await buildOpportunityIntelligence({ productIds: verifiedSupplyIds });
 
     const supplySelected = await selectAndPublishSupplySalesTests(verifiedSupplyIds, 10);
-    const supplyDownstream = await promoteGatePassedListings(supplySelected.publishedListingIds);
+    const supplyDownstream = await promoteGatePassedListings(supplySelected.selectedListingIds);
 
     if (supplySelected.published > 0) {
       if (cronRunId) await supabase.from("cron_runs").update({
@@ -100,7 +101,7 @@ export async function GET(request: Request) {
     const marketProductIds = Array.from(new Set((readyRows ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)));
     if (marketProductIds.length > 0) await buildOpportunityIntelligence({ productIds: marketProductIds });
     const decision = await selectAndPublishSalesTests(candidateIds, 10);
-    const downstream = await promoteGatePassedListings(decision.publishedListingIds);
+    const downstream = await promoteGatePassedListings(decision.selectedListingIds);
 
     if (cronRunId) await supabase.from("cron_runs").update({
       status: "succeeded",
