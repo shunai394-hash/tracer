@@ -19,10 +19,10 @@ export type PersistCjSupplyIntelligenceArgs = {
   fxRate: number;
   sellingPriceJpy: number;
   variantBarcode?: string | null;
-  supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null } | null;
+  supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null;
 };
 
-export type MarketplaceIdentity = { bestsellerId: string; productId: string; method: "gtin" | "jan" | "ean" | "upc"; confidence: number; rationale: string };
+export type MarketplaceIdentity = { bestsellerId: string; productId: string; method: "gtin" | "jan" | "ean" | "upc" | "mpn"; confidence: number; rationale: string };
 
 function normalizeBarcode(value: unknown): string { return typeof value === "string" ? value.trim().replace(/[^0-9]/g, "") : ""; }
 
@@ -42,17 +42,17 @@ async function readSupplierBarcode(args: { supplierProductId: string; supplierVa
 }
 
 export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null } | null }): Promise<MarketplaceIdentity | null> {
-  const suppliedIds = identifiersFromRecord({ gtin: args.supplierIdentifiers?.gtin, jan: args.supplierIdentifiers?.jan, ean: args.supplierIdentifiers?.ean, upc: args.supplierIdentifiers?.upc });
+  const suppliedIds = identifiersFromRecord({ gtin: args.supplierIdentifiers?.gtin, jan: args.supplierIdentifiers?.jan, ean: args.supplierIdentifiers?.ean, upc: args.supplierIdentifiers?.upc, mpn: args.supplierIdentifiers?.mpn });
   const barcode = Object.values(suppliedIds).find((value) => typeof value === "string" && value.trim()) ?? await readSupplierBarcode(args);
   const supplyIds = identifiersFromRecord({ ...suppliedIds, gtin: barcode || suppliedIds.gtin });
-  if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc) return null;
+  if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc && !supplyIds.mpn) return null;
 
   const matchesByProduct = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
   const lookupValues = new Set<string>();
   for (const value of [supplyIds.gtin, supplyIds.jan, supplyIds.ean, supplyIds.upc]) if (value) marketplaceBarcodeCandidates(value).forEach((candidate) => lookupValues.add(candidate));
 
   for (const value of lookupValues) {
-    const clauses = ["jan", "gtin", "ean", "upc"].map((column) => `${column}.eq.${value}`);
+    const clauses = ["jan", "gtin", "ean", "upc", "mpn"].map((column) => `${column}.eq.${value}`);
     const { data: bestsellers, error } = await args.db.from("marketplace_bestsellers").select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand,fetched_at").or(clauses.join(",")).limit(51);
     if (error) throw new Error(`CJ marketplace identity lookup failed: ${error.message}`);
     if ((bestsellers?.length ?? 0) > 50) return null;
@@ -60,7 +60,7 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
       if (typeof row.product_id !== "string" || !row.product_id.trim()) continue;
       const marketIds = identifiersFromRecord(row as Record<string, unknown>);
       const identity = matchProductIdentity({ market: { ...marketIds, brand: typeof row.brand === "string" ? row.brand : null, title: typeof row.title === "string" ? row.title : null }, supply: { ...supplyIds, title: null, brand: null } });
-      if (!identity.salesEligible || !["gtin", "jan", "ean", "upc"].includes(identity.method)) continue;
+      if (!identity.salesEligible || !["gtin", "jan", "ean", "upc", "mpn"].includes(identity.method)) continue;
       const productId = String(row.product_id);
       const candidate = { bestsellerId: String(row.id), productId, method: identity.method as MarketplaceIdentity["method"], confidence: identity.confidence, rationale: identity.rationale, fetchedAt: typeof row.fetched_at === "string" ? row.fetched_at : "" };
       const current = matchesByProduct.get(productId);
