@@ -25,16 +25,6 @@ jobs:
             curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
 
-          echo "=== CJ IDENTITY REVERIFY ==="
-          for i in 1 2 3 4; do
-            curl -sSf --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/cj-identity-reverify" > "reverify-${i}.json"
-            python3 - <<PY
-          import json
-          d=json.load(open("reverify-${i}.json"))
-          print(json.dumps(d, ensure_ascii=False, indent=2)[:30000])
-          PY
-          done
-
           echo "=== SALES TEST PUBLICATION ==="
           curl -sSf --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/sales-test-publication" > sales.json
           python3 - <<'PY'
