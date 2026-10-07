@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createBaseItem, editBaseItem, addBaseItemImage, isBaseConfigured } from "@/lib/channels/base";
-import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
+import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 
@@ -42,7 +42,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   if (!isBaseConfigured()) return { attempted: 0, published: 0, skipped: 0, failed: 0, results: [] };
   if (listingIds !== undefined && listingIds.length === 0) return { attempted: 0, published: 0, skipped: 0, failed: 0, results: [] };
   const supabase = createSupabaseAdminClient();
-  let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons").or("published.eq.true,base_item_id.not.is.null");
+  let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons").or("published.eq.true,base_item_id.not.is.null,pipeline_status.eq.selected");
   if (listingIds && listingIds.length > 0) query = query.in("id", Array.from(new Set(listingIds)));
   const { data: listings, error } = await query.order("base_item_id", { ascending: true, nullsFirst: true }).order("created_at", { ascending: false }).limit(limit);
   if (error) throw new Error(error.message);
@@ -69,7 +69,11 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     if (catalogCopy.title !== String(listing.title ?? "").trim() || catalogCopy.detail !== String(listing.description ?? listing.title ?? "").trim()) {
       await supabase.from("shop_listings").update({ title: catalogCopy.title, description: catalogCopy.detail, pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
     }
-    const hasSalesTestGate = hasPassedSalesTestGate({ ...listing, title: catalogCopy.title, normalized_title: catalogCopy.title });
+    const hasSelectedGate = listing.pipeline_status === "selected"
+      && listing.pipeline_reason === SALES_TEST_GATE_PASSED
+      && Array.isArray(listing.selection_reasons)
+      && listing.selection_reasons.includes(SALES_TEST_GATE_PASSED);
+    const hasSalesTestGate = hasPassedSalesTestGate({ ...listing, title: catalogCopy.title, normalized_title: catalogCopy.title }) || hasSelectedGate;
 
     if (listing.base_item_id && listing.published !== true) {
       if (listing.selling_price === null) { results.push({ listingId, ok: false, skipped: true, error: "base_hide_price_unknown" }); continue; }
@@ -185,7 +189,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
           pipeline_updated_at: new Date().toISOString(),
         })
         .eq("id", listingId)
-        .eq("published", true)
+        .or("published.eq.true,pipeline_status.eq.selected")
         .or("base_publication_status.is.null,base_publication_status.eq.failed,base_publication_status.eq.creating")
         .or("base_publication_lease_until.is.null,base_publication_lease_until.lt." + new Date().toISOString())
         .select("id")
