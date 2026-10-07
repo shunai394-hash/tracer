@@ -6,6 +6,7 @@ import type {
   SellabilityState,
 } from "@/lib/domain/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { isStrongDemandMatch } from "@/lib/intelligence/demand-match-evidence";
 import {
   assessCurrencyConfidence,
@@ -127,6 +128,8 @@ type SupplierListingRow = {
   orderable: boolean | null;
   inventory: number | null;
   shipping_cost: number | string | null;
+  cost: number | string | null;
+  currency: string | null;
 };
 
 // Identifier-grade identity methods (lib/market/identifiers.ts
@@ -511,6 +514,9 @@ export async function buildOpportunityIntelligence(options: {
     cjByProduct.set(row.product_id, list);
   }
 
+  const fxQuote = await getObservedUsdToJpyRate();
+  const usdToJpy = fxQuote?.rate ?? null;
+
   const computed: Array<{
     productId: string;
     payload: Record<string, unknown>;
@@ -529,6 +535,16 @@ export async function buildOpportunityIntelligence(options: {
 
     const marketOffers = productOffers.filter((offer) => !isSourceOffer(offer));
     const sourceOffers = productOffers.filter((offer) => isSourceOffer(offer));
+    const productListings = listingsByProduct.get(row.product_id) ?? [];
+    const verifiedListing = productListings.find((listing) =>
+      listing.verification_status === "verified" &&
+      listing.orderable === true &&
+      listing.inventory_confirmed === true &&
+      typeof listing.inventory === "number" &&
+      listing.inventory > 0 &&
+      Number(listing.cost) > 0 &&
+      Number(listing.shipping_cost) >= 0
+    ) ?? null;
 
     const marketOfferObserved = marketOffers.find((offer) => {
       const confidence = offerCurrencyConfidence(offer);
@@ -538,7 +554,31 @@ export async function buildOpportunityIntelligence(options: {
     const sourceOffer = sourceOffers.find((offer) => {
       const confidence = offerCurrencyConfidence(offer);
       return confidence === "high" || confidence === "medium";
-    }) ?? sourceOffers[0] ?? null;
+    }) ?? sourceOffers[0] ?? (
+      verifiedListing
+        ? {
+            id: String(verifiedListing.product_id) + ":verified-supplier",
+            product_id: row.product_id,
+            seller_name: "CJ_VERIFIED_SUPPLY",
+            image_url: row.image_url,
+            currency: verifiedListing.currency ?? "USD",
+            price: Number(verifiedListing.cost),
+            currency_confidence: "high",
+            availability: "available",
+            shipping_price: Number(verifiedListing.shipping_cost),
+            observed_at: row.last_seen_at ?? new Date().toISOString(),
+            metadata: {
+              provider: "cj_supply_first",
+              supplier_verified: true,
+              selling_price_jpy:
+                usdToJpy && Number.isFinite(usdToJpy)
+                  ? Math.ceil(Math.max(1980, (Number(verifiedListing.cost) + Number(verifiedListing.shipping_cost)) * usdToJpy * 2.5) / 100) * 100
+                  : null,
+              fx_rate: usdToJpy,
+            },
+          } as OfferRow
+        : null
+    );
 
     // CJ supply-first records already carry an observed TRACER test price
     // (selling_price_jpy + fx provenance). Treat that as the proposed market
@@ -701,7 +741,6 @@ export async function buildOpportunityIntelligence(options: {
         ? true
         : metadata.identity_status === "rejected_noise";
 
-    const productListings = listingsByProduct.get(row.product_id) ?? [];
     const relevance =
       demandQuery && row.normalized_title
         ? assessDemandRelevance({
