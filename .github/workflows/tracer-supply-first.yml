@@ -25,10 +25,10 @@ jobs:
       - name: Pipeline audit (before)
         run: |
           set -euo pipefail
-          OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-naito3087.vercel.app" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           curl --silent --show-error --max-time 60 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
-            "https://tracer-shunai394-9704s-projects.vercel.app/api/intelligence/pipeline-audit" || true
+            "https://tracer-naito3087.vercel.app/api/intelligence/pipeline-audit" || true
           echo
 
       - name: Run supply-first patrol passes
@@ -38,12 +38,12 @@ jobs:
           test -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN"
           for pass in 1 2 3 4; do
             echo "=== supply-first pass $pass/4 ==="
-            OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app"
+            OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-naito3087.vercel.app"
             OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$OIDC_URL" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
             test -n "$OIDC_TOKEN"
             curl --fail-with-body --silent --show-error --max-time 300 \
               -H "Authorization: Bearer $OIDC_TOKEN" \
-              "https://tracer-shunai394-9704s-projects.vercel.app/api/cron/supply-first"
+              "https://tracer-naito3087.vercel.app/api/cron/supply-first"
             sleep 5
           done
 
@@ -51,10 +51,10 @@ jobs:
         if: always()
         run: |
           set -uo pipefail
-          OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-naito3087.vercel.app" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           if ! curl --fail-with-body --silent --show-error --max-time 300 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
-            "https://tracer-shunai394-9704s-projects.vercel.app/api/cron/base-publish"; then
+            "https://tracer-naito3087.vercel.app/api/cron/base-publish"; then
             echo "BASE publication failed"
             exit 1
           fi
@@ -67,10 +67,10 @@ jobs:
           failures=""
           for stage in base-orders dropship-execution supplier-orders supplier-reconciliation; do
             echo "=== $stage ==="
-            OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-naito3087.vercel.app" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
             if ! curl --fail-with-body --silent --show-error --max-time 300 \
               -H "Authorization: Bearer $OIDC_TOKEN" \
-              "https://tracer-shunai394-9704s-projects.vercel.app/api/cron/$stage"; then
+              "https://tracer-naito3087.vercel.app/api/cron/$stage"; then
               failures="$failures $stage"
             fi
             echo
@@ -82,8 +82,8 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-naito3087.vercel.app" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           curl --silent --show-error --max-time 60 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
-            "https://tracer-shunai394-9704s-projects.vercel.app/api/intelligence/pipeline-audit" || true
+            "https://tracer-naito3087.vercel.app/api/intelligence/pipeline-audit" || true
           echo
