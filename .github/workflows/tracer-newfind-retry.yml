@@ -25,4 +25,4 @@ jobs:
           test -n "$token"
           curl --fail-with-body --silent --show-error --max-time 300 \
             -H "Authorization: Bearer $token" \
-            "https://tracer-self.vercel.app/api/cron/newfind-retry"
+            "https://tracer-naito3087.vercel.app/api/cron/newfind-retry"
