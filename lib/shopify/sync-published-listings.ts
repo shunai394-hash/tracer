@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, shopifyGraphQL, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
 import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 
 type Listing = {
   id: string;
@@ -55,6 +56,37 @@ function sku(listing: Listing): string {
   return `TRC-${source}`.slice(0, 100);
 }
 
+async function ensureJapaneseCopy(row: Listing): Promise<{ title: string; description: string }> {
+  const title = String(row.title ?? "").trim();
+  const description = String(row.description ?? title).trim();
+  if (isJapaneseProductTitle(title) && /[ぁ-んァ-ヶ一-龯々〆ヵー]/.test(description)) {
+    return { title, description };
+  }
+  if (!isGeminiConfigured()) throw new Error("japanese_catalog_copy_requires_gemini");
+  const result = await generateStructuredJson<{ title?: string; detail?: string }>({
+    systemInstruction: "あなたは日本のEC商品編集者です。入力情報だけを使い、日本語の商品名と商品説明を作成してください。英語のブランド名・型番・規格は必要な場合だけ残してください。存在しない仕様や数値は追加しないでください。JSONのみ返してください。",
+    prompt: JSON.stringify({ title, description }),
+    timeoutMs: 12000,
+  });
+  const translatedTitle = String(result?.title ?? "").trim();
+  const translatedDescription = String(result?.detail ?? "").trim();
+  if (!isJapaneseProductTitle(translatedTitle) || !/[ぁ-んァ-ヶ一-龯々〆ヵー]/.test(translatedDescription)) {
+    throw new Error("japanese_catalog_copy_invalid");
+  }
+  await supabaseForCopyUpdate(row.id, translatedTitle, translatedDescription);
+  return { title: translatedTitle, description: translatedDescription };
+}
+
+async function supabaseForCopyUpdate(listingId: string, title: string, description: string) {
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase.from("shop_listings").update({
+    title,
+    description,
+    pipeline_updated_at: new Date().toISOString(),
+  }).eq("id", listingId);
+  if (error) throw new Error(error.message);
+}
+
 async function findByHandle(handle: string): Promise<ShopifyProductNode | null> {
   const data = await shopifyGraphQL<{ products: { nodes: ShopifyProductNode[] } }>(
     `query ProductByHandle($query: String!) { products(first: 1, query: $query) { nodes { id handle status vendor tags variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType preview { image { url } } } } } } }`,
@@ -95,8 +127,6 @@ async function syncListingRows(
     hasPassedSalesTestGate(row) &&
     row.orderable === true &&
     row.tracking_available === true &&
-    !/^(cj|cjdropshipping)$/i.test(String(row.supplier_name ?? "").trim()) &&
-    isJapaneseProductTitle(row.title) &&
     Number(row.inventory) > 0,
   );
   const blocked = rows.filter((row) => !candidates.includes(row));
@@ -139,13 +169,14 @@ async function syncListingRows(
 
   for (const row of candidates) {
     try {
+      const copy = await ensureJapaneseCopy(row);
       const price = asNumber(row.selling_price);
       if (price === null || price <= 0) throw new Error("selling_price_invalid");
       if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) throw new Error("image_url_invalid");
 
       const productInput = {
-        title: row.title,
-        descriptionHtml: html(row.description),
+        title: copy.title,
+        descriptionHtml: html(copy.description),
         handle: row.shopify_handle || row.slug,
         price,
         sku: sku(row),
