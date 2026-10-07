@@ -219,6 +219,13 @@ async function syncListingRows(
         shopify_sync_status: "synced",
         shopify_sync_error: null,
         shopify_status: publication.published ? "published" : "blocked",
+        ...(publication.published ? {
+          published: true,
+          pipeline_stage: "PUBLISHED",
+          pipeline_status: "published",
+          pipeline_reason: "sales_test_gate_passed",
+          pipeline_updated_at: new Date().toISOString(),
+        } : {}),
       }).eq("id", row.id);
       if (updateError) throw new Error(updateError.message);
 
