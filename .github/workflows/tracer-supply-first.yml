@@ -28,7 +28,7 @@ jobs:
           OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           curl --silent --show-error --max-time 60 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
-            "https://tracer-self.vercel.app/api/intelligence/pipeline-audit" || true
+            "https://tracer-shunai394-9704s-projects.vercel.app/api/intelligence/pipeline-audit" || true
           echo
 
       - name: Run supply-first patrol passes
@@ -43,7 +43,7 @@ jobs:
             test -n "$OIDC_TOKEN"
             curl --fail-with-body --silent --show-error --max-time 300 \
               -H "Authorization: Bearer $OIDC_TOKEN" \
-              "https://tracer-self.vercel.app/api/cron/supply-first"
+              "https://tracer-shunai394-9704s-projects.vercel.app/api/cron/supply-first"
             sleep 5
           done
 
@@ -54,7 +54,7 @@ jobs:
           OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           if ! curl --fail-with-body --silent --show-error --max-time 300 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
-            "https://tracer-self.vercel.app/api/cron/base-publish"; then
+            "https://tracer-shunai394-9704s-projects.vercel.app/api/cron/base-publish"; then
             echo "BASE publication failed"
             exit 1
           fi
@@ -70,7 +70,7 @@ jobs:
             OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
             if ! curl --fail-with-body --silent --show-error --max-time 300 \
               -H "Authorization: Bearer $OIDC_TOKEN" \
-              "https://tracer-self.vercel.app/api/cron/$stage"; then
+              "https://tracer-shunai394-9704s-projects.vercel.app/api/cron/$stage"; then
               failures="$failures $stage"
             fi
             echo
@@ -85,5 +85,5 @@ jobs:
           OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           curl --silent --show-error --max-time 60 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
-            "https://tracer-self.vercel.app/api/intelligence/pipeline-audit" || true
+            "https://tracer-shunai394-9704s-projects.vercel.app/api/intelligence/pipeline-audit" || true
           echo
