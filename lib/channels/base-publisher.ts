@@ -73,7 +73,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       && listing.pipeline_reason === SALES_TEST_GATE_PASSED
       && Array.isArray(listing.selection_reasons)
       && listing.selection_reasons.includes(SALES_TEST_GATE_PASSED);
-    const hasSalesTestGate = hasPassedSalesTestGate({ ...listing, title: catalogCopy.title, normalized_title: catalogCopy.title }) || hasSelectedGate;
+    const hasSalesTestGate = hasPassedSalesTestGate({ ...listing, title: catalogCopy.title, normalized_title: catalogCopy.title } as Parameters<typeof hasPassedSalesTestGate>[0]) || hasSelectedGate;
 
     if (listing.base_item_id && listing.published !== true) {
       if (listing.selling_price === null) { results.push({ listingId, ok: false, skipped: true, error: "base_hide_price_unknown" }); continue; }
