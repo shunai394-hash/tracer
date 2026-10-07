@@ -98,27 +98,30 @@ async function findByHandle(handle: string): Promise<ShopifyProductNode | null> 
 export type ShopifySyncResult = { configured: boolean; considered: number; synced: number; failed: number; listingIds: string[]; errors: Array<{ listingId: string; error: string }> };
 
 /** Shopify is downstream-only: canonical Sales Test Gate plus live fulfillment evidence are mandatory. */
-export async function syncPublishedListingsToShopify(limit = 250, listingIds?: string[]): Promise<ShopifySyncResult> {
+export async function syncPublishedListingsToShopify(limit = 150, listingIds?: string[]): Promise<ShopifySyncResult> {
   if (!isShopifyConfigured()) {
     const message = "shopify_not_configured: SHOPIFY_STORE_DOMAIN and SHOPIFY_ADMIN_ACCESS_TOKEN are required in production";
     return { configured: false, considered: 0, synced: 0, failed: 1, listingIds: [], errors: [{ listingId: "SYSTEM", error: message }] };
   }
 
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
+  const baseSelect = "id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shopify_product_id,shopify_variant_id,shopify_handle";
+  let query = supabase
     .from("shop_listings")
-    .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shopify_product_id,shopify_variant_id,shopify_handle")
+    .select(baseSelect)
     .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected)")
+    .or("shopify_sync_status.is.null,shopify_sync_status.neq.syncing")
     .order("shopify_product_id", { ascending: true, nullsFirst: true })
-    .order("pipeline_updated_at", { ascending: false })
-    .limit(limit);
-  if (error) throw new Error(error.message);
+    .order("pipeline_updated_at", { ascending: false });
 
   if (listingIds?.length) {
-    const filtered = ((data ?? []) as Listing[]).filter((row) => listingIds.includes(String(row.id)));
-    return syncListingRows(filtered, supabase);
+    query = query.in("id", listingIds).limit(Math.max(listingIds.length, 1));
+  } else {
+    query = query.limit(Math.min(Math.max(limit, 1), 150));
   }
 
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
 
   return syncListingRows((data ?? []) as Listing[], supabase);
 }
@@ -172,6 +175,20 @@ async function syncListingRows(
   }
 
   for (const row of candidates) {
+    const claim = await supabase
+      .from("shop_listings")
+      .update({ shopify_sync_status: "syncing", shopify_sync_error: null })
+      .eq("id", row.id)
+      .or("shopify_sync_status.is.null,shopify_sync_status.neq.syncing")
+      .select("id")
+      .maybeSingle();
+    if (claim.error) {
+      results.failed += 1;
+      results.errors.push({ listingId: row.id, error: `sync_claim_failed:${claim.error.message}` });
+      continue;
+    }
+    if (!claim.data) continue;
+
     try {
       const copy = await ensureJapaneseCopy(row);
       const price = asNumber(row.selling_price);
@@ -185,7 +202,19 @@ async function syncListingRows(
         price,
         sku: sku(row),
       };
-      const existing = (await findByHandle(productInput.handle)) ?? (row.shopify_product_id
+      const existingById = row.shopify_product_id
+        ? await shopifyGraphQL<{ product: ShopifyProductNode | null }>(
+            `query ProductById($id: ID!) {
+              product(id: $id) {
+                id handle status vendor tags
+                variants(first: 10) { nodes { id sku price } }
+                media(first: 10) { nodes { mediaContentType preview { image { url } } } }
+              }
+            }`,
+            { id: row.shopify_product_id },
+          ).then((result) => result.product)
+        : null;
+      const existing = existingById ?? (await findByHandle(productInput.handle)) ?? (row.shopify_product_id
         ? {
             id: row.shopify_product_id,
             handle: row.shopify_handle || row.slug,
