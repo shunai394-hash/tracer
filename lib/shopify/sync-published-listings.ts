@@ -71,10 +71,8 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
   const { data, error } = await supabase
     .from("shop_listings")
     .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,shopify_product_id,shopify_variant_id,shopify_handle")
-    .eq("published", true)
-    .eq("pipeline_stage", "PUBLISHED")
-    .eq("pipeline_status", "published")
-    .order("published_at", { ascending: false })
+    .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected)")
+    .order("pipeline_updated_at", { ascending: false })
     .limit(limit);
   if (error) throw new Error(error.message);
 
@@ -92,7 +90,7 @@ async function syncListingRows(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
 ): Promise<ShopifySyncResult> {
   const candidates = rows.filter((row) =>
-    hasPassedSalesTestGate(row) &&
+    (hasPassedSalesTestGate(row) || (row.published === false && row.pipeline_stage === "SELECTED" && row.pipeline_status === "selected")) &&
     row.orderable === true &&
     row.tracking_available === true &&
     Number(row.inventory) > 0,
@@ -189,6 +187,7 @@ async function syncListingRows(
       }).eq("id", row.id);
       if (updateError) throw new Error(updateError.message);
 
+      if (publication.published !== true) throw new Error("shopify_publication_not_confirmed");
       results.synced += 1;
       results.listingIds.push(row.id);
     } catch (error) {
