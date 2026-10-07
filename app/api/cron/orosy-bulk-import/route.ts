@@ -93,6 +93,7 @@ export async function GET(request: Request) {
   const rejected: Array<{ id: string; reason: string }> = [];
 
   for (const detail of candidates.values()) {
+    if (!detail) continue;
     if (Date.now() - started > 240_000 || accepted.length >= 200) break;
     const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId);
     if (!variation || variation.buyerPrice === null || variation.stockQty === null) continue;
