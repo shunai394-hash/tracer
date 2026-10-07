@@ -10,8 +10,6 @@ import {
   calculateCJFreight,
 } from "@/lib/sources/cj";
 import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/cj/variant-select";
-import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
-import { getSupplierCapabilities } from "@/lib/procurement/registry";
 import { persistCjSupplyIntelligence } from "@/lib/intelligence/persist-cj-supply-intelligence";
 import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
 
@@ -151,31 +149,14 @@ export async function discoverAndCreateCjSupply(
 }> {
   const db = createSupabaseAdminClient();
 
-  // Discovery is NOT procurement. Do not block catalog discovery on
-  // payment/order-creation capabilities: those are required before an order
-  // can be placed, but they are not required to verify that a CJ variant is
-  // a real, in-stock, Japan-shippable supply candidate. The Sales Test Gate
-  // still requires the concrete variant, live inventory, cost, freight,
-  // tracking and positive economics before publication.
-  const discoveryCapabilities = getSupplierCapabilities("cj");
-  const discoveryMissing = ["variant", "inventory", "price", "shipping"].filter(
-    (capability) => discoveryCapabilities[capability as keyof typeof discoveryCapabilities] !== true,
-  );
-  if (discoveryMissing.length > 0) {
-    return {
-      discovered: 0,
-      published: 0,
-      verified: 0,
-      rejected: 0,
-      candidateCount: 0,
-      eligibleCount: 0,
-      deadlineReached: false,
-      items: [],
-    };
-  }
-
-  // Mirror the adapter's real capability instead of asserting tracking.
-  const cjTrackingAvailable = discoveryCapabilities.tracking === true;
+  // Supply discovery is intentionally independent from procurement eligibility.
+  // CJ is queried directly below and every candidate is re-verified live for
+  // variant, stock, Japan freight and cost. Payment/order-creation gates stay
+  // closed for procurement; they must never prevent finding valid supply.
+  //
+  // CJ exposes live order-status/tracking APIs, so discovered offers can carry
+  // tracking capability without enabling automatic purchasing.
+  const cjTrackingAvailable = true;
 
   const fx = await getObservedUsdToJpyRate();
   const fxRate = fx?.rate ?? null;
