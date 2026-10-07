@@ -1,6 +1,7 @@
 name: TRACER Publish CJ Products Now
 
 # Production publication trigger: verified supplier sales tests -> Shopify.
+# Retry trigger: publish verified, profitable CJ supply without marketplace barcode dependency.
 on:
   push:
     branches: [main]
