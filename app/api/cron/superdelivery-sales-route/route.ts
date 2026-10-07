@@ -5,7 +5,8 @@ import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
-import { promoteShopListingToNewfind } from "@/lib/integration/newfind";\nimport { discoverSuperDeliverySupply } from "@/lib/suppliers/discover-superdelivery-supply";
+import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
+import { discoverSuperDeliverySupply } from "@/lib/suppliers/discover-superdelivery-supply";\nimport { discoverSuperDeliverySupply } from "@/lib/suppliers/discover-superdelivery-supply";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
