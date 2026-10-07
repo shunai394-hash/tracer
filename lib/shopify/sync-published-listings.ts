@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, shopifyGraphQL, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
 import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
+import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 
 type Listing = {
   id: string;
@@ -64,7 +65,7 @@ async function findByHandle(handle: string): Promise<ShopifyProductNode | null> 
 export type ShopifySyncResult = { configured: boolean; considered: number; synced: number; failed: number; listingIds: string[]; errors: Array<{ listingId: string; error: string }> };
 
 /** Shopify is downstream-only: canonical Sales Test Gate plus live fulfillment evidence are mandatory. */
-export async function syncPublishedListingsToShopify(limit = 10, listingIds?: string[]): Promise<ShopifySyncResult> {
+export async function syncPublishedListingsToShopify(limit = 50, listingIds?: string[]): Promise<ShopifySyncResult> {
   if (!isShopifyConfigured()) return { configured: false, considered: 0, synced: 0, failed: 0, listingIds: [], errors: [] };
 
   const supabase = createSupabaseAdminClient();
@@ -93,6 +94,7 @@ async function syncListingRows(
     (hasPassedSalesTestGate(row) || (row.published === false && row.pipeline_stage === "SELECTED" && row.pipeline_status === "selected")) &&
     row.orderable === true &&
     row.tracking_available === true &&
+    isJapaneseProductTitle(row.title) &&
     Number(row.inventory) > 0,
   );
   const blocked = rows.filter((row) => !candidates.includes(row));
