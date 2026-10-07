@@ -6,6 +6,7 @@ import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportuni
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
+import { discoverSuperDeliverySupply } from "@/lib/suppliers/discover-superdelivery-supply";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
