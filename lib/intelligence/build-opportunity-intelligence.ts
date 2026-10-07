@@ -730,6 +730,11 @@ export async function buildOpportunityIntelligence(options: {
 
     const demand = scoreFromKnown(demandParts);
 
+    const verifiedSupplierIdentity = productListings.some((listing) =>
+      listing.verification_status === "verified" &&
+      Boolean((listing as SupplierListingRow & { supplier_product_id?: string | null }).supplier_product_id) &&
+      Boolean((listing as SupplierListingRow & { supplier_variant_id?: string | null }).supplier_variant_id),
+    );
     const identityRejected =
       !verifiedSupplierIdentity &&
       productCj.some((item) => item.identity_status === "rejected_noise") &&
@@ -755,11 +760,6 @@ export async function buildOpportunityIntelligence(options: {
         : null;
 
     const rejectedByRelevance = relevance?.status === "rejected_noise" && !verifiedSupplierIdentity;
-    const verifiedSupplierIdentity = productListings.some((listing) =>
-      listing.verification_status === "verified" &&
-      Boolean((listing as SupplierListingRow & { supplier_product_id?: string | null }).supplier_product_id) &&
-      Boolean((listing as SupplierListingRow & { supplier_variant_id?: string | null }).supplier_variant_id),
-    );
     const identityUnconfirmed =
       relevance?.status === "identity_unconfirmed" ||
       (metadata.identity_status === "supply_discovered" && !verifiedSupplierIdentity);
