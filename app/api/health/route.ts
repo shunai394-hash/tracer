@@ -18,7 +18,7 @@ export async function GET() {
       supabaseServiceRole: status.supabaseServiceRole,
       gemini: status.gemini,
       brightData: status.brightData,
-      cj: status.cj,
+      cj: Boolean(process.env.CJ_API_KEY),
       orosy: status.orosy,
       faire: status.faire,
       dsersMcp: status.dsersMcp,
