@@ -59,7 +59,7 @@ export async function GET(request: Request) {
       .select("product_id")
       .in("supplier", ["cj", "cjdropshipping", "orosy", "faire", "dsers"])
       .eq("verification_status", "verified")
-      .eq("identity_status", "linked")
+      .or("identity_status.eq.linked,identity_status.eq.supply_discovered")
       .eq("orderable", true)
       .eq("inventory_confirmed", true)
       .gt("inventory", 0)
