@@ -151,11 +151,17 @@ export async function discoverAndCreateCjSupply(
 }> {
   const db = createSupabaseAdminClient();
 
-  // Supply-first is only allowed to discover products that TRACER can
-  // procure autonomously. CJ currently fails the shared AUTO gate because
-  // payment completion is not yet verified end-to-end.
-  const autoProcurement = getAutoProcurementEligibility("cj");
-  if (!autoProcurement.eligible) {
+  // Discovery is NOT procurement. Do not block catalog discovery on
+  // payment/order-creation capabilities: those are required before an order
+  // can be placed, but they are not required to verify that a CJ variant is
+  // a real, in-stock, Japan-shippable supply candidate. The Sales Test Gate
+  // still requires the concrete variant, live inventory, cost, freight,
+  // tracking and positive economics before publication.
+  const discoveryCapabilities = getSupplierCapabilities("cj");
+  const discoveryMissing = ["variant", "inventory", "price", "shipping"].filter(
+    (capability) => discoveryCapabilities[capability as keyof typeof discoveryCapabilities] !== true,
+  );
+  if (discoveryMissing.length > 0) {
     return {
       discovered: 0,
       published: 0,
@@ -169,7 +175,7 @@ export async function discoverAndCreateCjSupply(
   }
 
   // Mirror the adapter's real capability instead of asserting tracking.
-  const cjTrackingAvailable = getSupplierCapabilities("cj").tracking === true;
+  const cjTrackingAvailable = discoveryCapabilities.tracking === true;
 
   const fx = await getObservedUsdToJpyRate();
   const fxRate = fx?.rate ?? null;
