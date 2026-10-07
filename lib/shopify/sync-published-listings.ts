@@ -99,7 +99,10 @@ export type ShopifySyncResult = { configured: boolean; considered: number; synce
 
 /** Shopify is downstream-only: canonical Sales Test Gate plus live fulfillment evidence are mandatory. */
 export async function syncPublishedListingsToShopify(limit = 50, listingIds?: string[]): Promise<ShopifySyncResult> {
-  if (!isShopifyConfigured()) return { configured: false, considered: 0, synced: 0, failed: 0, listingIds: [], errors: [] };
+  if (!isShopifyConfigured()) {
+    const message = "shopify_not_configured: SHOPIFY_STORE_DOMAIN and SHOPIFY_ADMIN_ACCESS_TOKEN are required in production";
+    return { configured: false, considered: 0, synced: 0, failed: 1, listingIds: [], errors: [{ listingId: "SYSTEM", error: message }] };
+  }
 
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
