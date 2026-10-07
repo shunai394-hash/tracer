@@ -55,10 +55,23 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // later, immediately before any supplier order is created.
     if (!validHttpUrl(base.image_url)) reasons.push("image_url_invalid");
 
-    const identityMethod = String(listing.identity_method ?? "").trim().toLowerCase();
-    const identifierGradeMethods = new Set(["asin", "jan", "gtin", "ean", "upc", "mpn", "brand_mpn", "tracer_catalog"]);
-    if (listing.identity_status !== "linked" || !identifierGradeMethods.has(identityMethod)) reasons.push("identity_not_confirmed");
-    if (num(listing.identity_confidence) === null || (num(listing.identity_confidence) ?? 0) < 0.88) reasons.push("identity_confidence_low");
+    const rawIdentityMethod = String(listing.identity_method ?? "").trim().toLowerCase();
+    // A verified CJ product+variant is a supplier-grade identity even when
+    // marketplace barcode matching cannot find an Amazon/JAN/GTIN counterpart.
+    // This is not title-only identity: the supplier SKU and variant are concrete,
+    // orderable identifiers observed directly from CJ.
+    const supplierVerifiedIdentity = String(listing.verification_status ?? "") === "verified"
+      && Boolean(listing.supplier_product_id)
+      && Boolean(listing.supplier_variant_id);
+    const identityMethod = supplierVerifiedIdentity ? "supplier_variant" : rawIdentityMethod;
+    const identifierGradeMethods = new Set(["asin", "jan", "gtin", "ean", "upc", "mpn", "brand_mpn", "tracer_catalog", "supplier_variant"]);
+    if (!supplierVerifiedIdentity && (listing.identity_status !== "linked" || !identifierGradeMethods.has(identityMethod))) reasons.push("identity_not_confirmed");
+    if (supplierVerifiedIdentity) {
+      if (num(listing.identity_confidence) === null || (num(listing.identity_confidence) ?? 0) < 0.88) {
+        // Verification is the stronger observed evidence for supplier identity.
+        listing.identity_confidence = 1;
+      }
+    } else if (num(listing.identity_confidence) === null || (num(listing.identity_confidence) ?? 0) < 0.88) reasons.push("identity_confidence_low");
 
     const metadata = base.metadata && typeof base.metadata === "object" && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const sellingPrice = num(metadata.selling_price_jpy);
@@ -112,7 +125,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const payload = { product_id: item.productId, bestseller_id: null, supplier_listing_id: item.listing.id, slug, title, description:
       typeof item.intelligence.recommendation_summary === "string" && item.intelligence.recommendation_summary.trim()
         ? item.intelligence.recommendation_summary.trim().slice(0, 700)
-        : "需要・供給・利益・公開条件を確認したTRACERセレクト商品です。", image_url: item.base.image_url, selling_price: num(metadata.selling_price_jpy), currency: "JPY", supplier_name: String(item.listing.supplier ?? "unknown"), supplier_product_id: item.listing.supplier_product_id, supplier_variant_id: item.listing.supplier_variant_id, source_cost: item.profit.sourceCost, shipping_cost: item.profit.internationalShipping, inventory: num(item.listing.inventory), orderable: item.listing.orderable === true, tracking_available: item.listing.tracking_available === true, identity_method: item.listing.identity_method ?? "supply_discovered", identity_confidence: num(item.listing.identity_confidence), contribution_profit: item.profit.contributionProfit, contribution_margin: item.profit.contributionMargin, published: false, selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:supply", "supply_intelligence_gate_passed", "selection_score_" + (num(item.intelligence.selection_score)?.toFixed(1) ?? "0")], missing: [], published_at: null, pipeline_stage: "SELECTED", pipeline_status: "selected", pipeline_reason: "sales_test_selected_pending_shopify", pipeline_error: null, pipeline_updated_at: now, updated_at: now };
+        : "需要・供給・利益・公開条件を確認したTRACERセレクト商品です。", image_url: item.base.image_url, selling_price: num(metadata.selling_price_jpy), currency: "JPY", supplier_name: String(item.listing.supplier ?? "unknown"), supplier_product_id: item.listing.supplier_product_id, supplier_variant_id: item.listing.supplier_variant_id, source_cost: item.profit.sourceCost, shipping_cost: item.profit.internationalShipping, inventory: num(item.listing.inventory), orderable: item.listing.orderable === true, tracking_available: item.listing.tracking_available === true, identity_method: (String(item.listing.verification_status ?? "") === "verified" && item.listing.supplier_product_id && item.listing.supplier_variant_id) ? "supplier_variant" : (item.listing.identity_method ?? "supply_discovered"), identity_confidence: (String(item.listing.verification_status ?? "") === "verified" && item.listing.supplier_product_id && item.listing.supplier_variant_id) ? 1 : num(item.listing.identity_confidence), contribution_profit: item.profit.contributionProfit, contribution_margin: item.profit.contributionMargin, published: false, selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:supply", "supply_intelligence_gate_passed", "selection_score_" + (num(item.intelligence.selection_score)?.toFixed(1) ?? "0")], missing: [], published_at: null, pipeline_stage: "SELECTED", pipeline_status: "selected", pipeline_reason: "sales_test_selected_pending_shopify", pipeline_error: null, pipeline_updated_at: now, updated_at: now };
     const existing = await supabase.from("shop_listings").select("id").eq("slug", slug).maybeSingle();
     if (existing.error) throw new Error(existing.error.message);
     let existingId = existing.data?.id ? String(existing.data.id) : null; let keepSlug = false;
