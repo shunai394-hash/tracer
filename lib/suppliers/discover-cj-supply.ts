@@ -204,44 +204,26 @@ export async function discoverAndCreateCjSupply(
   // Ordering by next_verification_at (nulls first) makes that column the
   // traversal cursor: each checked row moves to the back of the queue.
   const nowIso = new Date().toISOString();
+  // Re-process verified CJ supply that has not yet passed the Sales Test Gate.
+  // Previously this queue only admitted unverified/retryable rows, which meant
+  // the 646 already-verified CJ offers became permanently invisible to the
+  // publication path once their initial verification had completed.
+  // Gate-passed variants remain excluded by existingVariants; non-gate-passed
+  // verified variants are valid publication candidates and are live rechecked.
   const { data: seededRows, error: seededError } = await db
     .from("supplier_listings")
     .select("id,product_id,title,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,next_verification_at,verification_attempts")
     .eq("supplier", "cj")
     .not("supplier_product_id", "is", null)
     .not("supplier_variant_id", "is", null)
-    .in("verification_status", ["unverified", "retryable"])
-    .or(`next_verification_at.is.null,next_verification_at.lte.${nowIso}`)
-    .order("next_verification_at", { ascending: true, nullsFirst: true })
+    .in("verification_status", ["verified", "unverified", "retryable"])
+    .order("verification_status", { ascending: true })
     .order("inventory", { ascending: false, nullsFirst: false })
     .limit(500);
   if (seededError) throw new Error(`supply-first candidate query failed: ${seededError.message}`);
 
-  // Listed-but-not-gate-passed variants (e.g. CATALOG_TEST) go first: their
-  // listing exists, so verification + intelligence is what they are missing.
-  // Same due conditions and the same live checks as every other row.
-  const listedVariantIds = Array.from(new Set(
-    (existingListings ?? [])
-      .filter((row) => !hasPassedSalesTestGate(row))
-      .map((row) => String(row.supplier_variant_id ?? ""))
-      .filter(Boolean),
-  )).slice(0, 100);
-  let listedRows: typeof seededRows = [];
-  if (listedVariantIds.length > 0) {
-    const { data, error } = await db
-      .from("supplier_listings")
-      .select("id,product_id,title,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,next_verification_at,verification_attempts")
-      .eq("supplier", "cj")
-      .in("supplier_variant_id", listedVariantIds)
-      .in("verification_status", ["unverified", "retryable"])
-      .or(`next_verification_at.is.null,next_verification_at.lte.${nowIso}`)
-      .limit(100);
-    if (error) throw new Error(`supply-first listed candidate query failed: ${error.message}`);
-    listedRows = data ?? [];
-  }
-
   const seenSeedKeys = new Set<string>();
-  const seeded = [...(listedRows ?? []), ...(seededRows ?? [])].filter((row) => {
+  const seeded = (seededRows ?? []).filter((row) => {
     const key = `${String(row.supplier_product_id)}:${String(row.supplier_variant_id)}`;
     if (existingVariants.has(key) || seenSeedKeys.has(key)) return false;
     seenSeedKeys.add(key);
