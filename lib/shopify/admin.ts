@@ -119,3 +119,105 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   if (variantData.productVariantsBulkUpdate.userErrors.length) throw new Error(variantData.productVariantsBulkUpdate.userErrors.map((error) => error.message).join("; "));
   return { ...product, variants: { nodes: variantData.productVariantsBulkUpdate.productVariants } };
 }
+
+
+export type ShopifyPublicationState = {
+  publicationId: string;
+  published: boolean;
+};
+
+export async function getOnlineStorePublicationId(): Promise<string> {
+  const configured = process.env.SHOPIFY_PUBLICATION_ID?.trim();
+  if (configured) return configured;
+
+  const data = await shopifyGraphQL<{
+    publications: { nodes: Array<{ id: string; name: string }> };
+  }>(
+    `query OnlineStorePublication {
+      publications(first: 50) { nodes { id name } }
+    }`,
+  );
+  const publication = data.publications.nodes.find((node) => node.name.trim().toLowerCase() === "online store");
+  if (!publication) throw new Error("shopify_online_store_publication_not_found");
+  return publication.id;
+}
+
+export async function ensureShopifyProductPublished(productId: string): Promise<ShopifyPublicationState> {
+  const publicationId = await getOnlineStorePublicationId();
+  const current = await shopifyGraphQL<{
+    product: { publishedOnPublication: boolean } | null;
+  }>(
+    `query ProductPublicationCheck($id: ID!, $publicationId: ID!) {
+      product(id: $id) { publishedOnPublication(publicationId: $publicationId) }
+    }`,
+    { id: productId, publicationId },
+  );
+  if (!current.product) throw new Error("shopify_product_not_found_for_publication_check");
+
+  if (!current.product.publishedOnPublication) {
+    const result = await shopifyGraphQL<{
+      publishablePublish: {
+        userErrors: Array<{ field?: string[]; message: string }>;
+      };
+    }>(
+      `mutation PublishablePublish($id: ID!, $input: [PublicationInput!]!) {
+        publishablePublish(id: $id, input: $input) { userErrors { field message } }
+      }`,
+      { id: productId, input: [{ publicationId }] },
+    );
+    if (result.publishablePublish.userErrors.length) {
+      throw new Error(result.publishablePublish.userErrors.map((error) => error.message).join("; "));
+    }
+  }
+
+  const verified = await shopifyGraphQL<{
+    product: { publishedOnPublication: boolean } | null;
+  }>(
+    `query ProductPublicationVerify($id: ID!, $publicationId: ID!) {
+      product(id: $id) { publishedOnPublication(publicationId: $publicationId) }
+    }`,
+    { id: productId, publicationId },
+  );
+  if (!verified.product?.publishedOnPublication) throw new Error("shopify_publication_verification_failed");
+  return { publicationId, published: true };
+}
+
+export async function unpublishShopifyProduct(productId: string): Promise<ShopifyPublicationState> {
+  const publicationId = await getOnlineStorePublicationId();
+  const current = await shopifyGraphQL<{
+    product: { publishedOnPublication: boolean } | null;
+  }>(
+    `query ProductPublicationCheck($id: ID!, $publicationId: ID!) {
+      product(id: $id) { publishedOnPublication(publicationId: $publicationId) }
+    }`,
+    { id: productId, publicationId },
+  );
+  if (!current.product) throw new Error("shopify_product_not_found_for_unpublication_check");
+
+  if (current.product.publishedOnPublication) {
+    const result = await shopifyGraphQL<{
+      publishableUnpublish: {
+        userErrors: Array<{ field?: string[]; message: string }>;
+      };
+    }>(
+      `mutation PublishableUnpublish($id: ID!, $input: [PublicationInput!]!) {
+        publishableUnpublish(id: $id, input: $input) { userErrors { field message } }
+      }`,
+      { id: productId, input: [{ publicationId }] },
+    );
+    if (result.publishableUnpublish.userErrors.length) {
+      throw new Error(result.publishableUnpublish.userErrors.map((error) => error.message).join("; "));
+    }
+  }
+
+  const verified = await shopifyGraphQL<{
+    product: { publishedOnPublication: boolean } | null;
+  }>(
+    `query ProductPublicationVerify($id: ID!, $publicationId: ID!) {
+      product(id: $id) { publishedOnPublication(publicationId: $publicationId) }
+    }`,
+    { id: productId, publicationId },
+  );
+  if (verified.product?.publishedOnPublication) throw new Error("shopify_unpublication_verification_failed");
+  return { publicationId, published: false };
+}
