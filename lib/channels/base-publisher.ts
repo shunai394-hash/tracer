@@ -3,6 +3,8 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createBaseItem, editBaseItem, addBaseItemImage, isBaseConfigured } from "@/lib/channels/base";
 import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
+import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
+import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -11,6 +13,25 @@ export type BasePublicationResult = {
   failed: number;
   results: Array<{ listingId: string; ok: boolean; baseItemId?: string | null; skipped?: boolean; error?: string }>;
 };
+
+type JapaneseCatalogCopy = { title: string; detail: string; };
+
+async function ensureJapaneseCatalogCopy(title: string, detail: string): Promise<JapaneseCatalogCopy> {
+  const sourceTitle = String(title ?? "").trim();
+  const sourceDetail = String(detail ?? "").trim();
+  if (isJapaneseProductTitle(sourceTitle) && /[ぁ-んァ-ヶ一-龯々〆ヵー]/.test(sourceDetail)) return { title: sourceTitle, detail: sourceDetail };
+  if (!isGeminiConfigured()) throw new Error("BASE japanese catalog copy requires GEMINI_API_KEY");
+  const result = await generateStructuredJson<JapaneseCatalogCopy>({
+    systemInstruction: "あなたは日本のEC商品編集者です。入力された商品情報を日本語の販売用コピーへ変換してください。商品名と説明は必ず日本語にしてください。英語の固有名詞・型番・規格・ブランド名は必要な場合だけ残してください。存在しない仕様や数値を追加しないでください。titleは簡潔で自然な日本語の商品名、detailは購入判断に必要な特徴を読みやすい日本語でまとめてください。JSONのみ返してください。",
+    prompt: JSON.stringify({ title: sourceTitle, detail: sourceDetail }),
+    timeoutMs: 12_000,
+  });
+  const translatedTitle = String(result?.title ?? "").trim();
+  const translatedDetail = String(result?.detail ?? "").trim();
+  if (!isJapaneseProductTitle(translatedTitle)) throw new Error("BASE japanese catalog copy returned a non-Japanese title");
+  if (!translatedDetail || !/[ぁ-んァ-ヶ一-龯々〆ヵー]/.test(translatedDetail)) throw new Error("BASE japanese catalog copy returned a non-Japanese description");
+  return { title: translatedTitle, detail: translatedDetail };
+}
 
 function validHttpUrl(value: unknown): boolean {
   if (typeof value !== "string" || !value.trim()) return false;
@@ -29,12 +50,31 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   const results: BasePublicationResult["results"] = [];
   for (const listing of listings ?? []) {
     const listingId = String(listing.id);
-    const hasSalesTestGate = hasPassedSalesTestGate(listing);
+    let catalogCopy: JapaneseCatalogCopy;
+    try {
+      catalogCopy = await ensureJapaneseCatalogCopy(String(listing.title ?? ""), String(listing.description ?? listing.title ?? ""));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await supabase.from("shop_listings").update({
+        base_last_error: message,
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "blocked",
+        pipeline_reason: "japanese_catalog_copy_required",
+        pipeline_error: message,
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      results.push({ listingId, ok: false, skipped: true, error: "japanese_catalog_copy_required" });
+      continue;
+    }
+    if (catalogCopy.title !== String(listing.title ?? "").trim() || catalogCopy.detail !== String(listing.description ?? listing.title ?? "").trim()) {
+      await supabase.from("shop_listings").update({ title: catalogCopy.title, description: catalogCopy.detail, pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
+    }
+    const hasSalesTestGate = hasPassedSalesTestGate({ ...listing, title: catalogCopy.title, normalized_title: catalogCopy.title });
 
     if (listing.base_item_id && listing.published !== true) {
       if (listing.selling_price === null) { results.push({ listingId, ok: false, skipped: true, error: "base_hide_price_unknown" }); continue; }
       try {
-        await editBaseItem({ itemId: String(listing.base_item_id), title: listing.title, detail: listing.description ?? listing.title, price: Number(listing.selling_price), stock: 0, visible: false });
+        await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price: Number(listing.selling_price), stock: 0, visible: false });
         await supabase.from("shop_listings").update({ base_publication_status: "published", base_publication_lease_until: null, base_last_error: null, pipeline_stage: "BASE_RECONCILED", pipeline_status: "blocked", pipeline_reason: "tracer_unpublished", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
         results.push({ listingId, ok: true, baseItemId: String(listing.base_item_id) });
       } catch (error) {
@@ -64,7 +104,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       }).eq("id", listingId);
       if (listing.base_item_id) {
         try {
-          await editBaseItem({ itemId: String(listing.base_item_id), title: listing.title, detail: listing.description ?? listing.title, price: Number(listing.selling_price ?? 0), stock: 0, visible: false });
+          await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price: Number(listing.selling_price ?? 0), stock: 0, visible: false });
         } catch (error) {
           results.push({ listingId, ok: false, error: error instanceof Error ? error.message : String(error) });
           continue;
@@ -103,7 +143,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const shippingCost = listing.shipping_cost === null || listing.shipping_cost === undefined ? null : Number(listing.shipping_cost);
     if (shippingCost === null || !Number.isFinite(shippingCost) || shippingCost <= 0) {
       if (listing.base_item_id) {
-        try { await editBaseItem({ itemId: String(listing.base_item_id), title: listing.title, detail: listing.description ?? listing.title, price, stock: 0, visible: false }); }
+        try { await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price, stock: 0, visible: false }); }
         catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           await supabase.from("shop_listings").update({ base_last_error: message, pipeline_stage: "BASE_RECONCILIATION", pipeline_status: "failed", pipeline_reason: "base_hide_shipping_unknown_failed", pipeline_error: message, pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
@@ -117,7 +157,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const availableInventory = typeof listing.inventory === "number" ? Math.floor(listing.inventory) : typeof listing.inventory === "string" && listing.inventory.trim() !== "" ? Math.floor(Number(listing.inventory)) : null;
     if (availableInventory === null || !Number.isFinite(availableInventory) || availableInventory <= 0 || listing.orderable !== true) {
       if (listing.base_item_id) {
-        try { await editBaseItem({ itemId: String(listing.base_item_id), title: listing.title, detail: listing.description ?? listing.title, price, stock: 0, visible: false }); }
+        try { await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price, stock: 0, visible: false }); }
         catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           await supabase.from("shop_listings").update({ base_last_error: message, pipeline_stage: "BASE_RECONCILIATION", pipeline_status: "failed", pipeline_reason: "base_hide_failed", pipeline_error: message, pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
@@ -160,9 +200,9 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     try {
       let baseItemId = listing.base_item_id ? String(listing.base_item_id) : null;
       if (baseItemId) {
-        await editBaseItem({ itemId: baseItemId, title: listing.title, detail: listing.description ?? listing.title, price, stock: availableInventory, visible: true });
+        await editBaseItem({ itemId: baseItemId, title: catalogCopy.title, detail: catalogCopy.detail, price, stock: availableInventory, visible: true });
       } else {
-        const created = await createBaseItem({ title: listing.title, detail: listing.description ?? listing.title, price, stock: availableInventory, visible: true });
+        const created = await createBaseItem({ title: catalogCopy.title, detail: catalogCopy.detail, price, stock: availableInventory, visible: true });
         baseItemId = String(created.item_id ?? created.item?.item_id ?? "");
         if (!baseItemId) throw new Error("BASE create response missing item_id");
         const { error: persistIdError } = await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_publication_status: "creating", base_publication_lease_until: leaseUntil }).eq("id", listingId);
