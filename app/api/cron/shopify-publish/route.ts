@@ -4,7 +4,7 @@ import { isShopifyConfigured } from "@/lib/shopify/admin";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-listings";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await syncPublishedListingsToShopify(50);
+    const result = await syncPublishedListingsToShopify(200);
     return NextResponse.json({
       ok: result.failed === 0,
       phase: "shopify_channel_sync",
