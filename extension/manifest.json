@@ -10,7 +10,7 @@
   ],
   "host_permissions": [
     "http://localhost:3000/*",
-    "https://tracer-self.vercel.app/*"
+    "https://tracer-naito3087.vercel.app/*"
   ],
   "action": {
     "default_title": "TRACERへ送信",
