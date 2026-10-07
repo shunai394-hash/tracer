@@ -15,7 +15,7 @@ export const maxDuration = 300;
 async function promoteGatePassedListings(selectedListingIds: string[]) {
   const shopify = await syncPublishedListingsToShopify(selectedListingIds);
   const publishedListingIds = shopify.listingIds;
-  const base = await publishPublishedListingsToBase(10, selectedListingIds);
+  const base = await publishPublishedListingsToBase(50, selectedListingIds);
   // NEWFIND is an independent promotion channel. BASE is optional and must not
   // become a hidden prerequisite for distributing a gate-passed TRACER product.
   const newfind = await Promise.all(
@@ -71,7 +71,7 @@ export async function GET(request: Request) {
     const verifiedSupplyIds = Array.from(new Set((verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)));
     if (verifiedSupplyIds.length > 0) await buildOpportunityIntelligence({ productIds: verifiedSupplyIds });
 
-    const supplySelected = await selectAndPublishSupplySalesTests(verifiedSupplyIds, 10);
+    const supplySelected = await selectAndPublishSupplySalesTests(verifiedSupplyIds, 50);
     const supplyDownstream = await promoteGatePassedListings(supplySelected.selectedListingIds);
 
     if (supplySelected.published > 0) {
@@ -98,7 +98,7 @@ export async function GET(request: Request) {
     const candidateIds = (readyRows ?? []).map((row) => String(row.id));
     const marketProductIds = Array.from(new Set((readyRows ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)));
     if (marketProductIds.length > 0) await buildOpportunityIntelligence({ productIds: marketProductIds });
-    const decision = await selectAndPublishSalesTests(candidateIds, 10);
+    const decision = await selectAndPublishSalesTests(candidateIds, 50);
     const downstream = await promoteGatePassedListings(decision.selectedListingIds);
 
     if (cronRunId) await supabase.from("cron_runs").update({
