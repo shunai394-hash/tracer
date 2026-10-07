@@ -27,11 +27,11 @@ function listingQuality(row: Record<string, unknown>): number {
   return (row.identity_status === "linked" ? 1000 : 0) + (row.identity_method ? 100 : 0) + identity * 100 + (row.price_confirmed === true ? 100 : 0) + (row.inventory_confirmed === true ? 100 : 0) + (row.orderable === true ? 100 : 0) + (row.tracking_available === true ? 50 : 0) + (row.api_available === true ? 50 : 0) + (row.supplier_product_id ? 25 : 0) + (row.supplier_variant_id ? 25 : 0) + Math.min(inventory, 1000) / 1000;
 }
 
-export type SupplySalesTestResult = { published: number; publishedListingIds: string[]; considered: number; rejected: Array<{ productId: string; reasons: string[] }> };
+export type SupplySalesTestResult = { published: number; publishedListingIds: string[]; selectedListingIds: string[]; considered: number; rejected: Array<{ productId: string; reasons: string[] }> };
 
 export async function selectAndPublishSupplySalesTests(productIds: string[], limit = 3, options: { dryRun?: boolean } = {}): Promise<SupplySalesTestResult & { eligibleProductIds?: string[] }> {
   const supabase = createSupabaseAdminClient();
-  if (productIds.length === 0 || limit <= 0) return { published: 0, publishedListingIds: [], considered: 0, rejected: [] };
+  if (productIds.length === 0 || limit <= 0) return { published: 0, publishedListingIds: [], selectedListingIds: [], considered: 0, rejected: [] };
   initializeProcurement();
   const uniqueProductIds = Array.from(new Set(productIds));
   const { data: intelligenceRows, error: intelligenceError } = await supabase.from("opportunity_intelligence").select("product_id,demand_score,search_fit_score,market_gap_score,competition_score,creative_score,selection_score,overall_confidence,selection_eligible,sellability_state,filter_state,profit_state,recommendation_summary,why_now").in("product_id", uniqueProductIds);
@@ -112,15 +112,15 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (womenB.bonus !== womenA.bonus) return womenB.bonus - womenA.bonus;
     return b.quality - a.quality;
   });
-  if (options.dryRun) return { published: 0, publishedListingIds: [], considered: uniqueProductIds.length, rejected: rejected.slice(0, 50), eligibleProductIds: eligible.map((item) => item.productId) };
-  const chosen = eligible.slice(0, limit); const publishedListingIds: string[] = [];
+  if (options.dryRun) return { published: 0, publishedListingIds: [], selectedListingIds: [], considered: uniqueProductIds.length, rejected: rejected.slice(0, 50), eligibleProductIds: eligible.map((item) => item.productId) };
+  const chosen = eligible.slice(0, limit); const publishedListingIds: string[] = []; const selectedListingIds: string[] = [];
   for (const item of chosen) {
     const title = String(item.base.normalized_title ?? ("TRACER product " + item.productId)); const slug = slugify(title, item.productId); const now = new Date().toISOString();
     const metadata = item.base.metadata && typeof item.base.metadata === "object" && !Array.isArray(item.base.metadata) ? item.base.metadata as Record<string, unknown> : {};
     const payload = { product_id: item.productId, bestseller_id: null, supplier_listing_id: item.listing.id, slug, title, description:
       typeof item.intelligence.recommendation_summary === "string" && item.intelligence.recommendation_summary.trim()
         ? item.intelligence.recommendation_summary.trim().slice(0, 700)
-        : "需要・供給・利益・公開条件を確認したTRACERセレクト商品です。", image_url: item.base.image_url, selling_price: num(metadata.selling_price_jpy), currency: "JPY", supplier_name: String(item.listing.supplier ?? "unknown"), supplier_product_id: item.listing.supplier_product_id, supplier_variant_id: item.listing.supplier_variant_id, source_cost: item.profit.sourceCost, shipping_cost: item.profit.internationalShipping, inventory: num(item.listing.inventory), orderable: item.listing.orderable === true, tracking_available: item.listing.tracking_available === true, identity_method: item.listing.identity_method ?? "supply_discovered", identity_confidence: num(item.listing.identity_confidence), contribution_profit: item.profit.contributionProfit, contribution_margin: item.profit.contributionMargin, published: true, selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:supply", "supply_intelligence_gate_passed", "selection_score_" + (num(item.intelligence.selection_score)?.toFixed(1) ?? "0")], missing: [], published_at: now, pipeline_stage: "PUBLISHED", pipeline_status: "published", pipeline_reason: SALES_TEST_GATE_PASSED, pipeline_error: null, pipeline_updated_at: now, updated_at: now };
+        : "需要・供給・利益・公開条件を確認したTRACERセレクト商品です。", image_url: item.base.image_url, selling_price: num(metadata.selling_price_jpy), currency: "JPY", supplier_name: String(item.listing.supplier ?? "unknown"), supplier_product_id: item.listing.supplier_product_id, supplier_variant_id: item.listing.supplier_variant_id, source_cost: item.profit.sourceCost, shipping_cost: item.profit.internationalShipping, inventory: num(item.listing.inventory), orderable: item.listing.orderable === true, tracking_available: item.listing.tracking_available === true, identity_method: item.listing.identity_method ?? "supply_discovered", identity_confidence: num(item.listing.identity_confidence), contribution_profit: item.profit.contributionProfit, contribution_margin: item.profit.contributionMargin, published: false, selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:supply", "supply_intelligence_gate_passed", "selection_score_" + (num(item.intelligence.selection_score)?.toFixed(1) ?? "0")], missing: [], published_at: null, pipeline_stage: "SELECTED", pipeline_status: "selected", pipeline_reason: "sales_test_selected_pending_shopify", pipeline_error: null, pipeline_updated_at: now, updated_at: now };
     const existing = await supabase.from("shop_listings").select("id").eq("slug", slug).maybeSingle();
     if (existing.error) throw new Error(existing.error.message);
     let existingId = existing.data?.id ? String(existing.data.id) : null; let keepSlug = false;
@@ -128,7 +128,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const { slug: _slug, ...payloadWithoutSlug } = payload; void _slug;
     const result = existingId ? await supabase.from("shop_listings").update(keepSlug ? payloadWithoutSlug : payload).eq("id", existingId).select("id").single() : await supabase.from("shop_listings").insert(payload).select("id").single();
     if (result.error) throw new Error(result.error.message);
-    if (result.data?.id) publishedListingIds.push(String(result.data.id));
+    if (result.data?.id) selectedListingIds.push(String(result.data.id));
   }
-  return { published: publishedListingIds.length, publishedListingIds, considered: uniqueProductIds.length, rejected: rejected.slice(0, 50) };
+  return { published: 0, publishedListingIds: [], selectedListingIds, considered: uniqueProductIds.length, rejected: rejected.slice(0, 50) };
 }
