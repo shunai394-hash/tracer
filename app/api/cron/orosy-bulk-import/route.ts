@@ -72,11 +72,11 @@ export async function GET(request: Request) {
       const results = await searchOrosyProducts(query);
       for (const item of results) {
         if (candidates.size >= target) break;
-        if (!japaneseTitle(item.title) || !item.orderable || !item.imageUrl || !/^https?:\\/\\//u.test(item.imageUrl)) continue;
+        if (!japaneseTitle(item.title) || !item.orderable || !item.imageUrl || !/^https?:\/\//u.test(item.imageUrl)) continue;
         if (candidates.has(item.id)) continue;
         try {
           const detail = await getOrosyProductDetail(item.id);
-          if (!detail || !japaneseTitle(detail.title) || !detail.orderable || !detail.imageUrl || !/^https?:\\/\\//u.test(detail.imageUrl)) continue;
+          if (!detail || !japaneseTitle(detail.title) || !detail.orderable || !detail.imageUrl || !/^https?:\/\//u.test(detail.imageUrl)) continue;
           const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId);
           if (!variation) continue;
           candidates.set(`${detail.id}:${variation.variationId}`, detail);
