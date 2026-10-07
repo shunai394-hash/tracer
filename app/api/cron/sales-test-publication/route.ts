@@ -51,15 +51,13 @@ export async function GET(request: Request) {
     }
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
-    // Identity re-verification now runs as its own cron. This publication job
-    // consumes only canonical linked supply and never treats supply_discovered
-    // as a substitute for identifier-grade marketplace identity. Supplier is
-    // deliberately not CJ-only: Japanese catalog supply (for example Orosy)
-    // must be eligible for the same canonical publication gate.
+    // Consume only identifier-grade linked supply. CJ is a supported supply
+    // source; payment automation remains an order-time concern and never
+    // suppresses a listing that has already passed the publication gate.
     const { data: verifiedSupply, error: verifiedSupplyError } = await supabase
       .from("supplier_listings")
       .select("product_id")
-.neq("supplier", "cj").neq("supplier", "cjdropshipping").neq("supplier", "superdelivery")
+      .in("supplier", ["cj", "cjdropshipping", "orosy", "faire", "dsers"])
       .eq("verification_status", "verified")
       .eq("identity_status", "linked")
       .eq("orderable", true)
