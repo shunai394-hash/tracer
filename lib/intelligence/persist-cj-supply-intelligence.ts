@@ -50,6 +50,7 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
   const matchesByProduct = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
   const lookupValues = new Set<string>();
   for (const value of [supplyIds.gtin, supplyIds.jan, supplyIds.ean, supplyIds.upc]) if (value) marketplaceBarcodeCandidates(value).forEach((candidate) => lookupValues.add(candidate));
+  if (supplyIds.mpn) lookupValues.add(supplyIds.mpn);
 
   for (const value of lookupValues) {
     const clauses = ["jan", "gtin", "ean", "upc", "mpn"].map((column) => `${column}.eq.${value}`);
