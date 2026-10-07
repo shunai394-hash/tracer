@@ -2,8 +2,7 @@ name: TRACER Reach 900 Now
 # Immediate production run for the fixed 900-listing Sales Test Gate target.
 
 on:
-  push:
-    branches: ["main"]
+  workflow_dispatch:
 
 permissions:
   id-token: write
