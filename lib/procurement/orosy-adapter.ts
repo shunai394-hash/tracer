@@ -182,6 +182,44 @@ export const orosySupplierAdapter: TracerSupplierAdapter = {
     };
   },
 
+  async validateOrderInput(input: SupplierOrderInput) {
+    if (input.supplierName && input.supplierName.toLowerCase() !== SUPPLIER_NAME) {
+      return {
+        valid: false,
+        responseCode: "OROSY_SUPPLIER_MISMATCH",
+        responseMessage: "The purchase-order supplier does not match the Orosy adapter.",
+      };
+    }
+    if (!input.supplierProductId || !input.supplierVariantId || input.quantity < 1) {
+      return {
+        valid: false,
+        responseCode: "OROSY_ORDER_IDENTITY_INVALID",
+        responseMessage: "Orosy product, variant, and quantity are required before cart mutation.",
+      };
+    }
+    const detail = await getOrosyProductDetail(input.supplierProductId);
+    const variation = detail ? variationFor(detail, input.supplierVariantId) : null;
+    if (!detail || !variation) {
+      return {
+        valid: false,
+        responseCode: "OROSY_VARIANT_NOT_FOUND",
+        responseMessage: "The live Orosy product/variation could not be revalidated.",
+      };
+    }
+    if (!detail.orderable || variation.stockQty === null || variation.stockQty < input.quantity) {
+      return {
+        valid: false,
+        responseCode: "OROSY_LIVE_STOCK_GATE_FAILED",
+        responseMessage: "The live Orosy variant is not orderable at the requested quantity.",
+      };
+    }
+    return {
+      valid: true,
+      responseCode: "OROSY_ORDER_PREFLIGHT_PASSED",
+      responseMessage: "Live product, variation, orderability, and quantity were revalidated; cart/order creation remains fail-closed until the stateful cart contract is verified.",
+    };
+  },
+
   async createOrder(input: SupplierOrderInput): Promise<SupplierOrderResult> {
     void input;
     return {
