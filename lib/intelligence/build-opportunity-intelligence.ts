@@ -278,7 +278,7 @@ export async function buildOpportunityIntelligence(options: {
   const batchSize = Math.max(1, Math.min(100, options.batchSize ?? 1000));
   const batchOffset = Math.max(0, options.batchOffset ?? 0);
   const supabase = createSupabaseAdminClient();
-  const targetIds = Array.from(new Set((options.productIds ?? []).filter(Boolean))).slice(0, 100);
+  const targetIds = Array.from(new Set((options.productIds ?? []).filter(Boolean))).slice(0, 400);
 
   const intelligenceSelect = supabase
     .from("product_intelligence")
