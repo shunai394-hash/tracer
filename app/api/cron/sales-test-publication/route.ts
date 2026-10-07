@@ -54,6 +54,13 @@ export async function GET(request: Request) {
     // Consume only identifier-grade linked supply. CJ is a supported supply
     // source; payment automation remains an order-time concern and never
     // suppresses a listing that has already passed the publication gate.
+    const { data: demandSupply, error: demandSupplyError } = await supabase
+      .from("demand_cj_products")
+      .select("product_id")
+      .not("product_id", "is", null)
+      .limit(200);
+    if (demandSupplyError) throw new Error(demandSupplyError.message);
+
     const { data: verifiedSupply, error: verifiedSupplyError } = await supabase
       .from("supplier_listings")
       .select("product_id")
@@ -65,10 +72,13 @@ export async function GET(request: Request) {
       .gt("inventory", 0)
       .not("product_id", "is", null)
       .order("last_verified_at", { ascending: false, nullsFirst: false })
-      .limit(50);
+      .limit(200);
     if (verifiedSupplyError) throw new Error(verifiedSupplyError.message);
 
-    const verifiedSupplyIds = Array.from(new Set((verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)));
+    const verifiedSupplyIds = Array.from(new Set([
+      ...(demandSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
+      ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
+    ]));
     if (verifiedSupplyIds.length > 0) await buildOpportunityIntelligence({ productIds: verifiedSupplyIds });
 
     const supplySelected = await selectAndPublishSupplySalesTests(verifiedSupplyIds, 50);
