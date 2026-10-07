@@ -246,10 +246,7 @@ export async function selectAndPublishSalesTests(
       reasons.push(`supplier_auto_procurement_capability_missing:${autoProcurement.missing.join("|")}`);
     }
 
-    if (!isInternalSupply &&
-      typeof listing.supplier_variant_id !== "string" &&
-      !(String(listing.supplier ?? "").toLowerCase() === "cjdropshipping" && typeof listing.cj_variant_id === "string")
-    ) {
+    if (!isInternalSupply && typeof listing.supplier_variant_id !== "string") {
       reasons.push("supplier_variant_unknown");
     }
 
@@ -259,7 +256,7 @@ export async function selectAndPublishSalesTests(
       sellingProvider: isInternalSupply ? "tracer_internal" : String(bestseller.source ?? "marketplace"),
       sourceCost: asNumber(listing.cost),
       sourceCurrency: typeof listing.currency === "string" ? listing.currency : null,
-      sourceProvider: String(listing.supplier ?? "cj"),
+      sourceProvider: String(listing.supplier ?? "unknown"),
       internationalShipping: asNumber(listing.shipping_cost),
       domesticShipping: null,
       shippingCurrency: typeof listing.currency === "string" ? listing.currency : null,
@@ -386,7 +383,7 @@ export async function selectAndPublishSalesTests(
       currency: item.isInternalSupply ? item.listing.currency : item.bestseller.currency,
       supplier_name: item.listing.supplier,
       supplier_product_id: item.listing.supplier_product_id ?? item.listing.external_id,
-      supplier_variant_id: item.listing.supplier_variant_id ?? item.listing.cj_variant_id,
+      supplier_variant_id: item.listing.supplier_variant_id,
       source_cost: item.profit.sourceCost,
       shipping_cost: item.profit.internationalShipping,
       inventory: asNumber(item.listing.inventory),
