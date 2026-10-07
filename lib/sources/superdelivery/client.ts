@@ -81,6 +81,22 @@ function findStock(text: string): number | null {
   return null;
 }
 
+function findPrice(text: string): number | null {
+  // SUPER DELIVERY public pages expose wholesale/price text in several
+  // Japanese forms. Never treat retail/MSRP as source cost.
+  const patterns = [
+    /(?:卸価格|仕入れ価格|仕入価格|販売価格)\s*[：:]?\s*[¥￥]\s*([\d,]+)/i,
+    /[¥￥]\s*([\d,]+)\s*(?:\(税|円)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match?.[1]) continue;
+    const value = Number(match[1].replace(/,/g, ""));
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return null;
+}
+
 function findImage(html: string): string | null {
   const match = html.match(/<img[^>]+(?:src|data-src)=["']([^"']+)["']/i);
   return match?.[1] ? absoluteUrl(match[1]) : null;
@@ -128,7 +144,7 @@ async function searchPublicProducts(jan: string): Promise<SuperDeliveryProductSe
       janCode: detailJan,
       stock: findStock(text),
       exhibitState: /SOLD\s*OUT|完売|在庫なし/i.test(text) ? 3 : 2,
-      price: null,
+      price: findPrice(text),
       imageUrl: findImage(detailHtml),
       productUrl,
       raw: {
