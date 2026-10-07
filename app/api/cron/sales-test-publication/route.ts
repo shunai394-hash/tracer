@@ -15,7 +15,7 @@ export const maxDuration = 300;
 async function promoteGatePassedListings(selectedListingIds: string[]) {
   const shopify = await syncPublishedListingsToShopify(selectedListingIds);
   const publishedListingIds = shopify.listingIds;
-  const base = await publishPublishedListingsToBase(50, selectedListingIds);
+  const base = await publishPublishedListingsToBase(400, selectedListingIds);
   // NEWFIND is an independent promotion channel. BASE is optional and must not
   // become a hidden prerequisite for distributing a gate-passed TRACER product.
   const newfind = await Promise.all(
@@ -58,7 +58,7 @@ export async function GET(request: Request) {
       .from("demand_cj_products")
       .select("product_id")
       .not("product_id", "is", null)
-      .limit(200);
+      .limit(400);
     if (demandSupplyError) throw new Error(demandSupplyError.message);
 
     const { data: verifiedSupply, error: verifiedSupplyError } = await supabase
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
       .gt("inventory", 0)
       .not("product_id", "is", null)
       .order("last_verified_at", { ascending: false, nullsFirst: false })
-      .limit(200);
+      .limit(400);
     if (verifiedSupplyError) throw new Error(verifiedSupplyError.message);
 
     const verifiedSupplyIds = Array.from(new Set([
@@ -81,7 +81,7 @@ export async function GET(request: Request) {
     ]));
     if (verifiedSupplyIds.length > 0) await buildOpportunityIntelligence({ productIds: verifiedSupplyIds });
 
-    const supplySelected = await selectAndPublishSupplySalesTests(verifiedSupplyIds, 50);
+    const supplySelected = await selectAndPublishSupplySalesTests(verifiedSupplyIds, 400);
     const supplyDownstream = await promoteGatePassedListings(supplySelected.selectedListingIds);
 
     if (supplySelected.published > 0) {
@@ -103,12 +103,12 @@ export async function GET(request: Request) {
       .eq("pipeline_status", "ready")
       .not("product_id", "is", null)
       .order("fetched_at", { ascending: false })
-      .limit(10);
+      .limit(400);
     if (readyError) throw new Error(readyError.message);
     const candidateIds = (readyRows ?? []).map((row) => String(row.id));
     const marketProductIds = Array.from(new Set((readyRows ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)));
     if (marketProductIds.length > 0) await buildOpportunityIntelligence({ productIds: marketProductIds });
-    const decision = await selectAndPublishSalesTests(candidateIds, 50);
+    const decision = await selectAndPublishSalesTests(candidateIds, 400);
     const downstream = await promoteGatePassedListings(decision.selectedListingIds);
 
     if (cronRunId) await supabase.from("cron_runs").update({
