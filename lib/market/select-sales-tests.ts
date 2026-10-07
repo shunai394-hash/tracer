@@ -41,6 +41,7 @@ function validHttpUrl(value: unknown): boolean {
 export type SalesTestSelection = {
   published: number;
   publishedListingIds: string[];
+  selectedListingIds: string[];
   considered: number;
   rejected: Array<{ id: string; reasons: string[] }>;
 };
@@ -88,6 +89,7 @@ export async function selectAndPublishSalesTests(
     if (updateError) throw new Error(updateError.message);
   }
   const publishedListingIds: string[] = [];
+  const selectedListingIds: string[] = [];
   const eligible: Array<{
     bestseller: Record<string, unknown>;
     listing: Record<string, unknown>;
@@ -394,15 +396,15 @@ export async function selectAndPublishSalesTests(
       identity_confidence: item.listing.identity_confidence,
       contribution_profit: item.profit.contributionProfit,
       contribution_margin: item.profit.contributionMargin,
-      published: true,
+      published: false,
       selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:market", ...item.reasons],
       missing: [],
-      pipeline_stage: "PUBLISHED",
-      pipeline_status: "published",
-      pipeline_reason: SALES_TEST_GATE_PASSED,
+      pipeline_stage: "SELECTED",
+      pipeline_status: "selected",
+      pipeline_reason: "sales_test_selected_pending_shopify",
       pipeline_error: null,
       pipeline_updated_at: fetchedAt,
-      published_at: fetchedAt,
+      published_at: null,
       updated_at: fetchedAt,
     };
     const existing = await supabase.from("shop_listings").select("id").eq("slug", slug).maybeSingle();
@@ -420,10 +422,9 @@ export async function selectAndPublishSalesTests(
       await markPipeline(String(item.bestseller.id), "PRODUCT_CREATED", "failed", "shop_listing_upsert_failed", upsert.error.message);
       throw new Error(upsert.error.message);
     }
-    if (upsert.data?.id) publishedListingIds.push(String(upsert.data.id));
-    published += 1;
+    if (upsert.data?.id) selectedListingIds.push(String(upsert.data.id));
 
-    await markPipeline(String(item.bestseller.id), "PUBLISHED", "published", "shop_listing_created");
+    await markPipeline(String(item.bestseller.id), "SELECTED", "selected", "sales_test_selected_pending_shopify");
 
     await writeEvidence({
       productId,
@@ -432,7 +433,7 @@ export async function selectAndPublishSalesTests(
       source: "sales_test_selection",
       url: `/shop/${slug}`,
       fetchedAt,
-      fieldName: "shop_published",
+      fieldName: "sales_test_selected",
       fieldValue: "true",
       evidenceClass: "actual",
       confidence: 0.9,
@@ -440,5 +441,5 @@ export async function selectAndPublishSalesTests(
     });
   }
 
-  return { published, publishedListingIds, considered: (bestsellers ?? []).length, rejected: rejected.slice(0, 20) };
+  return { published, publishedListingIds, selectedListingIds, considered: (bestsellers ?? []).length, rejected: rejected.slice(0, 20) };
 }
