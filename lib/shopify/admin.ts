@@ -223,8 +223,8 @@ export async function setShopifyVariantInventory(input: { variantId: string; qua
   if (!level) throw new Error("shopify_inventory_location_not_found");
 
   const currentAvailable = level.quantities.find((q) => q.name === "available")?.quantity ?? 0;
-  const idempotencyKey = crypto.randomUUID();
-  const referenceDocumentUri = input.reference?.trim() || `tracer://shopify-inventory-sync/${variant.inventoryItem.id}/${idempotencyKey}`;
+  const referenceDocumentUri = input.reference?.trim() || `tracer://shopify-inventory-sync/${variant.inventoryItem.id}`;
+  const idempotencyKey = crypto.createHash("sha256").update(referenceDocumentUri).digest("hex").slice(0, 64);
 
   const result = await shopifyGraphQL<{
     inventorySetQuantities: {
@@ -254,6 +254,40 @@ export async function setShopifyVariantInventory(input: { variantId: string; qua
 
   if (result.inventorySetQuantities.userErrors.length) {
     throw new Error(result.inventorySetQuantities.userErrors.map((error) => error.message).join("; "));
+  }
+
+  const verified = await shopifyGraphQL<{
+    productVariant: {
+      inventoryItem: {
+        inventoryLevels: {
+          nodes: Array<{
+            location: { id: string };
+            quantities: Array<{ name: string; quantity: number }>;
+          }>;
+        };
+      };
+    } | null;
+  }>(
+    `query VerifyVariantInventory($id: ID!) {
+      productVariant(id: $id) {
+        inventoryItem {
+          inventoryLevels(first: 50) {
+            nodes {
+              location { id }
+              quantities(names: ["available"]) { name quantity }
+            }
+          }
+        }
+      }
+    }`,
+    { id: input.variantId },
+  );
+  const verifiedLevel = verified.productVariant?.inventoryItem.inventoryLevels.nodes.find(
+    (node) => node.location.id === level.location.id,
+  );
+  const verifiedQuantity = verifiedLevel?.quantities.find((q) => q.name === "available")?.quantity;
+  if (verifiedQuantity !== quantity) {
+    throw new Error(`shopify_inventory_verification_failed:expected=${quantity},actual=${verifiedQuantity ?? "missing"}`);
   }
 }
 
