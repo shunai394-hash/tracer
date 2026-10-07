@@ -201,8 +201,11 @@ export async function selectAndPublishSalesTests(
       ["inventory", supplierCapabilities.inventory],
       ["price", supplierCapabilities.price],
       ["shipping", supplierCapabilities.shipping],
+      ["orderPreflight", supplierCapabilities.orderPreflight],
       ["orderCreation", supplierCapabilities.orderCreation],
       ["payment", supplierCapabilities.payment],
+      ["orderStatus", supplierCapabilities.orderStatus],
+      ["tracking", supplierCapabilities.tracking],
       ["liveOrdering", supplierCapabilities.liveOrdering],
     ] as const;
     const missingSupplierCapabilities = requiredCapabilities
