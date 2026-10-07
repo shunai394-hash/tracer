@@ -3,6 +3,7 @@ import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-d
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
+import { syncPublishedListingsToShopify } from "@/lib/shopify/sync";
 import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
 import { requireCronAuth } from "@/lib/security/cron-auth";
 
@@ -52,8 +53,9 @@ export async function POST(request: NextRequest) {
     const opportunity = await buildOpportunityIntelligence();
     const selected = await selectAndPublishSalesTests(candidateIds, 3);
 
+    const shopify = await syncPublishedListingsToShopify(selected.selectedListingIds);
     const newfind = await Promise.all(
-      selected.publishedListingIds.map((listingId) =>
+      shopify.listingIds.map((listingId) =>
         promoteShopListingToNewfind(listingId).catch((error) => ({
           configured: true,
           sent: false,
@@ -71,9 +73,10 @@ export async function POST(request: NextRequest) {
       elapsedMs: Date.now() - startedAt,
       supplierInvestigation: suppliers,
       decision: selected,
+      shopify,
       newfind,
       publication: {
-        publishedNow: selected.published,
+        publishedNow: shopify.listingIds.length,
         existingPublishedListingsPreserved: true,
         candidateBatchSize: candidateIds.length,
         candidateBatchLimited: candidatePool.length > candidateIds.length,
