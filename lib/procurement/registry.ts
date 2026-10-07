@@ -8,7 +8,11 @@ const adapters = new Map<string, TracerSupplierAdapter>();
 export function registerSupplierAdapter(
   adapter: TracerSupplierAdapter,
 ): void {
-  adapters.set(adapter.name, adapter);
+  const normalized = normalizeSupplierName(adapter.name);
+  // CJ/CJDropshipping is permanently excluded from TRACER procurement.
+  // Even if a stale module attempts to register it, the registry must fail closed.
+  if (normalized === "cj") return;
+  adapters.set(normalized, adapter);
 }
 
 function normalizeSupplierName(value: string): string {
