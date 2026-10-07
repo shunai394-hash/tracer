@@ -1,10 +1,8 @@
-name: TRACER Production Deploy (CLI)
+name: TRACER Production Deploy (BASE + Shopify)
 
 on:
   push:
     branches: ["main"]
-    paths-ignore:
-      - ".github/workflows/tracer-vercel-production.yml"
 
 permissions:
   contents: read
@@ -19,44 +17,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Vercel CLI
-        run: npm install -g vercel@58.0.0
-
-      - name: Link project
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Production deployment
         run: |
-          set -euo pipefail
-          test -n "${VERCEL_TOKEN:?VERCEL_TOKEN GitHub secret is required}"
-          vercel link --yes --project tracer --scope shunai394-9704s-projects
-
-      - name: Pull production environment
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: vercel pull --yes --environment=production --scope shunai394-9704s-projects
-
-      - name: Build production
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: vercel build --prod --scope shunai394-9704s-projects
-
-      - name: Deploy production
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: vercel deploy --prebuilt --prod --yes --scope shunai394-9704s-projects
-
-      - name: Verify production commit
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          set -euo pipefail
-          expected="${GITHUB_SHA}"
-          for i in $(seq 1 20); do
-            echo "attempt $i: waiting for production commit $expected"
-            body="$(curl -sS --max-time 60 https://tracer-self.vercel.app/api/intelligence/pipeline-audit || true)"
-            actual="$(printf '%s' "$body" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' 2>/dev/null || true)"
-            echo "production=$actual expected=$expected"
-            if [ "$actual" = "$expected" ]; then exit 0; fi
-            sleep 10
-          done
-          exit 1
+          echo "TRACER production deployment is managed by the connected Vercel Git integration."
+          echo "Commit: ${GITHUB_SHA}"
+          echo "This workflow intentionally does not target tracer-self.vercel.app or use VERCEL_TOKEN."
