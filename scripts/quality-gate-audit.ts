@@ -11,6 +11,8 @@ const checks = [
   ["Shopify final CJ supplier safety boundary", "lib/shopify/sync-published-listings.ts", '!/^(cj|cjdropshipping)$/i.test(String(row.supplier_name ?? "").trim())'],
   ["Shopify Japanese title boundary", "lib/shopify/sync-published-listings.ts", "isJapaneseProductTitle(row.title)"],
   ["Orosy live order fail-closed", "lib/procurement/orosy-adapter.ts", "OROSY_ORDER_BLOCKED_CART_STATE"],
+  ["Orosy live order preflight", "lib/procurement/orosy-adapter.ts", "OROSY_ORDER_PREFLIGHT_PASSED"],
+  ["Orosy variant live revalidation", "lib/procurement/orosy-adapter.ts", "OROSY_LIVE_STOCK_GATE_FAILED"],
   ["Shopify storefront store", "lib/shop/store.ts", "shopify_sync_status"],
   ["Shopify storefront publication filter", "lib/shop/store.ts", "shopify_product_id"],
   ["Shopify storefront inventory filter", "lib/shop/store.ts", '.gt("inventory", 0)'],
