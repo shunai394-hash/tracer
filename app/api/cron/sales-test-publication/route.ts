@@ -15,11 +15,11 @@ export const maxDuration = 300;
 async function promoteGatePassedListings(selectedListingIds: string[]) {
   const shopify = await syncPublishedListingsToShopify(selectedListingIds);
   const publishedListingIds = shopify.listingIds;
-  const base = await publishPublishedListingsToBase(10, publishedListingIds);
+  const base = await publishPublishedListingsToBase(10, selectedListingIds);
   // NEWFIND is an independent promotion channel. BASE is optional and must not
   // become a hidden prerequisite for distributing a gate-passed TRACER product.
   const newfind = await Promise.all(
-    publishedListingIds.map((listingId) => promoteShopListingToNewfind(listingId).catch((error) => ({
+    selectedListingIds.map((listingId) => promoteShopListingToNewfind(listingId).catch((error) => ({
       configured: true,
       sent: false,
       eventId: `tracer-shop-listing:${listingId}`,
