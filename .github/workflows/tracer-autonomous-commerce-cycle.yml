@@ -67,5 +67,10 @@ jobs:
           for pass in 1 2 3 4; do
             call "/api/cron/shopify-publish" 300 "shopify-reconcile-$pass.json"
           done
-          call "/api/cron/base-publish" 300 base-reconcile.json
+          # Drain the existing BASE catalog in bounded passes. The publisher
+          # prioritizes already-linked BASE items, so these passes repair legacy
+          # English copy before moving on to new publications.
+          for pass in 1 2 3 4; do
+            call "/api/cron/base-publish" 300 "base-reconcile-$pass.json"
+          done
           call "/api/cron/dropship-execution" 300 dropship.json
