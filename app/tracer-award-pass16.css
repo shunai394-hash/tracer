@@ -54,3 +54,6 @@ main :where(input,select,textarea){accent-color:#67e8f9} main :where(input,selec
 
 /* Quality loop 08 — responsive art direction: Tune wide and narrow breakpoints so the composition remains intentional rather than stretched. */
 @media(min-width:1600px){main{padding-inline:max(0px,2vw)} main > section{max-width:1680px;margin-inline:auto}} @media(max-width:480px){main{word-break:normal} main h1{font-size:clamp(2.8rem,15vw,4.4rem)}}
+
+/* Quality loop 09 — motion/accessibility audit: Strengthen reduced-motion and forced-colors behavior and remove effects that can overwhelm users. */
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-delay:0s!important;transition-delay:0s!important}} @media(forced-colors:active){*:focus-visible{outline:2px solid CanvasText!important;box-shadow:none!important}}
