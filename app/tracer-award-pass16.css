@@ -36,3 +36,6 @@ main :where(a,button,[role="button"],input,select,textarea){-webkit-tap-highligh
 
 /* Quality loop 02 — mobile composition: Prevent horizontal spill, preserve header hierarchy, and improve compact navigation spacing. */
 html,body{max-width:100%;overflow-x:clip} main{min-width:0} header{contain:layout paint} @media(max-width:639px){header .tracer-nav-scroll{max-width:100vw} #mobile-navigation{max-width:100%;overflow-x:clip}}
+
+/* Quality loop 03 — reading rhythm: Tighten long-form measure and vertical rhythm so editorial copy scans like a premium publication. */
+main p{max-inline-size:72ch} main :where(h1,h2,h3){overflow-wrap:break-word} main :where(li,p){line-height:1.65} @media(min-width:1024px){main p{line-height:1.72}}
