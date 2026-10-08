@@ -24,7 +24,7 @@ async function ensureJapaneseCatalogCopy(title: string, detail: string): Promise
   const result = await generateStructuredJson<JapaneseCatalogCopy>({
     systemInstruction: "あなたは日本のEC商品編集者です。入力された商品情報を日本語の販売用コピーへ変換してください。商品名と説明は必ず日本語にしてください。英語の固有名詞・型番・規格・ブランド名は必要な場合だけ残してください。存在しない仕様や数値を追加しないでください。titleは簡潔で自然な日本語の商品名、detailは購入判断に必要な特徴を読みやすい日本語でまとめてください。JSONのみ返してください。",
     prompt: JSON.stringify({ title: sourceTitle, detail: sourceDetail }),
-    timeoutMs: 12_000,
+    timeoutMs: 8_000,
   });
   const translatedTitle = String(result?.title ?? "").trim();
   const translatedDetail = String(result?.detail ?? "").trim();
@@ -44,7 +44,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   const supabase = createSupabaseAdminClient();
   let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons").or("published.eq.true,base_item_id.not.is.null,pipeline_status.eq.selected");
   if (listingIds && listingIds.length > 0) query = query.in("id", Array.from(new Set(listingIds)));
-  const { data: listings, error } = await query.order("base_item_id", { ascending: true, nullsFirst: true }).order("created_at", { ascending: false }).limit(limit);
+  const { data: listings, error } = await query.order("base_item_id", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }).limit(limit);
   if (error) throw new Error(error.message);
 
   const results: BasePublicationResult["results"] = [];
