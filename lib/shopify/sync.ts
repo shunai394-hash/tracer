@@ -14,7 +14,7 @@ export type ShopifySyncResult = {
 export async function syncPublishedListingsToShopify(listingIds?: string[]): Promise<ShopifySyncResult> {
   if (!isShopifyConfigured()) return { configured: false, attempted: 0, synced: 0, failed: [], listingIds: [] };
 
-  const result = await syncCanonicalShopifyListings(100, listingIds);
+  const result = await syncCanonicalShopifyListings(150, listingIds);
   return {
     configured: result.configured,
     attempted: result.considered,
