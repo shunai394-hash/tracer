@@ -32,11 +32,19 @@ async function buildOpportunityInBatches(productIds: string[], batchSize = 15) {
 }
 
 async function promoteGatePassedListings(selectedListingIds: string[]) {
-  const shopify = await syncPublishedListingsToShopify(selectedListingIds);
+  // Delivery channels are independent: a Shopify/BASE outage must not suppress
+  // NEWFIND promotion or change the canonical TRACER publication result.
+  const shopify = await syncPublishedListingsToShopify(selectedListingIds).catch((error) => ({
+    ok: false,
+    listingIds: [] as string[],
+    error: error instanceof Error ? error.message : String(error),
+  }));
   const publishedListingIds = shopify.listingIds;
-  const base = await publishPublishedListingsToBase(400, selectedListingIds);
-  // NEWFIND is an independent promotion channel. BASE is optional and must not
-  // become a hidden prerequisite for distributing a gate-passed TRACER product.
+  const base = await publishPublishedListingsToBase(400, selectedListingIds).catch((error) => ({
+    ok: false,
+    results: [] as Array<{ ok: boolean; baseItemId?: string | null; listingId: string; error?: string }>,
+    error: error instanceof Error ? error.message : String(error),
+  }));
   const newfind = await Promise.all(
     selectedListingIds.map((listingId) => promoteShopListingToNewfind(listingId).catch((error) => ({
       configured: true,
@@ -47,7 +55,13 @@ async function promoteGatePassedListings(selectedListingIds: string[]) {
       detail: error instanceof Error ? error.message : String(error),
     }))),
   );
-  return { shopify, publishedListingIds, base, baseReady: base.results.filter((result) => result.ok && result.baseItemId).map((result) => result.listingId), newfind };
+  return {
+    shopify,
+    publishedListingIds,
+    base,
+    baseReady: base.results.filter((result) => result.ok && result.baseItemId).map((result) => result.listingId),
+    newfind,
+  };
 }
 
 export async function GET(request: Request) {
@@ -104,15 +118,36 @@ export async function GET(request: Request) {
     const supplySelected = await selectAndPublishSupplySalesTests(verifiedSupplyIds, 400);
 
     if (supplySelected.published > 0) {
+      const downstream = await promoteGatePassedListings(supplySelected.selectedListingIds);
       if (cronRunId) await supabase.from("cron_runs").update({
         status: "succeeded",
         finished_at: new Date().toISOString(),
         duration_ms: Date.now() - startedAt,
         processed: supplySelected.considered,
         failed: 0,
-        metadata: { phase: "sales_test_publication", mode: "canonical_supply_fast_path", considered: supplySelected.considered, published: supplySelected.published },
+        metadata: {
+          phase: "sales_test_publication",
+          mode: "canonical_supply_fast_path",
+          considered: supplySelected.considered,
+          published: supplySelected.published,
+          downstream: {
+            selected: supplySelected.selectedListingIds.length,
+            shopifyOk: downstream.shopify.ok !== false,
+            shopifyError: "error" in downstream.shopify ? downstream.shopify.error : null,
+            baseOk: downstream.base.ok !== false,
+            baseError: "error" in downstream.base ? downstream.base.error : null,
+            newfindSent: downstream.newfind.filter((item) => item.sent).length,
+          },
+        },
       }).eq("id", cronRunId);
-      return NextResponse.json({ ok: true, phase: "sales_test_publication", elapsedMs: Date.now() - startedAt, mode: "canonical_supply_fast_path", supplySelected, nextPhase: "downstream_delivery" });
+      return NextResponse.json({
+        ok: true,
+        phase: "sales_test_publication",
+        elapsedMs: Date.now() - startedAt,
+        mode: "canonical_supply_fast_path",
+        supplySelected,
+        downstream,
+      });
     }
 
     const { data: readyRows, error: readyError } = await supabase
