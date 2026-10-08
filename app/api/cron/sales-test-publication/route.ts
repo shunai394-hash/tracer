@@ -12,6 +12,25 @@ import { syncPublishedListingsToShopify } from "@/lib/shopify/sync";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+async function buildOpportunityInBatches(productIds: string[], batchSize = 50) {
+  const ids = Array.from(new Set(productIds.filter(Boolean)));
+  let processed = 0;
+  let upserted = 0;
+  let testReady = 0;
+  let rejected = 0;
+  for (let i = 0; i < ids.length; i += batchSize) {
+    const result = await buildOpportunityIntelligence({
+      productIds: ids.slice(i, i + batchSize),
+      batchSize,
+    });
+    processed += result.processed;
+    upserted += result.upserted;
+    testReady += result.testReady;
+    rejected += result.rejected;
+  }
+  return { processed, upserted, testReady, rejected };
+}
+
 async function promoteGatePassedListings(selectedListingIds: string[]) {
   const shopify = await syncPublishedListingsToShopify(selectedListingIds);
   const publishedListingIds = shopify.listingIds;
@@ -79,7 +98,7 @@ export async function GET(request: Request) {
       ...(demandSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
       ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
     ]));
-    if (verifiedSupplyIds.length > 0) await buildOpportunityIntelligence({ productIds: verifiedSupplyIds });
+    if (verifiedSupplyIds.length > 0) await buildOpportunityInBatches(verifiedSupplyIds, 50);
 
     const supplySelected = await selectAndPublishSupplySalesTests(verifiedSupplyIds, 400);
     const supplyDownstream = await promoteGatePassedListings(supplySelected.selectedListingIds);
@@ -107,7 +126,7 @@ export async function GET(request: Request) {
     if (readyError) throw new Error(readyError.message);
     const candidateIds = (readyRows ?? []).map((row) => String(row.id));
     const marketProductIds = Array.from(new Set((readyRows ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)));
-    if (marketProductIds.length > 0) await buildOpportunityIntelligence({ productIds: marketProductIds });
+    if (marketProductIds.length > 0) await buildOpportunityInBatches(marketProductIds, 50);
     const decision = await selectAndPublishSalesTests(candidateIds, 400);
     const downstream = await promoteGatePassedListings(decision.selectedListingIds);
 
