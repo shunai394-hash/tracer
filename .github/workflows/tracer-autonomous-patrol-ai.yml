@@ -20,10 +20,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          OIDC_TOKEN=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://tracer-naito3087.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
+          OIDC_TOKEN=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://tracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
           RESPONSE=$(curl -sS -w "\n%{http_code}" --max-time 55 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
-            "https://tracer-naito3087.vercel.app/api/cron/patrol-ai")
+            "https://tracer-pied-alpha.vercel.app/api/cron/patrol-ai")
           BODY=$(printf "%s" "$RESPONSE" | sed '$d')
           CODE=$(printf "%s" "$RESPONSE" | tail -n 1)
           echo "=== TRACER AUTONOMOUS PATROL AI ==="
