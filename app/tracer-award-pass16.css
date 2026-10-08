@@ -39,3 +39,6 @@ html,body{max-width:100%;overflow-x:clip} main{min-width:0} header{contain:layou
 
 /* Quality loop 03 — reading rhythm: Tighten long-form measure and vertical rhythm so editorial copy scans like a premium publication. */
 main p{max-inline-size:72ch} main :where(h1,h2,h3){overflow-wrap:break-word} main :where(li,p){line-height:1.65} @media(min-width:1024px){main p{line-height:1.72}}
+
+/* Quality loop 04 — rendering restraint: Contain decorative layers and long lists to reduce paint cost without changing the visual language. */
+main img{content-visibility:auto} main table tbody{contain:layout paint} @media(min-width:768px){main > section{contain:paint}} @media(max-width:767px){main > section{contain:layout}}
