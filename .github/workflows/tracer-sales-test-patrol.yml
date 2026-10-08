@@ -45,6 +45,15 @@ jobs:
           print(json.dumps(d, ensure_ascii=False, indent=2)[:30000])
           PY
           fi
+          echo "=== DEMAND MATCH ==="
+          T="$(token)"
+          curl -sSf --max-time 120 -H "Authorization: Bearer $T" "$BASE/api/cron/demand-match" > demand-match.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open("demand-match.json"))
+          print(json.dumps(d, ensure_ascii=False, indent=2)[:30000])
+          PY
+
           for pass in 1 2 3 4 5 6 7 8 9 10; do
             echo "=== SALES TEST PUBLICATION PASS $pass/10 ==="
             curl -sS --fail --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/sales-test-publication" > sales.json
