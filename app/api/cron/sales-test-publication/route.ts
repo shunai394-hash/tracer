@@ -132,9 +132,9 @@ export async function GET(request: Request) {
           published: supplySelected.published,
           downstream: {
             selected: supplySelected.selectedListingIds.length,
-            shopifyOk: downstream.shopify.ok !== false,
+            shopifyOk: !("error" in downstream.shopify),
             shopifyError: "error" in downstream.shopify ? downstream.shopify.error : null,
-            baseOk: downstream.base.ok !== false,
+            baseOk: !("error" in downstream.base),
             baseError: "error" in downstream.base ? downstream.base.error : null,
             newfindSent: downstream.newfind.filter((item) => item.sent).length,
           },
