@@ -36,3 +36,5 @@ jobs:
           T="$(token)"
           echo "=== FINAL SALES TEST PUBLICATION ==="
           curl -sSf --max-time 300 -H "Authorization: Bearer $T" "$BASE/api/cron/sales-test-publication"
+
+# rerun marker
