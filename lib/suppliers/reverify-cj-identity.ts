@@ -40,7 +40,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const { count: candidateCount, error: countError } = await candidateFilter;
   if (countError) throw new Error(`identity reverify candidate count failed: ${countError.message}`);
   const total = candidateCount ?? 0;
-  const { data: rows, error } = await db.from("supplier_listings").select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,updated_at").eq("supplier", "cj").in("verification_status", ["unverified", "retryable"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_variant_id", "is", null).order("id", { ascending: true });
+  const { data: rows, error } = await db.from("supplier_listings").select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status").eq("supplier", "cj").in("verification_status", ["unverified", "retryable"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_variant_id", "is", null).order("id", { ascending: true });
   if (error) throw new Error(`identity reverify candidate query failed: ${error.message}`);
   const allRows = rows ?? [];
   const womensRows = allRows.filter((row) => isWomensProductTitle(row.title, row.metadata));
