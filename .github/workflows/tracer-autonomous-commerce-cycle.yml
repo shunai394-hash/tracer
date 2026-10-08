@@ -48,8 +48,8 @@ jobs:
           PY
           }
 
-          echo "Wait for the current production deployment to settle."
-          sleep 90
+          echo "Wait briefly for the current production deployment to settle; start the 1000-product publication cycle immediately."
+          sleep 15
 
           # Publish already-verified supply BEFORE slow discovery/enrichment.
           call "/api/cron/sales-test-publication" 300 publish-first.json
