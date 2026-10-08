@@ -91,7 +91,7 @@ export async function GET(request: Request) {
       .gt("inventory", 0)
       .not("product_id", "is", null)
       .order("last_verified_at", { ascending: false, nullsFirst: false })
-      .limit(400);
+      .limit(1000);
     if (verifiedSupplyError) throw new Error(verifiedSupplyError.message);
 
     const verifiedSupplyIds = Array.from(new Set([
