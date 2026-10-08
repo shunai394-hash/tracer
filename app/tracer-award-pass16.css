@@ -42,3 +42,6 @@ main p{max-inline-size:72ch} main :where(h1,h2,h3){overflow-wrap:break-word} mai
 
 /* Quality loop 04 — rendering restraint: Contain decorative layers and long lists to reduce paint cost without changing the visual language. */
 main img{content-visibility:auto} main table tbody{contain:layout paint} @media(min-width:768px){main > section{contain:paint}} @media(max-width:767px){main > section{contain:layout}}
+
+/* Quality loop 05 — interaction craft: Add restrained hover/active transitions that communicate direction without gratuitous motion. */
+main a,main button{will-change:auto} main a:active,main button:active{transition-duration:120ms} main :where(a,button):not([aria-disabled="true"]):hover{transition-timing-function:var(--tracer-ease-silk)}
