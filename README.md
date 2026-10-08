@@ -157,3 +157,5 @@ For a specific batch, use the sourcing decision endpoint with authenticated acce
 <!-- publication patrol trigger 2026-10-08T16:33:24.527Z -->
 
 <!-- publish-cj-now-retrigger: 2026-10-09 -->
+
+<!-- 1000-product patrol 2026-10-08T16:42:54.142Z [publish-cj-now] -->
