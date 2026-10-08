@@ -27,7 +27,9 @@ jobs:
           BASE="https://tracer-self.vercel.app"
 
           token() {
-            curl -sSf               -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"               "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-naito3087.vercel.app" |
+            curl -sSf \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
 
@@ -36,7 +38,9 @@ jobs:
             local max_time="$2"
             local out="$3"
             local code
-            code=$(curl -sS -o "$out" -w "%{http_code}" --max-time "$max_time"               -H "Authorization: Bearer $(token)"               "$BASE$path")
+            code=$(curl -sS -o "$out" -w "%{http_code}" --max-time "$max_time" \
+              -H "Authorization: Bearer $(token)" \
+              "$BASE$path")
             echo "=== $path HTTP $code ==="
             python3 - "$out" <<'PY'
           import json, sys
@@ -54,22 +58,9 @@ jobs:
           echo "Waiting for the production deployment to pick up the main commit..."
           sleep 90
           call "/api/cron/orosy-bulk-import" 300 orosy.json
-          # Refresh marketplace evidence before the AI/Gate cycle so demand and
-          # supply selection are not repeatedly working from a stale cursor.
           call "/api/cron/market-sourcing" 90 market-sourcing.json
           call "/api/cron/intelligence" 300 intelligence.json
           call "/api/cron/sales-test-publication" 300 sales.json
-          # Reconcile the existing catalog too: Japanese copy is canonical before
-          # either downstream storefront is allowed to remain published.
-          # A single sync pass is bounded to 150 listings. Run four passes so
-          # the autonomous cycle drains the full backlog instead of leaving the
-          # catalog stranded after the first page.
-          for pass in 1 2 3 4; do
-            call "/api/cron/shopify-publish" 300 "shopify-reconcile-$pass.json"
-          done
-          # Drain the existing BASE catalog in bounded passes. The publisher
-          # prioritizes already-linked BASE items, so these passes repair legacy
-          # English copy before moving on to new publications.
           for pass in 1 2 3 4; do
             call "/api/cron/base-publish" 300 "base-reconcile-$pass.json"
           done
