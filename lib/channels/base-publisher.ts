@@ -19,7 +19,7 @@ type JapaneseCatalogCopy = { title: string; detail: string; };
 async function ensureJapaneseCatalogCopy(title: string, detail: string): Promise<JapaneseCatalogCopy> {
   const sourceTitle = String(title ?? "").trim();
   const sourceDetail = String(detail ?? "").trim();
-  if (isJapaneseProductTitle(sourceTitle) && /[ぁ-んァ-ヶ一-龯々〆ヵー]/.test(sourceDetail)) return { title: sourceTitle, detail: sourceDetail };
+  if (isJapaneseProductTitle(sourceTitle) && hasUsableJapaneseCopy(sourceDetail)) return { title: sourceTitle, detail: sourceDetail };
   if (!isGeminiConfigured()) throw new Error("BASE japanese catalog copy requires GEMINI_API_KEY");
   const result = await generateStructuredJson<JapaneseCatalogCopy>({
     systemInstruction: "あなたは日本のEC商品編集者です。入力された商品情報を日本語の販売用コピーへ変換してください。商品名と説明は必ず日本語にしてください。英語の固有名詞・型番・規格・ブランド名は必要な場合だけ残してください。存在しない仕様や数値を追加しないでください。titleは簡潔で自然な日本語の商品名、detailは購入判断に必要な特徴を読みやすい日本語でまとめてください。JSONのみ返してください。",
@@ -29,8 +29,17 @@ async function ensureJapaneseCatalogCopy(title: string, detail: string): Promise
   const translatedTitle = String(result?.title ?? "").trim();
   const translatedDetail = String(result?.detail ?? "").trim();
   if (!isJapaneseProductTitle(translatedTitle)) throw new Error("BASE japanese catalog copy returned a non-Japanese title");
-  if (!translatedDetail || !/[ぁ-んァ-ヶ一-龯々〆ヵー]/.test(translatedDetail)) throw new Error("BASE japanese catalog copy returned a non-Japanese description");
+  if (!hasUsableJapaneseCopy(translatedDetail)) throw new Error("BASE japanese catalog copy returned an English-heavy description");
   return { title: translatedTitle, detail: translatedDetail };
+}
+
+function hasUsableJapaneseCopy(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const text = value.normalize("NFKC").trim();
+  if (!text || !/[ぁ-んァ-ヶ一-龯々〆ヵー]/.test(text)) return false;
+  const japanese = (text.match(/[ぁ-んァ-ヶ一-龯々〆ヵー]/g) ?? []).length;
+  const latin = (text.match(/[A-Za-z]/g) ?? []).length;
+  return latin <= Math.max(12, japanese * 1.5);
 }
 
 function validHttpUrl(value: unknown): boolean {
