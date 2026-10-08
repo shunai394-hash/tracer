@@ -169,6 +169,7 @@ export async function discoverAndCreateCjSupply(
   const items: Array<Record<string, unknown>> = [];
   let discovered = 0;
   let verified = 0;
+  let catalogDiscovered = 0;
   let rejected = 0;
 
   // Reuse previously discovered CJ IDs first. These rows are only candidates;
@@ -436,8 +437,6 @@ export async function discoverAndCreateCjSupply(
     }
   }
 
-  // Never let re-verification of already-known products consume the entire run.\n  // The remaining budget is reserved for genuinely new CJ catalog products.\n  if (limit <= seededVerificationLimit && verified >= limit) return { discovered, published: 0, verified, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
-
   // Seeded verification is only one source of candidates. If all seeded
   // variants fail live Japan-freight verification, continue into the live CJ
   // catalog instead of stopping with zero new products.
@@ -449,7 +448,7 @@ export async function discoverAndCreateCjSupply(
   let page = cursor.page;
   let pagesScanned = 0;
   const seenSearchProducts = new Set<string>();
-  while (verified < limit && pagesScanned < queries.length * 2) {
+  while (catalogDiscovered < limit && pagesScanned < queries.length * 2) {
     if (Date.now() >= deadlineAt) {
       deadlineReached = true;
       break;
@@ -470,7 +469,7 @@ export async function discoverAndCreateCjSupply(
     const pageNumber = page;
     let pageCompleted = true;
     for (const candidate of search.products.map((x) => ({ ...x, variantId: null as string | null }))) {
-      if (verified >= limit || Date.now() >= deadlineAt) {
+      if (catalogDiscovered >= limit || Date.now() >= deadlineAt) {
         if (Date.now() >= deadlineAt) deadlineReached = true;
         pageCompleted = false;
         break;
@@ -635,6 +634,7 @@ export async function discoverAndCreateCjSupply(
         });
         discovered++;
         verified++;
+        catalogDiscovered++;
         items.push({
           productId,
           supplierListingId,
