@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BASE="https://tracer-pied-alpha.vercel.app"
+          BASE="https://tracer-self.vercel.app"
 
           token() {
             curl -sSf --max-time 20               -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"               "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
