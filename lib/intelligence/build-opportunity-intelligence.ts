@@ -1740,7 +1740,7 @@ export async function buildOpportunityIntelligence(options: {
   // trips per product, so ~1,000 products could not finish inside the 300s
   // patrol and TEST_READY was never produced. Rows are grouped by identical
   // column sets so a bulk upsert never nulls a column a payload omitted.
-  const CHUNK = 200;
+  const CHUNK = 40;
   const idByProduct = new Map<string, string>();
   const groups = new Map<string, typeof computed>();
   // One row per product: a bulk upsert cannot touch the same key twice.
