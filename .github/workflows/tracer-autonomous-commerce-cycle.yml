@@ -59,6 +59,11 @@ jobs:
           sleep 90
           call "/api/cron/orosy-bulk-import" 300 orosy.json
           call "/api/cron/market-sourcing" 90 market-sourcing.json
+          # Supplier verification is a required stage before intelligence/publication.
+          # Run two passes per cycle so the 4,550 pending market candidates are actually
+          # drained instead of waiting for the separate daily supplier cron.
+          call "/api/cron/supplier-investigation" 240 supplier-investigation-1.json
+          call "/api/cron/supplier-investigation" 240 supplier-investigation-2.json
           call "/api/cron/intelligence" 300 intelligence.json
           call "/api/cron/sales-test-publication" 300 sales.json
           for pass in 1 2 3 4; do
