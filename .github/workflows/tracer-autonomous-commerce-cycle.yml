@@ -59,7 +59,6 @@ jobs:
           sleep 90
           call "/api/cron/orosy-bulk-import" 300 orosy.json
           call "/api/cron/market-sourcing" 90 market-sourcing.json
-          call "/api/cron/supply-first" 300 supply-first.json
           call "/api/cron/intelligence" 300 intelligence.json
           call "/api/cron/sales-test-publication" 300 sales.json
           for pass in 1 2 3 4; do
