@@ -61,6 +61,7 @@ function mapListing(row: Record<string, unknown>): ShopListing {
     supplierName: typeof row.supplier_name === "string" ? row.supplier_name : null,
     supplierProductId: row.supplier_product_id ? String(row.supplier_product_id) : null,
     supplierVariantId: row.supplier_variant_id ? String(row.supplier_variant_id) : null,
+    shopifyVariantId: row.shopify_variant_id ? String(row.shopify_variant_id) : null,
     shopifyProductId: row.shopify_product_id ? String(row.shopify_product_id) : null,
     shopifyHandle: typeof row.shopify_handle === "string" ? row.shopify_handle : null,
     shopifySyncStatus: typeof row.shopify_sync_status === "string" ? row.shopify_sync_status : null,
@@ -116,7 +117,7 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
 
   const staleSoldOut = listings.filter((listing) => {
     const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : null;
-    return live !== null && live <= 0;
+    return live !== undefined && live <= 0;
   });
 
   if (staleSoldOut.length > 0) {
