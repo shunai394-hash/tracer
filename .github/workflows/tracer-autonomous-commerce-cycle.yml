@@ -58,6 +58,11 @@ jobs:
           call "/api/cron/sales-test-publication" 300 sales.json
           # Reconcile the existing catalog too: Japanese copy is canonical before
           # either downstream storefront is allowed to remain published.
-          call "/api/cron/shopify-publish" 300 shopify-reconcile.json
+          # A single sync pass is bounded to 150 listings. Run four passes so
+          # the autonomous cycle drains the full backlog instead of leaving the
+          # catalog stranded after the first page.
+          for pass in 1 2 3 4; do
+            call "/api/cron/shopify-publish" 300 "shopify-reconcile-$pass.json"
+          done
           call "/api/cron/base-publish" 300 base-reconcile.json
           call "/api/cron/dropship-execution" 300 dropship.json
