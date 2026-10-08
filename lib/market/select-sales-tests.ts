@@ -337,7 +337,7 @@ export async function selectAndPublishSalesTests(
     const id = String(item.bestseller.id);
     if (!chosenIds.has(id)) await markPipeline(id, "SALES_TEST", "blocked", "sales_test_limit");
   }
-  let published = 0;
+  const published = 0;
 
   for (const item of chosen) {
     const productId = String(item.bestseller.product_id ?? "");
