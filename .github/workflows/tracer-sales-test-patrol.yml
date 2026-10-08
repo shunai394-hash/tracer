@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
+      - name: Wait for production deployment
+        run: sleep 60
       - name: Run production intelligence and Sales Test Gate
         shell: bash
         env:
