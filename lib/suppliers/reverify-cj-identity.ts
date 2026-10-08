@@ -36,11 +36,11 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const db = createSupabaseAdminClient();
   const limit = Math.max(1, Math.min(options.limit ?? DEFAULT_LIMIT, MAX_LIMIT));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
-  const candidateFilter = db.from("supplier_listings").select("id", { count: "exact", head: true }).eq("supplier", "cj").in("verification_status", ["verified", "unverified", "retryable"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_variant_id", "is", null);
+  const candidateFilter = db.from("supplier_listings").select("id", { count: "exact", head: true }).eq("supplier", "cj").in("verification_status", ["unverified", "retryable"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_variant_id", "is", null);
   const { count: candidateCount, error: countError } = await candidateFilter;
   if (countError) throw new Error(`identity reverify candidate count failed: ${countError.message}`);
   const total = candidateCount ?? 0;
-  const { data: rows, error } = await db.from("supplier_listings").select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status").eq("supplier", "cj").in("verification_status", ["verified", "unverified", "retryable"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_variant_id", "is", null).order("id", { ascending: true });
+  const { data: rows, error } = await db.from("supplier_listings").select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,updated_at").eq("supplier", "cj").in("verification_status", ["verified", "unverified", "retryable"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_variant_id", "is", null).order("updated_at", { ascending: true, nullsFirst: true }).order("id", { ascending: true });
   if (error) throw new Error(`identity reverify candidate query failed: ${error.message}`);
   const allRows = rows ?? [];
   const womensRows = allRows.filter((row) => isWomensProductTitle(row.title, row.metadata));
@@ -48,11 +48,11 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const womenPriority = (row: typeof allRows[number]) => row.verification_status === "unverified" ? 0 : row.verification_status === "retryable" ? 1 : 2;
   womensRows.sort((a, b) => womenPriority(a) - womenPriority(b) || String(a.id).localeCompare(String(b.id)));
   otherRows.sort((a, b) => womenPriority(a) - womenPriority(b) || String(a.id).localeCompare(String(b.id)));
-  const womensOffset = womensRows.length > limit ? (Math.floor(Date.now() / 60_000) * limit) % womensRows.length : 0;
-  const selectedWomens = womensRows.length > 0 ? Array.from({ length: Math.min(limit, womensRows.length) }, (_, index) => womensRows[(womensOffset + index) % womensRows.length]) : [];
+  const womensOffset = 0;
+  const selectedWomens = womensRows.slice(0, Math.min(limit, womensRows.length));
   const remaining = Math.max(0, limit - selectedWomens.length);
-  const otherOffset = otherRows.length > remaining && remaining > 0 ? (Math.floor(Date.now() / 60_000) * remaining) % otherRows.length : 0;
-  const selectedOther = remaining > 0 && otherRows.length > 0 ? Array.from({ length: Math.min(remaining, otherRows.length) }, (_, index) => otherRows[(otherOffset + index) % otherRows.length]) : [];
+  const otherOffset = 0;
+  const selectedOther = remaining > 0 ? otherRows.slice(0, Math.min(remaining, otherRows.length)) : [];
   const selectedRows = [...selectedWomens, ...selectedOther];
   const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, errors: [], promotedListings: [], nextCursor: total > 0 ? String(selectedRows.at(-1)?.id ?? null) : null };
   const processRow = async (row: NonNullable<typeof rows>[number]) => {
@@ -62,18 +62,18 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const persistedBarcode = typeof listingMetadata.variant_barcode === "string" ? listingMetadata.variant_barcode.trim() : null;
       const variantBarcode = await readPersistableBarcode(String(row.supplier_product_id), String(row.supplier_variant_id), persistedBarcode);
       const identity = await resolveMarketplaceIdentity({ db, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } });
-      if (!identity) { if (variantBarcode) await db.from("supplier_listings").update({ metadata: { ...listingMetadata, variant_barcode: variantBarcode } }).eq("id", supplierListingId); return { kind: "no_match" as const, supplierListingId }; }
+      if (!identity) { await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), last_identity_reverify_at: new Date().toISOString() } }).eq("id", supplierListingId); return { kind: "no_match" as const, supplierListingId }; }
       const canonicalProductId = identity.productId;
       const { data: intelligence } = await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle();
       const metadata = record(intelligence?.metadata);
       const cost = num(row.cost); const shippingCost = num(row.shipping_cost); const inventory = num(row.inventory); const fxRate = num(metadata.fx_rate); const sellingPriceJpy = num(metadata.selling_price_jpy); const imageUrl = typeof intelligence?.image_url === "string" ? intelligence.image_url : "";
-      if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) { if (variantBarcode) await db.from("supplier_listings").update({ metadata: { ...listingMetadata, variant_barcode: variantBarcode } }).eq("id", supplierListingId); return { kind: "missing_economics" as const, supplierListingId }; }
+      if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) { await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), last_identity_reverify_at: new Date().toISOString() } }).eq("id", supplierListingId); return { kind: "missing_economics" as const, supplierListingId }; }
       await persistCjSupplyIntelligence({ productId: canonicalProductId, title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
       return { kind: "promoted" as const, supplierListingId, bestsellerId: identity.bestsellerId, method: identity.method };
     } catch (rowError) { return { kind: "error" as const, supplierListingId, error: rowError instanceof Error ? rowError.message : String(rowError) }; }
   };
   for (let offset = 0; offset < selectedRows.length; offset += CONCURRENCY) { if (Date.now() >= deadlineAt) break; const batch = selectedRows.slice(offset, offset + CONCURRENCY); const results = await Promise.all(batch.map(processRow)); for (const item of results) { result.checked += 1; if (item.kind === "promoted") { result.promoted += 1; result.promotedListings.push({ supplierListingId: item.supplierListingId, bestsellerId: item.bestsellerId, method: item.method }); } else if (item.kind === "no_match") result.noUniqueBarcodeMatch += 1; else if (item.kind === "missing_economics") result.missingEconomics += 1; else result.errors.push({ supplierListingId: item.supplierListingId, error: item.error }); } }
   const now = new Date().toISOString();
-  await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { rotationOffset: womensOffset, candidateCount: total, womensCandidates: womensRows.length, womensSelected: selectedWomens.length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, nextCursor: result.nextCursor, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
+  await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { rotationOffset: womensOffset, selectionStrategy: "oldest_updated_first", candidateCount: total, womensCandidates: womensRows.length, womensSelected: selectedWomens.length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, nextCursor: result.nextCursor, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
   return result;
 }
