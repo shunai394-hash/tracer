@@ -13,6 +13,8 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      - name: Wait for production deployment
+        run: sleep 60
       - name: Sync published TRACER listings to Shopify
         uses: actions/github-script@v7
         with:
