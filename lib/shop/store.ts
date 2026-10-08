@@ -13,6 +13,10 @@ function asNumber(value: unknown): number | null {
   return null;
 }
 
+function hasJapaneseText(value: unknown): boolean {
+  return typeof value === "string" && /[\\u3040-\\u30ff\\u3400-\\u9fff々ー]/u.test(value);
+}
+
 function asBoolean(value: unknown): boolean {
   return value === true;
 }
@@ -160,11 +164,12 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
     .gt("inventory", 0)
     .eq("tracking_available", true)
     .gt("selling_price", 0)
+    .eq("currency", "JPY")
     .order("published_at", { ascending: false })
     .limit(48);
 
   if (error) throw new Error(error.message);
-  const listings = await loadLiveListings((data ?? []) as Record<string, unknown>[]);
+  const listings = (await loadLiveListings((data ?? []) as Record<string, unknown>[])).filter((listing) => hasJapaneseText(listing.title));
   return listings
     .map((listing) => {
       const priority = womenProductPriority({ title: listing.title, category: listing.description });
@@ -191,7 +196,7 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
 
   if (error) throw new Error(error.message);
   if (!data) return null;
-  const listings = await loadLiveListings([data as Record<string, unknown>]);
+  const listings = (await loadLiveListings([data as Record<string, unknown>])).filter((listing) => hasJapaneseText(listing.title));
   return listings[0] ?? null;
 }
 
