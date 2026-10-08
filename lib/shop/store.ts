@@ -139,7 +139,7 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
 
   return listings
     .filter((listing) => {
-      const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : null;
+      const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : undefined;
       return live === undefined || live > 0;
     })
     .map((listing) => {
