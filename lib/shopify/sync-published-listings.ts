@@ -2,7 +2,6 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
-import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 
