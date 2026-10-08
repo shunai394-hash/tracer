@@ -98,10 +98,10 @@ export async function GET(request: Request) {
       ...(demandSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
       ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
     ]));
-    if (verifiedSupplyIds.length > 0) await buildOpportunityInBatches(verifiedSupplyIds, 50);
-
+    // Verified supply already has canonical opportunity intelligence. Do not rebuild
+    // it in the publication-critical path: enrichment was the main source of 2-3 minute
+    // lock contention and prevented successive publication passes.
     const supplySelected = await selectAndPublishSupplySalesTests(verifiedSupplyIds, 400);
-    const supplyDownstream = await promoteGatePassedListings(supplySelected.selectedListingIds);
 
     if (supplySelected.published > 0) {
       if (cronRunId) await supabase.from("cron_runs").update({
@@ -110,9 +110,9 @@ export async function GET(request: Request) {
         duration_ms: Date.now() - startedAt,
         processed: supplySelected.considered,
         failed: 0,
-        metadata: { phase: "sales_test_publication", mode: "canonical_supply_intelligence_gate", considered: supplySelected.considered, published: supplySelected.published, shopify: supplyDownstream.shopify },
+        metadata: { phase: "sales_test_publication", mode: "canonical_supply_fast_path", considered: supplySelected.considered, published: supplySelected.published },
       }).eq("id", cronRunId);
-      return NextResponse.json({ ok: true, phase: "sales_test_publication", elapsedMs: Date.now() - startedAt, mode: "canonical_supply_intelligence_gate", supplySelected, downstream: supplyDownstream, nextPhase: "base_publication" });
+      return NextResponse.json({ ok: true, phase: "sales_test_publication", elapsedMs: Date.now() - startedAt, mode: "canonical_supply_fast_path", supplySelected, nextPhase: "downstream_delivery" });
     }
 
     const { data: readyRows, error: readyError } = await supabase
