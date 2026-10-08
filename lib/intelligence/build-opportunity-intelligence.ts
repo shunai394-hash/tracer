@@ -816,6 +816,8 @@ export async function buildOpportunityIntelligence(options: {
       internationalShipping: shippingPrice,
       domesticShipping: null,
       shippingCurrency: sourceOffer?.currency ?? marketOffer?.currency ?? null,
+      sourceFxRateToSelling: asNumber(sourceOfferMetadata.fx_rate) ?? usdToJpy,
+      sourceFxRateSource: asNumber(sourceOfferMetadata.fx_rate) !== null ? "supplier_listing_metadata" : (fxQuote?.source ?? null),
     });
 
     const marginScore =
