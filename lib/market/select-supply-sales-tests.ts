@@ -5,6 +5,7 @@ import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { evaluateSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -34,6 +35,7 @@ export type SupplySalesTestResult = { published: number; publishedListingIds: st
 
 export async function selectAndPublishSupplySalesTests(productIds: string[], limit = 3, options: { dryRun?: boolean } = {}): Promise<SupplySalesTestResult & { eligibleProductIds?: string[] }> {
   const supabase = createSupabaseAdminClient();
+  const observedFx = await getObservedUsdToJpyRate();
   if (productIds.length === 0 || limit <= 0) return { published: 0, publishedListingIds: [], selectedListingIds: [], considered: 0, rejected: [] };
   const uniqueProductIds = Array.from(new Set(productIds));
   const { data: intelligenceRows, error: intelligenceError } = await supabase.from("opportunity_intelligence").select("product_id,demand_score,search_fit_score,market_gap_score,competition_score,creative_score,selection_score,overall_confidence,selection_eligible,sellability_state,filter_state,profit_state,recommendation_summary,why_now").in("product_id", uniqueProductIds);
@@ -77,7 +79,8 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (sourceCost !== null && sourceCost < 0) reasons.push("source_cost_invalid");
     if (shippingCost !== null && shippingCost < 0) reasons.push("shipping_cost_invalid");
 
-    const sourceFxRateToSelling = num(metadata.fx_rate);
+    const sourceFxRateToSelling = num(metadata.fx_rate) ?? observedFx?.rate ?? null;
+    const sourceFxRateSource = num(metadata.fx_rate) !== null ? "supplier_listing_metadata" : (observedFx?.source ?? null);
     const profit = simulateContributionProfit({
       sellingPrice,
       sellingCurrency: "JPY",
@@ -89,7 +92,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
       domesticShipping: null,
       shippingCurrency: typeof listing.currency === "string" ? listing.currency : "USD",
       sourceFxRateToSelling,
-      sourceFxRateSource: sourceFxRateToSelling !== null ? "supplier_listing_metadata" : undefined,
+      sourceFxRateSource: sourceFxRateSource ?? undefined,
     });
     const gate = evaluateSalesTestGate({ rank: null, title: localizedTitle, sellingPrice, identityLinked: supplierVerifiedIdentity || (listing.identity_status === "linked" && identifierGradeMethods.has(identityMethod)), identityMethod, identityConfidence: num(listing.identity_confidence), sourceCost, shippingCost, trackingAvailable: listing.tracking_available === true, apiAvailable: listing.api_available === true, profitCalculable: profit.calculable, shippingUnknown: profit.shippingUnknown, contributionProfit: profit.contributionProfit, currencyMismatch: false, priceConfirmed: listing.price_confirmed === true, inventoryConfirmed: listing.inventory_confirmed === true, inventory: num(listing.inventory), orderable: listing.orderable === true, supplierProductId: typeof listing.supplier_product_id === "string" ? listing.supplier_product_id : null, supplierVariantId: typeof listing.supplier_variant_id === "string" ? listing.supplier_variant_id : null, requireRank: false });
     if (!gate.eligible) reasons.push(...gate.reasons);
