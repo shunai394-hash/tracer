@@ -45,3 +45,6 @@ main img{content-visibility:auto} main table tbody{contain:layout paint} @media(
 
 /* Quality loop 05 — interaction craft: Add restrained hover/active transitions that communicate direction without gratuitous motion. */
 main a,main button{will-change:auto} main a:active,main button:active{transition-duration:120ms} main :where(a,button):not([aria-disabled="true"]):hover{transition-timing-function:var(--tracer-ease-silk)}
+
+/* Quality loop 06 — data surfaces: Give tables, status states, empty states, and dense operational blocks a consistent hierarchy. */
+main table th{text-align:left;font-weight:500} main table td,main table th{vertical-align:middle} main :where([data-status]){white-space:nowrap} main :where([aria-live="polite"]){min-height:1.25rem}
