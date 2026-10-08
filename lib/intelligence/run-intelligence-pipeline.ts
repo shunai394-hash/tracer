@@ -86,7 +86,7 @@ const MIN_STEP_REMAINING_MS = 1_000;
 async function runStep(
   name: string,
   fn: () => Promise<unknown>,
-  options: { downstream?: boolean; budgetMs?: number } = {},
+  options: { downstream?: boolean; budgetMs?: number; stopPipelineOnTimeout?: boolean } = {},
 ): Promise<PipelineStepResult> {
   const remaining = pipelineDeadlineAt - Date.now();
   const requestedBudget = options.budgetMs ?? (options.downstream ? 10_000 : Math.max(1_000, remaining - MIN_STEP_REMAINING_MS));
@@ -142,8 +142,8 @@ async function runStep(
     return { name, ok: true, skipped, retryable, result };
   } catch (error) {
     if (error instanceof StepTimeoutError) {
-      pipelineTimedOut = true;
-      console.warn(`[TRACER PIPELINE ${name}] deferred after ${Date.now() - startedAt}ms (budget ${budgetMs}ms); stopping downstream stages`);
+      if (options.stopPipelineOnTimeout !== false) pipelineTimedOut = true;
+      console.warn(`[TRACER PIPELINE ${name}] deferred after ${Date.now() - startedAt}ms (budget ${budgetMs}ms); ${options.stopPipelineOnTimeout === false ? "continuing independent stages" : "stopping downstream stages"}`);
       return {
         name,
         ok: true,
@@ -442,7 +442,10 @@ export async function runIntelligencePipeline(options: {
   const normalizePages = Math.max(1, Math.ceil((normalizeProductCount.count ?? 0) / normalizeWindowSize));
   const normalizeOffset = (Math.floor(Date.now() / 60_000) % normalizePages) * normalizeWindowSize;
   steps.push(await runStep("normalize", () => normalizeProductIntelligence({ limit: normalizeWindowSize, offset: normalizeOffset }), { budgetMs: 10_000 }));
-  steps.push(await runStep("identity", () => stampDemandCJIdentities(), { budgetMs: 5_000 }));
+  steps.push(await runStep("identity", () => stampDemandCJIdentities(), {
+    budgetMs: 20_000,
+    stopPipelineOnTimeout: false,
+  }));
   steps.push(await runStep("shopping_demand_sync", () => syncShoppingDemandObservations(), { budgetMs: 4_000 }));
   steps.push(await runStep("demand", () => inspectDemandObservations(), { budgetMs: 2_000 }));
   steps.push(await runStep("demand_analyze", () => persistDemandIntelligence(), { budgetMs: 6_000 }));
