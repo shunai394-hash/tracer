@@ -12,6 +12,7 @@ import {
 import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/cj/variant-select";
 import { persistCjSupplyIntelligence } from "@/lib/intelligence/persist-cj-supply-intelligence";
 import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
+import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
 
 function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
   const landed = (costUsd + shippingUsd) * fx;
@@ -357,6 +358,15 @@ export async function discoverAndCreateCjSupply(
       const seededVariants = await fetchCJProductVariants(candidate.id, { countryCode: "JP" });
       const seededVariant = seededVariants.find((item) => item.vid === candidate.variantId);
       const variantBarcode = typeof seededVariant?.barcode === "string" ? seededVariant.barcode : null;
+      const displayTitle = localizeProductTitle(detail.title, query);
+      if (!displayTitle) {
+        rejected++;
+        if (seededCandidate.supplierListingId) {
+          await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: "japanese_display_title_unavailable", attempts: seededCandidate.attempts });
+        }
+        items.push({ rejectedStage: "japanese_display_title_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, sourceTitle: detail.title });
+        continue;
+      }
       const sourceRef = `cj:${candidate.id}:${candidate.variantId}`;
       // Keep the product this supplier listing already belongs to (a listed
       // product must not be split into a second product row).
@@ -386,7 +396,7 @@ export async function discoverAndCreateCjSupply(
       }
       const intelligence = await persistCjSupplyIntelligence({
         productId,
-        title: detail.title,
+        title: displayTitle,
         imageUrl: detail.imageUrl,
         cost,
         shippingCost: freight,
@@ -406,7 +416,7 @@ export async function discoverAndCreateCjSupply(
         supplierListingId: String(supplierInsert.data.id),
         offerId: intelligence.offerId,
         intelligenceId: intelligence.intelligenceId,
-        title: detail.title,
+        title: displayTitle,
         supplierProductId: candidate.id,
         supplierVariantId: candidate.variantId,
         costUsd: cost,
