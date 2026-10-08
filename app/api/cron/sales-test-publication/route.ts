@@ -77,7 +77,7 @@ export async function GET(request: Request) {
       .from("demand_cj_products")
       .select("product_id")
       .not("product_id", "is", null)
-      .limit(400);
+      .limit(1000);
     if (demandSupplyError) throw new Error(demandSupplyError.message);
 
     const { data: verifiedSupply, error: verifiedSupplyError } = await supabase
