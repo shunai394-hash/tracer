@@ -54,6 +54,9 @@ jobs:
           echo "Waiting for the production deployment to pick up the main commit..."
           sleep 90
           call "/api/cron/orosy-bulk-import" 300 orosy.json
+          # Refresh marketplace evidence before the AI/Gate cycle so demand and
+          # supply selection are not repeatedly working from a stale cursor.
+          call "/api/cron/market-sourcing" 90 market-sourcing.json
           call "/api/cron/intelligence" 300 intelligence.json
           call "/api/cron/sales-test-publication" 300 sales.json
           # Reconcile the existing catalog too: Japanese copy is canonical before
