@@ -29,7 +29,7 @@ jobs:
             code=$(curl -sS -o "sync-$i.json" -w "%{http_code}" --max-time 120 \
               -H "Authorization: Bearer $(token)" \
               -H "Content-Type: application/json" \
-              -X POST "https://tracer-self.vercel.app/api/admin/shopify/sync" \
+              -X POST "https://tracer-pied-alpha.vercel.app/api/admin/shopify/sync" \
               -d '{}')
             echo "pass $i: HTTP $code"
             cat "sync-$i.json"
