@@ -48,13 +48,31 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   if (error) throw new Error(error.message);
 
   const results: BasePublicationResult["results"] = [];
+  // Generate Japanese copy concurrently so a 20-item BASE reconciliation does not
+  // spend the full serverless timeout waiting on Gemini one listing at a time.
+  const copyResults = await Promise.all((listings ?? []).map(async (listing) => {
+    const listingId = String(listing.id);
+    try {
+      const copy = await ensureJapaneseCatalogCopy(
+        String(listing.title ?? ""),
+        String(listing.description ?? listing.title ?? ""),
+      );
+      return { listingId, copy, error: null as string | null };
+    } catch (error) {
+      return {
+        listingId,
+        copy: null as JapaneseCatalogCopy | null,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }));
+  const copyByListingId = new Map(copyResults.map((item) => [item.listingId, item]));
+
   for (const listing of listings ?? []) {
     const listingId = String(listing.id);
-    let catalogCopy: JapaneseCatalogCopy;
-    try {
-      catalogCopy = await ensureJapaneseCatalogCopy(String(listing.title ?? ""), String(listing.description ?? listing.title ?? ""));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+    const copyResult = copyByListingId.get(listingId);
+    if (!copyResult?.copy) {
+      const message = copyResult?.error ?? "japanese_catalog_copy_required";
       await supabase.from("shop_listings").update({
         base_last_error: message,
         pipeline_stage: "BASE_PUBLICATION",
@@ -66,6 +84,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       results.push({ listingId, ok: false, skipped: true, error: "japanese_catalog_copy_required" });
       continue;
     }
+    const catalogCopy = copyResult.copy;
     if (catalogCopy.title !== String(listing.title ?? "").trim() || catalogCopy.detail !== String(listing.description ?? listing.title ?? "").trim()) {
       await supabase.from("shop_listings").update({ title: catalogCopy.title, description: catalogCopy.detail, pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
     }
