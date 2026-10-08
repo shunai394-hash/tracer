@@ -113,7 +113,7 @@ export async function syncPublishedListingsToShopify(limit = 150, listingIds?: s
   let query = supabase
     .from("shop_listings")
     .select(baseSelect)
-    .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,supplier_name.ilike.CJ%)")
+    .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
     .or("shopify_sync_status.is.null,shopify_sync_status.neq.syncing")
     .order("shopify_product_id", { ascending: true, nullsFirst: true })
     .order("pipeline_updated_at", { ascending: false });
