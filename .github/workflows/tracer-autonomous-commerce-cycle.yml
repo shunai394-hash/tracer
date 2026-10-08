@@ -69,3 +69,5 @@ jobs:
           # Downstream channels only after TRACER publication.
           call "/api/cron/base-publish" 300 base-reconcile.json
           call "/api/cron/dropship-execution" 300 dropship.json
+
+# Keep the autonomous commerce cycle push-triggered so a production-ready gate fix starts immediately.
