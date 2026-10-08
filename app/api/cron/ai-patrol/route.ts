@@ -5,7 +5,7 @@ import { decidePatrolAction } from "@/lib/ops/patrol-ai";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const BASE = "https://tracer-naito3087.vercel.app";
+const BASE = "https://tracer-pied-alpha.vercel.app";
 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
