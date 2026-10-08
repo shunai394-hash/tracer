@@ -1824,8 +1824,9 @@ export async function buildOpportunityIntelligence(options: {
   for (let i = 0; i < lifecycleEvents.length; i += CHUNK) {
     await supabase.from("opportunity_lifecycle_events").insert(lifecycleEvents.slice(i, i + CHUNK));
   }
-  for (let i = 0; i < forecastRows.length; i += CHUNK * 3) {
-    const forecastInsert = await supabase.from("product_sales_forecasts").insert(forecastRows.slice(i, i + CHUNK * 3));
+  const FORECAST_CHUNK = 75;
+  for (let i = 0; i < forecastRows.length; i += FORECAST_CHUNK * 3) {
+    const forecastInsert = await supabase.from("product_sales_forecasts").insert(forecastRows.slice(i, i + FORECAST_CHUNK * 3));
     if (forecastInsert.error) {
       throw new Error(`Failed to persist forecasts: ${forecastInsert.error.message}`);
     }
