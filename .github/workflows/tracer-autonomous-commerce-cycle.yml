@@ -24,7 +24,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BASE="https://tracer-self.vercel.app"
+          BASE="https://tracer-pied-alpha.vercel.app"
 
           token() {
             curl -sSf \
