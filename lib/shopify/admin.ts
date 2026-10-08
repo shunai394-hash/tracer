@@ -37,6 +37,12 @@ export async function shopifyGraphQL<T>(query: string, variables: Record<string,
     cache: "no-store",
   });
   const payload = (await response.json()) as GraphQLResponse<T>;
+  if (response.status === 401) {
+    throw new Error("Shopify Admin API authentication failed (HTTP 401). Verify the production SHOPIFY_STORE_DOMAIN and rotate/replace SHOPIFY_ADMIN_ACCESS_TOKEN; never log the token value.");
+  }
+  if (response.status === 403) {
+    throw new Error("Shopify Admin API permission denied (HTTP 403). Verify the app installation and required Admin API scopes; never log the token value.");
+  }
   if (!response.ok) throw new Error(`Shopify Admin API HTTP ${response.status}`);
   if (payload.errors?.length) throw new Error(payload.errors.map((error) => error.message).join("; "));
   if (!payload.data) throw new Error("Shopify Admin API returned no data");
