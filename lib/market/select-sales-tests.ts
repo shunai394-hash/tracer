@@ -6,6 +6,7 @@ import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -342,7 +343,8 @@ export async function selectAndPublishSalesTests(
   for (const item of chosen) {
     const productId = String(item.bestseller.product_id ?? "");
     if (!productId) continue;
-    const slug = slugify(String(item.bestseller.title), String(item.bestseller.id));
+    const listingTitle = localizeProductTitle(item.bestseller.title, String(item.bestseller.category ?? "")) ?? "暮らしの便利アイテム";
+    const slug = slugify(listingTitle, String(item.bestseller.id));
 
     await markPipeline(String(item.bestseller.id), "SELECTED", "selected", "sales_test_selected");
 
@@ -351,7 +353,7 @@ export async function selectAndPublishSalesTests(
       bestseller_id: item.bestseller.id,
       supplier_listing_id: item.isInternalSupply ? null : item.listing.id,
       slug,
-      title: item.bestseller.title,
+      title: listingTitle,
       description: item.isInternalSupply
         ? "TRACER独自供給カタログの商品です。需要・価格・在庫・注文可否をTRACER側で管理しています。"
         : "市場ランキングで確認された売れ筋商品です。仕入は識別子で同一商品と確認できた無在庫仕入先のみを使います。",
