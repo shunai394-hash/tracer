@@ -22,6 +22,8 @@ export type SalesTestGateInput = {
   requireRank?: boolean;
 };
 
+import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+
 const NON_PHYSICAL_TITLE_PATTERNS = [
   /商品券/i,
   /デジタルギフト/i,
@@ -43,6 +45,7 @@ export function evaluateSalesTestGate(input: SalesTestGateInput): { eligible: bo
   const reasons: string[] = [];
   if ((input.requireRank ?? true) && input.rank === null) reasons.push("rank_unknown");
   if (!input.title) reasons.push("title_unknown");
+  else if (!isJapaneseProductTitle(input.title)) reasons.push("japanese_title_required");
   if (isNonPhysicalProductTitle(input.title)) reasons.push("non_physical_product");
   if (input.sellingPrice === null) reasons.push("selling_price_unknown");
   else if (!Number.isFinite(input.sellingPrice) || input.sellingPrice <= 0) reasons.push("selling_price_invalid");
@@ -67,7 +70,7 @@ export function evaluateSalesTestGate(input: SalesTestGateInput): { eligible: bo
 
 export function verifySalesTestGateInvariants(): { ok: boolean; cases: Array<{ name: string; expected: boolean; actual: boolean }> } {
   const ready = evaluateSalesTestGate({ rank: 1, title: "Floor Mat", sellingPrice: 3980, identityLinked: true, identityMethod: "jan", sourceCost: 12, shippingCost: 4, trackingAvailable: true, apiAvailable: true, profitCalculable: true, shippingUnknown: false, contributionProfit: 8, currencyMismatch: false });
-  const titleOnly = evaluateSalesTestGate({ rank: 1, title: "Floor Mat", sellingPrice: 3980, identityLinked: false, identityMethod: "title", sourceCost: 12, shippingCost: 4, trackingAvailable: true, apiAvailable: true, profitCalculable: true, shippingUnknown: false, contributionProfit: 8, currencyMismatch: false });
+  const englishTitle = evaluateSalesTestGate({ rank: 1, title: "Floor Mat", sellingPrice: 3980, identityLinked: false, identityMethod: "title", sourceCost: 12, shippingCost: 4, trackingAvailable: true, apiAvailable: true, profitCalculable: true, shippingUnknown: false, contributionProfit: 8, currencyMismatch: false });
   const supplyReady = evaluateSalesTestGate({ ...supplyReadyInput(), requireRank: false });
   const supplyInventoryBlocked = evaluateSalesTestGate({ ...supplyReadyInput(), inventory: 0, requireRank: false });
   const invalidPrice = evaluateSalesTestGate({ ...supplyReadyInput(), sellingPrice: 0, requireRank: false });
@@ -75,7 +78,7 @@ export function verifySalesTestGateInvariants(): { ok: boolean; cases: Array<{ n
   const giftCard = evaluateSalesTestGate({ ...supplyReadyInput(), title: "Amazon Gift Card", requireRank: false });
   const cases = [
     { name: "complete_observed_product_is_eligible", expected: true, actual: ready.eligible },
-    { name: "title_only_identity_is_not_eligible", expected: true, actual: titleOnly.eligible === false && titleOnly.reasons.includes("identity_not_confirmed") },
+    { name: "english_title_is_not_eligible", expected: true, actual: englishTitle.eligible === false && englishTitle.reasons.includes("japanese_title_required") },
     { name: "supply_ready_is_eligible_without_market_rank", expected: true, actual: supplyReady.eligible },
     { name: "supply_zero_inventory_is_blocked", expected: true, actual: supplyInventoryBlocked.eligible === false && supplyInventoryBlocked.reasons.includes("inventory_zero") },
     { name: "zero_price_is_blocked", expected: true, actual: invalidPrice.eligible === false && invalidPrice.reasons.includes("selling_price_invalid") },
@@ -91,12 +94,13 @@ function supplyReadyInput(): SalesTestGateInput {
 
 export const SALES_TEST_GATE_PASSED = "sales_test_gate_passed";
 
-export type SalesTestGateRow = { published?: unknown; pipeline_stage?: unknown; pipeline_status?: unknown; pipeline_reason?: unknown; selection_reasons?: unknown };
+export type SalesTestGateRow = { published?: unknown; pipeline_stage?: unknown; pipeline_status?: unknown; pipeline_reason?: unknown; selection_reasons?: unknown; title?: unknown };
 
 export function hasPassedSalesTestGate(row: SalesTestGateRow): boolean {
   if (row.published !== true) return false;
   if (row.pipeline_status !== "published") return false;
   if (row.pipeline_stage !== "PUBLISHED" && row.pipeline_stage !== "BASE_PUBLISHED") return false;
   if (row.pipeline_reason !== SALES_TEST_GATE_PASSED) return false;
+  if (!isJapaneseProductTitle(row.title)) return false;
   return Array.isArray(row.selection_reasons) && row.selection_reasons.includes(SALES_TEST_GATE_PASSED);
 }
