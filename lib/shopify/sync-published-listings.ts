@@ -29,6 +29,7 @@ type Listing = {
   shopify_product_id: string | null;
   shopify_variant_id: string | null;
   shopify_handle: string | null;
+  shipping_cost?: number | string | null;
 };
 
 type ShopifyProductNode = {
@@ -105,11 +106,11 @@ export async function syncPublishedListingsToShopify(limit = 150, listingIds?: s
   }
 
   const supabase = createSupabaseAdminClient();
-  const baseSelect = "id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shopify_product_id,shopify_variant_id,shopify_handle";
+  const baseSelect = "id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,shopify_product_id,shopify_variant_id,shopify_handle";
   let query = supabase
     .from("shop_listings")
     .select(baseSelect)
-    .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
+    .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,supplier_name.ilike.CJ%)")
     .or("shopify_sync_status.is.null,shopify_sync_status.neq.syncing")
     .order("shopify_product_id", { ascending: true, nullsFirst: true })
     .order("pipeline_updated_at", { ascending: false });
@@ -135,7 +136,9 @@ async function syncListingRows(
     row.orderable === true &&
     row.tracking_available === true &&
     Number(row.inventory) > 0 &&
-    String(row.currency ?? "").trim().toUpperCase() === "JPY",
+    String(row.currency ?? "").trim().toUpperCase() === "JPY" &&
+    /^CJ/i.test(String(row.supplier_name ?? "")) &&
+    asNumber((row as Listing & { shipping_cost?: number | string | null }).shipping_cost) !== null,
   );
   const blocked = rows.filter((row) => !candidates.includes(row));
   const results: ShopifySyncResult = {
@@ -196,9 +199,10 @@ async function syncListingRows(
       if (price === null || price <= 0) throw new Error("selling_price_invalid");
       if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) throw new Error("image_url_invalid");
 
+      const shippingText = `日本向け配送：${asNumber(row.shipping_cost) === 0 ? "送料無料" : "送料別（仕入先確認済み）"}。配送状況は追跡可能です。`;
       const productInput = {
         title: copy.title,
-        descriptionHtml: html(copy.description),
+        descriptionHtml: html(`${copy.description}\n\n${shippingText}`),
         handle: row.shopify_handle || row.slug,
         price,
         sku: sku(row),
