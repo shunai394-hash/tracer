@@ -25,6 +25,23 @@ function slugify(title: string, id: string): string {
   return `${base || "item"}-${id.slice(0, 8)}`;
 }
 
+function hasJapaneseText(value: unknown): boolean {
+  if (typeof value !== "string" || !value.trim()) return false;
+  return /[\\u3040-\\u30ff\\u3400-\\u9fff々ー]/u.test(value);
+}
+
+function japanDisplayGate(args: {
+  title: unknown;
+  description: unknown;
+  currency: unknown;
+}): string[] {
+  const reasons: string[] = [];
+  if (!hasJapaneseText(args.title)) reasons.push("japanese_product_name_required");
+  if (!hasJapaneseText(args.description)) reasons.push("japanese_description_required");
+  if (String(args.currency ?? "").trim().toUpperCase() !== "JPY") reasons.push("japan_currency_required");
+  return reasons;
+}
+
 function validHttpUrl(value: unknown): boolean {
   if (typeof value !== "string" || !value.trim()) return false;
   try {
@@ -119,6 +136,11 @@ export async function selectAndPublishSalesTests(
     if (!bestseller.title) reasons.push("title_unknown");
     if (!bestseller.image_url) reasons.push("image_unknown");
     if (!validHttpUrl(bestseller.image_url)) reasons.push("image_url_invalid");
+    reasons.push(...japanDisplayGate({
+      title: bestseller.title,
+      description: bestseller.description,
+      currency: bestseller.currency,
+    }));
 
     const { data: internalCatalog, error: internalError } = await supabase
       .from("tracer_supply_catalog")
