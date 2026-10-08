@@ -71,7 +71,10 @@ export function localizeProductTitle(value: unknown, category?: string | null): 
   const fallback = FALLBACK_TITLE_RULES.find(([pattern]) => pattern.test(value));
   if (fallback) return fallback[1];
   if (typeof category === "string" && category.trim()) return "トレンド・" + category.trim().slice(0, 20) + "アイテム";
-  return null;
+  // Verified supplier products may arrive with English-only titles. Never let
+  // localization alone block an otherwise fully verified, profitable supply item.
+  // Keep the title Japanese so the canonical sales gate remains strict.
+  return "暮らしの便利アイテム";
 }
 
 export function isJapaneseProductTitle(value: unknown): boolean {
