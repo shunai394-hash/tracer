@@ -159,8 +159,14 @@ async function syncListingRows(
   for (const row of blocked) {
     if (!row.shopify_product_id) {
       await supabase.from("shop_listings").update({
+        published: false,
+        pipeline_stage: "BLOCKED",
+        pipeline_status: "blocked",
+        pipeline_reason: "sales_test_gate_not_passed",
+        pipeline_updated_at: new Date().toISOString(),
+        published_at: null,
         shopify_sync_status: "blocked",
-        shopify_sync_error: "sales_test_or_supply_gate_not_passed",
+        shopify_sync_error: "sales_test_or_supply_or_japanese_gate_not_passed",
         shopify_synced_at: new Date().toISOString(),
       }).eq("id", row.id);
       continue;
@@ -177,6 +183,12 @@ async function syncListingRows(
       results.failed += 1;
       results.errors.push({ listingId: row.id, error: `unpublish_failed:${message}` });
       await supabase.from("shop_listings").update({
+        published: false,
+        pipeline_stage: "BLOCKED",
+        pipeline_status: "blocked",
+        pipeline_reason: "sales_test_gate_unpublish_failed",
+        pipeline_updated_at: new Date().toISOString(),
+        published_at: null,
         shopify_sync_status: "failed",
         shopify_sync_error: `unpublish_failed:${message}`.slice(0, 2000),
         shopify_synced_at: new Date().toISOString(),
