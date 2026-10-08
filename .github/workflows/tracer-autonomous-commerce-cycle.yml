@@ -68,6 +68,11 @@ jobs:
 
           # Downstream channels only after TRACER publication.
           call "/api/cron/base-publish" 300 base-reconcile.json
+
+          # Sync only gate-passed, published, orderable and trackable listings to Shopify.
+          # The endpoint reports per-listing failures without bypassing TRACER gates.
+          call "/api/cron/shopify-publish" 300 shopify-sync.json
+
           call "/api/cron/dropship-execution" 300 dropship.json
 
 # Keep the autonomous commerce cycle push-triggered so a production-ready gate fix starts immediately.
