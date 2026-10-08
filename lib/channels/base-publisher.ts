@@ -48,9 +48,43 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   if (error) throw new Error(error.message);
 
   const results: BasePublicationResult["results"] = [];
-  // Generate Japanese copy concurrently so a 20-item BASE reconciliation does not
+
+  // Hide stale BASE items immediately. Do not spend Gemini time translating
+  // listings that TRACER has already blocked/unpublished.
+  for (const listing of listings ?? []) {
+    if (!listing.base_item_id || listing.published === true) continue;
+    if (listing.selling_price === null) {
+      results.push({ listingId: String(listing.id), ok: false, skipped: true, error: "base_hide_price_unknown" });
+      continue;
+    }
+    try {
+      await editBaseItem({
+        itemId: String(listing.base_item_id),
+        title: "販売停止中の商品",
+        detail: "現在この商品は販売停止中です。",
+        price: Number(listing.selling_price),
+        stock: 0,
+        visible: false,
+      });
+      await supabase.from("shop_listings").update({
+        base_publication_status: "published",
+        base_publication_lease_until: null,
+        base_last_error: null,
+        pipeline_stage: "BASE_RECONCILED",
+        pipeline_status: "blocked",
+        pipeline_reason: "tracer_unpublished",
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", String(listing.id));
+      results.push({ listingId: String(listing.id), ok: true, baseItemId: String(listing.base_item_id) });
+    } catch (error) {
+      results.push({ listingId: String(listing.id), ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  const activeListings = (listings ?? []).filter((listing) => !listing.base_item_id || listing.published === true);
+  // Generate Japanese copy concurrently only for listings that can remain visible.
   // spend the full serverless timeout waiting on Gemini one listing at a time.
-  const copyResults = await Promise.all((listings ?? []).map(async (listing) => {
+  const copyResults = await Promise.all(activeListings.map(async (listing) => {
     const listingId = String(listing.id);
     try {
       const copy = await ensureJapaneseCatalogCopy(
@@ -93,20 +127,6 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       && Array.isArray(listing.selection_reasons)
       && listing.selection_reasons.includes(SALES_TEST_GATE_PASSED);
     const hasSalesTestGate = hasPassedSalesTestGate({ ...listing, title: catalogCopy.title, normalized_title: catalogCopy.title } as Parameters<typeof hasPassedSalesTestGate>[0]) || hasSelectedGate;
-
-    if (listing.base_item_id && listing.published !== true) {
-      if (listing.selling_price === null) { results.push({ listingId, ok: false, skipped: true, error: "base_hide_price_unknown" }); continue; }
-      try {
-        await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price: Number(listing.selling_price), stock: 0, visible: false });
-        await supabase.from("shop_listings").update({ base_publication_status: "published", base_publication_lease_until: null, base_last_error: null, pipeline_stage: "BASE_RECONCILED", pipeline_status: "blocked", pipeline_reason: "tracer_unpublished", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
-        results.push({ listingId, ok: true, baseItemId: String(listing.base_item_id) });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        await supabase.from("shop_listings").update({ base_last_error: message, pipeline_stage: "BASE_RECONCILIATION", pipeline_status: "failed", pipeline_reason: "base_hide_failed", pipeline_error: message, pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
-        results.push({ listingId, ok: false, error: message });
-      }
-      continue;
-    }
 
     if (!listing.base_item_id && !hasSalesTestGate) { results.push({ listingId, ok: false, skipped: true, error: "sales_test_gate_not_passed" }); continue; }
 
