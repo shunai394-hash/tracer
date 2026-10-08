@@ -20,7 +20,7 @@ jobs:
           # Vercel builds after the push; poll until production reports this SHA.
           for i in $(seq 1 40); do
             token="$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
-            sha="$(curl -sS --max-time 60 -H "Authorization: Bearer $token" https://tracer-naito3087.vercel.app/api/intelligence/pipeline-audit | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            sha="$(curl -sS --max-time 60 -H "Authorization: Bearer $token" https://tracer-pied-alpha.vercel.app/api/intelligence/pipeline-audit | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
             echo "attempt $i: production commit=$sha expected=$GITHUB_SHA"
             if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
             sleep 15
@@ -31,7 +31,7 @@ jobs:
       - name: Pages, APIs, cron auth and data audit
         run: |
           set -uo pipefail
-          BASE=https://tracer-naito3087.vercel.app
+          BASE=https://tracer-pied-alpha.vercel.app
           failures=""
           token() {
             curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
@@ -95,7 +95,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BASE=https://tracer-naito3087.vercel.app
+          BASE=https://tracer-pied-alpha.vercel.app
           token() {
             curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
@@ -165,7 +165,7 @@ jobs:
             "$OIDC_URL" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           curl --fail-with-body --silent --show-error --max-time 300 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
-            "https://tracer-naito3087.vercel.app/api/cron/patrol-ai" | tee patrol-after-deploy.json
+            "https://tracer-pied-alpha.vercel.app/api/cron/patrol-ai" | tee patrol-after-deploy.json
           python3 - <<'PY'
           import json
           r=json.load(open("patrol-after-deploy.json", encoding="utf-8"))
