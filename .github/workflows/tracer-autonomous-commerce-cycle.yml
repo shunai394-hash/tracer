@@ -16,16 +16,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - name: Publish verified supply first, then refresh intelligence and operations
+      - name: Reverify CJ supply at scale, publish canonical listings, then refresh operations
         shell: bash
         run: |
           set -euo pipefail
           BASE="https://tracer-pied-alpha.vercel.app"
 
           token() {
-            curl -sSf --max-time 20 \
-              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+            curl -sSf --max-time 20               -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"               "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
 
@@ -34,9 +32,7 @@ jobs:
             local max_time="$2"
             local out="$3"
             local code
-            code=$(curl -sS -o "$out" -w "%{http_code}" --max-time "$max_time" \
-              -H "Authorization: Bearer $(token)" \
-              "$BASE$path" || true)
+            code=$(curl -sS -o "$out" -w "%{http_code}" --max-time "$max_time"               -H "Authorization: Bearer $(token)"               "$BASE$path" || true)
             echo "=== $path HTTP $code ==="
             python3 - "$out" <<'PY'
           import json,sys
@@ -48,19 +44,26 @@ jobs:
           PY
           }
 
-          echo "Wait briefly for the current production deployment to settle; start the 1000-product publication cycle immediately."
+          echo "Start the 1000-product cycle immediately."
           sleep 15
 
-          # Publish already-verified supply BEFORE slow discovery/enrichment.
+          # Drain the CJ identity-reverification backlog in 100-item batches.
+          # This is deliberately before publication so recovered canonical supply
+          # enters the normal sales-test gate in the same cycle.
+          for pass in 1 2 3 4 5 6 7 8; do
+            call "/api/cron/cj-identity-reverify" 300 "cj-reverify-${pass}.json"
+          done
+
+          # Publish only through the canonical sales-test gate.
           call "/api/cron/sales-test-publication" 300 publish-first.json
 
-          # Refresh supply data, but never let discovery block publication.
+          # Refresh supply and intelligence without making them a publication bypass.
           call "/api/cron/orosy-bulk-import" 120 orosy.json
           call "/api/cron/market-sourcing" 60 market-sourcing.json
           call "/api/cron/supplier-investigation" 180 supplier-investigation.json
           call "/api/cron/intelligence" 300 intelligence.json
 
-          # Re-run the canonical gate after intelligence refresh.
+          # Re-run the canonical gate after refresh.
           call "/api/cron/sales-test-publication" 300 publish-after-intelligence.json
 
           # Downstream channels only after TRACER publication.
