@@ -532,6 +532,12 @@ export async function discoverAndCreateCjSupply(
           detail.title = `${detail.title} (${variant.nameEn})`;
         }
 
+        const displayTitle = localizeProductTitle(detail.title, query);
+        if (!displayTitle) {
+          reject("japanese_display_title_unavailable", { sourceTitle: detail.title, supplierVariantId: variant.vid });
+          continue;
+        }
+
         const salePrice = yenPrice(cost, freight, fxRate);
         const variantBarcode = typeof variant.barcode === "string" ? variant.barcode : null;
         const sourceRef = `cj:${candidate.id}:${variant.vid}`;
@@ -613,7 +619,7 @@ export async function discoverAndCreateCjSupply(
 
         const intelligence = await persistCjSupplyIntelligence({
           productId,
-          title: detail.title,
+          title: displayTitle,
           imageUrl: detail.imageUrl,
           cost,
           shippingCost: freight,
@@ -633,7 +639,7 @@ export async function discoverAndCreateCjSupply(
           supplierListingId,
           offerId: intelligence.offerId,
           intelligenceId: intelligence.intelligenceId,
-          title: detail.title,
+          title: displayTitle,
           supplierProductId: candidate.id,
           supplierVariantId: variant.vid,
           costUsd: cost,
