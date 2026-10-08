@@ -57,3 +57,6 @@ main :where(input,select,textarea){accent-color:#67e8f9} main :where(input,selec
 
 /* Quality loop 09 — motion/accessibility audit: Strengthen reduced-motion and forced-colors behavior and remove effects that can overwhelm users. */
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-delay:0s!important;transition-delay:0s!important}} @media(forced-colors:active){*:focus-visible{outline:2px solid CanvasText!important;box-shadow:none!important}}
+
+/* Quality loop 10 — final art-direction audit: Unify spacing, borders, signal color, and micro-interactions; prefer clarity over decoration. */
+main :where(.border-white\/8,.border-white\/10){border-color:rgba(255,255,255,.075)} main :where(.text-cyan-300\/55,.text-cyan-300\/65){color:rgba(165,243,252,.62)} footer a{min-height:44px;display:inline-flex;align-items:center} @media(max-width:767px){footer nav{gap:4px 14px}}
