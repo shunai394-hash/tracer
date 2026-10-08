@@ -149,3 +149,6 @@ For a specific batch, use the sourcing decision endpoint with authenticated acce
 
 
 <!-- operational-cycle: 2026-10-08-publish-cj-now-oidc-fixed -->
+
+
+<!-- publication-patrol: 2026-10-08 [publish-cj-now] -->
