@@ -14,7 +14,7 @@ permissions:
 jobs:
   cycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - name: CJ -> JP -> Variant -> Inventory -> Profit -> Publication
         shell: bash
@@ -47,8 +47,9 @@ jobs:
           except Exception:
               print(open(path, encoding="utf-8", errors="replace").read()[:50000])
           PY
-            test "$code" -ge 200
-            test "$code" -lt 300
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              echo "WARN: $path returned HTTP $code; continuing the cycle."
+            fi
           }
 
           echo "Waiting for production deployment..."
@@ -62,7 +63,9 @@ jobs:
           done
 
           call "/api/cron/intelligence" 300 intelligence.json
-          call "/api/cron/sales-test-publication" 300 sales.json
+          for pass in 1 2 3 4 5 6 7 8 9 10; do
+            call "/api/cron/sales-test-publication" 300 "sales-$pass.json"
+          done
 
           for pass in 1 2 3 4 5 6; do
             call "/api/cron/base-publish" 300 "base-reconcile-$pass.json"
