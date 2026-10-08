@@ -28,7 +28,7 @@ jobs:
           set -uo pipefail
           BASE=https://tracer-self.vercel.app
           token() {
-            if T="$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-naito3087.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"; then
+            if T="$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"; then
               printf '%s' "$T"
             else
               curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
