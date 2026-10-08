@@ -155,3 +155,5 @@ For a specific batch, use the sourcing decision endpoint with authenticated acce
 <!-- publication-patrol: 2026-10-08 [publish-cj-now][jp-quality-gate] -->
 
 <!-- publication patrol trigger 2026-10-08T16:33:24.527Z -->
+
+<!-- publish-cj-now-retrigger: 2026-10-09 -->
