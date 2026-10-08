@@ -247,8 +247,9 @@ export async function discoverAndCreateCjSupply(
     attempts: Number(row.verification_attempts ?? 0),
   }));
 
+  const seededVerificationLimit = Math.min(10, limit);
   for (const seededCandidate of candidateInputs) {
-    if (verified >= limit) break;
+    if (verified >= seededVerificationLimit) break;
     if (Date.now() >= deadlineAt) {
       deadlineReached = true;
       break;
@@ -435,7 +436,7 @@ export async function discoverAndCreateCjSupply(
     }
   }
 
-  if (verified >= limit) return { discovered, published: 0, verified, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
+  // Never let re-verification of already-known products consume the entire run.\n  // The remaining budget is reserved for genuinely new CJ catalog products.\n  if (limit <= seededVerificationLimit && verified >= limit) return { discovered, published: 0, verified, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
 
   // Seeded verification is only one source of candidates. If all seeded
   // variants fail live Japan-freight verification, continue into the live CJ
