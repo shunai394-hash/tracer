@@ -116,7 +116,7 @@ export async function syncPublishedListingsToShopify(limit = 150, listingIds?: s
   // mismatched token must fail closed once per run, not mark every product failed
   // (or repeatedly attempt unpublishing) during the per-listing loop.
   try {
-    await shopifyGraphQL<{ shop: { name: string } }>(`query ShopifyAuthPreflight { shop { name } }`);
+    await shopifyGraphQL<{ products: { nodes: Array<{ id: string }> } }>(`query ShopifyAuthPreflight { products(first: 1) { nodes { id } } }`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return {
