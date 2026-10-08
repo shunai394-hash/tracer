@@ -378,7 +378,7 @@ export async function buildOpportunityIntelligence(options: {
   // proves a supplier search returned something.
   const supplierListingsResult = await supabase
     .from("supplier_listings")
-    .select("product_id, identity_method, identity_status, verification_status, inventory_confirmed, orderable, inventory, shipping_cost")
+    .select("product_id, identity_method, identity_status, verification_status, inventory_confirmed, orderable, inventory, shipping_cost, cost, currency, supplier_product_id, supplier_variant_id")
     .in("product_id", scopeIds);
   if (supplierListingsResult.error) throw new Error(supplierListingsResult.error.message);
   const listingsByProduct = new Map<string, SupplierListingRow[]>();
