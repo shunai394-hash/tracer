@@ -38,7 +38,7 @@ jobs:
             -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Fvercel.com" |
             python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
-          npx vercel@latest pull --yes --environment=production --scope=shunai394-9704s-projects --project=tracer
+          npx vercel@latest pull --yes --token "$VERCEL_OIDC_TOKEN" --environment=production --scope=shunai394-9704s-projects --project=tracer
 
       - name: Run current source against production DB
         run: |
