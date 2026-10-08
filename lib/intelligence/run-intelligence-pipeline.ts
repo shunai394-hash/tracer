@@ -521,12 +521,12 @@ export async function runIntelligencePipeline(options: {
   ]));
   const supplySalesStep = await runStep(
     "supply_sales_test_select",
-    () => selectAndPublishSupplySalesTests(supplyCandidateIds, 3),
-    { downstream: true, budgetMs: 6_000 },
+    () => selectAndPublishSupplySalesTests(supplyCandidateIds, 50),
+    { downstream: true, budgetMs: 20_000 },
   );
   steps.push(supplySalesStep);
 
-  const salesTestStep = await runStep("sales_test_select", () => selectAndPublishSalesTests(bestsellerIds, 3), { downstream: true, budgetMs: 6_000 });
+  const salesTestStep = await runStep("sales_test_select", () => selectAndPublishSalesTests(bestsellerIds, 50), { downstream: true, budgetMs: 20_000 });
   steps.push(salesTestStep);
 
   // Both Sales Test Gate paths deliver to NEWFIND (previously only the
