@@ -38,3 +38,5 @@ jobs:
           curl -sSf --max-time 300 -H "Authorization: Bearer $T" "$BASE/api/cron/sales-test-publication"
 
 # rerun marker 1791478424170
+
+# force expansion 2026-10-08T16:56:05.022Z
