@@ -11,10 +11,6 @@ permissions:
   id-token: write
   contents: read
 
-concurrency:
-  group: tracer-autonomous-commerce-cycle
-  cancel-in-progress: false
-
 jobs:
   cycle:
     runs-on: ubuntu-latest
