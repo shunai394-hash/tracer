@@ -337,7 +337,7 @@ export async function selectAndPublishSalesTests(
     const id = String(item.bestseller.id);
     if (!chosenIds.has(id)) await markPipeline(id, "SALES_TEST", "blocked", "sales_test_limit");
   }
-  const published = 0;
+  let published = 0;
 
   for (const item of chosen) {
     const productId = String(item.bestseller.product_id ?? "");
@@ -370,15 +370,15 @@ export async function selectAndPublishSalesTests(
       identity_confidence: item.listing.identity_confidence,
       contribution_profit: item.profit.contributionProfit,
       contribution_margin: item.profit.contributionMargin,
-      published: false,
+      published: true,
       selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:market", ...item.reasons],
       missing: [],
-      pipeline_stage: "SELECTED",
-      pipeline_status: "selected",
-      pipeline_reason: "sales_test_selected_pending_shopify",
+      pipeline_stage: "PUBLISHED",
+      pipeline_status: "published",
+      pipeline_reason: "sales_test_gate_passed_canonical_publish",
       pipeline_error: null,
       pipeline_updated_at: fetchedAt,
-      published_at: null,
+      published_at: fetchedAt,
       updated_at: fetchedAt,
     };
     const existing = await supabase.from("shop_listings").select("id").eq("slug", slug).maybeSingle();
@@ -396,9 +396,9 @@ export async function selectAndPublishSalesTests(
       await markPipeline(String(item.bestseller.id), "PRODUCT_CREATED", "failed", "shop_listing_upsert_failed", upsert.error.message);
       throw new Error(upsert.error.message);
     }
-    if (upsert.data?.id) selectedListingIds.push(String(upsert.data.id));
+    if (upsert.data?.id) { selectedListingIds.push(String(upsert.data.id)); publishedListingIds.push(String(upsert.data.id)); published += 1; }
 
-    await markPipeline(String(item.bestseller.id), "SELECTED", "selected", "sales_test_selected_pending_shopify");
+    await markPipeline(String(item.bestseller.id), "PUBLISHED", "published", "sales_test_gate_passed_canonical_publish");
 
     await writeEvidence({
       productId,
