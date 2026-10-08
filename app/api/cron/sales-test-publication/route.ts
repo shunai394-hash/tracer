@@ -161,7 +161,7 @@ export async function GET(request: Request) {
     if (readyError) throw new Error(readyError.message);
     const candidateIds = (readyRows ?? []).map((row) => String(row.id));
     const marketProductIds = Array.from(new Set((readyRows ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)));
-    if (marketProductIds.length > 0) await buildOpportunityInBatches(marketProductIds, 50);
+    if (marketProductIds.length > 0) await buildOpportunityInBatches(marketProductIds, 10);
     const decision = await selectAndPublishSalesTests(candidateIds, 400);
     const downstream = await promoteGatePassedListings(decision.selectedListingIds);
 
@@ -171,7 +171,7 @@ export async function GET(request: Request) {
       duration_ms: Date.now() - startedAt,
       processed: supplySelected.considered + candidateIds.length,
       failed: 0,
-      metadata: { phase: "sales_test_publication", mode: "market_linked_sales_test", supplyConsidered: supplySelected.considered, supplyPublished: supplySelected.published, considered: decision.considered, published: decision.published, shopify: downstream.shopify },
+      metadata: { phase: "sales_test_publication", mode: "market_linked_sales_test", supplyConsidered: supplySelected.considered, supplyPublished: supplySelected.published, supplyRejected: supplySelected.rejected.length, supplyRejectedReasons: supplySelected.rejected.reduce<Record<string, number>>((counts, item) => { for (const reason of item.reasons) counts[reason] = (counts[reason] ?? 0) + 1; return counts; }, {}), supplyRejectedSample: supplySelected.rejected.slice(0, 20), considered: decision.considered, published: decision.published, shopify: downstream.shopify },
     }).eq("id", cronRunId);
 
     return NextResponse.json({ ok: true, phase: "sales_test_publication", elapsedMs: Date.now() - startedAt, mode: "market_linked_sales_test", candidateCount: candidateIds.length, decision, downstream, nextPhase: "downstream_delivery" });
