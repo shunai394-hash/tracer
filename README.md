@@ -146,3 +146,6 @@ For a specific batch, use the sourcing decision endpoint with authenticated acce
 <!-- production-deploy-retrigger: 2026-10-06 [ops-trigger] -->
 <!-- newfind-patrol-repair: bounded-sales-test-publication -->
 <!-- supply-first-production-retrigger: 2026-10-02 -->
+
+
+<!-- operational-cycle: 2026-10-08-publish-cj-now -->
