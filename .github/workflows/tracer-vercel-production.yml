@@ -21,4 +21,5 @@ jobs:
         run: |
           echo "TRACER production deployment is managed by the connected Vercel Git integration."
           echo "Commit: ${GITHUB_SHA}"
+          echo "Vercel Git reconnect deployment probe."
           echo "This workflow intentionally does not target tracer-self.vercel.app or use VERCEL_TOKEN."
