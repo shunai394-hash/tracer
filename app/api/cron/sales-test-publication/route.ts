@@ -12,7 +12,7 @@ import { syncPublishedListingsToShopify } from "@/lib/shopify/sync";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-async function buildOpportunityInBatches(productIds: string[], batchSize = 50) {
+async function buildOpportunityInBatches(productIds: string[], batchSize = 15) {
   const ids = Array.from(new Set(productIds.filter(Boolean)));
   let processed = 0;
   let upserted = 0;
