@@ -24,14 +24,14 @@ async function canonicalSupplyRecovery() {
     .eq("api_available", true)
     .not("product_id", "is", null)
     .order("last_verified_at", { ascending: false, nullsFirst: false })
-    .limit(25);
+    .limit(100);
   if (error) throw new Error(error.message);
 
   const productIds = Array.from(new Set((data ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)));
   if (productIds.length === 0) return { considered: 0, published: 0, synced: 0, reason: "no_canonical_cj_supply" };
 
   const intelligence = await buildOpportunityIntelligence({ productIds });
-  const selected = await selectAndPublishSupplySalesTests(productIds, 10);
+  const selected = await selectAndPublishSupplySalesTests(productIds, 25);
   const shopify = selected.publishedListingIds.length > 0
     ? await syncPublishedListingsToShopify(selected.publishedListingIds)
     : { attempted: 0, synced: 0, failed: 0, listingIds: [] };
