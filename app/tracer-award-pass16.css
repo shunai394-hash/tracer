@@ -51,3 +51,6 @@ main table th{text-align:left;font-weight:500} main table td,main table th{verti
 
 /* Quality loop 07 — forms: Standardize control sizing, labels, disabled states, autofill appearance, and focus treatment. */
 main :where(input,select,textarea){accent-color:#67e8f9} main :where(input,select,textarea):disabled{cursor:not-allowed;opacity:.55} main :where(input,select,textarea):focus{border-color:rgba(165,243,252,.45)}
+
+/* Quality loop 08 — responsive art direction: Tune wide and narrow breakpoints so the composition remains intentional rather than stretched. */
+@media(min-width:1600px){main{padding-inline:max(0px,2vw)} main > section{max-width:1680px;margin-inline:auto}} @media(max-width:480px){main{word-break:normal} main h1{font-size:clamp(2.8rem,15vw,4.4rem)}}
