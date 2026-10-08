@@ -134,7 +134,8 @@ async function syncListingRows(
     hasPassedSalesTestGate(row) &&
     row.orderable === true &&
     row.tracking_available === true &&
-    Number(row.inventory) > 0,
+    Number(row.inventory) > 0 &&
+    String(row.currency ?? "").trim().toUpperCase() === "JPY",
   );
   const blocked = rows.filter((row) => !candidates.includes(row));
   const results: ShopifySyncResult = {
