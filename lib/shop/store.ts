@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 
 function asNumber(value: unknown): number | null {
@@ -68,6 +69,83 @@ function mapListing(row: Record<string, unknown>): ShopListing {
 
 const STOREFRONT_SELECT = "*";
 
+type ShopifyVariantStock = {
+  id: string;
+  inventoryQuantity: number | null;
+};
+
+async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, number>> {
+  const liveStock = new Map<string, number>();
+  if (!isShopifyConfigured() || variantIds.length === 0) return liveStock;
+
+  const ids = [...new Set(variantIds)].filter((id) => /^gid:\/\/shopify\/ProductVariant\//.test(id));
+  if (ids.length === 0) return liveStock;
+
+  const data = await shopifyGraphQL<{
+    nodes: Array<ShopifyVariantStock | null>;
+  }>(
+    `query LiveVariantInventory($ids: [ID!]!) {
+      nodes(ids: $ids) {
+        ... on ProductVariant {
+          id
+          inventoryQuantity
+        }
+      }
+    }`,
+    { ids },
+  );
+
+  for (const node of data.nodes ?? []) {
+    if (!node?.id) continue;
+    const quantity = asNumber(node.inventoryQuantity);
+    liveStock.set(node.id, Math.max(0, Math.floor(quantity ?? 0)));
+  }
+  return liveStock;
+}
+
+async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopListing[]> {
+  const listings = rows
+    .map(mapListing)
+    .filter((listing) => listing.inventory > 0 && listing.orderable && listing.trackingAvailable && listing.sellingPrice !== null && listing.sellingPrice > 0);
+
+  if (listings.length === 0) return [];
+
+  const liveStock = await getLiveShopifyStock(
+    listings.map((listing) => listing.shopifyVariantId).filter((id): id is string => Boolean(id)),
+  );
+
+  const staleSoldOut = listings.filter((listing) => {
+    const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : null;
+    return live !== null && live <= 0;
+  });
+
+  if (staleSoldOut.length > 0) {
+    const supabase = createSupabaseAdminClient();
+    const now = new Date().toISOString();
+    for (const listing of staleSoldOut) {
+      await supabase
+        .from("shop_listings")
+        .update({
+          inventory: 0,
+          orderable: false,
+          pipeline_updated_at: now,
+          updated_at: now,
+        })
+        .eq("id", listing.id);
+    }
+  }
+
+  return listings
+    .filter((listing) => {
+      const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : null;
+      return live === undefined || live > 0;
+    })
+    .map((listing) => {
+      const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : undefined;
+      return live === undefined ? listing : { ...listing, inventory: live };
+    });
+}
+
 export async function listPublishedShopListings(): Promise<ShopListing[]> {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
@@ -84,9 +162,9 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
     .limit(48);
 
   if (error) throw new Error(error.message);
-  return (data ?? [])
-    .map((row) => {
-      const listing = mapListing(row as Record<string, unknown>);
+  const listings = await loadLiveListings((data ?? []) as Record<string, unknown>[]);
+  return listings
+    .map((listing) => {
       const priority = womenProductPriority({ title: listing.title, category: listing.description });
       return { listing, womenBonus: priority.bonus };
     })
@@ -110,7 +188,9 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
     .maybeSingle();
 
   if (error) throw new Error(error.message);
-  return data ? mapListing(data as Record<string, unknown>) : null;
+  if (!data) return null;
+  const listings = await loadLiveListings([data as Record<string, unknown>]);
+  return listings[0] ?? null;
 }
 
 export async function recordShopFunnelEvent(args: {
