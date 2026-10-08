@@ -20,7 +20,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Wait for production deployment
-        run: sleep 20
+        run: sleep 60
       - name: Reverify CJ identities and publish canonical products
         shell: bash
         run: |
