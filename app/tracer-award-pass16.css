@@ -41,7 +41,7 @@ html,body{max-width:100%;overflow-x:clip} main{min-width:0} header{contain:layou
 main p{max-inline-size:72ch} main :where(h1,h2,h3){overflow-wrap:break-word} main :where(li,p){line-height:1.65} @media(min-width:1024px){main p{line-height:1.72}}
 
 /* Quality loop 04 — rendering restraint: Contain decorative layers and long lists to reduce paint cost without changing the visual language. */
-main img{content-visibility:auto} main table tbody{contain:layout paint} @media(min-width:768px){main > section{contain:paint}} @media(max-width:767px){main > section{contain:layout}}
+main img{content-visibility:auto} main table tbody{contain:layout paint} @media(max-width:767px){main > section{contain:layout}}
 
 /* Quality loop 05 — interaction craft: Add restrained hover/active transitions that communicate direction without gratuitous motion. */
 main a,main button{will-change:auto} main a:active,main button:active{transition-duration:120ms} main :where(a,button):not([aria-disabled="true"]):hover{transition-timing-function:var(--tracer-ease-silk)}
@@ -60,3 +60,8 @@ main :where(input,select,textarea){accent-color:#67e8f9} main :where(input,selec
 
 /* Quality loop 10 — final art-direction audit: Unify spacing, borders, signal color, and micro-interactions; prefer clarity over decoration. */
 main :where(.border-white\/8,.border-white\/10){border-color:rgba(255,255,255,.075)} main :where(.text-cyan-300\/55,.text-cyan-300\/65){color:rgba(165,243,252,.62)} footer a{min-height:44px;display:inline-flex;align-items:center} @media(max-width:767px){footer nav{gap:4px 14px}}
+
+/* Final 10th-pass correction: never clip editorial shadows or focus rings with paint containment. */
+@media (min-width: 768px) {
+  main > section { contain: layout; }
+}
