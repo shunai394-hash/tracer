@@ -30,6 +30,9 @@ type Listing = {
   shopify_variant_id: string | null;
   shopify_handle: string | null;
   shipping_cost?: number | string | null;
+  source_cost?: number | string | null;
+  contribution_profit?: number | string | null;
+  contribution_margin?: number | string | null;
 };
 
 type ShopifyProductNode = {
@@ -106,7 +109,7 @@ export async function syncPublishedListingsToShopify(limit = 150, listingIds?: s
   }
 
   const supabase = createSupabaseAdminClient();
-  const baseSelect = "id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,shopify_product_id,shopify_variant_id,shopify_handle";
+  const baseSelect = "id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle";
   let query = supabase
     .from("shop_listings")
     .select(baseSelect)
@@ -138,7 +141,10 @@ async function syncListingRows(
     Number(row.inventory) > 0 &&
     String(row.currency ?? "").trim().toUpperCase() === "JPY" &&
     /^CJ/i.test(String(row.supplier_name ?? "")) &&
-    asNumber((row as Listing & { shipping_cost?: number | string | null }).shipping_cost) !== null,
+    asNumber((row as Listing & { shipping_cost?: number | string | null }).shipping_cost) !== null &&
+    asNumber((row as Listing & { source_cost?: number | string | null }).source_cost) !== null &&
+    (asNumber((row as Listing & { contribution_profit?: number | string | null }).contribution_profit) ?? 0) > 0 &&
+    (asNumber((row as Listing & { contribution_margin?: number | string | null }).contribution_margin) ?? 0) > 0,
   );
   const blocked = rows.filter((row) => !candidates.includes(row));
   const results: ShopifySyncResult = {
