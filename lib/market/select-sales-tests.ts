@@ -37,7 +37,6 @@ function japanDisplayGate(args: {
 }): string[] {
   const reasons: string[] = [];
   if (!hasJapaneseText(args.title)) reasons.push("japanese_product_name_required");
-  if (!hasJapaneseText(args.description)) reasons.push("japanese_description_required");
   if (String(args.currency ?? "").trim().toUpperCase() !== "JPY") reasons.push("japan_currency_required");
   return reasons;
 }
