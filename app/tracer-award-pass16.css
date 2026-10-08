@@ -48,3 +48,6 @@ main a,main button{will-change:auto} main a:active,main button:active{transition
 
 /* Quality loop 06 — data surfaces: Give tables, status states, empty states, and dense operational blocks a consistent hierarchy. */
 main table th{text-align:left;font-weight:500} main table td,main table th{vertical-align:middle} main :where([data-status]){white-space:nowrap} main :where([aria-live="polite"]){min-height:1.25rem}
+
+/* Quality loop 07 — forms: Standardize control sizing, labels, disabled states, autofill appearance, and focus treatment. */
+main :where(input,select,textarea){accent-color:#67e8f9} main :where(input,select,textarea):disabled{cursor:not-allowed;opacity:.55} main :where(input,select,textarea):focus{border-color:rgba(165,243,252,.45)}
