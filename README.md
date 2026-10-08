@@ -148,4 +148,4 @@ For a specific batch, use the sourcing decision endpoint with authenticated acce
 <!-- supply-first-production-retrigger: 2026-10-02 -->
 
 
-<!-- operational-cycle: 2026-10-08-publish-cj-now -->
+<!-- operational-cycle: 2026-10-08-publish-cj-now-oidc-fixed -->
