@@ -1,0 +1,42 @@
+name: TRACER Build 1000 Supply
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tracer-build-1000
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: contains(github.event.head_commit.message, '[supply-1000]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Run bounded CJ supply discovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token() {
+            curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          sleep 60
+          for pass in 1 2 3 4; do
+            T="$(token)"
+            echo "=== CJ SUPPLY DISCOVERY $pass/4 ==="
+            curl -sSf --max-time 300 -H "Authorization: Bearer $T" "$BASE/api/cron/supply-first"
+            sleep 5
+          done
+          T="$(token)"
+          echo "=== DEMAND MATCH ==="
+          curl -sSf --max-time 180 -H "Authorization: Bearer $T" "$BASE/api/cron/demand-match"
+          echo
+          echo "=== SALES TEST PUBLICATION ==="
+          curl -sSf --max-time 300 -H "Authorization: Bearer $T" "$BASE/api/cron/sales-test-publication"
+          echo
