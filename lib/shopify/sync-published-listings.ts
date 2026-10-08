@@ -45,6 +45,11 @@ type ShopifyProductNode = {
   media?: { nodes: Array<{ mediaContentType: string; preview?: { image?: { url: string } | null } | null }> };
 };
 
+function hasGateProvenance(row: Listing): boolean {
+  return Array.isArray(row.selection_reasons)
+    && row.selection_reasons.some((reason) => String(reason) === "sales_test_gate_passed");
+}
+
 function asNumber(value: unknown): number | null {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : null;
@@ -135,7 +140,7 @@ async function syncListingRows(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
 ): Promise<ShopifySyncResult> {
   const candidates = rows.filter((row) =>
-    hasPassedSalesTestGate(row) &&
+    hasGateProvenance(row) &&
     row.orderable === true &&
     row.tracking_available === true &&
     Number(row.inventory) > 0 &&
