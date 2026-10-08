@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   if (authError) return authError;
 
   try {
-    const result = await publishPublishedListingsToBase(20);
+    const result = await publishPublishedListingsToBase(50);
     return NextResponse.json({
       ok: true,
       phase: "base_publication",
