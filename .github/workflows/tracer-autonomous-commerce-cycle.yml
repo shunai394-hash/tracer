@@ -14,16 +14,16 @@ permissions:
 jobs:
   cycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 45
     steps:
-      - name: CJ -> JP -> Variant -> Inventory -> Profit -> Publication
+      - name: Publish verified supply first, then refresh intelligence and operations
         shell: bash
         run: |
           set -euo pipefail
           BASE="https://tracer-pied-alpha.vercel.app"
 
           token() {
-            curl -sSf \
+            curl -sSf --max-time 20 \
               -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
               "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
@@ -36,39 +36,33 @@ jobs:
             local code
             code=$(curl -sS -o "$out" -w "%{http_code}" --max-time "$max_time" \
               -H "Authorization: Bearer $(token)" \
-              "$BASE$path")
+              "$BASE$path" || true)
             echo "=== $path HTTP $code ==="
             python3 - "$out" <<'PY'
-          import json, sys
-          path = sys.argv[1]
+          import json,sys
+          p=sys.argv[1]
           try:
-              data = json.load(open(path, encoding="utf-8"))
-              print(json.dumps(data, ensure_ascii=False, indent=2)[:50000])
+              print(json.dumps(json.load(open(p,encoding="utf-8")),ensure_ascii=False,indent=2)[:20000])
           except Exception:
-              print(open(path, encoding="utf-8", errors="replace").read()[:50000])
+              print(open(p,encoding="utf-8",errors="replace").read()[:20000])
           PY
-            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
-              echo "WARN: $path returned HTTP $code; continuing the cycle."
-            fi
           }
 
-          echo "Waiting for production deployment..."
+          echo "Wait for the current production deployment to settle."
           sleep 90
 
-          call "/api/cron/orosy-bulk-import" 300 orosy.json
-          call "/api/cron/market-sourcing" 90 market-sourcing.json
+          # Publish already-verified supply BEFORE slow discovery/enrichment.
+          call "/api/cron/sales-test-publication" 300 publish-first.json
 
-          for pass in 1 2 3 4 5 6 7 8 9 10; do
-            call "/api/cron/supplier-investigation" 240 "supplier-investigation-$pass.json"
-          done
-
+          # Refresh supply data, but never let discovery block publication.
+          call "/api/cron/orosy-bulk-import" 120 orosy.json
+          call "/api/cron/market-sourcing" 60 market-sourcing.json
+          call "/api/cron/supplier-investigation" 180 supplier-investigation.json
           call "/api/cron/intelligence" 300 intelligence.json
-          for pass in 1 2 3 4 5 6 7 8 9 10; do
-            call "/api/cron/sales-test-publication" 300 "sales-$pass.json"
-          done
 
-          for pass in 1 2 3 4 5 6; do
-            call "/api/cron/base-publish" 300 "base-reconcile-$pass.json"
-          done
+          # Re-run the canonical gate after intelligence refresh.
+          call "/api/cron/sales-test-publication" 300 publish-after-intelligence.json
 
+          # Downstream channels only after TRACER publication.
+          call "/api/cron/base-publish" 300 base-reconcile.json
           call "/api/cron/dropship-execution" 300 dropship.json
