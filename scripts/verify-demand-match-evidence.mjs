@@ -1,6 +1,7 @@
 // Demand match precision tests (pure logic, no DB, no network).
 // Run: node --experimental-strip-types scripts/verify-demand-match-evidence.mjs
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   buildIdentifierIndex,
   canonicalGtin,
@@ -33,6 +34,17 @@ function test(group, name, fn) {
     record(false, error instanceof Error ? error.message : String(error));
   }
 }
+
+test("CJ reverify source safety", "canonical identity is required before persisting reverify evidence", () => {
+  const source = readFileSync(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
+  assert.equal(source.includes("identity?.productId ?? String(row.product_id)"), false, "must not fall back to an existing product_id");
+  const holdBranch = source.indexOf("if (!identity) {");
+  const persistCall = source.indexOf("await persistCjSupplyIntelligence(");
+  assert.ok(holdBranch >= 0 && persistCall > holdBranch, "unmatched rows must be held before canonical persistence");
+  assert.match(source, /failed to persist recovered CJ evidence/);
+  assert.match(source, /failed to persist unmatched CJ evidence/);
+  assert.match(source, /\.select\("id"\)\s*\.maybeSingle\(\)/);
+});
 
 test("marketplace identity", "identifier-only matching rejects title/image-only identity and validates barcodes", () => {
   const result = verifyIdentifierMatchInvariants();
