@@ -115,10 +115,6 @@
       "schedule": "52 18 * * *"
     },
     {
-      "path": "/api/cron/intelligence",
-      "schedule": "57 18 * * *"
-    },
-    {
       "path": "/api/cron/patrol-ai",
       "schedule": "59 18 * * *"
     }
