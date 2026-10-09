@@ -23,7 +23,22 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Set up disposable local PostgreSQL for integration tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql postgresql-client
+          sudo pg_ctlcluster 16 main start
+          sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'ci-postgres-password';"
+          sudo -u postgres createdb tracer_test
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
+      - name: Run atomic catalog sync PostgreSQL integration tests (disposable CI database only)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: ci-postgres-password
+          PGDATABASE: tracer_test
+        run: psql -v ON_ERROR_STOP=1 -f scripts/test-atomic-catalog-sync.sql
       - run: npm run lint
       - run: npm run build

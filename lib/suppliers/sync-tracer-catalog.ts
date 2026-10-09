@@ -2,8 +2,12 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { identifiersFromRecord, matchProductIdentity } from "@/lib/market/identifiers";
+import { hasExactCurrentRequestVariantSet, hasUniqueIdentitySelection, onlyCurrentRequestVariants } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 function num(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  if (typeof value === "string" && value.trim() === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -15,8 +19,18 @@ function str(value: unknown): string | null {
 export async function syncTracerCatalogFromInternalSupply(args: {
   bestsellerId: string;
   salePrice?: number | null;
+  /** Exact internal_supply_variants row IDs written by this ingestion request. */
+  variantIds?: string[];
 }): Promise<{ matched: boolean; catalogId: string | null; variantId: string | null; reason?: string }> {
   const db = createSupabaseAdminClient();
+  const suppliedVariantIds = (args.variantIds ?? []).filter((id) => typeof id === "string" && id.trim());
+  const variantIds = [...new Set(suppliedVariantIds)];
+  if (variantIds.length === 0) {
+    return { matched: false, catalogId: null, variantId: null, reason: "no_variants_written_by_request" };
+  }
+  if (variantIds.length !== suppliedVariantIds.length) {
+    return { matched: false, catalogId: null, variantId: null, reason: "duplicate_variant_ids_in_request_scope" };
+  }
 
   const { data: bestseller, error: bestsellerError } = await db
     .from("marketplace_bestsellers")
@@ -38,6 +52,22 @@ export async function syncTracerCatalogFromInternalSupply(args: {
 
   if (!queries.length) return { matched: false, catalogId: null, variantId: null, reason: "no_identifier" };
 
+  // Resolve the exact request-scoped variant set independently of product lookup.
+  // Never use a product's other/older variants as fallback when IDs are missing or mismatched.
+  const { data: requestedVariants, error: requestedVariantError } = await db
+    .from("internal_supply_variants")
+    .select("*")
+    .in("id", variantIds);
+  if (requestedVariantError) throw new Error(requestedVariantError.message);
+  const scopedRows = (requestedVariants ?? []) as Array<Record<string, unknown> & { id: string; supply_product_id: string }>;
+  if (!hasExactCurrentRequestVariantSet(scopedRows, variantIds)) {
+    return { matched: false, catalogId: null, variantId: null, reason: "variant_scope_incomplete_or_cross_product" };
+  }
+  const requestedProductId = String(scopedRows[0].supply_product_id);
+  if (scopedRows.some((variant) => variant.active !== true || variant.orderable !== true || (num(variant.inventory) ?? 0) <= 0)) {
+    return { matched: false, catalogId: null, variantId: null, reason: "requested_variant_not_active_orderable_or_in_stock" };
+  }
+
   const or = queries.map(([column, value]) => `${column}.eq.${value.replace(/[,()]/g, "")}`).join(",");
 
   const { data: products, error: productError } = await db
@@ -50,6 +80,7 @@ export async function syncTracerCatalogFromInternalSupply(args: {
   if (productError) throw new Error(productError.message);
 
   for (const product of products ?? []) {
+    if (String(product.id) !== requestedProductId) continue;
     const productIds = identifiersFromRecord(product as Record<string, unknown>);
     const identity = matchProductIdentity({
       market: {
@@ -66,18 +97,11 @@ export async function syncTracerCatalogFromInternalSupply(args: {
 
     if (!identity.salesEligible) continue;
 
-    const { data: variants, error: variantError } = await db
-      .from("internal_supply_variants")
-      .select("*")
-      .eq("supply_product_id", product.id)
-      .eq("active", true)
-      .eq("orderable", true)
-      .gt("inventory", 0)
-      .limit(100);
-
-    if (variantError) throw new Error(variantError.message);
-
-    const confirmed = (variants ?? []).map((variant) => {
+    const currentRequestVariants = onlyCurrentRequestVariants(
+      scopedRows.filter((variant) => String(variant.supply_product_id) === requestedProductId) as Array<{ id: string; [key: string]: unknown }>,
+      variantIds,
+    );
+    const confirmed = currentRequestVariants.map((variant) => {
       const ids = identifiersFromRecord(variant as Record<string, unknown>);
       return {
         variant,
@@ -96,26 +120,28 @@ export async function syncTracerCatalogFromInternalSupply(args: {
       };
     }).filter((x) => x.identity.salesEligible);
 
-    const selected = confirmed.length === 1
-      ? confirmed[0]
-      : confirmed.find((x) =>
-          Boolean(
-            (marketIds.jan && x.variant.jan === marketIds.jan) ||
-            (marketIds.gtin && x.variant.gtin === marketIds.gtin) ||
-            (marketIds.ean && x.variant.ean === marketIds.ean) ||
-            (marketIds.upc && x.variant.upc === marketIds.upc),
-          ),
-        );
+    const exactIdentifierMatches = confirmed.filter((x) =>
+      Boolean(
+        (marketIds.jan && identifiersFromRecord(x.variant as Record<string, unknown>).jan === marketIds.jan) ||
+        (marketIds.gtin && identifiersFromRecord(x.variant as Record<string, unknown>).gtin === marketIds.gtin) ||
+        (marketIds.ean && identifiersFromRecord(x.variant as Record<string, unknown>).ean === marketIds.ean) ||
+        (marketIds.upc && identifiersFromRecord(x.variant as Record<string, unknown>).upc === marketIds.upc),
+      ),
+    );
+    const selected = hasUniqueIdentitySelection(confirmed.length, exactIdentifierMatches.length)
+      ? confirmed.length === 1 ? confirmed[0] : exactIdentifierMatches[0]
+      : undefined;
 
     if (!selected) continue;
 
     const variant = selected.variant;
     const inventory = num(variant.inventory) ?? num(product.inventory) ?? 0;
     const cost = num(variant.cost) ?? num(product.cost);
-    const shipping = num(variant.shipping_cost) ?? num(product.shipping_cost) ?? 0;
+    const shipping = num(variant.shipping_cost) ?? num(product.shipping_cost);
     const salePrice = num(args.salePrice);
     const tracking = variant.tracking_available === true || product.tracking_available === true;
-    const orderable = inventory > 0 && cost !== null && salePrice !== null && salePrice > cost + shipping && tracking;
+    const orderable = inventory > 0 && cost !== null && shipping !== null
+      && salePrice !== null && salePrice > cost + shipping && tracking;
 
     const { data: existing } = await db
       .from("tracer_supply_catalog")
@@ -160,39 +186,61 @@ export async function syncTracerCatalogFromInternalSupply(args: {
       updated_at: new Date().toISOString(),
     };
 
-    const { data: catalog, error: catalogError } = await db
-      .from("tracer_supply_catalog")
-      .upsert(payload, { onConflict: "tracer_sku" })
-      .select("id")
-      .single();
-
-    if (catalogError) throw new Error(catalogError.message);
-
     const variantSku = str(variant.variant_sku) ?? `${tracerSku}-DEFAULT`;
-    const { data: catalogVariant, error: catalogVariantError } = await db
-      .from("tracer_supply_variants")
-      .upsert({
-        catalog_id: catalog.id,
-        variant_sku: variantSku,
-        title: str(variant.title) ?? str(product.title),
-        barcode: str(variant.jan) ?? str(variant.gtin) ?? str(variant.ean) ?? str(variant.upc),
-        attributes: variant.metadata ?? {},
-        cost,
-        inventory,
-        orderable,
-        internal_supply_product_id: product.id,
-        internal_supply_variant_id: variant.id,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "variant_sku" })
-      .select("id")
-      .single();
+    const catalogPayload = {
+      ...payload,
+      // A non-orderable candidate can be cataloged as draft, but never elevated
+      // by this RPC unless the locked source rows still match their generations.
+    };
+    const catalogVariantPayload = {
+      catalog_id: null,
+      variant_sku: variantSku,
+      title: str(variant.title) ?? str(product.title),
+      barcode: str(variant.jan) ?? str(variant.gtin) ?? str(variant.ean) ?? str(variant.upc),
+      attributes: variant.metadata ?? {},
+      cost,
+      inventory,
+      orderable,
+      internal_supply_product_id: product.id,
+      internal_supply_variant_id: variant.id,
+      updated_at: new Date().toISOString(),
+    };
 
-    if (catalogVariantError) throw new Error(catalogVariantError.message);
+    const productGeneration = num(product.generation);
+    const variantGeneration = num(variant.generation);
+    if (productGeneration === null || variantGeneration === null) {
+      return { matched: false, catalogId: null, variantId: null, reason: "generation_missing" };
+    }
+
+    const { data: committed, error: commitError } = await db.rpc("commit_internal_supply_catalog_sync", {
+      p_product_id: String(product.id),
+      p_variant_id: String(variant.id),
+      p_expected_product_generation: productGeneration,
+      p_expected_variant_generation: variantGeneration,
+      p_catalog: catalogPayload,
+      p_catalog_variant: catalogVariantPayload,
+    });
+    if (commitError) throw new Error(commitError.message);
+
+    const result = committed as {
+      ok?: boolean;
+      reason?: string;
+      catalog_id?: string;
+      catalog_variant_id?: string;
+    } | null;
+    if (!result?.ok || !result.catalog_id || !result.catalog_variant_id) {
+      return {
+        matched: false,
+        catalogId: null,
+        variantId: null,
+        reason: result?.reason ?? "atomic_catalog_sync_rejected",
+      };
+    }
 
     return {
       matched: true,
-      catalogId: String(catalog.id),
-      variantId: String(catalogVariant.id),
+      catalogId: String(result.catalog_id),
+      variantId: String(result.catalog_variant_id),
       reason: orderable ? "ready" : "matched_but_not_ready",
     };
   }

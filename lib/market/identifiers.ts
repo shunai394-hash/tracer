@@ -33,7 +33,7 @@ export function marketplaceBarcodeCandidates(value: string): string[] {
 }
 
 function hasValidGs1CheckDigit(value: string): boolean {
-  if (!/^\d{8,14}$/.test(value)) return false;
+  if (![8, 12, 13, 14].includes(value.length) || !/^\d+$/.test(value)) return false;
   const body = value.slice(0, -1);
   const check = Number(value[value.length - 1]);
   let sum = 0;
@@ -67,7 +67,7 @@ export function normalizeIdentifier(
   if (scheme === "jan" && (num.length === 8 || num.length === 13)) return hasValidGs1CheckDigit(num) ? num : null;
   if (scheme === "ean" && (num.length === 8 || num.length === 13)) return hasValidGs1CheckDigit(num) ? num : null;
   if (scheme === "upc" && num.length === 12) return hasValidGs1CheckDigit(num) ? num : null;
-  if (scheme === "gtin" && num.length >= 8 && num.length <= 14) return num;
+  if (scheme === "gtin" && [8, 12, 13, 14].includes(num.length)) return hasValidGs1CheckDigit(num) ? num : null;
   return null;
 }
 
@@ -222,6 +222,21 @@ export function verifyIdentifierMatchInvariants(): {
         const r = matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, upc: "012345678905" }, supply: { ...EMPTY_IDENTIFIERS, gtin: "00012345678905" } });
         return r.salesEligible && r.method === "gtin";
       })(),
+    },
+    {
+      name: "invalid_gtin_check_digit_is_rejected",
+      expected: true,
+      actual: normalizeIdentifier("gtin", "4006381333932") === null,
+    },
+    {
+      name: "valid_gtin13_is_preserved",
+      expected: true,
+      actual: normalizeIdentifier("gtin", "4006381333931") === "4006381333931",
+    },
+    {
+      name: "invalid_gtin_length_is_rejected",
+      expected: true,
+      actual: normalizeIdentifier("gtin", "123456789") === null,
     },
     {
       name: "different_barcode_digits_do_not_match",

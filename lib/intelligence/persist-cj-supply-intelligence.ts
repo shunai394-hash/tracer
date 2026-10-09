@@ -4,6 +4,7 @@ import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
 import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates } from "@/lib/market/identifiers";
+import { hasUniqueMarketplaceIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 export type PersistCjSupplyIntelligenceArgs = {
   productId: string;
@@ -68,7 +69,7 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
       if (!current || candidate.confidence > current.confidence || (candidate.confidence === current.confidence && candidate.fetchedAt > current.fetchedAt)) matchesByProduct.set(productId, candidate);
     }
   }
-  if (matchesByProduct.size !== 1) return null;
+  if (!hasUniqueMarketplaceIdentity(matchesByProduct.size)) return null;
   const match = [...matchesByProduct.values()][0];
   return { bestsellerId: match.bestsellerId, productId: match.productId, method: match.method, confidence: match.confidence, rationale: match.rationale };
 }

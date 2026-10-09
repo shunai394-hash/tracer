@@ -144,6 +144,7 @@ export async function GET(request: Request) {
       const catalog = await syncTracerCatalogFromInternalSupply({
         bestsellerId: candidateId,
         salePrice: Number.isFinite(Number(bestseller.price)) ? Number(bestseller.price) : null,
+        variantIds: internal.supplyVariantId ? [internal.supplyVariantId] : [],
       });
       internalResults.push({
         bestsellerId: candidateId,
