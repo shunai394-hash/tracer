@@ -147,17 +147,19 @@ begin
   if (select generation from public.internal_supply_variants where id=v_variant) <> 2 then
     raise exception 'variant update trigger did not bump generation';
   end if;
-  if exists (
+  if not exists (
     select 1 from public.tracer_supply_catalog
-     where id=v_catalog_id and (status <> 'draft' or orderable is distinct from false or inventory <> 0)
+     where id=v_catalog_id and status = 'draft' and orderable is false and inventory = 0
   ) then
-    raise exception 'source mutation did not quarantine catalog projection';
+    raise exception 'source mutation did not leave catalog projection in draft/non-orderable/zero-stock state';
   end if;
-  if exists (
+  if not exists (
     select 1 from public.tracer_supply_variants
-     where catalog_id=v_catalog_id and (orderable is distinct from false or inventory <> 0)
+     where catalog_id=v_catalog_id
+       and internal_supply_variant_id=v_variant
+       and orderable is false and inventory = 0
   ) then
-    raise exception 'source mutation did not quarantine catalog variant';
+    raise exception 'source mutation did not leave the linked catalog variant non-orderable with zero stock';
   end if;
 
   v_result := public.commit_internal_supply_catalog_sync(v_product,v_variant,1,1,v_catalog,v_catalog_variant);
