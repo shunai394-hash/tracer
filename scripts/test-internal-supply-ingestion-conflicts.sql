@@ -18,6 +18,14 @@ create table public.internal_supply_variants (
   inventory integer not null default 0
 );
 
+-- Model the legacy production partial indexes before applying the migration.
+create unique index internal_supply_products_source_ref_uq
+  on public.internal_supply_products(source_name, source_ref) where source_ref is not null;
+create unique index internal_supply_variants_product_variant_sku_uq
+  on public.internal_supply_variants(supply_product_id, variant_sku) where variant_sku is not null;
+create unique index internal_supply_variants_product_variant_id_uq
+  on public.internal_supply_variants(supply_product_id, variant_id) where variant_id is not null;
+
 \i supabase/migrations/20261010143000_tracer_internal_supply_conflict_targets.sql
 -- The migration must be safe to re-apply in a disposable schema.
 \i supabase/migrations/20261010143000_tracer_internal_supply_conflict_targets.sql
