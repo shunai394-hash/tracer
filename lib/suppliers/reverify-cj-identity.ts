@@ -2,6 +2,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { persistCjSupplyIntelligence, resolveMarketplaceIdentity } from "@/lib/intelligence/persist-cj-supply-intelligence";
 import { calculateCJFreight, fetchCJProductVariants, fetchCJVariantByVid, fetchCJVariantStock, getCJProductDetail } from "@/lib/sources/cj";
+import { parseCJUsdPrice } from "@/lib/sources/cj/parse";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { normalizeIdentifier } from "@/lib/market/identifiers";
 import { isCjIdentityReverifyCandidate, isCjIdentityReverifyDue, CJ_IDENTITY_RETRY_DELAYS_MS, supplierBarcodeAudit } from "@/lib/suppliers/cj-identity-reverify-policy";
@@ -100,8 +101,8 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         catch (lookupError) { console.warn("[cj-identity-reverify] product evidence lookup failed", { supplierListingId, error: lookupError instanceof Error ? lookupError.message : String(lookupError) }); }
 
         if (cost === null && String(row.currency ?? "").toUpperCase() === "USD") {
-          const candidateCost = num(variantDetail?.sellPrice);
-          if (candidateCost !== null && candidateCost > 0) cost = candidateCost;
+          const candidateCost = parseCJUsdPrice(variantDetail?.sellPrice, row.currency);
+          if (candidateCost !== null) cost = candidateCost;
         }
         if (!imageUrl && typeof productDetail?.imageUrl === "string" && /^https?:\/\//i.test(productDetail.imageUrl.trim())) {
           imageUrl = productDetail.imageUrl.trim();
