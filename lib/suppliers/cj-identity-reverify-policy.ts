@@ -39,6 +39,11 @@ export function supplierBarcodeAudit(value: unknown, isValidGtIn: boolean): {
   };
 }
 
+export function hasUniqueIdentitySelection(candidateCount: number, exactMatchCount: number): boolean {
+  return Number.isInteger(candidateCount) && candidateCount > 0
+    && (candidateCount === 1 || (Number.isInteger(exactMatchCount) && exactMatchCount === 1));
+}
+
 export function hasUniqueMarketplaceIdentity(candidateProductCount: number): boolean {
   return Number.isInteger(candidateProductCount) && candidateProductCount === 1;
 }
@@ -61,6 +66,9 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
     { name: "at_1_hour_boundary_is_due", expected: true, actual: isCjIdentityReverifyDue({ next_identity_reverify_at: new Date(now + CJ_IDENTITY_RETRY_DELAYS_MS.processingError).toISOString() }, now + CJ_IDENTITY_RETRY_DELAYS_MS.processingError) },
     { name: "invalid_gtin_is_rejected_but_raw_value_is_retained", expected: true, actual: (() => { const raw = "1598446591114"; const audit = supplierBarcodeAudit(raw, false); return audit.variant_barcode_raw === raw && audit.variant_barcode_validation === "invalid_format_or_check_digit"; })() },
     { name: "valid_gtin_is_classified_but_not_itself_linked", expected: true, actual: (() => { const audit = supplierBarcodeAudit("4006381333931", true); return audit.variant_barcode_validation === "valid_gs1_check_digit" && !hasUniqueMarketplaceIdentity(0); })() },
+    { name: "multiple_variants_without_unique_identifier_match_are_rejected", expected: false, actual: hasUniqueIdentitySelection(3, 0) },
+    { name: "multiple_variants_with_one_exact_identifier_match_select_one", expected: true, actual: hasUniqueIdentitySelection(3, 1) },
+    { name: "multiple_variants_with_duplicate_exact_matches_are_rejected", expected: false, actual: hasUniqueIdentitySelection(3, 2) },
     { name: "zero_candidates_never_link", expected: false, actual: hasUniqueMarketplaceIdentity(0) },
     { name: "multiple_candidates_never_link", expected: false, actual: hasUniqueMarketplaceIdentity(2) },
     { name: "one_candidate_can_pass_identity_gate", expected: true, actual: hasUniqueMarketplaceIdentity(1) },
