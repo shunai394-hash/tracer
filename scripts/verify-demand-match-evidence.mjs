@@ -79,6 +79,8 @@ test("CJ reverify integration contract", "recovery uses live CJ evidence, persis
   assert.match(persistence, /hasUniqueMarketplaceIdentity\(matchesByProduct\.size\)/, "identity resolution must require exactly one canonical product");
   assert.match(persistence, /\.select\("id"\)\s*\.maybeSingle\(\)/, "supplier evidence update must return the affected row");
   assert.match(persistence, /CJ supplier evidence persistence failed/);
+  assert.match(persistence, /tracking_available: false/, "CJ API availability must not be treated as confirmed shipment tracking");
+  assert.doesNotMatch(persistence, /tracking_available: true/, "tracking must remain unverified until carrier-level evidence exists");
   assert.match(persistence, /CJ supplier evidence update affected no supplier listing row/, "zero-row update must fail instead of reporting recovery");
 });
 
