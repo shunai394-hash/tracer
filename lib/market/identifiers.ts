@@ -136,6 +136,20 @@ export function matchProductIdentity(args: {
 }): IdentityMatchResult {
   const market = args.market;
   const supply = args.supply;
+  const brandMarket = (market.brand ?? "").trim().normalize("NFKC").toLowerCase();
+  const brandSupply = (supply.brand ?? "").trim().normalize("NFKC").toLowerCase();
+
+  // A shared identifier is not sufficient to override contradictory brand evidence.
+  // Missing brand remains unknown; only two present, conflicting brands hard-stop identity.
+  if (brandMarket && brandSupply && brandMarket !== brandSupply) {
+    return {
+      linked: false,
+      salesEligible: false,
+      method: "none",
+      confidence: 0,
+      rationale: "supplier and marketplace brands conflict",
+    };
+  }
 
   if (eq(market.asin, supply.asin)) {
     return { linked: true, salesEligible: true, method: "asin", confidence: 0.99, rationale: "ASIN matches" };
@@ -272,6 +286,17 @@ export function verifyIdentifierMatchInvariants(): {
           supply: { ...EMPTY_IDENTIFIERS, mpn: "AB-1234", brand: "Other" },
         });
         return !r.salesEligible && !r.linked;
+      })(),
+    },
+    {
+      name: "same_gtin_with_conflicting_brand_is_not_sales_eligible",
+      expected: true,
+      actual: (() => {
+        const r = matchProductIdentity({
+          market: { ...EMPTY_IDENTIFIERS, gtin: "4006381333931", brand: "Acme" },
+          supply: { ...EMPTY_IDENTIFIERS, gtin: "4006381333931", brand: "Other" },
+        });
+        return !r.salesEligible && !r.linked && r.rationale.includes("brands conflict");
       })(),
     },
     {
