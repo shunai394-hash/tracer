@@ -19,7 +19,11 @@ assert.match(ingest, /normalizeIdentifier\("gtin", raw\)/,
   "invalid GTIN check digits must not become identity evidence");
 assert.match(ingest, /active: false/,
   "the product must be quarantined before variant mutation");
-assert.match(ingest, /orderable: false/,\n  "supplier stock/freight alone must not enable automated purchasing");\nassert.match(ingest, /identityLink = \{/,\n  "a unique exact identifier match must be recorded separately from orderability");\nassert.match(ingest, /automated_order_creation_verified: false/,
+assert.match(ingest, /orderable: false/,
+  "supplier stock/freight alone must not enable automated purchasing");
+assert.match(ingest, /identityLink = \{/,
+  "a unique exact identifier match must be recorded separately from orderability");
+assert.match(ingest, /automated_order_creation_verified: false/,
   "live stock/freight verification must not be represented as proof of automated ordering");
 assert.match(ingest, /internal_supply_ingestion_audit/,
   "an ingestion audit attempt must be made");
