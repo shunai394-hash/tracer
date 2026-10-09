@@ -2,6 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { identifiersFromRecord, matchProductIdentity } from "@/lib/market/identifiers";
+import { hasUniqueIdentitySelection } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 function num(value: unknown): number | null {
   const n = Number(value);
@@ -104,11 +105,9 @@ export async function syncTracerCatalogFromInternalSupply(args: {
         (marketIds.upc && identifiersFromRecord(x.variant as Record<string, unknown>).upc === marketIds.upc),
       ),
     );
-    const selected = confirmed.length === 1
-      ? confirmed[0]
-      : exactIdentifierMatches.length === 1
-        ? exactIdentifierMatches[0]
-        : undefined;
+    const selected = hasUniqueIdentitySelection(confirmed.length, exactIdentifierMatches.length)
+      ? confirmed.length === 1 ? confirmed[0] : exactIdentifierMatches[0]
+      : undefined;
 
     if (!selected) continue;
 
