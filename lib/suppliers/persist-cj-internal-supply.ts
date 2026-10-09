@@ -106,6 +106,19 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     .maybeSingle();
   if (existingProduct.error) throw new Error("cj_internal_supply_product_lookup_failed: " + existingProduct.error.message);
 
+  // Check global variant ownership before creating a product row. This avoids
+  // leaving orphan inactive product rows when an ID is already attached elsewhere.
+  const variantOwners = await db
+    .from("internal_supply_variants")
+    .select("id,supply_product_id")
+    .eq("variant_id", args.supplierVariantId)
+    .limit(2);
+  if (variantOwners.error) throw new Error("cj_internal_supply_variant_owner_lookup_failed: " + variantOwners.error.message);
+  const ownerIds = [...new Set((variantOwners.data ?? []).map((row: { supply_product_id: string }) => String(row.supply_product_id)))];
+  if (ownerIds.some((ownerId) => ownerId !== String(existingProduct.data?.id ?? ""))) {
+    throw new Error("cj_internal_supply_variant_already_owned_by_another_product");
+  }
+
   const productWrite = existingProduct.data?.id
     ? await db.from("internal_supply_products").update(productPayload).eq("id", existingProduct.data.id).select("id").single()
     : await db.from("internal_supply_products").insert(productPayload).select("id").single();
@@ -144,18 +157,6 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     fetched_at: now,
     updated_at: now,
   };
-
-  // A supplier variant ID is global to the CJ source. Do not silently attach
-  // an existing source variant to a second internal product row.
-  const variantOwners = await db
-    .from("internal_supply_variants")
-    .select("id,supply_product_id")
-    .eq("variant_id", args.supplierVariantId)
-    .limit(2);
-  if (variantOwners.error) throw new Error("cj_internal_supply_variant_owner_lookup_failed: " + variantOwners.error.message);
-  if ((variantOwners.data ?? []).some((row: { supply_product_id: string }) => String(row.supply_product_id) !== productId)) {
-    throw new Error("cj_internal_supply_variant_already_owned_by_another_product");
-  }
 
   const existingVariant = await db
     .from("internal_supply_variants")
