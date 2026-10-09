@@ -346,7 +346,7 @@ export async function selectAndPublishSalesTests(
     const productId = String(item.bestseller.product_id ?? "");
     if (!productId) continue;
     const listingTitle = localizeProductTitle(item.bestseller.title, String(item.bestseller.category ?? ""));
-    if (!isJapaneseProductTitle(listingTitle)) {
+    if (listingTitle === null || !isJapaneseProductTitle(listingTitle)) {
       const reasons = ["publishable_japanese_title_missing"];
       await markPipeline(String(item.bestseller.id), "SALES_TEST", "blocked", reasons.join(","));
       rejected.push({ id: String(item.bestseller.id), reasons });
