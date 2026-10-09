@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync";
+import { previewShopifySync } from "@/lib/shopify/sync-published-listings";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -10,7 +11,13 @@ export async function POST(request: Request) {
   if (authError) return authError;
 
   try {
-    const body = (await request.json().catch(() => ({}))) as { listingIds?: unknown };
+    const body = (await request.json().catch(() => ({}))) as { listingIds?: unknown; dryRun?: unknown; limit?: unknown };
+    // dryRun: report exactly what the next sync would write (no Shopify or DB writes).
+    if (body.dryRun === true) {
+      const limit = Number(body.limit);
+      const preview = await previewShopifySync(Number.isFinite(limit) && limit > 0 ? limit : 150);
+      return NextResponse.json({ ok: true, dryRun: true, ...preview });
+    }
     const listingIds = Array.isArray(body.listingIds)
       ? body.listingIds.map(String).filter(Boolean).slice(0, 100)
       : undefined;
