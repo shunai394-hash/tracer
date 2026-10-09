@@ -116,7 +116,7 @@ export async function probeShopifyAuth(): Promise<ShopifyAuthProbeResult> {
   let requestId: string | null = null;
   try {
     const token = (await getShopifyAccessToken()).trim();
-    if (!token || /\\s/.test(token) || /^["']|["']$/.test(token)) {
+    if (!token || /\s/.test(token) || /^["']|["']$/.test(token)) {
       return { shopifyHttpStatus: null, shopifyRequestId: null, graphqlErrors: ["Shopify access token is missing or malformed"], shopId: null, ok: false };
     }
     response = await fetch(shopifyEndpoint(), {
