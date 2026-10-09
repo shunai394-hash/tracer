@@ -72,9 +72,11 @@ export function shouldSyncInternalSupplyCatalog(args: {
     && args.successfulVariantWriteCount === args.submittedVariantCount;
 }
 
+/** A canonical variant is linkable only when exactly one candidate has an exact barcode-family match. A single fuzzy/MPN candidate is not enough to identify a variant. */
 export function hasUniqueIdentitySelection(candidateCount: number, exactMatchCount: number): boolean {
   return Number.isInteger(candidateCount) && candidateCount > 0
-    && (candidateCount === 1 || (Number.isInteger(exactMatchCount) && exactMatchCount === 1));
+    && Number.isInteger(exactMatchCount) && exactMatchCount === 1
+    && exactMatchCount <= candidateCount;
 }
 
 export function hasUniqueMarketplaceIdentity(candidateProductCount: number): boolean {
@@ -112,8 +114,11 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
     { name: "complete_variant_writes_allow_server_side_gate_to_run", expected: true, actual: shouldSyncInternalSupplyCatalog({ bestsellerId: "market-1", submittedVariantCount: 2, variantWriteErrorCount: 0, successfulVariantWriteCount: 2 }) },
     { name: "missing_marketplace_reference_blocks_catalog_sync", expected: false, actual: shouldSyncInternalSupplyCatalog({ bestsellerId: null, submittedVariantCount: 1, variantWriteErrorCount: 0, successfulVariantWriteCount: 1 }) },
     { name: "multiple_variants_without_unique_identifier_match_are_rejected", expected: false, actual: hasUniqueIdentitySelection(3, 0) },
+    { name: "single MPN-only candidate without exact barcode is rejected", expected: false, actual: hasUniqueIdentitySelection(1, 0) },
+    { name: "one candidate with one exact barcode match is accepted", expected: true, actual: hasUniqueIdentitySelection(1, 1) },
     { name: "multiple_variants_with_one_exact_identifier_match_select_one", expected: true, actual: hasUniqueIdentitySelection(3, 1) },
     { name: "multiple_variants_with_duplicate_exact_matches_are_rejected", expected: false, actual: hasUniqueIdentitySelection(3, 2) },
+    { name: "exact match count greater than candidate count is rejected", expected: false, actual: hasUniqueIdentitySelection(1, 2) },
     { name: "zero_candidates_never_link", expected: false, actual: hasUniqueMarketplaceIdentity(0) },
     { name: "multiple_candidates_never_link", expected: false, actual: hasUniqueMarketplaceIdentity(2) },
     { name: "one_candidate_can_pass_identity_gate", expected: true, actual: hasUniqueMarketplaceIdentity(1) },
