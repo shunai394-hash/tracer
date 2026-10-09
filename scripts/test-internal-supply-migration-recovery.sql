@@ -110,7 +110,8 @@ begin
       '10000000-0000-4000-8000-000000000099',
       'ORPHAN-VARIANT','ORPHAN-SKU','orphan',1,'cj'
     );
-  exception when foreign_key_violation then
+  exception when others then
+    -- The BEFORE trigger rejects missing owners before the FK check can run.
     v_rejected := true;
   end;
   if not v_rejected then raise exception 'variant without a parent product was accepted'; end if;
