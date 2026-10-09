@@ -45,9 +45,20 @@ update public.internal_supply_ingestion_audit
   set request_id = gen_random_uuid()
   where request_id is null;
 
-update public.internal_supply_ingestion_audit
-  set item_index = 0
-  where item_index is null;
+with missing_item_indexes as (
+  select id,
+         coalesce((select max(existing.item_index)
+                   from public.internal_supply_ingestion_audit existing
+                   where existing.request_id = audit.request_id
+                     and existing.item_index is not null), -1)
+           + row_number() over (partition by request_id order by id) as next_item_index
+  from public.internal_supply_ingestion_audit audit
+  where item_index is null
+)
+update public.internal_supply_ingestion_audit audit
+  set item_index = missing_item_indexes.next_item_index
+  from missing_item_indexes
+  where audit.id = missing_item_indexes.id;
 
 alter table public.internal_supply_ingestion_audit
   alter column request_id set not null,
