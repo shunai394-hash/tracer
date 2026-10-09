@@ -31,6 +31,7 @@ jobs:
           sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'ci-postgres-password';"
           sudo -u postgres createdb tracer_test
           sudo -u postgres createdb tracer_ingestion_test
+          sudo -u postgres createdb tracer_migration_test
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
       - run: node scripts/verify-cj-internal-supply-wiring.mjs
@@ -50,5 +51,13 @@ jobs:
           PGPASSWORD: ci-postgres-password
           PGDATABASE: tracer_ingestion_test
         run: psql -v ON_ERROR_STOP=1 -f scripts/test-internal-supply-ingestion-conflicts.sql
+      - name: Run migration failure-recovery and legacy audit tests (disposable CI database only)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: ci-postgres-password
+          PGDATABASE: tracer_migration_test
+        run: psql -v ON_ERROR_STOP=1 -f scripts/test-internal-supply-migration-recovery.sql
       - run: npm run lint
       - run: npm run build
