@@ -120,16 +120,16 @@ export async function syncTracerCatalogFromInternalSupply(args: {
       };
     }).filter((x) => x.identity.salesEligible);
 
+    // Product-level MPN/brand evidence may identify the model, but it cannot
+    // identify a specific color/size/pack variant. Only a unique exact barcode
+    // match across the JAN/EAN/UPC/GTIN family may bind a canonical variant.
+    // matchProductIdentity returns one of these methods only when the barcode
+    // itself matched (including safe cross-scheme GTIN normalization).
     const exactIdentifierMatches = confirmed.filter((x) =>
-      Boolean(
-        (marketIds.jan && identifiersFromRecord(x.variant as Record<string, unknown>).jan === marketIds.jan) ||
-        (marketIds.gtin && identifiersFromRecord(x.variant as Record<string, unknown>).gtin === marketIds.gtin) ||
-        (marketIds.ean && identifiersFromRecord(x.variant as Record<string, unknown>).ean === marketIds.ean) ||
-        (marketIds.upc && identifiersFromRecord(x.variant as Record<string, unknown>).upc === marketIds.upc),
-      ),
+      ["jan", "gtin", "ean", "upc"].includes(x.identity.method),
     );
     const selected = hasUniqueIdentitySelection(confirmed.length, exactIdentifierMatches.length)
-      ? confirmed.length === 1 ? confirmed[0] : exactIdentifierMatches[0]
+      ? exactIdentifierMatches[0]
       : undefined;
 
     if (!selected) continue;
