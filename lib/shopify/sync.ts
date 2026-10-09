@@ -11,10 +11,11 @@ export type ShopifySyncResult = {
   listingIds: string[];
 };
 
-export async function syncPublishedListingsToShopify(listingIds?: string[]): Promise<ShopifySyncResult> {
+export async function syncPublishedListingsToShopify(listingIds?: string[], limit = 150): Promise<ShopifySyncResult> {
   if (!isShopifyConfigured()) return { configured: false, attempted: 0, synced: 0, failed: [], listingIds: [] };
 
-  const result = await syncCanonicalShopifyListings(150, listingIds);
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(150, Math.floor(limit)) : 150;
+  const result = await syncCanonicalShopifyListings(safeLimit, listingIds);
   return {
     configured: result.configured,
     attempted: result.considered,
