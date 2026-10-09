@@ -85,8 +85,17 @@ begin
     return jsonb_build_object('ok', false, 'reason', 'payload_scope_mismatch');
   end if;
 
-  insert into public.tracer_supply_catalog
-  select (jsonb_populate_record(null::public.tracer_supply_catalog, p_catalog)).*
+  insert into public.tracer_supply_catalog (
+    tracer_sku, title, brand, category, image_url, status, cost, shipping_cost,
+    handling_cost, sale_price, currency, inventory, lead_time_days,
+    tracking_available, orderable, source_type, source_ref, evidence, metadata,
+    bestseller_id, updated_at
+  )
+  select r.tracer_sku, r.title, r.brand, r.category, r.image_url, r.status,
+    r.cost, r.shipping_cost, r.handling_cost, r.sale_price, r.currency,
+    r.inventory, r.lead_time_days, r.tracking_available, r.orderable,
+    r.source_type, r.source_ref, r.evidence, r.metadata, r.bestseller_id, r.updated_at
+  from jsonb_populate_record(null::public.tracer_supply_catalog, p_catalog) as r
   on conflict (tracer_sku) do update set
     title = excluded.title,
     brand = excluded.brand,
@@ -112,8 +121,14 @@ begin
 
   -- Ensure the catalog variant points at the row just committed above.
   p_catalog_variant := jsonb_set(p_catalog_variant, '{catalog_id}', to_jsonb(v_catalog_id::text), true);
-  insert into public.tracer_supply_variants
-  select (jsonb_populate_record(null::public.tracer_supply_variants, p_catalog_variant)).*
+  insert into public.tracer_supply_variants (
+    catalog_id, variant_sku, title, barcode, attributes, cost, inventory,
+    orderable, internal_supply_product_id, internal_supply_variant_id, updated_at
+  )
+  select r.catalog_id, r.variant_sku, r.title, r.barcode, r.attributes, r.cost,
+    r.inventory, r.orderable, r.internal_supply_product_id,
+    r.internal_supply_variant_id, r.updated_at
+  from jsonb_populate_record(null::public.tracer_supply_variants, p_catalog_variant) as r
   on conflict (variant_sku) do update set
     catalog_id = excluded.catalog_id,
     title = excluded.title,
