@@ -80,7 +80,7 @@ export function getFoundationStatus(): FoundationStatus {
     gemini: present(readEnv("GEMINI_API_KEY")),
     brightData: present(readEnv("BRIGHTDATA_API_TOKEN")),
     brightDataMcp: present(readEnv("BRIGHTDATA_MCP_API_KEY")),
-    shopify: present(readEnv("SHOPIFY_STORE_DOMAIN")) && present(readEnv("SHOPIFY_ADMIN_ACCESS_TOKEN")),
+    shopify: present(readEnv("SHOPIFY_STORE_DOMAIN")) && (present(readEnv("SHOPIFY_ADMIN_ACCESS_TOKEN")) || (present(readEnv("SHOPIFY_CLIENT_ID")) && present(readEnv("SHOPIFY_CLIENT_SECRET")))),
     metaAds: present(readEnv("META_ACCESS_TOKEN")),
     newfindInbound: (() => {
       const config = getNewfindConfig();
@@ -225,7 +225,9 @@ export function getShopifyConfig() {
   return {
     storeDomain: readEnv("SHOPIFY_STORE_DOMAIN"),
     adminAccessToken: readEnv("SHOPIFY_ADMIN_ACCESS_TOKEN"),
-    apiVersion: readEnv("SHOPIFY_API_VERSION") || "2024-10",
+    clientId: readEnv("SHOPIFY_CLIENT_ID"),
+    clientSecret: readEnv("SHOPIFY_CLIENT_SECRET"),
+    apiVersion: readEnv("SHOPIFY_API_VERSION") || "2026-07",
   };
 }
 
