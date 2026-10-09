@@ -166,15 +166,6 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     updated_at: now,
   };
 
-  const existingVariant = await db
-    .from("internal_supply_variants")
-    .select("id")
-    .eq("supply_product_id", productId)
-    .eq("variant_id", args.supplierVariantId)
-    .limit(1)
-    .maybeSingle();
-  if (existingVariant.error) throw new Error("cj_internal_supply_variant_lookup_failed: " + existingVariant.error.message);
-
   // The full unique conflict target is added by the companion migration.
   // This makes retries idempotent and avoids duplicate rows on concurrent runs.
   const variantWrite = await db
