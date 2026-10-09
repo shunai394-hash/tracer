@@ -41,6 +41,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
   variantId: string;
   sourceRef: string;
   identityLink: { bestsellerId: string; method: string; rationale: string } | null;
+  auditStatus: "written" | "table_missing" | "write_failed";
 }> {
   if (!args.supplierProductId.trim() || !args.supplierVariantId.trim()) {
     throw new Error("cj_internal_supply_missing_supplier_identity");
@@ -296,12 +297,24 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       identity_link: identityLink,
     },
   });
+  const auditErrorCode = typeof audit.error?.code === "string" ? audit.error.code : "";
+  const auditErrorMessage = audit.error?.message ?? "";
+  const auditTableMissing = Boolean(audit.error) && (
+    auditErrorCode === "42P01"
+    || auditErrorCode === "PGRST205"
+    || /relation .* does not exist|could not find the table .*schema cache/i.test(auditErrorMessage)
+  );
+  const auditStatus: "written" | "table_missing" | "write_failed" = !audit.error
+    ? "written"
+    : auditTableMissing ? "table_missing" : "write_failed";
   if (audit.error) {
-    console.warn("[cj-internal-supply] audit table unavailable or write failed", {
+    console.warn("[cj-internal-supply] audit persistence failed", {
       sourceRef,
-      error: audit.error.message,
+      status: auditStatus,
+      code: auditErrorCode || null,
+      error: auditErrorMessage,
     });
   }
 
-  return { productId, variantId, sourceRef, identityLink };
+  return { productId, variantId, sourceRef, identityLink, auditStatus };
 }
