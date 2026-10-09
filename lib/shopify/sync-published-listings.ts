@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
-import { isJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 
 type Listing = {
@@ -67,7 +67,7 @@ function sku(listing: Listing): string {
 async function ensureJapaneseCopy(row: Listing): Promise<{ title: string; description: string }> {
   const title = String(row.title ?? "").trim();
   const description = String(row.description ?? title).trim();
-  if (isJapaneseProductTitle(title) && /[ぁ-んァ-ヶ一-龯々〆ヵー]/.test(description)) {
+  if (isSpecificJapaneseProductTitle(title) && isJapaneseProductDescription(description)) {
     return { title, description };
   }
   if (!isGeminiConfigured()) {
