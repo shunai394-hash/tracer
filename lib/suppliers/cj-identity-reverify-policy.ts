@@ -77,6 +77,15 @@ export function hasUniqueIdentitySelection(candidateCount: number, exactMatchCou
     && (candidateCount === 1 || (Number.isInteger(exactMatchCount) && exactMatchCount === 1));
 }
 
+/** Select a variant only when the current request proves one unique identity. */
+export function selectUniqueIdentityCandidate<T extends { identity: { linked: boolean; salesEligible: boolean } }>(
+  candidates: T[],
+): T | undefined {
+  if (candidates.length === 1) return candidates[0];
+  const exactMatches = candidates.filter((candidate) => candidate.identity.linked && candidate.identity.salesEligible);
+  return exactMatches.length === 1 ? exactMatches[0] : undefined;
+}
+
 export function hasUniqueMarketplaceIdentity(candidateProductCount: number): boolean {
   return Number.isInteger(candidateProductCount) && candidateProductCount === 1;
 }
