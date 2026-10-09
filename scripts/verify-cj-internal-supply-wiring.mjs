@@ -24,6 +24,12 @@ assert.match(ingest, /variant_id: args\.supplierVariantId/,
   "the exact supplier variant ID must be persisted separately from SKU/barcode");
 assert.match(ingest, /normalizeIdentifier\("gtin", raw\)/,
   "invalid GTIN check digits must not become identity evidence");
+assert.match(ingest, /const freshIds = validBarcodeIds\(args\.barcode\)/,
+  "current barcode validation must remain separate from preserved identity evidence");
+assert.match(ingest, /ids = Object\.values\(freshIds\)\.some\(Boolean\) \? freshIds : previousIds/,
+  "a missing/invalid refresh must preserve prior verified IDs without mixing barcode values");
+assert.match(ingest, /preserved_prior_verified_identifier/,
+  "the audit payload must identify when prior verified identity was preserved");
 assert.match(ingest, /active: false/,
   "the product must be quarantined before variant mutation");
 assert.match(ingest, /orderable: false/,
