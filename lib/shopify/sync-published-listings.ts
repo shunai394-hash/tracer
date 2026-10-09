@@ -408,6 +408,21 @@ async function syncListingRows(
       results.listingIds.push(row.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (message === "japanese_catalog_title_localization_failed" || message === "japanese_catalog_copy_invalid") {
+        if (row.shopify_product_id) await unpublishShopifyProduct(String(row.shopify_product_id));
+        await supabase.from("shop_listings").update({
+          published: false,
+          pipeline_stage: "BLOCKED",
+          pipeline_status: "blocked",
+          pipeline_reason: "japanese_catalog_copy_invalid",
+          pipeline_updated_at: new Date().toISOString(),
+          published_at: null,
+          shopify_sync_status: "blocked",
+          shopify_sync_error: message,
+          shopify_synced_at: new Date().toISOString(),
+        }).eq("id", row.id);
+        continue;
+      }
       results.failed += 1;
       results.errors.push({ listingId: row.id, error: message });
       await supabase.from("shop_listings").update({
