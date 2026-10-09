@@ -109,7 +109,9 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
             if (liveInventory !== null && Number.isFinite(liveInventory) && liveInventory >= 0) inventory = liveInventory;
           } catch (lookupError) { console.warn("[cj-identity-reverify] variant inventory lookup failed", { supplierListingId, error: lookupError instanceof Error ? lookupError.message : String(lookupError) }); }
         }
-        if (shippingCost === null) {
+        // CJ freightCalculate returns USD amounts. Do not mix them into a
+        // listing with an unknown/non-USD cost currency.
+        if (shippingCost === null && String(row.currency ?? "").toUpperCase() === "USD") {
           try {
             const liveShipping = await calculateCJFreight(String(row.supplier_variant_id), { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 });
             if (liveShipping !== null && Number.isFinite(liveShipping) && liveShipping > 0) shippingCost = liveShipping;
