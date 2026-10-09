@@ -21,6 +21,7 @@ export type PersistCjSupplyIntelligenceArgs = {
   sellingPriceJpy: number;
   variantBarcode?: string | null;
   supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null;
+  supplierBrand?: string | null;
 };
 
 export type MarketplaceIdentity = { bestsellerId: string; productId: string; method: "gtin" | "jan" | "ean" | "upc" | "mpn"; confidence: number; rationale: string };
@@ -42,7 +43,7 @@ async function readSupplierBarcode(args: { supplierProductId: string; supplierVa
   return "";
 }
 
-export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<MarketplaceIdentity | null> {
+export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierBrand?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<MarketplaceIdentity | null> {
   const suppliedIds = identifiersFromRecord({ gtin: args.supplierIdentifiers?.gtin, jan: args.supplierIdentifiers?.jan, ean: args.supplierIdentifiers?.ean, upc: args.supplierIdentifiers?.upc, mpn: args.supplierIdentifiers?.mpn });
   const barcode = Object.values(suppliedIds).find((value) => typeof value === "string" && value.trim()) ?? await readSupplierBarcode(args);
   const supplyIds = identifiersFromRecord({ ...suppliedIds, gtin: barcode || suppliedIds.gtin });
@@ -61,10 +62,10 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
     for (const row of bestsellers ?? []) {
       if (typeof row.product_id !== "string" || !row.product_id.trim()) continue;
       const marketIds = identifiersFromRecord(row as Record<string, unknown>);
-      const identity = matchProductIdentity({ market: { ...marketIds, brand: typeof row.brand === "string" ? row.brand : null, title: typeof row.title === "string" ? row.title : null }, supply: { ...supplyIds, title: null, brand: null } });
-      if (!identity.salesEligible || !["gtin", "jan", "ean", "upc", "mpn"].includes(identity.method)) continue;
+      const identity = matchProductIdentity({ market: { ...marketIds, brand: typeof row.brand === "string" ? row.brand : null, title: typeof row.title === "string" ? row.title : null }, supply: { ...supplyIds, title: null, brand: typeof args.supplierBrand === "string" ? args.supplierBrand : null } });
+      if (!identity.salesEligible || !["gtin", "jan", "ean", "upc", "mpn", "brand_mpn"].includes(identity.method)) continue;
       const productId = String(row.product_id);
-      const candidate = { bestsellerId: String(row.id), productId, method: identity.method as MarketplaceIdentity["method"], confidence: identity.confidence, rationale: identity.rationale, fetchedAt: typeof row.fetched_at === "string" ? row.fetched_at : "" };
+      const candidate = { bestsellerId: String(row.id), productId, method: identity.method === "brand_mpn" ? "mpn" as const : identity.method as MarketplaceIdentity["method"], confidence: identity.confidence, rationale: identity.rationale, fetchedAt: typeof row.fetched_at === "string" ? row.fetched_at : "" };
       const current = matchesByProduct.get(productId);
       if (!current || candidate.confidence > current.confidence || (candidate.confidence === current.confidence && candidate.fetchedAt > current.fetchedAt)) matchesByProduct.set(productId, candidate);
     }
@@ -78,7 +79,7 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
   const supabase = createSupabaseAdminClient();
   const now = new Date().toISOString();
   const currencyAssessment = assessCurrencyConfidence({ currency: "USD", price: args.cost, provider: "cj" });
-  const marketplaceIdentity = options.identity !== undefined ? options.identity : await resolveMarketplaceIdentity({ db: supabase, supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, variantBarcode: args.variantBarcode, supplierIdentifiers: args.supplierIdentifiers });
+  const marketplaceIdentity = options.identity !== undefined ? options.identity : await resolveMarketplaceIdentity({ db: supabase, supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, variantBarcode: args.variantBarcode, supplierBrand: args.supplierBrand, supplierIdentifiers: args.supplierIdentifiers });
   const canonicalProductId = marketplaceIdentity?.productId ?? args.productId;
   let existingListingMetadata: Record<string, unknown> = {};
   const existingListing = await supabase.from("supplier_listings").select("metadata").eq("id", args.supplierListingId).maybeSingle();
