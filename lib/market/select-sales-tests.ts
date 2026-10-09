@@ -6,7 +6,7 @@ import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
-import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -283,6 +283,8 @@ export async function selectAndPublishSalesTests(
       const intelligenceConfidence = asNumber(intelligence.overall_confidence);
       if (intelligenceConfidence === null || intelligenceConfidence < 0.6) reasons.push("intelligence_confidence_low");
     }
+    const publishTitle = localizeProductTitle(bestseller.title, String(bestseller.category ?? ""));
+    if (!isJapaneseProductTitle(publishTitle)) reasons.push("publishable_japanese_title_missing");
     if (reasons.length > 0) {
       await markPipeline(String(bestseller.id), "SALES_TEST", "blocked", reasons.join(","));
       rejected.push({ id: String(bestseller.id), reasons });
@@ -343,7 +345,13 @@ export async function selectAndPublishSalesTests(
   for (const item of chosen) {
     const productId = String(item.bestseller.product_id ?? "");
     if (!productId) continue;
-    const listingTitle = localizeProductTitle(item.bestseller.title, String(item.bestseller.category ?? "")) ?? "暮らしの便利アイテム";
+    const listingTitle = localizeProductTitle(item.bestseller.title, String(item.bestseller.category ?? ""));
+    if (!isJapaneseProductTitle(listingTitle)) {
+      const reasons = ["publishable_japanese_title_missing"];
+      await markPipeline(String(item.bestseller.id), "SALES_TEST", "blocked", reasons.join(","));
+      rejected.push({ id: String(item.bestseller.id), reasons });
+      continue;
+    }
     const slug = slugify(listingTitle, String(item.bestseller.id));
 
     await markPipeline(String(item.bestseller.id), "SELECTED", "selected", "sales_test_selected");
