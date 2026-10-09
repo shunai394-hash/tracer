@@ -63,13 +63,13 @@ export async function POST(request: Request) {
       ? bestsellerId
       : null;
     const audit = async (
-      outcome: "rejected" | "draft_ingested" | "sync_blocked" | "synced" | "failed",
+      outcome: "started" | "rejected" | "draft_ingested" | "sync_blocked" | "synced" | "failed",
       productId: string | null,
       writtenIds: string[],
       catalogId: string | null,
       details: Record<string, unknown> = {},
     ) => {
-      const { error } = await db.from("internal_supply_ingestion_audit").insert({
+      const { error } = await db.from("internal_supply_ingestion_audit").upsert({
         request_id: requestId,
         item_index: itemIndex,
         source_name: sourceName,
@@ -82,9 +82,11 @@ export async function POST(request: Request) {
         catalog_id: catalogId,
         error_codes: errors.slice(-10),
         details,
-      });
+      }, { onConflict: "request_id,item_index" });
       if (error) errors.push("ingestion_audit_write_failed: " + error.message);
     };
+
+    await audit("started", null, [], null, { stage: "ingestion_started" });
 
     if (!x.title || cost === null || cost < 0 || !sourceRef) {
       rejected++;
