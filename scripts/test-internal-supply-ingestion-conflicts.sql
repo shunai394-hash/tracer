@@ -160,7 +160,7 @@ values ('cj', 'legacy:one', 'started'),
        ('cj', 'legacy:two', 'failed'),
        ('cj', 'legacy:three', 'synced');
 
-\\i supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql
+\i supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql
 
 do $$
 declare
