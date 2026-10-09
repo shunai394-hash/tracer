@@ -99,7 +99,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       supplier_sku: args.supplierSku?.trim() || null,
       supplier_barcode_raw: rawBarcode,
       supplier_barcode_validation: identifierValidation,
-      supplier_identifier_evidence_source: Object.values(freshIds).some(Boolean) ? "fresh_live_barcode" : Object.values(ids).some(Boolean) ? "preserved_prior_verified_identifier" : "none",
+      supplier_identifier_evidence_source: identifierEvidenceSource,
       image_url: args.imageUrl,
       query: args.query,
       fx_rate: args.fxRate,
@@ -140,6 +140,18 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     upc: normalizeIdentifier("upc", existingVariant?.data?.upc ?? existingProduct.data?.upc ?? null),
   };
   ids = Object.values(freshIds).some(Boolean) ? freshIds : previousIds;
+  const identifierEvidenceSource = Object.values(freshIds).some(Boolean)
+    ? "fresh_live_barcode"
+    : Object.values(ids).some(Boolean) ? "preserved_prior_valid_identifier" : "none";
+
+  // productPayload is initialized before the prior row can be read. Refresh its
+  // identifier fields only after choosing the complete fresh-or-preserved set,
+  // otherwise a missing/invalid live barcode would still erase product-level IDs.
+  productPayload.gtin = ids.gtin;
+  productPayload.jan = ids.jan;
+  productPayload.ean = ids.ean;
+  productPayload.upc = ids.upc;
+  productPayload.metadata.supplier_identifier_evidence_source = identifierEvidenceSource;
 
   // Check CJ-scoped variant ownership before creating a product row. A database
   // unique index is the final race-safe guard; this precheck improves diagnostics.
@@ -187,7 +199,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       supplier_variant_id: args.supplierVariantId,
       supplier_barcode_raw: rawBarcode,
       supplier_barcode_validation: identifierValidation,
-      supplier_identifier_evidence_source: Object.values(freshIds).some(Boolean) ? "fresh_live_barcode" : Object.values(ids).some(Boolean) ? "preserved_prior_verified_identifier" : "none",
+      supplier_identifier_evidence_source: identifierEvidenceSource,
       image_url: args.imageUrl,
       query: args.query,
       fx_rate: args.fxRate,
@@ -318,7 +330,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       supplier_variant_id: args.supplierVariantId,
       supplier_barcode_raw: rawBarcode,
       supplier_barcode_validation: identifierValidation,
-      supplier_identifier_evidence_source: Object.values(freshIds).some(Boolean) ? "fresh_live_barcode" : Object.values(ids).some(Boolean) ? "preserved_prior_verified_identifier" : "none",
+      supplier_identifier_evidence_source: identifierEvidenceSource,
       order_creation_verified: false,
       identity_link: identityLink,
     },
