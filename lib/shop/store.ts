@@ -14,7 +14,7 @@ function asNumber(value: unknown): number | null {
 }
 
 function hasJapaneseText(value: unknown): boolean {
-  return typeof value === "string" && /[\\u3040-\\u30ff\\u3400-\\u9fff々ー]/u.test(value);
+  return typeof value === "string" && /[ぁ-んァ-ヶ一-龯々ー]/u.test(value);
 }
 
 function asBoolean(value: unknown): boolean {
