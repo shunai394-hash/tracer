@@ -18,17 +18,46 @@ create table public.internal_supply_variants (
   inventory integer not null default 0
 );
 
--- Model the legacy production partial indexes before applying the migration.
+-- Reproduce the schema after the PR #152 migrations: legacy partial indexes
+-- coexist with the full conflict-target indexes until PR #168 removes obsolete
+-- uniqueness rules. This catches regressions where the old full SKU index survives.
 create unique index internal_supply_products_source_ref_uq
   on public.internal_supply_products(source_name, source_ref) where source_ref is not null;
+create unique index internal_supply_products_source_name_ref_atomic_uq
+  on public.internal_supply_products(source_name, source_ref);
 create unique index internal_supply_variants_product_variant_sku_uq
   on public.internal_supply_variants(supply_product_id, variant_sku) where variant_sku is not null;
 create unique index internal_supply_variants_product_variant_id_uq
   on public.internal_supply_variants(supply_product_id, variant_id) where variant_id is not null;
+create unique index internal_supply_variants_product_sku_atomic_uq
+  on public.internal_supply_variants(supply_product_id, variant_sku);
+create unique index internal_supply_variants_product_id_atomic_uq
+  on public.internal_supply_variants(supply_product_id, variant_id);
 
 \i supabase/migrations/20261010143000_tracer_internal_supply_conflict_targets.sql
 -- The migration must be safe to re-apply in a disposable schema.
 \i supabase/migrations/20261010143000_tracer_internal_supply_conflict_targets.sql
+
+-- SKU uniqueness must actually be gone, not merely hidden behind a differently named index.
+do $$
+begin
+  if exists (
+    select 1 from pg_indexes
+    where schemaname='public'
+      and tablename='internal_supply_variants'
+      and indexname in ('internal_supply_variants_product_variant_sku_uq','internal_supply_variants_product_sku_atomic_uq')
+  ) then
+    raise exception 'obsolete supplier SKU uniqueness index survived migration';
+  end if;
+  if not exists (
+    select 1 from pg_indexes
+    where schemaname='public'
+      and tablename='internal_supply_variants'
+      and indexname='internal_supply_variants_product_id_atomic_uq'
+  ) then
+    raise exception 'full variant-ID conflict target is missing';
+  end if;
+end $$;
 
 do $$
 declare
@@ -55,8 +84,8 @@ begin
     raise exception 'product upsert not idempotent: count %, title %', v_product_count, v_title;
   end if;
 
-  -- The concrete variant ID is the conflict key. Duplicate supplier SKUs are
-  -- allowed because sibling variants can legitimately share a SKU.
+  -- Concrete variant ID is the conflict key. Duplicate supplier SKUs are allowed
+  -- because sibling variants can legitimately share a SKU.
   insert into public.internal_supply_variants(id, supply_product_id, variant_id, variant_sku, title, inventory)
   values (v_variant_one, v_product_id, 'CJ-VARIANT-1', 'SHARED-SKU', 'variant one', 10)
   on conflict (supply_product_id, variant_id) do update
@@ -82,5 +111,5 @@ begin
     raise exception 'sibling variant was overwritten by retry';
   end if;
 
-  raise notice 'PASS: product upsert idempotency, variant ID upsert idempotency, sibling duplicate SKU, and migration repeatability';
+  raise notice 'PASS: migration ordering, duplicate SKU compatibility, product/variant upsert idempotency, and repeatability';
 end $$;
