@@ -77,10 +77,29 @@ export function localizeProductTitle(value: unknown, category?: string | null): 
   return "暮らしの便利アイテム";
 }
 
+const NON_PRODUCT_TITLE_PATTERNS = [
+  /商品アイデンティティ/i,
+  /選定対象外/,
+  /未確定/,
+  /必須ゲート/,
+  /テスト優先度/,
+  /unknown product/i,
+  /暮らしの便利アイテム/,
+  /^インテリア照明$/,
+  /^スマホ保護アクセサリー$/,
+  /^キッチン用品$/,
+  /^ペット用品$/,
+  /^美容・メイクアイテム$/,
+  /^ヘアケアアイテム$/,
+  /^アクセサリー$/,
+  /^バッグ・収納アイテム$/,
+  /^トレンド・.+アイテム$/,
+];
+
 export function isJapaneseProductTitle(value: unknown): boolean {
   if (typeof value !== "string") return false;
-  const title = value.normalize("NFKC").trim();
-  if (!title) return false;
+  const title = value.normalize("NFKC").trim().replace(/\\s+/g, " ");
+  if (!title || NON_PRODUCT_TITLE_PATTERNS.some((pattern) => pattern.test(title))) return false;
   const japanese = (title.match(/[ぁ-んァ-ヶ一-龯々〆ヵー]/g) ?? []).length;
   return japanese >= 2;
 }
