@@ -4,14 +4,15 @@ import { persistCjSupplyIntelligence, resolveMarketplaceIdentity } from "@/lib/i
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { normalizeIdentifier } from "@/lib/market/identifiers";
+import { isCjIdentityReverifyDue, CJ_IDENTITY_RETRY_DELAYS_MS } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 const CURSOR_JOB = "cj-identity-reverify-cursor";
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 const CONCURRENCY = 5;
-const NO_MATCH_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
-const MISSING_DATA_RETRY_MS = 24 * 60 * 60 * 1000;
-const ERROR_RETRY_MS = 60 * 60 * 1000;
+const NO_MATCH_RETRY_MS = CJ_IDENTITY_RETRY_DELAYS_MS.noUniqueMatch;
+const MISSING_DATA_RETRY_MS = CJ_IDENTITY_RETRY_DELAYS_MS.missingEvidence;
+const ERROR_RETRY_MS = CJ_IDENTITY_RETRY_DELAYS_MS.processingError;
 const WOMENS_PRODUCT_PATTERNS = [
   /skincare|skin care|serum|moisturizer|moisturiser|face cream|sunscreen|toner|essence|retinol|niacinamide|acne patch|pore strip|facial mask|cleansing/i,
   /beauty|cosmetic case|cosmetic bag|makeup|lipstick|lip gloss|lip tint|blush|mascara|eyelash|eyeliner|highlighter|contour|concealer/i,
@@ -32,10 +33,10 @@ export type CjIdentityReverifyResult = { checked: number; promoted: number; supp
 function num(value: unknown): number | null { const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN; return Number.isFinite(parsed) ? parsed : null; }
 function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 async function readPersistableBarcode(supplierProductId: string, supplierVariantId: string, persistedBarcode: string | null): Promise<string | null> {
-  const supplied = typeof persistedBarcode === "string" ? persistedBarcode.trim().replace(/[^0-9]/g, "") : "";
+  const supplied = typeof persistedBarcode === "string" ? persistedBarcode.trim() : "";
   if (supplied) return supplied;
-  try { const variants = await fetchCJProductVariants(supplierProductId, { countryCode: "JP" }); const found = variants.find((item) => item.vid === supplierVariantId); const barcode = typeof found?.barcode === "string" ? found.barcode.trim().replace(/[^0-9]/g, "") : ""; if (barcode) return barcode; } catch (error) { console.warn("[cj-identity-reverify] variant barcode lookup failed", { supplierProductId, supplierVariantId, error: error instanceof Error ? error.message : String(error) }); }
-  try { const variant = await fetchCJVariantByVid(supplierVariantId); const barcode = typeof variant?.barcode === "string" ? variant.barcode.trim().replace(/[^0-9]/g, "") : ""; return barcode || null; } catch (error) { console.warn("[cj-identity-reverify] queryByVid barcode lookup failed", { supplierProductId, supplierVariantId, error: error instanceof Error ? error.message : String(error) }); return null; }
+  try { const variants = await fetchCJProductVariants(supplierProductId, { countryCode: "JP" }); const found = variants.find((item) => item.vid === supplierVariantId); const barcode = typeof found?.barcode === "string" ? found.barcode.trim() : ""; if (barcode) return barcode; } catch (error) { console.warn("[cj-identity-reverify] variant barcode lookup failed", { supplierProductId, supplierVariantId, error: error instanceof Error ? error.message : String(error) }); }
+  try { const variant = await fetchCJVariantByVid(supplierVariantId); const barcode = typeof variant?.barcode === "string" ? variant.barcode.trim() : ""; return barcode || null; } catch (error) { console.warn("[cj-identity-reverify] queryByVid barcode lookup failed", { supplierProductId, supplierVariantId, error: error instanceof Error ? error.message : String(error) }); return null; }
 }
 export async function reverifyCjSupplyIdentities(options: { limit?: number; deadlineAt?: number } = {}): Promise<CjIdentityReverifyResult> {
   const db = createSupabaseAdminClient();
@@ -48,11 +49,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const { data: rows, error } = await db.from("supplier_listings").select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency").eq("supplier", "cj").in("verification_status", ["unverified", "retryable", "verified"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_variant_id", "is", null).order("id", { ascending: true });
   if (error) throw new Error(`identity reverify candidate query failed: ${error.message}`);
   const nowMs = Date.now();
-  const allRows = (rows ?? []).filter((row) => {
-    const metadata = record(row.metadata);
-    const nextAt = typeof metadata.next_identity_reverify_at === "string" ? Date.parse(metadata.next_identity_reverify_at) : NaN;
-    return !Number.isFinite(nextAt) || nextAt <= nowMs;
-  });
+  const allRows = (rows ?? []).filter((row) => isCjIdentityReverifyDue(row.metadata, nowMs));
   const womensRows = allRows.filter((row) => isWomensProductTitle(row.title, row.metadata));
   const otherRows = allRows.filter((row) => !isWomensProductTitle(row.title, row.metadata));
   const priority = (row: typeof allRows[number]) => row.verification_status === "unverified" ? 0 : 1;
