@@ -22,17 +22,48 @@ function shopifyEndpoint(): string {
   return `https://${domain}/admin/api/${apiVersion}/graphql.json`;
 }
 
+type ShopifyTokenResponse = { access_token?: string; expires_in?: number; error?: string };
+
+let cachedShopifyAccessToken: string | null = null;
+let cachedShopifyAccessTokenExpiresAt = 0;
+
+async function getShopifyAccessToken(): Promise<string> {
+  const { storeDomain, adminAccessToken, clientId, clientSecret } = getShopifyConfig();
+  if (clientId && clientSecret) {
+    if (cachedShopifyAccessToken && Date.now() < cachedShopifyAccessTokenExpiresAt) {
+      return cachedShopifyAccessToken;
+    }
+    const domain = storeDomain.trim().replace(/^https?:\\/\\//, "").replace(/\\/$/, "");
+    if (!domain) throw new Error("SHOPIFY_STORE_DOMAIN is not configured");
+    const response = await fetch(`https://${domain}/admin/oauth/access_token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body: new URLSearchParams({ grant_type: "client_credentials", client_id: clientId, client_secret: clientSecret }),
+      cache: "no-store",
+    });
+    const payload = await response.json().catch(() => null) as ShopifyTokenResponse | null;
+    if (!response.ok) throw new Error(`Shopify OAuth token HTTP ${response.status}${payload?.error ? `: ${payload.error}` : ""}`);
+    if (!payload?.access_token) throw new Error("Shopify OAuth token response missing access_token");
+    const expiresIn = Number(payload.expires_in);
+    const ttlSeconds = Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 86_399;
+    cachedShopifyAccessToken = payload.access_token;
+    cachedShopifyAccessTokenExpiresAt = Date.now() + Math.max(30, ttlSeconds - 60) * 1000;
+    return cachedShopifyAccessToken;
+  }
+  if (adminAccessToken) return adminAccessToken;
+  throw new Error("SHOPIFY_ADMIN_ACCESS_TOKEN or SHOPIFY_CLIENT_ID/SHOPIFY_CLIENT_SECRET is not configured");
+}
+
 export function isShopifyConfigured(): boolean {
-  const { storeDomain, adminAccessToken } = getShopifyConfig();
-  return Boolean(storeDomain && adminAccessToken);
+  const { storeDomain, adminAccessToken, clientId, clientSecret } = getShopifyConfig();
+  return Boolean(storeDomain && (adminAccessToken || (clientId && clientSecret)));
 }
 
 export async function shopifyGraphQL<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
-  const { adminAccessToken } = getShopifyConfig();
-  if (!adminAccessToken) throw new Error("SHOPIFY_ADMIN_ACCESS_TOKEN is not configured");
+  const accessToken = await getShopifyAccessToken();
   const response = await fetch(shopifyEndpoint(), {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": adminAccessToken },
+    headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": accessToken },
     body: JSON.stringify({ query, variables }),
     cache: "no-store",
   });
