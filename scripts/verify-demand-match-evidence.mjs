@@ -63,6 +63,22 @@ test("CJ reverify source safety", "retry metadata and cron_runs persistence fail
   assert.match(source, /identity reverify cursor lookup failed/);
 });
 
+test("CJ reverify integration contract", "recovery uses live CJ evidence, persists to supplier listing, and never promotes without unique identity", () => {
+  const source = readFileSync(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
+  const persistence = readFileSync(new URL("../lib/intelligence/persist-cj-supply-intelligence.ts", import.meta.url), "utf8");
+  assert.match(source, /fetchCJVariantByVid\(String\(row\.supplier_variant_id\)\)/, "variant evidence must be fetched by the recorded CJ vid");
+  assert.match(source, /getCJProductDetail\(String\(row\.supplier_product_id\)\)/, "product image evidence must be fetched by recorded CJ pid");
+  assert.match(source, /fetchCJVariantStock\(String\(row\.supplier_variant_id\)\)/, "stock evidence must use the exact CJ variant");
+  assert.match(source, /calculateCJFreight\(String\(row\.supplier_variant_id\)/, "freight must use the exact CJ variant");
+  assert.match(source, /String\(row\.currency \?\? ""\)\.toUpperCase\(\) === "USD"/, "CJ price and freight cannot be treated as USD without explicit stored currency");
+  assert.match(source, /identity_hold_reason: "no_unique_marketplace_identifier_match"/);
+  assert.match(source, /failed to persist unmatched CJ evidence/);
+  assert.match(source, /recovered CJ evidence update affected no supplier listing row/);
+  assert.match(source, /unmatched CJ evidence update affected no supplier listing row/);
+  assert.match(source, /if \(!identity\) \{[\s\S]*?return \{ kind: "no_match"/, "identity miss must return before canonical persistence");
+  assert.match(persistence, /hasUniqueMarketplaceIdentity\(matchesByProduct\.size\)/, "identity resolution must require exactly one canonical product");
+});
+
 test("CJ API fixtures", "variant sellPrice is accepted only with explicit USD currency", () => {
   assert.equal(parseCJUsdPrice("12.34", "USD"), 12.34);
   assert.equal(parseCJUsdPrice(12.34, "usd"), 12.34);
