@@ -27,6 +27,9 @@ async function quarantineCatalogForBestseller(
 }
 
 function finiteNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  if (typeof value === "string" && value.trim() === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -51,7 +54,7 @@ export async function POST(request: Request) {
 
   for (const [itemIndex, x] of items.entries()) {
     const cost = finiteNumber(x.cost);
-    const shipping = finiteNumber(x.shippingCost) ?? 0;
+    const shipping = finiteNumber(x.shippingCost);
     const inventory = Math.max(0, finiteNumber(x.inventory) ?? 0);
     const salePrice = finiteNumber(x.salePrice);
     const sourceRef = typeof x.sourceRef === "string" && x.sourceRef.trim() ? x.sourceRef.trim() : null;
