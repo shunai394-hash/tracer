@@ -2,8 +2,7 @@ name: TRACER Sales Test Patrol
 # Production target: n a i t o 3 0 8 7
 
 on:
-  push:
-    branches: ["main"]
+  # Sales Test Gate can publish eligible listings; require explicit manual invocation.
   workflow_dispatch:
     inputs:
       run_intelligence:

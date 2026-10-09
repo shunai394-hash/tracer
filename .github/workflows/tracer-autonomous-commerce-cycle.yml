@@ -1,10 +1,8 @@
 name: TRACER Autonomous Commerce Cycle
 
 on:
-  push:
-    branches: ["main"]
-  schedule:
-    - cron: "*/30 * * * *"
+  # Live multi-stage sourcing/publication/fulfillment is manual-only.
+  # Vercel Cron owns scheduled production operations; pushes must not trigger commerce writes.
   workflow_dispatch:
 
 permissions:
