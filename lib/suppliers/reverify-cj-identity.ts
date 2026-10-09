@@ -1,7 +1,7 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { persistCjSupplyIntelligence, resolveMarketplaceIdentity } from "@/lib/intelligence/persist-cj-supply-intelligence";
-import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
+import { calculateCJFreight, fetchCJProductVariants, fetchCJVariantByVid, fetchCJVariantStock, getCJProductDetail } from "@/lib/sources/cj";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { normalizeIdentifier } from "@/lib/market/identifiers";
 import { isCjIdentityReverifyCandidate, isCjIdentityReverifyDue, CJ_IDENTITY_RETRY_DELAYS_MS, supplierBarcodeAudit } from "@/lib/suppliers/cj-identity-reverify-policy";
@@ -80,15 +80,49 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       if (!canonicalProductId) { await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), last_identity_reverify_at: new Date().toISOString() } }).eq("id", supplierListingId); return { kind: "no_match" as const, supplierListingId }; }
       const { data: intelligence } = await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle();
       const metadata = record(intelligence?.metadata);
-      const cost = num(row.cost); const shippingCost = num(row.shipping_cost); const inventory = num(row.inventory);
+      let cost = num(row.cost);
+      let shippingCost = num(row.shipping_cost);
+      let inventory = num(row.inventory);
+      const listingImage = [listingMetadata.image_url, listingMetadata.product_image, listingMetadata.productImage, listingMetadata.image].find((value) => typeof value === "string" && /^https?:\/\//i.test(value.trim()));
+      let imageUrl = typeof intelligence?.image_url === "string" && /^https?:\/\//i.test(intelligence.image_url.trim()) ? intelligence.image_url.trim() : typeof listingImage === "string" ? listingImage.trim() : "";
+
+      // Recover missing evidence from CJ's product/variant APIs; never invent zero values.
+      // Cost is accepted from the variant endpoint only when the stored currency is explicitly USD.
+      if (cost === null || shippingCost === null || inventory === null || !imageUrl) {
+        let variantDetail: Awaited<ReturnType<typeof fetchCJVariantByVid>> = null;
+        let productDetail: Awaited<ReturnType<typeof getCJProductDetail>> = null;
+        try { variantDetail = await fetchCJVariantByVid(String(row.supplier_variant_id)); }
+        catch (lookupError) { console.warn("[cj-identity-reverify] variant evidence lookup failed", { supplierListingId, error: lookupError instanceof Error ? lookupError.message : String(lookupError) }); }
+        try { productDetail = await getCJProductDetail(String(row.supplier_product_id)); }
+        catch (lookupError) { console.warn("[cj-identity-reverify] product evidence lookup failed", { supplierListingId, error: lookupError instanceof Error ? lookupError.message : String(lookupError) }); }
+
+        if (cost === null && String(row.currency ?? "").toUpperCase() === "USD") {
+          const candidateCost = num(variantDetail?.sellPrice);
+          if (candidateCost !== null && candidateCost > 0) cost = candidateCost;
+        }
+        if (!imageUrl && typeof productDetail?.imageUrl === "string" && /^https?:\/\//i.test(productDetail.imageUrl.trim())) {
+          imageUrl = productDetail.imageUrl.trim();
+        }
+        if (inventory === null) {
+          try {
+            const liveInventory = await fetchCJVariantStock(String(row.supplier_variant_id));
+            if (liveInventory !== null && Number.isFinite(liveInventory) && liveInventory >= 0) inventory = liveInventory;
+          } catch (lookupError) { console.warn("[cj-identity-reverify] variant inventory lookup failed", { supplierListingId, error: lookupError instanceof Error ? lookupError.message : String(lookupError) }); }
+        }
+        if (shippingCost === null) {
+          try {
+            const liveShipping = await calculateCJFreight(String(row.supplier_variant_id), { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 });
+            if (liveShipping !== null && Number.isFinite(liveShipping) && liveShipping > 0) shippingCost = liveShipping;
+          } catch (lookupError) { console.warn("[cj-identity-reverify] freight lookup failed", { supplierListingId, error: lookupError instanceof Error ? lookupError.message : String(lookupError) }); }
+        }
+      }
+
       const storedFxRate = num(metadata.fx_rate);
       const observedFx = storedFxRate === null && String(row.currency ?? "").toUpperCase() === "USD" ? await getObservedUsdToJpyRate() : null;
       const fxRate = storedFxRate ?? observedFx?.rate ?? null;
       const storedSellingPriceJpy = num(metadata.selling_price_jpy);
       const landedCostJpy = cost !== null && shippingCost !== null && fxRate !== null ? (cost + shippingCost) * fxRate : null;
       const sellingPriceJpy = storedSellingPriceJpy ?? (landedCostJpy !== null && Number.isFinite(landedCostJpy) && landedCostJpy >= 0 ? Math.ceil(Math.max(1980, landedCostJpy * 2.5) / 100) * 100 : null);
-      const listingImage = [listingMetadata.image_url, listingMetadata.product_image, listingMetadata.productImage, listingMetadata.image].find((value) => typeof value === "string" && /^https?:\/\//i.test(value.trim()));
-      const imageUrl = typeof intelligence?.image_url === "string" && /^https?:\/\//i.test(intelligence.image_url.trim()) ? intelligence.image_url.trim() : typeof listingImage === "string" ? listingImage.trim() : "";
       if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) { const checkedAt = new Date(); await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode, variant_barcode_raw: variantBarcode } : {}), ...supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null), last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + MISSING_DATA_RETRY_MS).toISOString(), identity_hold_reason: "missing_economics_or_image" } }).eq("id", supplierListingId); return { kind: "missing_economics" as const, supplierListingId }; }
       await persistCjSupplyIntelligence({ productId: identity?.productId ?? String(row.product_id), title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
       if (!identity) {
