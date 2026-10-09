@@ -68,12 +68,15 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     sku: null,
     title: args.title,
     brand: null,
-    // Barcodes identify the concrete supplier variant, not a product-wide identity.
-    // Clear these fields so sibling variants cannot inherit a variant-only barcode.
-    gtin: null,
-    jan: null,
-    ean: null,
-    upc: null,
+    // This internal product row is intentionally scoped to the concrete CJ product+variant
+    // by source_ref, so these identity fields describe only this one variant. Keeping the
+    // verified barcode here as well as on the variant is required by the existing catalog
+    // resolver, which first locates the active internal product by identifier before it
+    // validates the exact request-scoped variant row. It does not copy identity to siblings.
+    gtin: ids.gtin,
+    jan: ids.jan,
+    ean: ids.ean,
+    upc: ids.upc,
     mpn: null,
     cost: args.costUsd,
     shipping_cost: args.shippingUsd,
