@@ -17,7 +17,7 @@ function buildUrl(base: string): string {
 function tracerSiteOrigin(): string | null {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
-  const configured = explicit || (vercel ? `https://${vercel.replace(/^https?:\/\//, "")}` : "https://tracer-naito3087.vercel.app");
+  const configured = explicit || (vercel ? `https://${vercel.replace(/^https?:\/\//, "")}` : "https://tracer-pied-alpha.vercel.app");
   try {
     const parsed = new URL(configured);
     if (parsed.protocol !== "https:") return null;
