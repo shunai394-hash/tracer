@@ -3,11 +3,15 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { persistCjSupplyIntelligence, resolveMarketplaceIdentity } from "@/lib/intelligence/persist-cj-supply-intelligence";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
+import { normalizeIdentifier } from "@/lib/market/identifiers";
 
 const CURSOR_JOB = "cj-identity-reverify-cursor";
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 const CONCURRENCY = 5;
+const NO_MATCH_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
+const MISSING_DATA_RETRY_MS = 24 * 60 * 60 * 1000;
+const ERROR_RETRY_MS = 60 * 60 * 1000;
 const WOMENS_PRODUCT_PATTERNS = [
   /skincare|skin care|serum|moisturizer|moisturiser|face cream|sunscreen|toner|essence|retinol|niacinamide|acne patch|pore strip|facial mask|cleansing/i,
   /beauty|cosmetic case|cosmetic bag|makeup|lipstick|lip gloss|lip tint|blush|mascara|eyelash|eyeliner|highlighter|contour|concealer/i,
@@ -43,7 +47,12 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const total = candidateCount ?? 0;
   const { data: rows, error } = await db.from("supplier_listings").select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency").eq("supplier", "cj").in("verification_status", ["unverified", "retryable"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_variant_id", "is", null).order("id", { ascending: true });
   if (error) throw new Error(`identity reverify candidate query failed: ${error.message}`);
-  const allRows = rows ?? [];
+  const nowMs = Date.now();
+  const allRows = (rows ?? []).filter((row) => {
+    const metadata = record(row.metadata);
+    const nextAt = typeof metadata.next_identity_reverify_at === "string" ? Date.parse(metadata.next_identity_reverify_at) : NaN;
+    return !Number.isFinite(nextAt) || nextAt <= nowMs;
+  });
   const womensRows = allRows.filter((row) => isWomensProductTitle(row.title, row.metadata));
   const otherRows = allRows.filter((row) => !isWomensProductTitle(row.title, row.metadata));
   const priority = (row: typeof allRows[number]) => row.verification_status === "unverified" ? 0 : 1;
