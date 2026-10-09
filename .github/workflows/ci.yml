@@ -37,6 +37,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Install PostgreSQL client for isolated integration tests
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
       - name: Run atomic catalog sync PostgreSQL integration tests (disposable CI database only)
