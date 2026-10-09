@@ -84,6 +84,18 @@ async function getShopifyAccessToken(): Promise<string> {
   throw new Error("SHOPIFY_ADMIN_ACCESS_TOKEN or SHOPIFY_CLIENT_ID/SHOPIFY_CLIENT_SECRET is not configured");
 }
 
+/**
+ * Shopify GraphQL needs global IDs. Some legacy shop_listings rows hold the
+ * numeric REST id ("8593204641836"); used as-is they make product lookups
+ * fail and unpublishing impossible. Normalise at the API boundary.
+ */
+export function toShopifyGid(kind: "Product" | "ProductVariant", id: string | null | undefined): string | null {
+  const value = String(id ?? "").trim();
+  if (!value) return null;
+  if (value.startsWith("gid://shopify/")) return value;
+  return /^\d+$/.test(value) ? `gid://shopify/${kind}/${value}` : value;
+}
+
 export function isShopifyConfigured(): boolean {
   const { storeDomain, adminAccessToken, clientId, clientSecret } = getShopifyConfig();
   return Boolean(storeDomain && (adminAccessToken || (clientId && clientSecret)));
