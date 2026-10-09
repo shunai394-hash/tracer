@@ -64,7 +64,7 @@ update public.internal_supply_ingestion_audit audit
 -- outcome vocabulary. Drop only CHECK constraints mentioning outcome, normalize
 -- old values while preserving the original value in details, then install the
 -- canonical constraint. This makes the upgrade safe for both old and new tables.
-do $
+do $migration$
 declare
   v_constraint record;
 begin
@@ -80,7 +80,7 @@ begin
       v_constraint.conname
     );
   end loop;
-end $;
+end $migration$;
 
 update public.internal_supply_ingestion_audit
    set details = coalesce(details, '{}'::jsonb)
@@ -133,7 +133,7 @@ grant all on public.internal_supply_ingestion_audit to service_role;
 -- Table grants do not include the sequence used by a bigserial ID. Grant the
 -- sequence privileges explicitly so service_role can insert audit rows on both
 -- fresh and upgraded schemas without opening sequence access to client roles.
-do $
+do $sequence_grants$
 declare
   v_sequence text;
 begin
@@ -142,4 +142,4 @@ begin
     execute format('revoke all on sequence %s from anon, authenticated', v_sequence::regclass);
     execute format('grant usage, select, update on sequence %s to service_role', v_sequence::regclass);
   end if;
-end $;
+end $sequence_grants$;
