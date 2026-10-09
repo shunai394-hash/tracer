@@ -200,7 +200,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       supplier_variant_id: args.supplierVariantId,
       supplier_barcode_raw: rawBarcode,
       supplier_barcode_validation: identifierValidation,
-      supplier_identifier_evidence_source: Object.values(freshIds).some(Boolean) ? "fresh_live_barcode" : "none",
+      supplier_identifier_evidence_source: identifierEvidenceSource,
       image_url: args.imageUrl,
       query: args.query,
       fx_rate: args.fxRate,
