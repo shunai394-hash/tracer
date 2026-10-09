@@ -76,9 +76,12 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const persistedBarcode = typeof listingMetadata.variant_barcode === "string" ? listingMetadata.variant_barcode.trim() : null;
       const variantBarcode = await readPersistableBarcode(String(row.supplier_product_id), String(row.supplier_variant_id), persistedBarcode);
       const identity = await resolveMarketplaceIdentity({ db, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } });
-      const canonicalProductId = identity?.productId ?? String(row.product_id);
-      if (!canonicalProductId) { await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), last_identity_reverify_at: new Date().toISOString() } }).eq("id", supplierListingId); return { kind: "no_match" as const, supplierListingId }; }
-      const { data: intelligence } = await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle();
+      // Only read product intelligence after a fresh, unique marketplace identity match.
+      // Existing supplier_listings.product_id is an internal linkage, not proof of canonical marketplace identity.
+      const canonicalProductId = identity?.productId ?? null;
+      const { data: intelligence } = canonicalProductId
+        ? await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle()
+        : { data: null };
       const metadata = record(intelligence?.metadata);
       let cost = num(row.cost);
       let shippingCost = num(row.shipping_cost);
