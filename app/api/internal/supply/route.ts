@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireCronAuth } from "@/lib/security/cron-auth";
 import { syncTracerCatalogFromInternalSupply } from "@/lib/suppliers/sync-tracer-catalog";
@@ -41,30 +42,57 @@ export async function POST(request: Request) {
   }
 
   const db = createSupabaseAdminClient();
+  const requestId = randomUUID();
   let accepted = 0;
   let rejected = 0;
   let catalogSynced = 0;
   let catalogReady = 0;
   const errors: string[] = [];
 
-  for (const x of items) {
+  for (const [itemIndex, x] of items.entries()) {
     const cost = finiteNumber(x.cost);
     const shipping = finiteNumber(x.shippingCost) ?? 0;
     const inventory = Math.max(0, finiteNumber(x.inventory) ?? 0);
     const salePrice = finiteNumber(x.salePrice);
     const sourceRef = typeof x.sourceRef === "string" && x.sourceRef.trim() ? x.sourceRef.trim() : null;
     const sourceName = typeof x.sourceName === "string" && x.sourceName.trim() ? x.sourceName.trim() : "internal";
+    const bestsellerId =
+      typeof x.bestsellerId === "string" && x.bestsellerId.trim() ? x.bestsellerId.trim() : null;
+    const submittedVariants = Array.isArray(x.variants) ? x.variants : [];
+    const auditBestsellerId = bestsellerId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(bestsellerId)
+      ? bestsellerId
+      : null;
+    const audit = async (
+      outcome: "rejected" | "draft_ingested" | "sync_blocked" | "synced" | "failed",
+      productId: string | null,
+      writtenIds: string[],
+      catalogId: string | null,
+      details: Record<string, unknown> = {},
+    ) => {
+      const { error } = await db.from("internal_supply_ingestion_audit").insert({
+        request_id: requestId,
+        item_index: itemIndex,
+        source_name: sourceName,
+        source_ref: sourceRef,
+        bestseller_id: auditBestsellerId,
+        outcome,
+        product_id: productId,
+        submitted_variant_count: submittedVariants.length,
+        written_variant_ids: writtenIds,
+        catalog_id: catalogId,
+        error_codes: errors.slice(-10),
+        details,
+      });
+      if (error) errors.push("ingestion_audit_write_failed: " + error.message);
+    };
 
     if (!x.title || cost === null || cost < 0 || !sourceRef) {
       rejected++;
       if (!sourceRef) errors.push("sourceRef required for idempotent internal supply ingestion");
+      await audit("rejected", null, [], null, { reason: !sourceRef ? "source_ref_required" : "invalid_product_payload" });
       continue;
     }
 
-    const bestsellerId =
-      typeof x.bestsellerId === "string" && x.bestsellerId.trim() ? x.bestsellerId.trim() : null;
-
-    const submittedVariants = Array.isArray(x.variants) ? x.variants : [];
     const intendedProductActive = x.active !== false;
     const productPayload = {
       product_id: typeof x.productId === "string" && x.productId ? x.productId : null,
@@ -97,45 +125,18 @@ export async function POST(request: Request) {
     let supplyProduct: { id: string } | null = null;
     let productError: { message: string } | null = null;
 
-    if (sourceRef) {
-      const existing = await db
-        .from("internal_supply_products")
-        .select("id")
-        .eq("source_name", sourceName)
-        .eq("source_ref", sourceRef)
-        .maybeSingle();
-      if (existing.error) productError = { message: existing.error.message };
-      else if (existing.data) {
-        const updated = await db
-          .from("internal_supply_products")
-          .update(productPayload)
-          .eq("id", existing.data.id)
-          .select("id")
-          .single();
-        supplyProduct = updated.data ? { id: String(updated.data.id) } : null;
-        if (updated.error) productError = { message: updated.error.message };
-      } else {
-        const inserted = await db
-          .from("internal_supply_products")
-          .insert(productPayload)
-          .select("id")
-          .single();
-        supplyProduct = inserted.data ? { id: String(inserted.data.id) } : null;
-        if (inserted.error) productError = { message: inserted.error.message };
-      }
-    } else {
-      const inserted = await db
-        .from("internal_supply_products")
-        .insert(productPayload)
-        .select("id")
-        .single();
-      supplyProduct = inserted.data ? { id: String(inserted.data.id) } : null;
-      if (inserted.error) productError = { message: inserted.error.message };
-    }
+    const productResult = await db
+      .from("internal_supply_products")
+      .upsert(productPayload, { onConflict: "source_name,source_ref" })
+      .select("id")
+      .single();
+    supplyProduct = productResult.data ? { id: String(productResult.data.id) } : null;
+    if (productResult.error) productError = { message: productResult.error.message };
 
     if (productError || !supplyProduct) {
       rejected++;
       errors.push(productError?.message ?? "internal_supply_products write failed");
+      await audit("failed", null, [], null, { reason: "product_write_failed" });
       continue;
     }
 
@@ -174,22 +175,12 @@ export async function POST(request: Request) {
         updated_at: new Date().toISOString(),
       };
 
-      const existing = await db
+      const conflictKey = variantSku ? "supply_product_id,variant_sku" : "supply_product_id,variant_id";
+      const result = await db
         .from("internal_supply_variants")
+        .upsert(variantPayload, { onConflict: conflictKey })
         .select("id")
-        .eq("supply_product_id", supplyProduct.id)
-        .eq(variantSku ? "variant_sku" : "variant_id", variantSku ?? variantId)
-        .maybeSingle();
-
-      if (existing.error) {
-        itemVariantErrors++;
-        errors.push(existing.error.message);
-        continue;
-      }
-
-      const result = existing.data
-        ? await db.from("internal_supply_variants").update(variantPayload).eq("id", existing.data.id).select("id").single()
-        : await db.from("internal_supply_variants").insert(variantPayload).select("id").single();
+        .single();
 
       if (result.error || !result.data) {
         itemVariantErrors++;
@@ -233,10 +224,13 @@ export async function POST(request: Request) {
           variantIds: writtenVariantIds,
         });
         if (synced.matched) {
+          auditOutcome = "synced";
+          auditCatalogId = synced.catalogId;
           catalogSynced++;
           if (synced.reason === "ready") catalogReady++;
         }
       } catch (error) {
+        auditOutcome = "failed";
         errors.push(error instanceof Error ? error.message : String(error));
       }
     } else if (bestsellerId && !productActivated) {
@@ -247,6 +241,12 @@ export async function POST(request: Request) {
         errors.push(`catalog quarantine failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
+    if (bestsellerId && auditOutcome === "draft_ingested") auditOutcome = "sync_blocked";
+    await audit(auditOutcome, supplyProduct.id, writtenVariantIds, auditCatalogId, {
+      product_activated: productActivated,
+      variant_write_errors: itemVariantErrors,
+      variant_write_count: itemVariantsWritten,
+    });
   }
 
   return NextResponse.json({
