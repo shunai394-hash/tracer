@@ -77,7 +77,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const listingMetadata = record(row.metadata);
       const persistedBarcode = typeof listingMetadata.variant_barcode === "string" ? listingMetadata.variant_barcode.trim() : null;
       const variantBarcode = await readPersistableBarcode(String(row.supplier_product_id), String(row.supplier_variant_id), persistedBarcode);
-      const supplierBrand = [listingMetadata.brand, listingMetadata.brand_name, listingMetadata.brandName].find((value): value is string => typeof value === "string" && value.trim()) ?? null;
+      const supplierBrand = [listingMetadata.brand, listingMetadata.brand_name, listingMetadata.brandName].find((value): value is string => typeof value === "string" && value.trim().length > 0) ?? null;
       const identity = await resolveMarketplaceIdentity({ db, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), variantBarcode, supplierBrand, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } });
       // Only read product intelligence after a fresh, unique marketplace identity match.
       // Existing supplier_listings.product_id is an internal linkage, not proof of canonical marketplace identity.
