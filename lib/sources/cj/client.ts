@@ -7,7 +7,7 @@ import {
   verifyVariantSelectionInvariants,
   type CJProductVariant,
 } from "@/lib/sources/cj/variant-select";
-import { firstCJImageUrl, parseCJStockData } from "@/lib/sources/cj/parse";
+import { firstCJImageUrl, parseCJFreightOptions, parseCJStockData } from "@/lib/sources/cj/parse";
 
 export { selectUnambiguousVariant, verifyVariantSelectionInvariants };
 export type { CJProductVariant };
@@ -500,121 +500,26 @@ export async function getCJFreightOptions(
     throw new CJRequestError(payload.message || "CJ freight options lookup failed");
   }
 
-  return (payload.data ?? [])
-    .map((row) => {
-      const name = typeof row.logisticName === "string" ? row.logisticName.trim() : "";
-      const total = Number(row.totalPostageFee);
-      const simple = Number(row.logisticPrice);
-      const shippingCost =
-        Number.isFinite(total) && total > 0
-          ? total
-          : Number.isFinite(simple) && simple > 0
-            ? simple
-            : null;
-      if (!name || shippingCost === null) return null;
-      return {
-        logisticName: name,
-        shippingCost,
-        arrivalTime:
-          typeof row.logisticAging === "string" && row.logisticAging.trim()
-            ? row.logisticAging.trim()
-            : null,
-      };
-    })
-    .filter((row): row is CJFreightOption => row !== null)
-    .sort((a, b) => a.shippingCost - b.shippingCost);
+  return parseCJFreightOptions(payload.data).map(({ logisticName, shippingCost, arrivalTime }) => ({
+    logisticName,
+    shippingCost,
+    arrivalTime,
+  }));
 }
 
 export async function calculateCJFreight(
   vid: string,
-  options?: {
+  requestOptions?: {
     startCountryCode?: string;
     endCountryCode?: string;
     quantity?: number;
     zip?: string;
   },
 ): Promise<number | null> {
-  const token = await getAccessToken();
-  const response = await fetchCJWithRateLimit(
-    "https://developers.cjdropshipping.com/api2.0/v1/logistic/freightCalculate",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "CJ-Access-Token": token,
-      },
-      body: JSON.stringify({
-        startCountryCode: options?.startCountryCode ?? "CN",
-        endCountryCode: options?.endCountryCode ?? "JP",
-        ...(options?.zip ? { zip: options.zip } : {}),
-        products: [
-          {
-            quantity: options?.quantity ?? 1,
-            vid,
-          },
-        ],
-      }),
-      cache: "no-store",
-    },
-  );
-
-  if (!response.ok) {
-    throw new CJRequestError(
-      `CJ freight calculation failed with HTTP ${response.status}`,
-    );
-  }
-
-  const payload = (await response.json()) as {
-    result?: boolean;
-    message?: string;
-    data?: unknown;
-  };
-
-  if (payload.result === false) {
-    throw new CJRequestError(payload.message || "CJ freight calculation failed");
-  }
-
-  // CJ has returned several freight field names across API versions and
-  // wrappers. Accept the documented price fields plus equivalent numeric
-  // postage/shipping fields, while never treating an unknown value as zero.
-  const readPrice = (value: unknown): number | null => {
-    if (typeof value === "number") return Number.isFinite(value) && value > 0 ? value : null;
-    if (typeof value === "string" && value.trim()) {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-    }
-    return null;
-  };
-
-  const rows: unknown[] = Array.isArray(payload.data)
-    ? payload.data
-    : payload.data && typeof payload.data === "object"
-      ? Object.values(payload.data as Record<string, unknown>).flatMap((value) =>
-          Array.isArray(value) ? value : [value],
-        )
-      : [];
-
-  const prices = rows
-    .map((row) => {
-      if (!row || typeof row !== "object" || Array.isArray(row)) return null;
-      const record = row as Record<string, unknown>;
-      for (const key of [
-        "totalPostageFee",
-        "logisticPrice",
-        "shippingCost",
-        "shippingFee",
-        "postageFee",
-        "freight",
-        "freightCost",
-      ]) {
-        const price = readPrice(record[key]);
-        if (price !== null) return price;
-      }
-      return null;
-    })
-    .filter((value): value is number => value !== null);
-
-  return prices.length > 0 ? Math.min(...prices) : null;
+  // Compare all-in totalPostageFee values first; only fall back to
+  // logisticPrice when no method returns a valid all-in total.
+  const options = await getCJFreightOptions(vid, requestOptions);
+  return options[0]?.shippingCost ?? null;
 }
 
 export async function searchCJProducts(
