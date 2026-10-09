@@ -161,11 +161,23 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
     });
 }
 
-export async function listPublishedShopListings(): Promise<ShopListing[]> {
+export type PublishedShopListingPage = {
+  listings: ShopListing[];
+  page: number;
+  pageSize: number;
+  totalEligible: number;
+  totalPages: number;
+};
+
+export async function listPublishedShopListingsPage(page = 1, pageSize = 48): Promise<PublishedShopListingPage> {
+  const requestedPage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const safePageSize = Number.isFinite(pageSize) ? Math.min(48, Math.max(12, Math.floor(pageSize))) : 48;
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
+  const from = (requestedPage - 1) * safePageSize;
+  const to = from + safePageSize - 1;
+  const { data, error, count } = await supabase
     .from("shop_listings")
-    .select(STOREFRONT_SELECT)
+    .select(STOREFRONT_SELECT, { count: "exact" })
     .eq("published", true)
     .not("shopify_product_id", "is", null)
     .eq("shopify_sync_status", "synced")
@@ -175,17 +187,27 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
     .gt("selling_price", 0)
     .eq("currency", "JPY")
     .order("published_at", { ascending: false })
-    .limit(48);
+    .range(from, to);
 
   if (error) throw new Error(error.message);
+  const totalEligible = count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalEligible / safePageSize));
+  if (requestedPage > totalPages) return listPublishedShopListingsPage(totalPages, safePageSize);
+
   const listings = (await loadLiveListings((data ?? []) as Record<string, unknown>[])).filter((listing) => hasJapaneseText(listing.title));
-  return listings
+  const prioritized = listings
     .map((listing) => {
       const priority = womenProductPriority({ title: listing.title, category: listing.description });
       return { listing, womenBonus: priority.bonus };
     })
     .sort((a, b) => b.womenBonus - a.womenBonus)
     .map(({ listing }) => listing);
+
+  return { listings: prioritized, page: requestedPage, pageSize: safePageSize, totalEligible, totalPages };
+}
+
+export async function listPublishedShopListings(): Promise<ShopListing[]> {
+  return (await listPublishedShopListingsPage(1, 48)).listings;
 }
 
 export async function getShopListingBySlug(slug: string): Promise<ShopListing | null> {
