@@ -68,7 +68,7 @@ begin
     return jsonb_build_object('ok', false, 'reason', 'payload_scope_mismatch');
   end if;
 
-  insert into public.tracer_supply_catalog as current_catalog (
+  insert into public.tracer_supply_catalog as existing_catalog (
     tracer_sku, title, brand, category, image_url, status, cost, shipping_cost,
     handling_cost, sale_price, currency, inventory, lead_time_days,
     tracking_available, orderable, source_type, source_ref, evidence, metadata,
@@ -100,7 +100,7 @@ begin
     metadata = excluded.metadata,
     bestseller_id = excluded.bestseller_id,
     updated_at = excluded.updated_at
-  where current_catalog.bestseller_id is not distinct from excluded.bestseller_id
+  where existing_catalog.bestseller_id is not distinct from excluded.bestseller_id
   returning id into v_catalog_id;
 
   -- A SKU already owned by another bestseller must never overwrite that row.
@@ -113,7 +113,7 @@ begin
     p_catalog_variant, '{catalog_id}', to_jsonb(v_catalog_id::text), true
   );
 
-  insert into public.tracer_supply_variants as current_variant (
+  insert into public.tracer_supply_variants as existing_variant (
     catalog_id, variant_sku, title, barcode, attributes, cost, inventory,
     orderable, internal_supply_product_id, internal_supply_variant_id, updated_at
   )
@@ -132,9 +132,9 @@ begin
     internal_supply_product_id = excluded.internal_supply_product_id,
     internal_supply_variant_id = excluded.internal_supply_variant_id,
     updated_at = excluded.updated_at
-  where current_variant.catalog_id = excluded.catalog_id
-    and current_variant.internal_supply_product_id is not distinct from excluded.internal_supply_product_id
-    and current_variant.internal_supply_variant_id is not distinct from excluded.internal_supply_variant_id
+  where existing_variant.catalog_id = excluded.catalog_id
+    and existing_variant.internal_supply_product_id is not distinct from excluded.internal_supply_product_id
+    and existing_variant.internal_supply_variant_id is not distinct from excluded.internal_supply_variant_id
   returning id into v_catalog_variant_id;
 
   -- Raising rolls back the preceding catalog upsert too; no partial projection is left behind.
