@@ -95,6 +95,18 @@ export async function POST(request: Request) {
       continue;
     }
 
+    if (bestsellerId) {
+      try {
+        // Make the old catalog unsellable before any source-product or variant mutation.
+        await quarantineCatalogForBestseller(db, bestsellerId);
+      } catch (error) {
+        rejected++;
+        errors.push("pre-ingestion catalog quarantine failed: " + (error instanceof Error ? error.message : String(error)));
+        await audit("failed", null, [], null, { reason: "pre_ingestion_catalog_quarantine_failed" });
+        continue;
+      }
+    }
+
     const intendedProductActive = x.active !== false;
     const productPayload = {
       product_id: typeof x.productId === "string" && x.productId ? x.productId : null,
@@ -157,15 +169,6 @@ export async function POST(request: Request) {
     if (retiredVariants.error) {
       itemVariantErrors++;
       errors.push("prior variant retirement failed: " + retiredVariants.error.message);
-    }
-    if (bestsellerId) {
-      try {
-        // Hide any previous sellable catalog state before mutating the source product/variants.
-        await quarantineCatalogForBestseller(db, bestsellerId);
-      } catch (error) {
-        itemVariantErrors++;
-        errors.push("pre-ingestion catalog quarantine failed: " + (error instanceof Error ? error.message : String(error)));
-      }
     }
 
     for (const v of submittedVariants) {
