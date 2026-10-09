@@ -18,7 +18,7 @@ import {
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { normalizeIdentifier } from "../lib/market/identifiers.ts";
-import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
+import { hasUniqueIdentitySelection, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
 const pending = [];
@@ -33,6 +33,15 @@ function test(group, name, fn) {
     record(false, error instanceof Error ? error.message : String(error));
   }
 }
+
+
+test("canonical variant identity gate", "a product-only match cannot stand in for an exact variant match", () => {
+  assert.equal(hasUniqueIdentitySelection(1, 0), false, "one supplier variant without matching variant identifier must remain unlinked");
+  assert.equal(hasUniqueIdentitySelection(3, 0), false, "product identity alone must not choose among variants");
+  assert.equal(hasUniqueIdentitySelection(3, 1), true, "exactly one variant identifier match can be selected");
+  assert.equal(hasUniqueIdentitySelection(3, 2), false, "multiple variant identifier matches are ambiguous");
+  assert.equal(hasUniqueIdentitySelection(0, 0), false, "empty candidate set cannot match");
+});
 
 test("CJ identity reverify policy", "retry intervals, candidate selection, raw GTIN audit, and unique-link gate", () => {
   const result = verifyCjIdentityReverifyPolicyInvariants();
