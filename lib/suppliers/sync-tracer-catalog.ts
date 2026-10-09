@@ -96,16 +96,19 @@ export async function syncTracerCatalogFromInternalSupply(args: {
       };
     }).filter((x) => x.identity.salesEligible);
 
+    const exactIdentifierMatches = confirmed.filter((x) =>
+      Boolean(
+        (marketIds.jan && identifiersFromRecord(x.variant as Record<string, unknown>).jan === marketIds.jan) ||
+        (marketIds.gtin && identifiersFromRecord(x.variant as Record<string, unknown>).gtin === marketIds.gtin) ||
+        (marketIds.ean && identifiersFromRecord(x.variant as Record<string, unknown>).ean === marketIds.ean) ||
+        (marketIds.upc && identifiersFromRecord(x.variant as Record<string, unknown>).upc === marketIds.upc),
+      ),
+    );
     const selected = confirmed.length === 1
       ? confirmed[0]
-      : confirmed.find((x) =>
-          Boolean(
-            (marketIds.jan && x.variant.jan === marketIds.jan) ||
-            (marketIds.gtin && x.variant.gtin === marketIds.gtin) ||
-            (marketIds.ean && x.variant.ean === marketIds.ean) ||
-            (marketIds.upc && x.variant.upc === marketIds.upc),
-          ),
-        );
+      : exactIdentifierMatches.length === 1
+        ? exactIdentifierMatches[0]
+        : undefined;
 
     if (!selected) continue;
 
