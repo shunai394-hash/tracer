@@ -17,7 +17,7 @@ import {
   variantsCompatible,
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
-import { normalizeIdentifier } from "../lib/market/identifiers.ts";
+import { normalizeIdentifier, marketplaceIdentifierLookupConditions, EMPTY_IDENTIFIERS, matchProductIdentity } from "../lib/market/identifiers.ts";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
@@ -33,6 +33,27 @@ function test(group, name, fn) {
     record(false, error instanceof Error ? error.message : String(error));
   }
 }
+
+test("cross-scheme supplier identity lookup", "JAN/GTIN/EAN/UPC lookup searches all barcode columns and normalizes UPC/GTIN-14", () => {
+  const conditions = marketplaceIdentifierLookupConditions({ ...EMPTY_IDENTIFIERS, jan: "4006381333931" });
+  for (const column of ["jan", "gtin", "ean", "upc"]) {
+    assert.ok(conditions.includes(`${column}.eq.4006381333931`), `missing ${column} exact barcode lookup`);
+    assert.ok(conditions.includes(`${column}.eq.04006381333931`), `missing ${column} GTIN-14 lookup`);
+  }
+  assert.equal(new Set(conditions).size, conditions.length, "lookup conditions must be unique");
+});
+test("cross-scheme supplier identity lookup", "MPN lookup is included only for grammar-safe exact identifiers", () => {
+  assert.ok(marketplaceIdentifierLookupConditions({ ...EMPTY_IDENTIFIERS, mpn: "WH-1000XM5" }).includes("mpn.eq.WH-1000XM5"));
+  assert.deepEqual(marketplaceIdentifierLookupConditions({ ...EMPTY_IDENTIFIERS, mpn: "MODEL,(A)" }), []);
+});
+test("cross-scheme supplier identity lookup", "cross-scheme exact variant identity counts as identifier proof", () => {
+  const identity = matchProductIdentity({
+    market: { ...EMPTY_IDENTIFIERS, jan: "4006381333931" },
+    supply: { ...EMPTY_IDENTIFIERS, gtin: "4006381333931" },
+  });
+  assert.equal(identity.linked, true);
+  assert.equal(identity.salesEligible, true);
+});
 
 test("CJ identity reverify policy", "retry intervals, candidate selection, raw GTIN audit, and unique-link gate", () => {
   const result = verifyCjIdentityReverifyPolicyInvariants();
