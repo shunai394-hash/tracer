@@ -43,7 +43,7 @@ test("CJ reverify source safety", "canonical identity is required before persist
   assert.ok(holdBranch >= 0 && persistCall > holdBranch, "unmatched rows must be held before canonical persistence");
   assert.match(source, /failed to persist recovered CJ evidence/);
   assert.match(source, /failed to persist unmatched CJ evidence/);
-  assert.match(source, /\.select\("id"\)\s*\.maybeSingle\(\)/);
+  assert.ok(source.includes('.select("id")\n          .maybeSingle()'), "evidence updates must verify a returned row");
 });
 
 test("marketplace identity", "identifier-only matching rejects title/image-only identity and validates barcodes", () => {
