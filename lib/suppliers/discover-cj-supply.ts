@@ -412,7 +412,7 @@ export async function discoverAndCreateCjSupply(
         sellingPriceJpy: salePrice,
         variantBarcode,
       });
-      let internalSupply: { productId: string; variantId: string; sourceRef: string; identityLink: { bestsellerId: string; method: string; rationale: string } | null } | null = null;
+      let internalSupply: { productId: string; variantId: string; sourceRef: string; identityLink: { bestsellerId: string; method: string; rationale: string } | null; auditStatus: "written" | "table_missing" | "write_failed" } | null = null;
       let internalSupplyError: string | null = null;
       try {
         internalSupply = await persistCjInternalSupplyCandidate({
@@ -457,6 +457,7 @@ export async function discoverAndCreateCjSupply(
         internalSupplyProductId: internalSupply?.productId ?? null,
         internalSupplyVariantId: internalSupply?.variantId ?? null,
         internalSupplySourceRef: internalSupply?.sourceRef ?? null,
+        internalSupplyAuditStatus: internalSupply?.auditStatus ?? "not_attempted",
         internalSupplyError,
         identityLink: internalSupply?.identityLink ?? null,
       });
@@ -664,7 +665,7 @@ export async function discoverAndCreateCjSupply(
           sellingPriceJpy: salePrice,
           variantBarcode,
         });
-        let internalSupply: { productId: string; variantId: string; sourceRef: string; identityLink: { bestsellerId: string; method: string; rationale: string } | null } | null = null;
+        let internalSupply: { productId: string; variantId: string; sourceRef: string; identityLink: { bestsellerId: string; method: string; rationale: string } | null; auditStatus: "written" | "table_missing" | "write_failed" } | null = null;
         let internalSupplyError: string | null = null;
         try {
           internalSupply = await persistCjInternalSupplyCandidate({
@@ -710,6 +711,7 @@ export async function discoverAndCreateCjSupply(
           internalSupplyProductId: internalSupply?.productId ?? null,
           internalSupplyVariantId: internalSupply?.variantId ?? null,
           internalSupplySourceRef: internalSupply?.sourceRef ?? null,
+          internalSupplyAuditStatus: internalSupply?.auditStatus ?? "not_attempted",
           internalSupplyError,
           identityLink: internalSupply?.identityLink ?? null,
         });
