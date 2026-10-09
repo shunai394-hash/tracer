@@ -121,7 +121,7 @@ async function findByHandle(handle: string): Promise<ShopifyProductNode | null> 
 export type ShopifySyncResult = { configured: boolean; considered: number; synced: number; failed: number; listingIds: string[]; errors: Array<{ listingId: string; error: string }> };
 
 /** Shopify is downstream-only: canonical Sales Test Gate plus live fulfillment evidence are mandatory. */
-export async function syncPublishedListingsToShopify(limit = 150, listingIds?: string[]): Promise<ShopifySyncResult> {
+export async function syncPublishedListingsToShopify(limit = 10, listingIds?: string[]): Promise<ShopifySyncResult> {
   if (!isShopifyConfigured()) {
     const message = "shopify_not_configured: SHOPIFY_STORE_DOMAIN and SHOPIFY_ADMIN_ACCESS_TOKEN are required in production";
     return { configured: false, considered: 0, synced: 0, failed: 1, listingIds: [], errors: [{ listingId: "SYSTEM", error: message }] };
@@ -154,10 +154,13 @@ export async function syncPublishedListingsToShopify(limit = 150, listingIds?: s
     .order("shopify_product_id", { ascending: true, nullsFirst: true })
     .order("pipeline_updated_at", { ascending: false });
 
+  // Bound each request even when callers supply explicit IDs. Shopify writes are
+  // sequential and can otherwise exceed Vercel's 120-second route timeout.
+  const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 15);
   if (listingIds?.length) {
-    query = query.in("id", listingIds).limit(Math.max(listingIds.length, 1));
+    query = query.in("id", listingIds).limit(Math.min(listingIds.length, safeLimit));
   } else {
-    query = query.limit(Math.min(Math.max(limit, 1), 150));
+    query = query.limit(safeLimit);
   }
 
   const { data, error } = await query;
