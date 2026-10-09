@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireCronAuth } from "@/lib/security/cron-auth";
 import { syncTracerCatalogFromInternalSupply } from "@/lib/suppliers/sync-tracer-catalog";
+import { shouldSyncInternalSupplyCatalog } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 export const runtime = "nodejs";
 
@@ -176,7 +177,7 @@ export async function POST(request: Request) {
       }
     }
 
-    if (bestsellerId && submittedVariants.length > 0 && itemVariantErrors === 0 && itemVariantsWritten === submittedVariants.length) {
+    if (shouldSyncInternalSupplyCatalog({ bestsellerId, submittedVariantCount: submittedVariants.length, variantWriteErrorCount: itemVariantErrors, successfulVariantWriteCount: itemVariantsWritten })) {
       try {
         const synced = await syncTracerCatalogFromInternalSupply({
           bestsellerId,
