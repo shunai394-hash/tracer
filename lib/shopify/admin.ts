@@ -101,26 +101,85 @@ export function isShopifyConfigured(): boolean {
   return Boolean(storeDomain && (adminAccessToken || (clientId && clientSecret)));
 }
 
-export async function shopifyGraphQL<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
-  const accessToken = await getShopifyAccessToken();
+export async function shopifyGraphQL<T>(
+  query: string,
+  variables: Record<string, unknown> = {},
+): Promise<T> {
+  const { adminAccessToken } = getShopifyConfig();
+  const token = adminAccessToken?.trim();
+
+  if (!token) {
+    throw new Error("SHOPIFY_ADMIN_ACCESS_TOKEN is not configured");
+  }
+
+  // Never expose the token itself in errors or logs.
+  if (/\s/.test(token) || /^["']|["']$/.test(token)) {
+    throw new Error(
+      "SHOPIFY_ADMIN_ACCESS_TOKEN contains whitespace or surrounding quotes",
+    );
+  }
+
   const response = await fetch(shopifyEndpoint(), {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": accessToken },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": token,
+    },
     body: JSON.stringify({ query, variables }),
     cache: "no-store",
+    signal: AbortSignal.timeout(30_000),
   });
-  const payload = await response.json().catch(() => null) as GraphQLResponse<T> | null;
+
+  const requestId = response.headers.get("x-request-id");
+  const responseText = await response.text();
+
+  // Never log the raw HTTP error body.
   if (!response.ok) {
-    const requestId = response.headers.get("x-request-id") || response.headers.get("x-shopify-request-id");
-    const detail = safeShopifyErrorDetail(payload);
-    throw new Error([
-      `Shopify Admin API HTTP ${response.status}`,
-      requestId ? `request_id=${requestId}` : "",
-      detail ? `detail=${detail}` : "",
-    ].filter(Boolean).join(" "));
+    const diagnostic = {
+      phase: "shopify_admin_request",
+      status: response.status,
+      requestId,
+      time: new Date().toISOString(),
+      deployment: process.env.VERCEL_DEPLOYMENT_ID ?? null,
+      commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+    };
+
+    console.error("Shopify Admin API request failed", diagnostic);
+
+    throw new Error(
+      `Shopify Admin API HTTP ${response.status}; requestId=${requestId ?? "unknown"}`,
+    );
   }
-  if (payload?.errors?.length) throw new Error(payload.errors.map((error) => error.message).join("; "));
-  if (!payload?.data) throw new Error("Shopify Admin API returned no data");
+
+  let payload: GraphQLResponse<T>;
+  try {
+    payload = JSON.parse(responseText) as GraphQLResponse<T>;
+  } catch {
+    throw new Error("Shopify Admin API returned invalid JSON");
+  }
+
+  if (payload.errors?.length) {
+    const secrets = [
+      token,
+      process.env.SHOPIFY_CLIENT_SECRET,
+      process.env.SHOPIFY_WEBHOOK_SECRET,
+    ].filter((value): value is string => Boolean(value));
+
+    const messages = payload.errors.map((error) => {
+      let message = error.message;
+      for (const secret of secrets) {
+        message = message.split(secret).join("[removed]");
+      }
+      return message.slice(0, 500);
+    });
+
+    throw new Error(messages.join("; "));
+  }
+
+  if (!payload.data) {
+    throw new Error("Shopify Admin API returned no data");
+  }
+
   return payload.data;
 }
 
