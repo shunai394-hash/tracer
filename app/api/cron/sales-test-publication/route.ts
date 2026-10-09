@@ -112,9 +112,29 @@ export async function GET(request: Request) {
       ...(demandSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
       ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
     ]));
-    // Verified supply already has canonical opportunity intelligence. Do not rebuild
-    // it in the publication-critical path: enrichment was the main source of 2-3 minute
-    // lock contention and prevented successive publication passes.
+    // Repair only the missing-intelligence subset for canonical supply. Do not
+    // rebuild already-enriched products: this keeps the publication path bounded
+    // while preventing verified supply from being permanently rejected merely
+    // because an earlier patrol timed out before writing opportunity_intelligence.
+    const opportunityProductIds = new Set<string>();
+    const canonicalProductIds = new Set<string>();
+    for (let i = 0; i < verifiedSupplyIds.length; i += 100) {
+      const ids = verifiedSupplyIds.slice(i, i + 100);
+      const [opportunityResult, canonicalResult] = await Promise.all([
+        supabase.from("opportunity_intelligence").select("product_id").in("product_id", ids),
+        supabase.from("product_intelligence").select("product_id").in("product_id", ids),
+      ]);
+      if (opportunityResult.error) throw new Error(opportunityResult.error.message);
+      if (canonicalResult.error) throw new Error(canonicalResult.error.message);
+      for (const row of opportunityResult.data ?? []) opportunityProductIds.add(String(row.product_id));
+      for (const row of canonicalResult.data ?? []) canonicalProductIds.add(String(row.product_id));
+    }
+    const missingOpportunityIds = verifiedSupplyIds.filter(
+      (id) => canonicalProductIds.has(id) && !opportunityProductIds.has(id),
+    );
+    if (missingOpportunityIds.length > 0) {
+      await buildOpportunityInBatches(missingOpportunityIds.slice(0, 30), 10);
+    }
     const supplySelected = await selectAndPublishSupplySalesTests(verifiedSupplyIds, 400);
 
     if (supplySelected.published > 0) {
