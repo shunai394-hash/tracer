@@ -9,6 +9,7 @@ const checks = [
   ["Shopify canonical sync", "lib/shopify/sync-published-listings.ts", "hasPassedSalesTestGate"],
   ["Shopify sync live-stock guard", "lib/shopify/sync-published-listings.ts", "Number(row.inventory) > 0"],
   ["Shopify live supplier order contract", "lib/shopify/sync-published-listings.ts", "hasLiveSupplierOrderContract(row)"],
+  ["Shopify supplier shipping capability", "lib/shopify/sync-published-listings.ts", "capabilities.shipping === true"],
   ["Shopify fresh supplier inventory", "lib/shopify/sync-published-listings.ts", "supplier_live_inventory_unverified"],
   ["Shopify live cost and shipping revalidation", "lib/shopify/sync-published-listings.ts", "supplier_live_shipping_changed_revalidation_required"],
   ["Shopify failed unpublish preserves confirmed state", "lib/shopify/sync-published-listings.ts", "shopify_unpublish_failed_manual_action_required"],
