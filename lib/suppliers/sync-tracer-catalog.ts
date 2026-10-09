@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { identifiersFromRecord, matchProductIdentity } from "@/lib/market/identifiers";
+import { identifiersFromRecord, matchProductIdentity, marketplaceIdentifierLookupConditions } from "@/lib/market/identifiers";
 import { hasExactCurrentRequestVariantSet, hasUniqueIdentitySelection, onlyCurrentRequestVariants } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 function num(value: unknown): number | null {
@@ -42,15 +42,10 @@ export async function syncTracerCatalogFromInternalSupply(args: {
   if (!bestseller) return { matched: false, catalogId: null, variantId: null, reason: "bestseller_not_found" };
 
   const marketIds = identifiersFromRecord(bestseller as Record<string, unknown>);
-  const queries = [
-    ["jan", marketIds.jan],
-    ["gtin", marketIds.gtin],
-    ["ean", marketIds.ean],
-    ["upc", marketIds.upc],
-    ["mpn", marketIds.mpn],
-  ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
-
-  if (!queries.length) return { matched: false, catalogId: null, variantId: null, reason: "no_identifier" };
+  const lookupConditions = marketplaceIdentifierLookupConditions(marketIds);
+  if (lookupConditions.length === 0) {
+    return { matched: false, catalogId: null, variantId: null, reason: "no_safe_identifier_lookup_condition" };
+  }
 
   // Resolve the exact request-scoped variant set independently of product lookup.
   // Never use a product's other/older variants as fallback when IDs are missing or mismatched.
@@ -68,13 +63,11 @@ export async function syncTracerCatalogFromInternalSupply(args: {
     return { matched: false, catalogId: null, variantId: null, reason: "requested_variant_not_active_orderable_or_in_stock" };
   }
 
-  const or = queries.map(([column, value]) => `${column}.eq.${value.replace(/[,()]/g, "")}`).join(",");
-
   const { data: products, error: productError } = await db
     .from("internal_supply_products")
     .select("*")
     .eq("active", true)
-    .or(or)
+    .or(lookupConditions.join(","))
     .limit(20);
 
   if (productError) throw new Error(productError.message);
@@ -120,14 +113,10 @@ export async function syncTracerCatalogFromInternalSupply(args: {
       };
     }).filter((x) => x.identity.salesEligible);
 
-    const exactIdentifierMatches = confirmed.filter((x) =>
-      Boolean(
-        (marketIds.jan && identifiersFromRecord(x.variant as Record<string, unknown>).jan === marketIds.jan) ||
-        (marketIds.gtin && identifiersFromRecord(x.variant as Record<string, unknown>).gtin === marketIds.gtin) ||
-        (marketIds.ean && identifiersFromRecord(x.variant as Record<string, unknown>).ean === marketIds.ean) ||
-        (marketIds.upc && identifiersFromRecord(x.variant as Record<string, unknown>).upc === marketIds.upc),
-      ),
-    );
+    // The matcher already normalizes GTIN-family identifiers across JAN/EAN/UPC/GTIN
+    // and handles exact MPN/ASIN evidence. Re-checking only same-named columns here
+    // wrongly discards valid cross-scheme matches and MPN matches when variants are ambiguous.
+    const exactIdentifierMatches = confirmed.filter((x) => x.identity.linked && x.identity.salesEligible);
     const selected = hasUniqueIdentitySelection(confirmed.length, exactIdentifierMatches.length)
       ? confirmed.length === 1 ? confirmed[0] : exactIdentifierMatches[0]
       : undefined;
@@ -135,19 +124,22 @@ export async function syncTracerCatalogFromInternalSupply(args: {
     if (!selected) continue;
 
     const variant = selected.variant;
-    const inventory = num(variant.inventory) ?? num(product.inventory) ?? 0;
-    const cost = num(variant.cost) ?? num(product.cost);
-    const shipping = num(variant.shipping_cost) ?? num(product.shipping_cost);
-    const salePrice = num(args.salePrice);
-    const tracking = variant.tracking_available === true || product.tracking_available === true;
-    const orderable = inventory > 0 && cost !== null && shipping !== null
-      && salePrice !== null && salePrice > cost + shipping && tracking;
-
-    const { data: existing } = await db
+    const { data: existing, error: existingError } = await db
       .from("tracer_supply_catalog")
       .select("id,sale_price,tracer_sku")
       .eq("bestseller_id", bestseller.id)
       .maybeSingle();
+    if (existingError) throw new Error(existingError.message);
+
+    const inventory = num(variant.inventory) ?? num(product.inventory) ?? 0;
+    const cost = num(variant.cost) ?? num(product.cost);
+    const shipping = num(variant.shipping_cost) ?? num(product.shipping_cost);
+    // Preserve a previously validated catalog price when this invocation does not
+    // submit a new one, but still recompute margin against fresh supplier economics.
+    const salePrice = num(args.salePrice) ?? num(existing?.sale_price);
+    const tracking = variant.tracking_available === true || product.tracking_available === true;
+    const orderable = inventory > 0 && cost !== null && shipping !== null
+      && salePrice !== null && salePrice > cost + shipping && tracking;
 
     const tracerSku = existing?.tracer_sku ??
       `TRC-${String(bestseller.id).replace(/-/g, "").slice(0, 16).toUpperCase()}`;
