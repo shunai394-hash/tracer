@@ -129,3 +129,17 @@ create unique index if not exists internal_supply_ingestion_audit_request_item_u
 alter table public.internal_supply_ingestion_audit enable row level security;
 revoke all on public.internal_supply_ingestion_audit from anon, authenticated;
 grant all on public.internal_supply_ingestion_audit to service_role;
+
+-- Table grants do not include the sequence used by a bigserial ID. Grant the
+-- sequence privileges explicitly so service_role can insert audit rows on both
+-- fresh and upgraded schemas without opening sequence access to client roles.
+do $
+declare
+  v_sequence text;
+begin
+  v_sequence := pg_get_serial_sequence('public.internal_supply_ingestion_audit', 'id');
+  if v_sequence is not null then
+    execute format('revoke all on sequence %s from anon, authenticated', v_sequence::regclass);
+    execute format('grant usage, select, update on sequence %s to service_role', v_sequence::regclass);
+  end if;
+end $;
