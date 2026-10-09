@@ -10,20 +10,6 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: public.ecr.aws/docker/library/postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: ci-postgres-password
-          POSTGRES_DB: tracer_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d tracer_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-anon-key
@@ -37,8 +23,13 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Install PostgreSQL client for isolated integration tests
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Set up disposable local PostgreSQL for integration tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql postgresql-client
+          sudo pg_ctlcluster 16 main start
+          sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'ci-postgres-password';"
+          sudo -u postgres createdb tracer_test
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
       - name: Run atomic catalog sync PostgreSQL integration tests (disposable CI database only)
