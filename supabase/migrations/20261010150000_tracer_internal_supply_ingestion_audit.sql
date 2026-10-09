@@ -31,6 +31,28 @@ alter table public.internal_supply_ingestion_audit
   add column if not exists error_codes text[] not null default '{}'::text[],
   add column if not exists details jsonb not null default '{}'::jsonb;
 
+-- Repair legacy tables that predate request/item idempotency columns. Existing
+-- rows receive distinct request IDs before the unique request/item index is built.
+alter table public.internal_supply_ingestion_audit
+  add column if not exists request_id uuid,
+  add column if not exists item_index integer;
+
+alter table public.internal_supply_ingestion_audit
+  alter column request_id set default gen_random_uuid(),
+  alter column item_index set default 0;
+
+update public.internal_supply_ingestion_audit
+  set request_id = gen_random_uuid()
+  where request_id is null;
+
+update public.internal_supply_ingestion_audit
+  set item_index = 0
+  where item_index is null;
+
+alter table public.internal_supply_ingestion_audit
+  alter column request_id set not null,
+  alter column item_index set not null;
+
 create index if not exists internal_supply_ingestion_audit_source_ref_idx
   on public.internal_supply_ingestion_audit(source_name, source_ref, created_at desc);
 create index if not exists internal_supply_ingestion_audit_request_idx
