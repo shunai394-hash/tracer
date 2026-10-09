@@ -13,6 +13,7 @@ import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/c
 import { persistCjSupplyIntelligence } from "@/lib/intelligence/persist-cj-supply-intelligence";
 import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
 import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { persistCjInternalSupplyCandidate } from "@/lib/suppliers/persist-cj-internal-supply";
 
 function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
   const landed = (costUsd + shippingUsd) * fx;
