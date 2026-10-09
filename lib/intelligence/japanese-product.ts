@@ -133,6 +133,19 @@ export function localizeProductDescription(value: unknown): string | null {
   ];
   return rules.find(([pattern]) => pattern.test(source))?.[1] ?? null;
 }
+export function isSpecificJapaneseProductTitle(value: unknown): boolean {
+  if (!isJapaneseProductTitle(value)) return false;
+  const title = String(value).normalize("NFKC").trim();
+  return !CATEGORY_ONLY_TITLES.has(title) && !/^トレンド・.+アイテム$/.test(title);
+}
+
+export function isJapaneseProductDescription(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const japanese = (value.match(/[ぁ-んァ-ヶ一-龯々〆ヵー]/g) ?? []).length;
+  const latin = (value.match(/[A-Za-z]/g) ?? []).length;
+  return japanese >= 12 && japanese >= latin * 0.5;
+}
+
 export function isJapaneseProductTitle(value: unknown): boolean {
   if (typeof value !== "string") return false;
   const title = value.normalize("NFKC").trim();
