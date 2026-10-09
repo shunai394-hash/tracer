@@ -70,6 +70,12 @@ assert.match(ingest, /auditErrorCode === "PGRST205"/);
 assert.match(auditMigration, /create table if not exists public\.internal_supply_ingestion_audit/);
 assert.match(auditMigration, /grant all on public\.internal_supply_ingestion_audit to service_role/);
 assert.match(identity, /function hasValidGs1CheckDigit/);
+assert.match(ingest, /const hasFreshIdentifier = Object\\.values\\(freshIds\\)\\.some\\(Boolean\\)/,
+  "new canonical links must be gated on a valid identifier from the current supplier response");
+assert.match(ingest, /if \\(hasFreshIdentifier\\) \\{/,
+  "preserved historical identifiers must not trigger a new canonical identity lookup");
+assert.match(ingest, /identifiersFromRecord\\(\\{ \\.\\.\\.freshIds, title: args\\.title \\}\\)/,
+  "canonical identity matching must use the current variant barcode, not preserved prior identifiers");
 assert.match(ingest, /identityMatchStatus: "linked" \\| "missing_barcode" \\| "invalid_barcode" \\| "lookup_failed" \\| "candidate_search_overflow" \\| "no_exact_match" \\| "ambiguous_exact_match" \\| "link_write_failed"/, "every candidate must return an explicit identity outcome");
 assert.match(ingest, /identity_match_status: identityMatchStatus/, "identity outcome must be retained in the audit trail");
 assert.ok((ingest.match(/supplier_identifier_evidence_source: identifierEvidenceSource/g) ?? []).length >= 2, "variant and audit metadata must agree on fresh vs preserved barcode evidence");
