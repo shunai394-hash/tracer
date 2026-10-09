@@ -112,6 +112,23 @@ export async function syncPublishedListingsToShopify(limit = 150, listingIds?: s
     return { configured: false, considered: 0, synced: 0, failed: 1, listingIds: [], errors: [{ listingId: "SYSTEM", error: message }] };
   }
 
+  // Validate Admin API credentials before touching any listing rows. A revoked or
+  // mismatched token must fail closed once per run, not mark every product failed
+  // (or repeatedly attempt unpublishing) during the per-listing loop.
+  try {
+    await shopifyGraphQL<{ products: { nodes: Array<{ id: string }> } }>(`query ShopifyAuthPreflight { products(first: 1) { nodes { id } } }`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      configured: true,
+      considered: 0,
+      synced: 0,
+      failed: 1,
+      listingIds: [],
+      errors: [{ listingId: "SYSTEM", error: `shopify_preflight_failed:${message}`.slice(0, 2000) }],
+    };
+  }
+
   const supabase = createSupabaseAdminClient();
   const baseSelect = "id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle";
   let query = supabase
