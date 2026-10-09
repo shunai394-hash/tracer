@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { evaluateSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
-import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 
 function num(value: unknown): number | null {
@@ -59,7 +59,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (!intelligence || !base || !listing) { rejected.push({ productId, reasons: ["required_supply_intelligence_missing"] }); continue; }
     if (!validHttpUrl(base.image_url)) reasons.push("image_url_invalid");
     const localizedTitle = localizeProductTitle(base.normalized_title, metadataCategory(base.metadata));
-    if (!localizedTitle) reasons.push("japanese_title_unavailable");
+    if (!isJapaneseProductTitle(localizedTitle)) reasons.push("japanese_title_unavailable");
 
     const rawIdentityMethod = String(listing.identity_method ?? "").trim().toLowerCase();
     const supplierVerifiedIdentity = String(listing.verification_status ?? "") === "verified"
