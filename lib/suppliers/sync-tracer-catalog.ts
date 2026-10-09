@@ -16,8 +16,14 @@ function str(value: unknown): string | null {
 export async function syncTracerCatalogFromInternalSupply(args: {
   bestsellerId: string;
   salePrice?: number | null;
+  /** Exact internal_supply_variants row IDs written by this ingestion request. */
+  variantIds: string[];
 }): Promise<{ matched: boolean; catalogId: string | null; variantId: string | null; reason?: string }> {
   const db = createSupabaseAdminClient();
+  const variantIds = [...new Set(args.variantIds.filter((id) => typeof id === "string" && id.trim()))];
+  if (variantIds.length === 0) {
+    return { matched: false, catalogId: null, variantId: null, reason: "no_variants_written_by_request" };
+  }
 
   const { data: bestseller, error: bestsellerError } = await db
     .from("marketplace_bestsellers")
@@ -71,6 +77,7 @@ export async function syncTracerCatalogFromInternalSupply(args: {
       .from("internal_supply_variants")
       .select("*")
       .eq("supply_product_id", product.id)
+      .in("id", variantIds)
       .eq("active", true)
       .eq("orderable", true)
       .gt("inventory", 0)
