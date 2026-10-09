@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { identifiersFromRecord, matchProductIdentity } from "@/lib/market/identifiers";
-import { hasUniqueIdentitySelection, onlyCurrentRequestVariants } from "@/lib/suppliers/cj-identity-reverify-policy";
+import { hasExactCurrentRequestVariantSet, hasUniqueIdentitySelection, onlyCurrentRequestVariants } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 function num(value: unknown): number | null {
   const n = Number(value);
@@ -20,9 +20,13 @@ export async function syncTracerCatalogFromInternalSupply(args: {
   variantIds?: string[];
 }): Promise<{ matched: boolean; catalogId: string | null; variantId: string | null; reason?: string }> {
   const db = createSupabaseAdminClient();
-  const variantIds = [...new Set((args.variantIds ?? []).filter((id) => typeof id === "string" && id.trim()))];
+  const suppliedVariantIds = (args.variantIds ?? []).filter((id) => typeof id === "string" && id.trim());
+  const variantIds = [...new Set(suppliedVariantIds)];
   if (variantIds.length === 0) {
     return { matched: false, catalogId: null, variantId: null, reason: "no_variants_written_by_request" };
+  }
+  if (variantIds.length !== suppliedVariantIds.length) {
+    return { matched: false, catalogId: null, variantId: null, reason: "duplicate_variant_ids_in_request_scope" };
   }
 
   const { data: bestseller, error: bestsellerError } = await db
@@ -45,6 +49,22 @@ export async function syncTracerCatalogFromInternalSupply(args: {
 
   if (!queries.length) return { matched: false, catalogId: null, variantId: null, reason: "no_identifier" };
 
+  // Resolve the exact request-scoped variant set independently of product lookup.
+  // Never use a product's other/older variants as fallback when IDs are missing or mismatched.
+  const { data: requestedVariants, error: requestedVariantError } = await db
+    .from("internal_supply_variants")
+    .select("*")
+    .in("id", variantIds);
+  if (requestedVariantError) throw new Error(requestedVariantError.message);
+  const scopedRows = (requestedVariants ?? []) as Array<Record<string, unknown> & { id: string; supply_product_id: string }>;
+  if (!hasExactCurrentRequestVariantSet(scopedRows, variantIds)) {
+    return { matched: false, catalogId: null, variantId: null, reason: "variant_scope_incomplete_or_cross_product" };
+  }
+  const requestedProductId = String(scopedRows[0].supply_product_id);
+  if (scopedRows.some((variant) => variant.active !== true || variant.orderable !== true || (num(variant.inventory) ?? 0) <= 0)) {
+    return { matched: false, catalogId: null, variantId: null, reason: "requested_variant_not_active_orderable_or_in_stock" };
+  }
+
   const or = queries.map(([column, value]) => `${column}.eq.${value.replace(/[,()]/g, "")}`).join(",");
 
   const { data: products, error: productError } = await db
@@ -57,6 +77,7 @@ export async function syncTracerCatalogFromInternalSupply(args: {
   if (productError) throw new Error(productError.message);
 
   for (const product of products ?? []) {
+    if (String(product.id) !== requestedProductId) continue;
     const productIds = identifiersFromRecord(product as Record<string, unknown>);
     const identity = matchProductIdentity({
       market: {
@@ -73,19 +94,10 @@ export async function syncTracerCatalogFromInternalSupply(args: {
 
     if (!identity.salesEligible) continue;
 
-    const { data: variants, error: variantError } = await db
-      .from("internal_supply_variants")
-      .select("*")
-      .eq("supply_product_id", product.id)
-      .in("id", variantIds)
-      .eq("active", true)
-      .eq("orderable", true)
-      .gt("inventory", 0)
-      .limit(100);
-
-    if (variantError) throw new Error(variantError.message);
-
-    const currentRequestVariants = onlyCurrentRequestVariants((variants ?? []) as Array<{ id: string; [key: string]: unknown }>, variantIds);
+    const currentRequestVariants = onlyCurrentRequestVariants(
+      scopedRows.filter((variant) => String(variant.supply_product_id) === requestedProductId) as Array<{ id: string; [key: string]: unknown }>,
+      variantIds,
+    );
     const confirmed = currentRequestVariants.map((variant) => {
       const ids = identifiersFromRecord(variant as Record<string, unknown>);
       return {
