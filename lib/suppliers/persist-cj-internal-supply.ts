@@ -63,7 +63,9 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
 
   const productPayload = {
     product_id: null,
-    sku: args.supplierSku?.trim() || null,
+    // Keep supplier SKU on the concrete variant row; it may repeat across variants.
+    // Production has a unique (source_name, sku) key on internal products.
+    sku: null,
     title: args.title,
     brand: null,
     ...ids,
@@ -84,6 +86,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       source: "cj_supply_first",
       supplier_product_id: args.supplierProductId,
       supplier_variant_id: args.supplierVariantId,
+      supplier_sku: args.supplierSku?.trim() || null,
       supplier_barcode_raw: rawBarcode,
       supplier_barcode_validation: identifierValidation,
       image_url: args.imageUrl,
