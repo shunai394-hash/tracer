@@ -62,15 +62,20 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (!isJapaneseProductTitle(localizedTitle)) reasons.push("japanese_title_unavailable");
 
     const rawIdentityMethod = String(listing.identity_method ?? "").trim().toLowerCase();
-    const supplierVerifiedIdentity = String(listing.verification_status ?? "") === "verified"
+    const identifierGradeMethods = new Set(["asin", "jan", "gtin", "ean", "upc", "mpn", "brand_mpn", "tracer_catalog"]);
+    // Supplier API verification proves that the supplier SKU is real and orderable;
+    // it does not prove that it is the same item as the marketplace demand product.
+    // Only an explicit server-side identity link with identifier-grade evidence may
+    // pass this gate. Never infer marketplace identity from verification_status.
+    const supplierVerifiedIdentity = listing.identity_status === "linked"
+      && identifierGradeMethods.has(rawIdentityMethod)
       && Boolean(listing.supplier_product_id)
-      && Boolean(listing.supplier_variant_id);
-    const identityMethod = supplierVerifiedIdentity ? "supplier_variant" : rawIdentityMethod;
-    const identifierGradeMethods = new Set(["asin", "jan", "gtin", "ean", "upc", "mpn", "brand_mpn", "tracer_catalog", "supplier_variant"]);
-    if (!supplierVerifiedIdentity && (listing.identity_status !== "linked" || !identifierGradeMethods.has(identityMethod))) reasons.push("identity_not_confirmed");
-    if (supplierVerifiedIdentity) {
-      if (num(listing.identity_confidence) === null || (num(listing.identity_confidence) ?? 0) < 0.88) listing.identity_confidence = 1;
-    } else if (num(listing.identity_confidence) === null || (num(listing.identity_confidence) ?? 0) < 0.88) reasons.push("identity_confidence_low");
+      && Boolean(listing.supplier_variant_id)
+      && num(listing.identity_confidence) !== null
+      && (num(listing.identity_confidence) ?? 0) >= 0.88;
+    const identityMethod = rawIdentityMethod;
+    if (!supplierVerifiedIdentity) reasons.push("identity_not_confirmed");
+    if (num(listing.identity_confidence) === null || (num(listing.identity_confidence) ?? 0) < 0.88) reasons.push("identity_confidence_low");
 
     const metadata = base.metadata && typeof base.metadata === "object" && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const sellingPrice = num(metadata.selling_price_jpy);
