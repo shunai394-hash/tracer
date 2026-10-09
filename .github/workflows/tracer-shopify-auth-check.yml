@@ -1,10 +1,16 @@
 name: TRACER Shopify Auth Check
 
-# Read-only: diagnoses Shopify Admin API authentication and scopes, and
-# reports Shopify sync state. Never writes to Shopify or the database and
-# never prints credential values.
+# Diagnoses Shopify Admin API authentication and scopes, reconciles Shopify
+# against shop_listings and previews the next sync (all read-only). Only when
+# run_sync is set does it run the existing gated sync once. Never prints
+# credential values.
 on:
   workflow_dispatch:
+    inputs:
+      run_sync:
+        description: "After the read-only checks, run the gated Shopify sync once (writes), then reconcile again"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -25,7 +31,8 @@ jobs:
               "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
-          for path in api/admin/shopify/auth-check api/admin/shopify/readiness api/admin/shopify/catalog; do
+          RUN_SYNC="${{ inputs.run_sync }}"
+          for path in api/admin/shopify/auth-check api/admin/shopify/readiness api/admin/shopify/catalog api/admin/shopify/reconcile; do
             code=$(curl -sS -o out.json -w "%{http_code}" --max-time 60 -H "Authorization: Bearer $(token)" "$BASE/$path" || echo 000)
             echo "=== $path HTTP $code ==="
             python3 - "$path" <<'PY'
@@ -40,3 +47,26 @@ jobs:
           print(json.dumps(d, ensure_ascii=False, indent=1)[:6000])
           PY
           done
+          summarize_sync() {
+            python3 - <<'PY'
+          import json
+          d = json.load(open("sync.json"))
+          rows = d.pop("rows", None)
+          print(json.dumps({k: v for k, v in d.items() if k not in ("listingIds",)}, ensure_ascii=False, indent=1)[:4000])
+          if rows is not None:
+              elig = [r for r in rows if r.get("eligible")]
+              print("eligible sample:", json.dumps(elig[:5], ensure_ascii=False))
+              print("blocked sample:", json.dumps([r for r in rows if not r.get("eligible")][:5], ensure_ascii=False))
+          PY
+          }
+          echo "=== sync dry run (no writes) ==="
+          curl -sS -o sync.json --max-time 120 -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" -X POST "$BASE/api/admin/shopify/sync" -d '{"dryRun":true,"limit":1000}'
+          summarize_sync
+          if [ "$RUN_SYNC" = "true" ]; then
+            echo "=== gated sync (writes) ==="
+            curl -sS -o sync.json --max-time 130 -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" -X POST "$BASE/api/admin/shopify/sync" -d '{}'
+            summarize_sync
+            echo "=== reconcile after sync ==="
+            curl -sS -o out.json --max-time 60 -H "Authorization: Bearer $(token)" "$BASE/api/admin/shopify/reconcile"
+            python3 -c 'import json; d=json.load(open("out.json")); print(json.dumps({k: d.get(k) for k in ("ok","shopify","db","error")}, ensure_ascii=False, indent=1))'
+          fi

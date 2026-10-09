@@ -164,22 +164,90 @@ export async function syncPublishedListingsToShopify(limit = 150, listingIds?: s
   return syncListingRows((data ?? []) as Listing[], supabase);
 }
 
+/**
+ * Why a listing may not be written to Shopify. Empty means it passes the same
+ * gate, supplier, inventory and economics checks the sync applies.
+ */
+function blockReasons(row: Listing): string[] {
+  const reasons: string[] = [];
+  if (!hasGateProvenance(row)) reasons.push("sales_test_gate_not_passed");
+  if (row.orderable !== true) reasons.push("not_orderable");
+  if (row.tracking_available !== true) reasons.push("tracking_unavailable");
+  if (!(Number(row.inventory) > 0)) reasons.push("inventory_zero_or_unknown");
+  if (String(row.currency ?? "").trim().toUpperCase() !== "JPY") reasons.push("currency_not_jpy");
+  if (!/^CJ/i.test(String(row.supplier_name ?? ""))) reasons.push("supplier_not_cj");
+  if (asNumber(row.shipping_cost) === null) reasons.push("shipping_cost_unknown");
+  if (asNumber(row.source_cost) === null) reasons.push("source_cost_unknown");
+  if (!((asNumber(row.contribution_profit) ?? 0) > 0)) reasons.push("profit_not_positive");
+  if (!((asNumber(row.contribution_margin) ?? 0) > 0)) reasons.push("margin_not_positive");
+  return reasons;
+}
+
+export type ShopifySyncPreviewRow = {
+  listingId: string;
+  productId: string;
+  eligible: boolean;
+  blockReasons: string[];
+  sku: string;
+  supplier: string | null;
+  supplierProductId: string | null;
+  supplierVariantId: string | null;
+  imageOk: boolean;
+  sellingPrice: number | null;
+  inventory: number | null;
+  shopifyProductId: string | null;
+  shopifyVariantId: string | null;
+  lastError: string | null;
+};
+
+/**
+ * Read-only: which listings the next sync would write, with the identifiers
+ * that will be sent (SKU, supplier product/variant, price, image, inventory).
+ * Same query and the same checks as syncPublishedListingsToShopify.
+ */
+export async function previewShopifySync(limit = 150): Promise<{ considered: number; eligible: number; rows: ShopifySyncPreviewRow[]; reasonCounts: Record<string, number> }> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("shop_listings")
+    .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_error")
+    .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
+    .or("shopify_sync_status.is.null,shopify_sync_status.neq.syncing")
+    .order("shopify_product_id", { ascending: true, nullsFirst: true })
+    .order("pipeline_updated_at", { ascending: false })
+    .limit(Math.min(Math.max(limit, 1), 1000));
+  if (error) throw new Error(error.message);
+  const reasonCounts: Record<string, number> = {};
+  const rows = ((data ?? []) as Array<Listing & { shopify_sync_error?: string | null }>).map((row) => {
+    const reasons = blockReasons(row);
+    if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) reasons.push("image_url_invalid");
+    if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");
+    if (!row.supplier_variant_id) reasons.push("supplier_variant_missing");
+    for (const reason of reasons) reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1;
+    return {
+      listingId: row.id,
+      productId: row.product_id,
+      eligible: reasons.length === 0,
+      blockReasons: reasons,
+      sku: sku(row),
+      supplier: row.supplier_name,
+      supplierProductId: row.supplier_product_id,
+      supplierVariantId: row.supplier_variant_id,
+      imageOk: typeof row.image_url === "string" && /^https?:\/\//i.test(row.image_url),
+      sellingPrice: asNumber(row.selling_price),
+      inventory: asNumber(row.inventory),
+      shopifyProductId: row.shopify_product_id,
+      shopifyVariantId: row.shopify_variant_id,
+      lastError: row.shopify_sync_error ? String(row.shopify_sync_error).slice(0, 120) : null,
+    };
+  });
+  return { considered: rows.length, eligible: rows.filter((row) => row.eligible).length, rows, reasonCounts };
+}
+
 async function syncListingRows(
   rows: Listing[],
   supabase: ReturnType<typeof createSupabaseAdminClient>,
 ): Promise<ShopifySyncResult> {
-  const candidates = rows.filter((row) =>
-    hasGateProvenance(row) &&
-    row.orderable === true &&
-    row.tracking_available === true &&
-    Number(row.inventory) > 0 &&
-    String(row.currency ?? "").trim().toUpperCase() === "JPY" &&
-    /^CJ/i.test(String(row.supplier_name ?? "")) &&
-    asNumber((row as Listing & { shipping_cost?: number | string | null }).shipping_cost) !== null &&
-    asNumber((row as Listing & { source_cost?: number | string | null }).source_cost) !== null &&
-    (asNumber((row as Listing & { contribution_profit?: number | string | null }).contribution_profit) ?? 0) > 0 &&
-    (asNumber((row as Listing & { contribution_margin?: number | string | null }).contribution_margin) ?? 0) > 0,
-  );
+  const candidates = rows.filter((row) => blockReasons(row).length === 0);
   const blocked = rows.filter((row) => !candidates.includes(row));
   const results: ShopifySyncResult = {
     configured: true,
