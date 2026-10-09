@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { identifiersFromRecord, matchProductIdentity, marketplaceIdentifierLookupConditions } from "@/lib/market/identifiers";
-import { hasExactCurrentRequestVariantSet, hasUniqueIdentitySelection, onlyCurrentRequestVariants } from "@/lib/suppliers/cj-identity-reverify-policy";
+import { hasExactCurrentRequestVariantSet, onlyCurrentRequestVariants, selectUniqueIdentityCandidate } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 function num(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -119,10 +119,7 @@ export async function syncTracerCatalogFromInternalSupply(args: {
 
     // Cross-scheme barcode normalization and exact MPN/ASIN are handled by the shared matcher.
     // With multiple variants, only one exact variant-level identity proof may be selected.
-    const exactIdentifierMatches = variantCandidates.filter((x) => x.identity.linked && x.identity.salesEligible);
-    const selected = hasUniqueIdentitySelection(variantCandidates.length, exactIdentifierMatches.length)
-      ? variantCandidates.length === 1 ? variantCandidates[0] : exactIdentifierMatches[0]
-      : undefined;
+    const selected = selectUniqueIdentityCandidate(variantCandidates);
 
     if (!selected) continue;
 
