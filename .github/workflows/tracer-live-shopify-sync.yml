@@ -1,8 +1,7 @@
 name: TRACER Live Shopify Sync
 
 on:
-  push:
-    branches: [main]
+  # Live Shopify writes are manual; scheduled publication remains on Vercel Cron.
   workflow_dispatch:
 
 permissions:
@@ -26,14 +25,14 @@ jobs:
           token() {
             curl -sSf \
               -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" |
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
           for i in 1 2 3 4 5 6 7 8; do
             code=$(curl -sS -o "sync-$i.json" -w "%{http_code}" --max-time 120 \
               -H "Authorization: Bearer $(token)" \
               -H "Content-Type: application/json" \
-              -X POST "https://tracer-self.vercel.app/api/admin/shopify/sync" \
+              -X POST "https://tracer-pied-alpha.vercel.app/api/admin/shopify/sync" \
               -d '{}')
             echo "pass $i: HTTP $code"
             cat "sync-$i.json"

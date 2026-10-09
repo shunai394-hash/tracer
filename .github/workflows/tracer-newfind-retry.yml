@@ -1,8 +1,7 @@
 name: TRACER NEWFIND Retry
 
 on:
-  schedule:
-    - cron: "*/20 * * * *"
+  # Retry writes are manual here; production cadence is owned by Vercel Cron.
   workflow_dispatch:
 
 permissions:
@@ -20,7 +19,7 @@ jobs:
           test -n "$ACTIONS_ID_TOKEN_REQUEST_URL"
           token="$(curl --fail-with-body --silent --show-error \
             -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" \
             | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           test -n "$token"
           curl --fail-with-body --silent --show-error --max-time 300 \

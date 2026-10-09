@@ -3,7 +3,7 @@ name: TRACER Production Patrol
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "17 0 * * *" # once daily at 09:17 JST; manual runs remain available
 
 permissions:
   id-token: write
@@ -22,7 +22,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app"
+          OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app"
           OIDC_TOKEN="$(curl --fail-with-body --silent --show-error \
             -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
             "$OIDC_URL" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"

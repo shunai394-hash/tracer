@@ -19,7 +19,7 @@ jobs:
           set -euo pipefail
           # Vercel builds after the push; poll until production reports this SHA.
           for i in $(seq 1 40); do
-            token="$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            token="$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
             sha="$(curl -sS --max-time 60 -H "Authorization: Bearer $token" https://tracer-pied-alpha.vercel.app/api/intelligence/pipeline-audit | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
             echo "attempt $i: production commit=$sha expected=$GITHUB_SHA"
             if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
@@ -34,7 +34,7 @@ jobs:
           BASE=https://tracer-pied-alpha.vercel.app
           failures=""
           token() {
-            curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+            curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
           expect() { # expect <label> <expected-code> <curl args...>
             label="$1"; want="$2"; shift 2
@@ -97,7 +97,7 @@ jobs:
           set -euo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
           token() {
-            curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+            curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
           cat > summarize.py <<'PY'
           import json, sys
@@ -159,7 +159,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app"
+          OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app"
           OIDC_TOKEN="$(curl --fail-with-body --silent --show-error \
             -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
             "$OIDC_URL" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
