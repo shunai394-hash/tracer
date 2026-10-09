@@ -99,7 +99,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       supplier_sku: args.supplierSku?.trim() || null,
       supplier_barcode_raw: rawBarcode,
       supplier_barcode_validation: identifierValidation,
-      supplier_identifier_evidence_source: identifierEvidenceSource,
+      supplier_identifier_evidence_source: "pending_identifier_selection",
       image_url: args.imageUrl,
       query: args.query,
       fx_rate: args.fxRate,
