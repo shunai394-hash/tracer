@@ -83,12 +83,12 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + ERROR_RETRY_MS).toISOString(), identity_reverify_status: "lookup_error", identity_hold_reason: "marketplace_identity_lookup_error" } }).eq("id", supplierListingId);
         return { kind: "lookup_error" as const, supplierListingId, error: lookupError instanceof Error ? lookupError.message : String(lookupError) };
       }
-      const identity = identityResult.identity;
-      if (!identity) {
+      if (identityResult.status !== "linked") {
         const checkedAt = new Date();
         await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), ...supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null), last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + NO_MATCH_RETRY_MS).toISOString(), identity_reverify_status: identityResult.status, identity_hold_reason: identityResult.status } }).eq("id", supplierListingId);
         return { kind: identityResult.status, supplierListingId };
       }
+      const identity = identityResult.identity;
       const canonicalProductId = identity.productId;
       const { data: intelligence } = await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle();
       const metadata = record(intelligence?.metadata);
