@@ -39,6 +39,18 @@ export function supplierBarcodeAudit(value: unknown, isValidGtIn: boolean): {
   };
 }
 
+export function hasExactCurrentRequestVariantSet(
+  rows: Array<{ id: string; supply_product_id: string }>,
+  requestedVariantIds: string[],
+): boolean {
+  const requested = requestedVariantIds.filter((id) => typeof id === "string" && id.trim());
+  if (requested.length === 0 || new Set(requested).size !== requested.length) return false;
+  const actual = rows.map((row) => row.id);
+  if (actual.length !== requested.length || new Set(actual).size !== actual.length) return false;
+  if (!requested.every((id) => actual.includes(id))) return false;
+  return new Set(rows.map((row) => row.supply_product_id)).size === 1;
+}
+
 export function onlyCurrentRequestVariants<T extends { id: string }>(
   rows: T[],
   requestedVariantIds: string[],
@@ -89,6 +101,11 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
     { name: "valid_gtin_is_classified_but_not_itself_linked", expected: true, actual: (() => { const audit = supplierBarcodeAudit("4006381333931", true); return audit.variant_barcode_validation === "valid_gs1_check_digit" && !hasUniqueMarketplaceIdentity(0); })() },
     { name: "stale_existing_variant_is_excluded_from_current_request_scope", expected: true, actual: JSON.stringify(onlyCurrentRequestVariants([{ id: "old-variant" }, { id: "written-this-request" }], ["written-this-request"]).map((row) => row.id)) === JSON.stringify(["written-this-request"]) },
     { name: "empty_current_request_variant_scope_selects_nothing", expected: true, actual: onlyCurrentRequestVariants([{ id: "old-variant" }], []).length === 0 },
+    { name: "exact_variant_scope_accepts_only_complete_single_product_set", expected: true, actual: hasExactCurrentRequestVariantSet([{ id: "v1", supply_product_id: "p1" }, { id: "v2", supply_product_id: "p1" }], ["v1", "v2"]) },
+    { name: "incomplete_variant_scope_is_rejected", expected: false, actual: hasExactCurrentRequestVariantSet([{ id: "v1", supply_product_id: "p1" }], ["v1", "v2"]) },
+    { name: "cross_product_variant_scope_is_rejected", expected: false, actual: hasExactCurrentRequestVariantSet([{ id: "v1", supply_product_id: "p1" }, { id: "v2", supply_product_id: "p2" }], ["v1", "v2"]) },
+    { name: "duplicate_requested_variant_ids_are_rejected", expected: false, actual: hasExactCurrentRequestVariantSet([{ id: "v1", supply_product_id: "p1" }], ["v1", "v1"]) },
+
     { name: "missing_variants_block_catalog_sync", expected: false, actual: shouldSyncInternalSupplyCatalog({ bestsellerId: "market-1", submittedVariantCount: 0, variantWriteErrorCount: 0, successfulVariantWriteCount: 0 }) },
     { name: "partial_variant_failure_blocks_catalog_sync", expected: false, actual: shouldSyncInternalSupplyCatalog({ bestsellerId: "market-1", submittedVariantCount: 2, variantWriteErrorCount: 1, successfulVariantWriteCount: 1 }) },
     { name: "incomplete_variant_writes_block_catalog_sync", expected: false, actual: shouldSyncInternalSupplyCatalog({ bestsellerId: "market-1", submittedVariantCount: 2, variantWriteErrorCount: 0, successfulVariantWriteCount: 1 }) },
