@@ -1,0 +1,42 @@
+name: TRACER Shopify Auth Check
+
+# Read-only: diagnoses Shopify Admin API authentication and scopes, and
+# reports Shopify sync state. Never writes to Shopify or the database and
+# never prints credential values.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Auth check, readiness and catalog (read-only)
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token() {
+            curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          for path in api/admin/shopify/auth-check api/admin/shopify/readiness api/admin/shopify/catalog; do
+            code=$(curl -sS -o out.json -w "%{http_code}" --max-time 60 -H "Authorization: Bearer $(token)" "$BASE/$path" || echo 000)
+            echo "=== $path HTTP $code ==="
+            python3 - "$path" <<'PY'
+          import json, sys
+          path = sys.argv[1]
+          try:
+              d = json.load(open("out.json"))
+          except Exception as e:
+              print("non-JSON response:", open("out.json").read()[:500]); raise SystemExit(0)
+          if path.endswith("catalog"):
+              d.pop("products", None)
+          print(json.dumps(d, ensure_ascii=False, indent=1)[:6000])
+          PY
+          done

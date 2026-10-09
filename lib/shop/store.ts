@@ -116,9 +116,18 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
 
   if (listings.length === 0) return [];
 
-  const liveStock = await getLiveShopifyStock(
-    listings.map((listing) => listing.shopifyVariantId).filter((id): id is string => Boolean(id)),
-  );
+  // A Shopify Admin API failure (e.g. HTTP 401 after a credential change)
+  // must not blank the whole storefront: fall back to the DB inventory that
+  // inventory-refresh keeps current, exactly as when Shopify is not
+  // configured, and log it so the failure is visible in monitoring.
+  let liveStock = new Map<string, number>();
+  try {
+    liveStock = await getLiveShopifyStock(
+      listings.map((listing) => listing.shopifyVariantId).filter((id): id is string => Boolean(id)),
+    );
+  } catch (error) {
+    console.error("[shopify-live-stock-unavailable]", error instanceof Error ? error.message.slice(0, 300) : String(error));
+  }
 
   const staleSoldOut = listings.filter((listing) => {
     const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : undefined;
