@@ -1,3 +1,30 @@
+const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/a4\s+portable\s+printers?|thermal printer.*phomemo|phomemo.*thermal printer/i, "A4対応 ポータブル感熱プリンター"],
+  [/jellyfish.*humidifier|humidifier.*jellyfish/i, "クラゲ型 加湿器・アロマディフューザー"],
+  [/kitchen bathroom toilet cleaning magic brush|bath brush.*glass wall|window slot clean brush/i, "浴室・窓まわり用 クリーニングブラシ"],
+  [/ceramic mug.*wooden handle|wooden handle.*filter tea cup|filter tea cup with lid/i, "木製ハンドル付き セラミックティーカップ"],
+  [/leather.*phone case|phone case.*leather/i, "レザー調 スマホケース"],
+  [/bunny.*cashmere warm cushion|bunny.*cushion.*fleece/i, "うさぎモチーフ ふんわりチェアクッション"],
+  [/a4 paper printing copy paper|copy paper 70g/i, "A4コピー用紙 70g/m²・500枚入り"],
+  [/northern lights.*music star projector|star projector lamp|cornucopia.*projector/i, "オーロラ・星空プロジェクターライト"],
+  [/retro large-diameter.*potted pot|potted pot decoration/i, "レトロデザイン 卓上プランター"],
+  [/straw covers cap.*cowboy hat|cowboy hat shaped.*straw topper/i, "カウボーイハット型 ストローカバー"],
+  [/hd large mirror.*magnifying glass|magnifying glass.*stand/i, "スタンド付き 拡大鏡"],
+  [/car decorations.*led ambient lights|interior led ambient lights/i, "車内LEDアンビエントライト"],
+  [/three-dimensional piggy butt.*phone case|piggy butt phone case/i, "ぶたモチーフ シリコンスマホケース"],
+  [/flowers.*phone case|flower.*phone case/i, "フラワーモチーフ スマホケース"],
+];
+
+const CATEGORY_ONLY_TITLES = new Set([
+  "スマホ保護アクセサリー",
+  "暮らしの便利アイテム",
+  "インテリア照明",
+  "キッチン用品",
+  "ペット用品",
+  "バスルームマット",
+  "トレンド・seeded_dueアイテム",
+]);
+
 const TITLE_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bwireless\b/gi, "ワイヤレス"], [/\bportable\b/gi, "ポータブル"], [/\brechargeable\b/gi, "充電式"],
   [/\bwaterproof\b/gi, "防水"], [/\btravel\b/gi, "トラベル"], [/\bmini\b/gi, "ミニ"], [/\blarge\b/gi, "大容量"],
@@ -59,8 +86,14 @@ const FALLBACK_TITLE_RULES: Array<[RegExp, string]> = [
 
 export function localizeProductTitle(value: unknown, category?: string | null): string | null {
   if (typeof value !== "string") return null;
-  let title = value.normalize("NFKC").trim().replace(/\s+/g, " ");
-  if (!title) return null;
+  const source = value.normalize("NFKC").trim().replace(/\s+/g, " ");
+  if (!source) return null;
+
+  // Specific, source-grounded product names must win over broad category rules.
+  const specific = SPECIFIC_TITLE_RULES.find(([pattern]) => pattern.test(source));
+  if (specific) return specific[1];
+
+  let title = source;
   for (const [pattern, replacement] of TITLE_REPLACEMENTS) title = title.replace(pattern, replacement);
   title = title.replace(/\s*[-|•]+\s*/g, "・").replace(/\s{2,}/g, " ").trim();
   if (isJapaneseProductTitle(title)) {
@@ -68,13 +101,49 @@ export function localizeProductTitle(value: unknown, category?: string | null): 
     const latin = (title.match(/[A-Za-z]/g) ?? []).length;
     if (latin <= japanese * 1.5) return title.slice(0, 120);
   }
-  const fallback = FALLBACK_TITLE_RULES.find(([pattern]) => pattern.test(value));
+
+  // A category label is not a product title. If the caller says the stored
+  // title is only a generic category and no specific source rule matched,
+  // stop sync instead of publishing another indistinguishable listing.
+  if (typeof category === "string" && CATEGORY_ONLY_TITLES.has(category.normalize("NFKC").trim())) return null;
+
+  const fallback = FALLBACK_TITLE_RULES.find(([pattern]) => pattern.test(source));
   if (fallback) return fallback[1];
   if (typeof category === "string" && category.trim()) return "トレンド・" + category.trim().slice(0, 20) + "アイテム";
-  // Verified supplier products may arrive with English-only titles. Never let
-  // localization alone block an otherwise fully verified, profitable supply item.
-  // Keep the title Japanese so the canonical sales gate remains strict.
-  return "暮らしの便利アイテム";
+  return null;
+}
+
+export function localizeProductDescription(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const source = value.normalize("NFKC");
+  const rules: Array<[RegExp, string]> = [
+    [/a4\s+portable\s+printers?|thermal printer.*phomemo|phomemo.*thermal printer/i, "A4サイズの用紙に対応する携帯型感熱プリンターです。対応用紙・接続方式・付属品は販売元の仕様をご確認ください。"],
+    [/jellyfish.*humidifier|humidifier.*jellyfish/i, "クラゲ型デザインの加湿器・ディフューザーです。給電方式・タンク容量・使用可能な香料は販売元の仕様をご確認ください。"],
+    [/kitchen bathroom toilet cleaning magic brush|bath brush.*glass wall|window slot clean brush/i, "浴室や窓まわりの清掃に使うブラシです。対応する面材や使用方法は販売元の仕様をご確認ください。"],
+    [/ceramic mug.*wooden handle|wooden handle.*filter tea cup|filter tea cup with lid/i, "木製ハンドル付きのセラミックカップです。容量・耐熱性・電子レンジ対応は販売元の仕様をご確認ください。"],
+    [/leather.*phone case|phone case.*leather/i, "レザー調デザインのスマートフォンケースです。対応機種・素材・付属品は商品バリエーションと販売元の仕様をご確認ください。"],
+    [/bunny.*cashmere warm cushion|bunny.*cushion.*fleece/i, "うさぎモチーフの起毛クッションです。寸法・素材・お手入れ方法は販売元の仕様をご確認ください。"],
+    [/a4 paper printing copy paper|copy paper 70g/i, "A4サイズのコピー用紙です。厚さ・枚数・対応プリンターは販売元の仕様をご確認ください。"],
+    [/northern lights.*music star projector|star projector lamp|cornucopia.*projector/i, "星空やオーロラ風の光を楽しむプロジェクターライトです。投影機能・給電方式・付属品は販売元の仕様をご確認ください。"],
+    [/retro large-diameter.*potted pot|potted pot decoration/i, "卓上で使うプランター・鉢カバーです。寸法・素材・設置条件は販売元の仕様をご確認ください。"],
+    [/straw covers cap.*cowboy hat|cowboy hat shaped.*straw topper/i, "ストロー先端に装着するカバーです。対応するストロー径・材質・耐熱性は販売元の仕様をご確認ください。"],
+    [/hd large mirror.*magnifying glass|magnifying glass.*stand/i, "スタンド付きの拡大鏡です。レンズ径・倍率・固定方法は販売元の仕様をご確認ください。"],
+    [/car decorations.*led ambient lights|interior led ambient lights/i, "車内用のLEDアンビエントライトです。電源方式・車種との適合・配線方法は販売元の仕様をご確認ください。"],
+    [/three-dimensional piggy butt.*phone case|piggy butt phone case|flowers.*phone case|flower.*phone case/i, "スマートフォン用ケースです。対応機種・素材・付属品は商品バリエーションと販売元の仕様をご確認ください。"],
+  ];
+  return rules.find(([pattern]) => pattern.test(source))?.[1] ?? null;
+}
+export function isSpecificJapaneseProductTitle(value: unknown): boolean {
+  if (!isJapaneseProductTitle(value)) return false;
+  const title = String(value).normalize("NFKC").trim();
+  return !CATEGORY_ONLY_TITLES.has(title) && !/^トレンド・.+アイテム$/.test(title);
+}
+
+export function isJapaneseProductDescription(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const japanese = (value.match(/[ぁ-んァ-ヶ一-龯々〆ヵー]/g) ?? []).length;
+  const latin = (value.match(/[A-Za-z]/g) ?? []).length;
+  return japanese >= 12 && japanese >= latin * 0.5;
 }
 
 export function isJapaneseProductTitle(value: unknown): boolean {

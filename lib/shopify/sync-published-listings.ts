@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
-import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 
 type Listing = {
@@ -67,20 +67,21 @@ function sku(listing: Listing): string {
 async function ensureJapaneseCopy(row: Listing): Promise<{ title: string; description: string }> {
   const title = String(row.title ?? "").trim();
   const description = String(row.description ?? title).trim();
-  if (isJapaneseProductTitle(title) && /[ぁ-んァ-ヶ一-龯々〆ヵー]/.test(description)) {
+  if (isSpecificJapaneseProductTitle(title) && isJapaneseProductDescription(description)) {
     return { title, description };
   }
   if (!isGeminiConfigured()) {
     // Keep catalog synchronization available without a Gemini key. Use only
     // deterministic title localization and a non-claiming Japanese description;
     // never invent product specifications or benefits.
-    const fallbackTitle = isJapaneseProductTitle(title)
-      ? title
-      : localizeProductTitle(title);
+    const sourceCopy = `${title}\n${description}`;
+    const fallbackTitle = localizeProductTitle(sourceCopy, title);
     if (!fallbackTitle || !isJapaneseProductTitle(fallbackTitle)) {
       throw new Error("japanese_catalog_title_localization_failed");
     }
-    const fallbackDescription = "商品の仕様・サイズ・素材・使用方法は、販売元の掲載情報をご確認ください。";
+    const fallbackDescription =
+      localizeProductDescription(sourceCopy) ??
+      "商品の仕様・サイズ・素材・使用方法は、販売元の掲載情報をご確認ください。";
     await supabaseForCopyUpdate(row.id, fallbackTitle, fallbackDescription);
     return { title: fallbackTitle, description: fallbackDescription };
   }
@@ -171,6 +172,7 @@ export async function syncPublishedListingsToShopify(limit = 150, listingIds?: s
  */
 function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
+  if (row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") reasons.push("pipeline_blocked");
   if (!hasGateProvenance(row)) reasons.push("sales_test_gate_not_passed");
   if (row.orderable !== true) reasons.push("not_orderable");
   if (row.tracking_available !== true) reasons.push("tracking_unavailable");
@@ -406,6 +408,21 @@ async function syncListingRows(
       results.listingIds.push(row.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (message === "japanese_catalog_title_localization_failed" || message === "japanese_catalog_copy_invalid") {
+        if (row.shopify_product_id) await unpublishShopifyProduct(String(row.shopify_product_id));
+        await supabase.from("shop_listings").update({
+          published: false,
+          pipeline_stage: "BLOCKED",
+          pipeline_status: "blocked",
+          pipeline_reason: "japanese_catalog_copy_invalid",
+          pipeline_updated_at: new Date().toISOString(),
+          published_at: null,
+          shopify_sync_status: "blocked",
+          shopify_sync_error: message,
+          shopify_synced_at: new Date().toISOString(),
+        }).eq("id", row.id);
+        continue;
+      }
       results.failed += 1;
       results.errors.push({ listingId: row.id, error: message });
       await supabase.from("shop_listings").update({
