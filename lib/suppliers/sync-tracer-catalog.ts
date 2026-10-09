@@ -5,6 +5,9 @@ import { identifiersFromRecord, matchProductIdentity } from "@/lib/market/identi
 import { hasExactCurrentRequestVariantSet, hasUniqueIdentitySelection, onlyCurrentRequestVariants } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 function num(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  if (typeof value === "string" && value.trim() === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -134,10 +137,11 @@ export async function syncTracerCatalogFromInternalSupply(args: {
     const variant = selected.variant;
     const inventory = num(variant.inventory) ?? num(product.inventory) ?? 0;
     const cost = num(variant.cost) ?? num(product.cost);
-    const shipping = num(variant.shipping_cost) ?? num(product.shipping_cost) ?? 0;
+    const shipping = num(variant.shipping_cost) ?? num(product.shipping_cost);
     const salePrice = num(args.salePrice);
     const tracking = variant.tracking_available === true || product.tracking_available === true;
-    const orderable = inventory > 0 && cost !== null && salePrice !== null && salePrice > cost + shipping && tracking;
+    const orderable = inventory > 0 && cost !== null && shipping !== null
+      && salePrice !== null && salePrice > cost + shipping && tracking;
 
     const { data: existing } = await db
       .from("tracer_supply_catalog")
