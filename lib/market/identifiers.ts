@@ -32,6 +32,25 @@ export function marketplaceBarcodeCandidates(value: string): string[] {
   return [...candidates];
 }
 
+/** Build a bounded PostgREST OR filter across barcode schemes, so a JAN can find a GTIN field and vice versa. */
+export function marketplaceIdentifierLookupConditions(ids: ProductIdentifiers): string[] {
+  const conditions = new Set<string>();
+  const barcodeColumns = ["jan", "gtin", "ean", "upc"] as const;
+  for (const scheme of barcodeColumns) {
+    const value = ids[scheme];
+    if (!value) continue;
+    for (const candidate of marketplaceBarcodeCandidates(value)) {
+      for (const column of barcodeColumns) conditions.add(`${column}.eq.${candidate}`);
+    }
+  }
+  // Avoid PostgREST filter grammar delimiters in free-form model numbers. A skipped
+  // MPN is a false negative, not a guessed identity; the exact matcher remains authoritative.
+  if (ids.mpn && /^[A-Z0-9][A-Z0-9._/-]{2,}$/.test(ids.mpn) && !/[(),]/.test(ids.mpn)) {
+    conditions.add(`mpn.eq.${ids.mpn}`);
+  }
+  return [...conditions];
+}
+
 function hasValidGs1CheckDigit(value: string): boolean {
   if (![8, 12, 13, 14].includes(value.length) || !/^\d+$/.test(value)) return false;
   const body = value.slice(0, -1);
