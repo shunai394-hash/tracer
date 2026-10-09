@@ -71,7 +71,7 @@ test("CJ reverify integration contract", "recovery uses live CJ evidence, persis
   assert.match(source, /fetchCJVariantStock\(String\(row\.supplier_variant_id\)\)/, "stock evidence must use the exact CJ variant");
   assert.match(source, /calculateCJFreight\(String\(row\.supplier_variant_id\)/, "freight must use the exact CJ variant");
   assert.match(source, /String\(row\.currency \?\? ""\)\.toUpperCase\(\) === "USD"/, "CJ price and freight cannot be treated as USD without explicit stored currency");
-  assert.match(source, /identity_hold_reason: "no_unique_marketplace_identifier_match"/);
+  assert.match(source, /identity_hold_reason:\s*(?:variantBarcode[^\n]*\?[^\n]*:\s*)?"no_unique_marketplace_identifier_match"/, "unmatched evidence must persist an explicit no-match hold reason");
   assert.match(source, /failed to persist unmatched CJ evidence/);
   assert.match(source, /recovered CJ evidence update affected no supplier listing row/);
   assert.match(source, /unmatched CJ evidence update affected no supplier listing row/);
