@@ -10,7 +10,7 @@ create table if not exists public.internal_supply_ingestion_audit (
   source_name text,
   source_ref text,
   bestseller_id uuid,
-  outcome text not null check (outcome in ('rejected','draft_ingested','sync_blocked','synced','failed')),
+  outcome text not null check (outcome in ('started','rejected','draft_ingested','sync_blocked','synced','failed')),
   product_id uuid,
   submitted_variant_count integer not null default 0 check (submitted_variant_count >= 0),
   written_variant_ids uuid[] not null default '{}',
@@ -27,3 +27,6 @@ create index if not exists internal_supply_ingestion_audit_source_idx
   on public.internal_supply_ingestion_audit(source_name, source_ref, created_at desc);
 
 alter table public.internal_supply_ingestion_audit enable row level security;
+
+create unique index if not exists internal_supply_ingestion_audit_request_item_uq
+  on public.internal_supply_ingestion_audit(request_id, item_index);
