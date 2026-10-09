@@ -412,6 +412,31 @@ export async function discoverAndCreateCjSupply(
         sellingPriceJpy: salePrice,
         variantBarcode,
       });
+      let internalSupply: { productId: string; variantId: string; sourceRef: string } | null = null;
+      let internalSupplyError: string | null = null;
+      try {
+        internalSupply = await persistCjInternalSupplyCandidate({
+          supplierProductId: candidate.id,
+          supplierVariantId: candidate.variantId,
+          supplierSku: seededVariant?.sku ?? null,
+          title: displayTitle,
+          imageUrl: detail.imageUrl,
+          barcode: variantBarcode,
+          costUsd: cost,
+          shippingUsd: freight,
+          inventory: Math.floor(stock),
+          fxRate,
+          sellingPriceJpy: salePrice,
+          query,
+        });
+      } catch (error) {
+        internalSupplyError = error instanceof Error ? error.message : String(error);
+        console.warn("[supply-first] internal supply ingest failed", {
+          supplierProductId: candidate.id,
+          supplierVariantId: candidate.variantId,
+          error: internalSupplyError,
+        });
+      }
       discovered++;
       verified++;
       items.push({
@@ -428,6 +453,11 @@ export async function discoverAndCreateCjSupply(
         sellingPriceJpy: salePrice,
         fxRate,
         published: false,
+        internalSupplyIngested: Boolean(internalSupply),
+        internalSupplyProductId: internalSupply?.productId ?? null,
+        internalSupplyVariantId: internalSupply?.variantId ?? null,
+        internalSupplySourceRef: internalSupply?.sourceRef ?? null,
+        internalSupplyError,
       });
     } catch (error) {
       rejected++;
@@ -633,6 +663,31 @@ export async function discoverAndCreateCjSupply(
           sellingPriceJpy: salePrice,
           variantBarcode,
         });
+        let internalSupply: { productId: string; variantId: string; sourceRef: string } | null = null;
+        let internalSupplyError: string | null = null;
+        try {
+          internalSupply = await persistCjInternalSupplyCandidate({
+            supplierProductId: candidate.id,
+            supplierVariantId: variant.vid,
+            supplierSku: variant.sku ?? null,
+            title: displayTitle,
+            imageUrl: detail.imageUrl,
+            barcode: variantBarcode,
+            costUsd: cost,
+            shippingUsd: freight,
+            inventory: Math.floor(stock),
+            fxRate,
+            sellingPriceJpy: salePrice,
+            query,
+          });
+        } catch (error) {
+          internalSupplyError = error instanceof Error ? error.message : String(error);
+          console.warn("[supply-first] internal supply ingest failed", {
+            supplierProductId: candidate.id,
+            supplierVariantId: variant.vid,
+            error: internalSupplyError,
+          });
+        }
         discovered++;
         verified++;
         catalogDiscovered++;
@@ -650,6 +705,11 @@ export async function discoverAndCreateCjSupply(
           sellingPriceJpy: salePrice,
           fxRate,
           published: false,
+          internalSupplyIngested: Boolean(internalSupply),
+          internalSupplyProductId: internalSupply?.productId ?? null,
+          internalSupplyVariantId: internalSupply?.variantId ?? null,
+          internalSupplySourceRef: internalSupply?.sourceRef ?? null,
+          internalSupplyError,
         });
       } catch (error) {
         reject("error", { error: error instanceof Error ? error.message : String(error) });
