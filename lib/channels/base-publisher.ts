@@ -57,10 +57,58 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   if (error) throw new Error(error.message);
 
   const results: BasePublicationResult["results"] = [];
+  const revokedBaseListingIds = new Set<string>();
 
-  // Hide stale BASE items immediately. Do not spend Gemini time translating
+  // Revalidate the durable Sales Test Gate for every existing BASE item on
+  // every reconciliation. If the proof is revoked, hide it remotely first.
+  // Never mark it unpublished in TRACER unless BASE confirms the hide.
+  for (const listing of listings ?? []) {
+    if (!listing.base_item_id || listing.published !== true || hasPassedSalesTestGate(listing as Parameters<typeof hasPassedSalesTestGate>[0])) continue;
+    const listingId = String(listing.id);
+    revokedBaseListingIds.add(listingId);
+    try {
+      if (listing.selling_price === null || !Number.isFinite(Number(listing.selling_price)) || Number(listing.selling_price) <= 0) {
+        throw new Error("base_gate_revoked_price_unknown_manual_hide_required");
+      }
+      await editBaseItem({
+        itemId: String(listing.base_item_id),
+        title: "販売停止中の商品",
+        detail: "販売条件の再確認が必要なため、現在販売を停止しています。",
+        price: Number(listing.selling_price),
+        stock: 0,
+        visible: false,
+      });
+      const { error: hidePersistError } = await supabase.from("shop_listings").update({
+        published: false,
+        orderable: false,
+        base_publication_status: "published",
+        base_publication_lease_until: null,
+        base_last_error: null,
+        pipeline_stage: "BASE_RECONCILED",
+        pipeline_status: "blocked",
+        pipeline_reason: "sales_test_gate_revoked",
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      if (hidePersistError) throw new Error(hidePersistError.message);
+      results.push({ listingId, ok: true, baseItemId: String(listing.base_item_id), skipped: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await supabase.from("shop_listings").update({
+        base_last_error: message,
+        pipeline_stage: "BASE_RECONCILIATION",
+        pipeline_status: "failed",
+        pipeline_reason: "base_gate_revoked_hide_failed_manual_action_required",
+        pipeline_error: message,
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      results.push({ listingId, ok: false, error: "base_gate_revoked_hide_failed_manual_action_required" });
+    }
+  }
+
+  // Hide other stale BASE items immediately. Do not spend Gemini time translating
   // listings that TRACER has already blocked/unpublished.
   for (const listing of listings ?? []) {
+    if (revokedBaseListingIds.has(String(listing.id))) continue;
     if (!listing.base_item_id || listing.published === true) continue;
     if (listing.selling_price === null) {
       results.push({ listingId: String(listing.id), ok: false, skipped: true, error: "base_hide_price_unknown" });
@@ -90,7 +138,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
   }
 
-  const activeListings = (listings ?? []).filter((listing) => !listing.base_item_id || listing.published === true);
+  const activeListings = (listings ?? []).filter((listing) => !revokedBaseListingIds.has(String(listing.id)) && (!listing.base_item_id || listing.published === true));
   // Generate Japanese copy concurrently only for listings that can remain visible.
   // spend the full serverless timeout waiting on Gemini one listing at a time.
   const copyResults = await Promise.all(activeListings.map(async (listing) => {
