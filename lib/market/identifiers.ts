@@ -33,7 +33,7 @@ export function marketplaceBarcodeCandidates(value: string): string[] {
 }
 
 function hasValidGs1CheckDigit(value: string): boolean {
-  if (!/^\d{8,14}$/.test(value)) return false;
+  if (![8, 12, 13, 14].includes(value.length) || !/^\d+$/.test(value)) return false;
   const body = value.slice(0, -1);
   const check = Number(value[value.length - 1]);
   let sum = 0;
@@ -67,7 +67,7 @@ export function normalizeIdentifier(
   if (scheme === "jan" && (num.length === 8 || num.length === 13)) return hasValidGs1CheckDigit(num) ? num : null;
   if (scheme === "ean" && (num.length === 8 || num.length === 13)) return hasValidGs1CheckDigit(num) ? num : null;
   if (scheme === "upc" && num.length === 12) return hasValidGs1CheckDigit(num) ? num : null;
-  if (scheme === "gtin" && num.length >= 8 && num.length <= 14) return num;
+  if (scheme === "gtin" && [8, 12, 13, 14].includes(num.length)) return hasValidGs1CheckDigit(num) ? num : null;
   return null;
 }
 
