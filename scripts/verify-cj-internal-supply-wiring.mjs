@@ -72,6 +72,7 @@ assert.match(auditMigration, /grant all on public\.internal_supply_ingestion_aud
 assert.match(identity, /function hasValidGs1CheckDigit/);
 assert.match(ingest, /identityMatchStatus: "linked" \\| "missing_barcode" \\| "invalid_barcode" \\| "lookup_failed" \\| "candidate_search_overflow" \\| "no_exact_match" \\| "ambiguous_exact_match" \\| "link_write_failed"/, "every candidate must return an explicit identity outcome");
 assert.match(ingest, /identity_match_status: identityMatchStatus/, "identity outcome must be retained in the audit trail");
+assert.ok((ingest.match(/supplier_identifier_evidence_source: identifierEvidenceSource/g) ?? []).length >= 3, "product, variant, and audit metadata must agree on fresh vs preserved barcode evidence");
 assert.match(discovery, /internalSupplyIngested, internalSupplyFailed, identityLinked, identityUnlinked, auditWritten, auditMissing, auditWriteFailed/, "aggregate counts must distinguish supplier verification from internal ingestion and identity linking");
 assert.ok(discovery.includes("identityMatchStatus: internalSupply?.identityMatchStatus"), "per-candidate results must expose the exact identity outcome");
 assert.ok(discovery.includes("internalSupplyFailed++"), "failed internal-supply writes must not disappear from the summary");
