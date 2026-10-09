@@ -21,6 +21,7 @@ export type PersistCjSupplyIntelligenceArgs = {
   sellingPriceJpy: number;
   variantBarcode?: string | null;
   supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null;
+  supplierBrand?: string | null;
 };
 
 export type MarketplaceIdentity = { bestsellerId: string; productId: string; method: "gtin" | "jan" | "ean" | "upc" | "mpn"; confidence: number; rationale: string };
@@ -42,7 +43,7 @@ async function readSupplierBarcode(args: { supplierProductId: string; supplierVa
   return "";
 }
 
-export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<MarketplaceIdentity | null> {
+export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierBrand?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<MarketplaceIdentity | null> {
   const suppliedIds = identifiersFromRecord({ gtin: args.supplierIdentifiers?.gtin, jan: args.supplierIdentifiers?.jan, ean: args.supplierIdentifiers?.ean, upc: args.supplierIdentifiers?.upc, mpn: args.supplierIdentifiers?.mpn });
   const barcode = Object.values(suppliedIds).find((value) => typeof value === "string" && value.trim()) ?? await readSupplierBarcode(args);
   const supplyIds = identifiersFromRecord({ ...suppliedIds, gtin: barcode || suppliedIds.gtin });
@@ -61,10 +62,10 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
     for (const row of bestsellers ?? []) {
       if (typeof row.product_id !== "string" || !row.product_id.trim()) continue;
       const marketIds = identifiersFromRecord(row as Record<string, unknown>);
-      const identity = matchProductIdentity({ market: { ...marketIds, brand: typeof row.brand === "string" ? row.brand : null, title: typeof row.title === "string" ? row.title : null }, supply: { ...supplyIds, title: null, brand: null } });
-      if (!identity.salesEligible || !["gtin", "jan", "ean", "upc", "mpn"].includes(identity.method)) continue;
+      const identity = matchProductIdentity({ market: { ...marketIds, brand: typeof row.brand === "string" ? row.brand : null, title: typeof row.title === "string" ? row.title : null }, supply: { ...supplyIds, title: null, brand: typeof args.supplierBrand === "string" ? args.supplierBrand : null } });
+      if (!identity.salesEligible || !["gtin", "jan", "ean", "upc", "mpn", "brand_mpn"].includes(identity.method)) continue;
       const productId = String(row.product_id);
-      const candidate = { bestsellerId: String(row.id), productId, method: identity.method as MarketplaceIdentity["method"], confidence: identity.confidence, rationale: identity.rationale, fetchedAt: typeof row.fetched_at === "string" ? row.fetched_at : "" };
+      const candidate = { bestsellerId: String(row.id), productId, method: identity.method === "brand_mpn" ? "mpn" as const : identity.method as MarketplaceIdentity["method"], confidence: identity.confidence, rationale: identity.rationale, fetchedAt: typeof row.fetched_at === "string" ? row.fetched_at : "" };
       const current = matchesByProduct.get(productId);
       if (!current || candidate.confidence > current.confidence || (candidate.confidence === current.confidence && candidate.fetchedAt > current.fetchedAt)) matchesByProduct.set(productId, candidate);
     }
@@ -78,15 +79,21 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
   const supabase = createSupabaseAdminClient();
   const now = new Date().toISOString();
   const currencyAssessment = assessCurrencyConfidence({ currency: "USD", price: args.cost, provider: "cj" });
-  const marketplaceIdentity = options.identity !== undefined ? options.identity : await resolveMarketplaceIdentity({ db: supabase, supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, variantBarcode: args.variantBarcode, supplierIdentifiers: args.supplierIdentifiers });
+  const marketplaceIdentity = options.identity !== undefined ? options.identity : await resolveMarketplaceIdentity({ db: supabase, supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, variantBarcode: args.variantBarcode, supplierBrand: args.supplierBrand, supplierIdentifiers: args.supplierIdentifiers });
   const canonicalProductId = marketplaceIdentity?.productId ?? args.productId;
   let existingListingMetadata: Record<string, unknown> = {};
   const existingListing = await supabase.from("supplier_listings").select("metadata").eq("id", args.supplierListingId).maybeSingle();
   if (existingListing.error) throw new Error(`CJ supplier listing read failed: ${existingListing.error.message}`);
   if (existingListing.data?.metadata && typeof existingListing.data.metadata === "object" && !Array.isArray(existingListing.data.metadata)) existingListingMetadata = existingListing.data.metadata as Record<string, unknown>;
   const verifiedMetadata = { ...existingListingMetadata, source: "cj_supply_first", identity_source: marketplaceIdentity ? "cj_variant_or_listing_identifier_to_marketplace_bestseller" : "cj_variant_evidence", identity_rationale: marketplaceIdentity?.rationale ?? "CJ variant/listing identifier evidence persisted; marketplace identity not yet confirmed", supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: args.variantBarcode ?? existingListingMetadata.variant_barcode ?? null };
-  const { error: evidenceError } = await supabase.from("supplier_listings").update({ ...(marketplaceIdentity ? { bestseller_id: marketplaceIdentity.bestsellerId, product_id: canonicalProductId, identity_method: marketplaceIdentity.method, identity_status: "linked", identity_confidence: marketplaceIdentity.confidence } : {}), cost: args.cost, shipping_cost: args.shippingCost, inventory: args.inventory, price_confirmed: Number.isFinite(args.cost) && args.cost >= 0, inventory_confirmed: Number.isFinite(args.inventory) && args.inventory >= 0, orderable: args.inventory > 0, tracking_available: true, api_available: true, verification_status: "verified", fetched_at: now, metadata: verifiedMetadata }).eq("id", args.supplierListingId);
+  const { data: evidenceRow, error: evidenceError } = await supabase
+    .from("supplier_listings")
+    .update({ ...(marketplaceIdentity ? { bestseller_id: marketplaceIdentity.bestsellerId, product_id: canonicalProductId, identity_method: marketplaceIdentity.method, identity_status: "linked", identity_confidence: marketplaceIdentity.confidence } : {}), cost: args.cost, shipping_cost: args.shippingCost, inventory: args.inventory, price_confirmed: Number.isFinite(args.cost) && args.cost >= 0, inventory_confirmed: Number.isFinite(args.inventory) && args.inventory >= 0, orderable: args.inventory > 0, tracking_available: true, api_available: true, verification_status: "verified", fetched_at: now, metadata: verifiedMetadata })
+    .eq("id", args.supplierListingId)
+    .select("id")
+    .maybeSingle();
   if (evidenceError) throw new Error(`CJ supplier evidence persistence failed: ${evidenceError.message}`);
+  if (!evidenceRow?.id) throw new Error("CJ supplier evidence update affected no supplier listing row");
   const offerPayload = { product_id: canonicalProductId, seller_name: "CJdropshipping", offer_url: null, image_url: args.imageUrl, currency: "USD", price: args.cost, currency_confidence: currencyAssessment.confidence, availability: args.inventory > 0 ? "available" : "unavailable", shipping_price: args.shippingCost, observed_at: now, metadata: { provider: "cj", source: "cj_supply_first", supplier_listing_id: args.supplierListingId, supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: args.variantBarcode ?? null, inventory: args.inventory, query: args.query, fx_rate: args.fxRate, selling_price_jpy: args.sellingPriceJpy, currency_confidence: currencyAssessment.confidence, currency_confidence_reasons: currencyAssessment.reasons, identity_confidence: marketplaceIdentity?.confidence ?? 0, identity_status: marketplaceIdentity ? "linked" : "supply_discovered", identity_method: marketplaceIdentity?.method ?? "supply_discovered", identity_rationale: marketplaceIdentity?.rationale ?? "CJ supply discovered; marketplace identity not confirmed", demand_evidence_status: "not_observed" } };
   const existingOffer = await supabase.from("product_offers").select("id").eq("product_id", canonicalProductId).eq("seller_name", "CJdropshipping").order("observed_at", { ascending: false }).limit(1).maybeSingle();
   if (existingOffer.error) throw new Error(existingOffer.error.message);

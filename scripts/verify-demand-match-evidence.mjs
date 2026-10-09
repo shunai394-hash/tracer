@@ -1,6 +1,7 @@
 // Demand match precision tests (pure logic, no DB, no network).
 // Run: node --experimental-strip-types scripts/verify-demand-match-evidence.mjs
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   buildIdentifierIndex,
   canonicalGtin,
@@ -17,8 +18,9 @@ import {
   variantsCompatible,
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
-import { normalizeIdentifier } from "../lib/market/identifiers.ts";
-import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
+import { normalizeIdentifier, verifyIdentifierMatchInvariants } from "../lib/market/identifiers.ts";
+import { supabaseWriteFailure, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
+import { firstCJImageUrl, parseCJFreightOptions, parseCJStockData, parseCJUsdPrice } from "../lib/sources/cj/parse.ts";
 
 const results = [];
 const pending = [];
@@ -33,6 +35,103 @@ function test(group, name, fn) {
     record(false, error instanceof Error ? error.message : String(error));
   }
 }
+
+test("CJ reverify source safety", "canonical identity is required before persisting reverify evidence", () => {
+  const source = readFileSync(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
+  assert.equal(source.includes("identity?.productId ?? String(row.product_id)"), false, "must not fall back to an existing product_id");
+  assert.match(source, /supplierBrand, supplierIdentifiers:/, "MPN matching must receive supplier brand evidence");
+  const holdBranch = source.indexOf("if (!identity) {");
+  const persistCall = source.indexOf("await persistCjSupplyIntelligence(");
+  assert.ok(holdBranch >= 0 && persistCall > holdBranch, "unmatched rows must be held before canonical persistence");
+  assert.match(source, /failed to persist recovered CJ evidence/);
+  assert.match(source, /failed to persist unmatched CJ evidence/);
+  assert.ok(source.includes('.select("id")\n          .maybeSingle()'), "evidence updates must verify a returned row");
+});
+
+test("Supabase persistence failures", "database errors and missing returned rows are not treated as success", () => {
+  assert.equal(supabaseWriteFailure("update listing", { message: "permission denied" }), "update listing failed: permission denied");
+  assert.equal(supabaseWriteFailure("update listing", null, null, true), "update listing affected no row");
+  assert.equal(supabaseWriteFailure("update listing", null, { id: "listing-1" }, true), null);
+  assert.equal(supabaseWriteFailure("insert cron run", { message: "statement timeout" }), "insert cron run failed: statement timeout");
+  assert.equal(supabaseWriteFailure("insert cron run", null), null);
+});
+test("CJ reverify source safety", "retry metadata and cron_runs persistence failures are surfaced", () => {
+  const source = readFileSync(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
+  assert.match(source, /failed to record retry state/);
+  assert.match(source, /persist retry state/);
+  assert.match(source, /persist cron_runs outcome/);
+  assert.match(source, /identity reverify cursor lookup failed/);
+});
+
+test("CJ reverify integration contract", "recovery uses live CJ evidence, persists to supplier listing, and never promotes without unique identity", () => {
+  const source = readFileSync(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
+  const persistence = readFileSync(new URL("../lib/intelligence/persist-cj-supply-intelligence.ts", import.meta.url), "utf8");
+  assert.match(source, /fetchCJVariantByVid\(String\(row\.supplier_variant_id\)\)/, "variant evidence must be fetched by the recorded CJ vid");
+  assert.match(source, /getCJProductDetail\(String\(row\.supplier_product_id\)\)/, "product image evidence must be fetched by recorded CJ pid");
+  assert.match(source, /fetchCJVariantStock\(String\(row\.supplier_variant_id\)\)/, "stock evidence must use the exact CJ variant");
+  assert.match(source, /calculateCJFreight\(String\(row\.supplier_variant_id\)/, "freight must use the exact CJ variant");
+  assert.match(source, /String\(row\.currency \?\? ""\)\.toUpperCase\(\) === "USD"/, "CJ price and freight cannot be treated as USD without explicit stored currency");
+  assert.match(source, /identity_hold_reason:\s*(?:variantBarcode[^\n]*\?[^\n]*:\s*)?"no_unique_marketplace_identifier_match"/, "unmatched evidence must persist an explicit no-match hold reason");
+  assert.match(source, /failed to persist unmatched CJ evidence/);
+  assert.match(source, /recovered CJ evidence update affected no supplier listing row/);
+  assert.match(source, /unmatched CJ evidence update affected no supplier listing row/);
+  assert.match(source, /if \(!identity\) \{[\s\S]*?return \{ kind: "no_match"/, "identity miss must return before canonical persistence");
+  assert.match(persistence, /hasUniqueMarketplaceIdentity\(matchesByProduct\.size\)/, "identity resolution must require exactly one canonical product");
+  assert.match(persistence, /\.select\("id"\)\s*\.maybeSingle\(\)/, "supplier evidence update must return the affected row");
+  assert.match(persistence, /CJ supplier evidence persistence failed/);
+  assert.match(persistence, /CJ supplier evidence update affected no supplier listing row/, "zero-row update must fail instead of reporting recovery");
+});
+
+test("CJ API fixtures", "variant sellPrice is accepted only with explicit USD currency", () => {
+  assert.equal(parseCJUsdPrice("12.34", "USD"), 12.34);
+  assert.equal(parseCJUsdPrice(12.34, "usd"), 12.34);
+  for (const currency of [null, undefined, "", "JPY", "CNY", "unknown"]) assert.equal(parseCJUsdPrice("12.34", currency), null, String(currency));
+  for (const value of [null, undefined, "", "not-a-price", 0, -1, "NaN"]) assert.equal(parseCJUsdPrice(value, "USD"), null, String(value));
+});
+test("CJ API fixtures", "real zero stock differs from missing or malformed stock", () => {
+  assert.equal(parseCJStockData([{ vid: "v-zero", storageNum: 0 }]), 0);
+  assert.equal(parseCJStockData([{ vid: "v-stock", storageNum: 3 }, { vid: "v-zero", storageNum: 0 }]), 3);
+  for (const value of [null, undefined, {}, [], [{ vid: "v-unknown" }], [{ storageNum: "unknown" }], -1, "-2"]) assert.equal(parseCJStockData(value), null, JSON.stringify(value));
+});
+test("CJ API fixtures", "freight selection compares all-in USD totals across multiple shipping methods", () => {
+  const parsed = parseCJFreightOptions([
+    { logisticName: "Slow Base Only", logisticPrice: 1.2, logisticAging: "10-20" },
+    { logisticName: "Express", logisticPrice: 7.5, totalPostageFee: 8.1, logisticAging: "3-6" },
+    { logisticName: "Economy", logisticPrice: 4.1, totalPostageFee: "5.25", logisticAging: "7-12" },
+    { logisticName: "Malformed", logisticPrice: "n/a", totalPostageFee: null },
+    { logisticName: "", logisticPrice: 0.2 },
+  ]);
+  assert.deepEqual(parsed.map(({ logisticName, shippingCost, priceBasis }) => [logisticName, shippingCost, priceBasis]), [
+    ["Economy", 5.25, "totalPostageFee"],
+    ["Express", 8.1, "totalPostageFee"],
+  ]);
+  assert.equal(parsed[0].arrivalTime, "7-12");
+});
+test("CJ API fixtures", "freight falls back to logisticPrice only when no totalPostageFee exists", () => {
+  const parsed = parseCJFreightOptions([
+    { logisticName: "Carrier B", logisticPrice: "4.20" },
+    { logisticName: "Carrier A", logisticPrice: 3.9 },
+    { logisticName: "Bad", logisticPrice: "unknown" },
+    null,
+  ]);
+  assert.deepEqual(parsed.map(({ logisticName, shippingCost, priceBasis }) => [logisticName, shippingCost, priceBasis]), [
+    ["Carrier A", 3.9, "logisticPrice"],
+    ["Carrier B", 4.2, "logisticPrice"],
+  ]);
+  assert.deepEqual(parseCJFreightOptions(null), []);
+  assert.deepEqual(parseCJFreightOptions({ data: [] }), []);
+});
+test("CJ API fixtures", "CJ image candidates are retained only when non-empty and parseable", () => {
+  assert.equal(firstCJImageUrl('["https://img.example/product.jpg","https://img.example/other.jpg"]'), "https://img.example/product.jpg");
+  assert.equal(firstCJImageUrl(""), null);
+  assert.equal(firstCJImageUrl("[malformed"), null);
+});
+
+test("marketplace identity", "identifier-only matching rejects title/image-only identity and validates barcodes", () => {
+  const result = verifyIdentifierMatchInvariants();
+  assert.equal(result.ok, true, result.cases.filter((item) => item.actual !== item.expected).map((item) => item.name).join(", "));
+  assert.ok(result.cases.length >= 10);
+});
 
 test("CJ identity reverify policy", "retry intervals, candidate selection, raw GTIN audit, and unique-link gate", () => {
   const result = verifyCjIdentityReverifyPolicyInvariants();
