@@ -145,6 +145,18 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     updated_at: now,
   };
 
+  // A supplier variant ID is global to the CJ source. Do not silently attach
+  // an existing source variant to a second internal product row.
+  const variantOwners = await db
+    .from("internal_supply_variants")
+    .select("id,supply_product_id")
+    .eq("variant_id", args.supplierVariantId)
+    .limit(2);
+  if (variantOwners.error) throw new Error("cj_internal_supply_variant_owner_lookup_failed: " + variantOwners.error.message);
+  if ((variantOwners.data ?? []).some((row: { supply_product_id: string }) => String(row.supply_product_id) !== productId)) {
+    throw new Error("cj_internal_supply_variant_already_owned_by_another_product");
+  }
+
   const existingVariant = await db
     .from("internal_supply_variants")
     .select("id")
