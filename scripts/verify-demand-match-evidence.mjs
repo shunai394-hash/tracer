@@ -17,6 +17,7 @@ import {
   variantsCompatible,
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
+import { normalizeIdentifier } from "../lib/market/identifiers.ts";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
@@ -37,6 +38,8 @@ test("CJ identity reverify policy", "retry intervals, candidate selection, raw G
   const result = verifyCjIdentityReverifyPolicyInvariants();
   assert.equal(result.ok, true, result.cases.filter((item) => item.actual !== item.expected).map((item) => item.name).join(", "));
   assert.equal(result.cases.length >= 15, true);
+  assert.equal(normalizeIdentifier("gtin", "1598446591114"), null);
+  assert.equal(normalizeIdentifier("gtin", "4006381333931"), "4006381333931");
 });
 
 // Market product fixtures (JANs carry valid check digits).
