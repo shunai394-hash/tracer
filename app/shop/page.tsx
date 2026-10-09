@@ -1,21 +1,36 @@
 import Link from "next/link";
-import { listPublishedShopListings } from "@/lib/shop/store";
+import { listPublishedShopListingsPage } from "@/lib/shop/store";
 import { formatMoney } from "@/lib/intelligence/format-display";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Shop — TRACER", description: "TRACERのSales Test Gateを通過し、Shopifyへ同期された販売中の商品。" };
 
-export default async function ShopPage() {
-  let listings: Awaited<ReturnType<typeof listPublishedShopListings>> = [];
+export default async function ShopPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string | string[] }>;
+}) {
+  const params = await searchParams;
+  const rawPage = Array.isArray(params.page) ? params.page[0] : params.page;
+  const parsedPage = Number(rawPage ?? "1");
+  const requestedPage = Number.isInteger(parsedPage) && parsedPage > 0 ? Math.min(parsedPage, 1000) : 1;
+  let catalog: Awaited<ReturnType<typeof listPublishedShopListingsPage>> = {
+    listings: [], page: 1, pageSize: 48, totalEligible: 0, totalPages: 1,
+  };
+  let listings = catalog.listings;
   let error: string | null = null;
-  try { listings = await listPublishedShopListings(); }
-  catch (caught) { error = caught instanceof SupabaseConfigError ? "店舗データを読み込めません。時間をおいてもう一度お試しください。" : caught instanceof Error ? caught.message : "店舗を読み込めませんでした。"; }
+  try {
+    catalog = await listPublishedShopListingsPage(requestedPage, 48);
+    listings = catalog.listings;
+  } catch (caught) {
+    error = caught instanceof SupabaseConfigError ? "店舗データを読み込めません。時間をおいてもう一度お試しください。" : caught instanceof Error ? caught.message : "店舗を読み込めませんでした。";
+  }
 
   return (
     <main className="tracer-editorial-page">
       <header className="tracer-editorial-hero tracer-shop-hero">
-        <div className="tracer-editorial-index"><span>01</span><span>SHOPIFY / STORE</span><span>{String(listings.length).padStart(2, "0")} LIVE</span></div>
+        <div className="tracer-editorial-index"><span>01</span><span>SHOPIFY / STORE</span><span>{String(listings.length).padStart(2, "0")} LIVE · PAGE {catalog.page}/{catalog.totalPages}</span></div>
         <div className="tracer-editorial-hero-grid">
           <div><p className="tracer-kicker">TRACER × Shopify</p><h1>「気になる」を、<br /><em>買える</em>まで。</h1><p className="tracer-lede">Sales Test Gateを通過し、Shopifyへ同期され、在庫・配送・注文可能性まで確認できる商品だけを並べます。</p></div>
           <aside className="tracer-editorial-note"><span>CHANNEL CONTRACT</span><strong>GATE → SHOPIFY →<br />STORE。</strong><p>TRACERだけの下書きは表示しません。</p><Link href="/bestsellers">選定の背景を見る ↗</Link></aside>
@@ -25,9 +40,11 @@ export default async function ShopPage() {
 
       {error ? <p role="alert" className="tracer-alert">{error}</p> : listings.length === 0 ? (
         <section className="tracer-empty" aria-labelledby="empty-heading">
-          <span>SHOPIFY CATALOG / 00 LIVE</span><h2 id="empty-heading">現在、販売可能なShopify商品はありません。</h2>
-          <p>商品を捏造して埋めることはしません。Sales Test Gate、Shopify同期、在庫、注文可能性、追跡可能性をすべて満たした商品だけが自動でここに現れます。</p>
-          <div className="mt-8 flex flex-wrap justify-center gap-3"><Link href="/bestsellers" className="border border-cyan-300/30 px-5 py-3 text-xs text-cyan-100 hover:bg-cyan-300/10">売れ筋を見る →</Link><Link href="/intelligence" className="border border-white/10 px-5 py-3 text-xs text-zinc-300 hover:border-white/20">商機を見る →</Link></div>
+          <span>SHOPIFY CATALOG / PAGE {catalog.page}</span><h2 id="empty-heading">{catalog.totalEligible > 0 ? "このページの商品は在庫再確認で非表示になりました。" : "現在、販売可能なShopify商品はありません。"}</h2>
+          <p>実在庫と販売条件を再確認し、確認できた商品だけを表示します。商品を捏造して埋めることはしません。</p>
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+            {catalog.page > 1 ? <Link href={catalog.page === 2 ? "/shop" : "/shop?page=" + (catalog.page - 1)} className="border border-white/10 px-5 py-3 text-xs text-zinc-300 hover:border-white/20">← 前のページ</Link> : null}
+            {catalog.page < catalog.totalPages ? <Link href={"/shop?page=" + (catalog.page + 1)} className="border border-cyan-300/30 px-5 py-3 text-xs text-cyan-100 hover:bg-cyan-300/10">次のページ →</Link> : null}<Link href="/bestsellers" className="border border-cyan-300/30 px-5 py-3 text-xs text-cyan-100 hover:bg-cyan-300/10">売れ筋を見る →</Link><Link href="/intelligence" className="border border-white/10 px-5 py-3 text-xs text-zinc-300 hover:border-white/20">商機を見る →</Link></div>
         </section>
       ) : (
         <section className="tracer-content-section" aria-labelledby="catalog-heading">
@@ -37,7 +54,7 @@ export default async function ShopPage() {
               <div className="relative overflow-hidden bg-zinc-900">
                 {listing.imageUrl ? <img src={listing.imageUrl} alt={listing.title} loading={index < 4 ? "eager" : "lazy"} decoding="async" className="aspect-[4/3] h-auto w-full object-cover transition duration-700 motion-safe:group-hover:scale-[1.04]" /> : <div className="flex aspect-[4/3] items-center justify-center text-[9px] font-mono tracking-[.18em] text-zinc-600">IMAGE COMING SOON</div>}
                 <span className="absolute left-3 top-3 border border-cyan-300/20 bg-black/75 px-2 py-1 text-[8px] font-mono tracking-[.15em] text-cyan-100">SHOPIFY LIVE</span>
-                <span className="absolute right-3 bottom-3 font-mono text-[8px] tracking-[.16em] text-white/45">{String(index + 1).padStart(2, "0")}</span>
+                <span className="absolute right-3 bottom-3 font-mono text-[8px] tracking-[.16em] text-white/45">{String((catalog.page - 1) * catalog.pageSize + index + 1).padStart(2, "0")}</span>
               </div>
               <div className="flex flex-1 flex-col p-5"><h3 className="line-clamp-2 text-base font-medium leading-6 text-zinc-100 group-hover:text-white">{listing.title}</h3>
                 {listing.description ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-zinc-500">{listing.description}</p> : null}
@@ -46,6 +63,15 @@ export default async function ShopPage() {
               </div>
             </Link>)}
           </div>
+          <nav aria-label="商品ページ" className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-6">
+            <p className="text-[9px] font-mono tracking-[.16em] text-zinc-500">
+              PAGE {catalog.page} / {catalog.totalPages} · {catalog.totalEligible} SYNCED GATE RECORDS
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {catalog.page > 1 ? <Link href={catalog.page === 2 ? "/shop" : "/shop?page=" + (catalog.page - 1)} className="border border-white/10 px-4 py-3 text-[10px] font-mono tracking-[.12em] text-zinc-300 hover:border-white/20">← PREVIOUS</Link> : null}
+              {catalog.page < catalog.totalPages ? <Link href={"/shop?page=" + (catalog.page + 1)} className="border border-cyan-300/30 px-4 py-3 text-[10px] font-mono tracking-[.12em] text-cyan-100 hover:bg-cyan-300/10">NEXT →</Link> : null}
+            </div>
+          </nav>
         </section>
       )}
     </main>
