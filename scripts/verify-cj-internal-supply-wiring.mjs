@@ -28,8 +28,13 @@ assert.match(ingest, /const freshIds = validBarcodeIds\(args\.barcode\)/,
   "current barcode validation must remain separate from preserved identity evidence");
 assert.match(ingest, /ids = Object\.values\(freshIds\)\.some\(Boolean\) \? freshIds : previousIds/,
   "a missing/invalid refresh must preserve prior verified IDs without mixing barcode values");
-assert.match(ingest, /preserved_prior_verified_identifier/,
-  "the audit payload must identify when prior verified identity was preserved");
+assert.match(ingest, /preserved_prior_valid_identifier/,
+  "the audit payload must not overstate prior identity provenance");
+assert.match(ingest, /productPayload\.gtin = ids\.gtin/);
+assert.match(ingest, /productPayload\.jan = ids\.jan/);
+assert.match(ingest, /productPayload\.ean = ids\.ean/);
+assert.match(ingest, /productPayload\.upc = ids\.upc/);
+assert.match(ingest, /productPayload\.metadata\.supplier_identifier_evidence_source = identifierEvidenceSource/);
 assert.match(ingest, /active: false/,
   "the product must be quarantined before variant mutation");
 assert.match(ingest, /orderable: false/,
