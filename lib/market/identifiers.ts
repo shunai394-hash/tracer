@@ -160,12 +160,18 @@ export function matchProductIdentity(args: {
   }
 
   if (eq(market.mpn, supply.mpn)) {
-    const brandMarket = (market.brand ?? "").trim().toLowerCase();
-    const brandSupply = (supply.brand ?? "").trim().toLowerCase();
+    const brandMarket = (market.brand ?? "").trim().normalize("NFKC").toLowerCase();
+    const brandSupply = (supply.brand ?? "").trim().normalize("NFKC").toLowerCase();
     if (brandMarket && brandSupply && brandMarket === brandSupply) {
       return { linked: true, salesEligible: true, method: "brand_mpn", confidence: 0.92, rationale: "brand and model match" };
     }
-    return { linked: true, salesEligible: true, method: "mpn", confidence: 0.88, rationale: "model/MPN matches" };
+    return {
+      linked: false,
+      salesEligible: false,
+      method: "mpn",
+      confidence: 0.35,
+      rationale: brandMarket && brandSupply ? "MPN matches but supplier and marketplace brands conflict" : "MPN match without confirmed matching brand is not sales eligible",
+    };
   }
 
   if (market.imageUrl && supply.imageUrl && market.imageUrl === supply.imageUrl) {
@@ -244,6 +250,39 @@ export function verifyIdentifierMatchInvariants(): {
       actual: (() => {
         const r = matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, jan: "4573138107287" }, supply: { ...EMPTY_IDENTIFIERS, gtin: "1111111111111" } });
         return r.method === "none" && !r.salesEligible;
+      })(),
+    },
+    {
+      name: "same_mpn_and_same_brand_is_sales_eligible",
+      expected: true,
+      actual: (() => {
+        const r = matchProductIdentity({
+          market: { ...EMPTY_IDENTIFIERS, mpn: "AB-1234", brand: "Acme" },
+          supply: { ...EMPTY_IDENTIFIERS, mpn: "AB-1234", brand: "Acme" },
+        });
+        return r.salesEligible && r.method === "brand_mpn";
+      })(),
+    },
+    {
+      name: "same_mpn_with_conflicting_brand_is_not_sales_eligible",
+      expected: true,
+      actual: (() => {
+        const r = matchProductIdentity({
+          market: { ...EMPTY_IDENTIFIERS, mpn: "AB-1234", brand: "Acme" },
+          supply: { ...EMPTY_IDENTIFIERS, mpn: "AB-1234", brand: "Other" },
+        });
+        return !r.salesEligible && !r.linked;
+      })(),
+    },
+    {
+      name: "same_mpn_without_supplier_brand_is_not_sales_eligible",
+      expected: true,
+      actual: (() => {
+        const r = matchProductIdentity({
+          market: { ...EMPTY_IDENTIFIERS, mpn: "AB-1234", brand: "Acme" },
+          supply: { ...EMPTY_IDENTIFIERS, mpn: "AB-1234", brand: null },
+        });
+        return !r.salesEligible && !r.linked;
       })(),
     },
     {
