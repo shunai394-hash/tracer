@@ -4,6 +4,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
+import { isSupplierConfigured, isSupplierLiveOrderingEnabled } from "@/lib/config/env";
+import { getSupplierAdapter, getSupplierCapabilities } from "@/lib/procurement/registry";
 
 type Listing = {
   id: string;
@@ -47,6 +49,27 @@ type ShopifyProductNode = {
 function hasGateProvenance(row: Listing): boolean {
   return Array.isArray(row.selection_reasons)
     && row.selection_reasons.some((reason) => String(reason) === "sales_test_gate_passed");
+}
+
+/** Only publish when a configured supplier can fulfill and track a paid order. */
+function hasLiveSupplierOrderContract(row: Listing): boolean {
+  const supplierName = String(row.supplier_name ?? "").trim();
+  if (!supplierName || /^(cj|cjdropshipping|superdelivery|super delivery)$/i.test(supplierName)) return false;
+  if (!row.supplier_product_id || !row.supplier_variant_id) return false;
+  const capabilities = getSupplierCapabilities(supplierName);
+  return capabilities.catalog === true
+    && capabilities.variant === true
+    && capabilities.inventory === true
+    && capabilities.price === true
+    && capabilities.shipping === true
+    && capabilities.orderPreflight === true
+    && capabilities.orderCreation === true
+    && capabilities.payment === true
+    && capabilities.orderStatus === true
+    && capabilities.tracking === true
+    && capabilities.liveOrdering === true
+    && isSupplierConfigured(supplierName)
+    && isSupplierLiveOrderingEnabled(supplierName);
 }
 
 function asNumber(value: unknown): number | null {
@@ -174,7 +197,8 @@ async function syncListingRows(
     row.tracking_available === true &&
     Number(row.inventory) > 0 &&
     String(row.currency ?? "").trim().toUpperCase() === "JPY" &&
-    /^CJ/i.test(String(row.supplier_name ?? "")) &&
+    !/^(cj|cjdropshipping)$/i.test(String(row.supplier_name ?? "").trim()) &&
+    hasLiveSupplierOrderContract(row) &&
     asNumber((row as Listing & { shipping_cost?: number | string | null }).shipping_cost) !== null &&
     asNumber((row as Listing & { source_cost?: number | string | null }).source_cost) !== null &&
     (asNumber((row as Listing & { contribution_profit?: number | string | null }).contribution_profit) ?? 0) > 0 &&
@@ -217,14 +241,14 @@ async function syncListingRows(
       results.failed += 1;
       results.errors.push({ listingId: row.id, error: `unpublish_failed:${message}` });
       await supabase.from("shop_listings").update({
-        published: false,
+        // Shopify did not confirm unpublishing. Preserve the last confirmed
+        // publication fields: the product may still be visible to buyers.
         pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
-        pipeline_reason: "sales_test_gate_unpublish_failed",
+        pipeline_reason: "shopify_unpublish_failed_manual_action_required",
         pipeline_updated_at: new Date().toISOString(),
-        published_at: null,
         shopify_sync_status: "failed",
-        shopify_sync_error: `unpublish_failed:${message}`.slice(0, 2000),
+        shopify_sync_error: `unpublish_failed_manual_action_required:${message}`.slice(0, 2000),
         shopify_synced_at: new Date().toISOString(),
       }).eq("id", row.id);
     }
@@ -246,6 +270,39 @@ async function syncListingRows(
     if (!claim.data) continue;
 
     try {
+      const supplierName = String(row.supplier_name ?? "").trim();
+      const supplier = getSupplierAdapter(supplierName);
+      if (!supplier) throw new Error("supplier_live_adapter_missing");
+
+      // Revalidate exact supplier identity and live fulfillment economics immediately before publication.
+      const supplierProductId = String(row.supplier_product_id ?? "");
+      const supplierVariantId = String(row.supplier_variant_id ?? "");
+      const liveProduct = await supplier.getProduct(supplierProductId);
+      if (!liveProduct || liveProduct.supplierProductId !== supplierProductId || liveProduct.orderable !== true) {
+        throw new Error("supplier_live_product_identity_or_orderability_unverified");
+      }
+      const liveVariant = await supplier.getVariant(supplierProductId, supplierVariantId);
+      if (!liveVariant || liveVariant.supplierProductId !== supplierProductId || liveVariant.supplierVariantId !== supplierVariantId || liveVariant.orderable !== true) {
+        throw new Error("supplier_live_variant_identity_or_orderability_unverified");
+      }
+      const liveInventory = await supplier.getInventory(supplierProductId, supplierVariantId);
+      if (!liveInventory || liveInventory.supplierProductId !== supplierProductId || liveInventory.supplierVariantId !== supplierVariantId || liveInventory.available !== true || liveInventory.quantity === null || !Number.isFinite(liveInventory.quantity) || liveInventory.quantity < 1) {
+        throw new Error("supplier_live_inventory_unverified");
+      }
+      const livePrice = await supplier.getPrice(supplierProductId, supplierVariantId);
+      const liveShipping = await supplier.getShipping(supplierProductId, supplierVariantId, {
+        destinationCountryCode: "JP",
+        quantity: 1,
+      });
+      const recordedCost = asNumber(row.source_cost);
+      const recordedShipping = asNumber(row.shipping_cost);
+      if (!livePrice || livePrice.amount === null || asNumber(livePrice.amount) !== recordedCost || String(livePrice.currency ?? "").toUpperCase() !== String(row.currency ?? "").toUpperCase()) {
+        throw new Error("supplier_live_cost_changed_revalidation_required");
+      }
+      if (!liveShipping || liveShipping.available !== true || liveShipping.amount === null || asNumber(liveShipping.amount) !== recordedShipping || String(liveShipping.currency ?? "").toUpperCase() !== String(row.currency ?? "").toUpperCase()) {
+        throw new Error("supplier_live_shipping_changed_revalidation_required");
+      }
+
       const copy = await ensureJapaneseCopy(row);
       const price = asNumber(row.selling_price);
       if (price === null || price <= 0) throw new Error("selling_price_invalid");
@@ -303,7 +360,7 @@ async function syncListingRows(
       if (!variant?.id) throw new Error("shopify_variant_missing_for_inventory_sync");
       await setShopifyVariantInventory({
         variantId: variant.id,
-        quantity: Number(row.inventory),
+        quantity: liveInventory.quantity,
         reference: `tracer://shop-listing/${row.id}`,
       });
 
@@ -312,6 +369,7 @@ async function syncListingRows(
         shopify_product_id: product.id,
         shopify_variant_id: variant?.id ?? null,
         shopify_handle: product.handle,
+        inventory: liveInventory.quantity,
         shopify_synced_at: new Date().toISOString(),
         shopify_sync_status: "synced",
         shopify_sync_error: null,
