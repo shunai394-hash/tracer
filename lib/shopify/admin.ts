@@ -129,7 +129,7 @@ export type ShopifyAuthProbeResult = {
 
 /** Read-only auth probe. Never returns credentials or raw response bodies. */
 export async function probeShopifyAuth(): Promise<ShopifyAuthProbeResult> {
-  let response: Response;
+  let response: Response | null = null;
   let responseText = "";
   let requestId: string | null = null;
   try {
@@ -151,6 +151,10 @@ export async function probeShopifyAuth(): Promise<ShopifyAuthProbeResult> {
     const message = error instanceof Error ? error.message : "Shopify auth probe failed";
     const safeMessage = message.replace(/(?:shpat|shpca|shppa|shpss|shpua)_[A-Za-z0-9_-]+/gi, "[REDACTED_TOKEN]").slice(0, 200);
     return { shopifyHttpStatus: null, shopifyRequestId: requestId, graphqlErrors: [safeMessage], shopId: null, ok: false };
+  }
+
+  if (!response) {
+    return { shopifyHttpStatus: null, shopifyRequestId: requestId, graphqlErrors: ["No valid Shopify Admin API credential candidate"], shopId: null, ok: false };
   }
 
   let graphqlErrors: string[] = [];
