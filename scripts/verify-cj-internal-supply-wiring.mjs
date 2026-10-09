@@ -13,6 +13,10 @@ assert.equal((discovery.match(/persistCjInternalSupplyCandidate\(/g) ?? []).leng
 assert.match(discovery, /internalSupplyIngested: Boolean\(internalSupply\)/);
 assert.match(ingest, /sourceRef = `cj:\$\{args\.supplierProductId\}:\$\{args\.supplierVariantId\}`/,
   "source reference must be deterministic for the concrete supplier product+variant");
+assert.match(ingest, /onConflict: "source_name,source_ref"/,
+  "product writes must use the deterministic source key for retry/concurrency safety");
+assert.match(ingest, /onConflict: "supply_product_id,variant_id"/,
+  "variant writes must use the exact supplier variant key for retry/concurrency safety");
 assert.match(ingest, /variant_id: args\.supplierVariantId/,
   "the exact supplier variant ID must be persisted separately from SKU/barcode");
 assert.match(ingest, /normalizeIdentifier\("gtin", raw\)/,
@@ -25,6 +29,8 @@ assert.match(ingest, /identityLink = \{/,
   "a unique exact identifier match must be recorded separately from orderability");
 assert.match(ingest, /automated_order_creation_verified: false/,
   "live stock/freight verification must not be represented as proof of automated ordering");
+assert.match(ingest, /sku: null/,
+  "supplier SKU is stored on the concrete variant to avoid collisions in the product-level unique SKU index");
 assert.match(ingest, /internal_supply_ingestion_audit/,
   "an ingestion audit attempt must be made");
 assert.match(identity, /function hasValidGs1CheckDigit/);
