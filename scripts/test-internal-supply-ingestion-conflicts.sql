@@ -46,6 +46,25 @@ begin
   if to_regclass('public.internal_supply_ingestion_audit') is null then
     raise exception 'internal supply ingestion audit table was not created';
   end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='internal_supply_ingestion_audit' and column_name='catalog_id'
+  ) then
+    raise exception 'audit schema is missing catalog_id required by catalog sync';
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='internal_supply_ingestion_audit' and column_name='bestseller_id'
+  ) then
+    raise exception 'audit schema is missing bestseller_id required by ingestion route';
+  end if;
+  if not exists (
+    select 1 from pg_indexes
+    where schemaname='public' and tablename='internal_supply_ingestion_audit'
+      and indexname='internal_supply_ingestion_audit_request_item_uq'
+  ) then
+    raise exception 'audit schema is missing request_id/item_index unique target for upsert';
+  end if;
 end $;
 
 -- SKU uniqueness must actually be gone, not merely hidden behind a differently named index.
