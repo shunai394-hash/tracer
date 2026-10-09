@@ -38,6 +38,11 @@ assert.match(productPayload, /gtin: null/);
 assert.match(productPayload, /jan: null/);
 assert.match(productPayload, /ean: null/);
 assert.match(productPayload, /upc: null/);
+const variantPayload = ingest.split("const variantPayload = {")[1]?.split("// The full unique conflict target")[0] ?? "";
+assert.ok(variantPayload.length > 0, "variant payload must be inspectable");
+assert.match(variantPayload, /\.\.\.ids/, "valid barcode identifiers must remain attached to the concrete supplier variant");
+assert.match(ingest, /cj_internal_supply_variant_already_owned_by_another_product/,
+  "a supplier variant ID already owned by another internal product must be rejected");
 assert.match(ingest, /internal_supply_ingestion_audit/,
   "an ingestion audit attempt must be made");
 assert.match(identity, /function hasValidGs1CheckDigit/);
