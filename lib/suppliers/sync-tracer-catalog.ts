@@ -182,39 +182,61 @@ export async function syncTracerCatalogFromInternalSupply(args: {
       updated_at: new Date().toISOString(),
     };
 
-    const { data: catalog, error: catalogError } = await db
-      .from("tracer_supply_catalog")
-      .upsert(payload, { onConflict: "tracer_sku" })
-      .select("id")
-      .single();
-
-    if (catalogError) throw new Error(catalogError.message);
-
     const variantSku = str(variant.variant_sku) ?? `${tracerSku}-DEFAULT`;
-    const { data: catalogVariant, error: catalogVariantError } = await db
-      .from("tracer_supply_variants")
-      .upsert({
-        catalog_id: catalog.id,
-        variant_sku: variantSku,
-        title: str(variant.title) ?? str(product.title),
-        barcode: str(variant.jan) ?? str(variant.gtin) ?? str(variant.ean) ?? str(variant.upc),
-        attributes: variant.metadata ?? {},
-        cost,
-        inventory,
-        orderable,
-        internal_supply_product_id: product.id,
-        internal_supply_variant_id: variant.id,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "variant_sku" })
-      .select("id")
-      .single();
+    const catalogPayload = {
+      ...payload,
+      // A non-orderable candidate can be cataloged as draft, but never elevated
+      // by this RPC unless the locked source rows still match their generations.
+    };
+    const catalogVariantPayload = {
+      catalog_id: null,
+      variant_sku: variantSku,
+      title: str(variant.title) ?? str(product.title),
+      barcode: str(variant.jan) ?? str(variant.gtin) ?? str(variant.ean) ?? str(variant.upc),
+      attributes: variant.metadata ?? {},
+      cost,
+      inventory,
+      orderable,
+      internal_supply_product_id: product.id,
+      internal_supply_variant_id: variant.id,
+      updated_at: new Date().toISOString(),
+    };
 
-    if (catalogVariantError) throw new Error(catalogVariantError.message);
+    const productGeneration = num(product.generation);
+    const variantGeneration = num(variant.generation);
+    if (productGeneration === null || variantGeneration === null) {
+      return { matched: false, catalogId: null, variantId: null, reason: "generation_missing" };
+    }
+
+    const { data: committed, error: commitError } = await db.rpc("commit_internal_supply_catalog_sync", {
+      p_product_id: String(product.id),
+      p_variant_id: String(variant.id),
+      p_expected_product_generation: productGeneration,
+      p_expected_variant_generation: variantGeneration,
+      p_catalog: catalogPayload,
+      p_catalog_variant: catalogVariantPayload,
+    });
+    if (commitError) throw new Error(commitError.message);
+
+    const result = committed as {
+      ok?: boolean;
+      reason?: string;
+      catalog_id?: string;
+      catalog_variant_id?: string;
+    } | null;
+    if (!result?.ok || !result.catalog_id || !result.catalog_variant_id) {
+      return {
+        matched: false,
+        catalogId: null,
+        variantId: null,
+        reason: result?.reason ?? "atomic_catalog_sync_rejected",
+      };
+    }
 
     return {
       matched: true,
-      catalogId: String(catalog.id),
-      variantId: String(catalogVariant.id),
+      catalogId: String(result.catalog_id),
+      variantId: String(result.catalog_variant_id),
       reason: orderable ? "ready" : "matched_but_not_ready",
     };
   }
