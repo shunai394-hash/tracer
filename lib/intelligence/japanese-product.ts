@@ -1,5 +1,5 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
-  [/a4\\s+portable\\s+printers?|thermal printer.*phomemo|phomemo.*thermal printer/i, "A4対応 ポータブル感熱プリンター"],
+  [/a4\s+portable\s+printers?|thermal printer.*phomemo|phomemo.*thermal printer/i, "A4対応 ポータブル感熱プリンター"],
   [/jellyfish.*humidifier|humidifier.*jellyfish/i, "クラゲ型 加湿器・アロマディフューザー"],
   [/kitchen bathroom toilet cleaning magic brush|bath brush.*glass wall|window slot clean brush/i, "浴室・窓まわり用 クリーニングブラシ"],
   [/ceramic mug.*wooden handle|wooden handle.*filter tea cup|filter tea cup with lid/i, "木製ハンドル付き セラミックティーカップ"],
@@ -86,7 +86,7 @@ const FALLBACK_TITLE_RULES: Array<[RegExp, string]> = [
 
 export function localizeProductTitle(value: unknown, category?: string | null): string | null {
   if (typeof value !== "string") return null;
-  const source = value.normalize("NFKC").trim().replace(/\\s+/g, " ");
+  const source = value.normalize("NFKC").trim().replace(/\s+/g, " ");
   if (!source) return null;
 
   // Specific, source-grounded product names must win over broad category rules.
@@ -95,7 +95,7 @@ export function localizeProductTitle(value: unknown, category?: string | null): 
 
   let title = source;
   for (const [pattern, replacement] of TITLE_REPLACEMENTS) title = title.replace(pattern, replacement);
-  title = title.replace(/\\s*[-|•]+\\s*/g, "・").replace(/\\s{2,}/g, " ").trim();
+  title = title.replace(/\s*[-|•]+\s*/g, "・").replace(/\s{2,}/g, " ").trim();
   if (isJapaneseProductTitle(title)) {
     const japanese = (title.match(/[ぁ-んァ-ヶ一-龯々〆ヵー]/g) ?? []).length;
     const latin = (title.match(/[A-Za-z]/g) ?? []).length;
@@ -117,7 +117,7 @@ export function localizeProductDescription(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const source = value.normalize("NFKC");
   const rules: Array<[RegExp, string]> = [
-    [/a4\\s+portable\\s+printers?|thermal printer.*phomemo|phomemo.*thermal printer/i, "A4サイズの用紙に対応する携帯型感熱プリンターです。対応用紙・接続方式・付属品は販売元の仕様をご確認ください。"],
+    [/a4\s+portable\s+printers?|thermal printer.*phomemo|phomemo.*thermal printer/i, "A4サイズの用紙に対応する携帯型感熱プリンターです。対応用紙・接続方式・付属品は販売元の仕様をご確認ください。"],
     [/jellyfish.*humidifier|humidifier.*jellyfish/i, "クラゲ型デザインの加湿器・ディフューザーです。給電方式・タンク容量・使用可能な香料は販売元の仕様をご確認ください。"],
     [/kitchen bathroom toilet cleaning magic brush|bath brush.*glass wall|window slot clean brush/i, "浴室や窓まわりの清掃に使うブラシです。対応する面材や使用方法は販売元の仕様をご確認ください。"],
     [/ceramic mug.*wooden handle|wooden handle.*filter tea cup|filter tea cup with lid/i, "木製ハンドル付きのセラミックカップです。容量・耐熱性・電子レンジ対応は販売元の仕様をご確認ください。"],
