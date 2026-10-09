@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
-import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 
 type Listing = {
@@ -70,7 +70,20 @@ async function ensureJapaneseCopy(row: Listing): Promise<{ title: string; descri
   if (isJapaneseProductTitle(title) && /[ぁ-んァ-ヶ一-龯々〆ヵー]/.test(description)) {
     return { title, description };
   }
-  if (!isGeminiConfigured()) throw new Error("japanese_catalog_copy_requires_gemini");
+  if (!isGeminiConfigured()) {
+    // Keep catalog synchronization available without a Gemini key. Use only
+    // deterministic title localization and a non-claiming Japanese description;
+    // never invent product specifications or benefits.
+    const fallbackTitle = isJapaneseProductTitle(title)
+      ? title
+      : localizeProductTitle(title);
+    if (!fallbackTitle || !isJapaneseProductTitle(fallbackTitle)) {
+      throw new Error("japanese_catalog_title_localization_failed");
+    }
+    const fallbackDescription = "商品の仕様・サイズ・素材・使用方法は、販売元の掲載情報をご確認ください。";
+    await supabaseForCopyUpdate(row.id, fallbackTitle, fallbackDescription);
+    return { title: fallbackTitle, description: fallbackDescription };
+  }
   const result = await generateStructuredJson<{ title?: string; detail?: string }>({
     systemInstruction: "あなたは日本のEC商品編集者です。入力情報だけを使い、日本語の商品名と商品説明を作成してください。英語のブランド名・型番・規格は必要な場合だけ残してください。存在しない仕様や数値は追加しないでください。JSONのみ返してください。",
     prompt: JSON.stringify({ title, description }),
