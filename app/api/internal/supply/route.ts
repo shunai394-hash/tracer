@@ -146,6 +146,18 @@ export async function POST(request: Request) {
     let itemVariantErrors = 0;
     let itemVariantsWritten = 0;
     const writtenVariantIds: string[] = [];
+    let auditOutcome: "draft_ingested" | "sync_blocked" | "synced" | "failed" = "draft_ingested";
+    let auditCatalogId: string | null = null;
+    // Retire the previous variant set first. This request is the only variant set
+    // eligible for reactivation and catalog sync; a crash leaves the product unsellable.
+    const retiredVariants = await db
+      .from("internal_supply_variants")
+      .update({ active: false, orderable: false, inventory: 0, updated_at: new Date().toISOString() })
+      .eq("supply_product_id", supplyProduct.id);
+    if (retiredVariants.error) {
+      itemVariantErrors++;
+      errors.push("prior variant retirement failed: " + retiredVariants.error.message);
+    }
     if (bestsellerId) {
       try {
         // Hide any previous sellable catalog state before mutating the source product/variants.
@@ -155,8 +167,6 @@ export async function POST(request: Request) {
         errors.push("pre-ingestion catalog quarantine failed: " + (error instanceof Error ? error.message : String(error)));
       }
     }
-    let auditOutcome: "draft_ingested" | "sync_blocked" | "synced" | "failed" = "draft_ingested";
-    let auditCatalogId: string | null = null;
 
     for (const v of submittedVariants) {
       const variantSku = typeof v.variantSku === "string" && v.variantSku.trim() ? v.variantSku.trim() : null;
@@ -217,6 +227,11 @@ export async function POST(request: Request) {
         .update({ active: false, updated_at: new Date().toISOString() })
         .eq("id", supplyProduct.id);
       if (deactivated.error) errors.push("product deactivation failed: " + deactivated.error.message);
+      const retired = await db
+        .from("internal_supply_variants")
+        .update({ active: false, orderable: false, inventory: 0, updated_at: new Date().toISOString() })
+        .eq("supply_product_id", supplyProduct.id);
+      if (retired.error) errors.push("partial variant quarantine failed: " + retired.error.message);
     }
     if (completeVariantWrite) {
       const activated = await db
