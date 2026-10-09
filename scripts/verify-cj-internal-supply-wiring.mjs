@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 const discovery = readFileSync("lib/suppliers/discover-cj-supply.ts", "utf8");
 const ingest = readFileSync("lib/suppliers/persist-cj-internal-supply.ts", "utf8");
 const identity = readFileSync("lib/market/identifiers.ts", "utf8");
+const auditMigration = readFileSync("supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql", "utf8");
 
 assert.match(discovery, /import \{ persistCjInternalSupplyCandidate \} from "@\/lib\/suppliers\/persist-cj-internal-supply"/);
 assert.equal((discovery.match(/persistCjInternalSupplyCandidate\(/g) ?? []).length, 2,
@@ -47,6 +48,14 @@ assert.match(ingest, /cj_internal_supply_variant_already_owned_by_another_produc
   "a supplier variant ID already owned by another internal product must be rejected");
 assert.match(ingest, /internal_supply_ingestion_audit/,
   "an ingestion audit attempt must be made");
+assert.match(ingest, /identity link duplicate did not match intended evidence/,
+  "a unique conflict must not be reported as success unless the persisted identity evidence matches");
+assert.match(ingest, /auditStatus: "written" \| "table_missing" \| "write_failed"/,
+  "audit table absence must be distinguished from other audit write failures");
+assert.match(ingest, /auditErrorCode === "42P01"/);
+assert.match(ingest, /auditErrorCode === "PGRST205"/);
+assert.match(auditMigration, /create table if not exists public\.internal_supply_ingestion_audit/);
+assert.match(auditMigration, /grant all on public\.internal_supply_ingestion_audit to service_role/);
 assert.match(identity, /function hasValidGs1CheckDigit/);
 
 console.log("CJ internal-supply wiring checks passed.");
