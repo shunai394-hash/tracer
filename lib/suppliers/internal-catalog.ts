@@ -39,7 +39,7 @@ export async function linkInternalSupplyForBestseller(args: {
     // investigation path; otherwise one DB permission issue makes the entire
     // autonomous patrol look like it discovered nothing.
     console.error("[TRACER INTERNAL SUPPLY LOOKUP SKIPPED]", error);
-    return { matched: false, supplierListingId: null };
+    return { matched: false, supplierListingId: null, supplyVariantId: null };
   }
 
   for (const product of products ?? []) {
@@ -180,5 +180,5 @@ export async function linkInternalSupplyForBestseller(args: {
     return { matched: true, supplierListingId: String(listing.id), supplyVariantId: String(variant.id) };
   }
 
-  return { matched: false, supplierListingId: null };
+  return { matched: false, supplierListingId: null, supplyVariantId: null };
 }
