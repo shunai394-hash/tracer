@@ -35,8 +35,9 @@ export async function POST(request: Request) {
     const sourceRef = typeof x.sourceRef === "string" && x.sourceRef.trim() ? x.sourceRef.trim() : null;
     const sourceName = typeof x.sourceName === "string" && x.sourceName.trim() ? x.sourceName.trim() : "internal";
 
-    if (!x.title || cost === null || cost < 0) {
+    if (!x.title || cost === null || cost < 0 || !sourceRef) {
       rejected++;
+      if (!sourceRef) errors.push("sourceRef required for idempotent internal supply ingestion");
       continue;
     }
 
@@ -116,11 +117,18 @@ export async function POST(request: Request) {
     }
 
     accepted++;
+    let itemVariantErrors = 0;
+    let itemVariantsWritten = 0;
+    const submittedVariants = Array.isArray(x.variants) ? x.variants : [];
 
-    for (const v of Array.isArray(x.variants) ? x.variants : []) {
+    for (const v of submittedVariants) {
       const variantSku = typeof v.variantSku === "string" && v.variantSku.trim() ? v.variantSku.trim() : null;
       const variantId = typeof v.variantId === "string" && v.variantId.trim() ? v.variantId.trim() : null;
-      if (!variantSku && !variantId) continue;
+      if (!variantSku && !variantId) {
+        itemVariantErrors++;
+        errors.push("variant requires variantSku or variantId");
+        continue;
+      }
 
       const variantPayload = {
         supply_product_id: supplyProduct.id,
@@ -151,6 +159,7 @@ export async function POST(request: Request) {
         .maybeSingle();
 
       if (existing.error) {
+        itemVariantErrors++;
         errors.push(existing.error.message);
         continue;
       }
@@ -159,10 +168,15 @@ export async function POST(request: Request) {
         ? await db.from("internal_supply_variants").update(variantPayload).eq("id", existing.data.id)
         : await db.from("internal_supply_variants").insert(variantPayload);
 
-      if (result.error) errors.push(result.error.message);
+      if (result.error) {
+        itemVariantErrors++;
+        errors.push(result.error.message);
+      } else {
+        itemVariantsWritten++;
+      }
     }
 
-    if (bestsellerId) {
+    if (bestsellerId && submittedVariants.length > 0 && itemVariantErrors === 0 && itemVariantsWritten === submittedVariants.length) {
       try {
         const synced = await syncTracerCatalogFromInternalSupply({
           bestsellerId,
@@ -175,6 +189,8 @@ export async function POST(request: Request) {
       } catch (error) {
         errors.push(error instanceof Error ? error.message : String(error));
       }
+    } else if (bestsellerId) {
+      errors.push("catalog sync withheld: variants missing or variant ingestion incomplete");
     }
   }
 
