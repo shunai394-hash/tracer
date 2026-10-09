@@ -50,7 +50,7 @@ jobs:
           # Test the detail route for a product actually rendered on /shop, not
           # merely the most recently modified row in the database.
           curl -sS --max-time 60 "$BASE/shop" > shop.html
-          SLUG="$(python3 -c 'import re; h=open("shop.html", encoding="utf-8").read(); slugs=re.findall(r\'href="/shop/([^"/?#]+)"\', h); print(next((s for s in slugs if s not in ("cart","checkout")), ""))')"
+          SLUG="$(python3 -c 'import re; h=open("shop.html", encoding="utf-8").read(); slugs=re.findall(r"href=\x22/shop/([^\x22/?#]+)", h); print(next((s for s in slugs if s not in ("cart","checkout")), ""))')"
 
           expect top 200 "$BASE/"
           expect shop 200 "$BASE/shop"
