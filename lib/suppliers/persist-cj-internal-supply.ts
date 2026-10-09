@@ -239,12 +239,17 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
   // barcode match. This evidence is independent of orderability: the variant
   // remains blocked from selling until the live supplier-order contract passes.
   let identityLink: { bestsellerId: string; method: string; rationale: string } | null = null;
-  let identityMatchStatus: "linked" | "missing_barcode" | "invalid_barcode" | "lookup_failed" | "candidate_search_overflow" | "no_exact_match" | "ambiguous_exact_match" | "link_write_failed" = Object.values(ids).some(Boolean)
+  // Only a valid barcode present in the current CJ variant response can create
+  // a new canonical link. A previously verified value is preserved for audit/data
+  // continuity, but it is historical evidence and must not be treated as a fresh
+  // supplier assignment after the live response omits or invalidates the barcode.
+  const hasFreshIdentifier = Object.values(freshIds).some(Boolean);
+  let identityMatchStatus: "linked" | "missing_barcode" | "invalid_barcode" | "lookup_failed" | "candidate_search_overflow" | "no_exact_match" | "ambiguous_exact_match" | "link_write_failed" = hasFreshIdentifier
     ? "no_exact_match"
     : rawBarcode ? "invalid_barcode" : "missing_barcode";
-  if (Object.values(ids).some(Boolean)) {
+  if (hasFreshIdentifier) {
     const clauses = ["jan", "gtin", "ean", "upc"]
-      .flatMap((column) => Object.entries(ids)
+      .flatMap((column) => Object.entries(freshIds)
         .filter(([, value]) => Boolean(value))
         .map(([, value]) => `${column}.eq.${value}`))
       .filter((clause, index, all) => all.indexOf(clause) === index);
@@ -262,7 +267,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       const matched = (marketRows ?? []).map((row: Record<string, unknown>) => {
         const identity = matchProductIdentity({
           market: { ...identifiersFromRecord(row), brand: typeof row.brand === "string" ? row.brand : null, title: typeof row.title === "string" ? row.title : null },
-          supply: { ...identifiersFromRecord({ ...ids, title: args.title }), title: args.title },
+          supply: { ...identifiersFromRecord({ ...freshIds, title: args.title }), title: args.title },
         });
         return { row, identity };
       }).filter((item) => item.identity.salesEligible);
