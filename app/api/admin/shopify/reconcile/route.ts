@@ -60,11 +60,13 @@ export async function GET(request: Request) {
       .limit(2000);
     if (error) throw new Error(error.message);
 
-    const byId = new Map(shopify.map((node) => [node.id, node]));
-    const linkedIds = new Set((rows ?? []).map((row) => String(row.shopify_product_id)));
+    // Legacy rows may hold numeric REST ids; compare on the numeric tail.
+    const tail = (id: unknown) => String(id ?? "").split("/").pop() ?? "";
+    const byId = new Map(shopify.map((node) => [tail(node.id), node]));
+    const linkedIds = new Set((rows ?? []).map((row) => tail(row.shopify_product_id)));
     const checks = (rows ?? []).map((row) => {
-      const node = byId.get(String(row.shopify_product_id));
-      const variant = node?.variants.nodes.find((v) => v.id === row.shopify_variant_id) ?? node?.variants.nodes[0];
+      const node = byId.get(tail(row.shopify_product_id));
+      const variant = node?.variants.nodes.find((v) => tail(v.id) === tail(row.shopify_variant_id)) ?? node?.variants.nodes[0];
       const expectedSku = `TRC-${row.supplier_variant_id || row.supplier_product_id || row.id}`.slice(0, 100);
       const gate = Array.isArray(row.selection_reasons) && row.selection_reasons.map(String).includes("sales_test_gate_passed");
       return {
@@ -75,7 +77,8 @@ export async function GET(request: Request) {
         dbPublished: row.published === true,
         gatePassed: gate,
         skuMatches: variant ? variant.sku === expectedSku : null,
-        variantIdMatches: variant ? !row.shopify_variant_id || variant.id === row.shopify_variant_id : null,
+        variantIdMatches: variant ? !row.shopify_variant_id || tail(variant.id) === tail(row.shopify_variant_id) : null,
+        legacyNumericId: /^\d+$/.test(String(row.shopify_product_id ?? "")),
         priceMatches: variant ? Number(variant.price) === Number(row.selling_price) : null,
         shopifyInventory: variant?.inventoryQuantity ?? null,
         dbInventory: row.inventory,
@@ -95,7 +98,7 @@ export async function GET(request: Request) {
         publishedOnOnlineStore: shopify.filter((n) => n.publishedOnPublication).length,
         activeAndPublished: shopify.filter((n) => n.status === "ACTIVE" && n.publishedOnPublication).length,
         withoutImage: shopify.filter((n) => !n.featuredMedia).length,
-        notLinkedInDb: shopify.filter((n) => !linkedIds.has(n.id)).length,
+        notLinkedInDb: shopify.filter((n) => !linkedIds.has(tail(n.id))).length,
       },
       db: {
         linkedRows: checks.length,
@@ -108,6 +111,7 @@ export async function GET(request: Request) {
         priceMismatch: count((c) => c.priceMatches === false),
         inventoryMismatch: count((c) => c.shopifyInventory !== null && c.dbInventory !== null && Number(c.shopifyInventory) !== Number(c.dbInventory)),
         withoutSupplierVariant: count((c) => !c.supplierVariantId),
+        legacyNumericIds: count((c) => c.legacyNumericId),
       },
       samples: {
         dbPublishedButNotLiveOnShopify: checks.filter((c) => c.dbPublished && !(c.shopifyStatus === "ACTIVE" && c.publishedOnOnlineStore === true)).slice(0, 5),

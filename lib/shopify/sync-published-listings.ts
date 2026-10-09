@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
+import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 
@@ -244,9 +244,14 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
 }
 
 async function syncListingRows(
-  rows: Listing[],
+  rawRows: Listing[],
   supabase: ReturnType<typeof createSupabaseAdminClient>,
 ): Promise<ShopifySyncResult> {
+  const rows = rawRows.map((row) => ({
+    ...row,
+    shopify_product_id: toShopifyGid("Product", row.shopify_product_id),
+    shopify_variant_id: toShopifyGid("ProductVariant", row.shopify_variant_id),
+  }));
   const candidates = rows.filter((row) => blockReasons(row).length === 0);
   const blocked = rows.filter((row) => !candidates.includes(row));
   const results: ShopifySyncResult = {
