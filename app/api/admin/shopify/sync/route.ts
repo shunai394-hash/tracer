@@ -19,11 +19,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, dryRun: true, ...preview });
     }
     const listingIds = Array.isArray(body.listingIds)
-      ? body.listingIds.map(String).filter(Boolean).slice(0, 15)
+      ? body.listingIds.map(String).filter(Boolean).slice(0, 8)
       : undefined;
 
     const rawSyncLimit = Number(body.limit);
-    const syncLimit = Number.isFinite(rawSyncLimit) && rawSyncLimit > 0 ? Math.min(15, Math.floor(rawSyncLimit)) : 10;
+    const syncLimit = Number.isFinite(rawSyncLimit) && rawSyncLimit > 0 ? Math.min(8, Math.floor(rawSyncLimit)) : 5;
     const result = await syncPublishedListingsToShopify(listingIds, syncLimit);
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
