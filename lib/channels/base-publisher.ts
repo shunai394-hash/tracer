@@ -108,6 +108,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   // Hide other stale BASE items immediately. Do not spend Gemini time translating
   // listings that TRACER has already blocked/unpublished.
   for (const listing of listings ?? []) {
+    if (revokedBaseListingIds.has(String(listing.id))) continue;
     if (!listing.base_item_id || listing.published === true) continue;
     if (listing.selling_price === null) {
       results.push({ listingId: String(listing.id), ok: false, skipped: true, error: "base_hide_price_unknown" });
