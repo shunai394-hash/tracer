@@ -6,6 +6,25 @@ import { shouldSyncInternalSupplyCatalog } from "@/lib/suppliers/cj-identity-rev
 
 export const runtime = "nodejs";
 
+async function quarantineCatalogForBestseller(
+  db: ReturnType<typeof createSupabaseAdminClient>,
+  bestsellerId: string,
+): Promise<void> {
+  const { data, error } = await db
+    .from("tracer_supply_catalog")
+    .update({ status: "draft", orderable: false, inventory: 0, updated_at: new Date().toISOString() })
+    .eq("bestseller_id", bestsellerId)
+    .select("id");
+  if (error) throw new Error(error.message);
+  const catalogIds = (data ?? []).map((row: { id: string }) => row.id);
+  if (catalogIds.length === 0) return;
+  const { error: variantError } = await db
+    .from("tracer_supply_variants")
+    .update({ orderable: false, inventory: 0, updated_at: new Date().toISOString() })
+    .in("catalog_id", catalogIds);
+  if (variantError) throw new Error(variantError.message);
+}
+
 function finiteNumber(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -45,6 +64,8 @@ export async function POST(request: Request) {
     const bestsellerId =
       typeof x.bestsellerId === "string" && x.bestsellerId.trim() ? x.bestsellerId.trim() : null;
 
+    const submittedVariants = Array.isArray(x.variants) ? x.variants : [];
+    const intendedProductActive = x.active !== false;
     const productPayload = {
       product_id: typeof x.productId === "string" && x.productId ? x.productId : null,
       sku: typeof x.sku === "string" ? x.sku : null,
@@ -64,7 +85,8 @@ export async function POST(request: Request) {
       tracking_available: Boolean(x.trackingAvailable),
       order_method: x.orderMethod ?? "internal",
       api_available: Boolean(x.apiAvailable),
-      active: x.active !== false,
+      // Keep the product unselectable until this request writes every submitted variant.
+      active: false,
       source_name: sourceName,
       source_ref: sourceRef,
       metadata: x.metadata ?? {},
@@ -120,7 +142,7 @@ export async function POST(request: Request) {
     accepted++;
     let itemVariantErrors = 0;
     let itemVariantsWritten = 0;
-    const submittedVariants = Array.isArray(x.variants) ? x.variants : [];
+    const writtenVariantIds: string[] = [];
 
     for (const v of submittedVariants) {
       const variantSku = typeof v.variantSku === "string" && v.variantSku.trim() ? v.variantSku.trim() : null;
@@ -166,22 +188,49 @@ export async function POST(request: Request) {
       }
 
       const result = existing.data
-        ? await db.from("internal_supply_variants").update(variantPayload).eq("id", existing.data.id)
-        : await db.from("internal_supply_variants").insert(variantPayload);
+        ? await db.from("internal_supply_variants").update(variantPayload).eq("id", existing.data.id).select("id").single()
+        : await db.from("internal_supply_variants").insert(variantPayload).select("id").single();
 
-      if (result.error) {
+      if (result.error || !result.data) {
         itemVariantErrors++;
-        errors.push(result.error.message);
+        errors.push(result.error?.message ?? "internal_supply_variants write returned no row");
       } else {
         itemVariantsWritten++;
+        writtenVariantIds.push(String(result.data.id));
       }
     }
 
-    if (shouldSyncInternalSupplyCatalog({ bestsellerId, submittedVariantCount: submittedVariants.length, variantWriteErrorCount: itemVariantErrors, successfulVariantWriteCount: itemVariantsWritten })) {
+    const completeVariantWrite = submittedVariants.length > 0
+      && itemVariantErrors === 0
+      && itemVariantsWritten === submittedVariants.length
+      && writtenVariantIds.length === submittedVariants.length;
+
+    let productActivated = false;
+    if (completeVariantWrite) {
+      const activated = await db
+        .from("internal_supply_products")
+        .update({ active: intendedProductActive, updated_at: new Date().toISOString() })
+        .eq("id", supplyProduct.id)
+        .select("id")
+        .single();
+      if (activated.error || !activated.data) {
+        errors.push(activated.error?.message ?? "internal supply product activation returned no row");
+      } else {
+        productActivated = intendedProductActive;
+      }
+    }
+
+    if (shouldSyncInternalSupplyCatalog({
+      bestsellerId,
+      submittedVariantCount: submittedVariants.length,
+      variantWriteErrorCount: itemVariantErrors,
+      successfulVariantWriteCount: itemVariantsWritten,
+    }) && productActivated) {
       try {
         const synced = await syncTracerCatalogFromInternalSupply({
           bestsellerId,
           salePrice,
+          variantIds: writtenVariantIds,
         });
         if (synced.matched) {
           catalogSynced++;
@@ -190,8 +239,13 @@ export async function POST(request: Request) {
       } catch (error) {
         errors.push(error instanceof Error ? error.message : String(error));
       }
-    } else if (bestsellerId) {
-      errors.push("catalog sync withheld: variants missing or variant ingestion incomplete");
+    } else if (bestsellerId && !productActivated) {
+      errors.push("catalog sync withheld: variants missing, incomplete, or product activation failed");
+      try {
+        await quarantineCatalogForBestseller(db, bestsellerId);
+      } catch (error) {
+        errors.push(`catalog quarantine failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
 
