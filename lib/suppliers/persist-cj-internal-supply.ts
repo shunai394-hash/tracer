@@ -68,7 +68,12 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     sku: null,
     title: args.title,
     brand: null,
-    ...ids,
+    // Barcodes identify the concrete supplier variant, not a product-wide identity.
+    // Clear these fields so sibling variants cannot inherit a variant-only barcode.
+    gtin: null,
+    jan: null,
+    ean: null,
+    upc: null,
     mpn: null,
     cost: args.costUsd,
     shipping_cost: args.shippingUsd,
