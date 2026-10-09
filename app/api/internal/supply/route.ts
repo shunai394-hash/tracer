@@ -211,6 +211,7 @@ export async function POST(request: Request) {
 
     let productActivated = false;
     if (!completeVariantWrite) {
+      auditOutcome = "sync_blocked";
       const deactivated = await db
         .from("internal_supply_products")
         .update({ active: false, updated_at: new Date().toISOString() })
@@ -225,6 +226,7 @@ export async function POST(request: Request) {
         .select("id")
         .single();
       if (activated.error || !activated.data) {
+        auditOutcome = "failed";
         errors.push(activated.error?.message ?? "internal supply product activation returned no row");
       } else {
         productActivated = intendedProductActive;
