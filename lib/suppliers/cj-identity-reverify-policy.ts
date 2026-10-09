@@ -72,9 +72,16 @@ export function shouldSyncInternalSupplyCatalog(args: {
     && args.successfulVariantWriteCount === args.submittedVariantCount;
 }
 
+/**
+ * A canonical product match is not proof of a canonical variant match.
+ * Require exactly one variant-level identifier match even when the product
+ * happens to expose only one supplier variant; product-level identifiers must
+ * never be silently promoted to variant identity evidence.
+ */
 export function hasUniqueIdentitySelection(candidateCount: number, exactMatchCount: number): boolean {
   return Number.isInteger(candidateCount) && candidateCount > 0
-    && (candidateCount === 1 || (Number.isInteger(exactMatchCount) && exactMatchCount === 1));
+    && Number.isInteger(exactMatchCount) && exactMatchCount === 1
+    && exactMatchCount <= candidateCount;
 }
 
 export function hasUniqueMarketplaceIdentity(candidateProductCount: number): boolean {
