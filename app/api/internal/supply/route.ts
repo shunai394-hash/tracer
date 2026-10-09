@@ -144,6 +144,8 @@ export async function POST(request: Request) {
     let itemVariantErrors = 0;
     let itemVariantsWritten = 0;
     const writtenVariantIds: string[] = [];
+    let auditOutcome: "draft_ingested" | "sync_blocked" | "synced" | "failed" = "draft_ingested";
+    let auditCatalogId: string | null = null;
 
     for (const v of submittedVariants) {
       const variantSku = typeof v.variantSku === "string" && v.variantSku.trim() ? v.variantSku.trim() : null;
@@ -228,13 +230,23 @@ export async function POST(request: Request) {
           auditCatalogId = synced.catalogId;
           catalogSynced++;
           if (synced.reason === "ready") catalogReady++;
+        } else {
+          auditOutcome = "sync_blocked";
+          errors.push("catalog sync blocked: " + (synced.reason ?? "no_unique_eligible_match"));
+          await quarantineCatalogForBestseller(db, bestsellerId);
         }
       } catch (error) {
         auditOutcome = "failed";
         errors.push(error instanceof Error ? error.message : String(error));
       }
     } else if (bestsellerId && !productActivated) {
+      auditOutcome = "sync_blocked";
       errors.push("catalog sync withheld: variants missing, incomplete, or product activation failed");
+      const deactivated = await db
+        .from("internal_supply_products")
+        .update({ active: false, updated_at: new Date().toISOString() })
+        .eq("id", supplyProduct.id);
+      if (deactivated.error) errors.push("product deactivation failed: " + deactivated.error.message);
       try {
         await quarantineCatalogForBestseller(db, bestsellerId);
       } catch (error) {
