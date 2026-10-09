@@ -61,6 +61,7 @@ function hasLiveSupplierOrderContract(row: Listing): boolean {
     && capabilities.variant === true
     && capabilities.inventory === true
     && capabilities.price === true
+    && capabilities.shipping === true
     && capabilities.orderPreflight === true
     && capabilities.orderCreation === true
     && capabilities.payment === true
