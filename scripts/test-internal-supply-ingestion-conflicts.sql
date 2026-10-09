@@ -38,6 +38,16 @@ create unique index internal_supply_variants_product_id_atomic_uq
 -- The migration must be safe to re-apply in a disposable schema.
 \i supabase/migrations/20261010143000_tracer_internal_supply_conflict_targets.sql
 
+-- Audit table migration must be ordered after catalog conflict-target migration and repeatable.
+\i supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql
+\i supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql
+do $
+begin
+  if to_regclass('public.internal_supply_ingestion_audit') is null then
+    raise exception 'internal supply ingestion audit table was not created';
+  end if;
+end $;
+
 -- SKU uniqueness must actually be gone, not merely hidden behind a differently named index.
 do $$
 begin
