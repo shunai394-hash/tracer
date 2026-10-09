@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { normalizeIdentifier } from "@/lib/market/identifiers";
+import { identifiersFromRecord, matchProductIdentity, normalizeIdentifier } from "@/lib/market/identifiers";
 
 type CandidateArgs = {
   supplierProductId: string;
@@ -137,7 +137,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     shipping_cost: args.shippingUsd,
     currency: "USD",
     inventory: Math.floor(args.inventory),
-    orderable: true,
+    orderable: false,
     tracking_available: true,
     active: true,
     metadata: {
@@ -152,7 +152,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       selling_price_jpy: args.sellingPriceJpy,
       live_stock_and_japan_freight_verified: true,
       automated_order_creation_verified: false,
-      sale_gate_note: "Live inventory and Japan freight are verified; publication still requires the procurement capability gate.",
+      sale_gate_note: "Live inventory and Japan freight are verified, but this variant remains non-orderable until supplier order creation is proven.",
     },
     fetched_at: now,
     updated_at: now,
@@ -185,6 +185,56 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     throw new Error("cj_internal_supply_product_activation_failed: " + (activate.error?.message ?? "no row returned"));
   }
 
+  // Record a canonical product+variant identity link only for a unique exact
+  // barcode match. This evidence is independent of orderability: the variant
+  // remains blocked from selling until the live supplier-order contract passes.
+  let identityLink: { bestsellerId: string; method: string; rationale: string } | null = null;
+  if (Object.values(ids).some(Boolean)) {
+    const clauses = ["jan", "gtin", "ean", "upc"]
+      .flatMap((column) => Object.entries(ids)
+        .filter(([, value]) => Boolean(value))
+        .map(([, value]) => `${column}.eq.${value}`))
+      .filter((clause, index, all) => all.indexOf(clause) === index);
+    const { data: marketRows, error: marketError } = await db
+      .from("marketplace_bestsellers")
+      .select("id,product_id,jan,gtin,ean,upc,mpn,title,brand")
+      .or(clauses.join(","))
+      .limit(51);
+    if (marketError) {
+      console.warn("[cj-internal-supply] exact identity lookup failed", { sourceRef, error: marketError.message });
+    } else if ((marketRows ?? []).length <= 50) {
+      const matched = (marketRows ?? []).map((row: Record<string, unknown>) => {
+        const identity = matchProductIdentity({
+          market: { ...identifiersFromRecord(row), brand: typeof row.brand === "string" ? row.brand : null, title: typeof row.title === "string" ? row.title : null },
+          supply: { ...identifiersFromRecord({ ...ids, title: args.title }), title: args.title },
+        });
+        return { row, identity };
+      }).filter((item) => item.identity.salesEligible);
+      if (matched.length === 1) {
+        const row = matched[0].row;
+        const linkPayload = {
+          bestseller_id: String(row.id),
+          supply_product_id: productId,
+          supply_variant_id: variantId,
+          identity_method: matched[0].identity.method,
+          identity_confidence: matched[0].identity.confidence,
+          identity_rationale: matched[0].identity.rationale,
+          status: "verified",
+        };
+        const link = await db.from("internal_supply_links").insert(linkPayload);
+        if (!link.error || /duplicate|unique/i.test(link.error.message)) {
+          identityLink = {
+            bestsellerId: String(row.id),
+            method: matched[0].identity.method,
+            rationale: matched[0].identity.rationale,
+          };
+        } else {
+          console.warn("[cj-internal-supply] identity link persistence failed", { sourceRef, error: link.error.message });
+        }
+      }
+    }
+  }
+
   // Audit is best-effort for compatibility with databases that have not yet
   // applied the PR #152 migration. Its absence must not hide the source write.
   const audit = await db.from("internal_supply_ingestion_audit").insert({
@@ -203,6 +253,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       supplier_barcode_raw: rawBarcode,
       supplier_barcode_validation: identifierValidation,
       order_creation_verified: false,
+      identity_link: identityLink,
     },
   });
   if (audit.error) {
