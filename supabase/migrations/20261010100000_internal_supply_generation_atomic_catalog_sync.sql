@@ -79,10 +79,26 @@ begin
     return jsonb_build_object('ok', false, 'reason', 'source_not_sellable');
   end if;
 
-  if (p_catalog->>'bestseller_id') is null
-     or (p_catalog_variant->>'internal_supply_variant_id')::uuid <> p_variant_id
-     or (p_catalog_variant->>'internal_supply_product_id')::uuid <> p_product_id then
+  -- SQL comparisons with NULL evaluate to NULL, not TRUE. Use explicit
+  -- null/empty checks and IS DISTINCT FROM so missing IDs fail closed.
+  if nullif(btrim(p_catalog->>'bestseller_id'), '') is null
+     or (p_catalog_variant->>'internal_supply_variant_id')::uuid is distinct from p_variant_id
+     or (p_catalog_variant->>'internal_supply_product_id')::uuid is distinct from p_product_id then
     return jsonb_build_object('ok', false, 'reason', 'payload_scope_mismatch');
+  end if;
+
+  -- variant_sku is globally unique in tracer_supply_variants. Never let a
+  -- different source identity claim an existing SKU and silently move ownership.
+  if exists (
+    select 1
+      from public.tracer_supply_variants existing_variant
+     where existing_variant.variant_sku = p_catalog_variant->>'variant_sku'
+       and (
+         existing_variant.internal_supply_variant_id is distinct from p_variant_id
+         or existing_variant.internal_supply_product_id is distinct from p_product_id
+       )
+  ) then
+    return jsonb_build_object('ok', false, 'reason', 'variant_sku_owned_by_other_source');
   end if;
 
   insert into public.tracer_supply_catalog (
@@ -140,7 +156,17 @@ begin
     internal_supply_product_id = excluded.internal_supply_product_id,
     internal_supply_variant_id = excluded.internal_supply_variant_id,
     updated_at = excluded.updated_at
+  where public.tracer_supply_variants.internal_supply_variant_id is not distinct from excluded.internal_supply_variant_id
+    and public.tracer_supply_variants.internal_supply_product_id is not distinct from excluded.internal_supply_product_id
   returning id into v_catalog_variant_id;
+
+  -- The ownership guard above also protects against a concurrent insert that
+  -- wins the unique-key race after our precheck. Raise (rather than return) so
+  -- PostgreSQL rolls back the catalog upsert earlier in this function.
+  if v_catalog_variant_id is null then
+    raise exception 'variant_sku_owned_by_other_source: %', p_catalog_variant->>'variant_sku'
+      using errcode = '23505';
+  end if;
 
   return jsonb_build_object(
     'ok', true,
