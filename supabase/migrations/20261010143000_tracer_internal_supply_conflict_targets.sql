@@ -1,9 +1,11 @@
 -- Ensure PostgREST ON CONFLICT targets can infer the exact uniqueness constraints.
 -- PostgreSQL UNIQUE indexes permit multiple NULL values, so these full indexes
 -- preserve nullable identifiers while allowing deterministic upserts.
+-- Reuse the canonical product index name from the earlier audit migration so
+-- applying all pending migrations does not create a duplicate equivalent index.
 -- Do not make variant_sku unique: suppliers can reuse a SKU across sibling
 -- variants, and the ingestion path uses the concrete supplier variant_id.
-create unique index if not exists internal_supply_products_source_ref_conflict_uq
+create unique index if not exists internal_supply_products_source_name_ref_atomic_uq
   on public.internal_supply_products(source_name, source_ref);
 
 create unique index if not exists internal_supply_variants_product_variant_id_conflict_uq
