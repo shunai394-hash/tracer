@@ -117,10 +117,10 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         }
       }
 
-      const storedFxRate = num(metadata.fx_rate);
+      const storedFxRate = num(metadata.fx_rate) ?? num(listingMetadata.fx_rate);
       const observedFx = storedFxRate === null && String(row.currency ?? "").toUpperCase() === "USD" ? await getObservedUsdToJpyRate() : null;
       const fxRate = storedFxRate ?? observedFx?.rate ?? null;
-      const storedSellingPriceJpy = num(metadata.selling_price_jpy);
+      const storedSellingPriceJpy = num(metadata.selling_price_jpy) ?? num(listingMetadata.selling_price_jpy);
       const landedCostJpy = cost !== null && shippingCost !== null && fxRate !== null ? (cost + shippingCost) * fxRate : null;
       const sellingPriceJpy = storedSellingPriceJpy ?? (landedCostJpy !== null && Number.isFinite(landedCostJpy) && landedCostJpy >= 0 ? Math.ceil(Math.max(1980, landedCostJpy * 2.5) / 100) * 100 : null);
       if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) { const checkedAt = new Date(); await db.from("supplier_listings").update({ ...(cost !== null ? { cost } : {}), ...(shippingCost !== null ? { shipping_cost: shippingCost } : {}), ...(inventory !== null ? { inventory } : {}), metadata: { ...listingMetadata, ...(imageUrl ? { image_url: imageUrl } : {}), ...(fxRate !== null ? { fx_rate: fxRate } : {}), ...(sellingPriceJpy !== null ? { selling_price_jpy: sellingPriceJpy } : {}), ...(variantBarcode ? { variant_barcode: variantBarcode, variant_barcode_raw: variantBarcode } : {}), ...supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null), last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + MISSING_DATA_RETRY_MS).toISOString(), identity_hold_reason: "missing_economics_or_image" } }).eq("id", supplierListingId); return { kind: "missing_economics" as const, supplierListingId }; }
