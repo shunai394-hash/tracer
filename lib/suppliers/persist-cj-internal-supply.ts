@@ -56,9 +56,10 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
   const db = createSupabaseAdminClient();
   const now = new Date().toISOString();
   const sourceRef = `cj:${args.supplierProductId}:${args.supplierVariantId}`;
-  const ids = validBarcodeIds(args.barcode);
+  const freshIds = validBarcodeIds(args.barcode);
+  let ids = freshIds;
   const identifierValidation = args.barcode?.trim()
-    ? Object.values(ids).some(Boolean) ? "valid_gs1_check_digit" : "invalid_format_or_check_digit"
+    ? Object.values(freshIds).some(Boolean) ? "valid_gs1_check_digit" : "invalid_format_or_check_digit"
     : "missing";
   const rawBarcode = args.barcode?.trim() || null;
 
@@ -98,6 +99,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       supplier_sku: args.supplierSku?.trim() || null,
       supplier_barcode_raw: rawBarcode,
       supplier_barcode_validation: identifierValidation,
+      supplier_identifier_evidence_source: Object.values(freshIds).some(Boolean) ? "fresh_live_barcode" : Object.values(ids).some(Boolean) ? "preserved_prior_verified_identifier" : "none",
       image_url: args.imageUrl,
       query: args.query,
       fx_rate: args.fxRate,
@@ -112,12 +114,32 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
 
   const existingProduct = await db
     .from("internal_supply_products")
-    .select("id")
+    .select("id,gtin,jan,ean,upc")
     .eq("source_name", "cj")
     .eq("source_ref", sourceRef)
     .limit(1)
     .maybeSingle();
   if (existingProduct.error) throw new Error("cj_internal_supply_product_lookup_failed: " + existingProduct.error.message);
+
+  // A temporary missing/invalid live barcode must not erase previously verified
+  // identity evidence on an idempotent refresh. Prefer the concrete variant row,
+  // then its variant-scoped product row; never mix identifiers from two barcodes.
+  const existingVariant = existingProduct.data?.id
+    ? await db
+      .from("internal_supply_variants")
+      .select("jan,gtin,ean,upc")
+      .eq("supply_product_id", String(existingProduct.data.id))
+      .eq("variant_id", args.supplierVariantId)
+      .maybeSingle()
+    : null;
+  if (existingVariant?.error) throw new Error("cj_internal_supply_existing_variant_lookup_failed: " + existingVariant.error.message);
+  const previousIds = {
+    gtin: normalizeIdentifier("gtin", existingVariant?.data?.gtin ?? existingProduct.data?.gtin ?? null),
+    jan: normalizeIdentifier("jan", existingVariant?.data?.jan ?? existingProduct.data?.jan ?? null),
+    ean: normalizeIdentifier("ean", existingVariant?.data?.ean ?? existingProduct.data?.ean ?? null),
+    upc: normalizeIdentifier("upc", existingVariant?.data?.upc ?? existingProduct.data?.upc ?? null),
+  };
+  ids = Object.values(freshIds).some(Boolean) ? freshIds : previousIds;
 
   // Check CJ-scoped variant ownership before creating a product row. A database
   // unique index is the final race-safe guard; this precheck improves diagnostics.
@@ -165,6 +187,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       supplier_variant_id: args.supplierVariantId,
       supplier_barcode_raw: rawBarcode,
       supplier_barcode_validation: identifierValidation,
+      supplier_identifier_evidence_source: Object.values(freshIds).some(Boolean) ? "fresh_live_barcode" : Object.values(ids).some(Boolean) ? "preserved_prior_verified_identifier" : "none",
       image_url: args.imageUrl,
       query: args.query,
       fx_rate: args.fxRate,
@@ -295,6 +318,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       supplier_variant_id: args.supplierVariantId,
       supplier_barcode_raw: rawBarcode,
       supplier_barcode_validation: identifierValidation,
+      supplier_identifier_evidence_source: Object.values(freshIds).some(Boolean) ? "fresh_live_barcode" : Object.values(ids).some(Boolean) ? "preserved_prior_verified_identifier" : "none",
       order_creation_verified: false,
       identity_link: identityLink,
     },
