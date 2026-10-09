@@ -32,12 +32,12 @@ jobs:
               "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
-          for i in 1 2 3 4 5 6 7 8; do
-            code=$(curl -sS -o "sync-$i.json" -w "%{http_code}" --max-time 120 \
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            code=$(curl -sS -o "sync-$i.json" -w "%{http_code}" --max-time 90 \
               -H "Authorization: Bearer $(token)" \
               -H "Content-Type: application/json" \
               -X POST "https://tracer-pied-alpha.vercel.app/api/admin/shopify/sync" \
-              -d '{}')
+              -d '{"limit":20}')
             echo "pass $i: HTTP $code"
             cat "sync-$i.json"
             echo
