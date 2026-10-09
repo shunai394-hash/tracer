@@ -84,7 +84,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       let shippingCost = num(row.shipping_cost);
       let inventory = num(row.inventory);
       const listingImage = [listingMetadata.image_url, listingMetadata.product_image, listingMetadata.productImage, listingMetadata.image].find((value) => typeof value === "string" && /^https?:\/\//i.test(value.trim()));
-      let imageUrl = typeof intelligence?.image_url === "string" && /^https?:\/\//i.test(intelligence.image_url.trim()) ? intelligence.image_url.trim() : typeof listingImage === "string" ? listingImage.trim() : "";
+      let imageUrl = identity && typeof intelligence?.image_url === "string" && /^https?:\/\//i.test(intelligence.image_url.trim()) ? intelligence.image_url.trim() : typeof listingImage === "string" ? listingImage.trim() : "";
 
       // Recover missing evidence from CJ's product/variant APIs; never invent zero values.
       // Cost is accepted from the variant endpoint only when the stored currency is explicitly USD.
@@ -150,7 +150,34 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         if (!persisted?.id) throw new Error("recovered CJ evidence update affected no supplier listing row");
         return { kind: "missing_economics" as const, supplierListingId };
       }
-      await persistCjSupplyIntelligence({ productId: identity?.productId ?? String(row.product_id), title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
+      if (!identity) {
+        const checkedAt = new Date();
+        const { data: held, error: holdError } = await db
+          .from("supplier_listings")
+          .update({
+            ...(cost !== null ? { cost } : {}),
+            ...(shippingCost !== null ? { shipping_cost: shippingCost } : {}),
+            ...(inventory !== null ? { inventory } : {}),
+            metadata: {
+              ...listingMetadata,
+              ...(imageUrl ? { image_url: imageUrl } : {}),
+              ...(fxRate !== null ? { fx_rate: fxRate } : {}),
+              ...(sellingPriceJpy !== null ? { selling_price_jpy: sellingPriceJpy } : {}),
+              ...(variantBarcode ? { variant_barcode: variantBarcode, variant_barcode_raw: variantBarcode } : {}),
+              ...supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null),
+              last_identity_reverify_at: checkedAt.toISOString(),
+              next_identity_reverify_at: new Date(checkedAt.getTime() + NO_MATCH_RETRY_MS).toISOString(),
+              identity_hold_reason: variantBarcode && normalizeIdentifier("gtin", variantBarcode) === null ? "invalid_supplier_barcode" : "no_unique_marketplace_identifier_match",
+            },
+          })
+          .eq("id", supplierListingId)
+          .select("id")
+          .maybeSingle();
+        if (holdError) throw new Error(`failed to persist unmatched CJ evidence: ${holdError.message}`);
+        if (!held?.id) throw new Error("unmatched CJ evidence update affected no supplier listing row");
+        return { kind: "no_match" as const, supplierListingId };
+      }
+      await persistCjSupplyIntelligence({ productId: identity.productId, title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
       if (!identity) {
         const { data: latest } = await db.from("supplier_listings").select("metadata").eq("id", supplierListingId).maybeSingle();
         const latestMetadata = record(latest?.metadata);
