@@ -33,7 +33,7 @@ async function getShopifyAccessToken(): Promise<string> {
     if (cachedShopifyAccessToken && Date.now() < cachedShopifyAccessTokenExpiresAt) {
       return cachedShopifyAccessToken;
     }
-    const domain = storeDomain.trim().replace(/^https?:\\/\\//, "").replace(/\\/$/, "");
+    const domain = storeDomain.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
     if (!domain) throw new Error("SHOPIFY_STORE_DOMAIN is not configured");
     const response = await fetch(`https://${domain}/admin/oauth/access_token`, {
       method: "POST",
