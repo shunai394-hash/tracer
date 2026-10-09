@@ -56,6 +56,10 @@ let cachedShopifyAccessTokenExpiresAt = 0;
 
 async function getShopifyAccessToken(): Promise<string> {
   const { storeDomain, adminAccessToken, clientId, clientSecret } = getShopifyConfig();
+  // Prefer an explicitly configured Admin API access token. OAuth client credentials
+  // must not silently override it; doing so can issue a token that is unauthorized
+  // for the store and break every storefront/API request.
+  if (adminAccessToken) return adminAccessToken;
   if (clientId && clientSecret) {
     if (cachedShopifyAccessToken && Date.now() < cachedShopifyAccessTokenExpiresAt) {
       return cachedShopifyAccessToken;
@@ -80,7 +84,6 @@ async function getShopifyAccessToken(): Promise<string> {
     cachedShopifyAccessTokenExpiresAt = Date.now() + Math.max(30, ttlSeconds - 60) * 1000;
     return cachedShopifyAccessToken;
   }
-  if (adminAccessToken) return adminAccessToken;
   throw new Error("SHOPIFY_ADMIN_ACCESS_TOKEN or SHOPIFY_CLIENT_ID/SHOPIFY_CLIENT_SECRET is not configured");
 }
 
