@@ -138,12 +138,21 @@ export async function probeShopifyAuth(): Promise<ShopifyAuthProbeResult> {
   let shopId: string | null = null;
   try {
     const payload = JSON.parse(responseText) as { data?: { shop?: { id?: unknown } | null }; errors?: Array<{ message?: unknown }> };
+    const secrets = [
+      process.env.SHOPIFY_ADMIN_ACCESS_TOKEN,
+      process.env.SHOPIFY_CLIENT_SECRET,
+      process.env.SHOPIFY_WEBHOOK_SECRET,
+    ].filter((value): value is string => Boolean(value));
     graphqlErrors = Array.isArray(payload.errors)
-      ? payload.errors.map((error) => String(error?.message ?? "GraphQL error").slice(0, 300))
+      ? payload.errors.map((error) => {
+          let message = String(error?.message ?? "GraphQL error");
+          for (const secret of secrets) message = message.split(secret).join("[REDACTED]");
+          return message.replace(/(?:shpat|shpca|shppa|shpss|shpua)_[A-Za-z0-9_-]+/gi, "[REDACTED_TOKEN]").slice(0, 300);
+        })
       : [];
     const candidate = payload.data?.shop?.id;
     if (typeof candidate === "string" && candidate.trim()) shopId = candidate;
-    if (response.ok && !Array.isArray(payload.errors) && !shopId) graphqlErrors.push("Shopify response did not include data.shop.id");
+    if (response.ok && !shopId && graphqlErrors.length === 0) graphqlErrors.push("Shopify response did not include data.shop.id");
   } catch {
     graphqlErrors = ["Shopify returned a non-JSON response"];
   }
