@@ -31,6 +31,13 @@ assert.match(ingest, /automated_order_creation_verified: false/,
   "live stock/freight verification must not be represented as proof of automated ordering");
 assert.match(ingest, /sku: null/,
   "supplier SKU is stored on the concrete variant to avoid collisions in the product-level unique SKU index");
+const productPayload = ingest.split("const productPayload = {")[1]?.split("const existingProduct =")[0] ?? "";
+assert.ok(productPayload.length > 0, "product payload must be inspectable");
+assert.doesNotMatch(productPayload, /\.\.\.ids/, "variant barcodes must not be copied into product-wide identity fields");
+assert.match(productPayload, /gtin: null/);
+assert.match(productPayload, /jan: null/);
+assert.match(productPayload, /ean: null/);
+assert.match(productPayload, /upc: null/);
 assert.match(ingest, /internal_supply_ingestion_audit/,
   "an ingestion audit attempt must be made");
 assert.match(identity, /function hasValidGs1CheckDigit/);
