@@ -5,7 +5,7 @@ import { calculateCJFreight, fetchCJProductVariants, fetchCJVariantByVid, fetchC
 import { parseCJUsdPrice } from "@/lib/sources/cj/parse";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { normalizeIdentifier } from "@/lib/market/identifiers";
-import { isCjIdentityReverifyCandidate, isCjIdentityReverifyDue, CJ_IDENTITY_RETRY_DELAYS_MS, supplierBarcodeAudit } from "@/lib/suppliers/cj-identity-reverify-policy";
+import { isCjIdentityReverifyCandidate, isCjIdentityReverifyDue, CJ_IDENTITY_RETRY_DELAYS_MS, supplierBarcodeAudit, supabaseWriteFailure } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 const CURSOR_JOB = "cj-identity-reverify-cursor";
 const DEFAULT_LIMIT = 25;
@@ -56,7 +56,8 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const priority = (row: typeof allRows[number]) => row.verification_status === "unverified" ? 0 : 1;
   womensRows.sort((a, b) => priority(a) - priority(b) || String(a.id).localeCompare(String(b.id)));
   otherRows.sort((a, b) => priority(a) - priority(b) || String(a.id).localeCompare(String(b.id)));
-  const { data: priorRuns } = await db.from("cron_runs").select("metadata").eq("job_name", CURSOR_JOB).eq("status", "succeeded").order("started_at", { ascending: false }).limit(1);
+  const { data: priorRuns, error: priorRunsError } = await db.from("cron_runs").select("metadata").eq("job_name", CURSOR_JOB).eq("status", "succeeded").order("started_at", { ascending: false }).limit(1);
+  if (priorRunsError) throw new Error(`identity reverify cursor lookup failed: ${priorRunsError.message}`);
   const priorCursor = typeof record(priorRuns?.[0]?.metadata).nextCursor === "string" ? String(record(priorRuns?.[0]?.metadata).nextCursor) : null;
   const rotateAfterCursor = (items: typeof allRows) => {
     if (!priorCursor || items.length === 0) return items;
@@ -192,15 +193,32 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       }
       return identity ? { kind: "promoted" as const, supplierListingId, bestsellerId: identity.bestsellerId, method: identity.method } : { kind: "supplier_verified" as const, supplierListingId };
     } catch (rowError) {
-      const { data: latest } = await db.from("supplier_listings").select("metadata").eq("id", supplierListingId).maybeSingle();
-      const latestMetadata = record(latest?.metadata);
-      const checkedAt = new Date();
-      await db.from("supplier_listings").update({ metadata: { ...latestMetadata, last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + ERROR_RETRY_MS).toISOString(), identity_hold_reason: "reverify_error" } }).eq("id", supplierListingId);
-      return { kind: "error" as const, supplierListingId, error: rowError instanceof Error ? rowError.message : String(rowError) };
+      let errorMessage = rowError instanceof Error ? rowError.message : String(rowError);
+      try {
+        const { data: latest, error: readError } = await db.from("supplier_listings").select("metadata").eq("id", supplierListingId).maybeSingle();
+        const readFailure = supabaseWriteFailure("read retry metadata", readError);
+        if (readFailure) throw new Error(readFailure);
+        if (!latest) throw new Error("retry metadata row was not found");
+        const latestMetadata = record(latest.metadata);
+        const checkedAt = new Date();
+        const { data: updated, error: updateError } = await db
+          .from("supplier_listings")
+          .update({ metadata: { ...latestMetadata, last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + ERROR_RETRY_MS).toISOString(), identity_hold_reason: "reverify_error" } })
+          .eq("id", supplierListingId)
+          .select("id")
+          .maybeSingle();
+        const updateFailure = supabaseWriteFailure("persist retry state", updateError, updated, true);
+        if (updateFailure) throw new Error(updateFailure);
+      } catch (recordError) {
+        errorMessage += `; failed to record retry state: ${recordError instanceof Error ? recordError.message : String(recordError)}`;
+      }
+      return { kind: "error" as const, supplierListingId, error: errorMessage };
     }
   };
   for (let offset = 0; offset < selectedRows.length; offset += CONCURRENCY) { if (Date.now() >= deadlineAt) break; const batch = selectedRows.slice(offset, offset + CONCURRENCY); const results = await Promise.all(batch.map(processRow)); for (const item of results) { result.checked += 1; if (item.kind === "promoted") { result.promoted += 1; result.promotedListings.push({ supplierListingId: item.supplierListingId, bestsellerId: item.bestsellerId, method: item.method }); } else if (item.kind === "supplier_verified") { result.supplierVerified += 1; } else if (item.kind === "no_match") result.noUniqueBarcodeMatch += 1; else if (item.kind === "missing_economics") result.missingEconomics += 1; else result.errors.push({ supplierListingId: item.supplierListingId, error: item.error }); } }
   const now = new Date().toISOString();
-  await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: "cursor_rotation_womens_priority", candidateCount: total, womensCandidates: womensRows.length, womensSelected: selectedWomens.length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
+  const { error: cronInsertError } = await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: "cursor_rotation_womens_priority", candidateCount: total, womensCandidates: womensRows.length, womensSelected: selectedWomens.length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
+  const cronInsertFailure = supabaseWriteFailure("persist cron_runs outcome", cronInsertError);
+  if (cronInsertFailure) throw new Error(cronInsertFailure);
   return result;
 }
