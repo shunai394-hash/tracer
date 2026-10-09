@@ -33,11 +33,13 @@ assert.match(ingest, /sku: null/,
   "supplier SKU is stored on the concrete variant to avoid collisions in the product-level unique SKU index");
 const productPayload = ingest.split("const productPayload = {")[1]?.split("const existingProduct =")[0] ?? "";
 assert.ok(productPayload.length > 0, "product payload must be inspectable");
-assert.doesNotMatch(productPayload, /\.\.\.ids/, "variant barcodes must not be copied into product-wide identity fields");
-assert.match(productPayload, /gtin: null/);
-assert.match(productPayload, /jan: null/);
-assert.match(productPayload, /ean: null/);
-assert.match(productPayload, /upc: null/);
+assert.match(productPayload, /source_ref: sourceRef/);
+assert.match(productPayload, /gtin: ids\.gtin/);
+assert.match(productPayload, /jan: ids\.jan/);
+assert.match(productPayload, /ean: ids\.ean/);
+assert.match(productPayload, /upc: ids\.upc/);
+assert.match(ingest, /sourceRef = `cj:\$\{args\.supplierProductId\}:\$\{args\.supplierVariantId\}`/,
+  "product-level barcode fields are safe only because this product row is scoped to the exact supplier variant");
 const variantPayload = ingest.split("const variantPayload = {")[1]?.split("// The full unique conflict target")[0] ?? "";
 assert.ok(variantPayload.length > 0, "variant payload must be inspectable");
 assert.match(variantPayload, /\.\.\.ids/, "valid barcode identifiers must remain attached to the concrete supplier variant");
