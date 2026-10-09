@@ -13,7 +13,6 @@ const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
   [/car decorations.*led ambient lights|interior led ambient lights/i, "車内LEDアンビエントライト"],
   [/three-dimensional piggy butt.*phone case|piggy butt phone case/i, "ぶたモチーフ シリコンスマホケース"],
   [/flowers.*phone case|flower.*phone case/i, "フラワーモチーフ スマホケース"],
-  [/creative new envelopes diagonally across/i, "商品仕様の再確認が必要なスマホアクセサリー"],
 ];
 
 const CATEGORY_ONLY_TITLES = new Set([
@@ -130,7 +129,7 @@ export function localizeProductDescription(value: unknown): string | null {
     [/straw covers cap.*cowboy hat|cowboy hat shaped.*straw topper/i, "ストロー先端に装着するカバーです。対応するストロー径・材質・耐熱性は販売元の仕様をご確認ください。"],
     [/hd large mirror.*magnifying glass|magnifying glass.*stand/i, "スタンド付きの拡大鏡です。レンズ径・倍率・固定方法は販売元の仕様をご確認ください。"],
     [/car decorations.*led ambient lights|interior led ambient lights/i, "車内用のLEDアンビエントライトです。電源方式・車種との適合・配線方法は販売元の仕様をご確認ください。"],
-    [/three-dimensional piggy butt.*phone case|piggy butt phone case|flowers.*phone case|flower.*phone case|creative new envelopes diagonally across/i, "スマートフォン用ケースです。対応機種・素材・付属品は商品バリエーションと販売元の仕様をご確認ください。"],
+    [/three-dimensional piggy butt.*phone case|piggy butt phone case|flowers.*phone case|flower.*phone case/i, "スマートフォン用ケースです。対応機種・素材・付属品は商品バリエーションと販売元の仕様をご確認ください。"],
   ];
   return rules.find(([pattern]) => pattern.test(source))?.[1] ?? null;
 }
