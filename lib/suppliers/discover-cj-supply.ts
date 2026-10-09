@@ -412,7 +412,7 @@ export async function discoverAndCreateCjSupply(
         sellingPriceJpy: salePrice,
         variantBarcode,
       });
-      let internalSupply: { productId: string; variantId: string; sourceRef: string } | null = null;
+      let internalSupply: { productId: string; variantId: string; sourceRef: string; identityLink: { bestsellerId: string; method: string; rationale: string } | null } | null = null;
       let internalSupplyError: string | null = null;
       try {
         internalSupply = await persistCjInternalSupplyCandidate({
@@ -458,6 +458,7 @@ export async function discoverAndCreateCjSupply(
         internalSupplyVariantId: internalSupply?.variantId ?? null,
         internalSupplySourceRef: internalSupply?.sourceRef ?? null,
         internalSupplyError,
+        identityLink: internalSupply?.identityLink ?? null,
       });
     } catch (error) {
       rejected++;
@@ -663,7 +664,7 @@ export async function discoverAndCreateCjSupply(
           sellingPriceJpy: salePrice,
           variantBarcode,
         });
-        let internalSupply: { productId: string; variantId: string; sourceRef: string } | null = null;
+        let internalSupply: { productId: string; variantId: string; sourceRef: string; identityLink: { bestsellerId: string; method: string; rationale: string } | null } | null = null;
         let internalSupplyError: string | null = null;
         try {
           internalSupply = await persistCjInternalSupplyCandidate({
@@ -710,6 +711,7 @@ export async function discoverAndCreateCjSupply(
           internalSupplyVariantId: internalSupply?.variantId ?? null,
           internalSupplySourceRef: internalSupply?.sourceRef ?? null,
           internalSupplyError,
+          identityLink: internalSupply?.identityLink ?? null,
         });
       } catch (error) {
         reject("error", { error: error instanceof Error ? error.message : String(error) });
