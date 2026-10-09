@@ -77,6 +77,9 @@ test("CJ reverify integration contract", "recovery uses live CJ evidence, persis
   assert.match(source, /unmatched CJ evidence update affected no supplier listing row/);
   assert.match(source, /if \(!identity\) \{[\s\S]*?return \{ kind: "no_match"/, "identity miss must return before canonical persistence");
   assert.match(persistence, /hasUniqueMarketplaceIdentity\(matchesByProduct\.size\)/, "identity resolution must require exactly one canonical product");
+  assert.match(persistence, /\.select\("id"\)\s*\.maybeSingle\(\)/, "supplier evidence update must return the affected row");
+  assert.match(persistence, /CJ supplier evidence persistence failed/);
+  assert.match(persistence, /CJ supplier evidence update affected no supplier listing row/, "zero-row update must fail instead of reporting recovery");
 });
 
 test("CJ API fixtures", "variant sellPrice is accepted only with explicit USD currency", () => {
