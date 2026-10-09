@@ -39,6 +39,19 @@ export function supplierBarcodeAudit(value: unknown, isValidGtIn: boolean): {
   };
 }
 
+export function shouldSyncInternalSupplyCatalog(args: {
+  bestsellerId: string | null;
+  submittedVariantCount: number;
+  variantWriteErrorCount: number;
+  successfulVariantWriteCount: number;
+}): boolean {
+  return Boolean(args.bestsellerId)
+    && Number.isInteger(args.submittedVariantCount)
+    && args.submittedVariantCount > 0
+    && args.variantWriteErrorCount === 0
+    && args.successfulVariantWriteCount === args.submittedVariantCount;
+}
+
 export function hasUniqueIdentitySelection(candidateCount: number, exactMatchCount: number): boolean {
   return Number.isInteger(candidateCount) && candidateCount > 0
     && (candidateCount === 1 || (Number.isInteger(exactMatchCount) && exactMatchCount === 1));
@@ -66,6 +79,11 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
     { name: "at_1_hour_boundary_is_due", expected: true, actual: isCjIdentityReverifyDue({ next_identity_reverify_at: new Date(now + CJ_IDENTITY_RETRY_DELAYS_MS.processingError).toISOString() }, now + CJ_IDENTITY_RETRY_DELAYS_MS.processingError) },
     { name: "invalid_gtin_is_rejected_but_raw_value_is_retained", expected: true, actual: (() => { const raw = "1598446591114"; const audit = supplierBarcodeAudit(raw, false); return audit.variant_barcode_raw === raw && audit.variant_barcode_validation === "invalid_format_or_check_digit"; })() },
     { name: "valid_gtin_is_classified_but_not_itself_linked", expected: true, actual: (() => { const audit = supplierBarcodeAudit("4006381333931", true); return audit.variant_barcode_validation === "valid_gs1_check_digit" && !hasUniqueMarketplaceIdentity(0); })() },
+    { name: "missing_variants_block_catalog_sync", expected: false, actual: shouldSyncInternalSupplyCatalog({ bestsellerId: "market-1", submittedVariantCount: 0, variantWriteErrorCount: 0, successfulVariantWriteCount: 0 }) },
+    { name: "partial_variant_failure_blocks_catalog_sync", expected: false, actual: shouldSyncInternalSupplyCatalog({ bestsellerId: "market-1", submittedVariantCount: 2, variantWriteErrorCount: 1, successfulVariantWriteCount: 1 }) },
+    { name: "incomplete_variant_writes_block_catalog_sync", expected: false, actual: shouldSyncInternalSupplyCatalog({ bestsellerId: "market-1", submittedVariantCount: 2, variantWriteErrorCount: 0, successfulVariantWriteCount: 1 }) },
+    { name: "complete_variant_writes_allow_server_side_gate_to_run", expected: true, actual: shouldSyncInternalSupplyCatalog({ bestsellerId: "market-1", submittedVariantCount: 2, variantWriteErrorCount: 0, successfulVariantWriteCount: 2 }) },
+    { name: "missing_marketplace_reference_blocks_catalog_sync", expected: false, actual: shouldSyncInternalSupplyCatalog({ bestsellerId: null, submittedVariantCount: 1, variantWriteErrorCount: 0, successfulVariantWriteCount: 1 }) },
     { name: "multiple_variants_without_unique_identifier_match_are_rejected", expected: false, actual: hasUniqueIdentitySelection(3, 0) },
     { name: "multiple_variants_with_one_exact_identifier_match_select_one", expected: true, actual: hasUniqueIdentitySelection(3, 1) },
     { name: "multiple_variants_with_duplicate_exact_matches_are_rejected", expected: false, actual: hasUniqueIdentitySelection(3, 2) },
