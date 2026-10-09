@@ -233,12 +233,41 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
           status: "verified",
         };
         const link = await db.from("internal_supply_links").insert(linkPayload);
-        if (!link.error || /duplicate|unique/i.test(link.error.message)) {
+        if (!link.error) {
           identityLink = {
             bestsellerId: String(row.id),
             method: matched[0].identity.method,
             rationale: matched[0].identity.rationale,
           };
+        } else if (/duplicate|unique/i.test(link.error.message)) {
+          // A unique violation alone does not prove that the existing row is the
+          // same reviewed identity evidence. Only treat it as an idempotent retry
+          // when the exact relationship and evidence already persisted match.
+          const existingLink = await db
+            .from("internal_supply_links")
+            .select("identity_method,identity_confidence,identity_rationale,status")
+            .eq("bestseller_id", linkPayload.bestseller_id)
+            .eq("supply_product_id", linkPayload.supply_product_id)
+            .eq("supply_variant_id", linkPayload.supply_variant_id)
+            .maybeSingle();
+          const sameEvidence = !existingLink.error
+            && existingLink.data?.status === "verified"
+            && existingLink.data?.identity_method === linkPayload.identity_method
+            && Number(existingLink.data?.identity_confidence) === linkPayload.identity_confidence
+            && existingLink.data?.identity_rationale === linkPayload.identity_rationale;
+          if (sameEvidence) {
+            identityLink = {
+              bestsellerId: String(row.id),
+              method: matched[0].identity.method,
+              rationale: matched[0].identity.rationale,
+            };
+          } else {
+            console.warn("[cj-internal-supply] identity link duplicate did not match intended evidence", {
+              sourceRef,
+              error: link.error.message,
+              existingError: existingLink.error?.message ?? null,
+            });
+          }
         } else {
           console.warn("[cj-internal-supply] identity link persistence failed", { sourceRef, error: link.error.message });
         }
