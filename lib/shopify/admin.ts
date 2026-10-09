@@ -170,11 +170,13 @@ export async function shopifyGraphQL<T>(
   query: string,
   variables: Record<string, unknown> = {},
 ): Promise<T> {
-  const { adminAccessToken } = getShopifyConfig();
-  const token = adminAccessToken?.trim();
+  // Use the same token provider as the auth probe. When client credentials
+  // are configured, a legacy static admin token may be stale or belong to a
+  // different app; all Admin API operations must use the exchanged token.
+  const token = (await getShopifyAccessToken()).trim();
 
   if (!token) {
-    throw new Error("SHOPIFY_ADMIN_ACCESS_TOKEN is not configured");
+    throw new Error("SHOPIFY_ADMIN_ACCESS_TOKEN or SHOPIFY_CLIENT_ID/SHOPIFY_CLIENT_SECRET is not configured");
   }
 
   // Never expose the token itself in errors or logs.
