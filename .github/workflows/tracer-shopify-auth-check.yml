@@ -2,15 +2,17 @@ name: TRACER Shopify Auth Check
 
 # Diagnoses Shopify Admin API authentication and scopes, reconciles Shopify
 # against shop_listings and previews the next sync (all read-only). Only when
-# run_sync is set does it run the existing gated sync once. Never prints
+# sync_batch > 0 does it write: the first N gate-eligible listings from the dry
+# run plus every blocked listing still linked to a Shopify product (so it is
+# unpublished), by explicit listing id, never a blind bulk sync. Never prints
 # credential values.
 on:
   workflow_dispatch:
     inputs:
-      run_sync:
-        description: "After the read-only checks, run the gated Shopify sync once (writes), then reconcile again"
-        type: boolean
-        default: false
+      sync_batch:
+        description: "Gate-eligible listings to sync after the read-only checks (0 = read-only). Linked blocked listings are always included for unpublish."
+        type: number
+        default: 0
 
 permissions:
   contents: read
@@ -31,7 +33,7 @@ jobs:
               "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
-          RUN_SYNC="${{ inputs.run_sync }}"
+          SYNC_BATCH="${{ inputs.sync_batch }}"
           for path in api/admin/shopify/auth-check api/admin/shopify/readiness api/admin/shopify/catalog api/admin/shopify/reconcile; do
             code=$(curl -sS -o out.json -w "%{http_code}" --max-time 60 -H "Authorization: Bearer $(token)" "$BASE/$path" || echo 000)
             echo "=== $path HTTP $code ==="
@@ -62,11 +64,21 @@ jobs:
           echo "=== sync dry run (no writes) ==="
           curl -sS -o sync.json --max-time 120 -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" -X POST "$BASE/api/admin/shopify/sync" -d '{"dryRun":true,"limit":1000}'
           summarize_sync
-          if [ "$RUN_SYNC" = "true" ]; then
-            echo "=== gated sync (writes) ==="
-            curl -sS -o sync.json --max-time 130 -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" -X POST "$BASE/api/admin/shopify/sync" -d '{}'
-            summarize_sync
+          if [ "${SYNC_BATCH%.*}" -gt 0 ] 2>/dev/null; then
+            python3 - "${SYNC_BATCH%.*}" <<'PY' > ids.json
+          import json, sys
+          n = int(sys.argv[1])
+          rows = json.load(open("sync.json")).get("rows") or []
+          eligible = [r["listingId"] for r in rows if r.get("eligible")][:n]
+          stale = [r["listingId"] for r in rows if not r.get("eligible") and r.get("shopifyProductId")]
+          ids = (stale + eligible)[:100]
+          print(json.dumps({"listingIds": ids}))
+          sys.stderr.write(f"batch: eligible={len(eligible)} blocked_linked={len(stale)} sent={len(ids)}\n")
+          PY
+            echo "=== gated sync by listing id (writes) ==="
+            curl -sS -o sync.json --max-time 130 -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" -X POST "$BASE/api/admin/shopify/sync" -d @ids.json
+            python3 -c 'import json; d=json.load(open("sync.json")); f=d.get("failed") or []; print(json.dumps({"ok": d.get("ok"), "attempted": d.get("attempted"), "synced": d.get("synced"), "failedCount": len(f), "error": d.get("error")}, indent=1)); import collections; print("failure kinds:", dict(collections.Counter(x["error"][:80] for x in f))); print("failed sample:", json.dumps(f[:5], ensure_ascii=False))'
             echo "=== reconcile after sync ==="
             curl -sS -o out.json --max-time 60 -H "Authorization: Bearer $(token)" "$BASE/api/admin/shopify/reconcile"
-            python3 -c 'import json; d=json.load(open("out.json")); print(json.dumps({k: d.get(k) for k in ("ok","shopify","db","error")}, ensure_ascii=False, indent=1))'
+            python3 -c 'import json; d=json.load(open("out.json")); print(json.dumps({k: d.get(k) for k in ("ok","shopify","db","error")}, ensure_ascii=False, indent=1)); print(json.dumps(d.get("samples",{}).get("mismatches",[])[:3], ensure_ascii=False))'
           fi

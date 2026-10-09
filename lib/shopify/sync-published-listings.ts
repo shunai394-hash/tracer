@@ -110,10 +110,11 @@ async function supabaseForCopyUpdate(listingId: string, title: string, descripti
 
 async function findByHandle(handle: string): Promise<ShopifyProductNode | null> {
   const data = await shopifyGraphQL<{ products: { nodes: ShopifyProductNode[] } }>(
-    `query ProductByHandle($query: String!) { products(first: 1, query: $query) { nodes { id handle status vendor tags variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType preview { image { url } } } } } } }`,
+    `query ProductByHandle($query: String!) { products(first: 5, query: $query) { nodes { id handle status vendor tags variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType preview { image { url } } } } } } }`,
     { query: `handle:${handle}` },
   );
-  return data.products.nodes[0] ?? null;
+  // The search is fuzzy; only an exact handle match is the same product.
+  return data.products.nodes.find((node) => node.handle === handle) ?? null;
 }
 
 export type ShopifySyncResult = { configured: boolean; considered: number; synced: number; failed: number; listingIds: string[]; errors: Array<{ listingId: string; error: string }> };
@@ -287,6 +288,15 @@ async function syncListingRows(
       }).eq("id", row.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (message === "shopify_product_not_found_for_unpublication_check") {
+        // Nothing left on Shopify to sell; the listing simply stays blocked.
+        await supabase.from("shop_listings").update({
+          shopify_sync_status: "blocked",
+          shopify_sync_error: "shopify_product_missing",
+          shopify_synced_at: new Date().toISOString(),
+        }).eq("id", row.id);
+        continue;
+      }
       results.failed += 1;
       results.errors.push({ listingId: row.id, error: `unpublish_failed:${message}` });
       await supabase.from("shop_listings").update({
@@ -344,16 +354,9 @@ async function syncListingRows(
             { id: row.shopify_product_id },
           ).then((result) => result.product)
         : null;
-      const existing = existingById ?? (await findByHandle(productInput.handle)) ?? (row.shopify_product_id
-        ? {
-            id: row.shopify_product_id,
-            handle: row.shopify_handle || row.slug,
-            vendor: "TRACER",
-            tags: ["TRACER"],
-            variants: { nodes: [{ id: row.shopify_variant_id || "", sku: null, price: null }] },
-            media: { nodes: [] },
-          }
-        : null);
+      // A stored id whose product no longer exists in Shopify is stale: fall
+      // back to an exact handle match, otherwise create the product afresh.
+      const existing = existingById ?? (await findByHandle(productInput.handle));
 
       if (existing && existing.vendor && existing.vendor !== "TRACER" && !existing.tags.includes("TRACER")) {
         throw new Error("shopify_handle_owned_by_non_tracer_product");
