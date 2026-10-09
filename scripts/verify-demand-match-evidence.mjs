@@ -17,7 +17,7 @@ import {
   variantsCompatible,
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
-import { normalizeIdentifier } from "../lib/market/identifiers.ts";
+import { normalizeIdentifier, verifyIdentifierMatchInvariants } from "../lib/market/identifiers.ts";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
@@ -33,6 +33,12 @@ function test(group, name, fn) {
     record(false, error instanceof Error ? error.message : String(error));
   }
 }
+
+test("marketplace identity", "identifier-only matching rejects title/image-only identity and validates barcodes", () => {
+  const result = verifyIdentifierMatchInvariants();
+  assert.equal(result.ok, true, result.cases.filter((item) => item.actual !== item.expected).map((item) => item.name).join(", "));
+  assert.ok(result.cases.length >= 10);
+});
 
 test("CJ identity reverify policy", "retry intervals, candidate selection, raw GTIN audit, and unique-link gate", () => {
   const result = verifyCjIdentityReverifyPolicyInvariants();
