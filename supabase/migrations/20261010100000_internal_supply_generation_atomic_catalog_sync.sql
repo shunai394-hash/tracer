@@ -154,3 +154,51 @@ $$;
 
 revoke all on function public.commit_internal_supply_catalog_sync(uuid, uuid, bigint, bigint, jsonb, jsonb) from public, anon, authenticated;
 grant execute on function public.commit_internal_supply_catalog_sync(uuid, uuid, bigint, bigint, jsonb, jsonb) to service_role;
+
+
+-- Any source-row mutation invalidates its prior catalog projection in the same
+-- transaction. This closes the inverse race where a fresh sync commits first and
+-- a concurrent ingestion changes source rows immediately afterwards.
+create or replace function public.quarantine_catalog_for_internal_supply_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if tg_table_name = 'internal_supply_variants' then
+    update public.tracer_supply_variants
+       set orderable = false, inventory = 0, updated_at = now()
+     where internal_supply_variant_id = new.id;
+    update public.tracer_supply_catalog c
+       set status = 'draft', orderable = false, inventory = 0, updated_at = now()
+     where exists (
+       select 1 from public.tracer_supply_variants cv
+        where cv.catalog_id = c.id
+          and cv.internal_supply_variant_id = new.id
+     );
+  elsif tg_table_name = 'internal_supply_products' then
+    update public.tracer_supply_variants
+       set orderable = false, inventory = 0, updated_at = now()
+     where internal_supply_product_id = new.id;
+    update public.tracer_supply_catalog c
+       set status = 'draft', orderable = false, inventory = 0, updated_at = now()
+     where exists (
+       select 1 from public.tracer_supply_variants cv
+        where cv.catalog_id = c.id
+          and cv.internal_supply_product_id = new.id
+     );
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists internal_supply_variants_quarantine_catalog on public.internal_supply_variants;
+create trigger internal_supply_variants_quarantine_catalog
+after update on public.internal_supply_variants
+for each row execute function public.quarantine_catalog_for_internal_supply_change();
+
+drop trigger if exists internal_supply_products_quarantine_catalog on public.internal_supply_products;
+create trigger internal_supply_products_quarantine_catalog
+after update on public.internal_supply_products
+for each row execute function public.quarantine_catalog_for_internal_supply_change();
