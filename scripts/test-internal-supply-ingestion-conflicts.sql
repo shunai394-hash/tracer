@@ -41,7 +41,7 @@ create unique index internal_supply_variants_product_id_atomic_uq
 -- Audit table migration must be ordered after catalog conflict-target migration and repeatable.
 \i supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql
 \i supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql
-do $
+do $$
 begin
   if to_regclass('public.internal_supply_ingestion_audit') is null then
     raise exception 'internal supply ingestion audit table was not created';
