@@ -221,5 +221,5 @@ begin
     raise exception 'service_role lacks execute privilege';
   end if;
 
-  raise notice 'PASS: unique valid scope, stale generation, cross-product scope, forged IDs, out-of-stock, SKU collision rollback, and grants';
+  raise notice 'PASS: unique valid scope, stale-generation rejection, source-mutation quarantine, cross-product scope, forged IDs, out-of-stock, catalog/variant rollback, and grants';
 end $$;
