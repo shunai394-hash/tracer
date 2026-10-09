@@ -70,5 +70,10 @@ assert.match(ingest, /auditErrorCode === "PGRST205"/);
 assert.match(auditMigration, /create table if not exists public\.internal_supply_ingestion_audit/);
 assert.match(auditMigration, /grant all on public\.internal_supply_ingestion_audit to service_role/);
 assert.match(identity, /function hasValidGs1CheckDigit/);
+assert.match(ingest, /identityMatchStatus: "linked" \\| "missing_barcode" \\| "invalid_barcode" \\| "lookup_failed" \\| "candidate_search_overflow" \\| "no_exact_match" \\| "ambiguous_exact_match" \\| "link_write_failed"/, "every candidate must return an explicit identity outcome");
+assert.match(ingest, /identity_match_status: identityMatchStatus/, "identity outcome must be retained in the audit trail");
+assert.match(discovery, /internalSupplyIngested, internalSupplyFailed, identityLinked, identityUnlinked, auditWritten, auditMissing, auditWriteFailed/, "aggregate counts must distinguish supplier verification from internal ingestion and identity linking");
+assert.match(discovery, /identityMatchStatus: internalSupply\\?\\.identityMatchStatus/, "per-candidate results must expose the exact identity outcome");
+assert.match(discovery, /internalSupplyFailed\\+\\+/, "failed internal-supply writes must not disappear from the summary");
 
 console.log("CJ internal-supply wiring checks passed.");
