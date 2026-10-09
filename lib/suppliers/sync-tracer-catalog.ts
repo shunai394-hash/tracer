@@ -94,7 +94,11 @@ export async function syncTracerCatalogFromInternalSupply(args: {
       scopedRows.filter((variant) => String(variant.supply_product_id) === requestedProductId) as Array<{ id: string; [key: string]: unknown }>,
       variantIds,
     );
-    const confirmed = currentRequestVariants.map((variant) => {
+    // Keep all current-request variants in the denominator. Filtering to sales-eligible
+    // variants first makes exactIdentifierMatches.length equal confirmed.length, which
+    // accidentally selects the first row when multiple variants share a product-level MPN.
+    // Count identity proof per variant, then fail closed unless exactly one variant is proven.
+    const variantCandidates = currentRequestVariants.map((variant) => {
       const ids = identifiersFromRecord(variant as Record<string, unknown>);
       return {
         variant,
@@ -111,14 +115,13 @@ export async function syncTracerCatalogFromInternalSupply(args: {
           },
         }),
       };
-    }).filter((x) => x.identity.salesEligible);
+    });
 
-    // The matcher already normalizes GTIN-family identifiers across JAN/EAN/UPC/GTIN
-    // and handles exact MPN/ASIN evidence. Re-checking only same-named columns here
-    // wrongly discards valid cross-scheme matches and MPN matches when variants are ambiguous.
-    const exactIdentifierMatches = confirmed.filter((x) => x.identity.linked && x.identity.salesEligible);
-    const selected = hasUniqueIdentitySelection(confirmed.length, exactIdentifierMatches.length)
-      ? confirmed.length === 1 ? confirmed[0] : exactIdentifierMatches[0]
+    // Cross-scheme barcode normalization and exact MPN/ASIN are handled by the shared matcher.
+    // With multiple variants, only one exact variant-level identity proof may be selected.
+    const exactIdentifierMatches = variantCandidates.filter((x) => x.identity.linked && x.identity.salesEligible);
+    const selected = hasUniqueIdentitySelection(variantCandidates.length, exactIdentifierMatches.length)
+      ? variantCandidates.length === 1 ? variantCandidates[0] : exactIdentifierMatches[0]
       : undefined;
 
     if (!selected) continue;
