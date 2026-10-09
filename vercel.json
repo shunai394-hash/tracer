@@ -2,125 +2,34 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build",
   "crons": [
-    {
-      "path": "/api/cron/market-sourcing",
-      "schedule": "0 12 * * *"
-    },
-    {
-      "path": "/api/cron/supplier-investigation",
-      "schedule": "5 12 * * *"
-    },
-    {
-      "path": "/api/cron/cj-variant-repair",
-      "schedule": "7 12 * * *"
-    },
-    {
-      "path": "/api/cron/cj-identity-reverify",
-      "schedule": "9 12 * * *"
-    },
-    {
-      "path": "/api/cron/orosy-bulk-import",
-      "schedule": "10 12 * * *"
-    },
-    {
-      "path": "/api/cron/sales-test-publication",
-      "schedule": "11 12 * * *"
-    },
-    {
-      "path": "/api/cron/shopify-publish",
-      "schedule": "14 12 * * *"
-    },
-    {
-      "path": "/api/cron/inventory-refresh",
-      "schedule": "15 12 * * *"
-    },
-    {
-      "path": "/api/cron/demand-match",
-      "schedule": "17 12 * * *"
-    },
-    {
-      "path": "/api/cron/intelligence",
-      "schedule": "22 12 * * *"
-    },
-    {
-      "path": "/api/cron/base-orders",
-      "schedule": "25 12 * * *"
-    },
-    {
-      "path": "/api/cron/dropship-execution",
-      "schedule": "30 12 * * *"
-    },
-    {
-      "path": "/api/cron/shopify-orders",
-      "schedule": "33 12 * * *"
-    },
-    {
-      "path": "/api/cron/supplier-reconciliation",
-      "schedule": "35 12 * * *"
-    },
-    {
-      "path": "/api/cron/shopify-fulfillment",
-      "schedule": "38 12 * * *"
-    },
-    {
-      "path": "/api/cron/supplier-orders",
-      "schedule": "40 12 * * *"
-    },
-    {
-      "path": "/api/cron/newfind-retry",
-      "schedule": "45 12 * * *"
-    },
-    {
-      "path": "/api/cron/supply-first",
-      "schedule": "50 12 * * *"
-    },
-    {
-      "path": "/api/cron/patrol-ai",
-      "schedule": "55 12 * * *"
-    },
-    {
-      "path": "/api/cron/cj-variant-repair",
-      "schedule": "7 18 * * *"
-    },
-    {
-      "path": "/api/cron/orosy-bulk-import",
-      "schedule": "10 18 * * *"
-    },
-    {
-      "path": "/api/cron/cj-identity-reverify",
-      "schedule": "9 18 * * *"
-    },
-    {
-      "path": "/api/cron/sales-test-publication",
-      "schedule": "11 18 * * *"
-    },
-    {
-      "path": "/api/cron/shopify-publish",
-      "schedule": "14 18 * * *"
-    },
-    {
-      "path": "/api/cron/demand-match",
-      "schedule": "17 18 * * *"
-    },
-    {
-      "path": "/api/cron/intelligence",
-      "schedule": "22 18 * * *"
-    },
-    {
-      "path": "/api/cron/supply-first",
-      "schedule": "47 18 * * *"
-    },
-    {
-      "path": "/api/cron/demand-match",
-      "schedule": "52 18 * * *"
-    },
-    {
-      "path": "/api/cron/intelligence",
-      "schedule": "57 18 * * *"
-    },
-    {
-      "path": "/api/cron/patrol-ai",
-      "schedule": "59 18 * * *"
-    }
+    { "path": "/api/cron/market-sourcing", "schedule": "0 12 * * *" },
+    { "path": "/api/cron/supplier-investigation", "schedule": "5 12 * * *" },
+    { "path": "/api/cron/cj-variant-repair", "schedule": "7 12 * * *" },
+    { "path": "/api/cron/cj-identity-reverify", "schedule": "9 12 * * *" },
+    { "path": "/api/cron/orosy-bulk-import", "schedule": "10 12 * * *" },
+    { "path": "/api/cron/sales-test-publication", "schedule": "11 12 * * *" },
+    { "path": "/api/cron/shopify-publish", "schedule": "14 12 * * *" },
+    { "path": "/api/cron/inventory-refresh", "schedule": "15 12 * * *" },
+    { "path": "/api/cron/demand-match", "schedule": "17 12 * * *" },
+    { "path": "/api/cron/intelligence", "schedule": "22 12 * * *" },
+    { "path": "/api/cron/base-orders", "schedule": "25 12 * * *" },
+    { "path": "/api/cron/dropship-execution", "schedule": "30 12 * * *" },
+    { "path": "/api/cron/shopify-orders", "schedule": "33 12 * * *" },
+    { "path": "/api/cron/supplier-reconciliation", "schedule": "35 12 * * *" },
+    { "path": "/api/cron/shopify-fulfillment", "schedule": "38 12 * * *" },
+    { "path": "/api/cron/supplier-orders", "schedule": "40 12 * * *" },
+    { "path": "/api/cron/newfind-retry", "schedule": "45 12 * * *" },
+    { "path": "/api/cron/supply-first", "schedule": "50 12 * * *" },
+    { "path": "/api/cron/patrol-ai", "schedule": "55 12 * * *" },
+    { "path": "/api/cron/cj-variant-repair", "schedule": "7 18 * * *" },
+    { "path": "/api/cron/orosy-bulk-import", "schedule": "10 18 * * *" },
+    { "path": "/api/cron/cj-identity-reverify", "schedule": "9 18 * * *" },
+    { "path": "/api/cron/sales-test-publication", "schedule": "11 18 * * *" },
+    { "path": "/api/cron/shopify-publish", "schedule": "14 18 * * *" },
+    { "path": "/api/cron/demand-match", "schedule": "17 18 * * *" },
+    { "path": "/api/cron/intelligence", "schedule": "22 18 * * *" },
+    { "path": "/api/cron/supply-first", "schedule": "47 18 * * *" },
+    { "path": "/api/cron/demand-match", "schedule": "52 18 * * *" },
+    { "path": "/api/cron/patrol-ai", "schedule": "59 18 * * *" }
   ]
 }
