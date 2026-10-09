@@ -224,6 +224,21 @@ export function verifyIdentifierMatchInvariants(): {
       })(),
     },
     {
+      name: "invalid_gtin_check_digit_is_rejected",
+      expected: true,
+      actual: normalizeIdentifier("gtin", "4006381333932") === null,
+    },
+    {
+      name: "valid_gtin13_is_preserved",
+      expected: true,
+      actual: normalizeIdentifier("gtin", "4006381333931") === "4006381333931",
+    },
+    {
+      name: "invalid_gtin_length_is_rejected",
+      expected: true,
+      actual: normalizeIdentifier("gtin", "123456789") === null,
+    },
+    {
       name: "different_barcode_digits_do_not_match",
       expected: true,
       actual: (() => {
