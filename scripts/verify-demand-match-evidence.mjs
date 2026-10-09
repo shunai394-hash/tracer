@@ -39,6 +39,7 @@ function test(group, name, fn) {
 test("CJ reverify source safety", "canonical identity is required before persisting reverify evidence", () => {
   const source = readFileSync(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
   assert.equal(source.includes("identity?.productId ?? String(row.product_id)"), false, "must not fall back to an existing product_id");
+  assert.match(source, /supplierBrand, supplierIdentifiers:/, "MPN matching must receive supplier brand evidence");
   const holdBranch = source.indexOf("if (!identity) {");
   const persistCall = source.indexOf("await persistCjSupplyIntelligence(");
   assert.ok(holdBranch >= 0 && persistCall > holdBranch, "unmatched rows must be held before canonical persistence");
