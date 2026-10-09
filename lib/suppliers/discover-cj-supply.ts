@@ -144,6 +144,13 @@ export async function discoverAndCreateCjSupply(
   published: number;
   verified: number;
   rejected: number;
+  internalSupplyIngested: number;
+  internalSupplyFailed: number;
+  identityLinked: number;
+  identityUnlinked: number;
+  auditWritten: number;
+  auditMissing: number;
+  auditWriteFailed: number;
   candidateCount: number;
   eligibleCount: number;
   deadlineReached: boolean;
@@ -172,6 +179,13 @@ export async function discoverAndCreateCjSupply(
   let verified = 0;
   let catalogDiscovered = 0;
   let rejected = 0;
+  let internalSupplyIngested = 0;
+  let internalSupplyFailed = 0;
+  let identityLinked = 0;
+  let identityUnlinked = 0;
+  let auditWritten = 0;
+  let auditMissing = 0;
+  let auditWriteFailed = 0;
 
   // Reuse previously discovered CJ IDs first. These rows are only candidates;
   // stock, variant and Japan freight are re-verified live before publication.
@@ -412,7 +426,7 @@ export async function discoverAndCreateCjSupply(
         sellingPriceJpy: salePrice,
         variantBarcode,
       });
-      let internalSupply: { productId: string; variantId: string; sourceRef: string; identityLink: { bestsellerId: string; method: string; rationale: string } | null; auditStatus: "written" | "table_missing" | "write_failed" } | null = null;
+      let internalSupply: { productId: string; variantId: string; sourceRef: string; identityLink: { bestsellerId: string; method: string; rationale: string } | null; identityMatchStatus: "linked" | "missing_barcode" | "invalid_barcode" | "lookup_failed" | "candidate_search_overflow" | "no_exact_match" | "ambiguous_exact_match" | "link_write_failed"; auditStatus: "written" | "table_missing" | "write_failed" } | null = null;
       let internalSupplyError: string | null = null;
       try {
         internalSupply = await persistCjInternalSupplyCandidate({
@@ -437,6 +451,16 @@ export async function discoverAndCreateCjSupply(
           error: internalSupplyError,
         });
       }
+      if (internalSupply) {
+        internalSupplyIngested++;
+        if (internalSupply.identityLink) identityLinked++;
+        else identityUnlinked++;
+        if (internalSupply.auditStatus === "written") auditWritten++;
+        else if (internalSupply.auditStatus === "table_missing") auditMissing++;
+        else auditWriteFailed++;
+      } else {
+        internalSupplyFailed++;
+      }
       discovered++;
       verified++;
       items.push({
@@ -460,6 +484,7 @@ export async function discoverAndCreateCjSupply(
         internalSupplyAuditStatus: internalSupply?.auditStatus ?? "not_attempted",
         internalSupplyError,
         identityLink: internalSupply?.identityLink ?? null,
+        identityMatchStatus: internalSupply?.identityMatchStatus ?? (internalSupplyError ? "ingest_failed" : "not_attempted"),
       });
     } catch (error) {
       rejected++;
@@ -665,7 +690,7 @@ export async function discoverAndCreateCjSupply(
           sellingPriceJpy: salePrice,
           variantBarcode,
         });
-        let internalSupply: { productId: string; variantId: string; sourceRef: string; identityLink: { bestsellerId: string; method: string; rationale: string } | null; auditStatus: "written" | "table_missing" | "write_failed" } | null = null;
+        let internalSupply: { productId: string; variantId: string; sourceRef: string; identityLink: { bestsellerId: string; method: string; rationale: string } | null; identityMatchStatus: "linked" | "missing_barcode" | "invalid_barcode" | "lookup_failed" | "candidate_search_overflow" | "no_exact_match" | "ambiguous_exact_match" | "link_write_failed"; auditStatus: "written" | "table_missing" | "write_failed" } | null = null;
         let internalSupplyError: string | null = null;
         try {
           internalSupply = await persistCjInternalSupplyCandidate({
@@ -689,6 +714,16 @@ export async function discoverAndCreateCjSupply(
             supplierVariantId: variant.vid,
             error: internalSupplyError,
           });
+        }
+        if (internalSupply) {
+          internalSupplyIngested++;
+          if (internalSupply.identityLink) identityLinked++;
+          else identityUnlinked++;
+          if (internalSupply.auditStatus === "written") auditWritten++;
+          else if (internalSupply.auditStatus === "table_missing") auditMissing++;
+          else auditWriteFailed++;
+        } else {
+          internalSupplyFailed++;
         }
         discovered++;
         verified++;
@@ -714,6 +749,7 @@ export async function discoverAndCreateCjSupply(
           internalSupplyAuditStatus: internalSupply?.auditStatus ?? "not_attempted",
           internalSupplyError,
           identityLink: internalSupply?.identityLink ?? null,
+        identityMatchStatus: internalSupply?.identityMatchStatus ?? (internalSupplyError ? "ingest_failed" : "not_attempted"),
         });
       } catch (error) {
         reject("error", { error: error instanceof Error ? error.message : String(error) });
@@ -731,5 +767,5 @@ export async function discoverAndCreateCjSupply(
   }
   await writeCatalogCursor(db, { queryIndex, page, verified, rejected });
 
-  return { discovered, published: 0, verified, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
+  return { discovered, published: 0, verified, rejected, internalSupplyIngested, internalSupplyFailed, identityLinked, identityUnlinked, auditWritten, auditMissing, auditWriteFailed, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
 }
