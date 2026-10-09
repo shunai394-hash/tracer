@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { identifiersFromRecord, matchProductIdentity } from "@/lib/market/identifiers";
-import { hasUniqueIdentitySelection } from "@/lib/suppliers/cj-identity-reverify-policy";
+import { hasUniqueIdentitySelection, onlyCurrentRequestVariants } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 function num(value: unknown): number | null {
   const n = Number(value);
@@ -85,7 +85,8 @@ export async function syncTracerCatalogFromInternalSupply(args: {
 
     if (variantError) throw new Error(variantError.message);
 
-    const confirmed = (variants ?? []).map((variant) => {
+    const currentRequestVariants = onlyCurrentRequestVariants((variants ?? []) as Array<{ id: string; [key: string]: unknown }>, variantIds);
+    const confirmed = currentRequestVariants.map((variant) => {
       const ids = identifiersFromRecord(variant as Record<string, unknown>);
       return {
         variant,
