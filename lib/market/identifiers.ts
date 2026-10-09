@@ -124,9 +124,14 @@ function toGtin14(value: string): string {
   return value.padStart(14, "0");
 }
 
-function barcodeFamilyValue(ids: ProductIdentifiers): string | null {
-  const raw = ids.jan ?? ids.gtin ?? ids.ean ?? ids.upc ?? null;
-  return raw ? toGtin14(raw) : null;
+function barcodeFamilyValues(ids: ProductIdentifiers): string[] {
+  // A record may carry more than one valid barcode scheme. Do not let the
+  // preferred-field order hide an exact match present in another field.
+  return [...new Set(
+    [ids.jan, ids.gtin, ids.ean, ids.upc]
+      .filter((value): value is string => Boolean(value))
+      .map(toGtin14),
+  )];
 }
 
 /** Identifier-grade identity only. Title/image similarity never makes a sales candidate eligible. */
@@ -147,15 +152,15 @@ export function matchProductIdentity(args: {
     }
   }
 
-  const marketBarcode = barcodeFamilyValue(market);
-  const supplyBarcode = barcodeFamilyValue(supply);
-  if (marketBarcode && supplyBarcode && marketBarcode === supplyBarcode) {
+  const marketBarcodes = barcodeFamilyValues(market);
+  const supplyBarcodes = new Set(barcodeFamilyValues(supply));
+  if (marketBarcodes.some((barcode) => supplyBarcodes.has(barcode))) {
     return {
       linked: true,
       salesEligible: true,
       method: "gtin",
       confidence: 0.98,
-      rationale: "barcode matches across the JAN/EAN/UPC/GTIN family (GTIN-14 normalized)",
+      rationale: "at least one valid barcode matches across the JAN/EAN/UPC/GTIN family (GTIN-14 normalized)",
     };
   }
 
@@ -221,6 +226,28 @@ export function verifyIdentifierMatchInvariants(): {
       actual: (() => {
         const r = matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, upc: "012345678905" }, supply: { ...EMPTY_IDENTIFIERS, gtin: "00012345678905" } });
         return r.salesEligible && r.method === "gtin";
+      })(),
+    },
+    {
+      name: "all_valid_barcode_fields_are_checked_for_cross_scheme_match",
+      expected: true,
+      actual: (() => {
+        const r = matchProductIdentity({
+          market: { ...EMPTY_IDENTIFIERS, jan: "4573138107287", gtin: "4006381333931" },
+          supply: { ...EMPTY_IDENTIFIERS, gtin: "4006381333931" },
+        });
+        return r.salesEligible && r.method === "gtin";
+      })(),
+    },
+    {
+      name: "all_barcode_fields_still_reject_nonmatching_digits",
+      expected: true,
+      actual: (() => {
+        const r = matchProductIdentity({
+          market: { ...EMPTY_IDENTIFIERS, jan: "4573138107287", gtin: "4006381333931" },
+          supply: { ...EMPTY_IDENTIFIERS, gtin: "1111111111111" },
+        });
+        return r.method === "none" && !r.salesEligible;
       })(),
     },
     {
