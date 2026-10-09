@@ -265,7 +265,7 @@ export async function createShopifyProduct(input: { title: string; descriptionHt
   const data = await shopifyGraphQL<{
     productCreate: { product: ShopifyProduct | null; userErrors: Array<{ field?: string[]; message: string }> };
   }>(
-    `mutation ProductCreate($input: ProductInput!, $media: [CreateMediaInput!]) {
+    `mutation ProductCreate($input: ProductCreateInput!, $media: [CreateMediaInput!]) {
       productCreate(product: $input, media: $media) {
         product { id handle status variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType alt preview { image { url } } } } }
         userErrors { field message }
