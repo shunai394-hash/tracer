@@ -40,6 +40,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
   productId: string;
   variantId: string;
   sourceRef: string;
+  identityLink: { bestsellerId: string; method: string; rationale: string } | null;
 }> {
   if (!args.supplierProductId.trim() || !args.supplierVariantId.trim()) {
     throw new Error("cj_internal_supply_missing_supplier_identity");
@@ -263,5 +264,5 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     });
   }
 
-  return { productId, variantId, sourceRef };
+  return { productId, variantId, sourceRef, identityLink };
 }
