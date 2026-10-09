@@ -19,7 +19,7 @@ import {
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { normalizeIdentifier, verifyIdentifierMatchInvariants } from "../lib/market/identifiers.ts";
-import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
+import { supabaseWriteFailure, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 import { firstCJImageUrl, parseCJFreightOptions, parseCJStockData, parseCJUsdPrice } from "../lib/sources/cj/parse.ts";
 
 const results = [];
@@ -45,6 +45,21 @@ test("CJ reverify source safety", "canonical identity is required before persist
   assert.match(source, /failed to persist recovered CJ evidence/);
   assert.match(source, /failed to persist unmatched CJ evidence/);
   assert.ok(source.includes('.select("id")\n          .maybeSingle()'), "evidence updates must verify a returned row");
+});
+
+test("Supabase persistence failures", "database errors and missing returned rows are not treated as success", () => {
+  assert.equal(supabaseWriteFailure("update listing", { message: "permission denied" }), "update listing failed: permission denied");
+  assert.equal(supabaseWriteFailure("update listing", null, null, true), "update listing affected no row");
+  assert.equal(supabaseWriteFailure("update listing", null, { id: "listing-1" }, true), null);
+  assert.equal(supabaseWriteFailure("insert cron run", { message: "statement timeout" }), "insert cron run failed: statement timeout");
+  assert.equal(supabaseWriteFailure("insert cron run", null), null);
+});
+test("CJ reverify source safety", "retry metadata and cron_runs persistence failures are surfaced", () => {
+  const source = readFileSync(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
+  assert.match(source, /failed to record retry state/);
+  assert.match(source, /persist retry state/);
+  assert.match(source, /persist cron_runs outcome/);
+  assert.match(source, /identity reverify cursor lookup failed/);
 });
 
 test("CJ API fixtures", "variant sellPrice is accepted only with explicit USD currency", () => {
