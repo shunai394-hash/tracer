@@ -1,3 +1,5 @@
+import { normalizeIdentifier } from "@/lib/market/identifiers";
+
 export const CJ_IDENTITY_RETRY_DELAYS_MS = {
   noUniqueMatch: 7 * 24 * 60 * 60 * 1000,
   missingEvidence: 24 * 60 * 60 * 1000,
@@ -24,6 +26,21 @@ export function isCjIdentityReverifyDue(metadata: unknown, nowMs = Date.now()): 
   return !Number.isFinite(nextAt) || nextAt <= nowMs;
 }
 
+export function supplierBarcodeAudit(value: unknown): {
+  variant_barcode_raw: string | null;
+  variant_barcode_validation: "missing" | "valid_gs1_check_digit" | "invalid_format_or_check_digit";
+} {
+  const raw = typeof value === "string" && value.trim() ? value.trim() : null;
+  return {
+    variant_barcode_raw: raw,
+    variant_barcode_validation: raw === null
+      ? "missing"
+      : normalizeIdentifier("gtin", raw) !== null
+        ? "valid_gs1_check_digit"
+        : "invalid_format_or_check_digit",
+  };
+}
+
 export function hasUniqueMarketplaceIdentity(candidateProductCount: number): boolean {
   return Number.isInteger(candidateProductCount) && candidateProductCount === 1;
 }
@@ -44,6 +61,8 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
     { name: "at_24_hour_boundary_is_due", expected: true, actual: isCjIdentityReverifyDue({ next_identity_reverify_at: new Date(now + CJ_IDENTITY_RETRY_DELAYS_MS.missingEvidence).toISOString() }, now + CJ_IDENTITY_RETRY_DELAYS_MS.missingEvidence) },
     { name: "one_millisecond_before_1_hour_boundary_is_deferred", expected: false, actual: isCjIdentityReverifyDue({ next_identity_reverify_at: new Date(now + CJ_IDENTITY_RETRY_DELAYS_MS.processingError).toISOString() }, now + CJ_IDENTITY_RETRY_DELAYS_MS.processingError - 1) },
     { name: "at_1_hour_boundary_is_due", expected: true, actual: isCjIdentityReverifyDue({ next_identity_reverify_at: new Date(now + CJ_IDENTITY_RETRY_DELAYS_MS.processingError).toISOString() }, now + CJ_IDENTITY_RETRY_DELAYS_MS.processingError) },
+    { name: "invalid_gtin_is_rejected_but_raw_value_is_retained", expected: true, actual: (() => { const raw = "1598446591114"; const audit = supplierBarcodeAudit(raw); return audit.variant_barcode_raw === raw && audit.variant_barcode_validation === "invalid_format_or_check_digit"; })() },
+    { name: "valid_gtin_is_classified_but_not_itself_linked", expected: true, actual: (() => { const audit = supplierBarcodeAudit("4006381333931"); return audit.variant_barcode_validation === "valid_gs1_check_digit" && !hasUniqueMarketplaceIdentity(0); })() },
     { name: "zero_candidates_never_link", expected: false, actual: hasUniqueMarketplaceIdentity(0) },
     { name: "multiple_candidates_never_link", expected: false, actual: hasUniqueMarketplaceIdentity(2) },
     { name: "one_candidate_can_pass_identity_gate", expected: true, actual: hasUniqueMarketplaceIdentity(1) },
