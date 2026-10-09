@@ -65,7 +65,7 @@ begin
   ) then
     raise exception 'audit schema is missing request_id/item_index unique target for upsert';
   end if;
-end $;
+end $$;
 
 -- SKU uniqueness must actually be gone, not merely hidden behind a differently named index.
 do $$
