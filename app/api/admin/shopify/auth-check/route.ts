@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getShopifyConfig } from "@/lib/config/env";
-import { shopifyGraphQL } from "@/lib/shopify/admin";
+import { probeShopifyAuth, shopifyGraphQL } from "@/lib/shopify/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,7 +77,11 @@ export async function GET(request: Request) {
     }
   }
 
-  // 2) Read-only Admin API call.
+  // 2) Exact read-only authentication probe. Its status is the Shopify HTTP status,
+  // not the outer diagnostic endpoint status. No raw response body or credentials are returned.
+  const shopifyProbe = await probeShopifyAuth();
+
+  // 3) Read-only Admin API call for app identity and granted scopes.
   let adminApi: Record<string, unknown>;
   try {
     const data = await shopifyGraphQL<{
@@ -101,7 +105,7 @@ export async function GET(request: Request) {
     adminApi = { ok: false, error: message.slice(0, 400), httpStatus: Number(message.match(/HTTP (\d{3})/)?.[1] ?? 0) || null };
   }
 
-  // 3) DB state (counts only).
+  // 4) DB state (counts only).
   const db = createSupabaseAdminClient();
   const count = async (build: (q: ReturnType<ReturnType<typeof db.from>["select"]>) => ReturnType<ReturnType<typeof db.from>["select"]>) => {
     const { count: n, error } = await build(db.from("shop_listings").select("id", { count: "exact", head: true }));
@@ -124,7 +128,11 @@ export async function GET(request: Request) {
     .limit(3);
 
   return NextResponse.json({
-    ok: adminApi.ok === true,
+    ok: shopifyProbe.ok,
+    shopifyHttpStatus: shopifyProbe.shopifyHttpStatus,
+    shopifyRequestId: shopifyProbe.shopifyRequestId,
+    graphqlErrors: shopifyProbe.graphqlErrors,
+    shopId: shopifyProbe.shopId,
     generatedAt: new Date().toISOString(),
     config,
     tokenExchange,
