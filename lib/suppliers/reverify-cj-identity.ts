@@ -2,6 +2,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { persistCjSupplyIntelligence, resolveMarketplaceIdentity } from "@/lib/intelligence/persist-cj-supply-intelligence";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
+import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 
 const CURSOR_JOB = "cj-identity-reverify-cursor";
 const DEFAULT_LIMIT = 25;
@@ -40,7 +41,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const { count: candidateCount, error: countError } = await candidateFilter;
   if (countError) throw new Error(`identity reverify candidate count failed: ${countError.message}`);
   const total = candidateCount ?? 0;
-  const { data: rows, error } = await db.from("supplier_listings").select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status").eq("supplier", "cj").in("verification_status", ["unverified", "retryable"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_variant_id", "is", null).order("id", { ascending: true });
+  const { data: rows, error } = await db.from("supplier_listings").select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency").eq("supplier", "cj").in("verification_status", ["unverified", "retryable"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_variant_id", "is", null).order("id", { ascending: true });
   if (error) throw new Error(`identity reverify candidate query failed: ${error.message}`);
   const allRows = rows ?? [];
   const womensRows = allRows.filter((row) => isWomensProductTitle(row.title, row.metadata));
@@ -73,7 +74,15 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       if (!canonicalProductId) { await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), last_identity_reverify_at: new Date().toISOString() } }).eq("id", supplierListingId); return { kind: "no_match" as const, supplierListingId }; }
       const { data: intelligence } = await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle();
       const metadata = record(intelligence?.metadata);
-      const cost = num(row.cost); const shippingCost = num(row.shipping_cost); const inventory = num(row.inventory); const fxRate = num(metadata.fx_rate); const sellingPriceJpy = num(metadata.selling_price_jpy); const imageUrl = typeof intelligence?.image_url === "string" ? intelligence.image_url : "";
+      const cost = num(row.cost); const shippingCost = num(row.shipping_cost); const inventory = num(row.inventory);
+      const storedFxRate = num(metadata.fx_rate);
+      const observedFx = storedFxRate === null && String(row.currency ?? "").toUpperCase() === "USD" ? await getObservedUsdToJpyRate() : null;
+      const fxRate = storedFxRate ?? observedFx?.rate ?? null;
+      const storedSellingPriceJpy = num(metadata.selling_price_jpy);
+      const landedCostJpy = cost !== null && shippingCost !== null && fxRate !== null ? (cost + shippingCost) * fxRate : null;
+      const sellingPriceJpy = storedSellingPriceJpy ?? (landedCostJpy !== null && Number.isFinite(landedCostJpy) && landedCostJpy >= 0 ? Math.ceil(Math.max(1980, landedCostJpy * 2.5) / 100) * 100 : null);
+      const listingImage = [listingMetadata.image_url, listingMetadata.product_image, listingMetadata.productImage, listingMetadata.image].find((value) => typeof value === "string" && /^https?:\/\//i.test(value.trim()));
+      const imageUrl = typeof intelligence?.image_url === "string" && /^https?:\/\//i.test(intelligence.image_url.trim()) ? intelligence.image_url.trim() : typeof listingImage === "string" ? listingImage.trim() : "";
       if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) { await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), last_identity_reverify_at: new Date().toISOString() } }).eq("id", supplierListingId); return { kind: "missing_economics" as const, supplierListingId }; }
       await persistCjSupplyIntelligence({ productId: identity?.productId ?? String(row.product_id), title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
       return identity ? { kind: "promoted" as const, supplierListingId, bestsellerId: identity.bestsellerId, method: identity.method } : { kind: "supplier_verified" as const, supplierListingId };
