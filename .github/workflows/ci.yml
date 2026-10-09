@@ -10,6 +10,20 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-postgres-password
+          POSTGRES_DB: tracer_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tracer_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-anon-key
@@ -25,5 +39,13 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
+      - name: Run atomic catalog sync PostgreSQL integration tests (disposable CI database only)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: ci-postgres-password
+          PGDATABASE: tracer_test
+        run: psql -v ON_ERROR_STOP=1 -f scripts/test-atomic-catalog-sync.sql
       - run: npm run lint
       - run: npm run build
