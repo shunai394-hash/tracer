@@ -216,15 +216,16 @@ async function syncListingRows(
       const message = error instanceof Error ? error.message : String(error);
       results.failed += 1;
       results.errors.push({ listingId: row.id, error: `unpublish_failed:${message}` });
+      // Shopify did not confirm unpublishing. Preserve the last confirmed
+      // publication fields: setting published=false here would falsely claim
+      // the external product is gone while it may still be visible to buyers.
       await supabase.from("shop_listings").update({
-        published: false,
         pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
-        pipeline_reason: "sales_test_gate_unpublish_failed",
+        pipeline_reason: "shopify_unpublish_failed_manual_action_required",
         pipeline_updated_at: new Date().toISOString(),
-        published_at: null,
         shopify_sync_status: "failed",
-        shopify_sync_error: `unpublish_failed:${message}`.slice(0, 2000),
+        shopify_sync_error: `unpublish_failed_manual_action_required:${message}`.slice(0, 2000),
         shopify_synced_at: new Date().toISOString(),
       }).eq("id", row.id);
     }
