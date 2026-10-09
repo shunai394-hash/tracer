@@ -9,7 +9,7 @@ import {
 export async function linkInternalSupplyForBestseller(args: {
   bestseller: Record<string, unknown>;
   fetchedAt: string;
-}): Promise<{ matched: boolean; supplierListingId: string | null }> {
+}): Promise<{ matched: boolean; supplierListingId: string | null; supplyVariantId: string | null }> {
   const supabase = createSupabaseAdminClient();
   const marketIds = identifiersFromRecord(args.bestseller);
   const queries = [
@@ -20,7 +20,7 @@ export async function linkInternalSupplyForBestseller(args: {
     ["mpn", marketIds.mpn],
   ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
 
-  if (queries.length === 0) return { matched: false, supplierListingId: null };
+  if (queries.length === 0) return { matched: false, supplierListingId: null, supplyVariantId: null };
 
   const or = queries
     .map(([column, value]) => `${column}.eq.${value.replace(/[,()]/g, "")}`)
@@ -177,7 +177,7 @@ export async function linkInternalSupplyForBestseller(args: {
       console.warn("[TRACER INTERNAL SUPPLY LINK SKIPPED]", linkResult.error.message);
     }
 
-    return { matched: true, supplierListingId: String(listing.id) };
+    return { matched: true, supplierListingId: String(listing.id), supplyVariantId: String(variant.id) };
   }
 
   return { matched: false, supplierListingId: null };
