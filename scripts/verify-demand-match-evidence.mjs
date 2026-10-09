@@ -18,7 +18,7 @@ import {
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { normalizeIdentifier, marketplaceIdentifierLookupConditions, EMPTY_IDENTIFIERS, matchProductIdentity } from "../lib/market/identifiers.ts";
-import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
+import { selectUniqueIdentityCandidate, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
 const pending = [];
@@ -53,6 +53,22 @@ test("cross-scheme supplier identity lookup", "cross-scheme exact variant identi
   });
   assert.equal(identity.linked, true);
   assert.equal(identity.salesEligible, true);
+});
+test("variant identity selection", "two variants sharing the same MPN are not resolved by arbitrary row order", () => {
+  const exact = { linked: true, salesEligible: true };
+  const selected = selectUniqueIdentityCandidate([
+    { id: "variant-black", identity: exact },
+    { id: "variant-white", identity: exact },
+    { id: "variant-red", identity: { linked: false, salesEligible: false } },
+  ]);
+  assert.equal(selected, undefined);
+});
+test("variant identity selection", "one exact variant identity proof is selected from multiple candidates", () => {
+  const selected = selectUniqueIdentityCandidate([
+    { id: "variant-black", identity: { linked: true, salesEligible: true } },
+    { id: "variant-white", identity: { linked: false, salesEligible: false } },
+  ]);
+  assert.equal(selected?.id, "variant-black");
 });
 
 test("CJ identity reverify policy", "retry intervals, candidate selection, raw GTIN audit, and unique-link gate", () => {
