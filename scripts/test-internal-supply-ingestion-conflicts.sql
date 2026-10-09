@@ -142,3 +142,63 @@ begin
 
   raise notice 'PASS: migration ordering, duplicate SKU compatibility, product/variant upsert idempotency, and repeatability';
 end $$;
+
+
+-- Exercise the upgrade path where an audit table already exists but predates
+-- request_id/item_index and the catalog/ingestion compatibility columns.
+-- This is still the disposable CI database; never run this script on production.
+drop table public.internal_supply_ingestion_audit;
+create table public.internal_supply_ingestion_audit (
+  id bigserial primary key,
+  source_name text,
+  source_ref text,
+  outcome text not null check (outcome in ('started','rejected','draft_ingested','sync_blocked','synced','failed')),
+  created_at timestamptz not null default now()
+);
+insert into public.internal_supply_ingestion_audit(source_name, source_ref, outcome)
+values ('cj', 'legacy:one', 'started'),
+       ('cj', 'legacy:two', 'failed'),
+       ('cj', 'legacy:three', 'synced');
+
+\\i supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql
+
+do $$
+declare
+  v_count integer;
+  v_distinct_requests integer;
+  v_nonnull_items integer;
+begin
+  select count(*), count(distinct request_id), count(item_index)
+    into v_count, v_distinct_requests, v_nonnull_items
+    from public.internal_supply_ingestion_audit;
+  if v_count <> 3 then
+    raise exception 'legacy audit rows were not preserved: expected 3, got %', v_count;
+  end if;
+  if v_distinct_requests <> 3 then
+    raise exception 'legacy audit rows did not receive distinct request IDs: %', v_distinct_requests;
+  end if;
+  if v_nonnull_items <> 3 then
+    raise exception 'legacy audit rows did not receive item indexes: %', v_nonnull_items;
+  end if;
+  if exists (
+    select 1 from public.internal_supply_ingestion_audit
+    group by request_id, item_index having count(*) > 1
+  ) then
+    raise exception 'legacy audit backfill produced duplicate request/item pairs';
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='internal_supply_ingestion_audit'
+      and column_name='catalog_id'
+  ) then
+    raise exception 'legacy audit upgrade did not add catalog_id';
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='internal_supply_ingestion_audit'
+      and column_name='bestseller_id'
+  ) then
+    raise exception 'legacy audit upgrade did not add bestseller_id';
+  end if;
+  raise notice 'PASS: legacy audit table upgrade preserves rows and backfills unique request/item keys';
+end $$;
