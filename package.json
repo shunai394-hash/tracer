@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "mobile:bootstrap": "node scripts/bootstrap-mobile.mjs"
+    "mobile:bootstrap": "node scripts/bootstrap-mobile.mjs",
+    "audit:quality": "npx --yes tsx scripts/quality-gate-audit.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
