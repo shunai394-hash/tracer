@@ -1,3 +1,28 @@
+
+/** Return a stable error for Supabase writes, including writes that matched no row. */
+export function supabaseWriteFailure(
+  operation: string,
+  error: unknown,
+  returnedRow?: unknown,
+  requireReturnedRow = false,
+): string | null {
+  if (error) {
+    const message = error && typeof error === "object" && "message" in error
+      ? String((error as { message?: unknown }).message ?? "unknown database error")
+      : String(error);
+    return `${operation} failed: ${message}`;
+  }
+  if (requireReturnedRow) {
+    const row = returnedRow && typeof returnedRow === "object" && !Array.isArray(returnedRow)
+      ? returnedRow as Record<string, unknown>
+      : null;
+    if (typeof row?.id !== "string" || !row.id.trim()) {
+      return `${operation} affected no row`;
+    }
+  }
+  return null;
+}
+
 export const CJ_IDENTITY_RETRY_DELAYS_MS = {
   noUniqueMatch: 7 * 24 * 60 * 60 * 1000,
   missingEvidence: 24 * 60 * 60 * 1000,
