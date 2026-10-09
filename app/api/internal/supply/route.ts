@@ -146,6 +146,15 @@ export async function POST(request: Request) {
     let itemVariantErrors = 0;
     let itemVariantsWritten = 0;
     const writtenVariantIds: string[] = [];
+    if (bestsellerId) {
+      try {
+        // Hide any previous sellable catalog state before mutating the source product/variants.
+        await quarantineCatalogForBestseller(db, bestsellerId);
+      } catch (error) {
+        itemVariantErrors++;
+        errors.push("pre-ingestion catalog quarantine failed: " + (error instanceof Error ? error.message : String(error)));
+      }
+    }
     let auditOutcome: "draft_ingested" | "sync_blocked" | "synced" | "failed" = "draft_ingested";
     let auditCatalogId: string | null = null;
 
@@ -201,6 +210,13 @@ export async function POST(request: Request) {
       && writtenVariantIds.length === submittedVariants.length;
 
     let productActivated = false;
+    if (!completeVariantWrite) {
+      const deactivated = await db
+        .from("internal_supply_products")
+        .update({ active: false, updated_at: new Date().toISOString() })
+        .eq("id", supplyProduct.id);
+      if (deactivated.error) errors.push("product deactivation failed: " + deactivated.error.message);
+    }
     if (completeVariantWrite) {
       const activated = await db
         .from("internal_supply_products")
