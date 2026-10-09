@@ -123,7 +123,33 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const storedSellingPriceJpy = num(metadata.selling_price_jpy) ?? num(listingMetadata.selling_price_jpy);
       const landedCostJpy = cost !== null && shippingCost !== null && fxRate !== null ? (cost + shippingCost) * fxRate : null;
       const sellingPriceJpy = storedSellingPriceJpy ?? (landedCostJpy !== null && Number.isFinite(landedCostJpy) && landedCostJpy >= 0 ? Math.ceil(Math.max(1980, landedCostJpy * 2.5) / 100) * 100 : null);
-      if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) { const checkedAt = new Date(); await db.from("supplier_listings").update({ ...(cost !== null ? { cost } : {}), ...(shippingCost !== null ? { shipping_cost: shippingCost } : {}), ...(inventory !== null ? { inventory } : {}), metadata: { ...listingMetadata, ...(imageUrl ? { image_url: imageUrl } : {}), ...(fxRate !== null ? { fx_rate: fxRate } : {}), ...(sellingPriceJpy !== null ? { selling_price_jpy: sellingPriceJpy } : {}), ...(variantBarcode ? { variant_barcode: variantBarcode, variant_barcode_raw: variantBarcode } : {}), ...supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null), last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + MISSING_DATA_RETRY_MS).toISOString(), identity_hold_reason: "missing_economics_or_image" } }).eq("id", supplierListingId); return { kind: "missing_economics" as const, supplierListingId }; }
+      if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) {
+        const checkedAt = new Date();
+        const { data: persisted, error: persistError } = await db
+          .from("supplier_listings")
+          .update({
+            ...(cost !== null ? { cost } : {}),
+            ...(shippingCost !== null ? { shipping_cost: shippingCost } : {}),
+            ...(inventory !== null ? { inventory } : {}),
+            metadata: {
+              ...listingMetadata,
+              ...(imageUrl ? { image_url: imageUrl } : {}),
+              ...(fxRate !== null ? { fx_rate: fxRate } : {}),
+              ...(sellingPriceJpy !== null ? { selling_price_jpy: sellingPriceJpy } : {}),
+              ...(variantBarcode ? { variant_barcode: variantBarcode, variant_barcode_raw: variantBarcode } : {}),
+              ...supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null),
+              last_identity_reverify_at: checkedAt.toISOString(),
+              next_identity_reverify_at: new Date(checkedAt.getTime() + MISSING_DATA_RETRY_MS).toISOString(),
+              identity_hold_reason: "missing_economics_or_image",
+            },
+          })
+          .eq("id", supplierListingId)
+          .select("id")
+          .maybeSingle();
+        if (persistError) throw new Error(`failed to persist recovered CJ evidence: ${persistError.message}`);
+        if (!persisted?.id) throw new Error("recovered CJ evidence update affected no supplier listing row");
+        return { kind: "missing_economics" as const, supplierListingId };
+      }
       await persistCjSupplyIntelligence({ productId: identity?.productId ?? String(row.product_id), title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
       if (!identity) {
         const { data: latest } = await db.from("supplier_listings").select("metadata").eq("id", supplierListingId).maybeSingle();
