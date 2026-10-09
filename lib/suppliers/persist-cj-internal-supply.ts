@@ -123,9 +123,13 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     throw new Error("cj_internal_supply_variant_already_owned_by_another_product");
   }
 
-  const productWrite = existingProduct.data?.id
-    ? await db.from("internal_supply_products").update(productPayload).eq("id", existingProduct.data.id).select("id").single()
-    : await db.from("internal_supply_products").insert(productPayload).select("id").single();
+  // Use the stable source key as the database-enforced idempotency key. A
+  // lookup-then-insert alone races when two cron invocations see no row.
+  const productWrite = await db
+    .from("internal_supply_products")
+    .upsert(productPayload, { onConflict: "source_name,source_ref" })
+    .select("id")
+    .single();
   if (productWrite.error || !productWrite.data?.id) {
     throw new Error("cj_internal_supply_product_write_failed: " + (productWrite.error?.message ?? "no row returned"));
   }
@@ -171,9 +175,13 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     .maybeSingle();
   if (existingVariant.error) throw new Error("cj_internal_supply_variant_lookup_failed: " + existingVariant.error.message);
 
-  const variantWrite = existingVariant.data?.id
-    ? await db.from("internal_supply_variants").update(variantPayload).eq("id", existingVariant.data.id).select("id").single()
-    : await db.from("internal_supply_variants").insert(variantPayload).select("id").single();
+  // The full unique conflict target is added by the companion migration.
+  // This makes retries idempotent and avoids duplicate rows on concurrent runs.
+  const variantWrite = await db
+    .from("internal_supply_variants")
+    .upsert(variantPayload, { onConflict: "supply_product_id,variant_id" })
+    .select("id")
+    .single();
   if (variantWrite.error || !variantWrite.data?.id) {
     throw new Error("cj_internal_supply_variant_write_failed: " + (variantWrite.error?.message ?? "no row returned"));
   }
