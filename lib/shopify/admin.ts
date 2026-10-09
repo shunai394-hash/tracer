@@ -101,6 +101,62 @@ export function isShopifyConfigured(): boolean {
   return Boolean(storeDomain && (adminAccessToken || (clientId && clientSecret)));
 }
 
+export type ShopifyAuthProbeResult = {
+  shopifyHttpStatus: number | null;
+  shopifyRequestId: string | null;
+  graphqlErrors: string[];
+  shopId: string | null;
+  ok: boolean;
+};
+
+/** Read-only auth probe. Never returns credentials or raw response bodies. */
+export async function probeShopifyAuth(): Promise<ShopifyAuthProbeResult> {
+  let response: Response;
+  let responseText = "";
+  let requestId: string | null = null;
+  try {
+    const token = (await getShopifyAccessToken()).trim();
+    if (!token || /\\s/.test(token) || /^["']|["']$/.test(token)) {
+      return { shopifyHttpStatus: null, shopifyRequestId: null, graphqlErrors: ["Shopify access token is missing or malformed"], shopId: null, ok: false };
+    }
+    response = await fetch(shopifyEndpoint(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": token },
+      body: JSON.stringify({ query: "query { shop { id } }" }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(30_000),
+    });
+    requestId = response.headers.get("x-request-id");
+    responseText = await response.text();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Shopify auth probe failed";
+    const safeMessage = message.replace(/(?:shpat|shpca|shppa|shpss|shpua)_[A-Za-z0-9_-]+/gi, "[REDACTED_TOKEN]").slice(0, 200);
+    return { shopifyHttpStatus: null, shopifyRequestId: requestId, graphqlErrors: [safeMessage], shopId: null, ok: false };
+  }
+
+  let graphqlErrors: string[] = [];
+  let shopId: string | null = null;
+  try {
+    const payload = JSON.parse(responseText) as { data?: { shop?: { id?: unknown } | null }; errors?: Array<{ message?: unknown }> };
+    graphqlErrors = Array.isArray(payload.errors)
+      ? payload.errors.map((error) => String(error?.message ?? "GraphQL error").slice(0, 300))
+      : [];
+    const candidate = payload.data?.shop?.id;
+    if (typeof candidate === "string" && candidate.trim()) shopId = candidate;
+    if (response.ok && !Array.isArray(payload.errors) && !shopId) graphqlErrors.push("Shopify response did not include data.shop.id");
+  } catch {
+    graphqlErrors = ["Shopify returned a non-JSON response"];
+  }
+
+  return {
+    shopifyHttpStatus: response.status,
+    shopifyRequestId: requestId,
+    graphqlErrors,
+    shopId,
+    ok: response.status === 200 && graphqlErrors.length === 0 && Boolean(shopId),
+  };
+}
+
 export async function shopifyGraphQL<T>(
   query: string,
   variables: Record<string, unknown> = {},
