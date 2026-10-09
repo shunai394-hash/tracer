@@ -42,11 +42,11 @@ async function readSupplierBarcode(args: { supplierProductId: string; supplierVa
   return "";
 }
 
-export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<MarketplaceIdentity | null> {
+export async function resolveMarketplaceIdentityDetailed(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<{ status: "linked" | "no_identifier" | "no_marketplace_match" | "ambiguous_match"; identity: MarketplaceIdentity | null }> {
   const suppliedIds = identifiersFromRecord({ gtin: args.supplierIdentifiers?.gtin, jan: args.supplierIdentifiers?.jan, ean: args.supplierIdentifiers?.ean, upc: args.supplierIdentifiers?.upc, mpn: args.supplierIdentifiers?.mpn });
   const barcode = Object.values(suppliedIds).find((value) => typeof value === "string" && value.trim()) ?? await readSupplierBarcode(args);
   const supplyIds = identifiersFromRecord({ ...suppliedIds, gtin: barcode || suppliedIds.gtin });
-  if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc && !supplyIds.mpn) return null;
+  if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc && !supplyIds.mpn) return { status: "no_identifier", identity: null };
 
   const matchesByProduct = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
   const lookupValues = new Set<string>();
@@ -57,7 +57,7 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
     const clauses = ["jan", "gtin", "ean", "upc", "mpn"].map((column) => `${column}.eq.${value}`);
     const { data: bestsellers, error } = await args.db.from("marketplace_bestsellers").select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand,fetched_at").or(clauses.join(",")).limit(51);
     if (error) throw new Error(`CJ marketplace identity lookup failed: ${error.message}`);
-    if ((bestsellers?.length ?? 0) > 50) return null;
+    if ((bestsellers?.length ?? 0) > 50) return { status: "ambiguous_match", identity: null };
     for (const row of bestsellers ?? []) {
       if (typeof row.product_id !== "string" || !row.product_id.trim()) continue;
       const marketIds = identifiersFromRecord(row as Record<string, unknown>);
@@ -69,7 +69,7 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
       if (!current || candidate.confidence > current.confidence || (candidate.confidence === current.confidence && candidate.fetchedAt > current.fetchedAt)) matchesByProduct.set(productId, candidate);
     }
   }
-  if (!hasUniqueMarketplaceIdentity(matchesByProduct.size)) return null;
+  if (matchesByProduct.size === 0) return { status: "no_marketplace_match", identity: null };\n  if (!hasUniqueMarketplaceIdentity(matchesByProduct.size)) return { status: "ambiguous_match", identity: null };
   const match = [...matchesByProduct.values()][0];
   return { bestsellerId: match.bestsellerId, productId: match.productId, method: match.method, confidence: match.confidence, rationale: match.rationale };
 }
