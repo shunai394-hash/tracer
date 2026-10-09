@@ -172,6 +172,7 @@ export async function syncPublishedListingsToShopify(limit = 150, listingIds?: s
  */
 function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
+  if (row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") reasons.push("pipeline_blocked");
   if (!hasGateProvenance(row)) reasons.push("sales_test_gate_not_passed");
   if (row.orderable !== true) reasons.push("not_orderable");
   if (row.tracking_available !== true) reasons.push("tracking_unavailable");
