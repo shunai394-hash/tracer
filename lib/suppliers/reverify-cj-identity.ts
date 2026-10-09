@@ -4,7 +4,7 @@ import { persistCjSupplyIntelligence, resolveMarketplaceIdentity } from "@/lib/i
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { normalizeIdentifier } from "@/lib/market/identifiers";
-import { isCjIdentityReverifyDue, CJ_IDENTITY_RETRY_DELAYS_MS, supplierBarcodeAudit } from "@/lib/suppliers/cj-identity-reverify-policy";
+import { isCjIdentityReverifyCandidate, isCjIdentityReverifyDue, CJ_IDENTITY_RETRY_DELAYS_MS, supplierBarcodeAudit } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 const CURSOR_JOB = "cj-identity-reverify-cursor";
 const DEFAULT_LIMIT = 25;
@@ -49,7 +49,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const { data: rows, error } = await db.from("supplier_listings").select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency").eq("supplier", "cj").in("verification_status", ["unverified", "retryable", "verified"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_variant_id", "is", null).order("id", { ascending: true });
   if (error) throw new Error(`identity reverify candidate query failed: ${error.message}`);
   const nowMs = Date.now();
-  const allRows = (rows ?? []).filter((row) => isCjIdentityReverifyDue(row.metadata, nowMs));
+  const allRows = (rows ?? []).filter((row) => isCjIdentityReverifyCandidate({ verificationStatus: row.verification_status, identityMethod: row.identity_method, supplierVariantId: row.supplier_variant_id }) && isCjIdentityReverifyDue(row.metadata, nowMs));
   const womensRows = allRows.filter((row) => isWomensProductTitle(row.title, row.metadata));
   const otherRows = allRows.filter((row) => !isWomensProductTitle(row.title, row.metadata));
   const priority = (row: typeof allRows[number]) => row.verification_status === "unverified" ? 0 : 1;
