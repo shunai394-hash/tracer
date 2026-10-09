@@ -41,6 +41,8 @@ create unique index internal_supply_variants_product_id_atomic_uq
 -- Audit table migration must be ordered after catalog conflict-target migration and repeatable.
 \i supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql
 \i supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql
+\i supabase/migrations/20261010152000_tracer_internal_supply_variant_source_ownership.sql
+\i supabase/migrations/20261010152000_tracer_internal_supply_variant_source_ownership.sql
 do $$
 begin
   if to_regclass('public.internal_supply_ingestion_audit') is null then
@@ -64,6 +66,19 @@ begin
       and indexname='internal_supply_ingestion_audit_request_item_uq'
   ) then
     raise exception 'audit schema is missing request_id/item_index unique target for upsert';
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='internal_supply_variants' and column_name='source_name'
+  ) then
+    raise exception 'variant ownership schema is missing source_name';
+  end if;
+  if not exists (
+    select 1 from pg_indexes
+    where schemaname='public' and tablename='internal_supply_variants'
+      and indexname='internal_supply_variants_source_name_variant_id_uq'
+  ) then
+    raise exception 'source-scoped variant ownership unique index is missing';
   end if;
 end $$;
 
@@ -97,6 +112,7 @@ declare
   v_variant_count integer;
   v_title text;
   v_inventory integer;
+  v_duplicate_cj_variant_rejected boolean := false;
 begin
   -- Product key is idempotent: retry updates one row, not duplicate products.
   insert into public.internal_supply_products(id, source_name, source_ref, title, active)
@@ -140,7 +156,27 @@ begin
     raise exception 'sibling variant was overwritten by retry';
   end if;
 
-  raise notice 'PASS: migration ordering, duplicate SKU compatibility, product/variant upsert idempotency, and repeatability';
+  -- A CJ variant ID cannot be claimed by another CJ product. The database
+  -- unique key is the race-safe integrity boundary beyond the app precheck.
+  insert into public.internal_supply_products(id, source_name, source_ref, title, active)
+  values ('10000000-0000-4000-8000-000000000004', 'cj', 'cj:product-2:variant-1', 'other CJ product', false);
+  begin
+    insert into public.internal_supply_variants(id, supply_product_id, variant_id, variant_sku, title, inventory)
+    values ('20000000-0000-4000-8000-000000000004', '10000000-0000-4000-8000-000000000004', 'CJ-VARIANT-1', 'OTHER-SKU', 'duplicate CJ variant ID', 5);
+  exception when unique_violation then
+    v_duplicate_cj_variant_rejected := true;
+  end;
+  if not v_duplicate_cj_variant_rejected then
+    raise exception 'same CJ variant ID was allowed under a second CJ product';
+  end if;
+
+  -- Variant IDs are scoped by supplier; another source may reuse the same opaque ID.
+  insert into public.internal_supply_products(id, source_name, source_ref, title, active)
+  values ('10000000-0000-4000-8000-000000000005', 'orosy', 'orosy:product-1', 'Orosy product', false);
+  insert into public.internal_supply_variants(id, supply_product_id, variant_id, variant_sku, title, inventory)
+  values ('20000000-0000-4000-8000-000000000005', '10000000-0000-4000-8000-000000000005', 'CJ-VARIANT-1', 'OROSY-SKU', 'Orosy variant', 3);
+
+  raise notice 'PASS: migration ordering, duplicate SKU compatibility, idempotent upserts, source-scoped variant ownership, and repeatability';
 end $$;
 
 

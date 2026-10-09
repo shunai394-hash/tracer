@@ -119,15 +119,16 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     .maybeSingle();
   if (existingProduct.error) throw new Error("cj_internal_supply_product_lookup_failed: " + existingProduct.error.message);
 
-  // Check global variant ownership before creating a product row. This avoids
-  // leaving orphan inactive product rows when an ID is already attached elsewhere.
+  // Check CJ-scoped variant ownership before creating a product row. A database
+  // unique index is the final race-safe guard; this precheck improves diagnostics.
   const variantOwners = await db
     .from("internal_supply_variants")
-    .select("id,supply_product_id")
+    .select("id,supply_product_id,source_name")
+    .eq("source_name", "cj")
     .eq("variant_id", args.supplierVariantId)
     .limit(2);
   if (variantOwners.error) throw new Error("cj_internal_supply_variant_owner_lookup_failed: " + variantOwners.error.message);
-  const ownerIds = [...new Set((variantOwners.data ?? []).map((row: { supply_product_id: string }) => String(row.supply_product_id)))];
+  const ownerIds = [...new Set((variantOwners.data ?? []).map((row: { supply_product_id: string; source_name: string }) => String(row.supply_product_id)))];
   if (ownerIds.some((ownerId) => ownerId !== String(existingProduct.data?.id ?? ""))) {
     throw new Error("cj_internal_supply_variant_already_owned_by_another_product");
   }
@@ -145,6 +146,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
   const productId = String(productWrite.data.id);
 
   const variantPayload = {
+    source_name: "cj",
     supply_product_id: productId,
     variant_sku: args.supplierSku?.trim() || null,
     variant_id: args.supplierVariantId,

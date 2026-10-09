@@ -18,6 +18,8 @@ assert.match(ingest, /onConflict: "source_name,source_ref"/,
   "product writes must use the deterministic source key for retry/concurrency safety");
 assert.match(ingest, /onConflict: "supply_product_id,variant_id"/,
   "variant writes must use the exact supplier variant key for retry/concurrency safety");
+assert.match(ingest, /source_name: "cj"/, "CJ variants must carry their source namespace");
+assert.match(ingest, /\.eq\("source_name", "cj"\)/, "variant ownership precheck must be supplier-scoped");
 assert.match(ingest, /variant_id: args\.supplierVariantId/,
   "the exact supplier variant ID must be persisted separately from SKU/barcode");
 assert.match(ingest, /normalizeIdentifier\("gtin", raw\)/,
