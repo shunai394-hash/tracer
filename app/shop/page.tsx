@@ -40,9 +40,11 @@ export default async function ShopPage({
 
       {error ? <p role="alert" className="tracer-alert">{error}</p> : listings.length === 0 ? (
         <section className="tracer-empty" aria-labelledby="empty-heading">
-          <span>SHOPIFY CATALOG / 00 LIVE</span><h2 id="empty-heading">現在、販売可能なShopify商品はありません。</h2>
-          <p>商品を捏造して埋めることはしません。Sales Test Gate、Shopify同期、在庫、注文可能性、追跡可能性をすべて満たした商品だけが自動でここに現れます。</p>
-          <div className="mt-8 flex flex-wrap justify-center gap-3"><Link href="/bestsellers" className="border border-cyan-300/30 px-5 py-3 text-xs text-cyan-100 hover:bg-cyan-300/10">売れ筋を見る →</Link><Link href="/intelligence" className="border border-white/10 px-5 py-3 text-xs text-zinc-300 hover:border-white/20">商機を見る →</Link></div>
+          <span>SHOPIFY CATALOG / PAGE {catalog.page}</span><h2 id="empty-heading">{catalog.totalEligible > 0 ? "このページの商品は在庫再確認で非表示になりました。" : "現在、販売可能なShopify商品はありません。"}</h2>
+          <p>実在庫と販売条件を再確認し、確認できた商品だけを表示します。商品を捏造して埋めることはしません。</p>
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+            {catalog.page > 1 ? <Link href={catalog.page === 2 ? "/shop" : "/shop?page=" + (catalog.page - 1)} className="border border-white/10 px-5 py-3 text-xs text-zinc-300 hover:border-white/20">← 前のページ</Link> : null}
+            {catalog.page < catalog.totalPages ? <Link href={"/shop?page=" + (catalog.page + 1)} className="border border-cyan-300/30 px-5 py-3 text-xs text-cyan-100 hover:bg-cyan-300/10">次のページ →</Link> : null}<Link href="/bestsellers" className="border border-cyan-300/30 px-5 py-3 text-xs text-cyan-100 hover:bg-cyan-300/10">売れ筋を見る →</Link><Link href="/intelligence" className="border border-white/10 px-5 py-3 text-xs text-zinc-300 hover:border-white/20">商機を見る →</Link></div>
         </section>
       ) : (
         <section className="tracer-content-section" aria-labelledby="catalog-heading">
