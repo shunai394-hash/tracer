@@ -139,7 +139,7 @@ export async function createShopifyProduct(input: { title: string; descriptionHt
   const data = await shopifyGraphQL<{
     productCreate: { product: ShopifyProduct | null; userErrors: Array<{ field?: string[]; message: string }> };
   }>(
-    `mutation ProductCreate($input: ProductInput!, $media: [CreateMediaInput!]) {
+    `mutation ProductCreate($input: ProductCreateInput!, $media: [CreateMediaInput!]) {
       productCreate(product: $input, media: $media) {
         product { id handle status variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType alt preview { image { url } } } } }
         userErrors { field message }
@@ -158,11 +158,11 @@ export async function createShopifyProduct(input: { title: string; descriptionHt
   }>(
     `mutation ProductVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
       productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants { id sku price }
+        productVariants { id sku price inventoryPolicy inventoryItem { tracked } }
         userErrors { field message }
       }
     }`,
-    { productId: product.id, variants: [{ id: variant.id, price: input.price.toFixed(2), sku: input.sku }] },
+    { productId: product.id, variants: [{ id: variant.id, price: input.price.toFixed(2), inventoryPolicy: "DENY", inventoryItem: { sku: input.sku, tracked: true } }] },
   );
   if (variantData.productVariantsBulkUpdate.userErrors.length) throw new Error(variantData.productVariantsBulkUpdate.userErrors.map((error) => error.message).join("; "));
   return { ...product, variants: { nodes: variantData.productVariantsBulkUpdate.productVariants } };
@@ -172,7 +172,7 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   const productData = await shopifyGraphQL<{
     productUpdate: { product: ShopifyProduct | null; userErrors: Array<{ field?: string[]; message: string }> };
   }>(
-    `mutation ProductUpdate($input: ProductInput!, $media: [CreateMediaInput!]) {
+    `mutation ProductUpdate($input: ProductUpdateInput!, $media: [CreateMediaInput!]) {
       productUpdate(product: $input, media: $media) {
         product { id handle status variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType alt preview { image { url } } } } }
         userErrors { field message }
@@ -191,11 +191,11 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   }>(
     `mutation ProductVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
       productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants { id sku price }
+        productVariants { id sku price inventoryPolicy inventoryItem { tracked } }
         userErrors { field message }
       }
     }`,
-    { productId: input.productId, variants: [{ id: variantId, price: input.price.toFixed(2), sku: input.sku }] },
+    { productId: input.productId, variants: [{ id: variantId, price: input.price.toFixed(2), inventoryPolicy: "DENY", inventoryItem: { sku: input.sku, tracked: true } }] },
   );
   if (variantData.productVariantsBulkUpdate.userErrors.length) throw new Error(variantData.productVariantsBulkUpdate.userErrors.map((error) => error.message).join("; "));
   return { ...product, variants: { nodes: variantData.productVariantsBulkUpdate.productVariants } };
