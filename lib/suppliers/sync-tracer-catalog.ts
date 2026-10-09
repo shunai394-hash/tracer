@@ -17,10 +17,10 @@ export async function syncTracerCatalogFromInternalSupply(args: {
   bestsellerId: string;
   salePrice?: number | null;
   /** Exact internal_supply_variants row IDs written by this ingestion request. */
-  variantIds: string[];
+  variantIds?: string[];
 }): Promise<{ matched: boolean; catalogId: string | null; variantId: string | null; reason?: string }> {
   const db = createSupabaseAdminClient();
-  const variantIds = [...new Set(args.variantIds.filter((id) => typeof id === "string" && id.trim()))];
+  const variantIds = [...new Set((args.variantIds ?? []).filter((id) => typeof id === "string" && id.trim()))];
   if (variantIds.length === 0) {
     return { matched: false, catalogId: null, variantId: null, reason: "no_variants_written_by_request" };
   }
