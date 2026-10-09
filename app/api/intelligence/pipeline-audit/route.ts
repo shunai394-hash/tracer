@@ -71,8 +71,15 @@ export async function GET(request: Request) {
     db.from("shop_listings")
       .select("id,slug,title,selling_price,inventory,orderable,published,base_item_id,base_publication_status,pipeline_reason,updated_at")
       .eq("published", true)
+      .not("shopify_product_id", "is", null)
+      .eq("shopify_sync_status", "synced")
+      .eq("orderable", true)
+      .eq("tracking_available", true)
+      .gt("inventory", 0)
+      .gt("selling_price", 0)
+      .eq("currency", "JPY")
       .order("updated_at", { ascending: false })
-      .limit(15),
+      .limit(50),
     db.from("shop_orders")
       .select("id,order_status,created_at")
       .order("created_at", { ascending: false })
@@ -100,6 +107,20 @@ export async function GET(request: Request) {
     duplicates("newfind_promotion_deliveries", "listing_id"),
   ]);
 
+  const genericTitles = new Set([
+    "スマホ保護アクセサリー",
+    "暮らしの便利アイテム",
+    "インテリア照明",
+    "キッチン用品",
+    "ペット用品",
+    "バスルームマット",
+    "トレンド・seeded_dueアイテム",
+  ]);
+  const storefrontRecentPublished = (recentPublished ?? []).filter((row) => {
+    const title = String(row.title ?? "").normalize("NFKC").trim();
+    return /[ぁ-んァ-ヶ一-龯々ー]/u.test(title) && !genericTitles.has(title);
+  }).slice(0, 15);
+
   const blocked: Record<string, number> = {};
   for (const row of blockedReasons ?? []) {
     const reason = String(row.pipeline_reason ?? "unknown");
@@ -122,7 +143,7 @@ export async function GET(request: Request) {
       newfind_listing_id: duplicateNewfindDeliveries,
     },
     shopListingBlockedReasons: blocked,
-    recentPublished: recentPublished ?? [],
+    recentPublished: storefrontRecentPublished,
     recentOrders: recentOrders ?? [],
   });
 }
