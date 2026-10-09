@@ -22,7 +22,34 @@ function shopifyEndpoint(): string {
   return `https://${domain}/admin/api/${apiVersion}/graphql.json`;
 }
 
-type ShopifyTokenResponse = { access_token?: string; expires_in?: number; error?: string };
+type ShopifyTokenResponse = { access_token?: string; expires_in?: number; error?: string; error_description?: string };
+
+function safeShopifyErrorDetail(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "";
+  const record = payload as Record<string, unknown>;
+  const raw = [
+    record.error_description,
+    record.error,
+    record.errors,
+    record.message,
+  ].find((value) => typeof value === "string" || Array.isArray(value));
+  if (raw === undefined) return "";
+  const textValue = typeof raw === "string"
+    ? raw
+    : Array.isArray(raw)
+      ? raw.map((entry) => {
+          if (typeof entry === "string") return entry;
+          if (entry && typeof entry === "object" && "message" in entry) return String((entry as {message?: unknown}).message ?? "");
+          return "";
+        }).filter(Boolean).join("; ")
+      : "";
+  return textValue
+    .replace(/(?:shpat|shpca|shppa|shpss|shpua)_[A-Za-z0-9_-]+/gi, "[REDACTED_TOKEN]")
+    .replace(/Bearer\\s+[^\\s,;]+/gi, "Bearer [REDACTED]")
+    .replace(/client_secret[=: ]+[^\\s,;]+/gi, "client_secret=[REDACTED]")
+    .replace(/access_token[=: ]+[^\\s,;]+/gi, "access_token=[REDACTED]")
+    .slice(0, 300);
+}
 
 let cachedShopifyAccessToken: string | null = null;
 let cachedShopifyAccessTokenExpiresAt = 0;
@@ -42,7 +69,10 @@ async function getShopifyAccessToken(): Promise<string> {
       cache: "no-store",
     });
     const payload = await response.json().catch(() => null) as ShopifyTokenResponse | null;
-    if (!response.ok) throw new Error(`Shopify OAuth token HTTP ${response.status}${payload?.error ? `: ${payload.error}` : ""}`);
+    if (!response.ok) {
+      const detail = safeShopifyErrorDetail(payload);
+      throw new Error(`Shopify OAuth token HTTP ${response.status}${detail ? ` detail=${detail}` : ""}`);
+    }
     if (!payload?.access_token) throw new Error("Shopify OAuth token response missing access_token");
     const expiresIn = Number(payload.expires_in);
     const ttlSeconds = Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 86_399;
@@ -67,10 +97,18 @@ export async function shopifyGraphQL<T>(query: string, variables: Record<string,
     body: JSON.stringify({ query, variables }),
     cache: "no-store",
   });
-  const payload = (await response.json()) as GraphQLResponse<T>;
-  if (!response.ok) throw new Error(`Shopify Admin API HTTP ${response.status}`);
-  if (payload.errors?.length) throw new Error(payload.errors.map((error) => error.message).join("; "));
-  if (!payload.data) throw new Error("Shopify Admin API returned no data");
+  const payload = await response.json().catch(() => null) as GraphQLResponse<T> | null;
+  if (!response.ok) {
+    const requestId = response.headers.get("x-request-id") || response.headers.get("x-shopify-request-id");
+    const detail = safeShopifyErrorDetail(payload);
+    throw new Error([
+      `Shopify Admin API HTTP ${response.status}`,
+      requestId ? `request_id=${requestId}` : "",
+      detail ? `detail=${detail}` : "",
+    ].filter(Boolean).join(" "));
+  }
+  if (payload?.errors?.length) throw new Error(payload.errors.map((error) => error.message).join("; "));
+  if (!payload?.data) throw new Error("Shopify Admin API returned no data");
   return payload.data;
 }
 
