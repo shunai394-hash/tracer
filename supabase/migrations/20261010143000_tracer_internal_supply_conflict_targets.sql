@@ -1,18 +1,20 @@
--- Ensure PostgREST ON CONFLICT targets can infer full uniqueness constraints.
--- Existing production indexes are partial and cannot be inferred from an onConflict
--- column list without the predicate. Replace them with full indexes.
--- Do not retain SKU uniqueness: CJ can reuse a SKU across sibling variants.
--- variant_id, not SKU, is the stable variant identity.
+-- Keep PostgREST ON CONFLICT targets inferable without enforcing supplier SKU uniqueness.
+-- CJ may legitimately reuse a SKU across sibling variants; the concrete variant_id is
+-- the stable key. PR #152 introduced the full product_id/variant_id index; retain it
+-- instead of adding a second, redundant unique index on the same columns.
 
--- This partial index rejects legitimate sibling variants sharing one supplier SKU.
+-- Remove both legacy and PR #152 full SKU uniqueness indexes. SKU is descriptive,
+-- not a globally reliable variant identity, and may repeat within a product.
 drop index if exists public.internal_supply_variants_product_variant_sku_uq;
+drop index if exists public.internal_supply_variants_product_sku_atomic_uq;
 
--- Replace the partial variant-ID index with a full index for PostgREST upserts.
+-- The partial variant-ID index cannot be inferred by PostgREST's column-only
+-- onConflict target. PR #152's full product_id/variant_id index is retained below.
 drop index if exists public.internal_supply_variants_product_variant_id_uq;
-create unique index if not exists internal_supply_variants_product_variant_id_conflict_uq
+create unique index if not exists internal_supply_variants_product_id_atomic_uq
   on public.internal_supply_variants(supply_product_id, variant_id);
 
--- The product source_ref partial index may coexist until this full conflict target
--- is installed; PostgreSQL permits multiple NULLs in a normal unique index.
+-- Also ensure the deterministic source key has a full unique index for upsert.
+-- PostgreSQL allows multiple NULL values in a normal unique index.
 create unique index if not exists internal_supply_products_source_name_ref_atomic_uq
   on public.internal_supply_products(source_name, source_ref);
