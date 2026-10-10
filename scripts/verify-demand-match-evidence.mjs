@@ -38,6 +38,17 @@ test("canonical marketplace variant evidence", "captures only explicit ProductGr
 });
 
 
+test("canonical marketplace variant evidence", "does not use the parent ASIN as a child ID when variants omit their own URL", () => {
+  const html = '<script type="application/ld+json">{"@context":"https://schema.org","@type":"ProductGroup","gtin13":"4006381333931","hasVariant":[{"@type":"Product","name":"Size Small","sku":"ITEM-S"},{"@type":"Product","name":"Size Large","sku":"ITEM-L"}]}</script>';
+  const variants = parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01");
+  assert.equal(variants.length, 2);
+  assert.deepEqual(variants.map((variant) => variant.sourceVariantId), ["ITEM-S", "ITEM-L"]);
+  assert.equal(variants.every((variant) => variant.asin === "B0PARENT01"), true, "parent URL may remain contextual metadata only");
+  assert.equal(variants.every((variant) => variant.gtin === null), true, "parent GTIN must not be inherited by child variants");
+});
+
+
+
 function test(group, name, fn) {
   const record = (ok, error) => results.push({ group, name, ok, error });
   try {
