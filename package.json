@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "mobile:bootstrap": "node scripts/bootstrap-mobile.mjs"
+    "mobile:bootstrap": "node scripts/bootstrap-mobile.mjs",
+    "test:base-publication-result": "node --experimental-strip-types --no-warnings scripts/verify-base-publication-result.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
