@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   identifiersFromRecord,
   identifierQueryEntries,
-  marketplaceBarcodeCandidates,
+  hasExactMarketplaceVariantIdentifierMatch,
   matchProductIdentity,
 } from "@/lib/market/identifiers";
 import { canUseParentIdentityForSingleVariant, hasUniqueIdentitySelection, hasUniqueMarketplaceIdentity, isVerifiedInternalSupplyLink, supplierListingStateForIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
@@ -161,19 +161,12 @@ export async function linkInternalSupplyForBestseller(args: {
       };
     }).filter((item) => item.identity.salesEligible);
 
-    const marketBarcodeCandidateSet = new Set(
-      [marketIds.jan, marketIds.gtin, marketIds.ean, marketIds.upc]
-        .filter((value): value is string => Boolean(value))
-        .flatMap((value) => marketplaceBarcodeCandidates(value)),
+    const exactIdentifierMatches = confirmedVariants.filter((item) =>
+      hasExactMarketplaceVariantIdentifierMatch(
+        marketIds,
+        identifiersFromRecord(item.variant as Record<string, unknown>),
+      ),
     );
-    const exactIdentifierMatches = confirmedVariants.filter((item) => {
-      const variantIds = identifiersFromRecord(item.variant as Record<string, unknown>);
-      const exactAsinMatch = Boolean(marketIds.asin && variantIds.asin === marketIds.asin);
-      return exactAsinMatch || [variantIds.jan, variantIds.gtin, variantIds.ean, variantIds.upc]
-        .filter((value): value is string => Boolean(value))
-        .flatMap((value) => marketplaceBarcodeCandidates(value))
-        .some((value) => marketBarcodeCandidateSet.has(value));
-    });
     // Multiple variants may share weak/model-level identity. Only select from
     // a multi-variant set when exactly one variant has an exact normalized
     // barcode match; never take the first matching row by response order.
