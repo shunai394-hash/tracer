@@ -99,7 +99,36 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const listingMetadata = record(row.metadata);
       const variantBarcode = await readPersistableBarcode(String(row.supplier_product_id), String(row.supplier_variant_id));
       const identity = await resolveMarketplaceIdentity({ db, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } });
-      const canonicalProductId = identity?.productId ?? String(row.product_id);
+      if (!identity) {
+        // A failed or ambiguous re-check must detach any prior canonical link immediately,
+        // even when economics/image data is missing and normal persistence is skipped.
+        const checkedAt = new Date();
+        const { error: detachError } = await db.from("supplier_listings").update({
+          bestseller_id: null,
+          product_id: null,
+          identity_method: null,
+          identity_status: "unverified",
+          identity_confidence: 0,
+          orderable: false,
+          api_available: false,
+          tracking_available: false,
+          verification_status: "identity_unverified",
+          metadata: {
+            ...listingMetadata,
+            variant_barcode: null,
+            marketplace_variant_evidence_id: null,
+            marketplace_source_variant_id: null,
+            last_identity_reverify_at: checkedAt.toISOString(),
+            next_identity_reverify_at: new Date(checkedAt.getTime() + NO_MATCH_RETRY_MS).toISOString(),
+            identity_hold_reason: variantBarcode && normalizeIdentifier("gtin", variantBarcode) === null
+              ? "invalid_supplier_barcode"
+              : "no_unique_marketplace_identifier_match",
+          },
+        }).eq("id", supplierListingId);
+        if (detachError) throw new Error(`CJ unmatched identity detach failed: ${detachError.message}`);
+        return { kind: "no_match" as const, supplierListingId };
+      }
+      const canonicalProductId = identity.productId;
       if (!canonicalProductId) { await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), last_identity_reverify_at: new Date().toISOString() } }).eq("id", supplierListingId); return { kind: "no_match" as const, supplierListingId }; }
       const { data: intelligence } = await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle();
       const metadata = record(intelligence?.metadata);
