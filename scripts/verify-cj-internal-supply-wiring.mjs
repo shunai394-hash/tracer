@@ -84,6 +84,16 @@ assert.match(identity, /function hasValidGs1CheckDigit/);
 // row, never from a parent product's barcode/MPN alone.
 assert.match(identityResolver, /from\("marketplace_bestseller_variants"\)/,
   "CJ identity resolution must query canonical child-variant evidence");
+assert.match(identityResolver, /fetchCJProductVariants\(args\.supplierProductId, \{ countryCode: "JP" \}\)/,
+  "identity proof must first query live variants for the exact supplier product");
+assert.match(identityResolver, /fetchCJVariantByVid\(args\.supplierVariantId\)/,
+  "identity proof must fall back to the exact supplier variant endpoint");
+const barcodeResolver = identityResolver.split("async function readSupplierBarcode")[1]?.split("export async function resolveMarketplaceIdentity")[0] ?? "";
+assert.ok(barcodeResolver.indexOf("fetchCJProductVariants") >= 0
+  && barcodeResolver.indexOf("fetchCJProductVariants") < barcodeResolver.indexOf("fetchCJVariantByVid"),
+  "the exact product variant response must be checked before the exact-variant detail fallback");
+assert.doesNotMatch(barcodeResolver, /normalizeBarcode\(args\.variantBarcode\)/,
+  "caller-supplied or stale listing barcodes must not be used as identity proof when the live variant lookup is unavailable");
 assert.match(identityResolver, /evidence_source === "schema_org_product_group_has_variant"/,
   "only independently observed ProductGroup hasVariant evidence may establish the link");
 assert.match(identityResolver, /canonicalVariantEvidenceId: String\(selected\.row\.id\)/,
