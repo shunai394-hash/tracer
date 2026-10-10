@@ -80,4 +80,11 @@ const audit = { variant_barcode_raw: null, variant_barcode_validation: "missing"
   );
 }
 
-console.log("PASS: actual fail-closed reset helper clears stale canonical/evidence links and all order/tracking flags; preserves unrelated audit metadata; schedules retry; surfaces DB write failures.");
+// Guard the production reverify control flow as well as the helper contract.
+const reverifySource = fs.readFileSync("lib/suppliers/reverify-cj-identity.ts", "utf8");
+assert.match(reverifySource, /if\s*\(!identity\)\s*\{[\s\S]*?clearCjIdentityLinkOnFailure/);
+assert.match(reverifySource, /reason:\s*"missing_economics_or_image"[\s\S]*?clearCjIdentityLinkOnFailure/);
+assert.match(reverifySource, /reason:\s*"reverify_error"[\s\S]*?clearCjIdentityLinkOnFailure/);
+assert.doesNotMatch(reverifySource, /identity\?\.productId\s*\?\?\s*String\(row\.product_id\)/);
+
+console.log("PASS: actual fail-closed reset helper and reverify control-flow guards clears stale canonical/evidence links and all order/tracking flags; preserves unrelated audit metadata; schedules retry; surfaces DB write failures.");
