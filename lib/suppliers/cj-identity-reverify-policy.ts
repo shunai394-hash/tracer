@@ -24,6 +24,20 @@ export function isCjIdentityReverifyDue(metadata: unknown, nowMs = Date.now()): 
   return !Number.isFinite(nextAt) || nextAt <= nowMs;
 }
 
+
+/** Return a barcode only when exactly one API result belongs to the requested CJ variant. */
+export function readExactSupplierVariantBarcode(
+  variants: Array<{ vid?: unknown; barcode?: unknown }>,
+  supplierVariantId: string,
+): string | null {
+  const requestedId = supplierVariantId.trim();
+  if (!requestedId) return null;
+  const matches = variants.filter((variant) => variant.vid === requestedId);
+  if (matches.length !== 1) return null;
+  const barcode = typeof matches[0].barcode === "string" ? matches[0].barcode.trim() : "";
+  return barcode || null;
+}
+
 export function supplierBarcodeAudit(value: unknown, isValidGtIn: boolean): {
   variant_barcode_raw: string | null;
   variant_barcode_validation: "missing" | "valid_gs1_check_digit" | "invalid_format_or_check_digit";
@@ -88,6 +102,7 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
   const now = Date.parse("2026-01-01T00:00:00.000Z");
   const cases = [
     { name: "verified_unlinked_is_candidate", expected: true, actual: isCjIdentityReverifyCandidate({ verificationStatus: "verified", identityMethod: "supply_discovered", supplierVariantId: "variant-1" }) },
+    { name: "failed_identity_remains_retryable", expected: true, actual: isCjIdentityReverifyCandidate({ verificationStatus: "retryable", identityMethod: "supply_discovered", supplierVariantId: "variant-1" }) },
     { name: "verified_linked_is_not_candidate", expected: false, actual: isCjIdentityReverifyCandidate({ verificationStatus: "verified", identityMethod: "gtin", supplierVariantId: "variant-1" }) },
     { name: "missing_variant_is_not_candidate", expected: false, actual: isCjIdentityReverifyCandidate({ verificationStatus: "verified", identityMethod: "supply_discovered", supplierVariantId: null }) },
     { name: "no_retry_timestamp_is_due", expected: true, actual: isCjIdentityReverifyDue({}, now) },
