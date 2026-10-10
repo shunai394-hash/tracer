@@ -272,7 +272,9 @@ export async function linkInternalSupplyForBestseller(args: {
     configured: true,
     supplier_product_id: String(product.id),
     supplier_variant_id: variant.id ? String(variant.id) : (variant.variant_id ? String(variant.variant_id) : null),
-    orderable: true,
+    // Keep this listing non-orderable until the exact verified link is durably recorded.
+    // Existing listings are downgraded first as well, so audit failures fail closed.
+    orderable: false,
     price_confirmed: variant.cost != null || product.cost != null,
     inventory_confirmed: true,
     fetched_at: args.fetchedAt,
@@ -301,11 +303,40 @@ export async function linkInternalSupplyForBestseller(args: {
     identity_rationale: rationale,
     status: "verified",
   };
-  // Cache/telemetry must not decide identity or prevent a valid listing.
+  // A verified identity link is part of the sales-safety contract, not optional telemetry.
+  // If insert reports a duplicate, accept it only when the exact same product+variant
+  // is already durably recorded as verified. Any other error leaves orderable=false.
   const linkResult = await supabase.from("internal_supply_links").insert(linkPayload);
-  if (linkResult.error && !/duplicate|unique/i.test(linkResult.error.message)) {
-    console.warn("[TRACER INTERNAL SUPPLY LINK SKIPPED]", linkResult.error.message);
+  let verifiedLinkPersisted = !linkResult.error;
+  if (linkResult.error && /duplicate|unique/i.test(linkResult.error.message)) {
+    const { data: existingLink, error: existingLinkError } = await supabase
+      .from("internal_supply_links")
+      .select("bestseller_id,supply_product_id,supply_variant_id,identity_method,status")
+      .eq("bestseller_id", args.bestseller.id)
+      .eq("supply_product_id", product.id)
+      .eq("supply_variant_id", variant.id)
+      .eq("identity_method", exactMethod)
+      .eq("status", "verified")
+      .limit(1)
+      .maybeSingle();
+    verifiedLinkPersisted = !existingLinkError && Boolean(existingLink);
+  }
+  if (!verifiedLinkPersisted) {
+    console.error("[TRACER INTERNAL SUPPLY LINK REQUIRED BUT NOT PERSISTED]", linkResult.error?.message ?? "unknown link persistence failure");
+    return { matched: false, supplierListingId: null, supplyVariantId: null };
   }
 
-  return { matched: true, supplierListingId: String(listingResult.data.id), supplyVariantId: String(variant.id) };
+  // Activate only after both listing and exact identity evidence are persisted.
+  // If this final write fails, the listing remains non-orderable.
+  const activationResult = await supabase
+    .from("supplier_listings")
+    .update({ orderable: true })
+    .eq("id", listingResult.data.id)
+    .select("id")
+    .single();
+  if (activationResult.error || !activationResult.data) {
+    throw new Error(activationResult.error?.message ?? "supplier listing activation returned no row");
+  }
+
+  return { matched: true, supplierListingId: String(activationResult.data.id), supplyVariantId: String(variant.id) };
 }
