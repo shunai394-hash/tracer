@@ -37,6 +37,7 @@ assert.match(base, /isPublishableCatalogTitle\(translatedTitle\)/, "BASE must re
 assert.match(base, /isPublishableCatalogDescription\(sourceDetail\)/, "BASE must reject generic source descriptions");
 assert.match(base, /isPublishableCatalogDescription\(translatedDetail\)/, "BASE must reject generic translated descriptions");
 assert.match(base, /base_hide_failed_after_catalog_validation/, "BASE hide failure must be surfaced");
+assert.match(base, /if \(listing\.base_item_id && listing\.published !== true\) continue;/, "BASE already-hidden rows must not be processed twice");
 assert.match(store, /isPublishableCatalogTitle\(listing\.title\)/, "storefront must filter invalid titles");
 assert.match(store, /isPublishableCatalogDescription\(listing\.description\)/, "storefront must filter generic descriptions");
 assert.match(store, /listing title failed catalog quality gate/, "order placement must revalidate title quality");
