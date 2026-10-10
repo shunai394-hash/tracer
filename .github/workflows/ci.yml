@@ -35,6 +35,7 @@ jobs:
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-publishable-title.mjs
+      - run: node --experimental-strip-types --no-warnings scripts/test-supplier-variant-listing-guard.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-cj-query-fallback.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-canonical-supplier-identity-gate.mjs
       - run: node scripts/verify-cj-internal-supply-wiring.mjs
@@ -70,5 +71,13 @@ jobs:
           PGPASSWORD: ci-postgres-password
           PGDATABASE: tracer_variant_link_test
         run: psql -v ON_ERROR_STOP=1 -f scripts/test-canonical-supplier-variant-links.sql
+      - name: Run published supplier variant uniqueness migration test (disposable CI database only)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: ci-postgres-password
+          PGDATABASE: tracer_publish_guard_test
+        run: psql -v ON_ERROR_STOP=1 -f scripts/test-shop-listings-published-variant-uniqueness.sql
       - run: npm run lint
       - run: npm run build
