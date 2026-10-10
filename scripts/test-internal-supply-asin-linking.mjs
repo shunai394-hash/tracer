@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { EMPTY_IDENTIFIERS, identifierQueryEntries, matchProductIdentity } from "../lib/market/identifiers.ts";
+import { EMPTY_IDENTIFIERS, identifierQueryEntries, hasExactMarketplaceVariantIdentifierMatch, matchProductIdentity } from "../lib/market/identifiers.ts";
 import { hasUniqueIdentitySelection } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const marketAsin = "B0TESTASIN1";
@@ -17,6 +17,14 @@ const exact = matchProductIdentity({
 });
 assert.equal(exact.salesEligible, true);
 assert.equal(exact.method, "asin");
+assert.equal(hasExactMarketplaceVariantIdentifierMatch(
+  { ...EMPTY_IDENTIFIERS, jan: "4006381333931" },
+  { ...EMPTY_IDENTIFIERS, gtin: "4006381333931" },
+), true);
+assert.equal(hasExactMarketplaceVariantIdentifierMatch(
+  { ...EMPTY_IDENTIFIERS, asin: marketAsin },
+  { ...EMPTY_IDENTIFIERS, asin: "B0OTHERASIN" },
+), false);
 assert.equal(hasUniqueIdentitySelection(3, 1), true);
 assert.equal(hasUniqueIdentitySelection(3, 2), false);
 
