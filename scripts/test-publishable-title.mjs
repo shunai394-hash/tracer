@@ -7,6 +7,8 @@ const cases = [
   ["identity failure suffix", "暮らしの便利アイテム 商品アイデンティティが未確定のため、選定対象外", false],
   ["sales gate failure suffix", "ペット用品 必須ゲートを満たしていないため、テスト優先度は低い", false],
   ["truncated evidence suffix", "スマホケース は観測された需要と供給データに基", false],
+  ["sales candidate explanation suffix", "マスカラ 防水 Super Long は観測された需要と供給データに基づいて販売テスト候補になる", false],
+  ["placeholder trend title", "トレンド・seeded_dueアイテム", false],
   ["generic specification placeholder", "商品の仕様・サイズ・素材・使用方法は、販売元の掲載情報をご確認ください。", false],
   ["empty title", "", false],
   ["non-string title", null, false],
