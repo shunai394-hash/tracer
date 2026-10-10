@@ -5,6 +5,7 @@ import {
   identifiersFromRecord,
   matchProductIdentity,
 } from "@/lib/market/identifiers";
+import { hasUniqueMarketplaceIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 export async function linkInternalSupplyForBestseller(args: {
   bestseller: Record<string, unknown>;
@@ -39,6 +40,31 @@ export async function linkInternalSupplyForBestseller(args: {
     // investigation path; otherwise one DB permission issue makes the entire
     // autonomous patrol look like it discovered nothing.
     console.error("[TRACER INTERNAL SUPPLY LOOKUP SKIPPED]", error);
+    return { matched: false, supplierListingId: null, supplyVariantId: null };
+  }
+
+  // Do not select the first eligible product from an ambiguous result set.
+  // Duplicate supplier barcodes/MPNs can otherwise link the marketplace item
+  // to whichever row PostgREST happens to return first. Only a single
+  // identity-eligible product may proceed to variant-level matching.
+  const identityEligibleProductCount = (products ?? []).filter((product) => {
+    const productIds = identifiersFromRecord(product as Record<string, unknown>);
+    const identity = matchProductIdentity({
+      market: {
+        ...marketIds,
+        brand: typeof args.bestseller.brand === "string" ? args.bestseller.brand : null,
+        title: String(args.bestseller.title ?? ""),
+      },
+      supply: {
+        ...productIds,
+        brand: typeof product.brand === "string" ? product.brand : null,
+        title: String(product.title ?? ""),
+      },
+    });
+    return identity.salesEligible;
+  }).length;
+
+  if (!hasUniqueMarketplaceIdentity(identityEligibleProductCount)) {
     return { matched: false, supplierListingId: null, supplyVariantId: null };
   }
 
