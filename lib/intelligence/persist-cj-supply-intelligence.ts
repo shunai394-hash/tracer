@@ -159,7 +159,7 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
   const { error: evidenceError } = await supabase.from("supplier_listings").update({
     bestseller_id: marketplaceIdentity?.bestsellerId ?? null,
     product_id: marketplaceIdentity ? canonicalProductId : null,
-    identity_method: marketplaceIdentity?.method ?? null,
+    identity_method: marketplaceIdentity?.method ?? "supply_discovered",
     identity_status: marketplaceIdentity ? "linked" : "unverified",
     identity_confidence: marketplaceIdentity?.confidence ?? 0,
     cost: args.cost,
@@ -173,7 +173,7 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
     // Do not fabricate shipping tracking or purchase-API capability from discovery.
     tracking_available: false,
     api_available: false,
-    verification_status: marketplaceIdentity ? "verified" : "identity_unverified",
+    verification_status: marketplaceIdentity ? "verified" : "retryable",
     fetched_at: now,
     metadata: verifiedMetadata,
   }).eq("id", args.supplierListingId);
