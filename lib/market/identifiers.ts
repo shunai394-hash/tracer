@@ -160,19 +160,6 @@ export function matchProductIdentity(args: {
   const market = args.market;
   const supply = args.supply;
 
-  // ASIN is a marketplace candidate lookup key, not independent proof that
-  // a supplier offer is the same sellable product/variant. Require a barcode
-  // family match or same-brand MPN before the Sales Test Gate can consider it.
-  if (eq(market.asin, supply.asin)) {
-    return {
-      linked: true,
-      salesEligible: false,
-      method: "asin",
-      confidence: 0.7,
-      rationale: "ASIN matches; candidate only until independent supplier identity evidence confirms the item",
-    };
-  }
-
   for (const scheme of ["jan", "gtin", "ean", "upc"] as const) {
     if (eq(market[scheme], supply[scheme])) {
       return { linked: true, salesEligible: true, method: scheme, confidence: 0.98, rationale: `${scheme.toUpperCase()} matches` };
@@ -205,6 +192,19 @@ export function matchProductIdentity(args: {
       method: "mpn",
       confidence: 0.55,
       rationale: brandMarket && brandSupply ? "MPN matches but brand conflicts" : "MPN matches but brand evidence is missing",
+    };
+  }
+
+  // ASIN is a marketplace candidate lookup key, not independent proof that
+  // a supplier offer is the same sellable product/variant. Require a barcode
+  // family match or same-brand MPN before the Sales Test Gate can consider it.
+  if (eq(market.asin, supply.asin)) {
+    return {
+      linked: true,
+      salesEligible: false,
+      method: "asin",
+      confidence: 0.7,
+      rationale: "ASIN matches; candidate only until independent supplier identity evidence confirms the item",
     };
   }
 
