@@ -230,6 +230,10 @@ export async function GET(request: Request) {
       internalResults.push({
         bestsellerId: candidateId,
         supplierListingId: internal.supplierListingId,
+        supplyVariantId: internal.supplyVariantId,
+        linkStatus: internal.linkStatus ?? null,
+        reason: internal.reason,
+        canonicalLinkVerified: true,
         catalog,
       });
     }
