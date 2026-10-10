@@ -14,7 +14,13 @@ export type InternalSupplyLinkStatus =
   | "write_failed"
   | "table_missing"
   | "duplicate_unverified"
-  | "readback_failed";
+  | "readback_failed"
+  | "no_identifiers"
+  | "lookup_failed"
+  | "candidate_limit_reached"
+  | "ambiguous_product"
+  | "no_eligible_variant"
+  | "inventory_unavailable";
 
 export async function linkInternalSupplyForBestseller(args: {
   bestseller: Record<string, unknown>;
@@ -23,7 +29,7 @@ export async function linkInternalSupplyForBestseller(args: {
   matched: boolean;
   supplierListingId: string | null;
   supplyVariantId: string | null;
-  linkStatus?: InternalSupplyLinkStatus;
+  linkStatus: InternalSupplyLinkStatus;
 }> {
   const supabase = createSupabaseAdminClient();
   const marketIds = identifiersFromRecord(args.bestseller);
@@ -35,7 +41,7 @@ export async function linkInternalSupplyForBestseller(args: {
     ["mpn", marketIds.mpn],
   ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
 
-  if (queries.length === 0) return { matched: false, supplierListingId: null, supplyVariantId: null };
+  if (queries.length === 0) return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "no_identifiers" };
 
   const or = queries
     .map(([column, value]) => `${column}.eq.${value.replace(/[,()]/g, "")}`)
@@ -54,13 +60,13 @@ export async function linkInternalSupplyForBestseller(args: {
     // investigation path; otherwise one DB permission issue makes the entire
     // autonomous patrol look like it discovered nothing.
     console.error("[TRACER INTERNAL SUPPLY LOOKUP SKIPPED]", error);
-    return { matched: false, supplierListingId: null, supplyVariantId: null };
+    return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "lookup_failed" };
   }
 
   // The query is deliberately bounded. If it fills the full 20-row limit,
   // the candidate set may be truncated, so uniqueness cannot be proven safely.
   if ((products ?? []).length >= 20) {
-    return { matched: false, supplierListingId: null, supplyVariantId: null };
+    return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "candidate_limit_reached" };
   }
 
   // Do not select the first eligible product from an ambiguous result set.
@@ -85,8 +91,11 @@ export async function linkInternalSupplyForBestseller(args: {
   }).length;
 
   if (!hasUniqueMarketplaceIdentity(identityEligibleProductCount)) {
-    return { matched: false, supplierListingId: null, supplyVariantId: null };
+    return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "ambiguous_product" };
   }
+
+  let sawSelectedVariant = false;
+  let sawUnavailableInventory = false;
 
   for (const product of products ?? []) {
     const productIds = identifiersFromRecord(product as Record<string, unknown>);
@@ -158,9 +167,13 @@ export async function linkInternalSupplyForBestseller(args: {
 
     if (!selected) continue;
 
+    sawSelectedVariant = true;
     const variant = selected.variant as Record<string, unknown>;
     const inventory = Number(variant.inventory ?? product.inventory ?? 0);
-    if (!Number.isFinite(inventory) || inventory <= 0) continue;
+    if (!Number.isFinite(inventory) || inventory <= 0) {
+      sawUnavailableInventory = true;
+      continue;
+    }
 
     const { data: existingListing } = await supabase
       .from("supplier_listings")
@@ -304,5 +317,10 @@ export async function linkInternalSupplyForBestseller(args: {
     };
   }
 
-  return { matched: false, supplierListingId: null, supplyVariantId: null };
+  return {
+    matched: false,
+    supplierListingId: null,
+    supplyVariantId: null,
+    linkStatus: sawSelectedVariant && sawUnavailableInventory ? "inventory_unavailable" : "no_eligible_variant",
+  };
 }
