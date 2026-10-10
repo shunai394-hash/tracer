@@ -56,7 +56,7 @@ class FakeQuery {
     if (this.action === "insert" || this.action === "upsert") {
       if (this.db.failWriteTable === this.table) return { data: null, error: { message: "injected write failure" } };
       const items = Array.isArray(this.payload) ? this.payload : [this.payload];
-      const inserted = items.map((item, index) => ({ id: item.id ?? `${this.table}-${this.db.sequence++}`, ...item }));
+      const inserted = items.map((item) => ({ id: item.id ?? `${this.table}-${this.db.sequence++}`, ...item }));
       for (const item of inserted) {
         if (this.action === "upsert" && this.table === "product_intelligence") {
           const oldIndex = rows.findIndex((row) => row.product_id === item.product_id);
@@ -94,7 +94,7 @@ const modules = {
   "@/lib/intelligence/currency-confidence": { assessCurrencyConfidence: () => ({ confidence: "high", reasons: [] }) },
   "@/lib/supabase/admin": { createSupabaseAdminClient: () => { throw new Error("test must inject a disposable DB"); } },
   "@/lib/sources/cj": {
-    fetchCJProductVariants: async (productId) => [{ vid: supplierVariantId, barcode }],
+    fetchCJProductVariants: async () => [{ vid: supplierVariantId, barcode }],
     fetchCJVariantByVid: async (vid) => ({ vid, barcode }),
   },
   "@/lib/market/identifiers": {
@@ -113,9 +113,9 @@ const modules = {
     },
   },
 };
-const module = { exports: {} };
+const testModule = { exports: {} };
 const context = {
-  module, exports: module.exports,
+  module: testModule, exports: testModule.exports,
   require: (id) => {
     if (!(id in modules)) throw new Error(`Unexpected import in persistence test: ${id}`);
     return modules[id];
@@ -123,7 +123,7 @@ const context = {
   console, Date, Set, Map, Object, Number, String, Array, Math, Error, JSON,
 };
 vm.runInNewContext(js, context, { filename: "persist-cj-supply-intelligence.compiled.cjs" });
-const { persistCjSupplyIntelligence } = module.exports;
+const { persistCjSupplyIntelligence } = testModule.exports;
 
 const args = {
   productId: "caller-fallback-must-not-be-linked",
