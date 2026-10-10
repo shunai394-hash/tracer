@@ -27,3 +27,22 @@ export function isPublishableCatalogTitle(value: unknown): boolean {
     normalized.includes(marker.normalize("NFKC").toLocaleLowerCase("ja-JP")),
   );
 }
+
+const NON_PRODUCT_DESCRIPTION_MARKERS = [
+  "商品の仕様・サイズ・素材・使用方法は、販売元の掲載情報をご確認ください",
+  "商品の仕様・サイズ・素材・使用方法は販売元の掲載情報をご確認ください",
+  "tracer selected product",
+  "商品情報を再確認しているため、一時的に販売を停止しています",
+  "現在この商品は販売停止中です",
+] as const;
+
+/** Reject generic fallbacks/status copy that gives buyers no product-specific information. */
+export function isPublishableCatalogDescription(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const description = value.normalize("NFKC").replace(/\\s+/g, " ").trim();
+  if (!description) return false;
+  const normalized = description.toLocaleLowerCase("ja-JP");
+  return !NON_PRODUCT_DESCRIPTION_MARKERS.some((marker) =>
+    normalized.includes(marker.normalize("NFKC").toLocaleLowerCase("ja-JP")),
+  );
+}
