@@ -77,6 +77,18 @@ export function hasUniqueIdentitySelection(candidateCount: number, exactMatchCou
     && (candidateCount === 1 || (Number.isInteger(exactMatchCount) && exactMatchCount === 1));
 }
 
+/**
+ * Parent-level identity can select a sole active, orderable, in-stock variant
+ * only when the parent was matched by a strong marketplace identifier.
+ */
+export function canUseParentIdentityForSingleVariant(args: {
+  identityMethod: string;
+  activeVariantCount: number;
+}): boolean {
+  return ["asin", "jan", "gtin", "ean", "upc"].includes(args.identityMethod)
+    && args.activeVariantCount === 1;
+}
+
 export function hasUniqueMarketplaceIdentity(candidateProductCount: number): boolean {
   return Number.isInteger(candidateProductCount) && candidateProductCount === 1;
 }
