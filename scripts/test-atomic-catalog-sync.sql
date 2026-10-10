@@ -56,6 +56,7 @@ create table public.tracer_supply_variants (
   updated_at timestamptz
 );
 
+\i supabase/migrations/20261010100000_internal_supply_generation_atomic_catalog_sync.sql
 \i supabase/migrations/20261010120000_harden_atomic_catalog_sync_scope_and_sku_conflicts.sql
 
 insert into public.internal_supply_products(id,generation,active) values
@@ -139,13 +140,55 @@ begin
     raise exception 'forged product ID should be rejected: %', v_result;
   end if;
 
-  -- Inactive, unorderable, and out-of-stock sources are rejected.
-  update public.internal_supply_variants set inventory=0 where id=v_variant;
-  v_result := public.commit_internal_supply_catalog_sync(v_product,v_variant,1,1,v_catalog,v_catalog_variant);
-  if coalesce((v_result->>'reason'),'') <> 'source_not_sellable' then
-    raise exception 'out-of-stock source should be rejected: %', v_result;
-  end if;
-  update public.internal_supply_variants set inventory=10 where id=v_variant;
+  -- Source UPDATE triggers must bump generation. Use the new generation so this
+  -- test exercises the stock gate, not the stale-generation gate.
+  declare
+    v_product_generation bigint;
+    v_variant_generation bigint;
+  begin
+    select generation into v_variant_generation
+      from public.internal_supply_variants where id=v_variant;
+    update public.internal_supply_variants set inventory=0 where id=v_variant;
+    if (select generation from public.internal_supply_variants where id=v_variant) <> v_variant_generation + 1 then
+      raise exception 'variant generation trigger did not increment on update';
+    end if;
+    select generation into v_product_generation
+      from public.internal_supply_products where id=v_product;
+    select generation into v_variant_generation
+      from public.internal_supply_variants where id=v_variant;
+    v_result := public.commit_internal_supply_catalog_sync(v_product,v_variant,v_product_generation,v_variant_generation,v_catalog,v_catalog_variant);
+    if coalesce((v_result->>'reason'),'') <> 'source_not_sellable' then
+      raise exception 'out-of-stock source should be rejected: %', v_result;
+    end if;
+    update public.internal_supply_variants set inventory=10 where id=v_variant;
+
+    -- A fresh generation may sync, but a subsequent source mutation must
+    -- atomically quarantine the catalog projection and variant.
+    select generation into v_product_generation
+      from public.internal_supply_products where id=v_product;
+    select generation into v_variant_generation
+      from public.internal_supply_variants where id=v_variant;
+    v_result := public.commit_internal_supply_catalog_sync(v_product,v_variant,v_product_generation,v_variant_generation,v_catalog,v_catalog_variant);
+    if coalesce((v_result->>'ok')::boolean,false) is not true then
+      raise exception 'fresh generation should sync before quarantine test: %', v_result;
+    end if;
+    update public.internal_supply_variants set inventory=9 where id=v_variant;
+    if exists (
+      select 1 from public.tracer_supply_variants
+       where internal_supply_variant_id=v_variant
+         and (orderable is distinct from false or inventory <> 0)
+    ) then
+      raise exception 'source variant mutation did not quarantine catalog variant';
+    end if;
+    if exists (
+      select 1 from public.tracer_supply_catalog c
+      join public.tracer_supply_variants cv on cv.catalog_id=c.id
+      where cv.internal_supply_variant_id=v_variant
+        and (c.status <> 'draft' or c.orderable is distinct from false or c.inventory <> 0)
+    ) then
+      raise exception 'source variant mutation did not quarantine catalog product';
+    end if;
+  end;
 
   -- SKU collision with a different bestseller must throw and roll back both writes.
   v_catalog := jsonb_set(v_catalog,'{tracer_sku}','"TRACER-TEST-001"'::jsonb);
