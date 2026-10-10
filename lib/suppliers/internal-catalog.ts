@@ -332,16 +332,22 @@ export async function linkInternalSupplyForBestseller(args: {
   // ordering switch plus current price, shipping, tracking, destination and API
   // evidence. If any gate is missing, keep the identity link but leave the
   // listing non-orderable so matching metrics can grow without faking sellability.
-  const cost = Number(variant.cost ?? product.cost);
-  const shippingCost = Number(variant.shipping_cost ?? product.shipping_cost);
-  const leadTimeDays = Number(product.lead_time_days);
+  const rawCost = variant.cost ?? product.cost;
+  const rawShippingCost = variant.shipping_cost ?? product.shipping_cost;
+  const rawLeadTimeDays = product.lead_time_days;
+  const cost = Number(rawCost);
+  const shippingCost = Number(rawShippingCost);
+  const leadTimeDays = Number(rawLeadTimeDays);
   const shipTo = typeof product.ship_to === "string" ? product.ship_to.trim().toUpperCase() : "";
   const liveOrderReady =
     isSupplierLiveOrderingEnabled("TRACER_INTERNAL") &&
     product.api_available === true &&
     (variant.tracking_available === true || product.tracking_available === true) &&
+    (typeof rawCost === "number" || (typeof rawCost === "string" && rawCost.trim() !== "")) &&
     Number.isFinite(cost) && cost >= 0 &&
+    (typeof rawShippingCost === "number" || (typeof rawShippingCost === "string" && rawShippingCost.trim() !== "")) &&
     Number.isFinite(shippingCost) && shippingCost >= 0 &&
+    (typeof rawLeadTimeDays === "number" || (typeof rawLeadTimeDays === "string" && rawLeadTimeDays.trim() !== "")) &&
     Number.isFinite(leadTimeDays) && leadTimeDays >= 0 &&
     (shipTo === "JP" || shipTo.split(/[\\s,;|]+/).includes("JP"));
   if (!liveOrderReady) {
