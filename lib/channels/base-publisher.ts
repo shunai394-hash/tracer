@@ -141,7 +141,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       results.push({ listingId: String(listing.id), ok: false, error: message });
       // A rejected/expired BASE token will fail every item in this batch; stop
       // immediately to avoid hammering the API while credentials are repaired.
-      if (/アクセストークンが無効|invalid_request|BASE OAuth refresh HTTP 4\\d\\d/i.test(message)) break;
+      if (/アクセストークンが無効|invalid_request|BASE OAuth refresh HTTP 4\d\d/i.test(message)) break;
     }
   }
 
