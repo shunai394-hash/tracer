@@ -50,6 +50,8 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f scripts/test-canonical-variant-evidence.sql
       - name: Run application internal supply retry lifecycle tests
         run: node --experimental-strip-types --no-warnings scripts/test-internal-link-retry-lifecycle.mjs
+      - name: Run ASIN-aware internal supply identity tests
+        run: node --experimental-strip-types --no-warnings scripts/test-internal-supply-asin-linking.mjs
       - name: Run durable internal supply link retry queue tests (disposable CI database only)
         env:
           PGHOST: 127.0.0.1
