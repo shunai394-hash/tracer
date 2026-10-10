@@ -6,7 +6,7 @@ import {
   marketplaceBarcodeCandidates,
   matchProductIdentity,
 } from "@/lib/market/identifiers";
-import { hasUniqueMarketplaceIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
+import { hasUniqueIdentitySelection, hasUniqueMarketplaceIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 export async function linkInternalSupplyForBestseller(args: {
   bestseller: Record<string, unknown>;
@@ -137,11 +137,11 @@ export async function linkInternalSupplyForBestseller(args: {
     // Multiple variants may share weak/model-level identity. Only select from
     // a multi-variant set when exactly one variant has an exact normalized
     // barcode match; never take the first matching row by response order.
-    const selected = confirmedVariants.length === 1
-      ? confirmedVariants[0]
-      : exactIdentifierMatches.length === 1
-        ? exactIdentifierMatches[0]
-        : null;
+    const selected = hasUniqueIdentitySelection(confirmedVariants.length, exactIdentifierMatches.length)
+      ? confirmedVariants.length === 1
+        ? confirmedVariants[0]
+        : exactIdentifierMatches[0]
+      : null;
 
     if (!selected) continue;
 
