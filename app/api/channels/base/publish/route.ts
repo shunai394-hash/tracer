@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
+import { getBasePublicationOutcome } from "@/lib/channels/base-publication-result";
 import { requireCronAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
@@ -11,7 +12,11 @@ export async function POST(request: Request) {
     if (authError) return authError;
 
     const result = await publishPublishedListingsToBase(20);
-    return NextResponse.json({ ok: true, channel: "base", ...result });
+    const outcome = getBasePublicationOutcome(result);
+    return NextResponse.json(
+      { ...outcome, channel: "base", ...result },
+      { status: outcome.status },
+    );
   } catch (error) {
     return NextResponse.json(
       {
