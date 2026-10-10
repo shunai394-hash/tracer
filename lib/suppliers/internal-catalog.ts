@@ -5,7 +5,6 @@ import {
   exactBarcodeFamilyMatch,
   identifiersFromRecord,
   marketplaceBarcodeCandidates,
-  matchProductIdentity,
   selectUniqueExactBarcodeMatch,
 } from "@/lib/market/identifiers";
 
@@ -140,23 +139,9 @@ export async function linkInternalSupplyForBestseller(args: {
   // supplier products into a false "unique" link.
   for (const product of products) {
     const productIds = identifiersFromRecord(product as Record<string, unknown>);
-    const identity = matchProductIdentity({
-      market: {
-        ...marketIds,
-        brand: typeof args.bestseller.brand === "string" ? args.bestseller.brand : null,
-        title: String(args.bestseller.title ?? ""),
-      },
-      supply: {
-        ...productIds,
-        brand: typeof product.brand === "string" ? product.brand : null,
-        title: String(product.title ?? ""),
-      },
-    });
-    // Parent identity is only a retrieval hint. A parent may have no barcode
-    // (or no identifiers at all) while its concrete variant carries the proof.
-    // Exact variant barcode matching below is the only identity gate.
-    void identity;
-
+    // A parent may have no barcode (or no identifiers at all) while its
+    // concrete variant carries the proof. Exact variant barcode matching below
+    // is the only identity gate.
     const firstVariantPage = await supabase
       .from("internal_supply_variants")
       .select("*")
