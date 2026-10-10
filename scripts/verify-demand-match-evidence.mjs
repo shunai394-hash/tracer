@@ -18,10 +18,43 @@ import {
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { normalizeIdentifier } from "../lib/market/identifiers.ts";
+import { parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
 const pending = [];
+
+test("canonical marketplace variant evidence", "captures only explicit ProductGroup child variants and never copies parent barcodes", () => {
+  const html = '<script type="application/ld+json">{"@context":"https://schema.org","@type":"ProductGroup","productGroupID":"PARENT-MODEL","gtin13":"4006381333931","hasVariant":[{"@type":"Product","name":"Bottle 500 ml","sku":"BOTTLE-500","url":"https://www.amazon.co.jp/dp/B0VARIANT1","gtin13":"4006381333931"},{"@type":"Product","name":"Bottle 1 L","sku":"BOTTLE-1000","url":"https://www.amazon.co.jp/dp/B0VARIANT2","gtin13":"4006381333932"}]}</script>';
+  const variants = parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01");
+  assert.equal(variants.length, 2);
+  assert.equal(variants[0].sourceVariantId, "B0VARIANT1");
+  assert.equal(variants[0].gtin, "4006381333931");
+  assert.equal(variants[1].sourceVariantId, "B0VARIANT2");
+  assert.equal(variants[1].gtin, null, "invalid variant barcode check digit must not be treated as evidence");
+  assert.equal(variants.every((variant) => variant.evidenceSource === "schema_org_product_group_has_variant"), true);
+  assert.equal(variants.some((variant) => variant.gtin === "4006381333931" && variant.sourceVariantId === "B0PARENT01"), false,
+    "parent product barcode must not be copied onto a child variant");
+});
+
+
+test("canonical marketplace variant evidence", "does not use the parent ASIN as a child ID when variants omit their own URL", () => {
+  const html = '<script type="application/ld+json">{"@context":"https://schema.org","@type":"ProductGroup","gtin13":"4006381333931","hasVariant":[{"@type":"Product","name":"Size Small","sku":"ITEM-S"},{"@type":"Product","name":"Size Large","sku":"ITEM-L"}]}</script>';
+  const variants = parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01");
+  assert.equal(variants.length, 2);
+  assert.deepEqual(variants.map((variant) => variant.sourceVariantId), ["ITEM-S", "ITEM-L"]);
+  assert.equal(variants.every((variant) => variant.asin === null), true, "parent ASIN must not be assigned to child variant evidence");
+  assert.equal(variants.every((variant) => variant.gtin === null), true, "parent GTIN must not be inherited by child variants");
+
+  const sameParentUrlHtml = '<script type="application/ld+json">{"@context":"https://schema.org","@type":"ProductGroup","hasVariant":[{"@type":"Product","name":"Variant repeats parent URL","sku":"ITEM-SAME-PARENT-URL","url":"https://www.amazon.co.jp/dp/B0PARENT01"}]}</script>';
+  const sameParentUrlVariants = parseCanonicalMarketplaceVariantEvidence(sameParentUrlHtml, "https://www.amazon.co.jp/dp/B0PARENT01");
+  assert.equal(sameParentUrlVariants.length, 1);
+  assert.equal(sameParentUrlVariants[0].sourceVariantId, "ITEM-SAME-PARENT-URL");
+  assert.equal(sameParentUrlVariants[0].asin, null, "explicitly repeated parent URL must not become child ASIN evidence");
+});
+
+
+
 function test(group, name, fn) {
   const record = (ok, error) => results.push({ group, name, ok, error });
   try {

@@ -14,6 +14,7 @@ import {
   type ParsedBestseller,
 } from "@/lib/market/parse-rankings";
 import { extractAsinFromUrl, normalizeIdentifier } from "@/lib/market/identifiers";
+import { parseCanonicalMarketplaceVariantEvidence } from "@/lib/market/canonical-variant-evidence";
 import { decodeHtmlBytes } from "@/lib/market/charset";
 
 export const MARKETPLACE_SOURCES = [
@@ -220,6 +221,7 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
 
       if (marketplace.marketplace === "amazon.co.jp") {
         const detail = parseAmazonProductDetail(detailHtml);
+        item.canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl);
         item.brand = detail.brand;
         item.model = detail.model;
         item.jan = normalizeIdentifier("jan", detail.jan);
