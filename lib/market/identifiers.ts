@@ -115,6 +115,18 @@ export function pickIdentifierQuery(ids: ProductIdentifiers): string | null {
   return ids.jan ?? ids.gtin ?? ids.ean ?? ids.upc ?? ids.asin ?? ids.mpn ?? null;
 }
 
+/** Query candidates in deterministic order; ASIN is lookup-only and never sufficient for sales identity. */
+export function identifierQueryEntries(ids: ProductIdentifiers): Array<[IdentifierScheme, string]> {
+  return ([
+    ["asin", ids.asin],
+    ["jan", ids.jan],
+    ["gtin", ids.gtin],
+    ["ean", ids.ean],
+    ["upc", ids.upc],
+    ["mpn", ids.mpn],
+  ] as Array<[IdentifierScheme, string | null]>).filter((entry): entry is [IdentifierScheme, string] => Boolean(entry[1]));
+}
+
 export type IdentityMatchMethod =
   | "asin" | "jan" | "gtin" | "ean" | "upc" | "mpn"
   | "brand_mpn" | "specs" | "image_url" | "title" | "none";
