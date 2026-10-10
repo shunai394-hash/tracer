@@ -41,6 +41,14 @@ assert.match(ingest, /orderable: false/,
   "supplier stock/freight alone must not enable automated purchasing");
 assert.match(ingest, /identityLink = \{/,
   "a unique exact identifier match must be recorded separately from orderability");
+assert.match(ingest, /from\("marketplace_bestseller_variants"\)/,
+  "supplier identity must be compared against independently stored marketplace child variants");
+assert.match(ingest, /marketplace_variant_evidence_id: String\(row\.id\)/,
+  "verified links must persist the exact canonical child-variant evidence ID");
+assert.match(ingest, /item\.row\.evidence_source === "schema_org_product_group_has_variant"/,
+  "only explicit canonical child-variant evidence is eligible");
+assert.match(ingest, /const barcodeMethod = \["jan", "gtin", "ean", "upc"\]\.includes\(identity\.method\)/,
+  "only exact barcode-family proof may establish supplier-to-child-variant identity");
 assert.match(ingest, /automated_order_creation_verified: false/,
   "live stock/freight verification must not be represented as proof of automated ordering");
 assert.match(ingest, /sku: null/,
@@ -61,7 +69,7 @@ assert.match(ingest, /cj_internal_supply_variant_already_owned_by_another_produc
   "a supplier variant ID already owned by another internal product must be rejected");
 assert.match(ingest, /internal_supply_ingestion_audit/,
   "an ingestion audit attempt must be made");
-assert.match(ingest, /identity link duplicate did not match intended evidence/,
+assert.match(ingest, /duplicate link does not match canonical child evidence/,
   "a unique conflict must not be reported as success unless the persisted identity evidence matches");
 assert.match(ingest, /auditStatus: "written" \| "table_missing" \| "write_failed"/,
   "audit table absence must be distinguished from other audit write failures");
