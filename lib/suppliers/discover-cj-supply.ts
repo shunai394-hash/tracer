@@ -13,6 +13,7 @@ import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/c
 import { persistCjSupplyIntelligence } from "@/lib/intelligence/persist-cj-supply-intelligence";
 import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
 import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { persistCjInternalSupplyCandidate } from "@/lib/suppliers/persist-cj-internal-supply";
 
 function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
   const landed = (costUsd + shippingUsd) * fx;
@@ -411,6 +412,31 @@ export async function discoverAndCreateCjSupply(
         sellingPriceJpy: salePrice,
         variantBarcode,
       });
+      let internalSupply: { productId: string; variantId: string; sourceRef: string; identityLink: { bestsellerId: string; method: string; rationale: string } | null; auditStatus: "written" | "table_missing" | "write_failed" } | null = null;
+      let internalSupplyError: string | null = null;
+      try {
+        internalSupply = await persistCjInternalSupplyCandidate({
+          supplierProductId: candidate.id,
+          supplierVariantId: candidate.variantId,
+          supplierSku: seededVariant?.sku ?? null,
+          title: displayTitle,
+          imageUrl: detail.imageUrl,
+          barcode: variantBarcode,
+          costUsd: cost,
+          shippingUsd: freight,
+          inventory: Math.floor(stock),
+          fxRate,
+          sellingPriceJpy: salePrice,
+          query,
+        });
+      } catch (error) {
+        internalSupplyError = error instanceof Error ? error.message : String(error);
+        console.warn("[supply-first] internal supply ingest failed", {
+          supplierProductId: candidate.id,
+          supplierVariantId: candidate.variantId,
+          error: internalSupplyError,
+        });
+      }
       discovered++;
       verified++;
       items.push({
@@ -427,6 +453,13 @@ export async function discoverAndCreateCjSupply(
         sellingPriceJpy: salePrice,
         fxRate,
         published: false,
+        internalSupplyIngested: Boolean(internalSupply),
+        internalSupplyProductId: internalSupply?.productId ?? null,
+        internalSupplyVariantId: internalSupply?.variantId ?? null,
+        internalSupplySourceRef: internalSupply?.sourceRef ?? null,
+        internalSupplyAuditStatus: internalSupply?.auditStatus ?? "not_attempted",
+        internalSupplyError,
+        identityLink: internalSupply?.identityLink ?? null,
       });
     } catch (error) {
       rejected++;
@@ -632,6 +665,31 @@ export async function discoverAndCreateCjSupply(
           sellingPriceJpy: salePrice,
           variantBarcode,
         });
+        let internalSupply: { productId: string; variantId: string; sourceRef: string; identityLink: { bestsellerId: string; method: string; rationale: string } | null; auditStatus: "written" | "table_missing" | "write_failed" } | null = null;
+        let internalSupplyError: string | null = null;
+        try {
+          internalSupply = await persistCjInternalSupplyCandidate({
+            supplierProductId: candidate.id,
+            supplierVariantId: variant.vid,
+            supplierSku: variant.sku ?? null,
+            title: displayTitle,
+            imageUrl: detail.imageUrl,
+            barcode: variantBarcode,
+            costUsd: cost,
+            shippingUsd: freight,
+            inventory: Math.floor(stock),
+            fxRate,
+            sellingPriceJpy: salePrice,
+            query,
+          });
+        } catch (error) {
+          internalSupplyError = error instanceof Error ? error.message : String(error);
+          console.warn("[supply-first] internal supply ingest failed", {
+            supplierProductId: candidate.id,
+            supplierVariantId: variant.vid,
+            error: internalSupplyError,
+          });
+        }
         discovered++;
         verified++;
         catalogDiscovered++;
@@ -649,6 +707,13 @@ export async function discoverAndCreateCjSupply(
           sellingPriceJpy: salePrice,
           fxRate,
           published: false,
+          internalSupplyIngested: Boolean(internalSupply),
+          internalSupplyProductId: internalSupply?.productId ?? null,
+          internalSupplyVariantId: internalSupply?.variantId ?? null,
+          internalSupplySourceRef: internalSupply?.sourceRef ?? null,
+          internalSupplyAuditStatus: internalSupply?.auditStatus ?? "not_attempted",
+          internalSupplyError,
+          identityLink: internalSupply?.identityLink ?? null,
         });
       } catch (error) {
         reject("error", { error: error instanceof Error ? error.message : String(error) });
