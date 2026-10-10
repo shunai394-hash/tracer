@@ -5,7 +5,7 @@ import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
-import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { evaluateSalesTestGate, SALES_TEST_GATE_PASSED, type SalesTestGateInput } from "@/lib/market/sales-test-gate";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 
 function asNumber(value: unknown): number | null {
@@ -34,6 +34,66 @@ function validHttpUrl(value: unknown): boolean {
   } catch {
     return false;
   }
+}
+
+export type CanonicalPublishRequest = {
+  /** Full gate input; the writer evaluates it itself and refuses on any reason. */
+  gateInput: SalesTestGateInput;
+  /** shop_listings row content (publication fields are set by the writer). */
+  listing: Record<string, unknown>;
+  slug: string;
+  /** Extra provenance appended after the gate marker. */
+  selectionReasons: string[];
+  /** Supply rows may already exist for the product under another slug. */
+  matchExistingByProductId?: string | null;
+  pipelineReason: string;
+};
+
+type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
+
+/**
+ * The only place a sales-test listing becomes published:true. It re-runs the
+ * Sales Test Gate on the exact input it is given; a caller cannot publish by
+ * constructing its own payload.
+ */
+export async function publishCanonicalSalesTestListing(
+  supabase: AdminClient,
+  request: CanonicalPublishRequest,
+): Promise<{ published: true; listingId: string } | { published: false; reasons: string[] }> {
+  const gate = evaluateSalesTestGate(request.gateInput);
+  if (!gate.eligible) return { published: false, reasons: gate.reasons };
+
+  const now = new Date().toISOString();
+  const payload = {
+    ...request.listing,
+    published: true,
+    selection_reasons: [SALES_TEST_GATE_PASSED, ...request.selectionReasons],
+    missing: [],
+    pipeline_stage: "PUBLISHED",
+    pipeline_status: "published",
+    pipeline_reason: request.pipelineReason,
+    pipeline_error: null,
+    pipeline_updated_at: now,
+    published_at: now,
+    updated_at: now,
+  };
+
+  const existing = await supabase.from("shop_listings").select("id").eq("slug", request.slug).maybeSingle();
+  if (existing.error) throw new Error(existing.error.message);
+  let existingId = existing.data?.id ? String(existing.data.id) : null;
+  let keepSlug = false;
+  if (!existingId && request.matchExistingByProductId) {
+    const byProduct = await supabase.from("shop_listings").select("id").eq("product_id", request.matchExistingByProductId).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+    if (byProduct.error) throw new Error(byProduct.error.message);
+    if (byProduct.data?.id) { existingId = String(byProduct.data.id); keepSlug = true; }
+  }
+  const withSlug = { ...payload, slug: request.slug };
+  const result = existingId
+    ? await supabase.from("shop_listings").update(keepSlug ? payload : withSlug).eq("id", existingId).select("id").single()
+    : await supabase.from("shop_listings").insert(withSlug).select("id").single();
+  if (result.error) throw new Error(result.error.message);
+  if (!result.data?.id) throw new Error("shop_listings write returned no id");
+  return { published: true, listingId: String(result.data.id) };
 }
 
 export type SalesTestSelection = {
@@ -95,6 +155,7 @@ export async function selectAndPublishSalesTests(
     reasons: string[];
     qualityScore: number;
     isInternalSupply: boolean;
+    gateInput: SalesTestGateInput;
   }> = [];
 
   const productIds = (bestsellers ?? [])
@@ -134,6 +195,11 @@ export async function selectAndPublishSalesTests(
 
     let listing: Record<string, unknown> | undefined;
     let isInternalSupply = false;
+    let supplierCandidateCount = 0;
+    // For internal supply the catalog row is the link; its evidence carries
+    // the identifier that actually established it.
+    let identityEvidenceMethod: string | null = null;
+    let identityEvidenceConfidence: number | null = null;
     if (internalCatalog) {
       const { data: catalogVariant, error: catalogVariantError } = await supabase
         .from("tracer_supply_variants")
@@ -147,6 +213,10 @@ export async function selectAndPublishSalesTests(
       if (catalogVariantError) throw new Error(catalogVariantError.message);
       const internalCatalogVariant = (catalogVariant ?? null) as Record<string, unknown> | null;
       isInternalSupply = true;
+      supplierCandidateCount = internalCatalogVariant ? 1 : 0;
+      const catalogEvidence = (internalCatalog.evidence ?? null) as Record<string, unknown> | null;
+      identityEvidenceMethod = typeof catalogEvidence?.identity_method === "string" ? catalogEvidence.identity_method : null;
+      identityEvidenceConfidence = asNumber(catalogEvidence?.identity_confidence);
       listing = {
         id: internalCatalog.id,
         supplier: "TRACER_INTERNAL",
@@ -182,6 +252,9 @@ export async function selectAndPublishSalesTests(
         .limit(5);
       if (listingError) throw new Error(listingError.message);
       listing = (listings ?? [])[0] as Record<string, unknown> | undefined;
+      supplierCandidateCount = new Set(
+        (listings ?? []).map((row) => String((row as Record<string, unknown>).supplier_variant_id ?? (row as Record<string, unknown>).id)),
+      ).size;
     }
 
     if (!listing) {
@@ -209,25 +282,6 @@ export async function selectAndPublishSalesTests(
       reasons.push("inventory_zero");
     }
 
-    const identityMethod = String(listing.identity_method ?? "");
-    const identifierGradeMethods = new Set([
-      "tracer_catalog",
-      "asin",
-      "jan",
-      "gtin",
-      "ean",
-      "upc",
-      "mpn",
-      "brand_mpn",
-    ]);
-    if (!identifierGradeMethods.has(identityMethod)) reasons.push("identity_not_confirmed");
-    const identityConfidence = asNumber(listing.identity_confidence);
-    if (identityConfidence === null || identityConfidence < 0.88) reasons.push("identity_confidence_low");
-
-    if (!isInternalSupply && typeof listing.supplier_variant_id !== "string") {
-      reasons.push("supplier_variant_unknown");
-    }
-
     const profit = simulateContributionProfit({
       sellingPrice: isInternalSupply ? asNumber(listing.catalog_sale_price) : asNumber(bestseller.price),
       sellingCurrency: isInternalSupply ? (typeof listing.currency === "string" ? listing.currency : null) : (typeof bestseller.currency === "string" ? bestseller.currency : null),
@@ -252,9 +306,17 @@ export async function selectAndPublishSalesTests(
     if (profit.shippingUnknown) reasons.push("shipping_unknown");
     if (profit.contributionProfit !== null && profit.contributionProfit <= 0) reasons.push("profit_not_positive");
 
+    // The shared Sales Test Gate decides identity, supply, stock, price and
+    // economics. The same input is re-evaluated by the canonical writer.
+    const gateInput = salesTestGateInputFor({ bestseller, listing, isInternalSupply, identityEvidenceMethod, identityEvidenceConfidence, supplierCandidateCount, profit });
+    const gate = evaluateSalesTestGate(gateInput);
+    if (!gate.eligible) reasons.push(...gate.reasons);
+    const identityConfidence = gateInput.identityConfidence ?? null;
+
     if (reasons.length > 0) {
-      await markPipeline(String(bestseller.id), "SALES_TEST", "blocked", reasons.join(","));
-      rejected.push({ id: String(bestseller.id), reasons });
+      const uniqueReasons = Array.from(new Set(reasons));
+      await markPipeline(String(bestseller.id), "SALES_TEST", "blocked", uniqueReasons.join(","));
+      rejected.push({ id: String(bestseller.id), reasons: uniqueReasons });
       continue;
     }
 
@@ -314,6 +376,7 @@ export async function selectAndPublishSalesTests(
       profit,
       qualityScore,
       isInternalSupply,
+      gateInput: { ...gateInput, title: publishTitle },
       reasons: [
         `quality_score_${qualityScore.toFixed(1)}`, `women_priority_${womenBonus}`, `demand_score_${demandScore.toFixed(1)}`,
         `search_fit_score_${searchFitScore.toFixed(1)}`, `market_gap_score_${marketGapScore.toFixed(1)}`,
@@ -356,11 +419,10 @@ export async function selectAndPublishSalesTests(
 
     await markPipeline(String(item.bestseller.id), "SELECTED", "selected", "sales_test_selected");
 
-    const listingPayload = {
+    const listingRow = {
       product_id: productId,
       bestseller_id: item.bestseller.id,
       supplier_listing_id: item.isInternalSupply ? null : item.listing.id,
-      slug,
       title: listingTitle,
       description: item.isInternalSupply
         ? "TRACER独自供給カタログの商品です。需要・価格・在庫・注文可否をTRACER側で管理しています。"
@@ -380,33 +442,29 @@ export async function selectAndPublishSalesTests(
       identity_confidence: item.listing.identity_confidence,
       contribution_profit: item.profit.contributionProfit,
       contribution_margin: item.profit.contributionMargin,
-      published: true,
-      selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:market", ...item.reasons],
-      missing: [],
-      pipeline_stage: "PUBLISHED",
-      pipeline_status: "published",
-      pipeline_reason: "sales_test_gate_passed_canonical_publish",
-      pipeline_error: null,
-      pipeline_updated_at: fetchedAt,
-      published_at: fetchedAt,
-      updated_at: fetchedAt,
     };
-    const existing = await supabase.from("shop_listings").select("id").eq("slug", slug).maybeSingle();
-    let upsert: { data: { id: string } | null; error: { message: string } | null };
-    if (existing.error) throw new Error(existing.error.message);
-    if (existing.data?.id) {
-      const updated = await supabase.from("shop_listings").update(listingPayload).eq("id", existing.data.id).select("id").single();
-      upsert = { data: updated.data as { id: string } | null, error: updated.error ? { message: updated.error.message } : null };
-    } else {
-      const inserted = await supabase.from("shop_listings").insert(listingPayload).select("id").single();
-      upsert = { data: inserted.data as { id: string } | null, error: inserted.error ? { message: inserted.error.message } : null };
+    let write: Awaited<ReturnType<typeof publishCanonicalSalesTestListing>>;
+    try {
+      write = await publishCanonicalSalesTestListing(supabase, {
+        gateInput: { ...item.gateInput, title: listingTitle },
+        listing: listingRow,
+        slug,
+        selectionReasons: ["sales_test_gate:market", ...item.reasons],
+        // Same marker as every canonical publication, so downstream channels
+        // (hasPassedSalesTestGate) recognise it.
+        pipelineReason: SALES_TEST_GATE_PASSED,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await markPipeline(String(item.bestseller.id), "PRODUCT_CREATED", "failed", "shop_listing_upsert_failed", message);
+      throw error;
     }
-
-    if (upsert.error) {
-      await markPipeline(String(item.bestseller.id), "PRODUCT_CREATED", "failed", "shop_listing_upsert_failed", upsert.error.message);
-      throw new Error(upsert.error.message);
+    if (!write.published) {
+      await markPipeline(String(item.bestseller.id), "SALES_TEST", "blocked", write.reasons.join(","));
+      rejected.push({ id: String(item.bestseller.id), reasons: write.reasons });
+      continue;
     }
-    if (upsert.data?.id) { selectedListingIds.push(String(upsert.data.id)); publishedListingIds.push(String(upsert.data.id)); published += 1; }
+    selectedListingIds.push(write.listingId); publishedListingIds.push(write.listingId); published += 1;
 
     await markPipeline(String(item.bestseller.id), "PUBLISHED", "published", "sales_test_gate_passed_canonical_publish");
 
@@ -426,4 +484,41 @@ export async function selectAndPublishSalesTests(
   }
 
   return { published, publishedListingIds, selectedListingIds, considered: (bestsellers ?? []).length, rejected: rejected.slice(0, 20) };
+}
+
+/** Build the Sales Test Gate input for a market or internal-supply candidate. */
+export function salesTestGateInputFor(args: {
+  bestseller: Record<string, unknown>;
+  listing: Record<string, unknown>;
+  isInternalSupply: boolean;
+  identityEvidenceMethod: string | null;
+  identityEvidenceConfidence: number | null;
+  supplierCandidateCount: number;
+  profit: { calculable: boolean; shippingUnknown: boolean; contributionProfit: number | null };
+}): SalesTestGateInput {
+  const { bestseller, listing, isInternalSupply } = args;
+  return {
+    rank: asNumber(bestseller.rank),
+    requireRank: true,
+    title: localizeProductTitle(bestseller.title, String(bestseller.category ?? "")),
+    sellingPrice: isInternalSupply ? asNumber(listing.catalog_sale_price) : asNumber(bestseller.price),
+    identityLinked: listing.identity_status === "linked",
+    identityMethod: isInternalSupply ? args.identityEvidenceMethod : (typeof listing.identity_method === "string" ? listing.identity_method : null),
+    identityConfidence: isInternalSupply ? args.identityEvidenceConfidence : asNumber(listing.identity_confidence),
+    sourceCost: asNumber(listing.cost),
+    shippingCost: asNumber(listing.shipping_cost),
+    trackingAvailable: listing.tracking_available === true,
+    apiAvailable: listing.api_available === true,
+    profitCalculable: args.profit.calculable,
+    shippingUnknown: args.profit.shippingUnknown,
+    contributionProfit: args.profit.contributionProfit,
+    currencyMismatch: false,
+    priceConfirmed: isInternalSupply ? asNumber(listing.cost) !== null : listing.price_confirmed === true,
+    inventoryConfirmed: listing.inventory_confirmed === true,
+    inventory: asNumber(listing.inventory),
+    orderable: listing.orderable === true,
+    supplierProductId: typeof listing.supplier_product_id === "string" && listing.supplier_product_id ? listing.supplier_product_id : null,
+    supplierVariantId: typeof listing.supplier_variant_id === "string" && listing.supplier_variant_id ? listing.supplier_variant_id : null,
+    supplierCandidateCount: args.supplierCandidateCount,
+  };
 }

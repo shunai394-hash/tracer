@@ -1,4 +1,5 @@
 ﻿import { generateCachedStructuredJson } from "@/lib/ai/gemini/cache";
+import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { normalizeIdentityText } from "@/lib/intelligence/identity-confidence";
 
 const UNRELATED_QUERY_TERMS = [
@@ -31,10 +32,24 @@ type ProductQueryResponse = {
   product_queries?: string[];
 };
 
+/**
+ * Safe fallback when query ideation is unavailable: search only the exact
+ * observed demand phrase. It creates candidates, never identity links or listings.
+ */
+export function deterministicCJProductQueries(demandQuery: string, category: string | null): string[] {
+  const exactQuery = demandQuery.trim();
+  if (!exactQuery) return [];
+  const automobileDemand = looksLikeAutomobileDemand(exactQuery, category);
+  return [exactQuery]
+    .filter((query) => !(automobileDemand && isUnrelatedAccessoryQuery(query)))
+    .slice(0, 1);
+}
+
 export async function generateCJProductQueries(
   demandQuery: string,
   category: string | null,
 ): Promise<string[]> {
+  if (!isGeminiConfigured()) return deterministicCJProductQueries(demandQuery, category);
   const result = await generateCachedStructuredJson<ProductQueryResponse>({
     cacheKey: `cj-queries:${demandQuery}:${category ?? ""}`,
     systemInstruction:

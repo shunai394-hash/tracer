@@ -33,6 +33,7 @@ jobs:
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-publishable-title.mjs
+      - run: node --experimental-strip-types --no-warnings --import ./scripts/lib/register-ts-alias.mjs scripts/test-cj-query-fallback.mjs
       - name: Run atomic catalog sync PostgreSQL integration tests (disposable CI database only)
         env:
           PGHOST: 127.0.0.1
@@ -49,5 +50,21 @@ jobs:
           PGPASSWORD: ci-postgres-password
           PGDATABASE: tracer_test
         run: psql -v ON_ERROR_STOP=1 -f scripts/test-canonical-variant-evidence.sql
+      - name: Run application internal supply retry lifecycle tests
+        run: node --experimental-strip-types --no-warnings scripts/test-internal-link-retry-lifecycle.mjs
+      - name: Run ASIN-aware internal supply identity tests
+        run: node --experimental-strip-types --no-warnings scripts/test-internal-supply-asin-linking.mjs
+      - name: Run publication gate identity/variant/supply regression tests (in-memory database only)
+        run: node --experimental-strip-types --no-warnings --import ./scripts/lib/register-ts-alias.mjs scripts/test-publish-gate-identity.mjs
+      - name: Audit that only the canonical Sales Test Gate writer publishes listings
+        run: node scripts/audit-publish-paths.mjs
+      - name: Run durable internal supply link retry queue tests (disposable CI database only)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: ci-postgres-password
+          PGDATABASE: tracer_test
+        run: psql -v ON_ERROR_STOP=1 -f scripts/test-internal-supply-link-retry-queue.sql
       - run: npm run lint
       - run: npm run build

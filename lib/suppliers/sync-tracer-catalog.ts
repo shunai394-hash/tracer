@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { identifiersFromRecord, matchProductIdentity } from "@/lib/market/identifiers";
+import { identifiersFromRecord, identifierQueryEntries, hasExactMarketplaceVariantIdentifierMatch, matchProductIdentity } from "@/lib/market/identifiers";
 import { hasExactCurrentRequestVariantSet, hasUniqueIdentitySelection, onlyCurrentRequestVariants } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 function num(value: unknown): number | null {
@@ -42,13 +42,7 @@ export async function syncTracerCatalogFromInternalSupply(args: {
   if (!bestseller) return { matched: false, catalogId: null, variantId: null, reason: "bestseller_not_found" };
 
   const marketIds = identifiersFromRecord(bestseller as Record<string, unknown>);
-  const queries = [
-    ["jan", marketIds.jan],
-    ["gtin", marketIds.gtin],
-    ["ean", marketIds.ean],
-    ["upc", marketIds.upc],
-    ["mpn", marketIds.mpn],
-  ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
+  const queries = identifierQueryEntries(marketIds);
 
   if (!queries.length) return { matched: false, catalogId: null, variantId: null, reason: "no_identifier" };
 
@@ -121,11 +115,9 @@ export async function syncTracerCatalogFromInternalSupply(args: {
     }).filter((x) => x.identity.salesEligible);
 
     const exactIdentifierMatches = confirmed.filter((x) =>
-      Boolean(
-        (marketIds.jan && identifiersFromRecord(x.variant as Record<string, unknown>).jan === marketIds.jan) ||
-        (marketIds.gtin && identifiersFromRecord(x.variant as Record<string, unknown>).gtin === marketIds.gtin) ||
-        (marketIds.ean && identifiersFromRecord(x.variant as Record<string, unknown>).ean === marketIds.ean) ||
-        (marketIds.upc && identifiersFromRecord(x.variant as Record<string, unknown>).upc === marketIds.upc),
+      hasExactMarketplaceVariantIdentifierMatch(
+        marketIds,
+        identifiersFromRecord(x.variant as Record<string, unknown>),
       ),
     );
     const selected = hasUniqueIdentitySelection(confirmed.length, exactIdentifierMatches.length)

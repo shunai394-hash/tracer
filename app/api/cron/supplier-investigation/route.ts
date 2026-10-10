@@ -5,7 +5,9 @@ import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { linkInternalSupplyForBestseller } from "@/lib/suppliers/internal-catalog";
+import { selectDueInternalLinkRetryIds } from "@/lib/suppliers/cj-identity-reverify-policy";
 import { syncTracerCatalogFromInternalSupply } from "@/lib/suppliers/sync-tracer-catalog";
+import { createPersistedLinkVerifier, createRetryQueueStore, isInternalLinkRetryDue, processInternalLinkCandidates } from "@/lib/suppliers/internal-link-retry-lifecycle";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -67,6 +69,27 @@ export async function GET(request: Request) {
 
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
+    // Durable internal-link retries are selected first. The retry table is
+    // the source of truth for failure reason, identifiers, attempt count and due time.
+    const { data: retryStateRows, error: retryStateError } = await supabase
+      .from("internal_supply_link_retry_queue")
+      .select("bestseller_id,supplier_listing_id,supply_variant_id,reason,link_status,retry_count,next_attempt_at")
+      .order("next_attempt_at", { ascending: true })
+      .limit(5000);
+    if (retryStateError) throw new Error(`internal link retry queue lookup failed: ${retryStateError.message}`);
+
+    const retryStateById = new Map(
+      (retryStateRows ?? []).map((row) => [String(row.bestseller_id), row]),
+    );
+    const dueRetryIds = selectDueInternalLinkRetryIds(
+      (retryStateRows ?? []).map((row) => ({
+        bestseller_id: String(row.bestseller_id),
+        next_attempt_at: row.next_attempt_at ? String(row.next_attempt_at) : null,
+      })),
+      Date.now(),
+      BESTSELLER_CANDIDATE_BATCH_SIZE,
+    );
+
     // Pull a wider queue, then spend the limited supplier-call budget on the
     // strongest strict identity evidence first. ASIN/MPN are intentionally
     // retained because investigate-dropship can enrich them before matching.
@@ -81,11 +104,18 @@ export async function GET(request: Request) {
 
     if (freshError) throw new Error(freshError.message);
 
-    let candidateIds = prioritizeRows(
+    const freshCandidateIds = prioritizeRows(
       (freshRows ?? []) as unknown as Record<string, unknown>[],
     )
-      .slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE)
+      .filter((row) => {
+        const queued = retryStateById.get(String(row.id));
+        return !queued || isInternalLinkRetryDue(queued.next_attempt_at ? String(queued.next_attempt_at) : null);
+      })
       .map((row) => String(row.id));
+
+    let candidateIds = [...dueRetryIds, ...freshCandidateIds]
+      .filter((id, index, ids) => ids.indexOf(id) === index)
+      .slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
 
     if (candidateIds.length < BESTSELLER_CANDIDATE_BATCH_SIZE) {
       const retrySlots = BESTSELLER_CANDIDATE_BATCH_SIZE - candidateIds.length;
@@ -107,49 +137,114 @@ export async function GET(request: Request) {
       // strict supplier identity.
       const prioritizedRetries = prioritizeRows(
         (retryRows ?? []) as unknown as Record<string, unknown>[],
-      ).slice(0, retrySlots);
+      ).filter((row) => {
+        const queued = retryStateById.get(String(row.id));
+        return !queued || isInternalLinkRetryDue(queued.next_attempt_at ? String(queued.next_attempt_at) : null);
+      }).slice(0, retrySlots);
 
       candidateIds = [...candidateIds, ...prioritizedRetries.map((row) => String(row.id))]
-        .filter((id, index, ids) => ids.indexOf(id) === index);
+        .filter((id, index, ids) => ids.indexOf(id) === index)
+        .slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
     }
 
     const internalMatchedIds: string[] = [];
     const internalResults: Record<string, unknown>[] = [];
+    const internalLinkFailures: Array<Record<string, unknown>> = [];
+    const internalLinkReasonCounts: Record<string, number> = {};
+    const internalLinkStatusCounts: Record<string, number> = {};
     const externalCandidateIds: string[] = [];
 
-    for (const candidateId of candidateIds) {
-      const { data: bestseller, error } = await supabase
-        .from("marketplace_bestsellers")
-        .select("*")
-        .eq("id", candidateId)
-        .maybeSingle();
-
-      if (error) throw new Error(error.message);
-      if (!bestseller) {
-        externalCandidateIds.push(candidateId);
-        continue;
-      }
-
-      const internal = await linkInternalSupplyForBestseller({
-        bestseller: bestseller as Record<string, unknown>,
+    const bestsellers = new Map<string, Record<string, unknown>>();
+    const outcomes = await processInternalLinkCandidates(candidateIds, {
+      loadBestseller: async (candidateId) => {
+        const { data, error } = await supabase
+          .from("marketplace_bestsellers")
+          .select("*")
+          .eq("id", candidateId)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        if (data) bestsellers.set(candidateId, data as Record<string, unknown>);
+        return (data as Record<string, unknown> | null) ?? null;
+      },
+      linkInternalSupply: (bestseller) => linkInternalSupplyForBestseller({
+        bestseller,
         fetchedAt: String(bestseller.fetched_at ?? new Date().toISOString()),
-      });
+      }),
+      syncCatalog: ({ bestsellerId, bestseller, supplyVariantId }) => syncTracerCatalogFromInternalSupply({
+        bestsellerId,
+        salePrice: Number.isFinite(Number(bestseller.price)) ? Number(bestseller.price) : null,
+        variantIds: supplyVariantId ? [supplyVariantId] : [],
+      }),
+      verifyPersistedLink: createPersistedLinkVerifier(supabase as never),
+      retryQueue: createRetryQueueStore(supabase as never),
+      priorRetryCount: (candidateId) => Number(retryStateById.get(candidateId)?.retry_count ?? 0),
+    });
 
-      if (!internal.matched) {
+    const internalLinkErrors: Array<Record<string, unknown>> = [];
+    for (const outcome of outcomes) {
+      const candidateId = outcome.candidateId;
+      if (outcome.status === "not_found") {
         externalCandidateIds.push(candidateId);
         continue;
       }
+      if (outcome.status === "candidate_error") {
+        // e.g. the retry row could not be written: durability lost, surfaced below.
+        internalLinkErrors.push({ bestsellerId: candidateId, error: outcome.error });
+        continue;
+      }
+      const link = outcome.link;
+      internalLinkReasonCounts[link.reason] = (internalLinkReasonCounts[link.reason] ?? 0) + 1;
+      if (link.linkStatus) {
+        internalLinkStatusCounts[link.linkStatus] = (internalLinkStatusCounts[link.linkStatus] ?? 0) + 1;
+      }
+      const title = String(bestsellers.get(candidateId)?.title ?? "");
 
+      if (outcome.status === "link_not_matched") {
+        internalLinkFailures.push({
+          bestsellerId: candidateId,
+          title,
+          supplierListingId: link.supplierListingId,
+          supplyVariantId: link.supplyVariantId,
+          reason: link.reason,
+          linkStatus: link.linkStatus ?? null,
+          retryCount: outcome.retryCount,
+          nextAttemptAt: outcome.nextAttemptAt,
+        });
+        externalCandidateIds.push(candidateId);
+        continue;
+      }
+      if (outcome.status === "catalog_sync_retry") {
+        // Canonical link exists but the catalog is not verified: not a match.
+        internalLinkFailures.push({
+          bestsellerId: candidateId,
+          title,
+          supplierListingId: link.supplierListingId,
+          supplyVariantId: link.supplyVariantId,
+          reason: "catalog_sync_failed",
+          linkStatus: outcome.kind === "rejected" ? "catalog_sync_rejected" : outcome.kind === "exception" ? "catalog_sync_error" : "catalog_link_unverified",
+          detail: outcome.reason,
+          retryable: true,
+          retryCount: outcome.retryCount,
+          nextAttemptAt: outcome.nextAttemptAt,
+        });
+        continue;
+      }
+      if (outcome.status === "retry_cleanup_failed") {
+        // The link and catalog are verified; the retry row survives and the
+        // next sweep re-runs this candidate idempotently before deleting it.
+        internalLinkErrors.push({ bestsellerId: candidateId, error: outcome.error, linkVerified: true });
+      }
+      // Count as fully matched only after catalog synchronization and read-back verification.
       internalMatchedIds.push(candidateId);
-      const catalog = await syncTracerCatalogFromInternalSupply({
-        bestsellerId: candidateId,
-        salePrice: Number.isFinite(Number(bestseller.price)) ? Number(bestseller.price) : null,
-        variantIds: internal.supplyVariantId ? [internal.supplyVariantId] : [],
-      });
       internalResults.push({
         bestsellerId: candidateId,
-        supplierListingId: internal.supplierListingId,
-        catalog,
+        supplierListingId: link.supplierListingId,
+        supplyVariantId: link.supplyVariantId,
+        linkStatus: link.linkStatus ?? null,
+        reason: link.reason,
+        canonicalLinkVerified: true,
+        retryCleared: outcome.status === "linked",
+        catalog: outcome.catalog,
       });
     }
 
@@ -190,6 +285,20 @@ export async function GET(request: Request) {
       phase: "supplier_investigation",
       candidateCount: candidateIds.length,
       internalMatched: internalMatchedIds.length,
+      internalLinkFailureCount: internalLinkFailures.length,
+      internalLinkFailures,
+      internalLinkErrors,
+      internalLinkDiagnostics: {
+        evaluated: Object.values(internalLinkReasonCounts).reduce((sum, count) => sum + count, 0),
+        matched: internalMatchedIds.length,
+        unmatched: Object.entries(internalLinkReasonCounts)
+          .filter(([reason]) => !["canonical_link_saved", "canonical_link_existing_verified"].includes(reason))
+          .reduce((sum, [, count]) => sum + count, 0),
+        reasonCounts: internalLinkReasonCounts,
+        linkStatusCounts: internalLinkStatusCounts,
+        dueRetryQueueCount: dueRetryIds.length,
+        pendingRetryQueueCount: retryStateRows?.length ?? 0,
+      },
       externalCandidates: externalCandidateIds.length,
       externalMatched: result.matched,
       totalMatched,
@@ -208,23 +317,35 @@ export async function GET(request: Request) {
       await supabase
         .from("cron_runs")
         .update({
-          status: "succeeded",
+          // Retry cleanup / persistence errors must not read as a clean run.
+          status: internalLinkErrors.length > 0 ? "partial" : "succeeded",
           finished_at: new Date().toISOString(),
           duration_ms: Date.now() - startedAt,
           processed: candidateIds.length,
-          failed: result.rowErrors,
+          failed: result.rowErrors + internalLinkErrors.length,
           metadata,
         })
         .eq("id", cronRunId);
     }
 
     return NextResponse.json({
-      ok: true,
+      ok: internalLinkErrors.length === 0,
       phase: "supplier_investigation",
       elapsedMs: Date.now() - startedAt,
       candidateIds,
       internalMatchedIds,
       internalResults,
+      internalLinkFailureCount: internalLinkFailures.length,
+      internalLinkFailures,
+      internalLinkErrors,
+      internalLinkDiagnostics: {
+        evaluated: Object.values(internalLinkReasonCounts).reduce((sum, count) => sum + count, 0),
+        matched: internalMatchedIds.length,
+        reasonCounts: internalLinkReasonCounts,
+        linkStatusCounts: internalLinkStatusCounts,
+        dueRetryQueueCount: dueRetryIds.length,
+        pendingRetryQueueCount: retryStateRows?.length ?? 0,
+      },
       ...result,
       totalMatched,
       nextPhase: "sales_test_publication",

@@ -1,6 +1,7 @@
 // Demand match precision tests (pure logic, no DB, no network).
 // Run: node --experimental-strip-types scripts/verify-demand-match-evidence.mjs
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   buildIdentifierIndex,
   canonicalGtin,
@@ -19,7 +20,7 @@ import {
 import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { normalizeIdentifier } from "../lib/market/identifiers.ts";
 import { parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
-import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
+import { internalLinkRetryDelayMs, internalProductCandidateStatus, selectDueInternalLinkRetryIds, supplierListingStateForIdentity, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
 const pending = [];
@@ -67,12 +68,66 @@ function test(group, name, fn) {
   }
 }
 
+test("supplier listing identity activation gate", "keeps unverified listings non-orderable and activates only after canonical link verification", () => {
+  assert.deepEqual(supplierListingStateForIdentity(false), {
+    identity_status: "pending",
+    configured: false,
+    orderable: false,
+  });
+  assert.deepEqual(supplierListingStateForIdentity(true), {
+    identity_status: "linked",
+    configured: true,
+    orderable: true,
+  });
+});
+
 test("CJ identity reverify policy", "retry intervals, candidate selection, raw GTIN audit, and unique-link gate", () => {
   const result = verifyCjIdentityReverifyPolicyInvariants();
   assert.equal(result.ok, true, result.cases.filter((item) => item.actual !== item.expected).map((item) => item.name).join(", "));
   assert.equal(result.cases.length >= 15, true);
   assert.equal(normalizeIdentifier("gtin", "1598446591114"), null);
   assert.equal(normalizeIdentifier("gtin", "4006381333931"), "4006381333931");
+});
+
+test("durable internal link retry queue", "retry delay increases and caps at seven days", () => {
+  assert.equal(internalLinkRetryDelayMs(1), 15 * 60 * 1000);
+  assert.equal(internalLinkRetryDelayMs(2), 30 * 60 * 1000);
+  assert.equal(internalLinkRetryDelayMs(3), 60 * 60 * 1000);
+  assert.equal(internalLinkRetryDelayMs(100), 7 * 24 * 60 * 60 * 1000);
+});
+
+test("durable internal link retry queue", "failed candidate is deferred then reselected by the next due sweep", () => {
+  const start = Date.parse("2026-01-01T00:00:00.000Z");
+  const firstDue = start + internalLinkRetryDelayMs(1);
+  const firstFailureState = [{ bestseller_id: "same-candidate", next_attempt_at: new Date(firstDue).toISOString() }];
+  assert.deepEqual(selectDueInternalLinkRetryIds(firstFailureState, firstDue - 1, 50), []);
+  assert.deepEqual(selectDueInternalLinkRetryIds(firstFailureState, firstDue, 50), ["same-candidate"]);
+
+  const secondDue = firstDue + internalLinkRetryDelayMs(2);
+  const secondFailureState = [{ bestseller_id: "same-candidate", next_attempt_at: new Date(secondDue).toISOString() }];
+  assert.deepEqual(selectDueInternalLinkRetryIds(secondFailureState, secondDue - 1, 50), []);
+  assert.deepEqual(selectDueInternalLinkRetryIds(secondFailureState, secondDue, 50), ["same-candidate"]);
+});
+
+test("durable internal link retry queue", "route delegates the lifecycle to the tested candidate processor", () => {
+  const route = readFileSync(new URL("../app/api/cron/supplier-investigation/route.ts", import.meta.url), "utf8");
+  const lifecycle = readFileSync(new URL("../lib/suppliers/internal-link-retry-lifecycle.ts", import.meta.url), "utf8");
+  // Behaviour is exercised by scripts/test-internal-link-retry-lifecycle.mjs;
+  // this guards the wiring: the route must use that processor, and inside the
+  // finalizer sync runs first, failures persist, and retry deletion is last.
+  assert.ok(route.includes("processInternalLinkCandidates("), "route must use the tested candidate processor");
+  assert.ok(!route.includes(".from(\"internal_supply_link_retry_queue\")\n          .delete()"), "route must not delete retries itself");
+  const finalizer = lifecycle.indexOf("export async function finalizeInternalSupplyLinkRetry");
+  const syncStart = lifecycle.indexOf("outcome = await withTimeout(args.syncCatalog()", finalizer);
+  const verify = lifecycle.indexOf("args.verifyPersisted(outcome)", syncStart);
+  const failurePersist = lifecycle.indexOf("await args.persistFailure(failure)", syncStart);
+  const retryDelete = lifecycle.indexOf("await args.clearRetry()", syncStart);
+  assert.ok(syncStart > finalizer, "finalizer must run catalog sync first");
+  assert.ok(verify > syncStart && verify < retryDelete, "persisted link must be read back before retry deletion");
+  assert.ok(failurePersist > syncStart && failurePersist < retryDelete, "failed sync must persist retry state before any deletion");
+  const matchedCount = route.indexOf("internalMatchedIds.push(candidateId)");
+  const outcomes = route.indexOf("await processInternalLinkCandidates(");
+  assert.ok(outcomes >= 0 && matchedCount > outcomes, "candidate must not count as matched before the lifecycle finishes");
 });
 
 // Market product fixtures (JANs carry valid check digits).

@@ -206,7 +206,7 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
 
   if (error) throw new Error(error.message);
   if (!data) return null;
-  const listings = (await loadLiveListings([data as Record<string, unknown>])).filter((listing) => hasJapaneseText(listing.title) && isPublishableCatalogTitle(listing.title));
+  const listings = (await loadLiveListings([data as Record<string, unknown>])).filter((listing) => hasJapaneseText(listing.title) && isPublishableCatalogTitle(listing.title) && isPublishableCatalogDescription(listing.description));
   return listings[0] ?? null;
 }
 

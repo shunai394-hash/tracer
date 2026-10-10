@@ -9,7 +9,8 @@ export const maxDuration = 60;
 type Db = ReturnType<typeof createSupabaseAdminClient>;
 type Query = ReturnType<ReturnType<Db["from"]>["select"]>;
 
-const IDENTIFIER_GRADE = ["asin", "jan", "gtin", "ean", "upc", "mpn", "brand_mpn", "tracer_catalog"];
+// Publish-grade identity only (ASIN and bare MPN are search evidence).
+const IDENTIFIER_GRADE = ["jan", "gtin", "ean", "upc", "brand_mpn", "tracer_catalog"];
 
 async function count(db: Db, table: string, filter?: (q: Query) => Query): Promise<number | string> {
   const base = db.from(table).select("*", { count: "exact", head: true });

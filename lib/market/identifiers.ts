@@ -32,6 +32,25 @@ export function marketplaceBarcodeCandidates(value: string): string[] {
   return [...candidates];
 }
 
+/**
+ * Exact variant evidence across barcode schemes. ASIN is deliberately excluded:
+ * it locates candidates but never proves the same item or variant on its own.
+ */
+export function hasExactMarketplaceVariantIdentifierMatch(
+  market: ProductIdentifiers,
+  variant: ProductIdentifiers,
+): boolean {
+  const marketBarcodes = new Set(
+    [market.jan, market.gtin, market.ean, market.upc]
+      .filter((value): value is string => Boolean(value))
+      .flatMap((value) => marketplaceBarcodeCandidates(value)),
+  );
+  return [variant.jan, variant.gtin, variant.ean, variant.upc]
+    .filter((value): value is string => Boolean(value))
+    .flatMap((value) => marketplaceBarcodeCandidates(value))
+    .some((value) => marketBarcodes.has(value));
+}
+
 function hasValidGs1CheckDigit(value: string): boolean {
   if (![8, 12, 13, 14].includes(value.length) || !/^\d+$/.test(value)) return false;
   const body = value.slice(0, -1);
@@ -100,6 +119,19 @@ export function hasAnyIdentifier(ids: ProductIdentifiers): boolean {
   return Boolean(ids.asin || ids.jan || ids.gtin || ids.ean || ids.upc || ids.mpn);
 }
 
+/** Stable query order for marketplace-to-supply identity lookup, including ASIN-only records. */
+export function identifierQueryEntries(ids: ProductIdentifiers): Array<[IdentifierScheme, string]> {
+  return ([
+    ["asin", ids.asin],
+    ["jan", ids.jan],
+    ["gtin", ids.gtin],
+    ["ean", ids.ean],
+    ["upc", ids.upc],
+    ["mpn", ids.mpn],
+  ] as Array<[IdentifierScheme, string | null]>)
+    .filter((entry): entry is [IdentifierScheme, string] => Boolean(entry[1]));
+}
+
 export function pickIdentifierQuery(ids: ProductIdentifiers): string | null {
   return ids.jan ?? ids.gtin ?? ids.ean ?? ids.upc ?? ids.asin ?? ids.mpn ?? null;
 }
@@ -124,9 +156,25 @@ function toGtin14(value: string): string {
   return value.padStart(14, "0");
 }
 
-function barcodeFamilyValue(ids: ProductIdentifiers): string | null {
-  const raw = ids.jan ?? ids.gtin ?? ids.ean ?? ids.upc ?? null;
-  return raw ? toGtin14(raw) : null;
+function barcodeFamilyValues(ids: ProductIdentifiers): string[] {
+  return [...new Set([ids.jan, ids.gtin, ids.ean, ids.upc]
+    .filter((value): value is string => Boolean(value))
+    .map(toGtin14))];
+}
+
+function normalizedBrand(value: string | null | undefined): string | null {
+  const brand = (value ?? "").normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+  return brand || null;
+}
+
+/**
+ * Identity methods that may carry a listing to publication. ASIN and bare
+ * MPN are search/investigation evidence only.
+ */
+export const PUBLISH_GRADE_IDENTITY_METHODS: ReadonlySet<string> = new Set(["jan", "gtin", "ean", "upc", "brand_mpn"]);
+
+export function isPublishGradeIdentityMethod(method: string | null | undefined): boolean {
+  return PUBLISH_GRADE_IDENTITY_METHODS.has(String(method ?? "").trim().toLowerCase());
 }
 
 /** Identifier-grade identity only. Title/image similarity never makes a sales candidate eligible. */
@@ -137,19 +185,17 @@ export function matchProductIdentity(args: {
   const market = args.market;
   const supply = args.supply;
 
-  if (eq(market.asin, supply.asin)) {
-    return { linked: true, salesEligible: true, method: "asin", confidence: 0.99, rationale: "ASIN matches" };
-  }
-
+  // 1) Barcodes (JAN/GTIN/EAN/UPC) are the only single identifiers that prove
+  //    the same item. When both sides carry barcodes and none agree, that is a
+  //    conflict that no ASIN or model number can override.
   for (const scheme of ["jan", "gtin", "ean", "upc"] as const) {
     if (eq(market[scheme], supply[scheme])) {
       return { linked: true, salesEligible: true, method: scheme, confidence: 0.98, rationale: `${scheme.toUpperCase()} matches` };
     }
   }
-
-  const marketBarcode = barcodeFamilyValue(market);
-  const supplyBarcode = barcodeFamilyValue(supply);
-  if (marketBarcode && supplyBarcode && marketBarcode === supplyBarcode) {
+  const marketBarcodes = barcodeFamilyValues(market);
+  const supplyBarcodes = barcodeFamilyValues(supply);
+  if (marketBarcodes.some((value) => supplyBarcodes.includes(value))) {
     return {
       linked: true,
       salesEligible: true,
@@ -158,14 +204,28 @@ export function matchProductIdentity(args: {
       rationale: "barcode matches across the JAN/EAN/UPC/GTIN family (GTIN-14 normalized)",
     };
   }
+  if (marketBarcodes.length > 0 && supplyBarcodes.length > 0) {
+    return { linked: false, salesEligible: false, method: "none", confidence: 0, rationale: "barcode_conflict: both sides carry barcodes and none match" };
+  }
 
+  // 2) Model number proves identity only together with the same brand. A
+  //    different brand is a conflict; a bare MPN is a lead, not a link.
   if (eq(market.mpn, supply.mpn)) {
-    const brandMarket = (market.brand ?? "").trim().toLowerCase();
-    const brandSupply = (supply.brand ?? "").trim().toLowerCase();
+    const brandMarket = normalizedBrand(market.brand);
+    const brandSupply = normalizedBrand(supply.brand);
     if (brandMarket && brandSupply && brandMarket === brandSupply) {
       return { linked: true, salesEligible: true, method: "brand_mpn", confidence: 0.92, rationale: "brand and model match" };
     }
-    return { linked: true, salesEligible: true, method: "mpn", confidence: 0.88, rationale: "model/MPN matches" };
+    if (brandMarket && brandSupply) {
+      return { linked: false, salesEligible: false, method: "none", confidence: 0, rationale: "brand_conflict: model numbers match but brands differ" };
+    }
+    return { linked: true, salesEligible: false, method: "mpn", confidence: 0.7, rationale: "model/MPN matches without brand confirmation; candidate only" };
+  }
+
+  // 3) ASIN is a search entry point only: it can surface a candidate but it
+  //    never confirms the same product, variant or permission to sell.
+  if (eq(market.asin, supply.asin)) {
+    return { linked: true, salesEligible: false, method: "asin", confidence: 0.7, rationale: "ASIN matches; candidate only until an independent barcode or brand+MPN confirms it" };
   }
 
   if (market.imageUrl && supply.imageUrl && market.imageUrl === supply.imageUrl) {
@@ -187,8 +247,8 @@ export function verifyIdentifierMatchInvariants(): {
 } {
   const cases = [
     {
-      name: "asin_match_is_sales_eligible",
-      expected: true,
+      name: "asin_only_match_is_not_sales_eligible",
+      expected: false,
       actual: matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, asin: "B0TESTASIN" }, supply: { ...EMPTY_IDENTIFIERS, asin: "B0TESTASIN" } }).salesEligible,
     },
     {
