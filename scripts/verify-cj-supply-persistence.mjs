@@ -244,9 +244,9 @@ const args = {
   const result = await persistCjSupplyIntelligence(args, {
     db,
     fetchProductVariants: async () => [{ vid: supplierVariantId, barcode }, { vid: supplierVariantId, barcode }],
-    fetchVariantByVid: async (vid) => ({ vid, barcode }),
+    fetchVariantByVid: async () => null,
   });
-  assert.equal(result.identity, null, "duplicate CJ variant records for the same vid are ambiguous");
+  assert.equal(result.identity, null, "duplicate CJ variant records without an independently confirmed detail response must not link");
   assert.equal(db.tables.product_offers.length, 0);
   assert.equal(db.tables.product_intelligence.length, 0);
 }
