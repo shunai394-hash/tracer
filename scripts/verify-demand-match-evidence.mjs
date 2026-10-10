@@ -17,7 +17,7 @@ import {
   variantsCompatible,
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
-import { normalizeIdentifier } from "../lib/market/identifiers.ts";
+import { matchProductIdentity, normalizeIdentifier, pickSupplierBarcodeIdentifier, EMPTY_IDENTIFIERS } from "../lib/market/identifiers.ts";
 import { parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
@@ -66,6 +66,25 @@ function test(group, name, fn) {
     record(false, error instanceof Error ? error.message : String(error));
   }
 }
+
+test("CJ supplier barcode selection", "MPN-only metadata does not suppress fresh barcode lookup", () => {
+  assert.equal(pickSupplierBarcodeIdentifier({ jan: null, gtin: null, ean: null, upc: null, mpn: "MODEL-123" }), null);
+  assert.equal(pickSupplierBarcodeIdentifier({ jan: null, gtin: null, ean: null, upc: null, mpn: "MODEL-123" }) ?? "fetch-from-CJ", "fetch-from-CJ");
+  assert.equal(pickSupplierBarcodeIdentifier({ jan: "4006381333931", gtin: null, ean: null, upc: null, mpn: "MODEL-123" }), "4006381333931");
+  assert.equal(pickSupplierBarcodeIdentifier({ jan: null, gtin: "4006381333931", ean: null, upc: null, mpn: "MODEL-123" }), "4006381333931");
+});
+
+test("MPN identity safety", "an MPN alone cannot prove a product link without matching brand", () => {
+  const market = { ...EMPTY_IDENTIFIERS, mpn: "MODEL-123", brand: "Brand A" };
+  const noSupplierBrand = matchProductIdentity({ market, supply: { ...EMPTY_IDENTIFIERS, mpn: "MODEL-123" } });
+  assert.equal(noSupplierBrand.salesEligible, false);
+  assert.equal(noSupplierBrand.linked, false);
+  const conflictingBrand = matchProductIdentity({ market, supply: { ...EMPTY_IDENTIFIERS, mpn: "MODEL-123", brand: "Brand B" } });
+  assert.equal(conflictingBrand.salesEligible, false);
+  const matchingBrand = matchProductIdentity({ market, supply: { ...EMPTY_IDENTIFIERS, mpn: "MODEL-123", brand: " brand a " } });
+  assert.equal(matchingBrand.salesEligible, true);
+  assert.equal(matchingBrand.method, "brand_mpn");
+});
 
 test("CJ identity reverify policy", "retry intervals, candidate selection, raw GTIN audit, and unique-link gate", () => {
   const result = verifyCjIdentityReverifyPolicyInvariants();
