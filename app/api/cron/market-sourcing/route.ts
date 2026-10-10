@@ -60,7 +60,8 @@ export async function GET(request: Request) {
       .from("cron_runs")
       .select("metadata")
       .eq("job_name", "market-sourcing")
-      .eq("status", "succeeded")
+      .in("status", ["succeeded", "failed"])
+      .not("metadata->>sourceIndex", "is", null)
       .order("started_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -111,24 +112,34 @@ export async function GET(request: Request) {
       hasMore: observation.hasMore,
       enrichment: observation.enrichment,
       supplierCandidateCount: observation.supplierCandidateIds.length,
+      canonicalVariantEvidenceParsed: observation.canonicalVariantEvidenceParsed,
+      canonicalVariantEvidenceWritten: observation.canonicalVariantEvidenceWritten,
+      canonicalVariantEvidenceWriteFailures: observation.canonicalVariantEvidenceWriteFailures,
+      canonicalVariantEvidenceStatus: observation.canonicalVariantEvidenceWriteFailures > 0
+        ? "write_failed"
+        : "ok",
     };
+    const evidenceWriteFailed = observation.canonicalVariantEvidenceWriteFailures > 0;
 
     if (cronRunId) {
       await supabase
         .from("cron_runs")
         .update({
-          status: "succeeded",
+          status: evidenceWriteFailed ? "failed" : "succeeded",
           finished_at: new Date().toISOString(),
           duration_ms: Date.now() - startedAt,
           processed: observation.inserted,
-          failed: 0,
+          failed: observation.canonicalVariantEvidenceWriteFailures,
+          error: evidenceWriteFailed
+            ? "Canonical marketplace variant evidence was not fully persisted"
+            : null,
           metadata,
         })
         .eq("id", cronRunId);
     }
 
     return NextResponse.json({
-      ok: true,
+      ok: !evidenceWriteFailed,
       phase: "market_observation",
       elapsedMs: Date.now() - startedAt,
       observation: {
@@ -136,6 +147,10 @@ export async function GET(request: Request) {
         inserted: observation.inserted,
         productsCreated: observation.productsCreated,
         supplierCandidateCount: observation.supplierCandidateIds.length,
+        canonicalVariantEvidenceParsed: observation.canonicalVariantEvidenceParsed,
+        canonicalVariantEvidenceWritten: observation.canonicalVariantEvidenceWritten,
+        canonicalVariantEvidenceWriteFailures: observation.canonicalVariantEvidenceWriteFailures,
+        canonicalVariantEvidenceStatus: metadata.canonicalVariantEvidenceStatus,
         enrichment: observation.enrichment,
         sourceIndex: nextSourceIndex,
         startIndex: observation.startIndex,
@@ -144,7 +159,7 @@ export async function GET(request: Request) {
         hasMore: observation.hasMore,
       },
       nextPhase: "supplier_investigation",
-    });
+    }, { status: evidenceWriteFailed ? 500 : 200 });
   } catch (error) {
     if (cronRunId) {
       try {
