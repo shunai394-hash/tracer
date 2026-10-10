@@ -97,9 +97,15 @@ export function parseCanonicalMarketplaceVariantEvidence(
 
       const url = variantUrl(variant, parentProductUrl);
       const asin = extractAsinFromUrl(url);
+      const parentAsin = extractAsinFromUrl(parentProductUrl);
       const sku = asString(variant.sku);
       const productId = asString(variant.productID);
-      const sourceVariantId = asin ?? productId ?? sku;
+
+      // A fallback to the parent page URL is useful for context, but its ASIN
+      // is not a child-variant identifier. Prefer identifiers declared on the
+      // child node; accept a URL-derived ASIN only when it differs from parent.
+      const urlAsinIsVariantSpecific = Boolean(asin && asin !== parentAsin);
+      const sourceVariantId = productId ?? sku ?? (urlAsinIsVariantSpecific ? asin : null);
       if (!sourceVariantId || seen.has(sourceVariantId)) continue;
 
       const gtinRaw =
