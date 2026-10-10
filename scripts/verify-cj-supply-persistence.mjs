@@ -48,7 +48,8 @@ class FakeQuery {
   async execute(single) {
     const rows = this.db.tables[this.table] ?? [];
     if (this.action === "update") {
-      if (this.db.failUpdateTable === this.table) return { data: null, error: { message: "injected update failure" } };
+      this.db.updateCount += 1;
+      if (this.db.failUpdateTable === this.table || this.db.failUpdateAt === this.db.updateCount) return { data: null, error: { message: "injected update failure" } };
       const matched = rows.filter((row) => this.filters.every((test) => test(row)));
       for (const row of matched) Object.assign(row, this.payload);
       return { data: this.returning ? matched : null, error: null };
@@ -76,8 +77,8 @@ class FakeQuery {
   }
 }
 class FakeDb {
-  constructor({ identityRows = [identityEvidence], failUpdateTable = null, failWriteTable = null } = {}) {
-    this.sequence = 1; this.variantBarcodeFilter = barcode; this.failUpdateTable = failUpdateTable; this.failWriteTable = failWriteTable;
+  constructor({ identityRows = [identityEvidence], failUpdateTable = null, failWriteTable = null, failUpdateAt = null } = {}) {
+    this.sequence = 1; this.updateCount = 0; this.variantBarcodeFilter = barcode; this.failUpdateTable = failUpdateTable; this.failWriteTable = failWriteTable; this.failUpdateAt = failUpdateAt;
     this.tables = {
       supplier_listings: [{ id: listingId, metadata: { prior: true }, product_id: "stale-product", bestseller_id: "stale-bestseller", orderable: true, api_available: true, tracking_available: true }],
       marketplace_bestseller_variants: identityRows,
@@ -213,4 +214,48 @@ const args = {
   assert.equal(db.tables.product_intelligence.length, 0, "failed listing write must not continue to intelligence persistence");
 }
 
-console.log("PASS: actual persistence function + identity resolver; exact unique match; duplicate/mismatched/blank barcode rejected; stale link cleared; procurement flags remain false; no canonical writes on no-match; failed listing write halts downstream writes.");
+
+{
+  const db = new FakeDb();
+  const result = await persistCjSupplyIntelligence(args, { db, fetchProductVariants: async () => [], fetchVariantByVid: async () => ({ vid: supplierVariantId, barcode: "" }) });
+  assert.equal(result.identity, null, "missing exact-variant barcode must not link");
+  assert.equal(db.tables.supplier_listings[0].product_id, null);
+  assert.equal(db.tables.product_offers.length, 0);
+  assert.equal(db.tables.product_intelligence.length, 0);
+}
+
+{
+  const invalidArgs = { ...args, supplierProductId: "", supplierVariantId: "" };
+  const db = new FakeDb();
+  const result = await persistCjSupplyIntelligence(invalidArgs, { db, fetchProductVariants: async () => [{ vid: "", barcode }], fetchVariantByVid: async (vid) => ({ vid, barcode }) });
+  assert.equal(result.identity, null, "empty supplier product/variant IDs must fail closed");
+  assert.equal(db.tables.supplier_listings[0].product_id, null);
+  assert.equal(db.tables.product_offers.length, 0);
+  assert.equal(db.tables.product_intelligence.length, 0);
+}
+
+for (const failedTable of ["product_offers", "product_intelligence"]) {
+  const db = new FakeDb({ failWriteTable: failedTable });
+  await assert.rejects(() => persistCjSupplyIntelligence(args, { db }), /injected write failure|CJ offer insert failed/);
+  const listing = db.tables.supplier_listings[0];
+  assert.equal(listing.product_id, null, `${failedTable} failure must not leave the supplier listing linked`);
+  assert.equal(listing.bestseller_id, null);
+  assert.equal(listing.identity_status, "unverified");
+  assert.equal(listing.orderable, false);
+  assert.equal(listing.api_available, false);
+  assert.equal(listing.tracking_available, false);
+}
+
+{
+  const db = new FakeDb({ failUpdateAt: 2 });
+  await assert.rejects(() => persistCjSupplyIntelligence(args, { db }), /identity link persistence failed/);
+  const listing = db.tables.supplier_listings[0];
+  assert.equal(listing.product_id, null, "failed final link write must leave listing detached");
+  assert.equal(listing.identity_status, "unverified");
+  assert.equal(listing.orderable, false);
+  assert.equal(listing.api_available, false);
+  assert.equal(listing.tracking_available, false);
+}
+
+console.log("PASS: app-path resolver/persistence with disposable DB double; exact unique match; duplicate/missing/blank/mismatched evidence and empty IDs rejected; stale links cleared before writes; downstream/final-write failures leave sale/order flags false and listing detached.");
+
