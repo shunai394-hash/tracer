@@ -4,7 +4,6 @@ import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
 import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates, pickSupplierBarcodeIdentifier } from "@/lib/market/identifiers";
-import { hasUniqueMarketplaceIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 export type PersistCjSupplyIntelligenceArgs = {
   productId: string;
@@ -55,7 +54,9 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
   // Always resolve the supplier's concrete variant barcode, then compare it only
   // with independently stored canonical child-variant evidence.
   const suppliedBarcode = pickSupplierBarcodeIdentifier(suppliedIds);
-  const barcode = suppliedBarcode ?? await readSupplierBarcode(args);
+  // Prefer the live concrete-variant barcode; use a stored valid barcode only if
+  // the supplier lookup is unavailable, never the other way around.
+  const barcode = (await readSupplierBarcode(args)) || suppliedBarcode || "";
   const supplyIds = identifiersFromRecord({ gtin: barcode || null });
   if (!supplyIds.gtin) return null;
 
