@@ -23,3 +23,12 @@ export function exactVariantBarcodeMethod(
   }
   return null;
 }
+
+
+/** A concrete supplier variant must match one and only one child-evidence row and one canonical product. */
+export function hasUniqueCanonicalVariantMatch(variantEvidenceCount: number, distinctCanonicalProductCount: number): boolean {
+  return Number.isInteger(variantEvidenceCount)
+    && Number.isInteger(distinctCanonicalProductCount)
+    && variantEvidenceCount === 1
+    && distinctCanonicalProductCount === 1;
+}
