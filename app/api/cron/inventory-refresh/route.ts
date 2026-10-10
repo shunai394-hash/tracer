@@ -28,7 +28,7 @@ export async function GET(request: Request) {
     const supabase = createSupabaseAdminClient();
     const { data: listings, error } = await supabase
       .from("shop_listings")
-      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
+      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
       .not("supplier_name", "is", null)
       .not("supplier_variant_id", "is", null)
       .or("base_item_id.not.is.null,and(pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published,pipeline_reason.eq.sales_test_gate_passed)")
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     // become orderable again. selection_reasons carries the durable marker.
     const { data: gatedListings, error: gatedError } = await supabase
       .from("shop_listings")
-      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
+      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
       .not("supplier_name", "is", null)
       .not("supplier_variant_id", "is", null)
       .eq("published", true)
