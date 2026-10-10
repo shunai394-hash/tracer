@@ -384,11 +384,14 @@ export async function discoverAndCreateCjSupply(
       const supplierInsert = await upsertSupplierListing(db, {
         supplier: "cj", external_id: candidate.variantId, sku: null, title: detail.title, product_id: productId,
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
-        order_method: "cj_api", api_available: true, identity_method: "supply_discovered",
-        identity_status: "supply_discovered", identity_confidence: 1, configured: true,
+        order_method: "cj_api", api_available: false, identity_method: "supply_discovered",
+        identity_status: "supply_discovered", identity_confidence: 0, configured: true,
         supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
         gtin: variantBarcode,
-        orderable: true, price_confirmed: true, inventory_confirmed: true, tracking_available: cjTrackingAvailable,
+        // Live catalog, stock and freight reads do not prove a real purchase can be submitted.
+        // Keep this discovered offer non-orderable until the order API and tracking path
+        // have been independently verified for this supplier account and variant.
+        orderable: false, price_confirmed: true, inventory_confirmed: true, tracking_available: false,
         fetched_at: new Date().toISOString(), metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate }
       }, seededCandidate.supplierListingId);
       if (supplierInsert.error) throw new Error(supplierInsert.error.message);
