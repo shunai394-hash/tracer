@@ -61,8 +61,11 @@ function jsonLdNodes(html: string): Record<string, unknown>[] {
 }
 
 function isType(record: Record<string, unknown>, expected: string): boolean {
-  const type = record["@type"];
-  return type === expected || (Array.isArray(type) && type.includes(expected));
+  const types = nodeList(record["@type"]);
+  return types.some((value) => {
+    if (typeof value !== "string") return false;
+    return value === expected || value.endsWith(`/${expected}`) || value.endsWith(`#${expected}`);
+  });
 }
 
 function variantUrl(record: Record<string, unknown>, fallbackUrl: string | null): string | null {
@@ -88,11 +91,25 @@ export function parseCanonicalMarketplaceVariantEvidence(
 ): CanonicalMarketplaceVariantEvidence[] {
   const output: CanonicalMarketplaceVariantEvidence[] = [];
   const seen = new Set<string>();
+  const nodes = jsonLdNodes(html);
+  const nodesById = new Map<string, Record<string, unknown>>();
+  for (const node of nodes) {
+    const id = asString(node["@id"]);
+    if (id) nodesById.set(id, node);
+  }
 
-  for (const group of jsonLdNodes(html)) {
+  for (const group of nodes) {
     if (!isType(group, "ProductGroup")) continue;
     for (const rawVariant of nodeList(group.hasVariant)) {
-      const variant = asRecord(rawVariant);
+      const reference = asRecord(rawVariant);
+      // JSON-LD may express hasVariant as an @id reference and declare the
+      // Product node elsewhere in the same @graph. Resolve only local nodes;
+      // an unresolved reference is not identity evidence.
+      const variant = reference && isType(reference, "Product")
+        ? reference
+        : reference && asString(reference["@id"])
+          ? nodesById.get(asString(reference["@id"]) as string) ?? null
+          : null;
       if (!variant || !isType(variant, "Product")) continue;
 
       const url = variantUrl(variant, parentProductUrl);
