@@ -6,7 +6,7 @@ import {
   marketplaceBarcodeCandidates,
   matchProductIdentity,
 } from "@/lib/market/identifiers";
-import { hasUniqueIdentitySelection, hasUniqueMarketplaceIdentity, isVerifiedInternalSupplyLink, supplierListingStateForIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
+import { hasUniqueIdentitySelection, internalProductCandidateStatus, isVerifiedInternalSupplyLink, supplierListingStateForIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 export type InternalSupplyLinkStatus =
   | "saved"
@@ -17,6 +17,7 @@ export type InternalSupplyLinkStatus =
   | "readback_failed"
   | "lookup_failed"
   | "candidate_set_truncated"
+  | "no_product_candidate"
   | "ambiguous_product"
   | "no_unique_variant"
   | "no_match"
@@ -90,8 +91,9 @@ export async function linkInternalSupplyForBestseller(args: {
     return identity.salesEligible;
   }).length;
 
-  if (!hasUniqueMarketplaceIdentity(identityEligibleProductCount)) {
-    return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "ambiguous_product" };
+  const candidateStatus = internalProductCandidateStatus(identityEligibleProductCount);
+  if (candidateStatus !== "unique_product_candidate") {
+    return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: candidateStatus };
   }
 
   for (const product of products ?? []) {
