@@ -56,6 +56,7 @@ create table public.tracer_supply_variants (
   updated_at timestamptz
 );
 
+\i supabase/migrations/20261010100000_internal_supply_generation_atomic_catalog_sync.sql
 \i supabase/migrations/20261010120000_harden_atomic_catalog_sync_scope_and_sku_conflicts.sql
 
 insert into public.internal_supply_products(id,generation,active) values
@@ -139,9 +140,34 @@ begin
     raise exception 'forged product ID should be rejected: %', v_result;
   end if;
 
-  -- Inactive, unorderable, and out-of-stock sources are rejected.
+  -- A source mutation bumps the DB generation and quarantines its existing projection.
+  -- This simulates request A reading generation=1, request B changing the row,
+  -- and request A attempting to commit using the stale generation.
   update public.internal_supply_variants set inventory=0 where id=v_variant;
+  if (select generation from public.internal_supply_variants where id=v_variant) <> 2 then
+    raise exception 'variant update trigger did not bump generation';
+  end if;
+  if not exists (
+    select 1 from public.tracer_supply_catalog
+     where id=v_catalog_id and status = 'draft' and orderable is false and inventory = 0
+  ) then
+    raise exception 'source mutation did not leave catalog projection in draft/non-orderable/zero-stock state';
+  end if;
+  if not exists (
+    select 1 from public.tracer_supply_variants
+     where catalog_id=v_catalog_id
+       and internal_supply_variant_id=v_variant
+       and orderable is false and inventory = 0
+  ) then
+    raise exception 'source mutation did not leave the linked catalog variant non-orderable with zero stock';
+  end if;
+
   v_result := public.commit_internal_supply_catalog_sync(v_product,v_variant,1,1,v_catalog,v_catalog_variant);
+  if coalesce((v_result->>'reason'),'') <> 'generation_conflict' then
+    raise exception 'stale request should be rejected after concurrent source update: %', v_result;
+  end if;
+
+  v_result := public.commit_internal_supply_catalog_sync(v_product,v_variant,1,2,v_catalog,v_catalog_variant);
   if coalesce((v_result->>'reason'),'') <> 'source_not_sellable' then
     raise exception 'out-of-stock source should be rejected: %', v_result;
   end if;
@@ -166,6 +192,26 @@ begin
     raise exception 'SKU collision left partial variant row';
   end if;
 
+  -- Force the second write to fail after a new catalog row would have been inserted.
+  -- The variant SKU is already owned by the first source identity. The transaction
+  -- must roll back the newly inserted catalog row, not leave a partial projection.
+  v_catalog := jsonb_set(v_catalog,'{tracer_sku}','"TRACER-TEST-ROLLBACK"'::jsonb);
+  v_catalog := jsonb_set(v_catalog,'{bestseller_id}',to_jsonb(v_other_bestseller::text));
+  v_catalog_variant := jsonb_set(v_catalog_variant,'{variant_sku}','"TRACER-TEST-001-V1"'::jsonb);
+  v_catalog_variant := jsonb_set(v_catalog_variant,'{internal_supply_product_id}',to_jsonb(v_other_product::text));
+  v_catalog_variant := jsonb_set(v_catalog_variant,'{internal_supply_variant_id}',to_jsonb(v_other_variant::text));
+  v_failed := false;
+  begin
+    perform public.commit_internal_supply_catalog_sync(v_other_product,v_other_variant,1,1,v_catalog,v_catalog_variant);
+  exception when unique_violation then v_failed := true;
+  end;
+  if not v_failed then
+    raise exception 'variant ownership collision should fail after catalog upsert';
+  end if;
+  if exists(select 1 from public.tracer_supply_catalog where tracer_sku='TRACER-TEST-ROLLBACK') then
+    raise exception 'catalog row survived failed catalog-variant write; transaction was not atomic';
+  end if;
+
   -- Privilege contract: only service_role may execute the SECURITY DEFINER RPC.
   if has_function_privilege('anon','public.commit_internal_supply_catalog_sync(uuid,uuid,bigint,bigint,jsonb,jsonb)','EXECUTE') then
     raise exception 'anon unexpectedly has execute privilege';
@@ -177,5 +223,5 @@ begin
     raise exception 'service_role lacks execute privilege';
   end if;
 
-  raise notice 'PASS: unique valid scope, stale generation, cross-product scope, forged IDs, out-of-stock, SKU collision rollback, and grants';
+  raise notice 'PASS: unique valid scope, stale-generation rejection, source-mutation quarantine, cross-product scope, forged IDs, out-of-stock, catalog/variant rollback, and grants';
 end $$;
