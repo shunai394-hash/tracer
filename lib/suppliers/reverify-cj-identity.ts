@@ -4,7 +4,7 @@ import { persistCjSupplyIntelligence, resolveMarketplaceIdentity } from "@/lib/i
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { normalizeIdentifier } from "@/lib/market/identifiers";
-import { isCjIdentityReverifyCandidate, isCjIdentityReverifyDue, CJ_IDENTITY_RETRY_DELAYS_MS, supplierBarcodeAudit } from "@/lib/suppliers/cj-identity-reverify-policy";
+import { isCjIdentityReverifyCandidate, isCjIdentityReverifyDue, CJ_IDENTITY_RETRY_DELAYS_MS, supplierBarcodeAudit, readExactSupplierVariantBarcode } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 const CURSOR_JOB = "cj-identity-reverify-cursor";
 const DEFAULT_LIMIT = 25;
@@ -32,11 +32,35 @@ function isWomensProductTitle(title: unknown, metadata?: unknown): boolean {
 export type CjIdentityReverifyResult = { checked: number; promoted: number; supplierVerified: number; noUniqueBarcodeMatch: number; missingEconomics: number; errors: Array<{ supplierListingId: string; error: string }>; promotedListings: Array<{ supplierListingId: string; bestsellerId: string; method: string }>; nextCursor: string | null };
 function num(value: unknown): number | null { const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN; return Number.isFinite(parsed) ? parsed : null; }
 function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
-async function readPersistableBarcode(supplierProductId: string, supplierVariantId: string, persistedBarcode: string | null): Promise<string | null> {
-  const supplied = typeof persistedBarcode === "string" ? persistedBarcode.trim() : "";
-  if (supplied) return supplied;
-  try { const variants = await fetchCJProductVariants(supplierProductId, { countryCode: "JP" }); const found = variants.find((item) => item.vid === supplierVariantId); const barcode = typeof found?.barcode === "string" ? found.barcode.trim() : ""; if (barcode) return barcode; } catch (error) { console.warn("[cj-identity-reverify] variant barcode lookup failed", { supplierProductId, supplierVariantId, error: error instanceof Error ? error.message : String(error) }); }
-  try { const variant = await fetchCJVariantByVid(supplierVariantId); const barcode = typeof variant?.barcode === "string" ? variant.barcode.trim() : ""; return barcode || null; } catch (error) { console.warn("[cj-identity-reverify] queryByVid barcode lookup failed", { supplierProductId, supplierVariantId, error: error instanceof Error ? error.message : String(error) }); return null; }
+async function readPersistableBarcode(supplierProductId: string, supplierVariantId: string): Promise<string | null> {
+  // Never trust metadata.variant_barcode as identity proof: it may be stale,
+  // copied from the parent listing, or associated with a different variant.
+  try {
+    const variants = await fetchCJProductVariants(supplierProductId, { countryCode: "JP" });
+    const barcode = readExactSupplierVariantBarcode(variants, supplierVariantId);
+    if (barcode) return barcode;
+  } catch (error) {
+    console.warn("[cj-identity-reverify] variant barcode lookup failed", {
+      supplierProductId,
+      supplierVariantId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  // queryByVid is also accepted only if its response explicitly identifies the
+  // exact requested variant. Missing/mismatched IDs fail closed.
+  try {
+    const variant = await fetchCJVariantByVid(supplierVariantId);
+    if (variant?.vid !== supplierVariantId) return null;
+    const barcode = typeof variant.barcode === "string" ? variant.barcode.trim() : "";
+    return barcode || null;
+  } catch (error) {
+    console.warn("[cj-identity-reverify] queryByVid barcode lookup failed", {
+      supplierProductId,
+      supplierVariantId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 export async function reverifyCjSupplyIdentities(options: { limit?: number; deadlineAt?: number } = {}): Promise<CjIdentityReverifyResult> {
   const db = createSupabaseAdminClient();
@@ -73,8 +97,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
     const supplierListingId = String(row.id);
     try {
       const listingMetadata = record(row.metadata);
-      const persistedBarcode = typeof listingMetadata.variant_barcode === "string" ? listingMetadata.variant_barcode.trim() : null;
-      const variantBarcode = await readPersistableBarcode(String(row.supplier_product_id), String(row.supplier_variant_id), persistedBarcode);
+      const variantBarcode = await readPersistableBarcode(String(row.supplier_product_id), String(row.supplier_variant_id));
       const identity = await resolveMarketplaceIdentity({ db, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } });
       const canonicalProductId = identity?.productId ?? String(row.product_id);
       if (!canonicalProductId) { await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), last_identity_reverify_at: new Date().toISOString() } }).eq("id", supplierListingId); return { kind: "no_match" as const, supplierListingId }; }
