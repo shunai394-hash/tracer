@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
+import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -178,7 +179,10 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
     .limit(48);
 
   if (error) throw new Error(error.message);
-  const listings = (await loadLiveListings((data ?? []) as Record<string, unknown>[])).filter((listing) => hasJapaneseText(listing.title));
+  const gatePassedRows = ((data ?? []) as Record<string, unknown>[]).filter((row) =>
+    hasPassedSalesTestGate(row as Parameters<typeof hasPassedSalesTestGate>[0]),
+  );
+  const listings = (await loadLiveListings(gatePassedRows)).filter((listing) => hasJapaneseText(listing.title));
   return listings
     .map((listing) => {
       const priority = womenProductPriority({ title: listing.title, category: listing.description });
@@ -204,7 +208,7 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
     .maybeSingle();
 
   if (error) throw new Error(error.message);
-  if (!data) return null;
+  if (!data || !hasPassedSalesTestGate(data as Parameters<typeof hasPassedSalesTestGate>[0])) return null;
   const listings = (await loadLiveListings([data as Record<string, unknown>])).filter((listing) => hasJapaneseText(listing.title));
   return listings[0] ?? null;
 }
