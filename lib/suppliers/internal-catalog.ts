@@ -63,6 +63,71 @@ export async function linkInternalSupplyForBestseller(args: {
     if ((page ?? []).length < 100) break;
   }
 
+  // Reverse lookup from concrete variants is essential when the supplier exposes
+  // the barcode only on a size/color/pack row and the parent product has none.
+  // This is retrieval only; a candidate is not linked until its own barcode is
+  // checked and the full candidate set proves exactly one match.
+  const variantLookupClauses = new Set<string>();
+  for (const scheme of ["jan", "gtin", "ean", "upc"] as const) {
+    for (const value of barcodeValues) variantLookupClauses.add(`${scheme}.eq.${value}`);
+  }
+  if (variantLookupClauses.size > 0) {
+    const variantOr = [...variantLookupClauses].join(",");
+    const firstVariantCandidatePage = await supabase
+      .from("internal_supply_variants")
+      .select("id,supply_product_id")
+      .eq("active", true)
+      .eq("orderable", true)
+      .gt("inventory", 0)
+      .or(variantOr)
+      .order("id", { ascending: true })
+      .range(0, 99);
+    if (firstVariantCandidatePage.error) {
+      console.error("[TRACER INTERNAL VARIANT LOOKUP SKIPPED]", firstVariantCandidatePage.error);
+      return { matched: false, supplierListingId: null, supplyVariantId: null };
+    }
+    const variantCandidateRows = [...(firstVariantCandidatePage.data ?? [])];
+    for (let offset = 100; (firstVariantCandidatePage.data ?? []).length === 100; offset += 100) {
+      const { data: page, error: pageError } = await supabase
+        .from("internal_supply_variants")
+        .select("id,supply_product_id")
+        .eq("active", true)
+        .eq("orderable", true)
+        .gt("inventory", 0)
+        .or(variantOr)
+        .order("id", { ascending: true })
+        .range(offset, offset + 99);
+      if (pageError) {
+        console.error("[TRACER INTERNAL VARIANT LOOKUP PAGE FAILED]", pageError);
+        return { matched: false, supplierListingId: null, supplyVariantId: null };
+      }
+      variantCandidateRows.push(...(page ?? []));
+      if ((page ?? []).length < 100) break;
+    }
+
+    const parentIds = [...new Set(variantCandidateRows
+      .map((row) => typeof row.supply_product_id === "string" ? row.supply_product_id : "")
+      .filter(Boolean))];
+    for (let offset = 0; offset < parentIds.length; offset += 100) {
+      const { data: parentPage, error: parentError } = await supabase
+        .from("internal_supply_products")
+        .select("*")
+        .eq("active", true)
+        .in("id", parentIds.slice(offset, offset + 100));
+      if (parentError) {
+        console.error("[TRACER INTERNAL VARIANT PARENT LOOKUP FAILED]", parentError);
+        return { matched: false, supplierListingId: null, supplyVariantId: null };
+      }
+      const known = new Set(products.map((product) => String(product.id)));
+      for (const parent of parentPage ?? []) {
+        if (!known.has(String(parent.id))) {
+          products.push(parent);
+          known.add(String(parent.id));
+        }
+      }
+    }
+  }
+
   const candidateMatches: Array<{
     product: (typeof products)[number];
     productIds: ReturnType<typeof identifiersFromRecord>;
@@ -87,7 +152,10 @@ export async function linkInternalSupplyForBestseller(args: {
         title: String(product.title ?? ""),
       },
     });
-    if (!identity.salesEligible) continue;
+    // Parent identity is only a retrieval hint. A parent may have no barcode
+    // (or no identifiers at all) while its concrete variant carries the proof.
+    // Exact variant barcode matching below is the only identity gate.
+    void identity;
 
     const firstVariantPage = await supabase
       .from("internal_supply_variants")
