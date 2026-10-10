@@ -81,6 +81,12 @@ export function hasUniqueMarketplaceIdentity(candidateProductCount: number): boo
   return Number.isInteger(candidateProductCount) && candidateProductCount === 1;
 }
 
+export function supplierListingStateForIdentity(linkVerified: boolean) {
+  return linkVerified
+    ? { identity_status: "linked", configured: true, orderable: true }
+    : { identity_status: "pending", configured: false, orderable: false };
+}
+
 export type InternalSupplyLinkIdentity = {
   bestseller_id: unknown;
   supply_product_id: unknown;
