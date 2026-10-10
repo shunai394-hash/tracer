@@ -109,23 +109,25 @@ test("durable internal link retry queue", "failed candidate is deferred then res
   assert.deepEqual(selectDueInternalLinkRetryIds(secondFailureState, secondDue, 50), ["same-candidate"]);
 });
 
-test("durable internal link retry queue", "route delegates cleanup to tested catalog-sync finalizer", () => {
+test("durable internal link retry queue", "route delegates the lifecycle to the tested candidate processor", () => {
   const route = readFileSync(new URL("../app/api/cron/supplier-investigation/route.ts", import.meta.url), "utf8");
   const lifecycle = readFileSync(new URL("../lib/suppliers/internal-link-retry-lifecycle.ts", import.meta.url), "utf8");
-  assert.ok(route.includes("finalizeInternalSupplyLinkRetry"), "route must use the retry finalizer");
-  const syncStart = lifecycle.indexOf("outcome = await args.syncCatalog()");
-  const failurePersist = lifecycle.indexOf("await args.persistFailure", syncStart);
+  // Behaviour is exercised by scripts/test-internal-link-retry-lifecycle.mjs;
+  // this guards the wiring: the route must use that processor, and inside the
+  // finalizer sync runs first, failures persist, and retry deletion is last.
+  assert.ok(route.includes("processInternalLinkCandidates("), "route must use the tested candidate processor");
+  assert.ok(!route.includes(".from(\"internal_supply_link_retry_queue\")\n          .delete()"), "route must not delete retries itself");
+  const finalizer = lifecycle.indexOf("export async function finalizeInternalSupplyLinkRetry");
+  const syncStart = lifecycle.indexOf("outcome = await withTimeout(args.syncCatalog()", finalizer);
+  const verify = lifecycle.indexOf("args.verifyPersisted(outcome)", syncStart);
+  const failurePersist = lifecycle.indexOf("await args.persistFailure(failure)", syncStart);
   const retryDelete = lifecycle.indexOf("await args.clearRetry()", syncStart);
-  assert.ok(syncStart >= 0, "finalizer must run catalog sync first");
-  assert.ok(failurePersist > syncStart, "failed sync must persist retry state");
-  assert.ok(retryDelete > syncStart, "retry cleanup must follow catalog sync");
-  assert.ok(lifecycle.indexOf("if (!outcome?.matched)", syncStart) < retryDelete, "unmatched catalog sync must never clear retry");
-  const finalizeCall = route.indexOf("const catalog = await finalizeInternalSupplyLinkRetry");
-  const matchedCount = route.indexOf("internalMatchedIds.push(candidateId)", finalizeCall);
-  const resultRecord = route.indexOf("internalResults.push({", finalizeCall);
-  assert.ok(finalizeCall >= 0, "route must invoke finalizer");
-  assert.ok(matchedCount > finalizeCall, "candidate must not count as fully matched before catalog sync finalizes");
-  assert.ok(resultRecord > matchedCount, "fully matched count must be recorded before result diagnostics");
+  assert.ok(syncStart > finalizer, "finalizer must run catalog sync first");
+  assert.ok(verify > syncStart && verify < retryDelete, "persisted link must be read back before retry deletion");
+  assert.ok(failurePersist > syncStart && failurePersist < retryDelete, "failed sync must persist retry state before any deletion");
+  const matchedCount = route.indexOf("internalMatchedIds.push(candidateId)");
+  const outcomes = route.indexOf("await processInternalLinkCandidates(");
+  assert.ok(outcomes >= 0 && matchedCount > outcomes, "candidate must not count as matched before the lifecycle finishes");
 });
 
 // Market product fixtures (JANs carry valid check digits).
