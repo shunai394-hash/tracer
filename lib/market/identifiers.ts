@@ -106,6 +106,11 @@ export function hasAnyIdentifier(ids: ProductIdentifiers): boolean {
   return Boolean(ids.asin || ids.jan || ids.gtin || ids.ean || ids.upc || ids.mpn);
 }
 
+/** Selects only barcode-grade identifiers; MPN is not a barcode and must not suppress supplier barcode retrieval. */
+export function pickSupplierBarcodeIdentifier(ids: Pick<ProductIdentifiers, "jan" | "gtin" | "ean" | "upc" | "mpn">): string | null {
+  return ids.gtin ?? ids.jan ?? ids.ean ?? ids.upc ?? null;
+}
+
 export function pickIdentifierQuery(ids: ProductIdentifiers): string | null {
   return ids.jan ?? ids.gtin ?? ids.ean ?? ids.upc ?? ids.asin ?? ids.mpn ?? null;
 }
