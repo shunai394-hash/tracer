@@ -7,6 +7,7 @@ const discovery = readFileSync("lib/suppliers/discover-cj-supply.ts", "utf8");
 const ingest = readFileSync("lib/suppliers/persist-cj-internal-supply.ts", "utf8");
 const identity = readFileSync("lib/market/identifiers.ts", "utf8");
 const auditMigration = readFileSync("supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql", "utf8");
+const pipeline = readFileSync("lib/intelligence/run-intelligence-pipeline.ts", "utf8");
 
 assert.match(discovery, /import \{ persistCjInternalSupplyCandidate \} from "@\/lib\/suppliers\/persist-cj-internal-supply"/);
 assert.equal((discovery.match(/persistCjInternalSupplyCandidate\(/g) ?? []).length, 2,
@@ -78,5 +79,9 @@ assert.match(ingest, /auditErrorCode === "PGRST205"/);
 assert.match(auditMigration, /create table if not exists public\.internal_supply_ingestion_audit/);
 assert.match(auditMigration, /grant all on public\.internal_supply_ingestion_audit to service_role/);
 assert.match(identity, /function hasValidGs1CheckDigit/);
+const matchStep = pipeline.split('runStep("match"')[1]?.split("));")[0] ?? "";
+assert.ok(matchStep.length > 0, "the demand-match stage must remain present");
+assert.match(matchStep, /stopPipelineOnTimeout:\s*false/,
+  "a demand-match timeout must not starve independent marketplace child-variant evidence collection");
 
 console.log("CJ internal-supply wiring checks passed.");
