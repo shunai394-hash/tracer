@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupplierCapabilities } from "@/lib/procurement/registry";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
 import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
@@ -47,6 +48,22 @@ type ShopifyProductNode = {
 function hasGateProvenance(row: Listing): boolean {
   return Array.isArray(row.selection_reasons)
     && row.selection_reasons.some((reason) => String(reason) === "sales_test_gate_passed");
+}
+
+function hasVerifiedLiveSupplierOrderContract(row: Listing): boolean {
+  if (!row.supplier_product_id?.trim() || !row.supplier_variant_id?.trim()) return false;
+  const capabilities = getSupplierCapabilities(String(row.supplier_name ?? ""));
+  return capabilities.catalog
+    && capabilities.variant
+    && capabilities.inventory
+    && capabilities.price
+    && capabilities.shipping
+    && capabilities.orderPreflight
+    && capabilities.orderCreation
+    && capabilities.payment
+    && capabilities.orderStatus
+    && capabilities.tracking
+    && capabilities.liveOrdering;
 }
 
 function asNumber(value: unknown): number | null {
@@ -178,7 +195,7 @@ function blockReasons(row: Listing): string[] {
   if (row.tracking_available !== true) reasons.push("tracking_unavailable");
   if (!(Number(row.inventory) > 0)) reasons.push("inventory_zero_or_unknown");
   if (String(row.currency ?? "").trim().toUpperCase() !== "JPY") reasons.push("currency_not_jpy");
-  if (!/^CJ/i.test(String(row.supplier_name ?? ""))) reasons.push("supplier_not_cj");
+  if (!hasVerifiedLiveSupplierOrderContract(row)) reasons.push("supplier_live_order_contract_unverified");
   if (asNumber(row.shipping_cost) === null) reasons.push("shipping_cost_unknown");
   if (asNumber(row.source_cost) === null) reasons.push("source_cost_unknown");
   if (!((asNumber(row.contribution_profit) ?? 0) > 0)) reasons.push("profit_not_positive");
