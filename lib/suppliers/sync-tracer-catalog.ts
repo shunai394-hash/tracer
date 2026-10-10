@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { identifiersFromRecord, identifierQueryEntries, matchProductIdentity } from "@/lib/market/identifiers";
+import { identifiersFromRecord, identifierQueryEntries, hasExactMarketplaceVariantIdentifierMatch, matchProductIdentity } from "@/lib/market/identifiers";
 import { hasExactCurrentRequestVariantSet, hasUniqueIdentitySelection, onlyCurrentRequestVariants } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 function num(value: unknown): number | null {
@@ -114,16 +114,12 @@ export async function syncTracerCatalogFromInternalSupply(args: {
       };
     }).filter((x) => x.identity.salesEligible);
 
-    const exactIdentifierMatches = confirmed.filter((x) => {
-      const variantIds = identifiersFromRecord(x.variant as Record<string, unknown>);
-      return Boolean(
-        (marketIds.asin && variantIds.asin === marketIds.asin) ||
-        (marketIds.jan && variantIds.jan === marketIds.jan) ||
-        (marketIds.gtin && variantIds.gtin === marketIds.gtin) ||
-        (marketIds.ean && variantIds.ean === marketIds.ean) ||
-        (marketIds.upc && variantIds.upc === marketIds.upc),
-      );
-    });
+    const exactIdentifierMatches = confirmed.filter((x) =>
+      hasExactMarketplaceVariantIdentifierMatch(
+        marketIds,
+        identifiersFromRecord(x.variant as Record<string, unknown>),
+      ),
+    );
     const selected = hasUniqueIdentitySelection(confirmed.length, exactIdentifierMatches.length)
       ? confirmed.length === 1 ? confirmed[0] : exactIdentifierMatches[0]
       : undefined;
