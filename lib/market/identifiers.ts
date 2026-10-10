@@ -176,7 +176,15 @@ export function matchProductIdentity(args: {
     if (brandMarket && brandSupply && brandMarket === brandSupply) {
       return { linked: true, salesEligible: true, method: "brand_mpn", confidence: 0.92, rationale: "brand and model match" };
     }
-    return { linked: true, salesEligible: true, method: "mpn", confidence: 0.88, rationale: "model/MPN matches" };
+    // MPNs are only unique within a manufacturer. Without the same known brand,
+    // keep the candidate for investigation but do not treat it as a proven link.
+    return {
+      linked: false,
+      salesEligible: false,
+      method: "mpn",
+      confidence: 0.55,
+      rationale: brandMarket && brandSupply ? "MPN matches but brand conflicts" : "MPN matches but brand evidence is missing",
+    };
   }
 
   if (market.imageUrl && supply.imageUrl && market.imageUrl === supply.imageUrl) {
@@ -255,6 +263,30 @@ export function verifyIdentifierMatchInvariants(): {
       actual: (() => {
         const r = matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, jan: "4573138107287" }, supply: { ...EMPTY_IDENTIFIERS, gtin: "1111111111111" } });
         return r.method === "none" && !r.salesEligible;
+      })(),
+    },
+    {
+      name: "mpn_without_brand_is_not_sales_eligible",
+      expected: true,
+      actual: (() => {
+        const r = matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, mpn: "MODEL-123", brand: "Brand A" }, supply: { ...EMPTY_IDENTIFIERS, mpn: "MODEL-123" } });
+        return !r.salesEligible && !r.linked && r.method === "mpn";
+      })(),
+    },
+    {
+      name: "mpn_with_conflicting_brand_is_not_sales_eligible",
+      expected: true,
+      actual: (() => {
+        const r = matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, mpn: "MODEL-123", brand: "Brand A" }, supply: { ...EMPTY_IDENTIFIERS, mpn: "MODEL-123", brand: "Brand B" } });
+        return !r.salesEligible && !r.linked && r.method === "mpn";
+      })(),
+    },
+    {
+      name: "mpn_with_same_brand_is_sales_eligible",
+      expected: true,
+      actual: (() => {
+        const r = matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, mpn: "MODEL-123", brand: "Brand A" }, supply: { ...EMPTY_IDENTIFIERS, mpn: "MODEL-123", brand: " brand a " } });
+        return r.salesEligible && r.linked && r.method === "brand_mpn";
       })(),
     },
     {
