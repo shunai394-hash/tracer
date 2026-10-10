@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
 import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
+import { isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 
 type Listing = {
   id: string;
@@ -172,6 +173,7 @@ export async function syncPublishedListingsToShopify(limit = 150, listingIds?: s
  */
 function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
+  if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
   if (row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") reasons.push("pipeline_blocked");
   if (!hasGateProvenance(row)) reasons.push("sales_test_gate_not_passed");
   if (row.orderable !== true) reasons.push("not_orderable");
