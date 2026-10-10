@@ -23,15 +23,6 @@ export async function syncTracerCatalogFromInternalSupply(args: {
   variantIds?: string[];
 }): Promise<{ matched: boolean; catalogId: string | null; variantId: string | null; reason?: string }> {
   const db = createSupabaseAdminClient();
-  const suppliedVariantIds = (args.variantIds ?? []).filter((id) => typeof id === "string" && id.trim());
-  const variantIds = [...new Set(suppliedVariantIds)];
-  if (variantIds.length === 0) {
-    return { matched: false, catalogId: null, variantId: null, reason: "no_variants_written_by_request" };
-  }
-  if (variantIds.length !== suppliedVariantIds.length) {
-    return { matched: false, catalogId: null, variantId: null, reason: "duplicate_variant_ids_in_request_scope" };
-  }
-
   const { data: bestseller, error: bestsellerError } = await db
     .from("marketplace_bestsellers")
     .select("*")
