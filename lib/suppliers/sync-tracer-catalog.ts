@@ -220,7 +220,6 @@ export async function syncTracerCatalogFromInternalSupply(args: {
       variantId: String(result.catalog_variant_id),
       reason: orderable ? "ready" : "matched_but_not_ready",
     };
-  }
 
   return { matched: false, catalogId: null, variantId: null, reason: "no_sales_eligible_internal_supply" };
 }
