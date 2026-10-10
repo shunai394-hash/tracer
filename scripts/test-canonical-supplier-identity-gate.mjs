@@ -20,6 +20,7 @@ assert.match(store, /supplier_identity_unlinked/);
 assert.match(route, /published: false/);
 assert.match(route, /base_unpublish_failed/);
 assert.match(route, /shopify_unpublish_failed/);
+assert.match(base, /invalid_request.*break/s, "BASE auth failures must stop the current hide batch");
 assert.match(base, /unpublishFailed \+= 1/);
 assert.match(base, /hidden: results\.filter\(\(r\) => r\.ok && r\.hidden\)\.length/);
 assert.match(route, /publishPublishedListingsToBase\(50/);

@@ -137,7 +137,11 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       }).eq("id", String(listing.id));
       results.push({ listingId: String(listing.id), ok: true, baseItemId: String(listing.base_item_id), hidden: true });
     } catch (error) {
-      results.push({ listingId: String(listing.id), ok: false, error: error instanceof Error ? error.message : String(error) });
+      const message = error instanceof Error ? error.message : String(error);
+      results.push({ listingId: String(listing.id), ok: false, error: message });
+      // A rejected/expired BASE token will fail every item in this batch; stop
+      // immediately to avoid hammering the API while credentials are repaired.
+      if (/アクセストークンが無効|invalid_request|BASE OAuth refresh HTTP 4\\d\\d/i.test(message)) break;
     }
   }
 
