@@ -24,7 +24,7 @@ export type PersistCjSupplyIntelligenceArgs = {
   supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null;
 };
 
-export type MarketplaceIdentity = { bestsellerId: string; productId: string; method: "gtin" | "jan" | "ean" | "upc"; confidence: number; rationale: string; marketplaceVariantEvidenceId?: string; marketplaceSourceVariantId?: string };
+export type MarketplaceIdentity = { bestsellerId: string; productId: string; method: "gtin" | "jan" | "ean" | "upc"; confidence: number; rationale: string; marketplaceVariantEvidenceId?: string; marketplaceSourceVariantId?: string; supplierVariantBarcode?: string };
 
 function normalizeBarcode(value: unknown): string { return typeof value === "string" ? value.trim().replace(/[^0-9]/g, "") : ""; }
 
@@ -117,6 +117,7 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
         rationale: `exact supplier-variant barcode matches canonical child-variant evidence (${variantBarcodeMethod})`,
         marketplaceVariantEvidenceId: evidenceId,
         marketplaceSourceVariantId: String(variant.source_variant_id),
+        supplierVariantBarcode: variantBarcode,
         fetchedAt: typeof variant.fetched_at === "string" ? variant.fetched_at : "",
       };
       // A repeated lookup may return the same row. Deduplicate only by the
@@ -138,6 +139,7 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
     rationale: match.rationale,
     marketplaceVariantEvidenceId: match.marketplaceVariantEvidenceId,
     marketplaceSourceVariantId: match.marketplaceSourceVariantId,
+    supplierVariantBarcode: match.supplierVariantBarcode,
   };
 }
 
@@ -151,7 +153,7 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
   const existingListing = await supabase.from("supplier_listings").select("metadata").eq("id", args.supplierListingId).maybeSingle();
   if (existingListing.error) throw new Error(`CJ supplier listing read failed: ${existingListing.error.message}`);
   if (existingListing.data?.metadata && typeof existingListing.data.metadata === "object" && !Array.isArray(existingListing.data.metadata)) existingListingMetadata = existingListing.data.metadata as Record<string, unknown>;
-  const verifiedMetadata = { ...existingListingMetadata, source: "cj_supply_first", identity_source: marketplaceIdentity ? "cj_variant_barcode_to_canonical_child_variant_evidence" : "cj_variant_evidence", identity_rationale: marketplaceIdentity?.rationale ?? "CJ variant/listing identifier evidence persisted; marketplace identity not yet confirmed", marketplace_variant_evidence_id: marketplaceIdentity?.marketplaceVariantEvidenceId ?? null, marketplace_source_variant_id: marketplaceIdentity?.marketplaceSourceVariantId ?? null, supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: args.variantBarcode ?? existingListingMetadata.variant_barcode ?? null };
+  const verifiedMetadata = { ...existingListingMetadata, source: "cj_supply_first", identity_source: marketplaceIdentity ? "cj_variant_barcode_to_canonical_child_variant_evidence" : "cj_variant_evidence", identity_rationale: marketplaceIdentity?.rationale ?? "CJ variant/listing identifier evidence persisted; marketplace identity not yet confirmed", marketplace_variant_evidence_id: marketplaceIdentity?.marketplaceVariantEvidenceId ?? null, marketplace_source_variant_id: marketplaceIdentity?.marketplaceSourceVariantId ?? null, supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: marketplaceIdentity?.supplierVariantBarcode ?? null };
   // Always overwrite prior identity/readiness state. A failed or ambiguous re-check
   // must not leave a stale "linked" listing sellable from an earlier successful run.
   const { error: evidenceError } = await supabase.from("supplier_listings").update({
@@ -176,7 +178,7 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
     metadata: verifiedMetadata,
   }).eq("id", args.supplierListingId);
   if (evidenceError) throw new Error(`CJ supplier evidence persistence failed: ${evidenceError.message}`);
-  const offerPayload = { product_id: canonicalProductId, seller_name: "CJdropshipping", offer_url: null, image_url: args.imageUrl, currency: "USD", price: args.cost, currency_confidence: currencyAssessment.confidence, availability: args.inventory > 0 ? "available" : "unavailable", shipping_price: args.shippingCost, observed_at: now, metadata: { provider: "cj", source: "cj_supply_first", supplier_listing_id: args.supplierListingId, supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: args.variantBarcode ?? null, inventory: args.inventory, query: args.query, fx_rate: args.fxRate, selling_price_jpy: args.sellingPriceJpy, currency_confidence: currencyAssessment.confidence, currency_confidence_reasons: currencyAssessment.reasons, identity_confidence: marketplaceIdentity?.confidence ?? 0, identity_status: marketplaceIdentity ? "linked" : "supply_discovered", identity_method: marketplaceIdentity?.method ?? "supply_discovered", identity_rationale: marketplaceIdentity?.rationale ?? "CJ supply discovered; marketplace identity not confirmed", demand_evidence_status: "not_observed" } };
+  const offerPayload = { product_id: canonicalProductId, seller_name: "CJdropshipping", offer_url: null, image_url: args.imageUrl, currency: "USD", price: args.cost, currency_confidence: currencyAssessment.confidence, availability: args.inventory > 0 ? "available" : "unavailable", shipping_price: args.shippingCost, observed_at: now, metadata: { provider: "cj", source: "cj_supply_first", supplier_listing_id: args.supplierListingId, supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: marketplaceIdentity?.supplierVariantBarcode ?? null, inventory: args.inventory, query: args.query, fx_rate: args.fxRate, selling_price_jpy: args.sellingPriceJpy, currency_confidence: currencyAssessment.confidence, currency_confidence_reasons: currencyAssessment.reasons, identity_confidence: marketplaceIdentity?.confidence ?? 0, identity_status: marketplaceIdentity ? "linked" : "supply_discovered", identity_method: marketplaceIdentity?.method ?? "supply_discovered", identity_rationale: marketplaceIdentity?.rationale ?? "CJ supply discovered; marketplace identity not confirmed", demand_evidence_status: "not_observed" } };
   const existingOffer = await supabase.from("product_offers").select("id").eq("product_id", canonicalProductId).eq("seller_name", "CJdropshipping").order("observed_at", { ascending: false }).limit(1).maybeSingle();
   if (existingOffer.error) throw new Error(existingOffer.error.message);
   let offerId: string;
