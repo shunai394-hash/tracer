@@ -129,13 +129,6 @@ function barcodeFamilyValue(ids: ProductIdentifiers): string | null {
   return raw ? toGtin14(raw) : null;
 }
 
-/**
- * Return a variant identity method only when at least one valid barcode on
- * each record matches across JAN/EAN/UPC/GTIN schemes. Unlike product identity,
- * ASIN/MPN must never select a concrete size, color, or pack variant.
- * Every populated barcode field is checked so an earlier nonmatching field
- * cannot hide an exact match in a later field.
- */
 /** A variant link is safe only when exactly one candidate across the full lookup has exact barcode evidence. */
 export function selectUniqueExactBarcodeMatch<T extends { method: "jan" | "gtin" | "ean" | "upc" | null }>(
   candidates: T[],
@@ -144,6 +137,13 @@ export function selectUniqueExactBarcodeMatch<T extends { method: "jan" | "gtin"
   return exact.length === 1 ? exact[0] : null;
 }
 
+/**
+ * Return a variant identity method only when at least one valid barcode on
+ * each record matches across JAN/EAN/UPC/GTIN schemes. Unlike product identity,
+ * ASIN/MPN must never select a concrete size, color, or pack variant.
+ * Every populated barcode field is checked so an earlier nonmatching field
+ * cannot hide an exact match in a later field.
+ */
 export function exactBarcodeFamilyMatch(
   market: ProductIdentifiers,
   supply: ProductIdentifiers,
