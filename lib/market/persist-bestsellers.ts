@@ -26,6 +26,9 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
   itemCount: number;
   inserted: number;
   productsCreated: number;
+  canonicalVariantEvidenceParsed: number;
+  canonicalVariantEvidenceWritten: number;
+  canonicalVariantEvidenceWriteFailures: number;
   skippedMarketplaces: string[];
   /** Per-marketplace detail-page enrichment telemetry (see collect-bestsellers.ts). */
   enrichment: Array<{ marketplace: string; attempted: number; htmlFetched: number; identifierFound: number }>;
@@ -49,6 +52,9 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
   const supabase = createSupabaseAdminClient();
   let inserted = 0;
   let productsCreated = 0;
+  let canonicalVariantEvidenceParsed = 0;
+  let canonicalVariantEvidenceWritten = 0;
+  let canonicalVariantEvidenceWriteFailures = 0;
   const bestsellerIds: string[] = [];
   const supplierCandidateIdsByMarketplace = new Map<string, string[]>();
   const seenMarketplaceIdentityKeys = new Map<string, Set<string>>();
@@ -112,6 +118,45 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
       if (error) throw new Error(error.message);
       inserted += 1;
       bestsellerIds.push(String(bestseller.id));
+
+      const variantEvidenceRows = (item.canonicalVariants ?? []).map((variant) => ({
+        bestseller_id: bestseller.id,
+        marketplace: marketplace.marketplace,
+        source: marketplace.source,
+        source_variant_id: variant.sourceVariantId,
+        sku: variant.sku,
+        title: variant.title,
+        asin: variant.asin,
+        jan: variant.jan,
+        gtin: variant.gtin,
+        ean: variant.ean,
+        upc: variant.upc,
+        mpn: variant.mpn,
+        product_url: variant.productUrl,
+        evidence_source: variant.evidenceSource,
+        raw_evidence: variant.rawEvidence,
+        fetched_at: marketplace.fetchedAt,
+        updated_at: marketplace.fetchedAt,
+      }));
+      canonicalVariantEvidenceParsed += variantEvidenceRows.length;
+      if (variantEvidenceRows.length > 0) {
+        const { data: writtenVariants, error: variantWriteError } = await supabase
+          .from("marketplace_bestseller_variants")
+          .upsert(variantEvidenceRows, { onConflict: "bestseller_id,source_variant_id" })
+          .select("id");
+        if (variantWriteError) {
+          // Keep ranking collection available during a staggered migration rollout,
+          // but surface the missing/failed evidence write as a separate counter.
+          canonicalVariantEvidenceWriteFailures += variantEvidenceRows.length;
+          console.error("[TRACER CANONICAL VARIANT EVIDENCE WRITE FAILED]", {
+            code: variantWriteError.code,
+            message: variantWriteError.message,
+            rows: variantEvidenceRows.length,
+          });
+        } else {
+          canonicalVariantEvidenceWritten += writtenVariants?.length ?? variantEvidenceRows.length;
+        }
+      }
 
       let productId: string | null = null;
 
@@ -276,6 +321,9 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
     itemCount: collected.itemCount,
     inserted,
     productsCreated,
+    canonicalVariantEvidenceParsed,
+    canonicalVariantEvidenceWritten,
+    canonicalVariantEvidenceWriteFailures,
     skippedMarketplaces,
     enrichment: collected.marketplaces
       .filter((marketplace) => marketplace.enrichment)
