@@ -143,12 +143,23 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
   };
 }
 
-export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntelligenceArgs, options: { identity?: MarketplaceIdentity | null } = {}): Promise<{ offerId: string; intelligenceId: string; identity: MarketplaceIdentity | null }> {
-  const supabase = createSupabaseAdminClient();
-  const now = new Date().toISOString();
+export type CjSupplyPersistenceDependencies = {
+  identity?: MarketplaceIdentity | null;
+  /** Injectable database client for disposable integration tests; defaults to the service-role client. */
+  db?: ReturnType<typeof createSupabaseAdminClient>;
+  /** Injectable clock for deterministic persistence assertions. */
+  now?: () => Date;
+};
+
+export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntelligenceArgs, options: CjSupplyPersistenceDependencies = {}): Promise<{ offerId: string | null; intelligenceId: string | null; identity: MarketplaceIdentity | null }> {
+  const supabase = options.db ?? createSupabaseAdminClient();
+  const now = (options.now?.() ?? new Date()).toISOString();
   const currencyAssessment = assessCurrencyConfidence({ currency: "USD", price: args.cost, provider: "cj" });
   const marketplaceIdentity = options.identity !== undefined ? options.identity : await resolveMarketplaceIdentity({ db: supabase, supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, variantBarcode: args.variantBarcode, supplierIdentifiers: args.supplierIdentifiers });
-  const canonicalProductId = marketplaceIdentity?.productId ?? args.productId;
+  // Never substitute a caller-provided/local discovery product ID for missing canonical identity.
+  // The listing row below is deliberately detached on a no-match, and no offer or
+  // canonical product-intelligence record is written in that case.
+  const canonicalProductId = marketplaceIdentity?.productId ?? null;
   let existingListingMetadata: Record<string, unknown> = {};
   const existingListing = await supabase.from("supplier_listings").select("metadata").eq("id", args.supplierListingId).maybeSingle();
   if (existingListing.error) throw new Error(`CJ supplier listing read failed: ${existingListing.error.message}`);
@@ -178,6 +189,14 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
     metadata: verifiedMetadata,
   }).eq("id", args.supplierListingId);
   if (evidenceError) throw new Error(`CJ supplier evidence persistence failed: ${evidenceError.message}`);
+  // A unique identity link is not a procurement capability proof, but it is a
+  // prerequisite for attaching a supplier offer to a canonical product. On a
+  // missing/ambiguous match, stop after clearing stale listing identity and keep
+  // all readiness flags false; do not write product_offers/product_intelligence
+  // against args.productId (which may be a local discovery ID, not the canonical ID).
+  if (!marketplaceIdentity || !canonicalProductId) {
+    return { offerId: null, intelligenceId: null, identity: null };
+  }
   const offerPayload = { product_id: canonicalProductId, seller_name: "CJdropshipping", offer_url: null, image_url: args.imageUrl, currency: "USD", price: args.cost, currency_confidence: currencyAssessment.confidence, availability: args.inventory > 0 ? "available" : "unavailable", shipping_price: args.shippingCost, observed_at: now, metadata: { provider: "cj", source: "cj_supply_first", supplier_listing_id: args.supplierListingId, supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: marketplaceIdentity?.supplierVariantBarcode ?? null, inventory: args.inventory, query: args.query, fx_rate: args.fxRate, selling_price_jpy: args.sellingPriceJpy, currency_confidence: currencyAssessment.confidence, currency_confidence_reasons: currencyAssessment.reasons, identity_confidence: marketplaceIdentity?.confidence ?? 0, identity_status: marketplaceIdentity ? "linked" : "supply_discovered", identity_method: marketplaceIdentity?.method ?? "supply_discovered", identity_rationale: marketplaceIdentity?.rationale ?? "CJ supply discovered; marketplace identity not confirmed", demand_evidence_status: "not_observed" } };
   const existingOffer = await supabase.from("product_offers").select("id").eq("product_id", canonicalProductId).eq("seller_name", "CJdropshipping").order("observed_at", { ascending: false }).limit(1).maybeSingle();
   if (existingOffer.error) throw new Error(existingOffer.error.message);
