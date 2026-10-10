@@ -127,7 +127,10 @@ export type InternalProductCandidateStatus =
   | "unique_product_candidate"
   | "ambiguous_product";
 
-/** Distinguish a missing eligible product from a genuinely ambiguous identity set. */
+/**
+ * Zero eligible products is a missing candidate, not an ambiguous match.
+ * Invalid counts fail closed as ambiguous.
+ */
 export function internalProductCandidateStatus(candidateCount: number): InternalProductCandidateStatus {
   if (!Number.isInteger(candidateCount) || candidateCount < 0) return "ambiguous_product";
   if (candidateCount === 0) return "no_product_candidate";
