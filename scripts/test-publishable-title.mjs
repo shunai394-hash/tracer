@@ -15,6 +15,9 @@ const cases = [
   ["overlong title", "a".repeat(181), false],
   ["description placeholder", "商品の仕様・サイズ・素材・使用方法は、販売元の掲載情報をご確認ください。", false],
   ["description placeholder with shipping suffix", "商品の仕様・サイズ・素材・使用方法は、販売元の掲載情報をご確認ください。 日本向け配送：送料別。", false],
+  ["description identity failure workflow text", "商品アイデンティティが未確定のため、選定対象外 日本向け配送：送料別。", false],
+  ["description sales gate failure workflow text", "必須ゲートを満たしていないため、テスト優先度は低い。", false],
+  ["description demand rationale workflow text", "観測された需要と供給データに基づいて販売テスト候補になる。", false],
   ["specific product description", "収納ボックス。折りたたみ式で、使わない時は薄く収納できます。", true],
   ["empty description", "", false],
 ];
