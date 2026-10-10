@@ -29,6 +29,9 @@ const checks = [
   ["gate-read failures fail closed and are surfaced",
     source.includes("sales_test_gate_revalidation_read_failed")
       && source.includes("currentGateReadError")],
+  ["explicit zero shipping is valid while unknown and negative shipping stay blocked",
+    source.includes("shippingCost === null || !Number.isFinite(shippingCost) || shippingCost < 0")
+      && !source.includes("shippingCost <= 0")],
 ];
 
 const failures = checks.filter(([, ok]) => !ok);
