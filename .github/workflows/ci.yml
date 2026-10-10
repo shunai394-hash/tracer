@@ -32,6 +32,8 @@ jobs:
           sudo -u postgres createdb tracer_test
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
+      - name: Exercise CJ supply identity and persistence application path (in-memory disposable DB)
+        run: node --experimental-strip-types --no-warnings scripts/verify-cj-supply-persistence.mjs
       - name: Run atomic catalog sync PostgreSQL integration tests (disposable CI database only)
         env:
           PGHOST: 127.0.0.1
