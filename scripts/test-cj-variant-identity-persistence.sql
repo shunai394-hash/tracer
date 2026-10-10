@@ -28,9 +28,10 @@ insert into public.marketplace_bestseller_variants(
  bestseller_id, marketplace, source, source_variant_id, title, gtin,
  evidence_source, raw_evidence, fetched_at
 ) values
- ('30000000-0000-4000-8000-000000000001','amazon.co.jp','ci_fixture','B0CHILD-A','Child A','5901234123457','schema_org_product_group_has_variant','{"fixture":true}'::jsonb,now()),
- ('30000000-0000-4000-8000-000000000002','amazon.co.jp','ci_fixture','B0CHILD-B','Child B','5901234123457','schema_org_product_group_has_variant','{"fixture":true}'::jsonb,now())
-on conflict (bestseller_id, source_variant_id) do nothing;
+ ('30000000-0000-4000-8000-000000000001','amazon.co.jp','cj_identity_fixture','B0CHILD-A','Child A','5901234123457','schema_org_product_group_has_variant','{"fixture":true}'::jsonb,now()),
+ ('30000000-0000-4000-8000-000000000002','amazon.co.jp','cj_identity_fixture','B0CHILD-B','Child B','5901234123457','schema_org_product_group_has_variant','{"fixture":true}'::jsonb,now())
+on conflict (bestseller_id, source_variant_id) do update
+ set source = excluded.source, gtin = excluded.gtin, raw_evidence = excluded.raw_evidence, updated_at = now();
 
 insert into public.supplier_listings(id,bestseller_id,product_id,identity_method,identity_status,identity_confidence,orderable,api_available,tracking_available,verification_status,metadata)
 values ('50000000-0000-4000-8000-000000000001',
@@ -51,7 +52,7 @@ begin
   -- Exact barcode must be unique across child evidence, not merely unique per parent.
   select count(*) into v_exact from public.marketplace_bestseller_variants
    where gtin='5901234123457'
-     and source='ci_fixture'
+     and source='cj_identity_fixture'
      and evidence_source='schema_org_product_group_has_variant'
      and bestseller_id in (
        '30000000-0000-4000-8000-000000000001',
