@@ -3,7 +3,7 @@ import "server-only";
 import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
-import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates } from "@/lib/market/identifiers";
+import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates, pickSupplierBarcodeIdentifier } from "@/lib/market/identifiers";
 import { hasUniqueMarketplaceIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 export type PersistCjSupplyIntelligenceArgs = {
@@ -44,7 +44,10 @@ async function readSupplierBarcode(args: { supplierProductId: string; supplierVa
 
 export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<MarketplaceIdentity | null> {
   const suppliedIds = identifiersFromRecord({ gtin: args.supplierIdentifiers?.gtin, jan: args.supplierIdentifiers?.jan, ean: args.supplierIdentifiers?.ean, upc: args.supplierIdentifiers?.upc, mpn: args.supplierIdentifiers?.mpn });
-  const barcode = Object.values(suppliedIds).find((value) => typeof value === "string" && value.trim()) ?? await readSupplierBarcode(args);
+  // Only a real barcode field may satisfy barcode evidence. An MPN alone must not
+  // prevent a fresh CJ variant barcode lookup, or it can starve valid exact links.
+  const suppliedBarcode = pickSupplierBarcodeIdentifier(suppliedIds);
+  const barcode = suppliedBarcode ?? await readSupplierBarcode(args);
   const supplyIds = identifiersFromRecord({ ...suppliedIds, gtin: barcode || suppliedIds.gtin });
   if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc && !supplyIds.mpn) return null;
 
