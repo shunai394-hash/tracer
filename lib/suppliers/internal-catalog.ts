@@ -6,7 +6,7 @@ import {
   marketplaceBarcodeCandidates,
   matchProductIdentity,
 } from "@/lib/market/identifiers";
-import { hasUniqueIdentitySelection, hasUniqueMarketplaceIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
+import { hasUniqueIdentitySelection, hasUniqueMarketplaceIdentity, isVerifiedInternalSupplyLink } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 export type InternalSupplyLinkStatus =
   | "saved"
@@ -262,14 +262,11 @@ export async function linkInternalSupplyForBestseller(args: {
         .maybeSingle();
 
       const row = readback.data as Record<string, unknown> | null;
-      const exactExistingLink = !readback.error && Boolean(row)
-        && String(row?.bestseller_id) === String(linkPayload.bestseller_id)
-        && String(row?.supply_product_id) === String(linkPayload.supply_product_id)
-        && String(row?.supply_variant_id) === String(linkPayload.supply_variant_id)
-        && row?.identity_method === linkPayload.identity_method
-        && Number(row?.identity_confidence) === Number(linkPayload.identity_confidence)
-        && row?.identity_rationale === linkPayload.identity_rationale
-        && row?.status === linkPayload.status;
+      const exactExistingLink = !readback.error
+        && isVerifiedInternalSupplyLink(
+          row as Parameters<typeof isVerifiedInternalSupplyLink>[0],
+          linkPayload,
+        );
 
       if (exactExistingLink) {
         return {
