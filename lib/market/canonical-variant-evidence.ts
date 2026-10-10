@@ -1,4 +1,4 @@
-import { extractAsinFromUrl, normalizeIdentifier } from "./identifiers";
+import { extractAsinFromUrl, normalizeIdentifier } from "./identifiers.ts";
 
 export type CanonicalMarketplaceVariantEvidence = {
   sourceVariantId: string;
