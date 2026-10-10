@@ -56,9 +56,25 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   if (!isBaseConfigured()) return { attempted: 0, published: 0, skipped: 0, failed: 0, results: [] };
   if (listingIds !== undefined && listingIds.length === 0) return { attempted: 0, published: 0, skipped: 0, failed: 0, results: [] };
   const supabase = createSupabaseAdminClient();
-  let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons").or("published.eq.true,base_item_id.not.is.null,pipeline_status.eq.selected");
-  if (listingIds && listingIds.length > 0) query = query.in("id", Array.from(new Set(listingIds)));
-  const { data: listings, error } = await query.order("base_item_id", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }).limit(limit);
+  let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons");
+  if (listingIds && listingIds.length > 0) {
+    // Explicit admin retries can target an exact listing regardless of its
+    // current publication status.
+    query = query.in("id", Array.from(new Set(listingIds)));
+  } else {
+    // Do not repeatedly select the same already-reconciled BASE items. That
+    // starved never-published listings because existing base_item_id rows were
+    // always ordered first and occupied every limited batch.
+    query = query.or([
+      "and(published.eq.true,base_publication_status.is.null)",
+      "and(published.eq.true,base_publication_status.neq.published)",
+      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.is.null)",
+      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.neq.published)",
+      "and(pipeline_status.eq.selected,base_item_id.is.null)",
+    ].join(","));
+  }
+  const safeLimit = Math.min(15, Math.max(1, Math.floor(Number.isFinite(limit) ? limit : 10)));
+  const { data: listings, error } = await query.order("created_at", { ascending: true }).limit(safeLimit);
   if (error) throw new Error(error.message);
 
   const results: BasePublicationResult["results"] = [];
