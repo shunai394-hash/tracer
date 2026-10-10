@@ -29,7 +29,8 @@ export type InternalSupplyMatchReason =
   | "inventory_unavailable"
   | "canonical_link_saved"
   | "canonical_link_existing_verified"
-  | "canonical_link_unverified";
+  | "canonical_link_unverified"
+  | "listing_activation_failed";
 
 export async function linkInternalSupplyForBestseller(args: {
   bestseller: Record<string, unknown>;
@@ -242,12 +243,14 @@ export async function linkInternalSupplyForBestseller(args: {
         order_method: product.order_method ?? "internal",
         api_available: product.api_available === true,
         identity_method: selected.identity.method,
-        identity_status: "linked",
+        identity_status: "unverified",
         identity_confidence: selected.identity.confidence,
         configured: true,
         supplier_product_id: String(product.id),
         supplier_variant_id: variant.id ? String(variant.id) : (variant.variant_id ? String(variant.variant_id) : null),
-        orderable: true,
+        // Keep this listing non-orderable until the canonical internal link
+        // is saved/read back and verified below.
+        orderable: false,
         price_confirmed: variant.cost != null || product.cost != null,
         inventory_confirmed: true,
         fetched_at: args.fetchedAt,
@@ -264,6 +267,23 @@ export async function linkInternalSupplyForBestseller(args: {
 
     if (listingResult.error) throw new Error(listingResult.error.message);
     const listing = listingResult.data;
+    const activateListingAfterVerifiedLink = async (): Promise<boolean> => {
+      const activation = await supabase
+        .from("supplier_listings")
+        .update({ ...listingPayload, identity_status: "linked", orderable: true })
+        .eq("id", String(listing.id))
+        .select("id")
+        .single();
+      if (activation.error || !activation.data?.id) {
+        console.error("[TRACER INTERNAL SUPPLY LISTING ACTIVATION FAILED]", {
+          supplierListingId: String(listing.id),
+          code: activation.error?.code ?? null,
+          message: activation.error?.message ?? "No activated listing row returned",
+        });
+        return false;
+      }
+      return true;
+    };
 
     const linkPayload = {
       bestseller_id: args.bestseller.id,
@@ -285,6 +305,15 @@ export async function linkInternalSupplyForBestseller(args: {
       .single();
 
     if (!linkResult.error && linkResult.data) {
+      if (!await activateListingAfterVerifiedLink()) {
+        return {
+          matched: false,
+          supplierListingId: String(listing.id),
+          supplyVariantId: String(variant.id),
+          linkStatus: "write_failed",
+          reason: "listing_activation_failed",
+        };
+      }
       return {
         matched: true,
         supplierListingId: String(listing.id),
@@ -318,6 +347,15 @@ export async function linkInternalSupplyForBestseller(args: {
         );
 
       if (exactExistingLink) {
+        if (!await activateListingAfterVerifiedLink()) {
+          return {
+            matched: false,
+            supplierListingId: String(listing.id),
+            supplyVariantId: String(variant.id),
+            linkStatus: "write_failed",
+            reason: "listing_activation_failed",
+          };
+        }
         return {
           matched: true,
           supplierListingId: String(listing.id),
