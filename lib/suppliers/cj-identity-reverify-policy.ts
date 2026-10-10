@@ -119,7 +119,7 @@ export function selectDueInternalLinkRetryIds(
 
 export function internalLinkRetryDelayMs(retryCount: number): number {
   const safeCount = Number.isInteger(retryCount) && retryCount > 0 ? retryCount : 1;
-  return Math.min(7 * 24 * 60 * 60 * 1000, 15 * 60 * 1000 * (2 ** Math.min(safeCount - 1, 9)));
+  return Math.min(7 * 24 * 60 * 60 * 1000, 15 * 60 * 1000 * (2 ** Math.min(safeCount - 1, 12)));
 }
 
 export function hasUniqueMarketplaceIdentity(candidateProductCount: number): boolean {
