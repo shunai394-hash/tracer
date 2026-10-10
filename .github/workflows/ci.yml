@@ -32,6 +32,8 @@ jobs:
           sudo -u postgres createdb tracer_test
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
+      - name: Verify failed market-sourcing evidence retries the same cursor
+        run: node --experimental-strip-types --no-warnings scripts/verify-market-sourcing-cursor.mjs
       - name: Run atomic catalog sync PostgreSQL integration tests (disposable CI database only)
         env:
           PGHOST: 127.0.0.1
