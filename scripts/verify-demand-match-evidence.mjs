@@ -19,7 +19,7 @@ import {
 import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { EMPTY_IDENTIFIERS, identifiersFromRecord, normalizeIdentifier } from "../lib/market/identifiers.ts";
 import { exactVariantBarcodeMethod, hasUniqueCanonicalVariantMatch } from "../lib/market/variant-barcode-proof.ts";
-import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
+import { readExactSupplierVariantBarcode, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
 const pending = [];
@@ -51,6 +51,20 @@ test("supplier variant barcode proof", "cross-scheme exact barcode links but pro
   assert.equal(hasUniqueCanonicalVariantMatch(0, 0), false);
 });
 
+test("CJ exact variant barcode provenance", "uses barcode only from the exact requested variant ID", () => {
+  const variants = [
+    { vid: "parent-or-other", barcode: "4006381333931" },
+    { vid: "target-variant", barcode: "4901234567894" },
+  ];
+  assert.equal(readExactSupplierVariantBarcode(variants, "target-variant"), "4901234567894");
+  assert.equal(readExactSupplierVariantBarcode(variants, "missing-variant"), null);
+  assert.equal(readExactSupplierVariantBarcode(variants, ""), null);
+});
+test("CJ exact variant barcode provenance", "missing, blank, or ambiguous API evidence fails closed", () => {
+  assert.equal(readExactSupplierVariantBarcode([{ vid: "target-variant", barcode: "  " }], "target-variant"), null);
+  assert.equal(readExactSupplierVariantBarcode([{ vid: "target-variant", barcode: "4006381333931" }, { vid: "target-variant", barcode: "4901234567894" }], "target-variant"), null);
+  assert.equal(readExactSupplierVariantBarcode([{ barcode: "4006381333931" }], "target-variant"), null);
+});
 test("CJ identity reverify policy", "retry intervals, candidate selection, raw GTIN audit, and unique-link gate", () => {
   const result = verifyCjIdentityReverifyPolicyInvariants();
   assert.equal(result.ok, true, result.cases.filter((item) => item.actual !== item.expected).map((item) => item.name).join(", "));
