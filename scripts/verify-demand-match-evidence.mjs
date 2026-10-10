@@ -18,7 +18,7 @@ import {
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { EMPTY_IDENTIFIERS, identifiersFromRecord, normalizeIdentifier } from "../lib/market/identifiers.ts";
-import { exactVariantBarcodeMethod } from "../lib/market/variant-barcode-proof.ts";
+import { exactVariantBarcodeMethod, hasUniqueCanonicalVariantMatch } from "../lib/market/variant-barcode-proof.ts";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
@@ -45,6 +45,10 @@ test("supplier variant barcode proof", "cross-scheme exact barcode links but pro
   assert.equal(exactVariantBarcodeMethod(market, wrongVariant), null);
   assert.equal(exactVariantBarcodeMethod(market, mpnOnly), null);
   assert.equal(exactVariantBarcodeMethod({ ...EMPTY_IDENTIFIERS, mpn: "MODEL-1" }, mpnOnly), null);
+  assert.equal(hasUniqueCanonicalVariantMatch(1, 1), true);
+  assert.equal(hasUniqueCanonicalVariantMatch(2, 1), false, "two child variants for one product remain ambiguous");
+  assert.equal(hasUniqueCanonicalVariantMatch(1, 2), false, "one child row cannot resolve to multiple canonical products");
+  assert.equal(hasUniqueCanonicalVariantMatch(0, 0), false);
 });
 
 test("CJ identity reverify policy", "retry intervals, candidate selection, raw GTIN audit, and unique-link gate", () => {
