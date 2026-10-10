@@ -4,7 +4,7 @@ import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
 import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates } from "@/lib/market/identifiers";
-import { exactVariantBarcodeMethod } from "@/lib/market/variant-barcode-proof";
+import { exactVariantBarcodeMethod, hasUniqueCanonicalVariantMatch } from "@/lib/market/variant-barcode-proof";
 
 export type PersistCjSupplyIntelligenceArgs = {
   productId: string;
@@ -114,7 +114,7 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
 
   const matches = [...matchesByVariant.values()];
   const distinctProductIds = new Set(matches.map((match) => match.productId));
-  if (matches.length !== 1 || distinctProductIds.size !== 1) return null;
+  if (!hasUniqueCanonicalVariantMatch(matches.length, distinctProductIds.size)) return null;
   const match = matches[0];
   return {
     bestsellerId: match.bestsellerId,
