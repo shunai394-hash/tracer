@@ -172,6 +172,7 @@ const args = {
   assert.equal(listing.tracking_available, false);
   assert.equal(db.tables.product_offers[0].product_id, canonicalProductId);
   assert.equal(db.tables.product_intelligence[0].product_id, canonicalProductId);
+  assert.equal(db.tables.product_intelligence[0].metadata.variant_barcode, barcode, "intelligence metadata must use the freshly verified exact-variant barcode, never the stale caller barcode");
 }
 
 {
