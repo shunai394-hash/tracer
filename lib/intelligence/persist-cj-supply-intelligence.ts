@@ -109,7 +109,7 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
     inventory_confirmed: Number.isFinite(args.inventory) && args.inventory >= 0,
     // Inventory observation alone does not prove that this exact variant can be
     // purchased. Keep the listing closed until exact marketplace identity exists.
-    orderable: args.inventory > 0 && marketplaceIdentity !== null,
+    orderable: false, // Discovery and identity matching do not prove the supplier purchase API can place an order.
     // Do not fabricate shipping tracking or purchase-API capability from discovery.
     tracking_available: false,
     api_available: false,
