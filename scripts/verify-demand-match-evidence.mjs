@@ -17,7 +17,12 @@ import {
   variantsCompatible,
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
-import { normalizeIdentifier } from "../lib/market/identifiers.ts";
+import {
+  EMPTY_IDENTIFIERS,
+  marketplaceIdentifierLookupConditions,
+  normalizeIdentifier,
+  verifyIdentifierMatchInvariants,
+} from "../lib/market/identifiers.ts";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
@@ -40,6 +45,16 @@ test("CJ identity reverify policy", "retry intervals, candidate selection, raw G
   assert.equal(result.cases.length >= 15, true);
   assert.equal(normalizeIdentifier("gtin", "1598446591114"), null);
   assert.equal(normalizeIdentifier("gtin", "4006381333931"), "4006381333931");
+});
+
+test("cross-scheme supplier identity lookup", "all valid barcode columns are searched and exact barcode evidence is independently verified", () => {
+  const result = verifyIdentifierMatchInvariants();
+  assert.equal(result.ok, true, result.cases.filter((item) => item.actual !== item.expected).map((item) => item.name).join(", "));
+  const conditions = marketplaceIdentifierLookupConditions({ ...EMPTY_IDENTIFIERS, jan: "4006381333931" });
+  for (const column of ["jan", "gtin", "ean", "upc"]) {
+    assert.ok(conditions.includes(`${column}.eq.4006381333931`), `missing cross-scheme lookup condition: ${column}`);
+  }
+  assert.equal(marketplaceIdentifierLookupConditions({ ...EMPTY_IDENTIFIERS, mpn: "ABC),mpn.eq.X" }).some((item) => item.includes("ABC)")), false);
 });
 
 // Market product fixtures (JANs carry valid check digits).

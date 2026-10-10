@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { identifiersFromRecord, matchProductIdentity } from "@/lib/market/identifiers";
+import { identifiersFromRecord, matchProductIdentity, marketplaceIdentifierLookupConditions } from "@/lib/market/identifiers";
 import { hasExactCurrentRequestVariantSet, hasUniqueIdentitySelection, onlyCurrentRequestVariants } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 function num(value: unknown): number | null {
@@ -42,15 +42,8 @@ export async function syncTracerCatalogFromInternalSupply(args: {
   if (!bestseller) return { matched: false, catalogId: null, variantId: null, reason: "bestseller_not_found" };
 
   const marketIds = identifiersFromRecord(bestseller as Record<string, unknown>);
-  const queries = [
-    ["jan", marketIds.jan],
-    ["gtin", marketIds.gtin],
-    ["ean", marketIds.ean],
-    ["upc", marketIds.upc],
-    ["mpn", marketIds.mpn],
-  ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
-
-  if (!queries.length) return { matched: false, catalogId: null, variantId: null, reason: "no_identifier" };
+  const lookupConditions = marketplaceIdentifierLookupConditions(marketIds);
+  if (!lookupConditions.length) return { matched: false, catalogId: null, variantId: null, reason: "no_identifier" };
 
   // Resolve the exact request-scoped variant set independently of product lookup.
   // Never use a product's other/older variants as fallback when IDs are missing or mismatched.
@@ -68,7 +61,7 @@ export async function syncTracerCatalogFromInternalSupply(args: {
     return { matched: false, catalogId: null, variantId: null, reason: "requested_variant_not_active_orderable_or_in_stock" };
   }
 
-  const or = queries.map(([column, value]) => `${column}.eq.${value.replace(/[,()]/g, "")}`).join(",");
+  const or = lookupConditions.join(",");
 
   const { data: products, error: productError } = await db
     .from("internal_supply_products")
@@ -120,16 +113,14 @@ export async function syncTracerCatalogFromInternalSupply(args: {
       };
     }).filter((x) => x.identity.salesEligible);
 
+    // Candidate search may use MPN to find a model, but only an exact
+    // barcode-family match can identify a specific variant (size/color/pack).
+    // matchProductIdentity normalizes valid JAN/EAN/UPC/GTIN values across schemes.
     const exactIdentifierMatches = confirmed.filter((x) =>
-      Boolean(
-        (marketIds.jan && identifiersFromRecord(x.variant as Record<string, unknown>).jan === marketIds.jan) ||
-        (marketIds.gtin && identifiersFromRecord(x.variant as Record<string, unknown>).gtin === marketIds.gtin) ||
-        (marketIds.ean && identifiersFromRecord(x.variant as Record<string, unknown>).ean === marketIds.ean) ||
-        (marketIds.upc && identifiersFromRecord(x.variant as Record<string, unknown>).upc === marketIds.upc),
-      ),
+      ["jan", "gtin", "ean", "upc"].includes(x.identity.method),
     );
     const selected = hasUniqueIdentitySelection(confirmed.length, exactIdentifierMatches.length)
-      ? confirmed.length === 1 ? confirmed[0] : exactIdentifierMatches[0]
+      ? exactIdentifierMatches[0]
       : undefined;
 
     if (!selected) continue;

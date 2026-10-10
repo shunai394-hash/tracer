@@ -60,6 +60,61 @@ update public.internal_supply_ingestion_audit audit
   from missing_item_indexes
   where audit.id = missing_item_indexes.id;
 
+-- Legacy deployments may have an older CHECK constraint that rejects the current
+-- outcome vocabulary. Drop only CHECK constraints mentioning outcome, normalize
+-- old values while preserving the original value in details, then install the
+-- canonical constraint. This makes the upgrade safe for both old and new tables.
+do $migration$
+declare
+  v_constraint record;
+begin
+  for v_constraint in
+    select conname
+      from pg_constraint
+     where conrelid = 'public.internal_supply_ingestion_audit'::regclass
+       and contype = 'c'
+       and position('outcome' in lower(pg_get_constraintdef(oid))) > 0
+  loop
+    execute format(
+      'alter table public.internal_supply_ingestion_audit drop constraint %I',
+      v_constraint.conname
+    );
+  end loop;
+end $migration$;
+
+update public.internal_supply_ingestion_audit
+   set details = coalesce(details, '{}'::jsonb)
+                   || jsonb_build_object('legacy_outcome_before_migration', outcome),
+       error_codes = array_append(coalesce(error_codes, '{}'::text[]), 'legacy_outcome_normalized'),
+       outcome = case lower(btrim(outcome))
+         when 'started' then 'started'
+         when 'rejected' then 'rejected'
+         when 'draft_ingested' then 'draft_ingested'
+         when 'sync_blocked' then 'sync_blocked'
+         when 'synced' then 'synced'
+         when 'failed' then 'failed'
+         when 'success' then 'synced'
+         when 'succeeded' then 'synced'
+         when 'complete' then 'synced'
+         when 'completed' then 'synced'
+         when 'published' then 'synced'
+         when 'ready' then 'synced'
+         when 'queued' then 'started'
+         when 'pending' then 'started'
+         when 'in_progress' then 'started'
+         when 'processing' then 'started'
+         when 'blocked' then 'sync_blocked'
+         when 'not_linked' then 'sync_blocked'
+         when 'invalid' then 'rejected'
+         when 'denied' then 'rejected'
+         else 'failed'
+       end
+ where outcome not in ('started','rejected','draft_ingested','sync_blocked','synced','failed');
+
+alter table public.internal_supply_ingestion_audit
+  add constraint internal_supply_ingestion_audit_outcome_check
+  check (outcome in ('started','rejected','draft_ingested','sync_blocked','synced','failed'));
+
 alter table public.internal_supply_ingestion_audit
   alter column request_id set not null,
   alter column item_index set not null;
@@ -74,3 +129,17 @@ create unique index if not exists internal_supply_ingestion_audit_request_item_u
 alter table public.internal_supply_ingestion_audit enable row level security;
 revoke all on public.internal_supply_ingestion_audit from anon, authenticated;
 grant all on public.internal_supply_ingestion_audit to service_role;
+
+-- Table grants do not include the sequence used by a bigserial ID. Grant the
+-- sequence privileges explicitly so service_role can insert audit rows on both
+-- fresh and upgraded schemas without opening sequence access to client roles.
+do $sequence_grants$
+declare
+  v_sequence text;
+begin
+  v_sequence := pg_get_serial_sequence('public.internal_supply_ingestion_audit', 'id');
+  if v_sequence is not null then
+    execute format('revoke all on sequence %s from anon, authenticated', v_sequence::regclass);
+    execute format('grant usage, select, update on sequence %s to service_role', v_sequence::regclass);
+  end if;
+end $sequence_grants$;

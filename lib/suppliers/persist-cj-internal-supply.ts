@@ -42,6 +42,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
   sourceRef: string;
   identityLink: { bestsellerId: string; method: string; rationale: string } | null;
   auditStatus: "written" | "table_missing" | "write_failed";
+  identityMatchStatus: "linked" | "missing_barcode" | "invalid_barcode" | "lookup_failed" | "candidate_search_overflow" | "no_exact_match" | "ambiguous_exact_match" | "link_write_failed";
 }> {
   if (!args.supplierProductId.trim() || !args.supplierVariantId.trim()) {
     throw new Error("cj_internal_supply_missing_supplier_identity");
@@ -238,9 +239,17 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
   // barcode match. This evidence is independent of orderability: the variant
   // remains blocked from selling until the live supplier-order contract passes.
   let identityLink: { bestsellerId: string; method: string; rationale: string } | null = null;
-  if (Object.values(ids).some(Boolean)) {
+  // Only a valid barcode present in the current CJ variant response can create
+  // a new canonical link. A previously verified value is preserved for audit/data
+  // continuity, but it is historical evidence and must not be treated as a fresh
+  // supplier assignment after the live response omits or invalidates the barcode.
+  const hasFreshIdentifier = Object.values(freshIds).some(Boolean);
+  let identityMatchStatus: "linked" | "missing_barcode" | "invalid_barcode" | "lookup_failed" | "candidate_search_overflow" | "no_exact_match" | "ambiguous_exact_match" | "link_write_failed" = hasFreshIdentifier
+    ? "no_exact_match"
+    : rawBarcode ? "invalid_barcode" : "missing_barcode";
+  if (hasFreshIdentifier) {
     const clauses = ["jan", "gtin", "ean", "upc"]
-      .flatMap((column) => Object.entries(ids)
+      .flatMap((column) => Object.entries(freshIds)
         .filter(([, value]) => Boolean(value))
         .map(([, value]) => `${column}.eq.${value}`))
       .filter((clause, index, all) => all.indexOf(clause) === index);
@@ -250,12 +259,15 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       .or(clauses.join(","))
       .limit(51);
     if (marketError) {
+      identityMatchStatus = "lookup_failed";
       console.warn("[cj-internal-supply] exact identity lookup failed", { sourceRef, error: marketError.message });
-    } else if ((marketRows ?? []).length <= 50) {
+    } else if ((marketRows ?? []).length > 50) {
+      identityMatchStatus = "candidate_search_overflow";
+    } else {
       const matched = (marketRows ?? []).map((row: Record<string, unknown>) => {
         const identity = matchProductIdentity({
           market: { ...identifiersFromRecord(row), brand: typeof row.brand === "string" ? row.brand : null, title: typeof row.title === "string" ? row.title : null },
-          supply: { ...identifiersFromRecord({ ...ids, title: args.title }), title: args.title },
+          supply: { ...identifiersFromRecord({ ...freshIds, title: args.title }), title: args.title },
         });
         return { row, identity };
       }).filter((item) => item.identity.salesEligible);
@@ -272,6 +284,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
         };
         const link = await db.from("internal_supply_links").insert(linkPayload);
         if (!link.error) {
+          identityMatchStatus = "linked";
           identityLink = {
             bestsellerId: String(row.id),
             method: matched[0].identity.method,
@@ -294,12 +307,14 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
             && Number(existingLink.data?.identity_confidence) === linkPayload.identity_confidence
             && existingLink.data?.identity_rationale === linkPayload.identity_rationale;
           if (sameEvidence) {
+            identityMatchStatus = "linked";
             identityLink = {
               bestsellerId: String(row.id),
               method: matched[0].identity.method,
               rationale: matched[0].identity.rationale,
             };
           } else {
+            identityMatchStatus = "link_write_failed";
             console.warn("[cj-internal-supply] identity link duplicate did not match intended evidence", {
               sourceRef,
               error: link.error.message,
@@ -307,8 +322,11 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
             });
           }
         } else {
+          identityMatchStatus = "link_write_failed";
           console.warn("[cj-internal-supply] identity link persistence failed", { sourceRef, error: link.error.message });
         }
+      } else if (matched.length > 1) {
+        identityMatchStatus = "ambiguous_exact_match";
       }
     }
   }
@@ -333,6 +351,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       supplier_identifier_evidence_source: identifierEvidenceSource,
       order_creation_verified: false,
       identity_link: identityLink,
+      identity_match_status: identityMatchStatus,
     },
   });
   const auditErrorCode = typeof audit.error?.code === "string" ? audit.error.code : "";
@@ -354,5 +373,5 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     });
   }
 
-  return { productId, variantId, sourceRef, identityLink, auditStatus };
+  return { productId, variantId, sourceRef, identityLink, identityMatchStatus, auditStatus };
 }
