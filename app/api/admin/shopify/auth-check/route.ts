@@ -3,6 +3,7 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getShopifyConfig } from "@/lib/config/env";
 import { probeShopifyAuth, shopifyGraphQL } from "@/lib/shopify/admin";
+import { evaluateShopifyAdminReadiness } from "@/lib/shopify/auth-readiness";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -127,8 +128,24 @@ export async function GET(request: Request) {
     .order("shopify_synced_at", { ascending: false, nullsFirst: false })
     .limit(3);
 
+  const adminApiOk = adminApi.ok === true;
+  const adminApiMissingScopes = Array.isArray(adminApi.missingScopes)
+    ? adminApi.missingScopes.filter((scope): scope is string => typeof scope === "string")
+    : adminApiOk
+      ? []
+      : REQUIRED_SCOPES.map((scope) => scope.scope);
+  const readiness = evaluateShopifyAdminReadiness({
+    probeOk: shopifyProbe.ok,
+    adminApiOk,
+    missingScopes: adminApiMissingScopes,
+  });
+
   return NextResponse.json({
-    ok: shopifyProbe.ok,
+    // Never report readiness solely because query { shop { id } } worked.
+    // The actual Admin API scope query and all required scopes must pass too.
+    ok: readiness.ready,
+    authenticated: readiness.authenticated,
+    missingScopes: readiness.missingScopes,
     shopifyHttpStatus: shopifyProbe.shopifyHttpStatus,
     shopifyRequestId: shopifyProbe.shopifyRequestId,
     graphqlErrors: shopifyProbe.graphqlErrors,
