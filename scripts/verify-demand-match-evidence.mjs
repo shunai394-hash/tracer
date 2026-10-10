@@ -71,6 +71,7 @@ test("CJ identity reverify policy", "retry intervals, candidate selection, raw G
   assert.equal(result.cases.length >= 15, true);
   assert.equal(normalizeIdentifier("gtin", "1598446591114"), null);
   assert.equal(normalizeIdentifier("gtin", "4006381333931"), "4006381333931");
+  assert.equal(normalizeIdentifier("gtin", "9991234567890"), "9991234567890", "isolated ambiguous-variant fixture uses a valid GTIN check digit");
 });
 
 // Market product fixtures (JANs carry valid check digits).
