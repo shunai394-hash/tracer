@@ -4,6 +4,7 @@ import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
 import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates } from "@/lib/market/identifiers";
+import { exactVariantBarcodeMethod } from "@/lib/market/variant-barcode-proof";
 import { hasUniqueMarketplaceIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 export type PersistCjSupplyIntelligenceArgs = {
@@ -23,29 +24,10 @@ export type PersistCjSupplyIntelligenceArgs = {
   supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null;
 };
 
-export type MarketplaceIdentity = { bestsellerId: string; productId: string; method: "gtin" | "jan" | "ean" | "upc" | "mpn"; confidence: number; rationale: string };
+export type MarketplaceIdentity = { bestsellerId: string; productId: string; method: "gtin" | "jan" | "ean" | "upc"; confidence: number; rationale: string };
 
 function normalizeBarcode(value: unknown): string { return typeof value === "string" ? value.trim().replace(/[^0-9]/g, "") : ""; }
 
-/** Variant sales identity requires an exact barcode-family match; product-level MPN/ASIN is not variant proof. */
-function exactVariantBarcodeMethod(
-  market: ReturnType<typeof identifiersFromRecord>,
-  variant: ReturnType<typeof identifiersFromRecord>,
-): "jan" | "gtin" | "ean" | "upc" | null {
-  const schemes = ["jan", "gtin", "ean", "upc"] as const;
-  for (const marketScheme of schemes) {
-    const marketValue = market[marketScheme];
-    if (!marketValue) continue;
-    for (const variantScheme of schemes) {
-      const variantValue = variant[variantScheme];
-      if (!variantValue) continue;
-      if (marketValue.padStart(14, "0") === variantValue.padStart(14, "0")) {
-        return marketScheme === variantScheme ? marketScheme : "gtin";
-      }
-    }
-  }
-  return null;
-}
 
 async function readSupplierBarcode(args: { supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null }): Promise<string> {
   const supplied = normalizeBarcode(args.variantBarcode);
