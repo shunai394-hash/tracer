@@ -77,6 +77,19 @@ export function hasUniqueIdentitySelection(candidateCount: number, exactMatchCou
     && (candidateCount === 1 || (Number.isInteger(exactMatchCount) && exactMatchCount === 1));
 }
 
+/**
+ * A parent product's exact marketplace identifier can safely identify its
+ * sole active, orderable, in-stock variant when that variant has no separate
+ * barcode. Model numbers alone are not enough to infer a variant.
+ */
+export function canUseParentIdentityForSingleVariant(args: {
+  identityMethod: string;
+  activeVariantCount: number;
+}): boolean {
+  return ["asin", "jan", "gtin", "ean", "upc"].includes(args.identityMethod)
+    && args.activeVariantCount === 1;
+}
+
 export function hasUniqueMarketplaceIdentity(candidateProductCount: number): boolean {
   return Number.isInteger(candidateProductCount) && candidateProductCount === 1;
 }
@@ -145,6 +158,9 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
     { name: "zero_candidates_never_link", expected: false, actual: hasUniqueMarketplaceIdentity(0) },
     { name: "multiple_candidates_never_link", expected: false, actual: hasUniqueMarketplaceIdentity(2) },
     { name: "one_candidate_can_pass_identity_gate", expected: true, actual: hasUniqueMarketplaceIdentity(1) },
+    { name: "exact_gtin_parent_can_select_its_only_variant", expected: true, actual: canUseParentIdentityForSingleVariant({ identityMethod: "gtin", activeVariantCount: 1 }) },
+    { name: "model_number_alone_cannot_infer_variant", expected: false, actual: canUseParentIdentityForSingleVariant({ identityMethod: "mpn", activeVariantCount: 1 }) },
+    { name: "multiple_variants_need_variant_level_identity", expected: false, actual: canUseParentIdentityForSingleVariant({ identityMethod: "gtin", activeVariantCount: 2 }) },
     { name: "internal link readback accepts exact persisted identity", expected: true, actual: isVerifiedInternalSupplyLink({ bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }, { bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }) },
     { name: "internal link readback rejects mismatched variant", expected: false, actual: isVerifiedInternalSupplyLink({ bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "wrong-v", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }, { bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }) },
     { name: "internal link readback rejects mismatched identity rationale", expected: false, actual: isVerifiedInternalSupplyLink({ bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "different evidence", status: "verified" }, { bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }) },
