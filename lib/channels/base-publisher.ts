@@ -119,7 +119,39 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const copyResult = copyByListingId.get(listingId);
     if (!copyResult?.copy) {
       const message = copyResult?.error ?? "japanese_catalog_copy_required";
+      // Fail closed for existing BASE items too: a catalog validation failure
+      // must not leave a previously visible product available for purchase.
+      if (listing.base_item_id) {
+        try {
+          await editBaseItem({
+            itemId: String(listing.base_item_id),
+            title: "販売停止中の商品",
+            detail: "商品情報を再確認しているため、一時的に販売を停止しています。",
+            price: Number(listing.selling_price ?? 0),
+            stock: 0,
+            visible: false,
+          });
+        } catch (hideError) {
+          const hideMessage = hideError instanceof Error ? hideError.message : String(hideError);
+          await supabase.from("shop_listings").update({
+            published: false,
+            orderable: false,
+            base_last_error: `${message};base_hide_failed:${hideMessage}`.slice(0, 2000),
+            pipeline_stage: "BASE_RECONCILIATION",
+            pipeline_status: "failed",
+            pipeline_reason: "base_hide_failed_after_catalog_validation",
+            pipeline_error: hideMessage.slice(0, 2000),
+            pipeline_updated_at: new Date().toISOString(),
+          }).eq("id", listingId);
+          results.push({ listingId, ok: false, error: "base_hide_failed_after_catalog_validation" });
+          continue;
+        }
+      }
       await supabase.from("shop_listings").update({
+        published: false,
+        orderable: false,
+        base_publication_status: listing.base_item_id ? "published" : "blocked",
+        base_publication_lease_until: null,
         base_last_error: message,
         pipeline_stage: "BASE_PUBLICATION",
         pipeline_status: "blocked",
