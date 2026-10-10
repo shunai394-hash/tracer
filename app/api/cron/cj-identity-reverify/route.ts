@@ -23,6 +23,17 @@ export async function GET(request: Request) {
       deadlineAt: startedAt + 240_000,
     });
 
+    console.info("[cj-identity-reverify] completed", {
+      elapsedMs: Date.now() - startedAt,
+      checked: result.checked,
+      promoted: result.promoted,
+      supplierVerified: result.supplierVerified,
+      noUniqueBarcodeMatch: result.noUniqueBarcodeMatch,
+      missingEconomics: result.missingEconomics,
+      errors: result.errors.length,
+      progress: result.progress,
+    });
+
     return NextResponse.json({
       ok: result.errors.length === 0,
       phase: "cj_identity_reverify",
