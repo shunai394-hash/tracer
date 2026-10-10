@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
+import { getMarketSourcingCursor } from "@/lib/market/market-sourcing-cursor";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -104,8 +105,15 @@ export async function GET(request: Request) {
       observation.canonicalVariantEvidenceWriteFailures > 0;
     // Do not persist an advanced cursor for a failed evidence batch. The next
     // invocation must retry this exact source/page until evidence is durable.
-    const cursorSourceIndex = evidenceWriteFailed ? observation.sourceIndex : nextSourceIndex;
-    const cursorNextIndex = evidenceWriteFailed ? observation.startIndex : nextStartIndex;
+    const cursor = getMarketSourcingCursor({
+      evidenceWriteFailed,
+      currentSourceIndex: observation.sourceIndex,
+      nextSourceIndex,
+      currentStartIndex: observation.startIndex,
+      nextStartIndex,
+    });
+    const cursorSourceIndex = cursor.sourceIndex;
+    const cursorNextIndex = cursor.nextIndex;
 
     const metadata = {
       phase: "market_observation",
