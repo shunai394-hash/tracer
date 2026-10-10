@@ -1,6 +1,7 @@
 // Demand match precision tests (pure logic, no DB, no network).
 // Run: node --experimental-strip-types scripts/verify-demand-match-evidence.mjs
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   buildIdentifierIndex,
   canonicalGtin,
@@ -106,6 +107,22 @@ test("durable internal link retry queue", "failed candidate is deferred then res
   const secondFailureState = [{ bestseller_id: "same-candidate", next_attempt_at: new Date(secondDue).toISOString() }];
   assert.deepEqual(selectDueInternalLinkRetryIds(secondFailureState, secondDue - 1, 50), []);
   assert.deepEqual(selectDueInternalLinkRetryIds(secondFailureState, secondDue, 50), ["same-candidate"]);
+});
+
+test("durable internal link retry queue", "catalog sync failure keeps the retry and success cleanup runs only after sync", () => {
+  const route = readFileSync(new URL("../app/api/cron/supplier-investigation/route.ts", import.meta.url), "utf8");
+  const syncStart = route.indexOf("const catalog = await syncTracerCatalogFromInternalSupply({", route.indexOf("if (!internal.matched)"));
+  const syncFailureGate = route.indexOf("if (!catalog.matched)", syncStart);
+  const failureRetryWrite = route.indexOf(".upsert(syncFailure, { onConflict: \"bestseller_id\" })", syncFailureGate);
+  const failureThrow = route.indexOf('throw new Error(`catalog sync failed for ${candidateId}', failureRetryWrite);
+  const cleanupDelete = route.indexOf('.from("internal_supply_link_retry_queue")', failureThrow);
+  const cleanupOperation = route.indexOf(".delete()", cleanupDelete);
+  assert.ok(syncStart >= 0, "catalog sync must run after canonical link verification");
+  assert.ok(syncFailureGate > syncStart, "catalog sync result must be checked");
+  assert.ok(failureRetryWrite > syncFailureGate, "failed catalog sync must be durably rescheduled");
+  assert.ok(failureThrow > failureRetryWrite, "cron must fail visibly after retaining the retry");
+  assert.ok(cleanupDelete > failureThrow && cleanupOperation > cleanupDelete, "retry cleanup must occur only after the catalog-sync failure branch");
+  assert.ok(route.indexOf("if (!catalog.matched)", syncStart) < cleanupOperation, "cleanup must be guarded by successful catalog sync");
 });
 
 // Market product fixtures (JANs carry valid check digits).
