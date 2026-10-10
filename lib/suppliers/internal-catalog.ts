@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   exactBarcodeFamilyMatch,
   identifiersFromRecord,
+  marketplaceBarcodeCandidates,
   matchProductIdentity,
 } from "@/lib/market/identifiers";
 
@@ -17,7 +18,11 @@ export async function linkInternalSupplyForBestseller(args: {
   // A same-digit JAN on the marketplace must still find a supplier row whose
   // value is stored in EAN/UPC/GTIN, otherwise exact cross-scheme matches are
   // lost before the variant-level proof can run.
-  const barcodeValues = [...new Set([marketIds.jan, marketIds.gtin, marketIds.ean, marketIds.upc].filter((value): value is string => Boolean(value)))];
+  const rawBarcodeValues = [marketIds.jan, marketIds.gtin, marketIds.ean, marketIds.upc]
+    .filter((value): value is string => Boolean(value));
+  // Include GTIN-14 padded/unpadded equivalents in the database lookup too.
+  // Normalizing only after retrieval misses valid UPC-12 <-> GTIN-14 matches.
+  const barcodeValues = [...new Set(rawBarcodeValues.flatMap(marketplaceBarcodeCandidates))];
   const lookupClauses = new Set<string>();
   for (const scheme of ["jan", "gtin", "ean", "upc"] as const) {
     for (const value of barcodeValues) lookupClauses.add(`${scheme}.eq.${value.replace(/[,()]/g, "")}`);
@@ -29,23 +34,41 @@ export async function linkInternalSupplyForBestseller(args: {
 
   const or = [...lookupClauses].join(",");
 
-  const { data: products, error } = await supabase
+  const firstProductPage = await supabase
     .from("internal_supply_products")
     .select("*")
     .eq("active", true)
     .or(or)
-    .limit(20);
+    .order("id", { ascending: true })
+    .range(0, 99);
 
-  if (error) {
+  if (firstProductPage.error) {
     // Internal supply is an optional acceleration path. A broken/missing
     // permission on this private catalog must never stop the external CJ
     // investigation path; otherwise one DB permission issue makes the entire
     // autonomous patrol look like it discovered nothing.
-    console.error("[TRACER INTERNAL SUPPLY LOOKUP SKIPPED]", error);
+    console.error("[TRACER INTERNAL SUPPLY LOOKUP SKIPPED]", firstProductPage.error);
     return { matched: false, supplierListingId: null, supplyVariantId: null };
   }
 
-  for (const product of products ?? []) {
+  const products = [...(firstProductPage.data ?? [])];
+  for (let offset = 100; (firstProductPage.data ?? []).length === 100; offset += 100) {
+    const { data: page, error: pageError } = await supabase
+      .from("internal_supply_products")
+      .select("*")
+      .eq("active", true)
+      .or(or)
+      .order("id", { ascending: true })
+      .range(offset, offset + 99);
+    if (pageError) {
+      console.error("[TRACER INTERNAL SUPPLY LOOKUP PAGE FAILED]", pageError);
+      return { matched: false, supplierListingId: null, supplyVariantId: null };
+    }
+    products.push(...(page ?? []));
+    if ((page ?? []).length < 100) break;
+  }
+
+  for (const product of products) {
     const productIds = identifiersFromRecord(product as Record<string, unknown>);
     const identity = matchProductIdentity({
       market: {
@@ -62,16 +85,33 @@ export async function linkInternalSupplyForBestseller(args: {
 
     if (!identity.salesEligible) continue;
 
-    const { data: variants, error: variantError } = await supabase
+    const firstVariantPage = await supabase
       .from("internal_supply_variants")
       .select("*")
       .eq("supply_product_id", product.id)
       .eq("active", true)
       .eq("orderable", true)
       .gt("inventory", 0)
-      .limit(50);
+      .order("id", { ascending: true })
+      .range(0, 99);
 
-    if (variantError) throw new Error(variantError.message);
+    if (firstVariantPage.error) throw new Error(firstVariantPage.error.message);
+
+    const variants = [...(firstVariantPage.data ?? [])];
+    for (let offset = 100; (firstVariantPage.data ?? []).length === 100; offset += 100) {
+      const { data: page, error: pageError } = await supabase
+        .from("internal_supply_variants")
+        .select("*")
+        .eq("supply_product_id", product.id)
+        .eq("active", true)
+        .eq("orderable", true)
+        .gt("inventory", 0)
+        .order("id", { ascending: true })
+        .range(offset, offset + 99);
+      if (pageError) throw new Error(pageError.message);
+      variants.push(...(page ?? []));
+      if ((page ?? []).length < 100) break;
+    }
 
     // A product-level ASIN/MPN can identify the model, but cannot prove
     // which concrete variant is the same color, size, or pack count. Require
