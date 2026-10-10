@@ -1,31 +1,8 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { identifiersFromRecord, marketplaceBarcodeCandidates } from "@/lib/market/identifiers";
+import { exactBarcodeFamilyMatch, identifiersFromRecord } from "@/lib/market/identifiers";
 import { hasExactCurrentRequestVariantSet, onlyCurrentRequestVariants, selectUniqueIdentityCandidate } from "@/lib/suppliers/cj-identity-reverify-policy";
-
-function exactVariantBarcodeMethod(
-  market: ReturnType<typeof identifiersFromRecord>,
-  supply: ReturnType<typeof identifiersFromRecord>,
-): string | null {
-  const schemes = ["jan", "gtin", "ean", "upc"] as const;
-  for (const marketScheme of schemes) {
-    const marketValue = market[marketScheme];
-    if (!marketValue) continue;
-    const marketCandidates = new Set(marketplaceBarcodeCandidates(marketValue));
-    marketCandidates.add(marketValue.padStart(14, "0"));
-    for (const supplyScheme of schemes) {
-      const supplyValue = supply[supplyScheme];
-      if (!supplyValue) continue;
-      const supplyCandidates = new Set(marketplaceBarcodeCandidates(supplyValue));
-      supplyCandidates.add(supplyValue.padStart(14, "0"));
-      if ([...marketCandidates].some((value) => supplyCandidates.has(value))) {
-        return marketScheme === supplyScheme ? marketScheme : "gtin";
-      }
-    }
-  }
-  return null;
-}
 
 function num(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -110,7 +87,7 @@ export async function syncTracerCatalogFromInternalSupply(args: {
     // Count identity proof per variant, then fail closed unless exactly one variant is proven.
     const variantCandidates = currentRequestVariants.map((variant) => {
       const ids = identifiersFromRecord(variant as Record<string, unknown>);
-      const barcodeMethod = exactVariantBarcodeMethod(marketIds, ids);
+      const barcodeMethod = exactBarcodeFamilyMatch(marketIds, ids);
       return {
         variant,
         // Variant identity is proven only by an exact barcode-family match.
