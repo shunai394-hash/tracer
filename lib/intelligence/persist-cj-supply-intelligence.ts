@@ -24,7 +24,7 @@ export type PersistCjSupplyIntelligenceArgs = {
   supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null;
 };
 
-export type MarketplaceIdentity = { bestsellerId: string; productId: string; method: "gtin" | "jan" | "ean" | "upc"; confidence: number; rationale: string };
+export type MarketplaceIdentity = { bestsellerId: string; productId: string; method: "gtin" | "jan" | "ean" | "upc"; confidence: number; rationale: string; marketplaceVariantEvidenceId?: string; marketplaceSourceVariantId?: string };
 
 function normalizeBarcode(value: unknown): string { return typeof value === "string" ? value.trim().replace(/[^0-9]/g, "") : ""; }
 
@@ -55,32 +55,77 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
   const supplyIds = identifiersFromRecord({ gtin: variantBarcode, mpn: suppliedIds.mpn });
   if (!supplyIds.gtin) return null;
 
-  const matchesByProduct = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
+  // A parent marketplace barcode is not proof of the child variant. Resolve only
+  // against independently captured ProductGroup.hasVariant evidence (PR #175).
+  // The migration in PR #175 must be applied before this code is deployed.
+  const matchesByVariant = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
   const lookupValues = new Set<string>();
-  for (const value of [supplyIds.gtin, supplyIds.jan, supplyIds.ean, supplyIds.upc]) if (value) marketplaceBarcodeCandidates(value).forEach((candidate) => lookupValues.add(candidate));
-  if (supplyIds.mpn) lookupValues.add(supplyIds.mpn);
+  for (const value of [supplyIds.gtin, supplyIds.jan, supplyIds.ean, supplyIds.upc]) {
+    if (value) marketplaceBarcodeCandidates(value).forEach((candidate) => lookupValues.add(candidate));
+  }
 
   for (const value of lookupValues) {
-    const clauses = ["jan", "gtin", "ean", "upc", "mpn"].map((column) => `${column}.eq.${value}`);
-    const { data: bestsellers, error } = await args.db.from("marketplace_bestsellers").select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand,fetched_at").or(clauses.join(",")).limit(51);
-    if (error) throw new Error(`CJ marketplace identity lookup failed: ${error.message}`);
-    if ((bestsellers?.length ?? 0) > 50) return null;
-    for (const row of bestsellers ?? []) {
-      if (typeof row.product_id !== "string" || !row.product_id.trim()) continue;
-      const marketIds = identifiersFromRecord(row as Record<string, unknown>);
+    const clauses = ["jan", "gtin", "ean", "upc"].map((column) => `${column}.eq.${value}`);
+    const { data: variants, error: variantError } = await args.db
+      .from("marketplace_bestseller_variants")
+      .select("id,bestseller_id,source_variant_id,jan,gtin,ean,upc,mpn,title,fetched_at")
+      .or(clauses.join(","))
+      .limit(51);
+    if (variantError) throw new Error(`CJ canonical child-variant lookup failed: ${variantError.message}`);
+    if ((variants?.length ?? 0) > 50) return null;
+    if (!variants?.length) continue;
+
+    const bestsellerIds = [...new Set(variants.map((row) => String(row.bestseller_id)).filter(Boolean))];
+    const { data: bestsellers, error: bestsellerError } = await args.db
+      .from("marketplace_bestsellers")
+      .select("id,product_id,brand,title")
+      .in("id", bestsellerIds);
+    if (bestsellerError) throw new Error(`CJ canonical parent lookup failed: ${bestsellerError.message}`);
+    const parentById = new Map((bestsellers ?? []).map((row) => [String(row.id), row]));
+
+    for (const variant of variants) {
+      const parent = parentById.get(String(variant.bestseller_id));
+      if (!parent || typeof parent.product_id !== "string" || !parent.product_id.trim()) continue;
+      const marketIds = identifiersFromRecord(variant as Record<string, unknown>);
       const variantBarcodeMethod = exactVariantBarcodeMethod(marketIds, supplyIds);
       if (!variantBarcodeMethod) continue;
-      const identity = matchProductIdentity({ market: { ...marketIds, brand: typeof row.brand === "string" ? row.brand : null, title: typeof row.title === "string" ? row.title : null }, supply: { ...supplyIds, title: null, brand: null } });
+      const identity = matchProductIdentity({
+        market: { ...marketIds, brand: typeof parent.brand === "string" ? parent.brand : null, title: typeof variant.title === "string" ? variant.title : (typeof parent.title === "string" ? parent.title : null) },
+        supply: { ...supplyIds, title: null, brand: null },
+      });
       if (!identity.salesEligible) continue;
-      const productId = String(row.product_id);
-      const candidate = { bestsellerId: String(row.id), productId, method: variantBarcodeMethod, confidence: Math.min(identity.confidence, 0.98), rationale: `exact supplier-variant barcode matches canonical marketplace barcode (${variantBarcodeMethod})`, fetchedAt: typeof row.fetched_at === "string" ? row.fetched_at : "" };
-      const current = matchesByProduct.get(productId);
-      if (!current || candidate.confidence > current.confidence || (candidate.confidence === current.confidence && candidate.fetchedAt > current.fetchedAt)) matchesByProduct.set(productId, candidate);
+      const productId = String(parent.product_id);
+      const evidenceId = String(variant.id);
+      const candidate = {
+        bestsellerId: String(variant.bestseller_id),
+        productId,
+        method: variantBarcodeMethod,
+        confidence: Math.min(identity.confidence, 0.98),
+        rationale: `exact supplier-variant barcode matches canonical child-variant evidence (${variantBarcodeMethod})`,
+        marketplaceVariantEvidenceId: evidenceId,
+        marketplaceSourceVariantId: String(variant.source_variant_id),
+        fetchedAt: typeof variant.fetched_at === "string" ? variant.fetched_at : "",
+      };
+      // A repeated lookup may return the same row. Deduplicate only by the
+      // evidence-row ID; two distinct child variants with the same barcode
+      // remain ambiguous even when they point to the same parent product.
+      matchesByVariant.set(evidenceId, candidate);
     }
   }
-  if (!hasUniqueMarketplaceIdentity(matchesByProduct.size)) return null;
-  const match = [...matchesByProduct.values()][0];
-  return { bestsellerId: match.bestsellerId, productId: match.productId, method: match.method, confidence: match.confidence, rationale: match.rationale };
+
+  const matches = [...matchesByVariant.values()];
+  const distinctProductIds = new Set(matches.map((match) => match.productId));
+  if (matches.length !== 1 || distinctProductIds.size !== 1) return null;
+  const match = matches[0];
+  return {
+    bestsellerId: match.bestsellerId,
+    productId: match.productId,
+    method: match.method,
+    confidence: match.confidence,
+    rationale: match.rationale,
+    marketplaceVariantEvidenceId: match.marketplaceVariantEvidenceId,
+    marketplaceSourceVariantId: match.marketplaceSourceVariantId,
+  };
 }
 
 export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntelligenceArgs, options: { identity?: MarketplaceIdentity | null } = {}): Promise<{ offerId: string; intelligenceId: string; identity: MarketplaceIdentity | null }> {
@@ -93,7 +138,7 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
   const existingListing = await supabase.from("supplier_listings").select("metadata").eq("id", args.supplierListingId).maybeSingle();
   if (existingListing.error) throw new Error(`CJ supplier listing read failed: ${existingListing.error.message}`);
   if (existingListing.data?.metadata && typeof existingListing.data.metadata === "object" && !Array.isArray(existingListing.data.metadata)) existingListingMetadata = existingListing.data.metadata as Record<string, unknown>;
-  const verifiedMetadata = { ...existingListingMetadata, source: "cj_supply_first", identity_source: marketplaceIdentity ? "cj_variant_or_listing_identifier_to_marketplace_bestseller" : "cj_variant_evidence", identity_rationale: marketplaceIdentity?.rationale ?? "CJ variant/listing identifier evidence persisted; marketplace identity not yet confirmed", supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: args.variantBarcode ?? existingListingMetadata.variant_barcode ?? null };
+  const verifiedMetadata = { ...existingListingMetadata, source: "cj_supply_first", identity_source: marketplaceIdentity ? "cj_variant_barcode_to_canonical_child_variant_evidence" : "cj_variant_evidence", identity_rationale: marketplaceIdentity?.rationale ?? "CJ variant/listing identifier evidence persisted; marketplace identity not yet confirmed", marketplace_variant_evidence_id: marketplaceIdentity?.marketplaceVariantEvidenceId ?? null, marketplace_source_variant_id: marketplaceIdentity?.marketplaceSourceVariantId ?? null, supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: args.variantBarcode ?? existingListingMetadata.variant_barcode ?? null };
   // Always overwrite prior identity/readiness state. A failed or ambiguous re-check
   // must not leave a stale "linked" listing sellable from an earlier successful run.
   const { error: evidenceError } = await supabase.from("supplier_listings").update({
