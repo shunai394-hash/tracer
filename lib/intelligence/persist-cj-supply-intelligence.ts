@@ -203,15 +203,38 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
     return { offerId: null, intelligenceId: null, identity: null };
   }
   const offerPayload = { product_id: canonicalProductId, seller_name: "CJdropshipping", offer_url: null, image_url: args.imageUrl, currency: "USD", price: args.cost, currency_confidence: currencyAssessment.confidence, availability: args.inventory > 0 ? "available" : "unavailable", shipping_price: args.shippingCost, observed_at: now, metadata: { provider: "cj", source: "cj_supply_first", supplier_listing_id: args.supplierListingId, supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: marketplaceIdentity?.supplierVariantBarcode ?? null, inventory: args.inventory, query: args.query, fx_rate: args.fxRate, selling_price_jpy: args.sellingPriceJpy, currency_confidence: currencyAssessment.confidence, currency_confidence_reasons: currencyAssessment.reasons, identity_confidence: marketplaceIdentity?.confidence ?? 0, identity_status: marketplaceIdentity ? "linked" : "supply_discovered", identity_method: marketplaceIdentity?.method ?? "supply_discovered", identity_rationale: marketplaceIdentity?.rationale ?? "CJ supply discovered; marketplace identity not confirmed", demand_evidence_status: "not_observed" } };
-  const existingOffer = await supabase.from("product_offers").select("id").eq("product_id", canonicalProductId).eq("seller_name", "CJdropshipping").order("observed_at", { ascending: false }).limit(1).maybeSingle();
+  const existingOffer = await supabase.from("product_offers").select("id,product_id,seller_name,offer_url,image_url,currency,price,currency_confidence,availability,shipping_price,observed_at,metadata").eq("product_id", canonicalProductId).eq("seller_name", "CJdropshipping").order("observed_at", { ascending: false }).limit(1).maybeSingle();
   if (existingOffer.error) throw new Error(existingOffer.error.message);
   let offerId: string;
-  if (existingOffer.data?.id) { const updated = await supabase.from("product_offers").update(offerPayload).eq("id", existingOffer.data.id).select("id").single(); if (updated.error) throw new Error(updated.error.message); offerId = String(updated.data.id); }
+  const previousOffer = existingOffer.data as Record<string, unknown> | null;
+  const insertedOffer = !previousOffer?.id;
+  if (previousOffer?.id) { const updated = await supabase.from("product_offers").update(offerPayload).eq("id", previousOffer.id).select("id").single(); if (updated.error) throw new Error(updated.error.message); offerId = String(updated.data.id); }
   else { const inserted = await supabase.from("product_offers").insert(offerPayload).select("id").single(); if (inserted.error) throw new Error(inserted.error.message || "CJ offer insert failed"); offerId = String(inserted.data.id); }
   const existingIntelligence = await supabase.from("product_intelligence").select("normalized_title,brand_name,category,source_url,demand_signal,metadata").eq("product_id", canonicalProductId).maybeSingle();
   if (existingIntelligence.error) throw new Error(existingIntelligence.error.message);
   const existingMetadata = existingIntelligence.data?.metadata && typeof existingIntelligence.data.metadata === "object" ? existingIntelligence.data.metadata as Record<string, unknown> : {};
   const intelligence = await supabase.from("product_intelligence").upsert({ product_id: canonicalProductId, normalized_title: existingIntelligence.data?.normalized_title ?? args.title, brand_name: existingIntelligence.data?.brand_name ?? null, category: existingIntelligence.data?.category ?? null, seller_name: "CJdropshipping", source_url: existingIntelligence.data?.source_url ?? null, image_url: args.imageUrl, currency: "USD", current_price: args.cost, price_confidence: currencyAssessment.confidence === "high" ? 0.9 : currencyAssessment.confidence === "medium" ? 0.6 : 0.2, identity_confidence: marketplaceIdentity?.confidence ?? 0, demand_signal: existingIntelligence.data?.demand_signal ?? null, supply_signal: 1, metadata: { ...existingMetadata, provider: "cj", source: "cj_supply_first", supplier_listing_id: args.supplierListingId, supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: args.variantBarcode ?? existingMetadata.variant_barcode ?? null, inventory: args.inventory, query: args.query, fx_rate: args.fxRate, selling_price_jpy: args.sellingPriceJpy, shipping_cost_usd: args.shippingCost, demand_evidence_status: existingMetadata.demand_evidence_status ?? "not_observed", identity_status: marketplaceIdentity ? "linked" : "supply_discovered", identity_method: marketplaceIdentity?.method ?? "supply_discovered", identity_confidence: marketplaceIdentity?.confidence ?? 0, identity_rationale: marketplaceIdentity?.rationale ?? "CJ supply discovered; marketplace identity not confirmed", intelligence_source: "cj_supply_discovery" }, last_seen_at: now, updated_at: now }, { onConflict: "product_id" }).select("id").single();
-  if (intelligence.error) throw new Error(intelligence.error.message);
+  if (intelligence.error) {
+    // Supabase client calls are separate transactions. Best-effort compensation prevents
+    // a failed intelligence write from leaving a newly inserted canonical offer orphaned.
+    // Existing offers are restored only for fields this operation overwrote.
+    const compensation = insertedOffer
+      ? await supabase.from("product_offers").delete().eq("id", offerId)
+      : await supabase.from("product_offers").update({
+          offer_url: previousOffer?.offer_url ?? null,
+          image_url: previousOffer?.image_url ?? null,
+          currency: previousOffer?.currency ?? null,
+          price: previousOffer?.price ?? null,
+          currency_confidence: previousOffer?.currency_confidence ?? null,
+          availability: previousOffer?.availability ?? null,
+          shipping_price: previousOffer?.shipping_price ?? null,
+          observed_at: previousOffer?.observed_at ?? null,
+          metadata: previousOffer?.metadata ?? null,
+        }).eq("id", offerId);
+    if (compensation.error) {
+      throw new Error(`CJ product intelligence persistence failed: ${intelligence.error.message}; offer compensation also failed: ${compensation.error.message}`);
+    }
+    throw new Error(`CJ product intelligence persistence failed; offer write compensated: ${intelligence.error.message}`);
+  }
   return { offerId, intelligenceId: String(intelligence.data.id), identity: marketplaceIdentity };
 }
