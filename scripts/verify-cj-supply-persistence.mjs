@@ -228,6 +228,11 @@ const args = {
   );
   assert.equal(db.tables.product_offers.length, 0);
   assert.equal(db.tables.product_intelligence.length, 0, "offer write failure must not continue to intelligence");
+  assert.equal(db.tables.supplier_listings[0].product_id, null, "offer failure must leave listing detached");
+  assert.equal(db.tables.supplier_listings[0].identity_status, "unverified");
+  assert.equal(db.tables.supplier_listings[0].orderable, false);
+  assert.equal(db.tables.supplier_listings[0].api_available, false);
+  assert.equal(db.tables.supplier_listings[0].tracking_available, false);
 }
 
 {
