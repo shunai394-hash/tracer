@@ -5,6 +5,7 @@ import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { linkInternalSupplyForBestseller } from "@/lib/suppliers/internal-catalog";
+import { internalLinkRetryDelayMs, selectDueInternalLinkRetryIds } from "@/lib/suppliers/cj-identity-reverify-policy";
 import { syncTracerCatalogFromInternalSupply } from "@/lib/suppliers/sync-tracer-catalog";
 
 export const runtime = "nodejs";
@@ -80,12 +81,14 @@ export async function GET(request: Request) {
     const retryStateById = new Map(
       (retryStateRows ?? []).map((row) => [String(row.bestseller_id), row]),
     );
-    const dueRetryRows = (retryStateRows ?? []).filter((row) =>
-      !row.next_attempt_at || String(row.next_attempt_at) <= nowIso
+    const dueRetryIds = selectDueInternalLinkRetryIds(
+      (retryStateRows ?? []).map((row) => ({
+        bestseller_id: String(row.bestseller_id),
+        next_attempt_at: row.next_attempt_at ? String(row.next_attempt_at) : null,
+      })),
+      Date.now(),
+      BESTSELLER_CANDIDATE_BATCH_SIZE,
     );
-    const dueRetryIds = dueRetryRows
-      .slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE)
-      .map((row) => String(row.bestseller_id));
 
     // Pull a wider queue, then spend the limited supplier-call budget on the
     // strongest strict identity evidence first. ASIN/MPN are intentionally
@@ -134,7 +137,10 @@ export async function GET(request: Request) {
       // strict supplier identity.
       const prioritizedRetries = prioritizeRows(
         (retryRows ?? []) as unknown as Record<string, unknown>[],
-      ).slice(0, retrySlots);
+      ).filter((row) => {
+        const queued = retryStateById.get(String(row.id));
+        return !queued || !queued.next_attempt_at || String(queued.next_attempt_at) <= nowIso;
+      }).slice(0, retrySlots);
 
       candidateIds = [...candidateIds, ...prioritizedRetries.map((row) => String(row.id))]
         .filter((id, index, ids) => ids.indexOf(id) === index)
@@ -174,7 +180,7 @@ export async function GET(request: Request) {
       if (!internal.matched) {
         const priorRetry = retryStateById.get(candidateId);
         const retryCount = Number(priorRetry?.retry_count ?? 0) + 1;
-        const delayMs = Math.min(7 * 24 * 60 * 60 * 1000, 15 * 60 * 1000 * (2 ** Math.min(retryCount - 1, 9)));
+        const delayMs = internalLinkRetryDelayMs(retryCount);
         const nextAttemptAt = new Date(Date.now() + delayMs).toISOString();
         const failureRecord = {
           bestseller_id: candidateId,
