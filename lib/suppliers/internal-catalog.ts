@@ -86,18 +86,19 @@ export async function linkInternalSupplyForBestseller(args: {
     })).filter((item) => item.method !== null);
 
     const uniqueVariant = confirmedVariants.length === 1 ? confirmedVariants[0] : null;
-    if (!uniqueVariant) continue;
+    const exactMethod = uniqueVariant?.method;
+    if (!uniqueVariant || !exactMethod) continue;
 
     const selected = {
       variant: uniqueVariant.variant,
       identity: {
         linked: true,
         salesEligible: true,
-        method: uniqueVariant.method,
+        method: exactMethod,
         confidence: 0.98,
-        rationale: uniqueVariant.method === "gtin"
+        rationale: exactMethod === "gtin"
           ? "exact barcode-family match across JAN/EAN/UPC/GTIN (GTIN-14 normalized)"
-          : `${uniqueVariant.method.toUpperCase()} matches exact canonical variant barcode`,
+          : `${exactMethod.toUpperCase()} matches exact canonical variant barcode`,
       },
     };
 
