@@ -216,7 +216,7 @@ export async function GET(request: Request) {
         continue;
       }
 
-      internalMatchedIds.push(candidateId);
+      // Count as fully matched only after catalog synchronization and retry finalization succeed.
       const catalog = await finalizeInternalSupplyLinkRetry({
         syncCatalog: () => syncTracerCatalogFromInternalSupply({
           bestsellerId: candidateId,
@@ -252,6 +252,7 @@ export async function GET(request: Request) {
           if (clearRetryError) throw new Error(`verified link and catalog sync succeeded but retry queue cleanup failed for ${candidateId}: ${clearRetryError.message}`);
         },
       });
+      internalMatchedIds.push(candidateId);
       internalResults.push({
         bestsellerId: candidateId,
         supplierListingId: internal.supplierListingId,
