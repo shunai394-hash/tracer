@@ -287,7 +287,14 @@ export async function linkInternalSupplyForBestseller(args: {
       .select("bestseller_id,supply_product_id,supply_variant_id,identity_method,identity_confidence,identity_rationale,status")
       .single();
 
-    if (!linkResult.error && linkResult.data) {
+    const insertedLink = linkResult.data as Record<string, unknown> | null;
+    const insertedLinkVerified = !linkResult.error
+      && isVerifiedInternalSupplyLink(
+        insertedLink as Parameters<typeof isVerifiedInternalSupplyLink>[0],
+        linkPayload,
+      );
+
+    if (insertedLinkVerified) {
       const { data: activatedListing, error: activationError } = await supabase
         .from("supplier_listings")
         .update(supplierListingStateForIdentity(true))
