@@ -182,10 +182,40 @@ const args = {
 }
 
 {
+  const originalList = modules["@/lib/sources/cj"].fetchCJProductVariants;
+  const originalDetail = modules["@/lib/sources/cj"].fetchCJVariantByVid;
+  modules["@/lib/sources/cj"].fetchCJProductVariants = async () => [{ vid: "different-cj-variant", barcode }];
+  modules["@/lib/sources/cj"].fetchCJVariantByVid = async () => ({ vid: "different-cj-variant", barcode });
+  const db = new FakeDb();
+  const result = await persistCjSupplyIntelligence(args, { db });
+  assert.equal(result.identity, null, "barcode from a mismatched CJ variant ID must not link");
+  assert.equal(db.tables.supplier_listings[0].product_id, null);
+  assert.equal(db.tables.product_offers.length, 0);
+  assert.equal(db.tables.product_intelligence.length, 0);
+  modules["@/lib/sources/cj"].fetchCJProductVariants = originalList;
+  modules["@/lib/sources/cj"].fetchCJVariantByVid = originalDetail;
+}
+
+{
+  const originalList = modules["@/lib/sources/cj"].fetchCJProductVariants;
+  const originalDetail = modules["@/lib/sources/cj"].fetchCJVariantByVid;
+  modules["@/lib/sources/cj"].fetchCJProductVariants = async () => [{ vid: supplierVariantId, barcode: "  " }];
+  modules["@/lib/sources/cj"].fetchCJVariantByVid = async () => ({ vid: supplierVariantId, barcode: "  " });
+  const db = new FakeDb();
+  const result = await persistCjSupplyIntelligence(args, { db });
+  assert.equal(result.identity, null, "blank barcode must not link");
+  assert.equal(db.tables.supplier_listings[0].product_id, null);
+  assert.equal(db.tables.product_offers.length, 0);
+  assert.equal(db.tables.product_intelligence.length, 0);
+  modules["@/lib/sources/cj"].fetchCJProductVariants = originalList;
+  modules["@/lib/sources/cj"].fetchCJVariantByVid = originalDetail;
+}
+
+{
   const db = new FakeDb({ failUpdateTable: "supplier_listings" });
   await assert.rejects(() => persistCjSupplyIntelligence(args, { db, identity: null }), /supplier evidence persistence failed/);
   assert.equal(db.tables.product_offers.length, 0, "failed listing write must not continue to offer persistence");
   assert.equal(db.tables.product_intelligence.length, 0, "failed listing write must not continue to intelligence persistence");
 }
 
-console.log("PASS: application persistence path; exact unique match; ambiguous match clears stale identity; procurement flags remain false; no canonical writes on no-match; listing-write failure halts downstream writes.");
+console.log("PASS: actual persistence function + identity resolver; exact unique match; duplicate/mismatched/blank barcode rejected; stale link cleared; procurement flags remain false; no canonical writes on no-match; failed listing write halts downstream writes.");
