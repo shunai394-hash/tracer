@@ -13,19 +13,21 @@ export async function linkInternalSupplyForBestseller(args: {
 }): Promise<{ matched: boolean; supplierListingId: string | null; supplyVariantId: string | null }> {
   const supabase = createSupabaseAdminClient();
   const marketIds = identifiersFromRecord(args.bestseller);
-  const queries = [
-    ["jan", marketIds.jan],
-    ["gtin", marketIds.gtin],
-    ["ean", marketIds.ean],
-    ["upc", marketIds.upc],
-    ["mpn", marketIds.mpn],
-  ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
+  // Query every barcode scheme with every observed canonical barcode value.
+  // A same-digit JAN on the marketplace must still find a supplier row whose
+  // value is stored in EAN/UPC/GTIN, otherwise exact cross-scheme matches are
+  // lost before the variant-level proof can run.
+  const barcodeValues = [...new Set([marketIds.jan, marketIds.gtin, marketIds.ean, marketIds.upc].filter((value): value is string => Boolean(value)))];
+  const lookupClauses = new Set<string>();
+  for (const scheme of ["jan", "gtin", "ean", "upc"] as const) {
+    for (const value of barcodeValues) lookupClauses.add(`${scheme}.eq.${value.replace(/[,()]/g, "")}`);
+  }
+  if (marketIds.asin) lookupClauses.add(`asin.eq.${marketIds.asin}`);
+  if (marketIds.mpn) lookupClauses.add(`mpn.eq.${marketIds.mpn.replace(/[,()]/g, "")}`);
 
-  if (queries.length === 0) return { matched: false, supplierListingId: null, supplyVariantId: null };
+  if (lookupClauses.size === 0) return { matched: false, supplierListingId: null, supplyVariantId: null };
 
-  const or = queries
-    .map(([column, value]) => `${column}.eq.${value.replace(/[,()]/g, "")}`)
-    .join(",");
+  const or = [...lookupClauses].join(",");
 
   const { data: products, error } = await supabase
     .from("internal_supply_products")
