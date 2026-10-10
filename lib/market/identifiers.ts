@@ -129,6 +129,30 @@ function barcodeFamilyValue(ids: ProductIdentifiers): string | null {
   return raw ? toGtin14(raw) : null;
 }
 
+/**
+ * Return a variant identity method only when at least one valid barcode on
+ * each record matches across JAN/EAN/UPC/GTIN schemes. Unlike product identity,
+ * ASIN/MPN must never select a concrete size, color, or pack variant.
+ * Every populated barcode field is checked so an earlier nonmatching field
+ * cannot hide an exact match in a later field.
+ */
+export function exactBarcodeFamilyMatch(
+  market: ProductIdentifiers,
+  supply: ProductIdentifiers,
+): "jan" | "gtin" | "ean" | "upc" | null {
+  const schemes = ["jan", "gtin", "ean", "upc"] as const;
+  for (const marketScheme of schemes) {
+    const marketValue = market[marketScheme];
+    if (!marketValue) continue;
+    for (const supplyScheme of schemes) {
+      const supplyValue = supply[supplyScheme];
+      if (!supplyValue || toGtin14(marketValue) !== toGtin14(supplyValue)) continue;
+      return marketScheme === supplyScheme ? marketScheme : "gtin";
+    }
+  }
+  return null;
+}
+
 /** Identifier-grade identity only. Title/image similarity never makes a sales candidate eligible. */
 export function matchProductIdentity(args: {
   market: ProductIdentifiers & { brand?: string | null; title?: string | null; imageUrl?: string | null };
