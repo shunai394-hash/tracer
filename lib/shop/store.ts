@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
+import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -112,7 +113,7 @@ async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, nu
 async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopListing[]> {
   const listings = rows
     .map(mapListing)
-    .filter((listing) => listing.inventory > 0 && listing.orderable && listing.trackingAvailable && listing.sellingPrice !== null && listing.sellingPrice > 0);
+    .filter((listing) => isPublishableCatalogTitle(listing.title) && isPublishableCatalogDescription(listing.description) && listing.inventory > 0 && listing.orderable && listing.trackingAvailable && listing.sellingPrice !== null && listing.sellingPrice > 0);
 
   if (listings.length === 0) return [];
 
@@ -178,7 +179,7 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
     .limit(48);
 
   if (error) throw new Error(error.message);
-  const listings = (await loadLiveListings((data ?? []) as Record<string, unknown>[])).filter((listing) => hasJapaneseText(listing.title));
+  const listings = (await loadLiveListings((data ?? []) as Record<string, unknown>[])).filter((listing) => hasJapaneseText(listing.title) && isPublishableCatalogTitle(listing.title) && isPublishableCatalogDescription(listing.description));
   return listings
     .map((listing) => {
       const priority = womenProductPriority({ title: listing.title, category: listing.description });
@@ -205,7 +206,7 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
 
   if (error) throw new Error(error.message);
   if (!data) return null;
-  const listings = (await loadLiveListings([data as Record<string, unknown>])).filter((listing) => hasJapaneseText(listing.title));
+  const listings = (await loadLiveListings([data as Record<string, unknown>])).filter((listing) => hasJapaneseText(listing.title) && isPublishableCatalogTitle(listing.title));
   return listings[0] ?? null;
 }
 
@@ -263,6 +264,8 @@ export async function placeShopOrder(args: {
   for (const item of args.items) {
     const listing = listings.find((row) => row.id === item.listingId) as Record<string, unknown> | undefined;
     if (!listing) throw new Error("listing is not published");
+    if (!isPublishableCatalogTitle(listing.title)) throw new Error("listing title failed catalog quality gate");
+    if (!isPublishableCatalogDescription(listing.description)) throw new Error("listing description failed catalog quality gate");
     if (listing.orderable !== true) throw new Error("listing is not currently orderable");
     const inventory = asNumber(listing.inventory) ?? 0;
     if (inventory < item.qty) throw new Error("requested quantity exceeds current inventory");
