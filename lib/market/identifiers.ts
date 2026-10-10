@@ -28,7 +28,13 @@ export function marketplaceBarcodeCandidates(value: string): string[] {
   if (!normalized) return [];
   const candidates = new Set<string>([normalized]);
   if (normalized.length === 12 || normalized.length === 13) candidates.add(normalized.padStart(14, "0"));
-  if (normalized.length === 14 && normalized.startsWith("0")) candidates.add(normalized.slice(1));
+  if (normalized.length === 14 && normalized.startsWith("0")) {
+    // A leading 0 can represent a padded EAN-13; two leading zeros can
+    // represent UPC-A padded to GTIN-14. Preserve the original and add only
+    // the corresponding width candidates so retrieval can find either form.
+    candidates.add(normalized.slice(1));
+    if (normalized.startsWith("00")) candidates.add(normalized.slice(2));
+  }
   return [...candidates];
 }
 
