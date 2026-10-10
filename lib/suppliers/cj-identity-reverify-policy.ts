@@ -81,6 +81,34 @@ export function hasUniqueMarketplaceIdentity(candidateProductCount: number): boo
   return Number.isInteger(candidateProductCount) && candidateProductCount === 1;
 }
 
+export type InternalSupplyLinkIdentity = {
+  bestseller_id: unknown;
+  supply_product_id: unknown;
+  supply_variant_id: unknown;
+  identity_method: unknown;
+  identity_confidence: unknown;
+  identity_rationale: unknown;
+  status: unknown;
+};
+
+export function isVerifiedInternalSupplyLink(
+  existing: InternalSupplyLinkIdentity | null,
+  expected: InternalSupplyLinkIdentity,
+): boolean {
+  if (!existing) return false;
+  const expectedConfidence = Number(expected.identity_confidence);
+  const existingConfidence = Number(existing.identity_confidence);
+  return String(existing.bestseller_id) === String(expected.bestseller_id)
+    && String(existing.supply_product_id) === String(expected.supply_product_id)
+    && String(existing.supply_variant_id) === String(expected.supply_variant_id)
+    && existing.identity_method === expected.identity_method
+    && Number.isFinite(expectedConfidence)
+    && Number.isFinite(existingConfidence)
+    && existingConfidence === expectedConfidence
+    && existing.identity_rationale === expected.identity_rationale
+    && existing.status === expected.status;
+}
+
 export function verifyCjIdentityReverifyPolicyInvariants(): {
   ok: boolean;
   cases: Array<{ name: string; expected: boolean; actual: boolean }>;
@@ -117,6 +145,10 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
     { name: "zero_candidates_never_link", expected: false, actual: hasUniqueMarketplaceIdentity(0) },
     { name: "multiple_candidates_never_link", expected: false, actual: hasUniqueMarketplaceIdentity(2) },
     { name: "one_candidate_can_pass_identity_gate", expected: true, actual: hasUniqueMarketplaceIdentity(1) },
+    { name: "internal link readback accepts exact persisted identity", expected: true, actual: isVerifiedInternalSupplyLink({ bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }, { bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }) },
+    { name: "internal link readback rejects mismatched variant", expected: false, actual: isVerifiedInternalSupplyLink({ bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "wrong-v", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }, { bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }) },
+    { name: "internal link readback rejects mismatched identity rationale", expected: false, actual: isVerifiedInternalSupplyLink({ bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "different evidence", status: "verified" }, { bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }) },
+    { name: "internal link readback rejects missing row", expected: false, actual: isVerifiedInternalSupplyLink(null, { bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }) },
   ];
   return { ok: cases.every((item) => item.actual === item.expected), cases };
 }
