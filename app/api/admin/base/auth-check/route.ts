@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const status = Number(message.match(/HTTP (\\d{3})/)?.[1] ?? 0) || null;
+    const status = Number(message.match(/HTTP ([0-9]{3})/)?.[1] ?? 0) || null;
     const diagnosis = status === 400 || status === 401
       ? "base_access_token_rejected_or_invalid_scope"
       : status === 403
