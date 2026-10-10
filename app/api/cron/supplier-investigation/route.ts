@@ -7,6 +7,7 @@ import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { linkInternalSupplyForBestseller } from "@/lib/suppliers/internal-catalog";
 import { internalLinkRetryDelayMs, selectDueInternalLinkRetryIds } from "@/lib/suppliers/cj-identity-reverify-policy";
 import { syncTracerCatalogFromInternalSupply } from "@/lib/suppliers/sync-tracer-catalog";
+import { finalizeInternalSupplyLinkRetry } from "@/lib/suppliers/internal-link-retry-lifecycle";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -215,17 +216,50 @@ export async function GET(request: Request) {
         continue;
       }
 
-      const { error: clearRetryError } = await supabase
-        .from("internal_supply_link_retry_queue")
-        .delete()
-        .eq("bestseller_id", candidateId);
-      if (clearRetryError) throw new Error(`verified link saved but retry queue cleanup failed for ${candidateId}: ${clearRetryError.message}`);
-
       internalMatchedIds.push(candidateId);
-      const catalog = await syncTracerCatalogFromInternalSupply({
-        bestsellerId: candidateId,
-        salePrice: Number.isFinite(Number(bestseller.price)) ? Number(bestseller.price) : null,
-        variantIds: internal.supplyVariantId ? [internal.supplyVariantId] : [],
+      const catalog = await finalizeInternalSupplyLinkRetry({
+        syncCatalog: () => syncTracerCatalogFromInternalSupply({
+          bestsellerId: candidateId,
+          salePrice: Number.isFinite(Number(bestseller.price)) ? Number(bestseller.price) : null,
+          variantIds: internal.supplyVariantId ? [internal.supplyVariantId] : [],
+        }),
+        persistFailure: async (reason) => {
+          const priorRetry = retryStateById.get(candidateId);
+          const retryCount = Number(priorRetry?.retry_count ?? 0) + 1;
+          const now = new Date();
+          const nextAttemptAt = new Date(now.getTime() + internalLinkRetryDelayMs(retryCount)).toISOString();
+          const { error: retryWriteError } = await supabase
+            .from("internal_supply_link_retry_queue")
+            .upsert({
+              bestseller_id: candidateId,
+              supplier_listing_id: internal.supplierListingId,
+              supply_variant_id: internal.supplyVariantId,
+              reason: "catalog_sync_failed",
+              link_status: "pending_catalog_sync",
+              retry_count: retryCount,
+              last_attempt_at: now.toISOString(),
+              next_attempt_at: nextAttemptAt,
+              last_error: reason,
+              updated_at: now.toISOString(),
+            }, { onConflict: "bestseller_id" });
+          if (retryWriteError) throw new Error(`catalog sync failed and retry persistence failed for ${candidateId}: ${retryWriteError.message}`);
+          internalLinkFailures.push({
+            bestsellerId: candidateId,
+            supplierListingId: internal.supplierListingId,
+            supplyVariantId: internal.supplyVariantId,
+            reason: "catalog_sync_failed",
+            catalogFailureReason: reason,
+            retryCount,
+            nextAttemptAt,
+          });
+        },
+        clearRetry: async () => {
+          const { error: clearRetryError } = await supabase
+            .from("internal_supply_link_retry_queue")
+            .delete()
+            .eq("bestseller_id", candidateId);
+          if (clearRetryError) throw new Error(`verified link and catalog sync succeeded but retry cleanup failed for ${candidateId}: ${clearRetryError.message}`);
+        },
       });
       internalResults.push({
         bestsellerId: candidateId,
@@ -235,6 +269,7 @@ export async function GET(request: Request) {
         reason: internal.reason,
         canonicalLinkVerified: true,
         catalog,
+        retryPending: !catalog.matched,
       });
     }
 
