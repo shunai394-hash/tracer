@@ -19,7 +19,7 @@ import {
 import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { normalizeIdentifier } from "../lib/market/identifiers.ts";
 import { parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
-import { supplierListingStateForIdentity, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
+import { internalLinkRetryDelayMs, selectDueInternalLinkRetryIds, supplierListingStateForIdentity, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
 const pending = [];
@@ -86,6 +86,26 @@ test("CJ identity reverify policy", "retry intervals, candidate selection, raw G
   assert.equal(result.cases.length >= 15, true);
   assert.equal(normalizeIdentifier("gtin", "1598446591114"), null);
   assert.equal(normalizeIdentifier("gtin", "4006381333931"), "4006381333931");
+});
+
+test("durable internal link retry queue", "retry delay increases and caps at seven days", () => {
+  assert.equal(internalLinkRetryDelayMs(1), 15 * 60 * 1000);
+  assert.equal(internalLinkRetryDelayMs(2), 30 * 60 * 1000);
+  assert.equal(internalLinkRetryDelayMs(3), 60 * 60 * 1000);
+  assert.equal(internalLinkRetryDelayMs(100), 7 * 24 * 60 * 60 * 1000);
+});
+
+test("durable internal link retry queue", "failed candidate is deferred then reselected by the next due sweep", () => {
+  const start = Date.parse("2026-01-01T00:00:00.000Z");
+  const firstDue = start + internalLinkRetryDelayMs(1);
+  const firstFailureState = [{ bestseller_id: "same-candidate", next_attempt_at: new Date(firstDue).toISOString() }];
+  assert.deepEqual(selectDueInternalLinkRetryIds(firstFailureState, firstDue - 1, 50), []);
+  assert.deepEqual(selectDueInternalLinkRetryIds(firstFailureState, firstDue, 50), ["same-candidate"]);
+
+  const secondDue = firstDue + internalLinkRetryDelayMs(2);
+  const secondFailureState = [{ bestseller_id: "same-candidate", next_attempt_at: new Date(secondDue).toISOString() }];
+  assert.deepEqual(selectDueInternalLinkRetryIds(secondFailureState, secondDue - 1, 50), []);
+  assert.deepEqual(selectDueInternalLinkRetryIds(secondFailureState, secondDue, 50), ["same-candidate"]);
 });
 
 // Market product fixtures (JANs carry valid check digits).
