@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 const discovery = readFileSync("lib/suppliers/discover-cj-supply.ts", "utf8");
 const ingest = readFileSync("lib/suppliers/persist-cj-internal-supply.ts", "utf8");
 const identity = readFileSync("lib/market/identifiers.ts", "utf8");
+const identityResolver = readFileSync("lib/intelligence/persist-cj-supply-intelligence.ts", "utf8");
 const auditMigration = readFileSync("supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql", "utf8");
 
 assert.match(discovery, /import \{ persistCjInternalSupplyCandidate \} from "@\/lib\/suppliers\/persist-cj-internal-supply"/);
@@ -78,5 +79,32 @@ assert.match(ingest, /auditErrorCode === "PGRST205"/);
 assert.match(auditMigration, /create table if not exists public\.internal_supply_ingestion_audit/);
 assert.match(auditMigration, /grant all on public\.internal_supply_ingestion_audit to service_role/);
 assert.match(identity, /function hasValidGs1CheckDigit/);
+
+// Supplier listing identity must come from one exact canonical child-variant
+// row, never from a parent product's barcode/MPN alone.
+assert.match(identityResolver, /from\("marketplace_bestseller_variants"\)/,
+  "CJ identity resolution must query canonical child-variant evidence");
+assert.match(identityResolver, /fetchCJProductVariants\(args\.supplierProductId, \{ countryCode: "JP" \}\)/,
+  "identity proof must first query live variants for the exact supplier product");
+assert.match(identityResolver, /fetchCJVariantByVid\(args\.supplierVariantId\)/,
+  "identity proof must fall back to the exact supplier variant endpoint");
+const barcodeResolver = identityResolver.split("async function readSupplierBarcode")[1]?.split("export async function resolveMarketplaceIdentity")[0] ?? "";
+assert.ok(barcodeResolver.indexOf("fetchCJProductVariants") >= 0
+  && barcodeResolver.indexOf("fetchCJProductVariants") < barcodeResolver.indexOf("fetchCJVariantByVid"),
+  "the exact product variant response must be checked before the exact-variant detail fallback");
+assert.doesNotMatch(barcodeResolver, /normalizeBarcode\(args\.variantBarcode\)/,
+  "caller-supplied or stale listing barcodes must not be used as identity proof when the live variant lookup is unavailable");
+assert.match(identityResolver, /evidence_source === "schema_org_product_group_has_variant"/,
+  "only independently observed ProductGroup hasVariant evidence may establish the link");
+assert.match(identityResolver, /canonicalVariantEvidenceId: String\(selected\.row\.id\)/,
+  "the canonical child-variant evidence ID must be retained in the identity result");
+assert.match(identityResolver, /canonical_variant_evidence_id: marketplaceIdentity\?\.canonicalVariantEvidenceId/,
+  "supplier-listing audit metadata must preserve the exact evidence row");
+assert.match(identityResolver, /identity_status: marketplaceIdentity \? "linked" : "supply_discovered"/,
+  "failed or ambiguous re-verification must demote a listing instead of retaining stale linked status");
+assert.match(identityResolver, /missingEvidenceTable/,
+  "a missing child-evidence migration must fail closed without aborting supplier discovery");
+assert.doesNotMatch(identityResolver, /from\("marketplace_bestsellers"\)\s*\.select\("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand,fetched_at"\)/,
+  "parent-level identifier matches must not be used as canonical child-variant proof");
 
 console.log("CJ internal-supply wiring checks passed.");
