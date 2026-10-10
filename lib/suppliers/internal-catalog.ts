@@ -6,7 +6,7 @@ import {
   marketplaceBarcodeCandidates,
   matchProductIdentity,
 } from "@/lib/market/identifiers";
-import { hasUniqueIdentitySelection, hasUniqueMarketplaceIdentity, isVerifiedInternalSupplyLink } from "@/lib/suppliers/cj-identity-reverify-policy";
+import { hasUniqueIdentitySelection, hasUniqueMarketplaceIdentity, isVerifiedInternalSupplyLink, supplierListingStateForIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 export type InternalSupplyLinkStatus =
   | "saved"
@@ -210,12 +210,12 @@ export async function linkInternalSupplyForBestseller(args: {
         order_method: product.order_method ?? "internal",
         api_available: product.api_available === true,
         identity_method: selected.identity.method,
-        identity_status: "pending",
+        ...supplierListingStateForIdentity(false),
         identity_confidence: selected.identity.confidence,
-        configured: false,
+
         supplier_product_id: String(product.id),
         supplier_variant_id: variant.id ? String(variant.id) : (variant.variant_id ? String(variant.variant_id) : null),
-        orderable: false,
+
         price_confirmed: variant.cost != null || product.cost != null,
         inventory_confirmed: true,
         fetched_at: args.fetchedAt,
@@ -258,7 +258,7 @@ export async function linkInternalSupplyForBestseller(args: {
     if (!linkResult.error && linkResult.data) {
       const { data: activatedListing, error: activationError } = await supabase
         .from("supplier_listings")
-        .update({ identity_status: "linked", configured: true, orderable: true })
+        .update(supplierListingStateForIdentity(true))
         .eq("id", String(listing.id))
         .select("id")
         .single();
@@ -300,7 +300,7 @@ export async function linkInternalSupplyForBestseller(args: {
       if (exactExistingLink) {
         const { data: activatedListing, error: activationError } = await supabase
           .from("supplier_listings")
-          .update({ identity_status: "linked", configured: true, orderable: true })
+          .update(supplierListingStateForIdentity(true))
           .eq("id", String(listing.id))
           .select("id")
           .single();
