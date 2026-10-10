@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { exactBarcodeFamilyMatch, identifiersFromRecord } from "@/lib/market/identifiers";
-import { hasExactCurrentRequestVariantSet, onlyCurrentRequestVariants, selectUniqueIdentityCandidate } from "@/lib/suppliers/cj-identity-reverify-policy";
+import { hasExactCurrentRequestVariantSet, onlyCurrentRequestVariants } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 function num(value: unknown): number | null {
   if (value === null || value === undefined) return null;
