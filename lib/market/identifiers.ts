@@ -148,8 +148,17 @@ export function matchProductIdentity(args: {
   const market = args.market;
   const supply = args.supply;
 
+  // ASIN is a marketplace candidate lookup key, not independent proof that
+  // a supplier offer is the same sellable product/variant. Require a barcode
+  // family match or same-brand MPN before the Sales Test Gate can consider it.
   if (eq(market.asin, supply.asin)) {
-    return { linked: true, salesEligible: true, method: "asin", confidence: 0.99, rationale: "ASIN matches" };
+    return {
+      linked: true,
+      salesEligible: false,
+      method: "asin",
+      confidence: 0.7,
+      rationale: "ASIN matches; candidate only until independent supplier identity evidence confirms the item",
+    };
   }
 
   for (const scheme of ["jan", "gtin", "ean", "upc"] as const) {
@@ -206,8 +215,8 @@ export function verifyIdentifierMatchInvariants(): {
 } {
   const cases = [
     {
-      name: "asin_match_is_sales_eligible",
-      expected: true,
+      name: "asin_only_match_is_not_sales_eligible",
+      expected: false,
       actual: matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, asin: "B0TESTASIN" }, supply: { ...EMPTY_IDENTIFIERS, asin: "B0TESTASIN" } }).salesEligible,
     },
     {
