@@ -68,7 +68,18 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
     .select("id,bestseller_id,source_variant_id,jan,gtin,ean,upc,evidence_source")
     .or(clauses.join(","))
     .limit(51);
-  if (canonicalError) throw new Error(`CJ canonical child-variant identity lookup failed: ${canonicalError.message}`);
+  if (canonicalError) {
+    const code = typeof canonicalError.code === "string" ? canonicalError.code : "";
+    const missingEvidenceTable = code === "42P01" || code === "PGRST205"
+      || /relation .* does not exist|could not find the table .*schema cache/i.test(canonicalError.message);
+    if (missingEvidenceTable) {
+      console.warn("[cj-supply-identity] canonical child-variant evidence table unavailable; keeping supplier unlinked", {
+        code: code || null,
+      });
+      return null;
+    }
+    throw new Error(`CJ canonical child-variant identity lookup failed: ${canonicalError.message}`);
+  }
   if ((canonicalRows?.length ?? 0) > 50) return null;
 
   const matches = (canonicalRows ?? []).map((row) => {
