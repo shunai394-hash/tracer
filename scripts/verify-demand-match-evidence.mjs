@@ -42,6 +42,7 @@ test("internal supplier link fail-closed contract", "listing stays non-orderable
   assert.match(source.slice(liveOrderGate, activation), /tracking_available === true/, "tracking evidence must be required before activation");
   assert.match(source.slice(liveOrderGate, activation), /Number\.isFinite\(shippingCost\)/, "known shipping cost must be required before activation");
   assert.match(source.slice(liveOrderGate, activation), /shipTo === "JP"/, "explicit Japan shipping evidence must be required before activation");
+  assert.match(source, /ship_to: typeof product\\.ship_to === "string" \\? product\\.ship_to : null/, "missing Japan shipping must not be fabricated into the persisted listing");
   assert.match(source.slice(failureGate, activation), /return \{ matched: false/, "failed audit persistence must return unmatched without activation");
 });
 
