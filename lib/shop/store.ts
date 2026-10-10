@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
+import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -111,8 +112,10 @@ async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, nu
 }
 
 async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopListing[]> {
-  const listings = rows
-    .map(mapListing)
+  const mapped = rows.map(mapListing);
+  const linkedSupplierIds = await getLinkedSupplierListingIds(mapped.map((listing) => listing.supplierListingId));
+  const listings = mapped
+    .filter((listing) => Boolean(listing.supplierListingId && linkedSupplierIds.has(listing.supplierListingId)))
     .filter((listing) => isPublishableCatalogTitle(listing.title) && isPublishableCatalogDescription(listing.description) && listing.inventory > 0 && listing.orderable && listing.trackingAvailable && listing.sellingPrice !== null && listing.sellingPrice > 0);
 
   if (listings.length === 0) return [];
@@ -255,7 +258,11 @@ export async function placeShopOrder(args: {
     .gt("selling_price", 0);
 
   if (error) throw new Error(error.message);
-  if (!listings || listings.length === 0) throw new Error("published Shopify listing not found");
+  if (!listings || listings.length !== new Set(listingIds).size) throw new Error("published Shopify listing not found");
+  const linkedSupplierIds = await getLinkedSupplierListingIds(listings.map((listing) => listing.supplier_listing_id));
+  if (listings.some((listing) => !listing.supplier_listing_id || !linkedSupplierIds.has(String(listing.supplier_listing_id)))) {
+    throw new Error("supplier_identity_unlinked");
+  }
 
   let subtotal = 0;
   let currency: string | null = null;
