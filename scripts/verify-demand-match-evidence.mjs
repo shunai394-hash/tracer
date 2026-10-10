@@ -17,7 +17,7 @@ import {
   variantsCompatible,
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
-import { normalizeIdentifier } from "../lib/market/identifiers.ts";
+import { exactBarcodeFamilyMatch, EMPTY_IDENTIFIERS, normalizeIdentifier } from "../lib/market/identifiers.ts";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
@@ -40,6 +40,20 @@ test("CJ identity reverify policy", "retry intervals, candidate selection, raw G
   assert.equal(result.cases.length >= 15, true);
   assert.equal(normalizeIdentifier("gtin", "1598446591114"), null);
   assert.equal(normalizeIdentifier("gtin", "4006381333931"), "4006381333931");
+});
+
+test("exact variant barcode identity", "checks every barcode field and never falls back to ASIN/MPN", () => {
+  const market = { ...EMPTY_IDENTIFIERS, jan: "4006381333931" };
+  assert.equal(exactBarcodeFamilyMatch(market, { ...EMPTY_IDENTIFIERS, ean: "4006381333931" }), "gtin");
+  assert.equal(exactBarcodeFamilyMatch(market, { ...EMPTY_IDENTIFIERS, jan: "4006381333931", ean: "4006381333931" }), "jan");
+  assert.equal(exactBarcodeFamilyMatch(market, { ...EMPTY_IDENTIFIERS, gtin: "4006381333931", ean: "4006381333931" }), "gtin");
+  assert.equal(exactBarcodeFamilyMatch(market, { ...EMPTY_IDENTIFIERS, jan: "1111111111111", ean: "4006381333931" }), "gtin");
+  assert.equal(exactBarcodeFamilyMatch(market, { ...EMPTY_IDENTIFIERS, asin: "B0TESTASIN", mpn: "MODEL-1" }), null);
+  assert.equal(exactBarcodeFamilyMatch(market, { ...EMPTY_IDENTIFIERS, ean: "4006381333932" }), null);
+  assert.equal(exactBarcodeFamilyMatch(
+    { ...EMPTY_IDENTIFIERS, upc: "012345678905" },
+    { ...EMPTY_IDENTIFIERS, gtin: "00012345678905" },
+  ), "gtin");
 });
 
 // Market product fixtures (JANs carry valid check digits).
