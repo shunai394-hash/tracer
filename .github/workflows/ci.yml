@@ -32,6 +32,7 @@ jobs:
           sudo -u postgres createdb tracer_test
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
+      - run: node --experimental-strip-types --no-warnings scripts/verify-cj-variant-barcode-proof.mjs
       - name: Run atomic catalog sync PostgreSQL integration tests (disposable CI database only)
         env:
           PGHOST: 127.0.0.1
@@ -48,5 +49,13 @@ jobs:
           PGPASSWORD: ci-postgres-password
           PGDATABASE: tracer_test
         run: psql -v ON_ERROR_STOP=1 -f scripts/test-canonical-variant-evidence.sql
+      - name: Run CJ variant identity persistence contract (disposable CI database only)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: ci-postgres-password
+          PGDATABASE: tracer_test
+        run: psql -v ON_ERROR_STOP=1 -f scripts/test-cj-variant-identity-persistence.sql
       - run: npm run lint
       - run: npm run build
