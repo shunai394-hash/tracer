@@ -95,6 +95,7 @@ async function requestBase(
     },
     body,
     cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
   });
 
   const text = await response.text();
@@ -232,6 +233,7 @@ export async function listBaseOrders(options?: {
     method: "GET",
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
     cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
   });
   const text = await response.text();
   if (!response.ok) throw new Error(`BASE orders HTTP ${response.status}: ${text.slice(0, 500)}`);
@@ -247,6 +249,7 @@ export async function getBaseOrderDetail(uniqueKey: string): Promise<BaseOrderDe
       method: "GET",
       headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
     },
   );
   const text = await response.text();
