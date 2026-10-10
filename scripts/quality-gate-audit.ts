@@ -8,6 +8,7 @@ const root = process.cwd();
 const checks = [
   ["Shopify publishable title guard", "lib/shopify/sync-published-listings.ts", "catalog_title_not_publishable"],
   ["BASE publishable title guard", "lib/channels/base-publisher.ts", "BASE catalog title contains workflow or disqualification text"],
+  ["BASE catalog validation fail-closed hide", "lib/channels/base-publisher.ts", "base_hide_failed_after_catalog_validation"],
   ["Shopify legacy sync", "lib/shopify/sync.ts", "hasPassedSalesTestGate"],
   ["Shopify canonical sync", "lib/shopify/sync-published-listings.ts", "hasPassedSalesTestGate"],
   ["Shopify sync live-stock guard", "lib/shopify/sync-published-listings.ts", "Number(row.inventory) > 0"],
