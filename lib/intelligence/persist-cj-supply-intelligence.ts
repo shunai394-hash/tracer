@@ -3,7 +3,7 @@ import "server-only";
 import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
-import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates, pickSupplierBarcodeIdentifier } from "@/lib/market/identifiers";
+import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates } from "@/lib/market/identifiers";
 
 export type PersistCjSupplyIntelligenceArgs = {
   productId: string;
@@ -26,37 +26,40 @@ export type MarketplaceIdentity = { bestsellerId: string; productId: string; can
 
 function normalizeBarcode(value: unknown): string { return typeof value === "string" ? value.trim().replace(/[^0-9]/g, "") : ""; }
 
-async function readSupplierBarcode(args: { supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null }): Promise<string> {
-  const supplied = normalizeBarcode(args.variantBarcode);
-  if (supplied) return supplied;
+async function readSupplierBarcode(args: { supplierProductId: string; supplierVariantId: string }): Promise<string> {
+  // Identity evidence must come from the exact supplier variant's live response.
+  // Do not let a stale listing/product-level barcode override or substitute for it.
   try {
     const variants = await fetchCJProductVariants(args.supplierProductId, { countryCode: "JP" });
     const direct = normalizeBarcode(variants.find((item) => item.vid === args.supplierVariantId)?.barcode);
     if (direct) return direct;
-  } catch (error) { console.warn("[cj-supply-identity] variant barcode lookup failed", { error: error instanceof Error ? error.message : String(error) }); }
+  } catch (error) {
+    console.warn("[cj-supply-identity] variant barcode lookup failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   try {
     const detailVariant = await fetchCJVariantByVid(args.supplierVariantId);
-    if (detailVariant?.vid === args.supplierVariantId) return normalizeBarcode(detailVariant.barcode);
-  } catch (error) { console.warn("[cj-supply-identity] queryByVid barcode lookup failed", { error: error instanceof Error ? error.message : String(error) }); }
+    if (detailVariant?.vid === args.supplierVariantId) {
+      const direct = normalizeBarcode(detailVariant.barcode);
+      if (direct) return direct;
+    }
+  } catch (error) {
+    console.warn("[cj-supply-identity] queryByVid barcode lookup failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   return "";
 }
 
 export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<MarketplaceIdentity | null> {
-  const suppliedIds = identifiersFromRecord({
-    gtin: args.supplierIdentifiers?.gtin,
-    jan: args.supplierIdentifiers?.jan,
-    ean: args.supplierIdentifiers?.ean,
-    upc: args.supplierIdentifiers?.upc,
-    mpn: args.supplierIdentifiers?.mpn,
+  // Parent product identifiers, MPNs, and caller-supplied listing barcodes are
+  // not proof of a concrete size/color/pack. Only a live barcode returned for the
+  // exact supplier variant ID may establish the canonical child-variant link.
+  const barcode = await readSupplierBarcode({
+    supplierProductId: args.supplierProductId,
+    supplierVariantId: args.supplierVariantId,
   });
-
-  // Parent product identifiers and MPNs are not proof of a concrete size/color/pack.
-  // Always resolve the supplier's concrete variant barcode, then compare it only
-  // with independently stored canonical child-variant evidence.
-  const suppliedBarcode = pickSupplierBarcodeIdentifier(suppliedIds);
-  // Prefer the live concrete-variant barcode; use a stored valid barcode only if
-  // the supplier lookup is unavailable, never the other way around.
-  const barcode = (await readSupplierBarcode(args)) || suppliedBarcode || "";
   const supplyIds = identifiersFromRecord({ gtin: barcode || null });
   if (!supplyIds.gtin) return null;
 
