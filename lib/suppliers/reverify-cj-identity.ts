@@ -29,7 +29,30 @@ function isWomensProductTitle(title: unknown, metadata?: unknown): boolean {
   const searchable = [typeof title === "string" ? title : "", typeof record.category === "string" ? record.category : "", typeof record.query === "string" ? record.query : "", typeof record.tags === "string" ? record.tags : "", Array.isArray(record.tags) ? record.tags.filter((value): value is string => typeof value === "string").join(" ") : ""].join(" ");
   return WOMENS_PRODUCT_PATTERNS.some((pattern) => pattern.test(searchable));
 }
-export type CjIdentityReverifyResult = { checked: number; promoted: number; supplierVerified: number; noUniqueBarcodeMatch: number; missingEconomics: number; errors: Array<{ supplierListingId: string; error: string }>; promotedListings: Array<{ supplierListingId: string; bestsellerId: string; method: string }>; nextCursor: string | null };
+export type CjIdentityProgressCounts = {
+  linkedCjSupplierListings: number;
+  saleableCatalogProducts: number;
+  linkedInStockCatalogVariants: number;
+  publishedOrderableListings: number;
+};
+export type CjIdentityReverifyResult = { checked: number; promoted: number; supplierVerified: number; noUniqueBarcodeMatch: number; missingEconomics: number; errors: Array<{ supplierListingId: string; error: string }>; promotedListings: Array<{ supplierListingId: string; bestsellerId: string; method: string }>; nextCursor: string | null; progress: { before: CjIdentityProgressCounts; after: CjIdentityProgressCounts } };
+
+async function readCjIdentityProgressCounts(db: ReturnType<typeof createSupabaseAdminClient>): Promise<CjIdentityProgressCounts> {
+  const [linked, products, variants, published] = await Promise.all([
+    db.from("supplier_listings").select("id", { count: "exact", head: true }).eq("supplier", "cj").eq("identity_status", "linked"),
+    db.from("tracer_supply_catalog").select("id", { count: "exact", head: true }).eq("status", "ready").eq("orderable", true).gt("inventory", 0),
+    db.from("tracer_supply_variants").select("id", { count: "exact", head: true }).not("internal_supply_variant_id", "is", null).eq("orderable", true).gt("inventory", 0),
+    db.from("shop_listings").select("id", { count: "exact", head: true }).eq("published", true).eq("orderable", true),
+  ]);
+  const failed = [linked, products, variants, published].find((query) => query.error);
+  if (failed?.error) throw new Error("CJ identity progress audit failed: " + failed.error.message);
+  return {
+    linkedCjSupplierListings: linked.count ?? 0,
+    saleableCatalogProducts: products.count ?? 0,
+    linkedInStockCatalogVariants: variants.count ?? 0,
+    publishedOrderableListings: published.count ?? 0,
+  };
+}
 function num(value: unknown): number | null { const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN; return Number.isFinite(parsed) ? parsed : null; }
 function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 async function readPersistableBarcode(supplierProductId: string, supplierVariantId: string, persistedBarcode: string | null): Promise<string | null> {
@@ -55,6 +78,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const priority = (row: typeof allRows[number]) => row.verification_status === "unverified" ? 0 : 1;
   womensRows.sort((a, b) => priority(a) - priority(b) || String(a.id).localeCompare(String(b.id)));
   otherRows.sort((a, b) => priority(a) - priority(b) || String(a.id).localeCompare(String(b.id)));
+  const beforeCounts = await readCjIdentityProgressCounts(db);
   const { data: priorRuns } = await db.from("cron_runs").select("metadata").eq("job_name", CURSOR_JOB).eq("status", "succeeded").order("started_at", { ascending: false }).limit(1);
   const priorCursor = typeof record(priorRuns?.[0]?.metadata).nextCursor === "string" ? String(record(priorRuns?.[0]?.metadata).nextCursor) : null;
   const rotateAfterCursor = (items: typeof allRows) => {
@@ -68,7 +92,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const remaining = Math.max(0, limit - selectedWomens.length);
   const selectedOther = remaining > 0 ? rotatedOther.slice(0, Math.min(remaining, rotatedOther.length)) : [];
   const selectedRows = [...selectedWomens, ...selectedOther];
-  const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, errors: [], promotedListings: [], nextCursor: selectedRows.length ? String(selectedRows[selectedRows.length - 1].id) : null };
+  const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, errors: [], promotedListings: [], nextCursor: selectedRows.length ? String(selectedRows[selectedRows.length - 1].id) : null, progress: { before: beforeCounts, after: beforeCounts } };
   const processRow = async (row: NonNullable<typeof rows>[number]) => {
     const supplierListingId = String(row.id);
     try {
@@ -107,7 +131,9 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
     }
   };
   for (let offset = 0; offset < selectedRows.length; offset += CONCURRENCY) { if (Date.now() >= deadlineAt) break; const batch = selectedRows.slice(offset, offset + CONCURRENCY); const results = await Promise.all(batch.map(processRow)); for (const item of results) { result.checked += 1; if (item.kind === "promoted") { result.promoted += 1; result.promotedListings.push({ supplierListingId: item.supplierListingId, bestsellerId: item.bestsellerId, method: item.method }); } else if (item.kind === "supplier_verified") { result.supplierVerified += 1; } else if (item.kind === "no_match") result.noUniqueBarcodeMatch += 1; else if (item.kind === "missing_economics") result.missingEconomics += 1; else result.errors.push({ supplierListingId: item.supplierListingId, error: item.error }); } }
+  result.progress.after = await readCjIdentityProgressCounts(db);
   const now = new Date().toISOString();
-  await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: "cursor_rotation_womens_priority", candidateCount: total, womensCandidates: womensRows.length, womensSelected: selectedWomens.length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
+  const { error: runInsertError } = await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: "cursor_rotation_womens_priority", candidateCount: total, womensCandidates: womensRows.length, womensSelected: selectedWomens.length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, progress: result.progress, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
+  if (runInsertError) throw new Error("CJ identity progress audit persistence failed: " + runInsertError.message);
   return result;
 }
