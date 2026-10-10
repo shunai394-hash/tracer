@@ -43,6 +43,12 @@ export async function linkInternalSupplyForBestseller(args: {
     return { matched: false, supplierListingId: null, supplyVariantId: null };
   }
 
+  // The query is deliberately bounded. If it fills the full 20-row limit,
+  // the candidate set may be truncated, so uniqueness cannot be proven safely.
+  if ((products ?? []).length >= 20) {
+    return { matched: false, supplierListingId: null, supplyVariantId: null };
+  }
+
   // Do not select the first eligible product from an ambiguous result set.
   // Duplicate supplier barcodes/MPNs can otherwise link the marketplace item
   // to whichever row PostgREST happens to return first. Only a single
