@@ -1,5 +1,6 @@
 import "server-only";
 
+import { isSupplierLiveOrderingEnabled } from "@/lib/config/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   exactBarcodeFamilyMatch,
@@ -326,7 +327,28 @@ export async function linkInternalSupplyForBestseller(args: {
     return { matched: false, supplierListingId: null, supplyVariantId: null };
   }
 
-  // Activate only after both listing and exact identity evidence are persisted.
+  // Identity proof and supplier orderability are separate gates. A durable
+  // barcode link alone must never activate ordering; require the explicit live
+  // ordering switch plus current price, shipping, tracking, destination and API
+  // evidence. If any gate is missing, keep the identity link but leave the
+  // listing non-orderable so matching metrics can grow without faking sellability.
+  const cost = Number(variant.cost ?? product.cost);
+  const shippingCost = Number(variant.shipping_cost ?? product.shipping_cost);
+  const leadTimeDays = Number(product.lead_time_days);
+  const shipTo = typeof product.ship_to === "string" ? product.ship_to.trim().toUpperCase() : "";
+  const liveOrderReady =
+    isSupplierLiveOrderingEnabled("TRACER_INTERNAL") &&
+    product.api_available === true &&
+    (variant.tracking_available === true || product.tracking_available === true) &&
+    Number.isFinite(cost) && cost >= 0 &&
+    Number.isFinite(shippingCost) && shippingCost >= 0 &&
+    Number.isFinite(leadTimeDays) && leadTimeDays >= 0 &&
+    (shipTo === "JP" || shipTo.split(/[\\s,;|]+/).includes("JP"));
+  if (!liveOrderReady) {
+    return { matched: true, supplierListingId: String(listingResult.data.id), supplyVariantId: String(variant.id) };
+  }
+
+  // Activate only after identity evidence and the independent live-order gate pass.
   // If this final write fails, the listing remains non-orderable.
   const activationResult = await supabase
     .from("supplier_listings")
