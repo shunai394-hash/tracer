@@ -99,16 +99,23 @@ export async function GET(request: Request) {
       ? observation.sourceIndex
       : (observation.sourceIndex + 1) % 8;
     const nextStartIndex = observation.hasMore ? observation.nextIndex : 0;
+    const evidenceWriteFailed =
+      !observation.canonicalVariantEvidenceSchemaAvailable ||
+      observation.canonicalVariantEvidenceWriteFailures > 0;
+    // Do not persist an advanced cursor for a failed evidence batch. The next
+    // invocation must retry this exact source/page until evidence is durable.
+    const cursorSourceIndex = evidenceWriteFailed ? observation.sourceIndex : nextSourceIndex;
+    const cursorNextIndex = evidenceWriteFailed ? observation.startIndex : nextStartIndex;
 
     const metadata = {
       phase: "market_observation",
       itemCount: observation.itemCount,
       inserted: observation.inserted,
       batchSize: MARKET_SOURCING_BATCH_SIZE,
-      sourceIndex: nextSourceIndex,
+      sourceIndex: cursorSourceIndex,
       startIndex: observation.startIndex,
       processedCount: observation.processedCount,
-      nextIndex: nextStartIndex,
+      nextIndex: cursorNextIndex,
       hasMore: observation.hasMore,
       enrichment: observation.enrichment,
       supplierCandidateCount: observation.supplierCandidateIds.length,
@@ -122,9 +129,6 @@ export async function GET(request: Request) {
           ? "write_failed"
           : "ok",
     };
-    const evidenceWriteFailed = !observation.canonicalVariantEvidenceSchemaAvailable
-      || observation.canonicalVariantEvidenceWriteFailures > 0;
-
     if (cronRunId) {
       await supabase
         .from("cron_runs")
@@ -133,7 +137,8 @@ export async function GET(request: Request) {
           finished_at: new Date().toISOString(),
           duration_ms: Date.now() - startedAt,
           processed: observation.inserted,
-          failed: observation.canonicalVariantEvidenceWriteFailures,
+          failed: observation.canonicalVariantEvidenceWriteFailures +
+            (observation.canonicalVariantEvidenceSchemaAvailable ? 0 : 1),
           error: evidenceWriteFailed
             ? "Canonical marketplace variant evidence was not fully persisted"
             : null,
