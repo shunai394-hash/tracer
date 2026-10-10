@@ -6,7 +6,7 @@ import {
   marketplaceBarcodeCandidates,
   matchProductIdentity,
 } from "@/lib/market/identifiers";
-import { hasUniqueIdentitySelection, internalProductCandidateStatus, isVerifiedInternalSupplyLink, supplierListingStateForIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
+import { canUseParentIdentityForSingleVariant, hasUniqueIdentitySelection, internalProductCandidateStatus, hasUniqueMarketplaceIdentity, isVerifiedInternalSupplyLink, supplierListingStateForIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 export type InternalSupplyLinkStatus =
   | "saved"
@@ -23,6 +23,22 @@ export type InternalSupplyLinkStatus =
   | "no_match"
   | "listing_activation_failed";
 
+export type InternalSupplyMatchReason =
+  | "missing_marketplace_identifier"
+  | "lookup_failed"
+  | "candidate_limit_reached"
+  | "no_product_candidate"
+  | "ambiguous_product_identity"
+  | "variant_lookup_failed"
+  | "variant_candidate_limit_reached"
+  | "no_eligible_variant"
+  | "ambiguous_variant_identity"
+  | "inventory_unavailable"
+  | "canonical_link_saved"
+  | "canonical_link_existing_verified"
+  | "canonical_link_unverified"
+  | "listing_activation_failed";
+
 export async function linkInternalSupplyForBestseller(args: {
   bestseller: Record<string, unknown>;
   fetchedAt: string;
@@ -31,6 +47,7 @@ export async function linkInternalSupplyForBestseller(args: {
   supplierListingId: string | null;
   supplyVariantId: string | null;
   linkStatus?: InternalSupplyLinkStatus;
+  reason: InternalSupplyMatchReason;
 }> {
   const supabase = createSupabaseAdminClient();
   const marketIds = identifiersFromRecord(args.bestseller);
@@ -42,7 +59,7 @@ export async function linkInternalSupplyForBestseller(args: {
     ["mpn", marketIds.mpn],
   ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
 
-  if (queries.length === 0) return { matched: false, supplierListingId: null, supplyVariantId: null };
+  if (queries.length === 0) return { matched: false, supplierListingId: null, supplyVariantId: null, reason: "missing_marketplace_identifier" };
 
   const or = queries
     .map(([column, value]) => `${column}.eq.${value.replace(/[,()]/g, "")}`)
@@ -61,13 +78,13 @@ export async function linkInternalSupplyForBestseller(args: {
     // investigation path; otherwise one DB permission issue makes the entire
     // autonomous patrol look like it discovered nothing.
     console.error("[TRACER INTERNAL SUPPLY LOOKUP SKIPPED]", { code: error.code ?? null, message: error.message });
-    return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "lookup_failed" };
+    return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "lookup_failed", reason: "lookup_failed" };
   }
 
   // The query is deliberately bounded. If it fills the full 20-row limit,
   // the candidate set may be truncated, so uniqueness cannot be proven safely.
   if ((products ?? []).length >= 20) {
-    return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "candidate_set_truncated" };
+    return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "candidate_set_truncated", reason: "candidate_limit_reached" };
   }
 
   // Do not select the first eligible product from an ambiguous result set.
@@ -93,9 +110,16 @@ export async function linkInternalSupplyForBestseller(args: {
 
   const candidateStatus = internalProductCandidateStatus(identityEligibleProductCount);
   if (candidateStatus !== "unique_product_candidate") {
-    return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: candidateStatus };
+    return {
+      matched: false,
+      supplierListingId: null,
+      supplyVariantId: null,
+      linkStatus: candidateStatus,
+      reason: candidateStatus === "no_product_candidate" ? "no_product_candidate" : "ambiguous_product_identity",
+    };
   }
 
+  let failureReason: InternalSupplyMatchReason = "no_eligible_variant";
   for (const product of products ?? []) {
     const productIds = identifiersFromRecord(product as Record<string, unknown>);
     const identity = matchProductIdentity({
@@ -122,9 +146,13 @@ export async function linkInternalSupplyForBestseller(args: {
       .gt("inventory", 0)
       .limit(50);
 
+    if ((variants ?? []).length >= 50) {
+      return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "candidate_set_truncated", reason: "variant_candidate_limit_reached" };
+    }
+
     if (variantError) {
       console.error("[TRACER INTERNAL SUPPLY VARIANT LOOKUP FAILED]", { code: variantError.code ?? null, message: variantError.message });
-      return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "lookup_failed" };
+      return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "lookup_failed", reason: "variant_lookup_failed" };
     }
 
     const confirmedVariants = (variants ?? []).map((variant) => {
@@ -161,19 +189,29 @@ export async function linkInternalSupplyForBestseller(args: {
     // Multiple variants may share weak/model-level identity. Only select from
     // a multi-variant set when exactly one variant has an exact normalized
     // barcode match; never take the first matching row by response order.
-    const selected = hasUniqueIdentitySelection(confirmedVariants.length, exactIdentifierMatches.length)
+    let selected = hasUniqueIdentitySelection(confirmedVariants.length, exactIdentifierMatches.length)
       ? confirmedVariants.length === 1
         ? confirmedVariants[0]
         : exactIdentifierMatches[0]
       : null;
 
+    if (!selected && (variants ?? []).length === 1 && canUseParentIdentityForSingleVariant({
+      identityMethod: identity.method,
+      activeVariantCount: (variants ?? []).length,
+    })) {
+      selected = { variant: variants![0], identity };
+    }
+
     if (!selected) {
-      return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "no_unique_variant" };
+      failureReason = confirmedVariants.length > 1 || ((variants ?? []).length > 1 && exactIdentifierMatches.length !== 1)
+        ? "ambiguous_variant_identity"
+        : "no_eligible_variant";
+      continue;
     }
 
     const variant = selected.variant as Record<string, unknown>;
     const inventory = Number(variant.inventory ?? product.inventory ?? 0);
-    if (!Number.isFinite(inventory) || inventory <= 0) continue;
+    if (!Number.isFinite(inventory) || inventory <= 0) { failureReason = "inventory_unavailable"; continue; }
 
     const { data: existingListing, error: existingListingError } = await supabase
       .from("supplier_listings")
@@ -186,7 +224,7 @@ export async function linkInternalSupplyForBestseller(args: {
 
     if (existingListingError) {
       console.error("[TRACER INTERNAL SUPPLY LISTING LOOKUP FAILED]", { code: existingListingError.code ?? null, message: existingListingError.message });
-      return { matched: false, supplierListingId: null, supplyVariantId: String(variant.id), linkStatus: "lookup_failed" };
+      return { matched: false, supplierListingId: null, supplyVariantId: String(variant.id), linkStatus: "lookup_failed", reason: "variant_lookup_failed" };
     }
 
     const listingPayload = {
@@ -234,7 +272,7 @@ export async function linkInternalSupplyForBestseller(args: {
 
     if (listingResult.error || !listingResult.data?.id) {
       console.error("[TRACER INTERNAL SUPPLY LISTING WRITE FAILED]", { code: listingResult.error?.code ?? null, message: listingResult.error?.message ?? "no listing row returned" });
-      return { matched: false, supplierListingId: null, supplyVariantId: String(variant.id), linkStatus: "write_failed" };
+      return { matched: false, supplierListingId: null, supplyVariantId: String(variant.id), linkStatus: "write_failed", reason: "canonical_link_unverified" };
     }
     const listing = listingResult.data;
 
@@ -257,7 +295,14 @@ export async function linkInternalSupplyForBestseller(args: {
       .select("bestseller_id,supply_product_id,supply_variant_id,identity_method,identity_confidence,identity_rationale,status")
       .single();
 
-    if (!linkResult.error && linkResult.data) {
+    const insertedLink = linkResult.data as Record<string, unknown> | null;
+    const insertedLinkVerified = !linkResult.error
+      && isVerifiedInternalSupplyLink(
+        insertedLink as Parameters<typeof isVerifiedInternalSupplyLink>[0],
+        linkPayload,
+      );
+
+    if (insertedLinkVerified) {
       const { data: activatedListing, error: activationError } = await supabase
         .from("supplier_listings")
         .update(supplierListingStateForIdentity(true))
@@ -266,13 +311,14 @@ export async function linkInternalSupplyForBestseller(args: {
         .single();
       if (activationError || !activatedListing?.id) {
         console.error("[TRACER INTERNAL SUPPLY LISTING ACTIVATION FAILED]", { code: activationError?.code ?? null, message: activationError?.message ?? "no activated row returned" });
-        return { matched: false, supplierListingId: String(listing.id), supplyVariantId: String(variant.id), linkStatus: "listing_activation_failed" };
+        return { matched: false, supplierListingId: String(listing.id), supplyVariantId: String(variant.id), linkStatus: "listing_activation_failed", reason: "listing_activation_failed" };
       }
       return {
         matched: true,
         supplierListingId: String(listing.id),
         supplyVariantId: String(variant.id),
         linkStatus: "saved",
+        reason: "canonical_link_saved",
       };
     }
 
@@ -308,13 +354,14 @@ export async function linkInternalSupplyForBestseller(args: {
           .single();
         if (activationError || !activatedListing?.id) {
           console.error("[TRACER INTERNAL SUPPLY LISTING ACTIVATION FAILED]", { code: activationError?.code ?? null, message: activationError?.message ?? "no activated row returned" });
-          return { matched: false, supplierListingId: String(listing.id), supplyVariantId: String(variant.id), linkStatus: "listing_activation_failed" };
+          return { matched: false, supplierListingId: String(listing.id), supplyVariantId: String(variant.id), linkStatus: "listing_activation_failed", reason: "listing_activation_failed" };
         }
         return {
           matched: true,
           supplierListingId: String(listing.id),
           supplyVariantId: String(variant.id),
           linkStatus: "existing_verified",
+          reason: "canonical_link_existing_verified",
         };
       }
 
@@ -329,6 +376,7 @@ export async function linkInternalSupplyForBestseller(args: {
         supplierListingId: String(listing.id),
         supplyVariantId: String(variant.id),
         linkStatus: readback.error ? "readback_failed" : "duplicate_unverified",
+        reason: "canonical_link_unverified",
       };
     }
 
@@ -342,8 +390,9 @@ export async function linkInternalSupplyForBestseller(args: {
       supplierListingId: String(listing.id),
       supplyVariantId: String(variant.id),
       linkStatus: isMissingTable ? "table_missing" : "write_failed",
+      reason: "canonical_link_unverified",
     };
   }
 
-  return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "no_match" };
+  return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "no_match", reason: failureReason };
 }

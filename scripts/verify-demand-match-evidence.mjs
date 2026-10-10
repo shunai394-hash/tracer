@@ -1,6 +1,7 @@
 // Demand match precision tests (pure logic, no DB, no network).
 // Run: node --experimental-strip-types scripts/verify-demand-match-evidence.mjs
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   buildIdentifierIndex,
   canonicalGtin,
@@ -19,7 +20,7 @@ import {
 import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { normalizeIdentifier } from "../lib/market/identifiers.ts";
 import { parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
-import { supplierListingStateForIdentity, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
+import { internalLinkRetryDelayMs, selectDueInternalLinkRetryIds, supplierListingStateForIdentity, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
 const pending = [];
@@ -86,6 +87,43 @@ test("CJ identity reverify policy", "retry intervals, candidate selection, raw G
   assert.equal(result.cases.length >= 15, true);
   assert.equal(normalizeIdentifier("gtin", "1598446591114"), null);
   assert.equal(normalizeIdentifier("gtin", "4006381333931"), "4006381333931");
+});
+
+test("durable internal link retry queue", "retry delay increases and caps at seven days", () => {
+  assert.equal(internalLinkRetryDelayMs(1), 15 * 60 * 1000);
+  assert.equal(internalLinkRetryDelayMs(2), 30 * 60 * 1000);
+  assert.equal(internalLinkRetryDelayMs(3), 60 * 60 * 1000);
+  assert.equal(internalLinkRetryDelayMs(100), 7 * 24 * 60 * 60 * 1000);
+});
+
+test("durable internal link retry queue", "failed candidate is deferred then reselected by the next due sweep", () => {
+  const start = Date.parse("2026-01-01T00:00:00.000Z");
+  const firstDue = start + internalLinkRetryDelayMs(1);
+  const firstFailureState = [{ bestseller_id: "same-candidate", next_attempt_at: new Date(firstDue).toISOString() }];
+  assert.deepEqual(selectDueInternalLinkRetryIds(firstFailureState, firstDue - 1, 50), []);
+  assert.deepEqual(selectDueInternalLinkRetryIds(firstFailureState, firstDue, 50), ["same-candidate"]);
+
+  const secondDue = firstDue + internalLinkRetryDelayMs(2);
+  const secondFailureState = [{ bestseller_id: "same-candidate", next_attempt_at: new Date(secondDue).toISOString() }];
+  assert.deepEqual(selectDueInternalLinkRetryIds(secondFailureState, secondDue - 1, 50), []);
+  assert.deepEqual(selectDueInternalLinkRetryIds(secondFailureState, secondDue, 50), ["same-candidate"]);
+});
+
+test("durable internal link retry queue", "catalog sync failure keeps the retry and success cleanup runs only after sync", () => {
+  const route = readFileSync(new URL("../app/api/cron/supplier-investigation/route.ts", import.meta.url), "utf8");
+  const syncStart = route.indexOf("let catalog: Awaited<ReturnType<typeof syncTracerCatalogFromInternalSupply>>;", route.indexOf("if (!internal.matched)"));
+  const syncFailureGate = route.indexOf("if (!catalog.matched)", syncStart);
+  const failureRetryWrite = route.indexOf(".upsert(syncFailure, { onConflict: \"bestseller_id\" })", syncFailureGate);
+  const failureThrow = route.indexOf('throw new Error(`catalog sync failed for ${candidateId}', failureRetryWrite);
+  const cleanupDelete = route.indexOf('.from("internal_supply_link_retry_queue")', failureThrow);
+  const cleanupOperation = route.indexOf(".delete()", cleanupDelete);
+  assert.ok(syncStart >= 0, "catalog sync must run after canonical link verification");
+  assert.ok(syncFailureGate > syncStart, "catalog sync result must be checked");
+  assert.ok(route.indexOf("catch (error)", syncStart) < syncFailureGate, "thrown catalog sync errors must enter the retry-preserving failure path");
+  assert.ok(failureRetryWrite > syncFailureGate, "failed catalog sync must be durably rescheduled");
+  assert.ok(failureThrow > failureRetryWrite, "cron must fail visibly after retaining the retry");
+  assert.ok(cleanupDelete > failureThrow && cleanupOperation > cleanupDelete, "retry cleanup must occur only after the catalog-sync failure branch");
+  assert.ok(route.indexOf("if (!catalog.matched)", syncStart) < cleanupOperation, "cleanup must be guarded by successful catalog sync");
 });
 
 // Market product fixtures (JANs carry valid check digits).

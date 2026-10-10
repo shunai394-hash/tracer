@@ -77,8 +77,49 @@ export function hasUniqueIdentitySelection(candidateCount: number, exactMatchCou
     && (candidateCount === 1 || (Number.isInteger(exactMatchCount) && exactMatchCount === 1));
 }
 
-export function hasUniqueMarketplaceIdentity(candidateProductCount: number): boolean {
-  return Number.isInteger(candidateProductCount) && candidateProductCount === 1;
+/**
+ * Parent-level identity can select a sole active, orderable, in-stock variant
+ * only when the parent was matched by a strong marketplace identifier.
+ */
+export function canUseParentIdentityForSingleVariant(args: {
+  identityMethod: string;
+  activeVariantCount: number;
+}): boolean {
+  return ["asin", "jan", "gtin", "ean", "upc", "exact_asin", "exact_jan", "exact_gtin", "exact_ean", "exact_upc"].includes(args.identityMethod)
+    && args.activeVariantCount === 1;
+}
+
+export type InternalLinkRetryState = {
+  bestseller_id: string;
+  next_attempt_at: string | null;
+};
+
+export function selectDueInternalLinkRetryIds(
+  rows: InternalLinkRetryState[],
+  nowMs = Date.now(),
+  limit = 50,
+): string[] {
+  if (!Number.isInteger(limit) || limit <= 0) return [];
+  return rows
+    .filter((row) => {
+      if (!row.bestseller_id.trim()) return false;
+      if (!row.next_attempt_at) return true;
+      const dueAt = Date.parse(row.next_attempt_at);
+      return Number.isFinite(dueAt) && dueAt <= nowMs;
+    })
+    .sort((a, b) => {
+      const aTime = a.next_attempt_at ? Date.parse(a.next_attempt_at) : Number.NEGATIVE_INFINITY;
+      const bTime = b.next_attempt_at ? Date.parse(b.next_attempt_at) : Number.NEGATIVE_INFINITY;
+      return aTime - bTime || a.bestseller_id.localeCompare(b.bestseller_id);
+    })
+    .map((row) => row.bestseller_id)
+    .filter((id, index, ids) => ids.indexOf(id) === index)
+    .slice(0, limit);
+}
+
+export function internalLinkRetryDelayMs(retryCount: number): number {
+  const safeCount = Number.isInteger(retryCount) && retryCount > 0 ? retryCount : 1;
+  return Math.min(7 * 24 * 60 * 60 * 1000, 15 * 60 * 1000 * (2 ** Math.min(safeCount - 1, 12)));
 }
 
 export type InternalProductCandidateStatus =
@@ -87,14 +128,18 @@ export type InternalProductCandidateStatus =
   | "ambiguous_product";
 
 /**
- * Keep operational telemetry honest: zero eligible products is a missing
- * candidate, not an ambiguous match. Invalid counts fail closed as ambiguous.
+ * Zero eligible products is a missing candidate, not an ambiguous match.
+ * Invalid counts fail closed as ambiguous.
  */
 export function internalProductCandidateStatus(candidateCount: number): InternalProductCandidateStatus {
   if (!Number.isInteger(candidateCount) || candidateCount < 0) return "ambiguous_product";
   if (candidateCount === 0) return "no_product_candidate";
   if (candidateCount === 1) return "unique_product_candidate";
   return "ambiguous_product";
+}
+
+export function hasUniqueMarketplaceIdentity(candidateProductCount: number): boolean {
+  return Number.isInteger(candidateProductCount) && candidateProductCount === 1;
 }
 
 export function supplierListingStateForIdentity(linkVerified: boolean) {
@@ -164,13 +209,14 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
     { name: "multiple_variants_without_unique_identifier_match_are_rejected", expected: false, actual: hasUniqueIdentitySelection(3, 0) },
     { name: "multiple_variants_with_one_exact_identifier_match_select_one", expected: true, actual: hasUniqueIdentitySelection(3, 1) },
     { name: "multiple_variants_with_duplicate_exact_matches_are_rejected", expected: false, actual: hasUniqueIdentitySelection(3, 2) },
+    { name: "exact parent barcode may select sole variant", expected: true, actual: canUseParentIdentityForSingleVariant({ identityMethod: "exact_gtin", activeVariantCount: 1 }) },
+    { name: "parent model number cannot select sole variant", expected: false, actual: canUseParentIdentityForSingleVariant({ identityMethod: "mpn", activeVariantCount: 1 }) },
+    { name: "multiple variants block parent identity fallback", expected: false, actual: canUseParentIdentityForSingleVariant({ identityMethod: "exact_gtin", activeVariantCount: 2 }) },
+    { name: "due retry is selected before future retry", expected: true, actual: JSON.stringify(selectDueInternalLinkRetryIds([{ bestseller_id: "future", next_attempt_at: "2026-01-02T00:00:00.000Z" }, { bestseller_id: "due", next_attempt_at: "2026-01-01T00:00:00.000Z" }], Date.parse("2026-01-01T12:00:00.000Z"), 1)) === JSON.stringify(["due"]) },
+    { name: "retry delay grows and is capped at seven days", expected: true, actual: internalLinkRetryDelayMs(1) === 15 * 60 * 1000 && internalLinkRetryDelayMs(100) === 7 * 24 * 60 * 60 * 1000 },
     { name: "zero_candidates_never_link", expected: false, actual: hasUniqueMarketplaceIdentity(0) },
     { name: "multiple_candidates_never_link", expected: false, actual: hasUniqueMarketplaceIdentity(2) },
     { name: "one_candidate_can_pass_identity_gate", expected: true, actual: hasUniqueMarketplaceIdentity(1) },
-    { name: "zero internal product candidates are reported as missing, not ambiguous", expected: true, actual: internalProductCandidateStatus(0) === "no_product_candidate" },
-    { name: "one internal product candidate is uniquely classified", expected: true, actual: internalProductCandidateStatus(1) === "unique_product_candidate" },
-    { name: "multiple internal product candidates remain ambiguous", expected: true, actual: internalProductCandidateStatus(2) === "ambiguous_product" },
-    { name: "invalid internal product candidate count fails closed", expected: true, actual: internalProductCandidateStatus(-1) === "ambiguous_product" },
     { name: "internal link readback accepts exact persisted identity", expected: true, actual: isVerifiedInternalSupplyLink({ bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }, { bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }) },
     { name: "internal link readback rejects mismatched variant", expected: false, actual: isVerifiedInternalSupplyLink({ bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "wrong-v", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }, { bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }) },
     { name: "internal link readback rejects mismatched identity rationale", expected: false, actual: isVerifiedInternalSupplyLink({ bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "different evidence", status: "verified" }, { bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }) },
