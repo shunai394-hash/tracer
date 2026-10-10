@@ -122,6 +122,22 @@ export function internalLinkRetryDelayMs(retryCount: number): number {
   return Math.min(7 * 24 * 60 * 60 * 1000, 15 * 60 * 1000 * (2 ** Math.min(safeCount - 1, 12)));
 }
 
+export type InternalProductCandidateStatus =
+  | "no_product_candidate"
+  | "unique_product_candidate"
+  | "ambiguous_product";
+
+/**
+ * Zero eligible products is a missing candidate, not an ambiguous match.
+ * Invalid counts fail closed as ambiguous.
+ */
+export function internalProductCandidateStatus(candidateCount: number): InternalProductCandidateStatus {
+  if (!Number.isInteger(candidateCount) || candidateCount < 0) return "ambiguous_product";
+  if (candidateCount === 0) return "no_product_candidate";
+  if (candidateCount === 1) return "unique_product_candidate";
+  return "ambiguous_product";
+}
+
 export function hasUniqueMarketplaceIdentity(candidateProductCount: number): boolean {
   return Number.isInteger(candidateProductCount) && candidateProductCount === 1;
 }
