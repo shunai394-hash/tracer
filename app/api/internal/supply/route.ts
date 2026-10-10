@@ -163,6 +163,7 @@ export async function POST(request: Request) {
     const writtenVariantIds: string[] = [];
     let auditOutcome: "draft_ingested" | "sync_blocked" | "synced" | "failed" = "draft_ingested";
     let auditCatalogId: string | null = null;
+    let catalogSyncReason: string | null = null;
     // Retire the previous variant set first. This request is the only variant set
     // eligible for reactivation and catalog sync; a crash leaves the product unsellable.
     const retiredVariants = await db
@@ -266,6 +267,7 @@ export async function POST(request: Request) {
           salePrice,
           variantIds: writtenVariantIds,
         });
+        catalogSyncReason = synced.reason ?? (synced.matched ? "matched" : "no_unique_eligible_match");
         if (synced.matched) {
           auditOutcome = "synced";
           auditCatalogId = synced.catalogId;
@@ -278,9 +280,11 @@ export async function POST(request: Request) {
         }
       } catch (error) {
         auditOutcome = "failed";
+        catalogSyncReason = "catalog_sync_exception";
         errors.push(error instanceof Error ? error.message : String(error));
       }
     } else if (bestsellerId && !productActivated) {
+      catalogSyncReason = "variant_write_incomplete_or_product_activation_failed";
       auditOutcome = "sync_blocked";
       errors.push("catalog sync withheld: variants missing, incomplete, or product activation failed");
       const deactivated = await db
@@ -299,6 +303,7 @@ export async function POST(request: Request) {
       product_activated: productActivated,
       variant_write_errors: itemVariantErrors,
       variant_write_count: itemVariantsWritten,
+      catalog_sync_reason: catalogSyncReason,
     });
   }
 
