@@ -1,4 +1,6 @@
 ﻿import { generateCachedStructuredJson } from "@/lib/ai/gemini/cache";
+import { isGeminiConfigured } from "@/lib/ai/gemini";
+import { deterministicCJProductQueries } from "./deterministic-cj-product-queries";
 import { normalizeIdentityText } from "@/lib/intelligence/identity-confidence";
 
 const UNRELATED_QUERY_TERMS = [
@@ -35,6 +37,7 @@ export async function generateCJProductQueries(
   demandQuery: string,
   category: string | null,
 ): Promise<string[]> {
+  if (!isGeminiConfigured()) return deterministicCJProductQueries(demandQuery);
   const result = await generateCachedStructuredJson<ProductQueryResponse>({
     cacheKey: `cj-queries:${demandQuery}:${category ?? ""}`,
     systemInstruction:

@@ -22,7 +22,6 @@ import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities"
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { readMarketCursor, writeMarketCursor } from "@/lib/market/market-cursor";
 import { reverifyCjSupplyIdentities } from "@/lib/suppliers/reverify-cj-identity";
-import { isGeminiConfigured } from "@/lib/ai/gemini";
 import {
   GeminiConfigError,
   GeminiRequestError,
@@ -175,38 +174,13 @@ async function researchLimitedSupply(): Promise<unknown> {
   const { data: candidates, error } = await supabase
     .from("demand_product_candidates")
     .select("id, status")
-    .eq("status", "new")
+    .in("status", ["new", "researching"])
     .order("created_at", { ascending: false })
     .limit(1);
 
   if (error) throw new Error(error.message);
   const candidate = candidates?.[0];
   if (!candidate) return { skipped: true, reason: "no_new_candidates" };
-
-  if (!isGeminiConfigured()) {
-    // Candidate resolution is a mandatory part of the AI→MATCHER loop.
-    // Do not silently skip it and let a patrol look complete: the candidate
-    // must remain blocked until the configured AI query planner is available.
-    await recordCandidateResolutionEvidence({
-      candidateId: String(candidate.id),
-      fieldName: "candidate_resolution_blocked",
-      fieldValue: "gemini_not_configured",
-      evidenceClass: "actual",
-      confidence: 1,
-      metadata: {
-        stage: "query_ideation",
-        retryable: true,
-        reason: "gemini_not_configured_candidate_resolution_blocked",
-      },
-    });
-    return {
-      skipped: true,
-      retryable: true,
-      reason: "gemini_not_configured_candidate_resolution_blocked",
-      candidateId: candidate.id,
-      note: "Candidate→supplier resolution is incomplete until Gemini query ideation is available",
-    };
-  }
 
   try {
     const researched = await researchDemandCandidateWithCJ(candidate.id);
