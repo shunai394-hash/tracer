@@ -27,6 +27,26 @@ export type MarketplaceIdentity = { bestsellerId: string; productId: string; met
 
 function normalizeBarcode(value: unknown): string { return typeof value === "string" ? value.trim().replace(/[^0-9]/g, "") : ""; }
 
+/** Variant sales identity requires an exact barcode-family match; product-level MPN/ASIN is not variant proof. */
+function exactVariantBarcodeMethod(
+  market: ReturnType<typeof identifiersFromRecord>,
+  variant: ReturnType<typeof identifiersFromRecord>,
+): "jan" | "gtin" | "ean" | "upc" | null {
+  const schemes = ["jan", "gtin", "ean", "upc"] as const;
+  for (const marketScheme of schemes) {
+    const marketValue = market[marketScheme];
+    if (!marketValue) continue;
+    for (const variantScheme of schemes) {
+      const variantValue = variant[variantScheme];
+      if (!variantValue) continue;
+      if (marketValue.padStart(14, "0") === variantValue.padStart(14, "0")) {
+        return marketScheme === variantScheme ? marketScheme : "gtin";
+      }
+    }
+  }
+  return null;
+}
+
 async function readSupplierBarcode(args: { supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null }): Promise<string> {
   const supplied = normalizeBarcode(args.variantBarcode);
   if (supplied) return supplied;
@@ -44,9 +64,13 @@ async function readSupplierBarcode(args: { supplierProductId: string; supplierVa
 
 export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<MarketplaceIdentity | null> {
   const suppliedIds = identifiersFromRecord({ gtin: args.supplierIdentifiers?.gtin, jan: args.supplierIdentifiers?.jan, ean: args.supplierIdentifiers?.ean, upc: args.supplierIdentifiers?.upc, mpn: args.supplierIdentifiers?.mpn });
-  const barcode = Object.values(suppliedIds).find((value) => typeof value === "string" && value.trim()) ?? await readSupplierBarcode(args);
-  const supplyIds = identifiersFromRecord({ ...suppliedIds, gtin: barcode || suppliedIds.gtin });
-  if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc && !supplyIds.mpn) return null;
+  // Prefer barcode read from this exact supplier variant. MPN/ASIN can locate a candidate
+  // product, but cannot prove the size/color/pack variant that will be purchased.
+  const variantBarcode = normalizeBarcode(args.variantBarcode) || await readSupplierBarcode(args);
+  const supplyIds = variantBarcode
+    ? identifiersFromRecord({ gtin: variantBarcode, mpn: suppliedIds.mpn })
+    : identifiersFromRecord({ jan: suppliedIds.jan, gtin: suppliedIds.gtin, ean: suppliedIds.ean, upc: suppliedIds.upc, mpn: suppliedIds.mpn });
+  if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc) return null;
 
   const matchesByProduct = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
   const lookupValues = new Set<string>();
@@ -61,10 +85,12 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
     for (const row of bestsellers ?? []) {
       if (typeof row.product_id !== "string" || !row.product_id.trim()) continue;
       const marketIds = identifiersFromRecord(row as Record<string, unknown>);
+      const variantBarcodeMethod = exactVariantBarcodeMethod(marketIds, supplyIds);
+      if (!variantBarcodeMethod) continue;
       const identity = matchProductIdentity({ market: { ...marketIds, brand: typeof row.brand === "string" ? row.brand : null, title: typeof row.title === "string" ? row.title : null }, supply: { ...supplyIds, title: null, brand: null } });
-      if (!identity.salesEligible || !["gtin", "jan", "ean", "upc", "mpn"].includes(identity.method)) continue;
+      if (!identity.salesEligible) continue;
       const productId = String(row.product_id);
-      const candidate = { bestsellerId: String(row.id), productId, method: identity.method as MarketplaceIdentity["method"], confidence: identity.confidence, rationale: identity.rationale, fetchedAt: typeof row.fetched_at === "string" ? row.fetched_at : "" };
+      const candidate = { bestsellerId: String(row.id), productId, method: variantBarcodeMethod, confidence: Math.min(identity.confidence, 0.98), rationale: `exact supplier-variant barcode matches canonical marketplace barcode (${variantBarcodeMethod})`, fetchedAt: typeof row.fetched_at === "string" ? row.fetched_at : "" };
       const current = matchesByProduct.get(productId);
       if (!current || candidate.confidence > current.confidence || (candidate.confidence === current.confidence && candidate.fetchedAt > current.fetchedAt)) matchesByProduct.set(productId, candidate);
     }
