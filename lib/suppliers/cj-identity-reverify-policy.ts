@@ -24,6 +24,20 @@ export function isCjIdentityReverifyDue(metadata: unknown, nowMs = Date.now()): 
   return !Number.isFinite(nextAt) || nextAt <= nowMs;
 }
 
+
+/** Return a barcode only when exactly one API result belongs to the requested CJ variant. */
+export function readExactSupplierVariantBarcode(
+  variants: Array<{ vid?: unknown; barcode?: unknown }>,
+  supplierVariantId: string,
+): string | null {
+  const requestedId = supplierVariantId.trim();
+  if (!requestedId) return null;
+  const matches = variants.filter((variant) => variant.vid === requestedId);
+  if (matches.length !== 1) return null;
+  const barcode = typeof matches[0].barcode === "string" ? matches[0].barcode.trim() : "";
+  return barcode || null;
+}
+
 export function supplierBarcodeAudit(value: unknown, isValidGtIn: boolean): {
   variant_barcode_raw: string | null;
   variant_barcode_validation: "missing" | "valid_gs1_check_digit" | "invalid_format_or_check_digit";
