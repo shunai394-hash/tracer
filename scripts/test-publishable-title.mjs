@@ -41,4 +41,4 @@ assert.match(base, /if \(listing\.base_item_id && listing\.published !== true\) 
 assert.match(store, /isPublishableCatalogTitle\(listing\.title\)/, "storefront must filter invalid titles");
 assert.match(store, /isPublishableCatalogDescription\(listing\.description\)/, "storefront must filter generic descriptions");
 assert.match(store, /listing title failed catalog quality gate/, "order placement must revalidate title quality");
-console.log(`Catalog title/description quality tests: ${cases.length} cases + 10 channel wiring checks passed.`);
+console.log(`Catalog title/description quality tests: ${cases.length} cases + 13 channel wiring checks passed.`);
