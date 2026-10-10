@@ -39,7 +39,7 @@ const NON_PRODUCT_DESCRIPTION_MARKERS = [
 /** Reject generic fallbacks/status copy that gives buyers no product-specific information. */
 export function isPublishableCatalogDescription(value: unknown): boolean {
   if (typeof value !== "string") return false;
-  const description = value.normalize("NFKC").replace(/\\s+/g, " ").trim();
+  const description = value.normalize("NFKC").replace(/\s+/g, " ").trim();
   if (!description) return false;
   const normalized = description.toLocaleLowerCase("ja-JP");
   return !NON_PRODUCT_DESCRIPTION_MARKERS.some((marker) =>
