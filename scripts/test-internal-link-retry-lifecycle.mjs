@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { finalizeInternalSupplyLinkRetry } from "../lib/suppliers/internal-link-retry-lifecycle.ts";
 
-const events: string[] = [];
+const events = [];
 
-async function run(name: string, fn: () => Promise<void>) {
+async function run(name, fn) {
   try {
     await fn();
     console.log("PASS", name);
