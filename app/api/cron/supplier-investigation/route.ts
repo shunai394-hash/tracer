@@ -115,6 +115,8 @@ export async function GET(request: Request) {
 
     const internalMatchedIds: string[] = [];
     const internalResults: Record<string, unknown>[] = [];
+    const internalLinkOutcomes: Record<string, number> = {};
+    const internalLinkChecks: Array<{ bestsellerId: string; matched: boolean; linkStatus: string }> = [];
     const externalCandidateIds: string[] = [];
 
     for (const candidateId of candidateIds) {
@@ -134,6 +136,9 @@ export async function GET(request: Request) {
         bestseller: bestseller as Record<string, unknown>,
         fetchedAt: String(bestseller.fetched_at ?? new Date().toISOString()),
       });
+
+      internalLinkOutcomes[internal.linkStatus] = (internalLinkOutcomes[internal.linkStatus] ?? 0) + 1;
+      internalLinkChecks.push({ bestsellerId: candidateId, matched: internal.matched, linkStatus: internal.linkStatus });
 
       if (!internal.matched) {
         externalCandidateIds.push(candidateId);
@@ -194,6 +199,8 @@ export async function GET(request: Request) {
       externalMatched: result.matched,
       totalMatched,
       internalResults,
+      internalLinkOutcomes,
+      internalLinkChecks,
       skippedNoIdentifier: result.skippedNoIdentifier,
       unconfigured: result.unconfigured,
       noIdentifierOverlap: result.noIdentifierOverlap,
@@ -225,6 +232,8 @@ export async function GET(request: Request) {
       candidateIds,
       internalMatchedIds,
       internalResults,
+      internalLinkOutcomes,
+      internalLinkChecks,
       ...result,
       totalMatched,
       nextPhase: "sales_test_publication",
