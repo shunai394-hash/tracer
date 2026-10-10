@@ -263,7 +263,7 @@ export async function linkInternalSupplyForBestseller(args: {
     currency: variant.currency ?? product.currency ?? "JPY",
     inventory,
     lead_time_days: product.lead_time_days,
-    ship_to: product.ship_to ?? "JP",
+    ship_to: typeof product.ship_to === "string" ? product.ship_to : null,
     tracking_available: variant.tracking_available === true || product.tracking_available === true,
     order_method: product.order_method ?? "internal",
     api_available: product.api_available === true,
