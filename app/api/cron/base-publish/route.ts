@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isBaseConfigured } from "@/lib/channels/base";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
+import { getBasePublicationOutcome } from "@/lib/channels/base-publication-result";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
@@ -25,12 +26,13 @@ export async function GET(request: Request) {
 
   try {
     const result = await publishPublishedListingsToBase(50);
+    const outcome = getBasePublicationOutcome(result);
     return NextResponse.json({
-      ok: result.failed === 0,
+      ...outcome,
       phase: "base_publication",
       configured: true,
       ...result,
-    }, { status: result.failed === 0 ? 200 : 207, headers });
+    }, { status: outcome.status, headers });
   } catch (error) {
     console.error("[TRACER BASE PUBLICATION CRON ERROR]", error);
     return NextResponse.json(
