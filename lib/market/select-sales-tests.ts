@@ -7,6 +7,7 @@ import { writeEvidence } from "@/lib/market/evidence-ledger";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { hasConflictingSupplierVariantListing } from "@/lib/market/supplier-variant-listing-guard";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -392,8 +393,29 @@ export async function selectAndPublishSalesTests(
       updated_at: fetchedAt,
     };
     const existing = await supabase.from("shop_listings").select("id").eq("slug", slug).maybeSingle();
-    let upsert: { data: { id: string } | null; error: { message: string } | null };
     if (existing.error) throw new Error(existing.error.message);
+    const supplierVariantId = typeof item.listing.supplier_variant_id === "string"
+      ? item.listing.supplier_variant_id.trim()
+      : "";
+    if (supplierVariantId) {
+      const { data: variantRows, error: variantRowsError } = await supabase
+        .from("shop_listings")
+        .select("id")
+        .eq("supplier_variant_id", supplierVariantId)
+        .limit(3);
+      if (variantRowsError) throw new Error(`supplier_variant_listing_conflict_lookup_failed:${variantRowsError.message}`);
+      const currentListingId = existing.data?.id ? String(existing.data.id) : null;
+      if (hasConflictingSupplierVariantListing(
+        (variantRows ?? []).map((row) => ({ id: String(row.id) })),
+        currentListingId,
+      )) {
+        const reasons = ["duplicate_supplier_variant_listing"];
+        await markPipeline(String(item.bestseller.id), "SALES_TEST", "blocked", reasons[0]);
+        rejected.push({ id: String(item.bestseller.id), reasons });
+        continue;
+      }
+    }
+    let upsert: { data: { id: string } | null; error: { message: string } | null };
     if (existing.data?.id) {
       const updated = await supabase.from("shop_listings").update(listingPayload).eq("id", existing.data.id).select("id").single();
       upsert = { data: updated.data as { id: string } | null, error: updated.error ? { message: updated.error.message } : null };
