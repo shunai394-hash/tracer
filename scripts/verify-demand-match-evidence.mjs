@@ -17,7 +17,9 @@ import {
   variantsCompatible,
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
-import { normalizeIdentifier } from "../lib/market/identifiers.ts";
+import { EMPTY_IDENTIFIERS, identifiersFromRecord, normalizeIdentifier } from "../lib/market/identifiers.ts";
+import { exactVariantBarcodeMethod, hasUniqueCanonicalVariantMatch } from "../lib/market/variant-barcode-proof.ts";
+import { readExactSupplierVariantBarcode } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 import { parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
@@ -54,6 +56,36 @@ test("canonical marketplace variant evidence", "does not use the parent ASIN as 
 });
 
 
+
+test("supplier variant barcode proof", "cross-scheme exact barcode links but product MPN alone never proves a concrete variant", () => {
+  const market = identifiersFromRecord({ jan: "4006381333931", mpn: "MODEL-1" });
+  const exactVariant = identifiersFromRecord({ ean: "4006381333931", mpn: "MODEL-1" });
+  const wrongVariant = identifiersFromRecord({ ean: "4006381333932", mpn: "MODEL-1" });
+  const mpnOnly = { ...EMPTY_IDENTIFIERS, mpn: "MODEL-1" };
+  assert.equal(exactVariantBarcodeMethod(market, exactVariant), "gtin");
+  assert.equal(exactVariantBarcodeMethod(market, wrongVariant), null);
+  assert.equal(exactVariantBarcodeMethod(market, mpnOnly), null);
+  assert.equal(exactVariantBarcodeMethod({ ...EMPTY_IDENTIFIERS, mpn: "MODEL-1" }, mpnOnly), null);
+  assert.equal(hasUniqueCanonicalVariantMatch(1, 1), true);
+  assert.equal(hasUniqueCanonicalVariantMatch(2, 1), false, "two child variants for one product remain ambiguous");
+  assert.equal(hasUniqueCanonicalVariantMatch(1, 2), false, "one child row cannot resolve to multiple canonical products");
+  assert.equal(hasUniqueCanonicalVariantMatch(0, 0), false);
+});
+
+test("CJ exact variant barcode provenance", "uses barcode only from the exact requested variant ID", () => {
+  const variants = [
+    { vid: "parent-or-other", barcode: "4006381333931" },
+    { vid: "target-variant", barcode: "4901234567894" },
+  ];
+  assert.equal(readExactSupplierVariantBarcode(variants, "target-variant"), "4901234567894");
+  assert.equal(readExactSupplierVariantBarcode(variants, "missing-variant"), null);
+  assert.equal(readExactSupplierVariantBarcode(variants, ""), null);
+});
+test("CJ exact variant barcode provenance", "missing, blank, or ambiguous API evidence fails closed", () => {
+  assert.equal(readExactSupplierVariantBarcode([{ vid: "target-variant", barcode: "  " }], "target-variant"), null);
+  assert.equal(readExactSupplierVariantBarcode([{ vid: "target-variant", barcode: "4006381333931" }, { vid: "target-variant", barcode: "4901234567894" }], "target-variant"), null);
+  assert.equal(readExactSupplierVariantBarcode([{ barcode: "4006381333931" }], "target-variant"), null);
+});
 
 function test(group, name, fn) {
   const record = (ok, error) => results.push({ group, name, ok, error });
