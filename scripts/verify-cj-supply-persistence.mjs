@@ -42,11 +42,17 @@ class FakeQuery {
   update(payload) { this.action = "update"; this.payload = payload; return this; }
   insert(payload) { this.action = "insert"; this.payload = payload; return this; }
   upsert(payload) { this.action = "upsert"; this.payload = payload; return this; }
+  delete() { this.action = "delete"; return this; }
   maybeSingle() { return this.execute(true); }
   single() { return this.execute(true); }
   then(resolve, reject) { return this.execute(false).then(resolve, reject); }
   async execute(single) {
     const rows = this.db.tables[this.table] ?? [];
+    if (this.action === "delete") {
+      const matched = rows.filter((row) => this.filters.every((test) => test(row)));
+      this.db.tables[this.table] = rows.filter((row) => !this.filters.every((test) => test(row)));
+      return { data: matched, error: null };
+    }
     if (this.action === "update") {
       if (this.db.failUpdateTable === this.table) return { data: null, error: { message: "injected update failure" } };
       const matched = rows.filter((row) => this.filters.every((test) => test(row)));
@@ -213,4 +219,36 @@ const args = {
   assert.equal(db.tables.product_intelligence.length, 0, "failed listing write must not continue to intelligence persistence");
 }
 
-console.log("PASS: actual persistence function + identity resolver; exact unique match; duplicate/mismatched/blank barcode rejected; stale link cleared; procurement flags remain false; no canonical writes on no-match; failed listing write halts downstream writes.");
+{
+  const db = new FakeDb({ failWriteTable: "product_offers" });
+  await assert.rejects(
+    () => persistCjSupplyIntelligence(args, { db, fetchProductVariants: async () => [{ vid: supplierVariantId, barcode }], fetchVariantByVid: async (vid) => ({ vid, barcode }) }),
+    /injected write failure/,
+  );
+  assert.equal(db.tables.product_offers.length, 0);
+  assert.equal(db.tables.product_intelligence.length, 0, "offer write failure must not continue to intelligence");
+}
+
+{
+  const db = new FakeDb({ failWriteTable: "product_intelligence" });
+  await assert.rejects(
+    () => persistCjSupplyIntelligence(args, { db, fetchProductVariants: async () => [{ vid: supplierVariantId, barcode }], fetchVariantByVid: async (vid) => ({ vid, barcode }) }),
+    /offer write compensated/,
+  );
+  assert.equal(db.tables.product_offers.length, 0, "new offer must be removed when intelligence write fails");
+  assert.equal(db.tables.product_intelligence.length, 0);
+}
+
+{
+  const db = new FakeDb();
+  const result = await persistCjSupplyIntelligence(args, {
+    db,
+    fetchProductVariants: async () => [{ vid: supplierVariantId, barcode }, { vid: supplierVariantId, barcode }],
+    fetchVariantByVid: async (vid) => ({ vid, barcode }),
+  });
+  assert.equal(result.identity, null, "duplicate CJ variant records for the same vid are ambiguous");
+  assert.equal(db.tables.product_offers.length, 0);
+  assert.equal(db.tables.product_intelligence.length, 0);
+}
+
+console.log("PASS: actual persistence function + real identity policies; exact unique match; duplicate/mismatched/blank barcode rejected; stale link cleared; procurement flags remain false; no canonical writes on no-match; failed listing write halts downstream writes.");
