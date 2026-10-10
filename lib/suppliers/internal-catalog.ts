@@ -351,7 +351,9 @@ export async function linkInternalSupplyForBestseller(args: {
     Number.isFinite(leadTimeDays) && leadTimeDays >= 0 &&
     (shipTo === "JP" || shipTo.split(/[\s,;|]+/).includes("JP"));
   if (!liveOrderReady) {
-    return { matched: true, supplierListingId: String(listingResult.data.id), supplyVariantId: String(variant.id) };
+    // Preserve the identity match for diagnostics, but withhold the variant ID
+    // so downstream catalog sync cannot publish this row as saleable.
+    return { matched: true, supplierListingId: String(listingResult.data.id), supplyVariantId: null };
   }
 
   // Activate only after identity evidence and the independent live-order gate pass.
