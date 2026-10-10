@@ -42,6 +42,15 @@ test("cross-scheme supplier identity lookup", "JAN/GTIN/EAN/UPC lookup searches 
   }
   assert.equal(new Set(conditions).size, conditions.length, "lookup conditions must be unique");
 });
+test("cross-scheme supplier identity lookup", "GTIN-14 lookup includes the corresponding UPC-12 width", () => {
+  const conditions = marketplaceIdentifierLookupConditions({
+    ...EMPTY_IDENTIFIERS,
+    gtin: "00012345678905",
+  });
+  for (const column of ["jan", "gtin", "ean", "upc"]) {
+    assert.ok(conditions.includes(`${column}.eq.012345678905`), `missing ${column} UPC-12 candidate`);
+  }
+});
 test("variant identity selection", "a lone candidate without exact barcode proof is not selected", () => {
   assert.equal(selectUniqueIdentityCandidate([
     { id: "unmatched", identity: { linked: false, salesEligible: false } },
