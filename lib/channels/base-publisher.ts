@@ -5,7 +5,7 @@ import { createBaseItem, editBaseItem, addBaseItemImage, isBaseConfigured } from
 import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
-import { isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
+import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -21,6 +21,7 @@ async function ensureJapaneseCatalogCopy(title: string, detail: string): Promise
   const sourceTitle = String(title ?? "").trim();
   const sourceDetail = String(detail ?? "").trim();
   if (!isPublishableCatalogTitle(sourceTitle)) throw new Error("BASE catalog title contains workflow or disqualification text");
+  if (!isPublishableCatalogDescription(sourceDetail)) throw new Error("BASE catalog description contains generic placeholder text");
   if (isJapaneseProductTitle(sourceTitle) && hasUsableJapaneseCopy(sourceDetail)) return { title: sourceTitle, detail: sourceDetail };
   if (!isGeminiConfigured()) throw new Error("BASE japanese catalog copy requires GEMINI_API_KEY");
   const result = await generateStructuredJson<JapaneseCatalogCopy>({
@@ -32,6 +33,7 @@ async function ensureJapaneseCatalogCopy(title: string, detail: string): Promise
   const translatedDetail = String(result?.detail ?? "").trim();
   if (!isJapaneseProductTitle(translatedTitle)) throw new Error("BASE japanese catalog copy returned a non-Japanese title");
   if (!isPublishableCatalogTitle(translatedTitle)) throw new Error("BASE japanese catalog copy returned workflow or disqualification text");
+  if (!isPublishableCatalogDescription(translatedDetail)) throw new Error("BASE japanese catalog copy returned generic placeholder text");
   if (!hasUsableJapaneseCopy(translatedDetail)) throw new Error("BASE japanese catalog copy returned an English-heavy description");
   return { title: translatedTitle, detail: translatedDetail };
 }
