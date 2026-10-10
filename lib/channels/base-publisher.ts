@@ -11,7 +11,7 @@ export type BasePublicationResult = {
   published: number;
   skipped: number;
   failed: number;
-  results: Array<{ listingId: string; ok: boolean; baseItemId?: string | null; skipped?: boolean; error?: string }>;
+  results: Array<{ listingId: string; ok: boolean; baseItemId?: string | null; skipped?: boolean; failed?: boolean; error?: string }>;
 };
 
 type JapaneseCatalogCopy = { title: string; detail: string; };
@@ -118,7 +118,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         pipeline_updated_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", listingId);
-      results.push({ listingId, ok: false, baseItemId: String(listing.base_item_id), skipped: true, error: message });
+      results.push({ listingId, ok: false, baseItemId: String(listing.base_item_id), skipped: true, failed: true, error: message });
     }
   }
 
@@ -272,7 +272,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         try {
           await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price: Number(listing.selling_price ?? 0), stock: 0, visible: false });
         } catch (error) {
-          results.push({ listingId, ok: false, error: error instanceof Error ? error.message : String(error) });
+          results.push({ listingId, ok: false, skipped: true, failed: true, error: error instanceof Error ? error.message : String(error) });
           continue;
         }
       }
@@ -415,22 +415,24 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
           hideError = error instanceof Error ? error.message : String(error);
         }
       }
-      const finalError = blockError?.message ?? hideError;
+      const finalError = blockError?.message ?? hideError ?? currentGateReadError?.message;
       const { error: finalStateError } = await supabase.from("shop_listings").update({
         base_publication_status: itemId ? (hideError ? "failed" : "published") : "blocked",
         base_publication_lease_until: null,
         base_last_error: finalError,
         pipeline_stage: finalError ? "BASE_RECONCILIATION" : "BASE_RECONCILED",
         pipeline_status: finalError ? "failed" : "blocked",
-        pipeline_reason: finalError ? "sales_test_gate_hide_failed" : reason,
+        pipeline_reason: blockError ? "sales_test_gate_block_write_failed" : hideError ? "sales_test_gate_hide_failed" : currentGateReadError ? "sales_test_gate_revalidation_read_failed" : reason,
         pipeline_error: finalError,
         pipeline_updated_at: new Date().toISOString(),
       }).eq("id", listingId);
+      const operationalFailure = Boolean(finalError || finalStateError);
       results.push({
         listingId,
-        ok: !finalError && !finalStateError,
+        ok: !operationalFailure,
         baseItemId: itemId,
         skipped: true,
+        failed: operationalFailure,
         error: finalError ?? finalStateError?.message ?? reason,
       });
       continue;
@@ -456,5 +458,5 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       results.push({ listingId, ok: false, error: message });
     }
   }
-  return { attempted: listings?.length ?? 0, published: results.filter((r) => r.ok && Boolean(r.baseItemId) && !r.skipped).length, skipped: results.filter((r) => r.skipped).length, failed: results.filter((r) => !r.ok).length, results };
+  return { attempted: listings?.length ?? 0, published: results.filter((r) => r.ok && Boolean(r.baseItemId) && !r.skipped).length, skipped: results.filter((r) => r.skipped).length, failed: results.filter((r) => r.failed === true || (!r.ok && !r.skipped)).length, results };
 }
