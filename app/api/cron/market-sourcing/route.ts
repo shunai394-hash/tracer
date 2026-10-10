@@ -112,14 +112,18 @@ export async function GET(request: Request) {
       hasMore: observation.hasMore,
       enrichment: observation.enrichment,
       supplierCandidateCount: observation.supplierCandidateIds.length,
+      canonicalVariantEvidenceSchemaAvailable: observation.canonicalVariantEvidenceSchemaAvailable,
       canonicalVariantEvidenceParsed: observation.canonicalVariantEvidenceParsed,
       canonicalVariantEvidenceWritten: observation.canonicalVariantEvidenceWritten,
       canonicalVariantEvidenceWriteFailures: observation.canonicalVariantEvidenceWriteFailures,
-      canonicalVariantEvidenceStatus: observation.canonicalVariantEvidenceWriteFailures > 0
-        ? "write_failed"
-        : "ok",
+      canonicalVariantEvidenceStatus: !observation.canonicalVariantEvidenceSchemaAvailable
+        ? "schema_unavailable"
+        : observation.canonicalVariantEvidenceWriteFailures > 0
+          ? "write_failed"
+          : "ok",
     };
-    const evidenceWriteFailed = observation.canonicalVariantEvidenceWriteFailures > 0;
+    const evidenceWriteFailed = !observation.canonicalVariantEvidenceSchemaAvailable
+      || observation.canonicalVariantEvidenceWriteFailures > 0;
 
     if (cronRunId) {
       await supabase
@@ -147,6 +151,7 @@ export async function GET(request: Request) {
         inserted: observation.inserted,
         productsCreated: observation.productsCreated,
         supplierCandidateCount: observation.supplierCandidateIds.length,
+        canonicalVariantEvidenceSchemaAvailable: observation.canonicalVariantEvidenceSchemaAvailable,
         canonicalVariantEvidenceParsed: observation.canonicalVariantEvidenceParsed,
         canonicalVariantEvidenceWritten: observation.canonicalVariantEvidenceWritten,
         canonicalVariantEvidenceWriteFailures: observation.canonicalVariantEvidenceWriteFailures,
