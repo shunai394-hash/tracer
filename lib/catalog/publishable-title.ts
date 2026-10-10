@@ -5,7 +5,7 @@ const NON_PRODUCT_TITLE_MARKERS = [
   "テスト優先度は低い",
   "販売停止中の商品",
   "商品の仕様・サイズ・素材・使用方法は",
-  "観測された需要と供給データに基づ",
+  "観測された需要と供給データに基",
   "sales_test_gate_not_passed",
   "identity_pending",
   "supplier_variant_identity_missing",
