@@ -6,6 +6,7 @@ import { initializeProcurement } from "@/lib/procurement/init";
 import { getSupplierAdapter } from "@/lib/procurement/registry";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { resolveInventoryRefreshPublication } from "@/lib/market/inventory-refresh-publication";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
@@ -146,12 +147,17 @@ export async function GET(request: Request) {
         const now = new Date().toISOString();
 
         if (inventory === null) {
+          const stockDecision = resolveInventoryRefreshPublication({
+            inventory,
+            wasPublished: listing.published === true,
+            durableSalesTestGatePassed: hasDurableSalesTestGate(listing),
+          });
           const { error: listingError } = await supabase
             .from("shop_listings")
             .update({
-              inventory: null,
-              orderable: false,
-              published: false,
+              inventory: stockDecision.inventory,
+              orderable: stockDecision.orderable,
+              published: stockDecision.published,
               pipeline_error: "Supplier variant stock could not be verified",
               pipeline_updated_at: now,
               updated_at: now,
@@ -200,16 +206,19 @@ export async function GET(request: Request) {
           continue;
         }
 
-        const orderable = inventory > 0;
-        const durableGatePassed = hasDurableSalesTestGate(listing);
+        const stockDecision = resolveInventoryRefreshPublication({
+          inventory,
+          wasPublished: listing.published === true,
+          durableSalesTestGatePassed: hasDurableSalesTestGate(listing),
+        });
+        const orderable = stockDecision.orderable;
         // Stock recovery alone never republishes a previously blocked listing.
-        // Only an already-published listing with durable sales-gate evidence may
-        // remain eligible for storefront visibility.
-        const listingCanRemainPublished = listing.published === true && durableGatePassed && orderable;
+        // The pure policy is covered by executable regression tests.
+        const listingCanRemainPublished = stockDecision.published;
         const { error: listingError } = await supabase
           .from("shop_listings")
           .update({
-            inventory,
+            inventory: stockDecision.inventory,
             orderable,
             published: listingCanRemainPublished,
             ...(!orderable ? {
@@ -225,8 +234,8 @@ export async function GET(request: Request) {
           const { error: supplierError } = await supabase
             .from("supplier_listings")
             .update({
-              inventory,
-              inventory_confirmed: true,
+              inventory: stockDecision.inventory,
+              inventory_confirmed: stockDecision.inventory !== null,
               orderable,
               fetched_at: now,
             })
@@ -242,8 +251,8 @@ export async function GET(request: Request) {
               title: String(listing.title ?? ""),
               detail: String(listing.description ?? listing.title ?? ""),
               price: Number(listing.selling_price),
-              stock: listingCanRemainPublished ? Math.max(0, Math.floor(inventory)) : 0,
-              visible: listingCanRemainPublished,
+              stock: stockDecision.baseStock,
+              visible: stockDecision.baseVisible,
             });
             baseUpdated++;
             await supabase.from("shop_listings").update({
