@@ -19,6 +19,7 @@ export type InternalSupplyLinkStatus =
   | "lookup_failed"
   | "candidate_limit_reached"
   | "ambiguous_product"
+  | "ambiguous_variant"
   | "no_eligible_variant"
   | "inventory_unavailable";
 
@@ -96,6 +97,7 @@ export async function linkInternalSupplyForBestseller(args: {
 
   let sawSelectedVariant = false;
   let sawUnavailableInventory = false;
+  let sawAmbiguousVariant = false;
 
   for (const product of products ?? []) {
     const productIds = identifiersFromRecord(product as Record<string, unknown>);
@@ -120,7 +122,6 @@ export async function linkInternalSupplyForBestseller(args: {
       .eq("supply_product_id", product.id)
       .eq("active", true)
       .eq("orderable", true)
-      .gt("inventory", 0)
       .limit(50);
 
     if (variantError) throw new Error(variantError.message);
@@ -165,7 +166,10 @@ export async function linkInternalSupplyForBestseller(args: {
         : exactIdentifierMatches[0]
       : null;
 
-    if (!selected) continue;
+    if (!selected) {
+      if (confirmedVariants.length > 1) sawAmbiguousVariant = true;
+      continue;
+    }
 
     sawSelectedVariant = true;
     const variant = selected.variant as Record<string, unknown>;
@@ -321,6 +325,10 @@ export async function linkInternalSupplyForBestseller(args: {
     matched: false,
     supplierListingId: null,
     supplyVariantId: null,
-    linkStatus: sawSelectedVariant && sawUnavailableInventory ? "inventory_unavailable" : "no_eligible_variant",
+    linkStatus: sawSelectedVariant && sawUnavailableInventory
+      ? "inventory_unavailable"
+      : sawAmbiguousVariant
+        ? "ambiguous_variant"
+        : "no_eligible_variant",
   };
 }
