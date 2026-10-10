@@ -58,6 +58,10 @@ test("exact variant barcode identity", "checks every barcode field and never fal
     "UPC lookup must include the zero-padded GTIN-14 candidate before database retrieval");
   assert.ok(marketplaceBarcodeCandidates("00012345678905").includes("012345678905"),
     "GTIN-14 lookup must include its safe UPC-width candidate before database retrieval");
+  assert.ok(marketplaceBarcodeCandidates("96385074").includes("00000096385074"),
+    "GTIN-8 lookup must include its zero-padded GTIN-14 candidate before database retrieval");
+  assert.ok(marketplaceBarcodeCandidates("00000096385074").includes("96385074"),
+    "zero-padded GTIN-8 lookup must recover its exact 8-digit form");
   const unique = selectUniqueExactBarcodeMatch([{ productId: "p1", method: "gtin" }]);
   assert.equal(unique?.productId, "p1");
   assert.equal(selectUniqueExactBarcodeMatch([
