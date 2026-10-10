@@ -5,6 +5,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
 import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates } from "@/lib/market/identifiers";
 import { exactVariantBarcodeMethod, hasUniqueCanonicalVariantMatch } from "@/lib/market/variant-barcode-proof";
+import { readExactSupplierVariantBarcode } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 export type PersistCjSupplyIntelligenceArgs = {
   productId: string;
