@@ -28,7 +28,11 @@ export function marketplaceBarcodeCandidates(value: string): string[] {
   if (!normalized) return [];
   const candidates = new Set<string>([normalized]);
   if (normalized.length === 12 || normalized.length === 13) candidates.add(normalized.padStart(14, "0"));
-  if (normalized.length === 14 && normalized.startsWith("0")) candidates.add(normalized.slice(1));
+  if (normalized.length === 14 && normalized.startsWith("0")) {
+    candidates.add(normalized.slice(1));
+    // Two leading zeros can represent a UPC-A value padded to GTIN-14.
+    if (normalized.startsWith("00")) candidates.add(normalized.slice(2));
+  }
   return [...candidates];
 }
 
