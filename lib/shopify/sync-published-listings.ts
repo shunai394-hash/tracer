@@ -178,7 +178,9 @@ function blockReasons(row: Listing): string[] {
   if (row.tracking_available !== true) reasons.push("tracking_unavailable");
   if (!(Number(row.inventory) > 0)) reasons.push("inventory_zero_or_unknown");
   if (String(row.currency ?? "").trim().toUpperCase() !== "JPY") reasons.push("currency_not_jpy");
-  if (!/^CJ/i.test(String(row.supplier_name ?? ""))) reasons.push("supplier_not_cj");
+  if (!/^(cj|cjdropshipping)$/i.test(String(row.supplier_name ?? "").trim())) reasons.push("supplier_not_cj");
+  if (!String(row.supplier_product_id ?? "").trim()) reasons.push("supplier_product_missing");
+  if (!String(row.supplier_variant_id ?? "").trim()) reasons.push("supplier_variant_missing");
   if (asNumber(row.shipping_cost) === null) reasons.push("shipping_cost_unknown");
   if (asNumber(row.source_cost) === null) reasons.push("source_cost_unknown");
   if (!((asNumber(row.contribution_profit) ?? 0) > 0)) reasons.push("profit_not_positive");
@@ -224,7 +226,6 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
     const reasons = blockReasons(row);
     if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) reasons.push("image_url_invalid");
     if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");
-    if (!row.supplier_variant_id) reasons.push("supplier_variant_missing");
     for (const reason of reasons) reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1;
     return {
       listingId: row.id,
@@ -259,7 +260,7 @@ async function syncListingRows(
   const blocked = rows.filter((row) => !candidates.includes(row));
   const results: ShopifySyncResult = {
     configured: true,
-    considered: candidates.length,
+    considered: rows.length,
     synced: 0,
     failed: 0,
     listingIds: [],
