@@ -103,10 +103,17 @@ export async function GET(request: Request) {
     const evidenceWriteFailed =
       !observation.canonicalVariantEvidenceSchemaAvailable ||
       observation.canonicalVariantEvidenceWriteFailures > 0;
+    const failureKind = observation.canonicalVariantEvidenceSchemaStatus === "missing"
+      ? "schema_missing"
+      : observation.canonicalVariantEvidenceSchemaStatus === "probe_error"
+        ? "schema_probe_error"
+        : observation.canonicalVariantEvidenceWriteFailures > 0
+          ? "write_failed"
+          : "none";
     // Do not persist an advanced cursor for a failed evidence batch. The next
     // invocation must retry this exact source/page until evidence is durable.
     const cursor = getMarketSourcingCursor({
-      evidenceWriteFailed,
+      failureKind,
       currentSourceIndex: observation.sourceIndex,
       nextSourceIndex,
       currentStartIndex: observation.startIndex,
@@ -128,14 +135,20 @@ export async function GET(request: Request) {
       enrichment: observation.enrichment,
       supplierCandidateCount: observation.supplierCandidateIds.length,
       canonicalVariantEvidenceSchemaAvailable: observation.canonicalVariantEvidenceSchemaAvailable,
+      canonicalVariantEvidenceSchemaStatus: observation.canonicalVariantEvidenceSchemaStatus,
+      canonicalVariantEvidenceSchemaErrorCode: observation.canonicalVariantEvidenceSchemaErrorCode,
+      canonicalVariantEvidenceSchemaErrorMessage: observation.canonicalVariantEvidenceSchemaErrorMessage,
+      canonicalVariantEvidenceReplayRequired: observation.canonicalVariantEvidenceSchemaStatus === "missing",
       canonicalVariantEvidenceParsed: observation.canonicalVariantEvidenceParsed,
       canonicalVariantEvidenceWritten: observation.canonicalVariantEvidenceWritten,
       canonicalVariantEvidenceWriteFailures: observation.canonicalVariantEvidenceWriteFailures,
-      canonicalVariantEvidenceStatus: !observation.canonicalVariantEvidenceSchemaAvailable
+      canonicalVariantEvidenceStatus: observation.canonicalVariantEvidenceSchemaStatus === "missing"
         ? "schema_unavailable"
-        : observation.canonicalVariantEvidenceWriteFailures > 0
-          ? "write_failed"
-          : "ok",
+        : observation.canonicalVariantEvidenceSchemaStatus === "probe_error"
+          ? "schema_probe_failed"
+          : observation.canonicalVariantEvidenceWriteFailures > 0
+            ? "write_failed"
+            : "ok",
     };
     if (cronRunId) {
       await supabase
@@ -165,10 +178,15 @@ export async function GET(request: Request) {
         productsCreated: observation.productsCreated,
         supplierCandidateCount: observation.supplierCandidateIds.length,
         canonicalVariantEvidenceSchemaAvailable: observation.canonicalVariantEvidenceSchemaAvailable,
+        canonicalVariantEvidenceSchemaStatus: observation.canonicalVariantEvidenceSchemaStatus,
+        canonicalVariantEvidenceSchemaErrorCode: observation.canonicalVariantEvidenceSchemaErrorCode,
+        canonicalVariantEvidenceSchemaErrorMessage: observation.canonicalVariantEvidenceSchemaErrorMessage,
+        canonicalVariantEvidenceReplayRequired: observation.canonicalVariantEvidenceSchemaStatus === "missing",
         canonicalVariantEvidenceParsed: observation.canonicalVariantEvidenceParsed,
         canonicalVariantEvidenceWritten: observation.canonicalVariantEvidenceWritten,
         canonicalVariantEvidenceWriteFailures: observation.canonicalVariantEvidenceWriteFailures,
         canonicalVariantEvidenceStatus: metadata.canonicalVariantEvidenceStatus,
+        canonicalVariantEvidenceReplayRequired: observation.canonicalVariantEvidenceSchemaStatus === "missing",
         enrichment: observation.enrichment,
         sourceIndex: cursorSourceIndex,
         startIndex: cursorNextIndex,
