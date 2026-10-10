@@ -206,7 +206,7 @@ export async function shopifyGraphQL<T>(
   // once. Never fall back on 403 or GraphQL/user errors.
   const staticToken = getShopifyConfig().adminAccessToken.trim();
   if (response.status === 401 && staticToken && staticToken !== token
-      && !/\\s/.test(staticToken) && !/^[\\"']|[\\"']$/.test(staticToken)) {
+      && !/\s/.test(staticToken) && !/^["']|["']$/.test(staticToken)) {
     const fallbackResponse = await makeRequest(staticToken);
     if (fallbackResponse.ok) {
       response = fallbackResponse;
