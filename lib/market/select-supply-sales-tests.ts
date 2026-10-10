@@ -6,6 +6,7 @@ import { evaluateSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sale
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
+import { hasConflictingSupplierVariantListing } from "@/lib/market/supplier-variant-listing-guard";
 
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -144,6 +145,24 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (existing.error) throw new Error(existing.error.message);
     let existingId = existing.data?.id ? String(existing.data.id) : null; let keepSlug = false;
     if (!existingId) { const byProduct = await supabase.from("shop_listings").select("id").eq("product_id", item.productId).order("updated_at", { ascending: false }).limit(1).maybeSingle(); if (byProduct.error) throw new Error(byProduct.error.message); if (byProduct.data?.id) { existingId = String(byProduct.data.id); keepSlug = true; } }
+    const supplierVariantId = typeof item.listing.supplier_variant_id === "string"
+      ? item.listing.supplier_variant_id.trim()
+      : "";
+    if (supplierVariantId) {
+      const { data: variantRows, error: variantRowsError } = await supabase
+        .from("shop_listings")
+        .select("id")
+        .eq("supplier_variant_id", supplierVariantId)
+        .limit(3);
+      if (variantRowsError) throw new Error(`supplier_variant_listing_conflict_lookup_failed:${variantRowsError.message}`);
+      if (hasConflictingSupplierVariantListing(
+        (variantRows ?? []).map((row) => ({ id: String(row.id) })),
+        existingId,
+      )) {
+        rejected.push({ productId: item.productId, reasons: ["duplicate_supplier_variant_listing"] });
+        continue;
+      }
+    }
     const { slug: _slug, ...payloadWithoutSlug } = payload; void _slug;
     const result = existingId ? await supabase.from("shop_listings").update(keepSlug ? payloadWithoutSlug : payload).eq("id", existingId).select("id").single() : await supabase.from("shop_listings").insert(payload).select("id").single();
     if (result.error) throw new Error(result.error.message);
