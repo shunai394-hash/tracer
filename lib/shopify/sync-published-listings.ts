@@ -111,7 +111,7 @@ async function supabaseForCopyUpdate(listingId: string, title: string, descripti
 
 async function findByHandle(handle: string): Promise<ShopifyProductNode | null> {
   const data = await shopifyGraphQL<{ products: { nodes: ShopifyProductNode[] } }>(
-    `query ProductByHandle($query: String!) { products(first: 5, query: $query) { nodes { id handle status vendor tags variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType preview { image { url } } } } } } }`,
+    `query ProductByHandle($query: String!) { products(first: 5, query: $query) { nodes { id handle status vendor tags variants(first: 100) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType preview { image { url } } } } } } }`,
     { query: `handle:${handle}` },
   );
   // The search is fuzzy; only an exact handle match is the same product.
@@ -349,7 +349,7 @@ async function syncListingRows(
             `query ProductById($id: ID!) {
               product(id: $id) {
                 id handle status vendor tags
-                variants(first: 10) { nodes { id sku price } }
+                variants(first: 100) { nodes { id sku price } }
                 media(first: 10) { nodes { mediaContentType preview { image { url } } } }
               }
             }`,
@@ -364,6 +364,17 @@ async function syncListingRows(
         throw new Error("shopify_handle_owned_by_non_tracer_product");
       }
 
+      // A stored Shopify ID is not proof that the canonical product/variant
+      // still matches this listing. Never overwrite a different handle or
+      // select the first arbitrary variant from a multi-variant product.
+      if (existing && existing.handle !== productInput.handle) {
+        throw new Error("shopify_existing_product_identity_mismatch_manual_reconciliation_required");
+      }
+      const matchingExistingVariant = existing?.variants.nodes.find((node) => node.sku === productInput.sku) ?? null;
+      if (existing && !matchingExistingVariant) {
+        throw new Error("shopify_existing_product_identity_mismatch_manual_reconciliation_required");
+      }
+
       const product = existing
         ? await updateShopifyProduct({
             productId: existing.id,
@@ -371,7 +382,7 @@ async function syncListingRows(
             descriptionHtml: productInput.descriptionHtml,
             handle: productInput.handle,
             price: productInput.price,
-            variantId: existing.variants.nodes[0]?.id || null,
+            variantId: matchingExistingVariant?.id || null,
             sku: productInput.sku,
             imageUrl: existing.media?.nodes?.length ? null : row.image_url,
           })
