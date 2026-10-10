@@ -81,6 +81,22 @@ export function hasUniqueMarketplaceIdentity(candidateProductCount: number): boo
   return Number.isInteger(candidateProductCount) && candidateProductCount === 1;
 }
 
+export type InternalProductCandidateStatus =
+  | "no_product_candidate"
+  | "unique_product_candidate"
+  | "ambiguous_product";
+
+/**
+ * Keep operational telemetry honest: zero eligible products is a missing
+ * candidate, not an ambiguous match. Invalid counts fail closed as ambiguous.
+ */
+export function internalProductCandidateStatus(candidateCount: number): InternalProductCandidateStatus {
+  if (!Number.isInteger(candidateCount) || candidateCount < 0) return "ambiguous_product";
+  if (candidateCount === 0) return "no_product_candidate";
+  if (candidateCount === 1) return "unique_product_candidate";
+  return "ambiguous_product";
+}
+
 export function supplierListingStateForIdentity(linkVerified: boolean) {
   return linkVerified
     ? { identity_status: "linked", configured: true, orderable: true }
@@ -151,6 +167,10 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
     { name: "zero_candidates_never_link", expected: false, actual: hasUniqueMarketplaceIdentity(0) },
     { name: "multiple_candidates_never_link", expected: false, actual: hasUniqueMarketplaceIdentity(2) },
     { name: "one_candidate_can_pass_identity_gate", expected: true, actual: hasUniqueMarketplaceIdentity(1) },
+    { name: "zero internal product candidates are reported as missing, not ambiguous", expected: true, actual: internalProductCandidateStatus(0) === "no_product_candidate" },
+    { name: "one internal product candidate is uniquely classified", expected: true, actual: internalProductCandidateStatus(1) === "unique_product_candidate" },
+    { name: "multiple internal product candidates remain ambiguous", expected: true, actual: internalProductCandidateStatus(2) === "ambiguous_product" },
+    { name: "invalid internal product candidate count fails closed", expected: true, actual: internalProductCandidateStatus(-1) === "ambiguous_product" },
     { name: "internal link readback accepts exact persisted identity", expected: true, actual: isVerifiedInternalSupplyLink({ bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }, { bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }) },
     { name: "internal link readback rejects mismatched variant", expected: false, actual: isVerifiedInternalSupplyLink({ bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "wrong-v", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }, { bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }) },
     { name: "internal link readback rejects mismatched identity rationale", expected: false, actual: isVerifiedInternalSupplyLink({ bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "different evidence", status: "verified" }, { bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }) },
