@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   identifiersFromRecord,
+  identifierQueryEntries,
   marketplaceBarcodeCandidates,
   matchProductIdentity,
 } from "@/lib/market/identifiers";
@@ -50,13 +51,7 @@ export async function linkInternalSupplyForBestseller(args: {
 }> {
   const supabase = createSupabaseAdminClient();
   const marketIds = identifiersFromRecord(args.bestseller);
-  const queries = [
-    ["jan", marketIds.jan],
-    ["gtin", marketIds.gtin],
-    ["ean", marketIds.ean],
-    ["upc", marketIds.upc],
-    ["mpn", marketIds.mpn],
-  ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
+  const queries = identifierQueryEntries(marketIds);
 
   if (queries.length === 0) return { matched: false, supplierListingId: null, supplyVariantId: null, reason: "missing_marketplace_identifier" };
 
@@ -173,7 +168,8 @@ export async function linkInternalSupplyForBestseller(args: {
     );
     const exactIdentifierMatches = confirmedVariants.filter((item) => {
       const variantIds = identifiersFromRecord(item.variant as Record<string, unknown>);
-      return [variantIds.jan, variantIds.gtin, variantIds.ean, variantIds.upc]
+      const exactAsinMatch = Boolean(marketIds.asin && variantIds.asin === marketIds.asin);
+      return exactAsinMatch || [variantIds.jan, variantIds.gtin, variantIds.ean, variantIds.upc]
         .filter((value): value is string => Boolean(value))
         .flatMap((value) => marketplaceBarcodeCandidates(value))
         .some((value) => marketBarcodeCandidateSet.has(value));
