@@ -127,7 +127,9 @@ export function parseCanonicalMarketplaceVariantEvidence(
         sourceVariantId,
         sku,
         title: asString(variant.name),
-        asin,
+        // Never expose the parent page ASIN as a child variant identifier,
+        // even when the child node explicitly repeats the parent URL.
+        asin: urlAsinIsVariantSpecific ? asin : null,
         jan,
         gtin,
         ean,
