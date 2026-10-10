@@ -1,0 +1,71 @@
+name: TRACER One-shot supply-to-channel recovery
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  recover:
+    if: contains(github.event.head_commit.message, 'TRACER_ONE_SHOT_SUPPLY_RECOVERY')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Run bounded supply discovery, gate, BASE and Shopify batch
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token() {
+            curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          call_get() {
+            local path="$1" max_time="$2" out="$3"
+            local t code
+            t="$(token)" || { echo "OIDC token failed for $path"; return 1; }
+            code="$(curl -sS -o "$out" -w "%{http_code}" --max-time "$max_time" -H "Authorization: Bearer $t" "$BASE/$path" || true)"
+            echo "=== $path HTTP $code ==="
+            python3 - "$out" <<'PY'
+          import json,sys
+          try:
+              d=json.load(open(sys.argv[1]))
+              for k in ("ok","elapsedMs","supplyFirst","selected","published","failed","reason","error"):
+                  if k in d: print(k, json.dumps(d[k],ensure_ascii=False)[:2500])
+          except Exception:
+              print(open(sys.argv[1]).read()[:1000])
+          PY
+          }
+          call_get api/cron/supply-first 300 supply-first.json || true
+          call_get api/cron/sales-test-publication 300 sales-test.json || true
+          call_get api/cron/base-publish 60 base-publish.json || true
+
+          echo "=== Shopify dry run ==="
+          T="$(token)"
+          CODE="$(curl -sS -o shopify-preview.json -w "%{http_code}" --max-time 120 -H "Authorization: Bearer $T" -H "Content-Type: application/json" -X POST "$BASE/api/admin/shopify/sync" -d '{"dryRun":true,"limit":1000}' || true)"
+          echo "Shopify preview HTTP $CODE"
+          python3 - <<'PY'
+          import json
+          d=json.load(open("shopify-preview.json"))
+          rows=d.get("rows") or []
+          eligible=[r["listingId"] for r in rows if r.get("eligible")][:10]
+          print(json.dumps({"ok":d.get("ok"),"considered":d.get("considered"),"eligible":d.get("eligible"),"reasonCounts":d.get("reasonCounts"),"batchSize":len(eligible)},ensure_ascii=False))
+          json.dump({"listingIds":eligible,"limit":10},open("shopify-batch.json","w"))
+          PY
+          N="$(python3 -c 'import json; print(len(json.load(open("shopify-batch.json"))["listingIds"]))')"
+          if [ "$N" -gt 0 ]; then
+            echo "=== Shopify gated live batch: $N listings ==="
+            T="$(token)"
+            CODE="$(curl -sS -o shopify-sync.json -w "%{http_code}" --max-time 130 -H "Authorization: Bearer $T" -H "Content-Type: application/json" -X POST "$BASE/api/admin/shopify/sync" -d @shopify-batch.json || true)"
+            echo "Shopify live sync HTTP $CODE"
+            python3 - <<'PY'
+          import json
+          d=json.load(open("shopify-sync.json"))
+          print(json.dumps({k:d.get(k) for k in ("ok","configured","considered","synced","failed","errors")},ensure_ascii=False)[:5000])
+          PY
+          else
+            echo "Shopify live sync skipped: no eligible listings passed the read-only gate."
+          fi
