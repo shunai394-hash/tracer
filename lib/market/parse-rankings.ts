@@ -1,4 +1,5 @@
 import { decodeHtmlEntities } from "@/lib/market/html-entities";
+import type { CanonicalMarketplaceVariantEvidence } from "./canonical-variant-evidence";
 import { extractAsinFromUrl, normalizeIdentifier } from "@/lib/market/identifiers";
 
 export type ParsedBestseller = {
@@ -17,6 +18,8 @@ export type ParsedBestseller = {
   reviewCount: number | null;
   productUrl: string | null;
   imageUrl: string | null;
+  /** Explicit canonical child variants parsed from ProductGroup.hasVariant JSON-LD only. */
+  canonicalVariants?: CanonicalMarketplaceVariantEvidence[];
 };
 
 function decode(value: string): string {
