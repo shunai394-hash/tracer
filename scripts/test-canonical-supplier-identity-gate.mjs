@@ -10,6 +10,7 @@ const [helper, shopify, base, store, route, vercel] = await Promise.all([
   readFile(new URL("../vercel.json", import.meta.url), "utf8"),
 ]);
 assert.match(helper, /identity_status === "linked"/);
+assert.match(helper, /offset \+= 100/, "identity lookups must batch large supplier ID sets");
 assert.match(shopify, /supplier_identity_unlinked/);
 assert.match(shopify, /identity_status !== "linked"/);
 assert.match(base, /identityUnlinkedIds/);

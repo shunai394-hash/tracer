@@ -8,10 +8,19 @@ export async function getLinkedSupplierListingIds(values: unknown[]): Promise<Se
   if (ids.length === 0) return new Set();
 
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
-    .from("supplier_listings")
-    .select("id,identity_status")
-    .in("id", ids);
-  if (error) throw new Error(`supplier_identity_lookup_failed:${error.message}`);
-  return new Set((data ?? []).filter((row) => row.identity_status === "linked").map((row) => String(row.id)));
+  const linked = new Set<string>();
+  // Keep PostgREST URLs comfortably below proxy/request-line limits when a
+  // bounded catalog scan includes hundreds or thousands of supplier rows.
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const batch = ids.slice(offset, offset + 100);
+    const { data, error } = await supabase
+      .from("supplier_listings")
+      .select("id,identity_status")
+      .in("id", batch);
+    if (error) throw new Error(`supplier_identity_lookup_failed:${error.message}`);
+    for (const row of data ?? []) {
+      if (row.identity_status === "linked") linked.add(String(row.id));
+    }
+  }
+  return linked;
 }
