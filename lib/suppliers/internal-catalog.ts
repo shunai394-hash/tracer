@@ -349,7 +349,7 @@ export async function linkInternalSupplyForBestseller(args: {
     Number.isFinite(shippingCost) && shippingCost >= 0 &&
     (typeof rawLeadTimeDays === "number" || (typeof rawLeadTimeDays === "string" && rawLeadTimeDays.trim() !== "")) &&
     Number.isFinite(leadTimeDays) && leadTimeDays >= 0 &&
-    (shipTo === "JP" || shipTo.split(/[\\s,;|]+/).includes("JP"));
+    (shipTo === "JP" || shipTo.split(/[\s,;|]+/).includes("JP"));
   if (!liveOrderReady) {
     return { matched: true, supplierListingId: String(listingResult.data.id), supplyVariantId: String(variant.id) };
   }
