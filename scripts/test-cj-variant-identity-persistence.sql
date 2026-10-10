@@ -50,7 +50,13 @@ declare
 begin
   -- Exact barcode must be unique across child evidence, not merely unique per parent.
   select count(*) into v_exact from public.marketplace_bestseller_variants
-   where gtin='4006381333931' and evidence_source='schema_org_product_group_has_variant';
+   where gtin='4006381333931'
+     and source='ci_fixture'
+     and evidence_source='schema_org_product_group_has_variant'
+     and bestseller_id in (
+       '30000000-0000-4000-8000-000000000001',
+       '30000000-0000-4000-8000-000000000002'
+     );
   if v_exact <> 2 then raise exception 'fixture expected 2 matching child rows, got %',v_exact; end if;
 
   -- Ambiguous match is refused; stale linked identity must be cleared rather than retained.
