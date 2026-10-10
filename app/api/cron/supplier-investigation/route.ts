@@ -7,6 +7,7 @@ import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { linkInternalSupplyForBestseller } from "@/lib/suppliers/internal-catalog";
 import { internalLinkRetryDelayMs, selectDueInternalLinkRetryIds } from "@/lib/suppliers/cj-identity-reverify-policy";
 import { syncTracerCatalogFromInternalSupply } from "@/lib/suppliers/sync-tracer-catalog";
+import { finalizeInternalSupplyLinkRetry } from "@/lib/suppliers/internal-link-retry-lifecycle";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -215,55 +216,42 @@ export async function GET(request: Request) {
         continue;
       }
 
-      // A canonical link alone is not the end of this workflow. Keep the
-      // durable retry record until catalog synchronization has also succeeded.
-      // If sync is rejected or incomplete, reschedule the same bestseller so
-      // the next sweep can re-verify the canonical link and retry catalog sync.
-      let catalog: Awaited<ReturnType<typeof syncTracerCatalogFromInternalSupply>>;
-      let catalogSyncError: string | null = null;
-      try {
-        catalog = await syncTracerCatalogFromInternalSupply({
+      // Count as fully matched only after catalog synchronization and retry finalization succeed.
+      const catalog = await finalizeInternalSupplyLinkRetry({
+        syncCatalog: () => syncTracerCatalogFromInternalSupply({
           bestsellerId: candidateId,
           salePrice: Number.isFinite(Number(bestseller.price)) ? Number(bestseller.price) : null,
           variantIds: internal.supplyVariantId ? [internal.supplyVariantId] : [],
-        });
-      } catch (error) {
-        catalogSyncError = error instanceof Error ? error.message : String(error);
-        catalog = { matched: false, catalogId: null, variantId: null, reason: "sync_exception" };
-      }
-      if (!catalog.matched) {
-        const priorRetry = retryStateById.get(candidateId);
-        const retryCount = Number(priorRetry?.retry_count ?? 0) + 1;
-        const nextAttemptAt = new Date(Date.now() + internalLinkRetryDelayMs(retryCount)).toISOString();
-        const syncFailure = {
-          bestseller_id: candidateId,
-          supplier_listing_id: internal.supplierListingId,
-          supply_variant_id: internal.supplyVariantId,
-          reason: `catalog_sync_failed:${catalog.reason ?? "unknown"}`,
-          link_status: "catalog_sync_failed",
-          retry_count: retryCount,
-          last_attempt_at: new Date().toISOString(),
-          next_attempt_at: nextAttemptAt,
-          last_error: catalogSyncError ?? catalog.reason ?? "Catalog synchronization did not confirm success",
-          updated_at: new Date().toISOString(),
-        };
-        const { error: retryWriteError } = await supabase
-          .from("internal_supply_link_retry_queue")
-          .upsert(syncFailure, { onConflict: "bestseller_id" });
-        if (retryWriteError) {
-          throw new Error(`catalog sync failed and retry persistence failed for ${candidateId}: ${retryWriteError.message}`);
-        }
-        throw new Error(`catalog sync failed for ${candidateId}; retry retained until ${nextAttemptAt}: ${catalogSyncError ?? catalog.reason ?? "unknown"}`);
-      }
-
-      // Only clear the retry after both canonical-link verification and
-      // catalog synchronization have positively completed.
-      const { error: clearRetryError } = await supabase
-        .from("internal_supply_link_retry_queue")
-        .delete()
-        .eq("bestseller_id", candidateId);
-      if (clearRetryError) throw new Error(`verified link and catalog sync succeeded but retry queue cleanup failed for ${candidateId}: ${clearRetryError.message}`);
-
+        }),
+        persistFailure: async (reason) => {
+          const priorRetry = retryStateById.get(candidateId);
+          const retryCount = Number(priorRetry?.retry_count ?? 0) + 1;
+          const now = new Date();
+          const nextAttemptAt = new Date(now.getTime() + internalLinkRetryDelayMs(retryCount)).toISOString();
+          const { error: retryWriteError } = await supabase
+            .from("internal_supply_link_retry_queue")
+            .upsert({
+              bestseller_id: candidateId,
+              supplier_listing_id: internal.supplierListingId,
+              supply_variant_id: internal.supplyVariantId,
+              reason: "catalog_sync_failed",
+              link_status: "catalog_sync_failed",
+              retry_count: retryCount,
+              last_attempt_at: now.toISOString(),
+              next_attempt_at: nextAttemptAt,
+              last_error: reason,
+              updated_at: now.toISOString(),
+            }, { onConflict: "bestseller_id" });
+          if (retryWriteError) throw new Error(`catalog sync failed and retry persistence failed for ${candidateId}: ${retryWriteError.message}`);
+        },
+        clearRetry: async () => {
+          const { error: clearRetryError } = await supabase
+            .from("internal_supply_link_retry_queue")
+            .delete()
+            .eq("bestseller_id", candidateId);
+          if (clearRetryError) throw new Error(`verified link and catalog sync succeeded but retry queue cleanup failed for ${candidateId}: ${clearRetryError.message}`);
+        },
+      });
       internalMatchedIds.push(candidateId);
       internalResults.push({
         bestsellerId: candidateId,
