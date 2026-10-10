@@ -110,8 +110,8 @@ export async function GET(request: Request) {
         : observation.canonicalVariantEvidenceWriteFailures > 0
           ? "write_failed"
           : "none";
-    // Do not persist an advanced cursor for a failed evidence batch. The next
-    // invocation must retry this exact source/page until evidence is durable.
+    // Row-write and transient probe failures retry the same page. A confirmed
+    // missing table advances to avoid a hot loop and is explicitly flagged for replay.
     const cursor = getMarketSourcingCursor({
       failureKind,
       currentSourceIndex: observation.sourceIndex,
@@ -186,10 +186,9 @@ export async function GET(request: Request) {
         canonicalVariantEvidenceWritten: observation.canonicalVariantEvidenceWritten,
         canonicalVariantEvidenceWriteFailures: observation.canonicalVariantEvidenceWriteFailures,
         canonicalVariantEvidenceStatus: metadata.canonicalVariantEvidenceStatus,
-        canonicalVariantEvidenceReplayRequired: observation.canonicalVariantEvidenceSchemaStatus === "missing",
         enrichment: observation.enrichment,
         sourceIndex: cursorSourceIndex,
-        startIndex: cursorNextIndex,
+        startIndex: observation.startIndex,
         processedCount: observation.processedCount,
         nextIndex: cursorNextIndex,
         hasMore: observation.hasMore,
