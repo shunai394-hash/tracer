@@ -32,6 +32,23 @@ export function marketplaceBarcodeCandidates(value: string): string[] {
   return [...candidates];
 }
 
+/** Exact variant evidence across barcode schemes, plus an exact variant-level ASIN. */
+export function hasExactMarketplaceVariantIdentifierMatch(
+  market: ProductIdentifiers,
+  variant: ProductIdentifiers,
+): boolean {
+  if (market.asin && variant.asin && market.asin === variant.asin) return true;
+  const marketBarcodes = new Set(
+    [market.jan, market.gtin, market.ean, market.upc]
+      .filter((value): value is string => Boolean(value))
+      .flatMap((value) => marketplaceBarcodeCandidates(value)),
+  );
+  return [variant.jan, variant.gtin, variant.ean, variant.upc]
+    .filter((value): value is string => Boolean(value))
+    .flatMap((value) => marketplaceBarcodeCandidates(value))
+    .some((value) => marketBarcodes.has(value));
+}
+
 function hasValidGs1CheckDigit(value: string): boolean {
   if (![8, 12, 13, 14].includes(value.length) || !/^\d+$/.test(value)) return false;
   const body = value.slice(0, -1);
