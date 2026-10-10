@@ -74,7 +74,8 @@ export function shouldSyncInternalSupplyCatalog(args: {
 
 export function hasUniqueIdentitySelection(candidateCount: number, exactMatchCount: number): boolean {
   return Number.isInteger(candidateCount) && candidateCount > 0
-    && (candidateCount === 1 || (Number.isInteger(exactMatchCount) && exactMatchCount === 1));
+    && Number.isInteger(exactMatchCount) && exactMatchCount === 1
+    && exactMatchCount <= candidateCount;
 }
 
 export function hasUniqueMarketplaceIdentity(candidateProductCount: number): boolean {
@@ -112,6 +113,9 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
     { name: "complete_variant_writes_allow_server_side_gate_to_run", expected: true, actual: shouldSyncInternalSupplyCatalog({ bestsellerId: "market-1", submittedVariantCount: 2, variantWriteErrorCount: 0, successfulVariantWriteCount: 2 }) },
     { name: "missing_marketplace_reference_blocks_catalog_sync", expected: false, actual: shouldSyncInternalSupplyCatalog({ bestsellerId: null, submittedVariantCount: 1, variantWriteErrorCount: 0, successfulVariantWriteCount: 1 }) },
     { name: "multiple_variants_without_unique_identifier_match_are_rejected", expected: false, actual: hasUniqueIdentitySelection(3, 0) },
+    { name: "single MPN-only candidate without exact barcode is rejected", expected: false, actual: hasUniqueIdentitySelection(1, 0) },
+    { name: "one candidate with one exact barcode match is accepted", expected: true, actual: hasUniqueIdentitySelection(1, 1) },
+    { name: "exact matches cannot exceed candidate count", expected: false, actual: hasUniqueIdentitySelection(1, 2) },
     { name: "multiple_variants_with_one_exact_identifier_match_select_one", expected: true, actual: hasUniqueIdentitySelection(3, 1) },
     { name: "multiple_variants_with_duplicate_exact_matches_are_rejected", expected: false, actual: hasUniqueIdentitySelection(3, 2) },
     { name: "zero_candidates_never_link", expected: false, actual: hasUniqueMarketplaceIdentity(0) },
