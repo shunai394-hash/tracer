@@ -27,8 +27,16 @@ export function marketplaceBarcodeCandidates(value: string): string[] {
   const normalized = digits(value.trim());
   if (!normalized) return [];
   const candidates = new Set<string>([normalized]);
-  if (normalized.length === 12 || normalized.length === 13) candidates.add(normalized.padStart(14, "0"));
-  if (normalized.length === 14 && normalized.startsWith("0")) candidates.add(normalized.slice(1));
+  if ([8, 12, 13].includes(normalized.length)) candidates.add(normalized.padStart(14, "0"));
+  if (normalized.length === 14) {
+    // Only strip leading zero padding; never remove a non-zero GTIN indicator digit.
+    for (const targetLength of [13, 12, 8]) {
+      const prefixLength = 14 - targetLength;
+      if (normalized.startsWith("0".repeat(prefixLength))) {
+        candidates.add(normalized.slice(prefixLength));
+      }
+    }
+  }
   return [...candidates];
 }
 
