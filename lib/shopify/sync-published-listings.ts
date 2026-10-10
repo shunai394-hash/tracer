@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
 import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
+import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 
 type Listing = {
   id: string;
@@ -176,6 +177,8 @@ export function shopifySyncBlockReasons(row: Listing): string[] {
 
 function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
+  if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
+  if (!isPublishableCatalogDescription(row.description)) reasons.push("catalog_description_not_publishable");
   if (row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") reasons.push("pipeline_blocked");
   if (!hasGateProvenance(row)) reasons.push("sales_test_gate_not_passed");
   // Shopify is downstream delivery only: it never decides publication. A row

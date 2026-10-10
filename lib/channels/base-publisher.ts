@@ -5,6 +5,7 @@ import { createBaseItem, editBaseItem, addBaseItemImage, isBaseConfigured } from
 import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -19,6 +20,8 @@ type JapaneseCatalogCopy = { title: string; detail: string; };
 async function ensureJapaneseCatalogCopy(title: string, detail: string): Promise<JapaneseCatalogCopy> {
   const sourceTitle = String(title ?? "").trim();
   const sourceDetail = String(detail ?? "").trim();
+  if (!isPublishableCatalogTitle(sourceTitle)) throw new Error("BASE catalog title contains workflow or disqualification text");
+  if (!isPublishableCatalogDescription(sourceDetail)) throw new Error("BASE catalog description contains generic placeholder text");
   if (isJapaneseProductTitle(sourceTitle) && hasUsableJapaneseCopy(sourceDetail)) return { title: sourceTitle, detail: sourceDetail };
   if (!isGeminiConfigured()) throw new Error("BASE japanese catalog copy requires GEMINI_API_KEY");
   const result = await generateStructuredJson<JapaneseCatalogCopy>({
@@ -29,6 +32,8 @@ async function ensureJapaneseCatalogCopy(title: string, detail: string): Promise
   const translatedTitle = String(result?.title ?? "").trim();
   const translatedDetail = String(result?.detail ?? "").trim();
   if (!isJapaneseProductTitle(translatedTitle)) throw new Error("BASE japanese catalog copy returned a non-Japanese title");
+  if (!isPublishableCatalogTitle(translatedTitle)) throw new Error("BASE japanese catalog copy returned workflow or disqualification text");
+  if (!isPublishableCatalogDescription(translatedDetail)) throw new Error("BASE japanese catalog copy returned generic placeholder text");
   if (!hasUsableJapaneseCopy(translatedDetail)) throw new Error("BASE japanese catalog copy returned an English-heavy description");
   return { title: translatedTitle, detail: translatedDetail };
 }
@@ -113,10 +118,44 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
 
   for (const listing of listings ?? []) {
     const listingId = String(listing.id);
+    // Already-hidden BASE items were reconciled above; do not process them a second time.
+    if (listing.base_item_id && listing.published !== true) continue;
     const copyResult = copyByListingId.get(listingId);
     if (!copyResult?.copy) {
       const message = copyResult?.error ?? "japanese_catalog_copy_required";
+      // Fail closed for existing BASE items too: a catalog validation failure
+      // must not leave a previously visible product available for purchase.
+      if (listing.base_item_id) {
+        try {
+          await editBaseItem({
+            itemId: String(listing.base_item_id),
+            title: "販売停止中の商品",
+            detail: "商品情報を再確認しているため、一時的に販売を停止しています。",
+            price: Number(listing.selling_price ?? 0),
+            stock: 0,
+            visible: false,
+          });
+        } catch (hideError) {
+          const hideMessage = hideError instanceof Error ? hideError.message : String(hideError);
+          await supabase.from("shop_listings").update({
+            published: false,
+            orderable: false,
+            base_last_error: `${message};base_hide_failed:${hideMessage}`.slice(0, 2000),
+            pipeline_stage: "BASE_RECONCILIATION",
+            pipeline_status: "failed",
+            pipeline_reason: "base_hide_failed_after_catalog_validation",
+            pipeline_error: hideMessage.slice(0, 2000),
+            pipeline_updated_at: new Date().toISOString(),
+          }).eq("id", listingId);
+          results.push({ listingId, ok: false, error: "base_hide_failed_after_catalog_validation" });
+          continue;
+        }
+      }
       await supabase.from("shop_listings").update({
+        published: false,
+        orderable: false,
+        base_publication_status: listing.base_item_id ? "published" : "blocked",
+        base_publication_lease_until: null,
         base_last_error: message,
         pipeline_stage: "BASE_PUBLICATION",
         pipeline_status: "blocked",
