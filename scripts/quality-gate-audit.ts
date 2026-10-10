@@ -7,6 +7,10 @@ import { isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 const root = process.cwd();
 const checks = [
   ["Shopify publishable title guard", "lib/shopify/sync-published-listings.ts", "catalog_title_not_publishable"],
+  ["Shopify publishable description guard", "lib/shopify/sync-published-listings.ts", "catalog_description_not_publishable"],
+  ["BASE publishable description guard", "lib/channels/base-publisher.ts", "BASE catalog description contains generic placeholder text"],
+  ["Storefront publishable description guard", "lib/shop/store.ts", "isPublishableCatalogDescription(listing.description)"],
+  ["Checkout publishable description guard", "lib/shop/store.ts", "listing description failed catalog quality gate"],
   ["Storefront publishable title guard", "lib/shop/store.ts", "isPublishableCatalogTitle(listing.title)"],
   ["Checkout publishable title guard", "lib/shop/store.ts", "listing title failed catalog quality gate"],
   ["BASE publishable title guard", "lib/channels/base-publisher.ts", "BASE catalog title contains workflow or disqualification text"],
