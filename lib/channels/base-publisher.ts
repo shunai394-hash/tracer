@@ -307,7 +307,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
 
     const shippingCost = listing.shipping_cost === null || listing.shipping_cost === undefined ? null : Number(listing.shipping_cost);
-    if (shippingCost === null || !Number.isFinite(shippingCost) || shippingCost <= 0) {
+    if (shippingCost === null || !Number.isFinite(shippingCost) || shippingCost < 0) {
       if (listing.base_item_id) {
         try { await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price, stock: 0, visible: false }); }
         catch (error) {
