@@ -200,10 +200,12 @@ export async function GET(request: Request) {
             orderable,
             // Zero stock must revoke the DB publication flag as well as ordering.
             // Positive stock never grants publication by itself; the existing
-            // publication state is preserved until all independent gates pass.
-            ...(orderable ? {} : { published: false }),
-            pipeline_error: orderable ? null : "Supplier variant has no available inventory",
-            pipeline_updated_at: now,
+            // publication state and unrelated pipeline errors are preserved.
+            ...(orderable ? {} : {
+              published: false,
+              pipeline_error: "Supplier variant has no available inventory",
+              pipeline_updated_at: now,
+            }),
             updated_at: now,
           })
           .eq("id", listingId);
