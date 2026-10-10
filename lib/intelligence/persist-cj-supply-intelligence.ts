@@ -29,11 +29,11 @@ export type MarketplaceIdentity = { bestsellerId: string; productId: string; met
 function normalizeBarcode(value: unknown): string { return typeof value === "string" ? value.trim().replace(/[^0-9]/g, "") : ""; }
 
 
-async function readSupplierBarcode(args: { supplierProductId: string; supplierVariantId: string }): Promise<string> {
+async function readSupplierBarcode(args: { supplierProductId: string; supplierVariantId: string }, lookup: { fetchProductVariants: typeof fetchCJProductVariants; fetchVariantByVid: typeof fetchCJVariantByVid }): Promise<string> {
   // Only a fresh response explicitly keyed to this exact variant can prove the
   // barcode. Never accept persisted metadata/listing-level variantBarcode here.
   try {
-    const variants = await fetchCJProductVariants(args.supplierProductId, { countryCode: "JP" });
+    const variants = await lookup.fetchProductVariants(args.supplierProductId, { countryCode: "JP" });
     const exact = readExactSupplierVariantBarcode(variants, args.supplierVariantId);
     if (exact) return normalizeBarcode(exact);
   } catch (error) {
@@ -44,7 +44,7 @@ async function readSupplierBarcode(args: { supplierProductId: string; supplierVa
     });
   }
   try {
-    const detailVariant = await fetchCJVariantByVid(args.supplierVariantId);
+    const detailVariant = await lookup.fetchVariantByVid(args.supplierVariantId);
     if (detailVariant?.vid === args.supplierVariantId) return normalizeBarcode(detailVariant.barcode);
   } catch (error) {
     console.warn("[cj-supply-identity] queryByVid barcode lookup failed", {
@@ -56,12 +56,14 @@ async function readSupplierBarcode(args: { supplierProductId: string; supplierVa
   return "";
 }
 
-export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<MarketplaceIdentity | null> {
+export type CjIdentityLookupDependencies = { fetchProductVariants?: typeof fetchCJProductVariants; fetchVariantByVid?: typeof fetchCJVariantByVid };
+
+export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null; lookup?: CjIdentityLookupDependencies }): Promise<MarketplaceIdentity | null> {
   const suppliedIds = identifiersFromRecord({ gtin: args.supplierIdentifiers?.gtin, jan: args.supplierIdentifiers?.jan, ean: args.supplierIdentifiers?.ean, upc: args.supplierIdentifiers?.upc, mpn: args.supplierIdentifiers?.mpn });
   // Prefer a fresh barcode read from the exact CJ variant ID. The optional
   // variantBarcode argument is retained for API compatibility but is not trusted
   // as proof because it may be stale or copied from a parent listing.
-  const variantBarcode = await readSupplierBarcode(args);
+  const variantBarcode = await readSupplierBarcode(args, { fetchProductVariants: args.lookup?.fetchProductVariants ?? fetchCJProductVariants, fetchVariantByVid: args.lookup?.fetchVariantByVid ?? fetchCJVariantByVid });
   // Fail closed: listing/product-level barcode fields are not proof for the concrete
   // supplier variant. If the exact CJ variant has no readable barcode, do not link it.
   if (!variantBarcode) return null;
@@ -149,13 +151,16 @@ export type CjSupplyPersistenceDependencies = {
   db?: ReturnType<typeof createSupabaseAdminClient>;
   /** Injectable clock for deterministic persistence assertions. */
   now?: () => Date;
+  /** Deterministic CJ responses for isolated application-path tests. */
+  fetchProductVariants?: typeof fetchCJProductVariants;
+  fetchVariantByVid?: typeof fetchCJVariantByVid;
 };
 
 export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntelligenceArgs, options: CjSupplyPersistenceDependencies = {}): Promise<{ offerId: string | null; intelligenceId: string | null; identity: MarketplaceIdentity | null }> {
   const supabase = options.db ?? createSupabaseAdminClient();
   const now = (options.now?.() ?? new Date()).toISOString();
   const currencyAssessment = assessCurrencyConfidence({ currency: "USD", price: args.cost, provider: "cj" });
-  const marketplaceIdentity = options.identity !== undefined ? options.identity : await resolveMarketplaceIdentity({ db: supabase, supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, variantBarcode: args.variantBarcode, supplierIdentifiers: args.supplierIdentifiers });
+  const marketplaceIdentity = options.identity !== undefined ? options.identity : await resolveMarketplaceIdentity({ db: supabase, supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, variantBarcode: args.variantBarcode, supplierIdentifiers: args.supplierIdentifiers, lookup: { fetchProductVariants: options.fetchProductVariants, fetchVariantByVid: options.fetchVariantByVid } });
   // Never substitute a caller-provided/local discovery product ID for missing canonical identity.
   // The listing row below is deliberately detached on a no-match, and no offer or
   // canonical product-intelligence record is written in that case.
