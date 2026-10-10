@@ -17,7 +17,7 @@ import {
   variantsCompatible,
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
-import { normalizeIdentifier } from "../lib/market/identifiers.ts";
+import { exactBarcodeFamilyMatch, EMPTY_IDENTIFIERS, marketplaceBarcodeCandidates, normalizeIdentifier, selectUniqueExactBarcodeMatch } from "../lib/market/identifiers.ts";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
@@ -40,6 +40,38 @@ test("CJ identity reverify policy", "retry intervals, candidate selection, raw G
   assert.equal(result.cases.length >= 15, true);
   assert.equal(normalizeIdentifier("gtin", "1598446591114"), null);
   assert.equal(normalizeIdentifier("gtin", "4006381333931"), "4006381333931");
+});
+
+test("exact variant barcode identity", "checks every barcode field and never falls back to ASIN/MPN", () => {
+  const market = { ...EMPTY_IDENTIFIERS, jan: "4006381333931" };
+  assert.equal(exactBarcodeFamilyMatch(market, { ...EMPTY_IDENTIFIERS, ean: "4006381333931" }), "gtin");
+  assert.equal(exactBarcodeFamilyMatch(market, { ...EMPTY_IDENTIFIERS, jan: "4006381333931", ean: "4006381333931" }), "jan");
+  assert.equal(exactBarcodeFamilyMatch(market, { ...EMPTY_IDENTIFIERS, gtin: "4006381333931", ean: "4006381333931" }), "gtin");
+  assert.equal(exactBarcodeFamilyMatch(market, { ...EMPTY_IDENTIFIERS, jan: "1111111111111", ean: "4006381333931" }), "gtin");
+  assert.equal(exactBarcodeFamilyMatch(market, { ...EMPTY_IDENTIFIERS, asin: "B0TESTASIN", mpn: "MODEL-1" }), null);
+  assert.equal(exactBarcodeFamilyMatch(market, { ...EMPTY_IDENTIFIERS, ean: "4006381333932" }), null);
+  assert.equal(exactBarcodeFamilyMatch(
+    { ...EMPTY_IDENTIFIERS, upc: "012345678905" },
+    { ...EMPTY_IDENTIFIERS, gtin: "00012345678905" },
+  ), "gtin");
+  assert.ok(marketplaceBarcodeCandidates("012345678905").includes("00012345678905"),
+    "UPC lookup must include the zero-padded GTIN-14 candidate before database retrieval");
+  assert.ok(marketplaceBarcodeCandidates("00012345678905").includes("012345678905"),
+    "GTIN-14 lookup must include its safe UPC-width candidate before database retrieval");
+  assert.ok(marketplaceBarcodeCandidates("96385074").includes("00000096385074"),
+    "GTIN-8 lookup must include its zero-padded GTIN-14 candidate before database retrieval");
+  assert.ok(marketplaceBarcodeCandidates("00000096385074").includes("96385074"),
+    "zero-padded GTIN-8 lookup must recover its exact 8-digit form");
+  const unique = selectUniqueExactBarcodeMatch([{ productId: "p1", method: "gtin" }]);
+  assert.equal(unique?.productId, "p1");
+  assert.equal(selectUniqueExactBarcodeMatch([
+    { productId: "p1", method: "gtin" },
+    { productId: "p2", method: "gtin" },
+  ]), null, "same exact barcode across separate supplier products must remain ambiguous");
+  assert.equal(selectUniqueExactBarcodeMatch([
+    { productId: "p1", method: null },
+    { productId: "p2", method: "ean" },
+  ])?.productId, "p2", "non-exact candidates must not suppress one unique exact match");
 });
 
 // Market product fixtures (JANs carry valid check digits).

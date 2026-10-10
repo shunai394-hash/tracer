@@ -27,8 +27,16 @@ export function marketplaceBarcodeCandidates(value: string): string[] {
   const normalized = digits(value.trim());
   if (!normalized) return [];
   const candidates = new Set<string>([normalized]);
-  if (normalized.length === 12 || normalized.length === 13) candidates.add(normalized.padStart(14, "0"));
-  if (normalized.length === 14 && normalized.startsWith("0")) candidates.add(normalized.slice(1));
+  if ([8, 12, 13].includes(normalized.length)) candidates.add(normalized.padStart(14, "0"));
+  if (normalized.length === 14) {
+    // Only strip leading zero padding; never remove a non-zero GTIN indicator digit.
+    for (const targetLength of [13, 12, 8]) {
+      const prefixLength = 14 - targetLength;
+      if (normalized.startsWith("0".repeat(prefixLength))) {
+        candidates.add(normalized.slice(prefixLength));
+      }
+    }
+  }
   return [...candidates];
 }
 
@@ -127,6 +135,38 @@ function toGtin14(value: string): string {
 function barcodeFamilyValue(ids: ProductIdentifiers): string | null {
   const raw = ids.jan ?? ids.gtin ?? ids.ean ?? ids.upc ?? null;
   return raw ? toGtin14(raw) : null;
+}
+
+/** A variant link is safe only when exactly one candidate across the full lookup has exact barcode evidence. */
+export function selectUniqueExactBarcodeMatch<T extends { method: "jan" | "gtin" | "ean" | "upc" | null }>(
+  candidates: T[],
+): T | null {
+  const exact = candidates.filter((candidate) => candidate.method !== null);
+  return exact.length === 1 ? exact[0] : null;
+}
+
+/**
+ * Return a variant identity method only when at least one valid barcode on
+ * each record matches across JAN/EAN/UPC/GTIN schemes. Unlike product identity,
+ * ASIN/MPN must never select a concrete size, color, or pack variant.
+ * Every populated barcode field is checked so an earlier nonmatching field
+ * cannot hide an exact match in a later field.
+ */
+export function exactBarcodeFamilyMatch(
+  market: ProductIdentifiers,
+  supply: ProductIdentifiers,
+): "jan" | "gtin" | "ean" | "upc" | null {
+  const schemes = ["jan", "gtin", "ean", "upc"] as const;
+  for (const marketScheme of schemes) {
+    const marketValue = market[marketScheme];
+    if (!marketValue) continue;
+    for (const supplyScheme of schemes) {
+      const supplyValue = supply[supplyScheme];
+      if (!supplyValue || toGtin14(marketValue) !== toGtin14(supplyValue)) continue;
+      return marketScheme === supplyScheme ? marketScheme : "gtin";
+    }
+  }
+  return null;
 }
 
 /** Identifier-grade identity only. Title/image similarity never makes a sales candidate eligible. */
