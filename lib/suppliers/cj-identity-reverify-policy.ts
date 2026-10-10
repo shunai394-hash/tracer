@@ -74,14 +74,13 @@ export function shouldSyncInternalSupplyCatalog(args: {
 
 export function hasUniqueIdentitySelection(candidateCount: number, exactMatchCount: number): boolean {
   return Number.isInteger(candidateCount) && candidateCount > 0
-    && (candidateCount === 1 || (Number.isInteger(exactMatchCount) && exactMatchCount === 1));
+    && Number.isInteger(exactMatchCount) && exactMatchCount === 1;
 }
 
 /** Select a variant only when the current request proves one unique identity. */
 export function selectUniqueIdentityCandidate<T extends { identity: { linked: boolean; salesEligible: boolean } }>(
   candidates: T[],
 ): T | undefined {
-  if (candidates.length === 1) return candidates[0];
   const exactMatches = candidates.filter((candidate) => candidate.identity.linked && candidate.identity.salesEligible);
   return exactMatches.length === 1 ? exactMatches[0] : undefined;
 }
@@ -114,6 +113,8 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
     { name: "incomplete_variant_scope_is_rejected", expected: false, actual: hasExactCurrentRequestVariantSet([{ id: "v1", supply_product_id: "p1" }], ["v1", "v2"]) },
     { name: "cross_product_variant_scope_is_rejected", expected: false, actual: hasExactCurrentRequestVariantSet([{ id: "v1", supply_product_id: "p1" }, { id: "v2", supply_product_id: "p2" }], ["v1", "v2"]) },
     { name: "duplicate_requested_variant_ids_are_rejected", expected: false, actual: hasExactCurrentRequestVariantSet([{ id: "v1", supply_product_id: "p1" }], ["v1", "v1"]) },
+    { name: "singleton_without_exact_identity_is_rejected", expected: false, actual: hasUniqueIdentitySelection(1, 0) },
+    { name: "singleton_with_exact_identity_is_accepted", expected: true, actual: hasUniqueIdentitySelection(1, 1) },
 
     { name: "missing_variants_block_catalog_sync", expected: false, actual: shouldSyncInternalSupplyCatalog({ bestsellerId: "market-1", submittedVariantCount: 0, variantWriteErrorCount: 0, successfulVariantWriteCount: 0 }) },
     { name: "partial_variant_failure_blocks_catalog_sync", expected: false, actual: shouldSyncInternalSupplyCatalog({ bestsellerId: "market-1", submittedVariantCount: 2, variantWriteErrorCount: 1, successfulVariantWriteCount: 1 }) },
