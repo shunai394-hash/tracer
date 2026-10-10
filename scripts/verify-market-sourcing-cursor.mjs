@@ -9,18 +9,28 @@ const common = {
 };
 
 assert.deepEqual(
-  getMarketSourcingCursor({ ...common, evidenceWriteFailed: true }),
+  getMarketSourcingCursor({ ...common, failureKind: "write_failed" }),
   { sourceIndex: 3, nextIndex: 200 },
-  "schema/write failure must retry the exact same source and page",
+  "write failure must retry the exact same source and page",
 );
 assert.deepEqual(
-  getMarketSourcingCursor({ ...common, evidenceWriteFailed: false }),
+  getMarketSourcingCursor({ ...common, failureKind: "schema_probe_error" }),
+  { sourceIndex: 3, nextIndex: 200 },
+  "transient schema probe errors must retry the same page",
+);
+assert.deepEqual(
+  getMarketSourcingCursor({ ...common, failureKind: "schema_missing" }),
+  { sourceIndex: 4, nextIndex: 400 },
+  "a confirmed missing table must not hot-loop the same batch; replay is required",
+);
+assert.deepEqual(
+  getMarketSourcingCursor({ ...common, failureKind: "none" }),
   { sourceIndex: 4, nextIndex: 400 },
   "a successful evidence batch may advance to the next page",
 );
 assert.deepEqual(
   getMarketSourcingCursor({
-    evidenceWriteFailed: true,
+    failureKind: "write_failed",
     currentSourceIndex: 7,
     nextSourceIndex: 0,
     currentStartIndex: 0,
@@ -30,4 +40,4 @@ assert.deepEqual(
   "a failed final page must not rotate to the next marketplace",
 );
 
-console.log("PASS: failed evidence batches retain the cursor; successful batches advance");
+console.log("PASS: write/probe failures retry; missing schema advances with replay required");
