@@ -154,7 +154,17 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
             rows: variantEvidenceRows.length,
           });
         } else {
-          canonicalVariantEvidenceWritten += writtenVariants?.length ?? variantEvidenceRows.length;
+          // Count only rows explicitly returned by PostgREST. A successful HTTP
+          // response with no representation is not proof that every row was stored.
+          const writtenCount = writtenVariants?.length ?? 0;
+          canonicalVariantEvidenceWritten += writtenCount;
+          if (writtenCount < variantEvidenceRows.length) {
+            canonicalVariantEvidenceWriteFailures += variantEvidenceRows.length - writtenCount;
+            console.error("[TRACER CANONICAL VARIANT EVIDENCE WRITE COUNT MISMATCH]", {
+              expected: variantEvidenceRows.length,
+              returned: writtenCount,
+            });
+          }
         }
       }
 
