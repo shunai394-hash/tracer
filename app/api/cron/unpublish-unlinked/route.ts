@@ -60,6 +60,16 @@ export async function GET(request: Request) {
     } catch (cause) { errors.push(`base:${cause instanceof Error ? cause.message : String(cause)}`); }
   }
 
+  if (errors.length > 0) {
+    console.error("[unpublish-unlinked] external channel reconciliation incomplete", {
+      candidatesChecked: (data ?? []).length,
+      unlinkedFound: unlinked.length,
+      shopifyAttempted: shopifyPending.length,
+      baseAttempted: basePending.length,
+      errors,
+    });
+  }
+
   return NextResponse.json({
     ok: errors.length === 0,
     candidatesChecked: (data ?? []).length,
