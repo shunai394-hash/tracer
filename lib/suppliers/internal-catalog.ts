@@ -14,7 +14,13 @@ export type InternalSupplyLinkStatus =
   | "write_failed"
   | "table_missing"
   | "duplicate_unverified"
-  | "readback_failed";
+  | "readback_failed"
+  | "lookup_failed"
+  | "candidate_set_truncated"
+  | "ambiguous_product"
+  | "no_unique_variant"
+  | "no_match"
+  | "listing_activation_failed";
 
 export async function linkInternalSupplyForBestseller(args: {
   bestseller: Record<string, unknown>;
@@ -53,14 +59,14 @@ export async function linkInternalSupplyForBestseller(args: {
     // permission on this private catalog must never stop the external CJ
     // investigation path; otherwise one DB permission issue makes the entire
     // autonomous patrol look like it discovered nothing.
-    console.error("[TRACER INTERNAL SUPPLY LOOKUP SKIPPED]", error);
-    return { matched: false, supplierListingId: null, supplyVariantId: null };
+    console.error("[TRACER INTERNAL SUPPLY LOOKUP SKIPPED]", { code: error.code ?? null, message: error.message });
+    return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "lookup_failed" };
   }
 
   // The query is deliberately bounded. If it fills the full 20-row limit,
   // the candidate set may be truncated, so uniqueness cannot be proven safely.
   if ((products ?? []).length >= 20) {
-    return { matched: false, supplierListingId: null, supplyVariantId: null };
+    return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "candidate_set_truncated" };
   }
 
   // Do not select the first eligible product from an ambiguous result set.
@@ -85,7 +91,7 @@ export async function linkInternalSupplyForBestseller(args: {
   }).length;
 
   if (!hasUniqueMarketplaceIdentity(identityEligibleProductCount)) {
-    return { matched: false, supplierListingId: null, supplyVariantId: null };
+    return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "ambiguous_product" };
   }
 
   for (const product of products ?? []) {
@@ -114,7 +120,10 @@ export async function linkInternalSupplyForBestseller(args: {
       .gt("inventory", 0)
       .limit(50);
 
-    if (variantError) throw new Error(variantError.message);
+    if (variantError) {
+      console.error("[TRACER INTERNAL SUPPLY VARIANT LOOKUP FAILED]", { code: variantError.code ?? null, message: variantError.message });
+      return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "lookup_failed" };
+    }
 
     const confirmedVariants = (variants ?? []).map((variant) => {
       const variantIds = identifiersFromRecord(variant as Record<string, unknown>);
@@ -156,13 +165,15 @@ export async function linkInternalSupplyForBestseller(args: {
         : exactIdentifierMatches[0]
       : null;
 
-    if (!selected) continue;
+    if (!selected) {
+      return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "no_unique_variant" };
+    }
 
     const variant = selected.variant as Record<string, unknown>;
     const inventory = Number(variant.inventory ?? product.inventory ?? 0);
     if (!Number.isFinite(inventory) || inventory <= 0) continue;
 
-    const { data: existingListing } = await supabase
+    const { data: existingListing, error: existingListingError } = await supabase
       .from("supplier_listings")
       .select("id")
       .eq("supplier", "tracer_internal")
@@ -170,6 +181,11 @@ export async function linkInternalSupplyForBestseller(args: {
       .eq("external_id", String(product.source_ref ?? product.id))
       .limit(1)
       .maybeSingle();
+
+    if (existingListingError) {
+      console.error("[TRACER INTERNAL SUPPLY LISTING LOOKUP FAILED]", { code: existingListingError.code ?? null, message: existingListingError.message });
+      return { matched: false, supplierListingId: null, supplyVariantId: String(variant.id), linkStatus: "lookup_failed" };
+    }
 
     const listingPayload = {
         supplier: "tracer_internal",
@@ -194,12 +210,12 @@ export async function linkInternalSupplyForBestseller(args: {
         order_method: product.order_method ?? "internal",
         api_available: product.api_available === true,
         identity_method: selected.identity.method,
-        identity_status: "linked",
+        identity_status: "pending",
         identity_confidence: selected.identity.confidence,
-        configured: true,
+        configured: false,
         supplier_product_id: String(product.id),
         supplier_variant_id: variant.id ? String(variant.id) : (variant.variant_id ? String(variant.variant_id) : null),
-        orderable: true,
+        orderable: false,
         price_confirmed: variant.cost != null || product.cost != null,
         inventory_confirmed: true,
         fetched_at: args.fetchedAt,
@@ -214,7 +230,10 @@ export async function linkInternalSupplyForBestseller(args: {
       ? await supabase.from("supplier_listings").update(listingPayload).eq("id", existingListing.id).select("id").single()
       : await supabase.from("supplier_listings").insert(listingPayload).select("id").single();
 
-    if (listingResult.error) throw new Error(listingResult.error.message);
+    if (listingResult.error || !listingResult.data?.id) {
+      console.error("[TRACER INTERNAL SUPPLY LISTING WRITE FAILED]", { code: listingResult.error?.code ?? null, message: listingResult.error?.message ?? "no listing row returned" });
+      return { matched: false, supplierListingId: null, supplyVariantId: String(variant.id), linkStatus: "write_failed" };
+    }
     const listing = listingResult.data;
 
     const linkPayload = {
@@ -237,6 +256,16 @@ export async function linkInternalSupplyForBestseller(args: {
       .single();
 
     if (!linkResult.error && linkResult.data) {
+      const { data: activatedListing, error: activationError } = await supabase
+        .from("supplier_listings")
+        .update({ identity_status: "linked", configured: true, orderable: true })
+        .eq("id", String(listing.id))
+        .select("id")
+        .single();
+      if (activationError || !activatedListing?.id) {
+        console.error("[TRACER INTERNAL SUPPLY LISTING ACTIVATION FAILED]", { code: activationError?.code ?? null, message: activationError?.message ?? "no activated row returned" });
+        return { matched: false, supplierListingId: String(listing.id), supplyVariantId: String(variant.id), linkStatus: "listing_activation_failed" };
+      }
       return {
         matched: true,
         supplierListingId: String(listing.id),
@@ -269,6 +298,16 @@ export async function linkInternalSupplyForBestseller(args: {
         );
 
       if (exactExistingLink) {
+        const { data: activatedListing, error: activationError } = await supabase
+          .from("supplier_listings")
+          .update({ identity_status: "linked", configured: true, orderable: true })
+          .eq("id", String(listing.id))
+          .select("id")
+          .single();
+        if (activationError || !activatedListing?.id) {
+          console.error("[TRACER INTERNAL SUPPLY LISTING ACTIVATION FAILED]", { code: activationError?.code ?? null, message: activationError?.message ?? "no activated row returned" });
+          return { matched: false, supplierListingId: String(listing.id), supplyVariantId: String(variant.id), linkStatus: "listing_activation_failed" };
+        }
         return {
           matched: true,
           supplierListingId: String(listing.id),
@@ -304,5 +343,5 @@ export async function linkInternalSupplyForBestseller(args: {
     };
   }
 
-  return { matched: false, supplierListingId: null, supplyVariantId: null };
+  return { matched: false, supplierListingId: null, supplyVariantId: null, linkStatus: "no_match" };
 }
