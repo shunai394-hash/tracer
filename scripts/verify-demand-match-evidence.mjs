@@ -36,7 +36,7 @@ test("internal supplier link fail-closed contract", "listing stays non-orderable
   assert.ok(listingPersist > nonOrderable, "non-orderable payload must be persisted before the link write");
   assert.ok(linkPersist > listingPersist, "verified identity link must be written after the listing is blocked");
   assert.ok(failureGate > linkPersist && activation > failureGate, "link failure gate must precede any orderable activation");
-  assert.match(source.slice(failureGate, activation), /return \\{ matched: false/, "failed audit persistence must return unmatched without activation");
+  assert.match(source.slice(failureGate, activation), /return \{ matched: false/, "failed audit persistence must return unmatched without activation");
 });
 
 
