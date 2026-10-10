@@ -118,6 +118,9 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
 
   for (const listing of listings ?? []) {
     const listingId = String(listing.id);
+    // Already-hidden BASE items were reconciled above; do not process them a
+    // second time as missing-copy failures or overwrite their reconciliation reason.
+    if (listing.base_item_id && listing.published !== true) continue;
     const copyResult = copyByListingId.get(listingId);
     if (!copyResult?.copy) {
       const message = copyResult?.error ?? "japanese_catalog_copy_required";
