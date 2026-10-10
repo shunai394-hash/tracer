@@ -18,7 +18,8 @@ const checks = [
       && source.includes("visible: false,")],
   ["remote reconciliation errors are persisted and surfaced",
     source.includes('pipeline_reason: "sales_test_gate_hide_failed"')
-      && source.includes("failed: results.filter((r) => !r.ok).length")],
+      && source.includes("failed: results.filter((r) => r.failed === true || (!r.ok && !r.skipped)).length")
+      && source.includes("failed: operationalFailure")],
   ["hidden/reconciled rows do not inflate the published count",
     source.includes("published: results.filter((r) => r.ok && Boolean(r.baseItemId) && !r.skipped).length")],
   ["durable Sales Test Gate is re-read immediately before visible BASE writes",
