@@ -19,7 +19,7 @@ import {
 import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { normalizeIdentifier } from "../lib/market/identifiers.ts";
 import { parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
-import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
+import { supplierListingStateForIdentity, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
 const pending = [];
@@ -66,6 +66,19 @@ function test(group, name, fn) {
     record(false, error instanceof Error ? error.message : String(error));
   }
 }
+
+test("supplier listing identity activation gate", "keeps unverified listings non-orderable and activates only after canonical link verification", () => {
+  assert.deepEqual(supplierListingStateForIdentity(false), {
+    identity_status: "pending",
+    configured: false,
+    orderable: false,
+  });
+  assert.deepEqual(supplierListingStateForIdentity(true), {
+    identity_status: "linked",
+    configured: true,
+    orderable: true,
+  });
+});
 
 test("CJ identity reverify policy", "retry intervals, candidate selection, raw GTIN audit, and unique-link gate", () => {
   const result = verifyCjIdentityReverifyPolicyInvariants();

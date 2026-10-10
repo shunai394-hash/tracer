@@ -115,6 +115,13 @@ export async function GET(request: Request) {
 
     const internalMatchedIds: string[] = [];
     const internalResults: Record<string, unknown>[] = [];
+    const internalLinkFailures: Array<{
+      bestsellerId: string;
+      title: string;
+      linkStatus: string;
+      supplierListingId: string | null;
+      supplyVariantId: string | null;
+    }> = [];
     const externalCandidateIds: string[] = [];
 
     for (const candidateId of candidateIds) {
@@ -136,6 +143,19 @@ export async function GET(request: Request) {
       });
 
       if (!internal.matched) {
+        // Preserve canonical-link write/readback failures in durable cron
+        // telemetry instead of silently collapsing them into "no match".
+        // The candidate remains eligible for the normal external/blocked-row
+        // retry path; this record makes the reason auditable after the run.
+        if (internal.linkStatus) {
+          internalLinkFailures.push({
+            bestsellerId: candidateId,
+            title: String(bestseller.title ?? ""),
+            linkStatus: internal.linkStatus,
+            supplierListingId: internal.supplierListingId,
+            supplyVariantId: internal.supplyVariantId,
+          });
+        }
         externalCandidateIds.push(candidateId);
         continue;
       }
@@ -190,6 +210,8 @@ export async function GET(request: Request) {
       phase: "supplier_investigation",
       candidateCount: candidateIds.length,
       internalMatched: internalMatchedIds.length,
+      internalLinkFailureCount: internalLinkFailures.length,
+      internalLinkFailures,
       externalCandidates: externalCandidateIds.length,
       externalMatched: result.matched,
       totalMatched,
@@ -225,6 +247,8 @@ export async function GET(request: Request) {
       candidateIds,
       internalMatchedIds,
       internalResults,
+      internalLinkFailureCount: internalLinkFailures.length,
+      internalLinkFailures,
       ...result,
       totalMatched,
       nextPhase: "sales_test_publication",
