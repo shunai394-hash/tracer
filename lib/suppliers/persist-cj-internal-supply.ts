@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { identifiersFromRecord, matchProductIdentity, normalizeIdentifier } from "@/lib/market/identifiers";
+import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates, normalizeIdentifier } from "@/lib/market/identifiers";
 
 type CandidateArgs = {
   supplierProductId: string;
@@ -246,7 +246,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     const clauses = ["jan", "gtin", "ean", "upc"]
       .flatMap((column) => Object.values(ids)
         .filter((value): value is string => Boolean(value))
-        .map((value) => `${column}.eq.${value}`))
+        .flatMap((value) => marketplaceBarcodeCandidates(value).map((candidate) => `${column}.eq.${candidate}`)))
       .filter((clause, index, all) => all.indexOf(clause) === index);
     const { data: canonicalRows, error: canonicalError } = await db
       .from("marketplace_bestseller_variants")
