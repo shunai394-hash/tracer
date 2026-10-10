@@ -136,6 +136,14 @@ function barcodeFamilyValue(ids: ProductIdentifiers): string | null {
  * Every populated barcode field is checked so an earlier nonmatching field
  * cannot hide an exact match in a later field.
  */
+/** A variant link is safe only when exactly one candidate across the full lookup has exact barcode evidence. */
+export function selectUniqueExactBarcodeMatch<T extends { method: "jan" | "gtin" | "ean" | "upc" | null }>(
+  candidates: T[],
+): T | null {
+  const exact = candidates.filter((candidate) => candidate.method !== null);
+  return exact.length === 1 ? exact[0] : null;
+}
+
 export function exactBarcodeFamilyMatch(
   market: ProductIdentifiers,
   supply: ProductIdentifiers,
