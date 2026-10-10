@@ -100,6 +100,19 @@ export function hasAnyIdentifier(ids: ProductIdentifiers): boolean {
   return Boolean(ids.asin || ids.jan || ids.gtin || ids.ean || ids.upc || ids.mpn);
 }
 
+/** Stable query order for marketplace-to-supply identity lookup, including ASIN-only records. */
+export function identifierQueryEntries(ids: ProductIdentifiers): Array<[IdentifierScheme, string]> {
+  return ([
+    ["asin", ids.asin],
+    ["jan", ids.jan],
+    ["gtin", ids.gtin],
+    ["ean", ids.ean],
+    ["upc", ids.upc],
+    ["mpn", ids.mpn],
+  ] as Array<[IdentifierScheme, string | null]>)
+    .filter((entry): entry is [IdentifierScheme, string] => Boolean(entry[1]));
+}
+
 export function pickIdentifierQuery(ids: ProductIdentifiers): string | null {
   return ids.jan ?? ids.gtin ?? ids.ean ?? ids.upc ?? ids.asin ?? ids.mpn ?? null;
 }
