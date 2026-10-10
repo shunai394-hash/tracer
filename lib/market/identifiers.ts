@@ -32,6 +32,25 @@ export function marketplaceBarcodeCandidates(value: string): string[] {
   return [...candidates];
 }
 
+/** Build bounded PostgREST conditions across all barcode schemes; exact matching remains authoritative. */
+export function marketplaceIdentifierLookupConditions(ids: ProductIdentifiers): string[] {
+  const conditions = new Set<string>();
+  const barcodeColumns = ["jan", "gtin", "ean", "upc"] as const;
+  for (const scheme of barcodeColumns) {
+    const value = ids[scheme];
+    if (!value) continue;
+    for (const candidate of marketplaceBarcodeCandidates(value)) {
+      for (const column of barcodeColumns) conditions.add(`${column}.eq.${candidate}`);
+    }
+  }
+  // MPN is only a candidate lookup hint; reject PostgREST grammar delimiters and
+  // require a bounded identifier shape. It never proves variant identity.
+  if (ids.mpn && /^[A-Z0-9][A-Z0-9._/-]{2,}$/.test(ids.mpn) && !/[(),]/.test(ids.mpn)) {
+    conditions.add(`mpn.eq.${ids.mpn}`);
+  }
+  return [...conditions];
+}
+
 function hasValidGs1CheckDigit(value: string): boolean {
   if (![8, 12, 13, 14].includes(value.length) || !/^\d+$/.test(value)) return false;
   const body = value.slice(0, -1);
@@ -249,6 +268,22 @@ export function verifyIdentifierMatchInvariants(): {
         });
         return r.method === "none" && !r.salesEligible;
       })(),
+    },
+    {
+      name: "cross-scheme lookup checks every barcode column",
+      expected: true,
+      actual: (() => {
+        const conditions = marketplaceIdentifierLookupConditions({ ...EMPTY_IDENTIFIERS, jan: "4006381333931" });
+        return conditions.includes("gtin.eq.4006381333931")
+          && conditions.includes("ean.eq.4006381333931")
+          && conditions.includes("upc.eq.4006381333931")
+          && conditions.includes("jan.eq.4006381333931");
+      })(),
+    },
+    {
+      name: "unsafe MPN filter syntax is excluded",
+      expected: true,
+      actual: !marketplaceIdentifierLookupConditions({ ...EMPTY_IDENTIFIERS, mpn: "ABC),mpn.eq.X" }).some((condition) => condition.includes("ABC)")),
     },
     {
       name: "invalid_gtin_check_digit_is_rejected",
