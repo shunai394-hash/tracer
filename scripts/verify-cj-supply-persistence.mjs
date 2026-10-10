@@ -67,8 +67,8 @@ class FakeQuery {
     }
     let selected = rows.filter((row) => this.filters.every((test) => test(row)));
     if (this.table === "marketplace_bestseller_variants" && this.orClause) {
-      const expected = this.db.variantBarcodeFilter;
-      selected = selected.filter((row) => [row.jan, row.gtin, row.ean, row.upc].includes(expected));
+      const terms = this.orClause.split(",").map((term) => { const match = term.match(/^([a-z_]+)\\.eq\\.(.*)$/); return match ? { field: match[1], value: match[2] } : null; }).filter(Boolean);
+      selected = selected.filter((row) => terms.some(({ field, value }) => String(row[field] ?? "") === value));
     }
     if (this.limitCount !== null) selected = selected.slice(0, this.limitCount);
     if (single) return { data: selected[0] ?? null, error: null };
@@ -89,6 +89,25 @@ class FakeDb {
   from(table) { return new FakeQuery(this, table); }
 }
 
+function compileRealTsModule(path) {
+  const code = fs.readFileSync(path, "utf8");
+  const output = ts.transpileModule(code, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+  }).outputText;
+  const moduleRecord = { exports: {} };
+  vm.runInNewContext(output, {
+    module: moduleRecord,
+    exports: moduleRecord.exports,
+    require: (id) => { throw new Error(`Unexpected import in real helper ${path}: ${id}`); },
+    console, Date, Set, Map, Object, Number, String, Array, Math, Error, JSON, RegExp,
+  }, { filename: path + ".compiled.cjs" });
+  return moduleRecord.exports;
+}
+
+const realIdentifiers = compileRealTsModule("lib/market/identifiers.ts");
+const realVariantBarcodeProof = compileRealTsModule("lib/market/variant-barcode-proof.ts");
+const realCjIdentityPolicy = compileRealTsModule("lib/suppliers/cj-identity-reverify-policy.ts");
+
 const modules = {
   "server-only": {},
   "@/lib/intelligence/currency-confidence": { assessCurrencyConfidence: () => ({ confidence: "high", reasons: [] }) },
@@ -97,21 +116,9 @@ const modules = {
     fetchCJProductVariants: async () => [{ vid: supplierVariantId, barcode }],
     fetchCJVariantByVid: async (vid) => ({ vid, barcode }),
   },
-  "@/lib/market/identifiers": {
-    identifiersFromRecord: (value) => Object.fromEntries(Object.entries(value).filter(([, v]) => typeof v === "string" && v.trim()).map(([k, v]) => [k, v.trim()])),
-    marketplaceBarcodeCandidates: (value) => [value],
-    matchProductIdentity: ({ market, supply }) => ({ salesEligible: market.gtin === supply.gtin || market.jan === supply.gtin, confidence: 0.98, method: "gtin", rationale: "exact identifier" }),
-  },
-  "@/lib/market/variant-barcode-proof": {
-    exactVariantBarcodeMethod: (market, supply) => [market.jan, market.gtin, market.ean, market.upc].includes(supply.gtin) ? "gtin" : null,
-    hasUniqueCanonicalVariantMatch: (matchCount, productCount) => matchCount === 1 && productCount === 1,
-  },
-  "@/lib/suppliers/cj-identity-reverify-policy": {
-    readExactSupplierVariantBarcode: (variants, requestedId) => {
-      const matches = variants.filter((variant) => variant.vid === requestedId);
-      return matches.length === 1 && typeof matches[0].barcode === "string" && matches[0].barcode.trim() ? matches[0].barcode.trim() : null;
-    },
-  },
+  "@/lib/market/identifiers": realIdentifiers,
+  "@/lib/market/variant-barcode-proof": realVariantBarcodeProof,
+  "@/lib/suppliers/cj-identity-reverify-policy": realCjIdentityPolicy,
 };
 const testModule = { exports: {} };
 const context = {
@@ -143,7 +150,7 @@ const args = {
 
 {
   const db = new FakeDb();
-  const result = await persistCjSupplyIntelligence(args, { db, now: () => new Date("2026-10-10T00:00:00.000Z") });
+  const result = await persistCjSupplyIntelligence(args, { db, now: () => new Date("2026-10-10T00:00:00.000Z"), fetchProductVariants: async () => [{ vid: supplierVariantId, barcode }], fetchVariantByVid: async (vid) => ({ vid, barcode }) });
   assert.equal(result.identity?.productId, canonicalProductId, "real resolver must choose the exact canonical child variant");
   assert.equal(result.identity?.marketplaceVariantEvidenceId, "evidence-1");
   assert.equal(result.offerId !== null, true);
@@ -166,7 +173,7 @@ const args = {
     { ...identityEvidence, id: "evidence-2", source_variant_id: "market-variant-2" },
   ];
   const db = new FakeDb({ identityRows: duplicateEvidence });
-  const result = await persistCjSupplyIntelligence(args, { db });
+  const result = await persistCjSupplyIntelligence(args, { db, fetchProductVariants: async () => [{ vid: supplierVariantId, barcode }], fetchVariantByVid: async (vid) => ({ vid, barcode }) });
   assert.equal(result.identity, null, "duplicate child evidence must be rejected");
   assert.equal(result.offerId, null);
   assert.equal(result.intelligenceId, null);
@@ -182,33 +189,21 @@ const args = {
 }
 
 {
-  const originalList = modules["@/lib/sources/cj"].fetchCJProductVariants;
-  const originalDetail = modules["@/lib/sources/cj"].fetchCJVariantByVid;
-  modules["@/lib/sources/cj"].fetchCJProductVariants = async () => [{ vid: "different-cj-variant", barcode }];
-  modules["@/lib/sources/cj"].fetchCJVariantByVid = async () => ({ vid: "different-cj-variant", barcode });
   const db = new FakeDb();
-  const result = await persistCjSupplyIntelligence(args, { db });
+  const result = await persistCjSupplyIntelligence(args, { db, fetchProductVariants: async () => [{ vid: "different-cj-variant", barcode }], fetchVariantByVid: async (vid) => ({ vid: "different-cj-variant", barcode }) });
   assert.equal(result.identity, null, "barcode from a mismatched CJ variant ID must not link");
   assert.equal(db.tables.supplier_listings[0].product_id, null);
   assert.equal(db.tables.product_offers.length, 0);
   assert.equal(db.tables.product_intelligence.length, 0);
-  modules["@/lib/sources/cj"].fetchCJProductVariants = originalList;
-  modules["@/lib/sources/cj"].fetchCJVariantByVid = originalDetail;
 }
 
 {
-  const originalList = modules["@/lib/sources/cj"].fetchCJProductVariants;
-  const originalDetail = modules["@/lib/sources/cj"].fetchCJVariantByVid;
-  modules["@/lib/sources/cj"].fetchCJProductVariants = async () => [{ vid: supplierVariantId, barcode: "  " }];
-  modules["@/lib/sources/cj"].fetchCJVariantByVid = async () => ({ vid: supplierVariantId, barcode: "  " });
   const db = new FakeDb();
-  const result = await persistCjSupplyIntelligence(args, { db });
+  const result = await persistCjSupplyIntelligence(args, { db, fetchProductVariants: async () => [{ vid: supplierVariantId, barcode: "  " }], fetchVariantByVid: async (vid) => ({ vid, barcode: "  " }) });
   assert.equal(result.identity, null, "blank barcode must not link");
   assert.equal(db.tables.supplier_listings[0].product_id, null);
   assert.equal(db.tables.product_offers.length, 0);
   assert.equal(db.tables.product_intelligence.length, 0);
-  modules["@/lib/sources/cj"].fetchCJProductVariants = originalList;
-  modules["@/lib/sources/cj"].fetchCJVariantByVid = originalDetail;
 }
 
 {
