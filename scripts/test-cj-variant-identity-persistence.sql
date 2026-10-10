@@ -44,6 +44,7 @@ do $$
 declare
   v_exact integer;
   v_ambiguous integer;
+  v_mismatch integer;
   v_status text;
   v_product uuid;
   v_failure boolean := false;
@@ -54,8 +55,10 @@ begin
   if v_exact <> 2 then raise exception 'fixture expected 2 matching child rows, got %',v_exact; end if;
 
   -- Ambiguous match is refused; stale linked identity must be cleared rather than retained.
-  select count(*) into v_ambiguous from public.marketplace_bestseller_variants where gtin='4006381333932';
-  if v_ambiguous <> 0 then raise exception 'unexpected mismatch barcode fixture'; end if;
+  select count(*) into v_ambiguous from public.marketplace_bestseller_variants where gtin='4901234567894';
+  if v_ambiguous <> 2 then raise exception 'expected ambiguous duplicate child barcode, got %',v_ambiguous; end if;
+  select count(*) into v_mismatch from public.marketplace_bestseller_variants where gtin='4006381333932';
+  if v_mismatch <> 0 then raise exception 'mismatched barcode unexpectedly found evidence'; end if;
 
   update public.supplier_listings set
     bestseller_id=null, product_id=null, identity_method=null, identity_status='unverified',
