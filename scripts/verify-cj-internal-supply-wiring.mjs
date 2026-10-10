@@ -92,6 +92,8 @@ assert.match(identityResolver, /canonical_variant_evidence_id: marketplaceIdenti
   "supplier-listing audit metadata must preserve the exact evidence row");
 assert.match(identityResolver, /identity_status: marketplaceIdentity \? "linked" : "supply_discovered"/,
   "failed or ambiguous re-verification must demote a listing instead of retaining stale linked status");
+assert.match(identityResolver, /missingEvidenceTable/,
+  "a missing child-evidence migration must fail closed without aborting supplier discovery");
 assert.doesNotMatch(identityResolver, /from\("marketplace_bestsellers"\)\s*\.select\("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand,fetched_at"\)/,
   "parent-level identifier matches must not be used as canonical child-variant proof");
 
