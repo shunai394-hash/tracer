@@ -17,7 +17,8 @@ import {
   variantsCompatible,
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
-import { normalizeIdentifier } from "../lib/market/identifiers.ts";
+import { EMPTY_IDENTIFIERS, identifiersFromRecord, normalizeIdentifier } from "../lib/market/identifiers.ts";
+import { exactVariantBarcodeMethod } from "../lib/market/variant-barcode-proof.ts";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
@@ -33,6 +34,18 @@ function test(group, name, fn) {
     record(false, error instanceof Error ? error.message : String(error));
   }
 }
+
+
+test("supplier variant barcode proof", "cross-scheme exact barcode links but product MPN alone never proves a concrete variant", () => {
+  const market = identifiersFromRecord({ jan: "4006381333931", mpn: "MODEL-1" });
+  const exactVariant = identifiersFromRecord({ ean: "4006381333931", mpn: "MODEL-1" });
+  const wrongVariant = identifiersFromRecord({ ean: "4006381333932", mpn: "MODEL-1" });
+  const mpnOnly = { ...EMPTY_IDENTIFIERS, mpn: "MODEL-1" };
+  assert.equal(exactVariantBarcodeMethod(market, exactVariant), "gtin");
+  assert.equal(exactVariantBarcodeMethod(market, wrongVariant), null);
+  assert.equal(exactVariantBarcodeMethod(market, mpnOnly), null);
+  assert.equal(exactVariantBarcodeMethod({ ...EMPTY_IDENTIFIERS, mpn: "MODEL-1" }, mpnOnly), null);
+});
 
 test("CJ identity reverify policy", "retry intervals, candidate selection, raw GTIN audit, and unique-link gate", () => {
   const result = verifyCjIdentityReverifyPolicyInvariants();
