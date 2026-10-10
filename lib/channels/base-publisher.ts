@@ -58,39 +58,148 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
 
   const results: BasePublicationResult["results"] = [];
 
-  // Hide stale BASE items immediately. Do not spend Gemini time translating
-  // listings that TRACER has already blocked/unpublished.
+  // Never let an existing remote BASE item bypass the durable Sales Test Gate.
+  // Keep these IDs out of every later copy/publication loop even if hiding fails.
+  const doNotRepublishIds = new Set<string>();
   for (const listing of listings ?? []) {
     if (!listing.base_item_id || listing.published === true) continue;
-    if (listing.selling_price === null) {
-      results.push({ listingId: String(listing.id), ok: false, skipped: true, error: "base_hide_price_unknown" });
-      continue;
-    }
+    const listingId = String(listing.id);
+    doNotRepublishIds.add(listingId);
+    const now = new Date().toISOString();
+    const { error: blockError } = await supabase.from("shop_listings").update({
+      published: false,
+      orderable: false,
+      base_publication_lease_until: null,
+      pipeline_stage: "BASE_RECONCILIATION",
+      pipeline_status: "blocked",
+      pipeline_reason: "tracer_unpublished",
+      pipeline_updated_at: now,
+      updated_at: now,
+    }).eq("id", listingId);
     try {
       await editBaseItem({
         itemId: String(listing.base_item_id),
         title: "販売停止中の商品",
         detail: "現在この商品は販売停止中です。",
-        price: Number(listing.selling_price),
+        price: Number(listing.selling_price ?? 0),
         stock: 0,
         visible: false,
       });
-      await supabase.from("shop_listings").update({
+      const { error: reconcileError } = await supabase.from("shop_listings").update({
         base_publication_status: "published",
         base_publication_lease_until: null,
-        base_last_error: null,
-        pipeline_stage: "BASE_RECONCILED",
-        pipeline_status: "blocked",
-        pipeline_reason: "tracer_unpublished",
+        base_last_error: blockError?.message ?? null,
+        pipeline_stage: blockError ? "BASE_RECONCILIATION" : "BASE_RECONCILED",
+        pipeline_status: blockError ? "failed" : "blocked",
+        pipeline_reason: blockError ? "base_local_block_write_failed" : "tracer_unpublished",
+        pipeline_error: blockError?.message ?? null,
         pipeline_updated_at: new Date().toISOString(),
-      }).eq("id", String(listing.id));
-      results.push({ listingId: String(listing.id), ok: true, baseItemId: String(listing.base_item_id) });
+      }).eq("id", listingId);
+      if (reconcileError) throw new Error(reconcileError.message);
+      results.push({
+        listingId,
+        ok: !blockError,
+        baseItemId: String(listing.base_item_id),
+        skipped: true,
+        ...(blockError ? { error: blockError.message } : {}),
+      });
     } catch (error) {
-      results.push({ listingId: String(listing.id), ok: false, error: error instanceof Error ? error.message : String(error) });
+      const message = error instanceof Error ? error.message : String(error);
+      await supabase.from("shop_listings").update({
+        published: false,
+        orderable: false,
+        base_publication_status: "failed",
+        base_publication_lease_until: null,
+        base_last_error: message,
+        pipeline_stage: "BASE_RECONCILIATION",
+        pipeline_status: "failed",
+        pipeline_reason: "base_hide_failed",
+        pipeline_error: message,
+        pipeline_updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      results.push({ listingId, ok: false, baseItemId: String(listing.base_item_id), skipped: true, error: message });
     }
   }
 
-  const activeListings = (listings ?? []).filter((listing) => !listing.base_item_id || listing.published === true);
+  // Revalidate every already-visible BASE item before any translation or publish work.
+  // This prevents copy-generation failure from short-circuiting an emergency hide.
+  for (const listing of listings ?? []) {
+    if (!listing.base_item_id || listing.published !== true) continue;
+    const hasSelectedGate = listing.pipeline_status === "selected"
+      && listing.pipeline_reason === SALES_TEST_GATE_PASSED
+      && Array.isArray(listing.selection_reasons)
+      && listing.selection_reasons.includes(SALES_TEST_GATE_PASSED);
+    const hasSalesTestGate = hasPassedSalesTestGate({
+      ...listing,
+      title: String(listing.title ?? ""),
+      normalized_title: String(listing.title ?? ""),
+    } as Parameters<typeof hasPassedSalesTestGate>[0]) || hasSelectedGate;
+    if (hasSalesTestGate) continue;
+
+    const listingId = String(listing.id);
+    doNotRepublishIds.add(listingId);
+    const now = new Date().toISOString();
+    const { error: blockError } = await supabase.from("shop_listings").update({
+      published: false,
+      orderable: false,
+      base_publication_lease_until: null,
+      pipeline_stage: "BASE_RECONCILIATION",
+      pipeline_status: "blocked",
+      pipeline_reason: "sales_test_gate_not_passed",
+      pipeline_updated_at: now,
+      updated_at: now,
+    }).eq("id", listingId);
+    try {
+      await editBaseItem({
+        itemId: String(listing.base_item_id),
+        title: "販売停止中の商品",
+        detail: "販売条件の再確認が必要なため、この商品は販売停止中です。",
+        price: Number(listing.selling_price ?? 0),
+        stock: 0,
+        visible: false,
+      });
+      const { error: reconcileError } = await supabase.from("shop_listings").update({
+        base_publication_status: "published",
+        base_publication_lease_until: null,
+        base_last_error: blockError?.message ?? null,
+        pipeline_stage: blockError ? "BASE_RECONCILIATION" : "BASE_RECONCILED",
+        pipeline_status: blockError ? "failed" : "blocked",
+        pipeline_reason: blockError ? "sales_test_gate_block_write_failed" : "sales_test_gate_not_passed",
+        pipeline_error: blockError?.message ?? null,
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      if (reconcileError) throw new Error(reconcileError.message);
+      results.push({
+        listingId,
+        ok: !blockError,
+        baseItemId: String(listing.base_item_id),
+        skipped: true,
+        error: "sales_test_gate_not_passed",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await supabase.from("shop_listings").update({
+        published: false,
+        orderable: false,
+        base_publication_status: "failed",
+        base_publication_lease_until: null,
+        base_last_error: message,
+        pipeline_stage: "BASE_RECONCILIATION",
+        pipeline_status: "failed",
+        pipeline_reason: "sales_test_gate_hide_failed",
+        pipeline_error: message,
+        pipeline_updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      results.push({ listingId, ok: false, baseItemId: String(listing.base_item_id), skipped: true, error: message });
+    }
+  }
+
+  const activeListings = (listings ?? []).filter((listing) =>
+    !doNotRepublishIds.has(String(listing.id))
+    && (!listing.base_item_id || listing.published === true)
+  );
   // Generate Japanese copy concurrently only for listings that can remain visible.
   // spend the full serverless timeout waiting on Gemini one listing at a time.
   const copyResults = await Promise.all(activeListings.map(async (listing) => {
@@ -113,6 +222,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
 
   for (const listing of listings ?? []) {
     const listingId = String(listing.id);
+    if (doNotRepublishIds.has(listingId)) continue;
     const copyResult = copyByListingId.get(listingId);
     if (!copyResult?.copy) {
       const message = copyResult?.error ?? "japanese_catalog_copy_required";
@@ -137,7 +247,11 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       && listing.selection_reasons.includes(SALES_TEST_GATE_PASSED);
     const hasSalesTestGate = hasPassedSalesTestGate({ ...listing, title: catalogCopy.title, normalized_title: catalogCopy.title } as Parameters<typeof hasPassedSalesTestGate>[0]) || hasSelectedGate;
 
-    if (!listing.base_item_id && !hasSalesTestGate) { results.push({ listingId, ok: false, skipped: true, error: "sales_test_gate_not_passed" }); continue; }
+    if (!hasSalesTestGate) {
+      // New listings without the durable gate must never be created on BASE.
+      results.push({ listingId, ok: false, skipped: true, error: "sales_test_gate_not_passed" });
+      continue;
+    }
 
     // BASE publication is a sales-channel operation, not procurement authorization.
     // A listing may be sold on BASE only when the canonical Sales Test Gate has
@@ -269,5 +383,5 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       results.push({ listingId, ok: false, error: message });
     }
   }
-  return { attempted: listings?.length ?? 0, published: results.filter((r) => r.ok && r.baseItemId).length, skipped: results.filter((r) => r.skipped).length, failed: results.filter((r) => !r.ok && !r.skipped).length, results };
+  return { attempted: listings?.length ?? 0, published: results.filter((r) => r.ok && Boolean(r.baseItemId) && !r.skipped).length, skipped: results.filter((r) => r.skipped).length, failed: results.filter((r) => !r.ok && !r.skipped).length, results };
 }
