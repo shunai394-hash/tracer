@@ -41,19 +41,17 @@ export async function syncTracerCatalogFromInternalSupply(args: {
   if (bestsellerError) throw new Error(bestsellerError.message);
   if (!bestseller) return { matched: false, catalogId: null, variantId: null, reason: "bestseller_not_found" };
 
-  const marketIds = identifiersFromRecord(bestseller as Record<string, unknown>);
-  const queries = [
-    ["jan", marketIds.jan],
-    ["gtin", marketIds.gtin],
-    ["ean", marketIds.ean],
-    ["upc", marketIds.upc],
-    ["mpn", marketIds.mpn],
-  ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
+  // Resolve only the exact internal variants written by this request.
+  // Parent product identifiers are not child-variant identity evidence.
+  const suppliedVariantIds = (args.variantIds ?? []).filter((id) => typeof id === "string" && id.trim());
+  const variantIds = [...new Set(suppliedVariantIds)];
+  if (variantIds.length === 0) {
+    return { matched: false, catalogId: null, variantId: null, reason: "no_variants_written_by_request" };
+  }
+  if (variantIds.length !== suppliedVariantIds.length) {
+    return { matched: false, catalogId: null, variantId: null, reason: "duplicate_variant_ids_in_request_scope" };
+  }
 
-  if (!queries.length) return { matched: false, catalogId: null, variantId: null, reason: "no_identifier" };
-
-  // Resolve the exact request-scoped variant set independently of product lookup.
-  // Never use a product's other/older variants as fallback when IDs are missing or mismatched.
   const { data: requestedVariants, error: requestedVariantError } = await db
     .from("internal_supply_variants")
     .select("*")
@@ -68,72 +66,60 @@ export async function syncTracerCatalogFromInternalSupply(args: {
     return { matched: false, catalogId: null, variantId: null, reason: "requested_variant_not_active_orderable_or_in_stock" };
   }
 
-  const or = queries.map(([column, value]) => `${column}.eq.${value.replace(/[,()]/g, "")}`).join(",");
-
-  const { data: products, error: productError } = await db
+  const { data: product, error: productError } = await db
     .from("internal_supply_products")
     .select("*")
+    .eq("id", requestedProductId)
     .eq("active", true)
-    .or(or)
-    .limit(20);
-
+    .maybeSingle();
   if (productError) throw new Error(productError.message);
+  if (!product) {
+    return { matched: false, catalogId: null, variantId: null, reason: "requested_supply_product_inactive_or_missing" };
+  }
 
-  for (const product of products ?? []) {
-    if (String(product.id) !== requestedProductId) continue;
-    const productIds = identifiersFromRecord(product as Record<string, unknown>);
+  const { data: canonicalRows, error: canonicalError } = await db
+    .from("marketplace_bestseller_variants")
+    .select("id,bestseller_id,source_variant_id,jan,gtin,ean,upc,evidence_source,title,product_url,sku")
+    .eq("bestseller_id", bestseller.id)
+    .limit(251);
+  if (canonicalError) throw new Error(canonicalError.message);
+  const canonicalVariants = (canonicalRows ?? []) as Array<Record<string, unknown> & { id: string; bestseller_id: string }>;
+  if (canonicalVariants.length === 0) {
+    return { matched: false, catalogId: null, variantId: null, reason: "no_canonical_child_variant_evidence" };
+  }
+  if (canonicalVariants.length > 250) {
+    return { matched: false, catalogId: null, variantId: null, reason: "canonical_child_variant_evidence_truncated" };
+  }
+
+  const currentRequestVariants = onlyCurrentRequestVariants(
+    scopedRows as Array<{ id: string; [key: string]: unknown }>,
+    variantIds,
+  );
+  const matches = currentRequestVariants.flatMap((variant) => canonicalVariants.map((canonical) => {
     const identity = matchProductIdentity({
-      market: {
-        ...marketIds,
-        brand: str(bestseller.brand),
-        title: String(bestseller.title ?? ""),
-      },
-      supply: {
-        ...productIds,
-        brand: str(product.brand),
-        title: String(product.title ?? ""),
-      },
+      market: identifiersFromRecord(canonical),
+      supply: identifiersFromRecord(variant as Record<string, unknown>),
     });
+    return { variant, canonical, identity };
+  }).filter((candidate) =>
+    candidate.identity.salesEligible
+    && ["jan", "gtin", "ean", "upc"].includes(candidate.identity.method)
+    && candidate.canonical.evidence_source === "schema_org_product_group_has_variant"
+    && typeof candidate.canonical.source_variant_id === "string"
+    && candidate.canonical.source_variant_id.trim().length > 0,
+  ));
 
-    if (!identity.salesEligible) continue;
+  // This endpoint currently commits one catalog variant per call. If the
+  // request scope contains multiple valid pairs, stop rather than silently
+  // choosing one and losing the remaining variant relationships.
+  if (matches.length === 0) {
+    return { matched: false, catalogId: null, variantId: null, reason: "no_exact_canonical_child_variant_match" };
+  }
+  if (matches.length !== 1) {
+    return { matched: false, catalogId: null, variantId: null, reason: "ambiguous_canonical_child_variant_match" };
+  }
 
-    const currentRequestVariants = onlyCurrentRequestVariants(
-      scopedRows.filter((variant) => String(variant.supply_product_id) === requestedProductId) as Array<{ id: string; [key: string]: unknown }>,
-      variantIds,
-    );
-    const confirmed = currentRequestVariants.map((variant) => {
-      const ids = identifiersFromRecord(variant as Record<string, unknown>);
-      return {
-        variant,
-        identity: matchProductIdentity({
-          market: {
-            ...marketIds,
-            brand: str(bestseller.brand),
-            title: String(bestseller.title ?? ""),
-          },
-          supply: {
-            ...ids,
-            brand: str(product.brand),
-            title: String(variant.title ?? product.title ?? ""),
-          },
-        }),
-      };
-    }).filter((x) => x.identity.salesEligible);
-
-    const exactIdentifierMatches = confirmed.filter((x) =>
-      Boolean(
-        (marketIds.jan && identifiersFromRecord(x.variant as Record<string, unknown>).jan === marketIds.jan) ||
-        (marketIds.gtin && identifiersFromRecord(x.variant as Record<string, unknown>).gtin === marketIds.gtin) ||
-        (marketIds.ean && identifiersFromRecord(x.variant as Record<string, unknown>).ean === marketIds.ean) ||
-        (marketIds.upc && identifiersFromRecord(x.variant as Record<string, unknown>).upc === marketIds.upc),
-      ),
-    );
-    const selected = hasUniqueIdentitySelection(confirmed.length, exactIdentifierMatches.length)
-      ? confirmed.length === 1 ? confirmed[0] : exactIdentifierMatches[0]
-      : undefined;
-
-    if (!selected) continue;
-
+  const selected = matches[0];
     const variant = selected.variant;
     const inventory = num(variant.inventory) ?? num(product.inventory) ?? 0;
     const cost = num(variant.cost) ?? num(product.cost);
