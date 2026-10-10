@@ -2,9 +2,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { verifySalesTestGateInvariants } from "@/lib/market/sales-test-gate";
 import { verifyWomenPriorityInvariants } from "@/lib/intelligence/womens-priority";
+import { isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 
 const root = process.cwd();
 const checks = [
+  ["Shopify publishable title guard", "lib/shopify/sync-published-listings.ts", "catalog_title_not_publishable"],
+  ["BASE publishable title guard", "lib/channels/base-publisher.ts", "BASE catalog title contains workflow or disqualification text"],
   ["Shopify legacy sync", "lib/shopify/sync.ts", "hasPassedSalesTestGate"],
   ["Shopify canonical sync", "lib/shopify/sync-published-listings.ts", "hasPassedSalesTestGate"],
   ["Shopify sync live-stock guard", "lib/shopify/sync-published-listings.ts", "Number(row.inventory) > 0"],
@@ -56,7 +59,18 @@ const checks = [
   ["CJ identity recovery twice daily", "vercel.json", "9 18 * * *"],
 ] as const;
 
+const titleCases: Array<[string, unknown, boolean]> = [
+  ["ordinary Japanese product title", "折りたたみ収納ボックス", true],
+  ["identity failure suffix", "暮らしの便利アイテム 商品アイデンティティが未確定のため、選定対象外", false],
+  ["sales gate failure suffix", "ペット用品 必須ゲートを満たしていないため、テスト優先度は低い", false],
+  ["truncated evidence suffix", "スマホケース は観測された需要と供給データに基", false],
+  ["generic specification placeholder", "商品の仕様・サイズ・素材・使用方法は、販売元の掲載情報をご確認ください。", false],
+  ["empty title", "", false],
+  ["overlong title", "a".repeat(181), false],
+];
+const titleFailures = titleCases.filter(([name, title, expected]) => isPublishableCatalogTitle(title) !== expected).map(([name]) => name);
 const failures: string[] = [];
+if (titleFailures.length) failures.push(`publishable-title cases failed: ${titleFailures.join(", ")}`);
 const invariant = verifySalesTestGateInvariants();
 const womenInvariant = verifyWomenPriorityInvariants();
 if (!womenInvariant.ok) failures.push(`women-priority invariants failed: ${JSON.stringify(womenInvariant.cases)}`);
