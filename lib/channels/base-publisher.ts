@@ -107,10 +107,12 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked)) continue;
     if (listing.published !== true && ["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
     if (listing.selling_price === null) {
-      results.push({ listingId: String(listing.id), ok: false, skipped: true, error: "base_hide_price_unknown" });
+      results.failed += 1;
+      results.results.push({ listingId: String(listing.id), ok: false, skipped: true, error: "base_hide_price_unknown" });
       continue;
     }
     try {
+      results.attempted += 1;
       await editBaseItem({
         itemId: String(listing.base_item_id),
         title: "販売停止中の商品",
@@ -134,7 +136,8 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       }).eq("id", String(listing.id));
       results.push({ listingId: String(listing.id), ok: true, baseItemId: String(listing.base_item_id) });
     } catch (error) {
-      results.push({ listingId: String(listing.id), ok: false, error: error instanceof Error ? error.message : String(error) });
+      results.failed += 1;
+      results.results.push({ listingId: String(listing.id), ok: false, error: error instanceof Error ? error.message : String(error) });
     }
   }
 

@@ -18,6 +18,9 @@ assert.match(base, /base_last_error: isIdentityUnlinked \? "supplier_identity_un
 assert.match(store, /supplierListingId && linkedSupplierIds\.has/);
 assert.match(store, /supplier_identity_unlinked/);
 assert.match(route, /published: false/);
+assert.match(route, /base_unpublish_failed/);
+assert.match(route, /shopify_unpublish_failed/);
+assert.match(base, /results\.failed \+= 1/);
 assert.match(route, /publishPublishedListingsToBase\(50/);
 assert.match(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/);
 console.log("Canonical supplier identity publication gates: 10 assertions passed");
