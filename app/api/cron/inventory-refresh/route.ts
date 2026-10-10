@@ -221,7 +221,6 @@ export async function GET(request: Request) {
         const { error: listingError } = await supabase
           .from("shop_listings")
           .update(listingPatch)
-          .eq("id", listingId)
           .eq("id", listingId);
         if (listingError) throw new Error(listingError.message);
 
