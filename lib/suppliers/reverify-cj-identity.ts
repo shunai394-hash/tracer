@@ -129,8 +129,33 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         return { kind: "no_match" as const, supplierListingId };
       }
       const canonicalProductId = identity.productId;
-      if (!canonicalProductId) { await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), last_identity_reverify_at: new Date().toISOString() } }).eq("id", supplierListingId); return { kind: "no_match" as const, supplierListingId }; }
-      const { data: intelligence } = await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle();
+      if (!canonicalProductId) {
+        const checkedAt = new Date();
+        const { error: detachError } = await db.from("supplier_listings").update({
+          bestseller_id: null,
+          product_id: null,
+          identity_method: null,
+          identity_status: "unverified",
+          identity_confidence: 0,
+          orderable: false,
+          api_available: false,
+          tracking_available: false,
+          verification_status: "identity_unverified",
+          metadata: {
+            ...listingMetadata,
+            variant_barcode: null,
+            marketplace_variant_evidence_id: null,
+            marketplace_source_variant_id: null,
+            last_identity_reverify_at: checkedAt.toISOString(),
+            next_identity_reverify_at: new Date(checkedAt.getTime() + NO_MATCH_RETRY_MS).toISOString(),
+            identity_hold_reason: "canonical_product_id_missing",
+          },
+        }).eq("id", supplierListingId);
+        if (detachError) throw new Error(`CJ missing canonical product ID detach failed: ${detachError.message}`);
+        return { kind: "no_match" as const, supplierListingId };
+      }
+      const { data: intelligence, error: intelligenceReadError } = await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle();
+      if (intelligenceReadError) throw new Error(`CJ product intelligence read failed: ${intelligenceReadError.message}`);
       const metadata = record(intelligence?.metadata);
       const cost = num(row.cost); const shippingCost = num(row.shipping_cost); const inventory = num(row.inventory);
       const storedFxRate = num(metadata.fx_rate);
@@ -141,25 +166,43 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const sellingPriceJpy = storedSellingPriceJpy ?? (landedCostJpy !== null && Number.isFinite(landedCostJpy) && landedCostJpy >= 0 ? Math.ceil(Math.max(1980, landedCostJpy * 2.5) / 100) * 100 : null);
       const listingImage = [listingMetadata.image_url, listingMetadata.product_image, listingMetadata.productImage, listingMetadata.image].find((value) => typeof value === "string" && /^https?:\/\//i.test(value.trim()));
       const imageUrl = typeof intelligence?.image_url === "string" && /^https?:\/\//i.test(intelligence.image_url.trim()) ? intelligence.image_url.trim() : typeof listingImage === "string" ? listingImage.trim() : "";
-      if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) { const checkedAt = new Date(); await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode, variant_barcode_raw: variantBarcode } : {}), ...supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null), last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + MISSING_DATA_RETRY_MS).toISOString(), identity_hold_reason: "missing_economics_or_image" } }).eq("id", supplierListingId); return { kind: "missing_economics" as const, supplierListingId }; }
-      await persistCjSupplyIntelligence({ productId: identity.productId, title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
-      if (!identity) {
-        const { data: latest } = await db.from("supplier_listings").select("metadata").eq("id", supplierListingId).maybeSingle();
-        const latestMetadata = record(latest?.metadata);
+      if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) {
         const checkedAt = new Date();
-        await db.from("supplier_listings").update({ metadata: { ...latestMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), ...supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null), last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + NO_MATCH_RETRY_MS).toISOString(), identity_hold_reason: variantBarcode && normalizeIdentifier("gtin", variantBarcode) === null ? "invalid_supplier_barcode" : "no_unique_marketplace_identifier_match" } }).eq("id", supplierListingId);
+        const { error: holdError } = await db.from("supplier_listings").update({
+          orderable: false,
+          api_available: false,
+          tracking_available: false,
+          metadata: {
+            ...listingMetadata,
+            ...(variantBarcode ? { variant_barcode: variantBarcode, variant_barcode_raw: variantBarcode } : {}),
+            ...supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null),
+            last_identity_reverify_at: checkedAt.toISOString(),
+            next_identity_reverify_at: new Date(checkedAt.getTime() + MISSING_DATA_RETRY_MS).toISOString(),
+            identity_hold_reason: "missing_economics_or_image",
+          },
+        }).eq("id", supplierListingId);
+        if (holdError) throw new Error(`CJ missing economics/image hold update failed: ${holdError.message}`);
+        return { kind: "missing_economics" as const, supplierListingId };
       }
-      return identity ? { kind: "promoted" as const, supplierListingId, bestsellerId: identity.bestsellerId, method: identity.method } : { kind: "supplier_verified" as const, supplierListingId };
+      await persistCjSupplyIntelligence({ productId: identity.productId, title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
+      return { kind: "promoted" as const, supplierListingId, bestsellerId: identity.bestsellerId, method: identity.method };
     } catch (rowError) {
       const { data: latest } = await db.from("supplier_listings").select("metadata").eq("id", supplierListingId).maybeSingle();
       const latestMetadata = record(latest?.metadata);
       const checkedAt = new Date();
-      await db.from("supplier_listings").update({ metadata: { ...latestMetadata, last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + ERROR_RETRY_MS).toISOString(), identity_hold_reason: "reverify_error" } }).eq("id", supplierListingId);
-      return { kind: "error" as const, supplierListingId, error: rowError instanceof Error ? rowError.message : String(rowError) };
+      const { error: retryUpdateError } = await db.from("supplier_listings").update({
+        orderable: false,
+        api_available: false,
+        tracking_available: false,
+        metadata: { ...latestMetadata, last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + ERROR_RETRY_MS).toISOString(), identity_hold_reason: "reverify_error" },
+      }).eq("id", supplierListingId);
+      const originalError = rowError instanceof Error ? rowError.message : String(rowError);
+      return { kind: "error" as const, supplierListingId, error: retryUpdateError ? `${originalError}; retry scheduling update failed: ${retryUpdateError.message}` : originalError };
     }
   };
   for (let offset = 0; offset < selectedRows.length; offset += CONCURRENCY) { if (Date.now() >= deadlineAt) break; const batch = selectedRows.slice(offset, offset + CONCURRENCY); const results = await Promise.all(batch.map(processRow)); for (const item of results) { result.checked += 1; if (item.kind === "promoted") { result.promoted += 1; result.promotedListings.push({ supplierListingId: item.supplierListingId, bestsellerId: item.bestsellerId, method: item.method }); } else if (item.kind === "supplier_verified") { result.supplierVerified += 1; } else if (item.kind === "no_match") result.noUniqueBarcodeMatch += 1; else if (item.kind === "missing_economics") result.missingEconomics += 1; else result.errors.push({ supplierListingId: item.supplierListingId, error: item.error }); } }
   const now = new Date().toISOString();
-  await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: "cursor_rotation_womens_priority", candidateCount: total, womensCandidates: womensRows.length, womensSelected: selectedWomens.length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
+  const { error: runLogError } = await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: result.errors.length ? "failed" : "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: "cursor_rotation_womens_priority", candidateCount: total, womensCandidates: womensRows.length, womensSelected: selectedWomens.length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
+  if (runLogError) throw new Error(`CJ identity reverify run log persistence failed: ${runLogError.message}`);
   return result;
 }
