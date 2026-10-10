@@ -50,7 +50,11 @@ function hasGateProvenance(row: Listing): boolean {
 }
 
 function asNumber(value: unknown): number | null {
-  const n = typeof value === "number" ? value : Number(value);
+  // null/undefined/blank are missing evidence, not numeric zero. In particular,
+  // unknown shipping must never be rendered as "free shipping".
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string" || !value.trim()) return null;
+  const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
 
@@ -179,8 +183,10 @@ function blockReasons(row: Listing): string[] {
   if (!(Number(row.inventory) > 0)) reasons.push("inventory_zero_or_unknown");
   if (String(row.currency ?? "").trim().toUpperCase() !== "JPY") reasons.push("currency_not_jpy");
   if (!/^CJ/i.test(String(row.supplier_name ?? ""))) reasons.push("supplier_not_cj");
-  if (asNumber(row.shipping_cost) === null) reasons.push("shipping_cost_unknown");
-  if (asNumber(row.source_cost) === null) reasons.push("source_cost_unknown");
+  const shippingCost = asNumber(row.shipping_cost);
+  if (shippingCost === null || shippingCost < 0) reasons.push("shipping_cost_unknown");
+  const sourceCost = asNumber(row.source_cost);
+  if (sourceCost === null || sourceCost <= 0) reasons.push("source_cost_unknown");
   if (!((asNumber(row.contribution_profit) ?? 0) > 0)) reasons.push("profit_not_positive");
   if (!((asNumber(row.contribution_margin) ?? 0) > 0)) reasons.push("margin_not_positive");
   return reasons;
