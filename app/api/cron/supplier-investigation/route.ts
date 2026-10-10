@@ -116,6 +116,8 @@ export async function GET(request: Request) {
     const internalMatchedIds: string[] = [];
     const internalResults: Record<string, unknown>[] = [];
     const externalCandidateIds: string[] = [];
+    const internalLinkReasonCounts: Record<string, number> = {};
+    const internalLinkStatusCounts: Record<string, number> = {};
 
     for (const candidateId of candidateIds) {
       const { data: bestseller, error } = await supabase
@@ -134,6 +136,10 @@ export async function GET(request: Request) {
         bestseller: bestseller as Record<string, unknown>,
         fetchedAt: String(bestseller.fetched_at ?? new Date().toISOString()),
       });
+      internalLinkReasonCounts[internal.reason] = (internalLinkReasonCounts[internal.reason] ?? 0) + 1;
+      if (internal.linkStatus) {
+        internalLinkStatusCounts[internal.linkStatus] = (internalLinkStatusCounts[internal.linkStatus] ?? 0) + 1;
+      }
 
       if (!internal.matched) {
         externalCandidateIds.push(candidateId);
@@ -186,6 +192,15 @@ export async function GET(request: Request) {
     }
 
     const totalMatched = internalMatchedIds.length + result.matched;
+    const internalLinkDiagnostics = {
+      evaluated: Object.values(internalLinkReasonCounts).reduce((sum, count) => sum + count, 0),
+      matched: internalMatchedIds.length,
+      unmatched: Object.entries(internalLinkReasonCounts)
+        .filter(([reason]) => !["canonical_link_saved", "canonical_link_existing_verified"].includes(reason))
+        .reduce((sum, [, count]) => sum + count, 0),
+      reasonCounts: internalLinkReasonCounts,
+      linkStatusCounts: internalLinkStatusCounts,
+    };
     const metadata = {
       phase: "supplier_investigation",
       candidateCount: candidateIds.length,
@@ -194,6 +209,7 @@ export async function GET(request: Request) {
       externalMatched: result.matched,
       totalMatched,
       internalResults,
+      internalLinkDiagnostics,
       skippedNoIdentifier: result.skippedNoIdentifier,
       unconfigured: result.unconfigured,
       noIdentifierOverlap: result.noIdentifierOverlap,
@@ -225,6 +241,7 @@ export async function GET(request: Request) {
       candidateIds,
       internalMatchedIds,
       internalResults,
+      internalLinkDiagnostics,
       ...result,
       totalMatched,
       nextPhase: "sales_test_publication",
