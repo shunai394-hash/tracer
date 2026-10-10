@@ -2,6 +2,8 @@
 -- Runs after PR #175's migration test in CI; never targets production.
 \set ON_ERROR_STOP on
 
+alter table public.marketplace_bestsellers add column if not exists product_id uuid;
+
 create table if not exists public.supplier_listings (
   id uuid primary key,
   bestseller_id uuid references public.marketplace_bestsellers(id) on delete set null,
