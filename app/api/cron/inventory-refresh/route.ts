@@ -143,6 +143,7 @@ export async function GET(request: Request) {
             .update({
               inventory: null,
               orderable: false,
+              published: false,
               pipeline_error: "Supplier variant stock could not be verified",
               pipeline_updated_at: now,
               updated_at: now,
@@ -197,6 +198,12 @@ export async function GET(request: Request) {
           .update({
             inventory,
             orderable,
+            // Zero stock must revoke the DB publication flag as well as ordering.
+            // Positive stock never grants publication by itself; the existing
+            // publication state is preserved until all independent gates pass.
+            ...(orderable ? {} : { published: false }),
+            pipeline_error: orderable ? null : "Supplier variant has no available inventory",
+            pipeline_updated_at: now,
             updated_at: now,
           })
           .eq("id", listingId);
