@@ -28,26 +28,39 @@ export type MarketplaceIdentity = { bestsellerId: string; productId: string; met
 function normalizeBarcode(value: unknown): string { return typeof value === "string" ? value.trim().replace(/[^0-9]/g, "") : ""; }
 
 
-async function readSupplierBarcode(args: { supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null }): Promise<string> {
-  const supplied = normalizeBarcode(args.variantBarcode);
-  if (supplied) return supplied;
+async function readSupplierBarcode(args: { supplierProductId: string; supplierVariantId: string }): Promise<string> {
+  // Only a fresh response explicitly keyed to this exact variant can prove the
+  // barcode. Never accept persisted metadata/listing-level variantBarcode here.
   try {
     const variants = await fetchCJProductVariants(args.supplierProductId, { countryCode: "JP" });
-    const direct = normalizeBarcode(variants.find((item) => item.vid === args.supplierVariantId)?.barcode);
-    if (direct) return direct;
-  } catch (error) { console.warn("[cj-supply-identity] variant barcode lookup failed", { error: error instanceof Error ? error.message : String(error) }); }
+    const exact = readExactSupplierVariantBarcode(variants, args.supplierVariantId);
+    if (exact) return normalizeBarcode(exact);
+  } catch (error) {
+    console.warn("[cj-supply-identity] variant barcode lookup failed", {
+      supplierProductId: args.supplierProductId,
+      supplierVariantId: args.supplierVariantId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   try {
     const detailVariant = await fetchCJVariantByVid(args.supplierVariantId);
     if (detailVariant?.vid === args.supplierVariantId) return normalizeBarcode(detailVariant.barcode);
-  } catch (error) { console.warn("[cj-supply-identity] queryByVid barcode lookup failed", { error: error instanceof Error ? error.message : String(error) }); }
+  } catch (error) {
+    console.warn("[cj-supply-identity] queryByVid barcode lookup failed", {
+      supplierProductId: args.supplierProductId,
+      supplierVariantId: args.supplierVariantId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   return "";
 }
 
 export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<MarketplaceIdentity | null> {
   const suppliedIds = identifiersFromRecord({ gtin: args.supplierIdentifiers?.gtin, jan: args.supplierIdentifiers?.jan, ean: args.supplierIdentifiers?.ean, upc: args.supplierIdentifiers?.upc, mpn: args.supplierIdentifiers?.mpn });
-  // Prefer barcode read from this exact supplier variant. MPN/ASIN can locate a candidate
-  // product, but cannot prove the size/color/pack variant that will be purchased.
-  const variantBarcode = normalizeBarcode(args.variantBarcode) || await readSupplierBarcode(args);
+  // Prefer a fresh barcode read from the exact CJ variant ID. The optional
+  // variantBarcode argument is retained for API compatibility but is not trusted
+  // as proof because it may be stale or copied from a parent listing.
+  const variantBarcode = await readSupplierBarcode(args);
   // Fail closed: listing/product-level barcode fields are not proof for the concrete
   // supplier variant. If the exact CJ variant has no readable barcode, do not link it.
   if (!variantBarcode) return null;
