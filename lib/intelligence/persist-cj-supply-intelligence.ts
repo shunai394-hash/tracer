@@ -49,10 +49,11 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
   // Prefer barcode read from this exact supplier variant. MPN/ASIN can locate a candidate
   // product, but cannot prove the size/color/pack variant that will be purchased.
   const variantBarcode = normalizeBarcode(args.variantBarcode) || await readSupplierBarcode(args);
-  const supplyIds = variantBarcode
-    ? identifiersFromRecord({ gtin: variantBarcode, mpn: suppliedIds.mpn })
-    : identifiersFromRecord({ jan: suppliedIds.jan, gtin: suppliedIds.gtin, ean: suppliedIds.ean, upc: suppliedIds.upc, mpn: suppliedIds.mpn });
-  if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc) return null;
+  // Fail closed: listing/product-level barcode fields are not proof for the concrete
+  // supplier variant. If the exact CJ variant has no readable barcode, do not link it.
+  if (!variantBarcode) return null;
+  const supplyIds = identifiersFromRecord({ gtin: variantBarcode, mpn: suppliedIds.mpn });
+  if (!supplyIds.gtin) return null;
 
   const matchesByProduct = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
   const lookupValues = new Set<string>();
