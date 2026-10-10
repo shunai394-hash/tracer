@@ -1,8 +1,31 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { identifiersFromRecord, matchProductIdentity, marketplaceIdentifierLookupConditions } from "@/lib/market/identifiers";
+import { identifiersFromRecord, marketplaceBarcodeCandidates } from "@/lib/market/identifiers";
 import { hasExactCurrentRequestVariantSet, onlyCurrentRequestVariants, selectUniqueIdentityCandidate } from "@/lib/suppliers/cj-identity-reverify-policy";
+
+function exactVariantBarcodeMethod(
+  market: ReturnType<typeof identifiersFromRecord>,
+  supply: ReturnType<typeof identifiersFromRecord>,
+): string | null {
+  const schemes = ["jan", "gtin", "ean", "upc"] as const;
+  for (const marketScheme of schemes) {
+    const marketValue = market[marketScheme];
+    if (!marketValue) continue;
+    const marketCandidates = new Set(marketplaceBarcodeCandidates(marketValue));
+    marketCandidates.add(marketValue.padStart(14, "0"));
+    for (const supplyScheme of schemes) {
+      const supplyValue = supply[supplyScheme];
+      if (!supplyValue) continue;
+      const supplyCandidates = new Set(marketplaceBarcodeCandidates(supplyValue));
+      supplyCandidates.add(supplyValue.padStart(14, "0"));
+      if ([...marketCandidates].some((value) => supplyCandidates.has(value))) {
+        return marketScheme === supplyScheme ? marketScheme : "gtin";
+      }
+    }
+  }
+  return null;
+}
 
 function num(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -42,9 +65,8 @@ export async function syncTracerCatalogFromInternalSupply(args: {
   if (!bestseller) return { matched: false, catalogId: null, variantId: null, reason: "bestseller_not_found" };
 
   const marketIds = identifiersFromRecord(bestseller as Record<string, unknown>);
-  const lookupConditions = marketplaceIdentifierLookupConditions(marketIds);
-  if (lookupConditions.length === 0) {
-    return { matched: false, catalogId: null, variantId: null, reason: "no_safe_identifier_lookup_condition" };
+  if (![marketIds.jan, marketIds.gtin, marketIds.ean, marketIds.upc].some(Boolean)) {
+    return { matched: false, catalogId: null, variantId: null, reason: "no_canonical_barcode_for_variant_proof" };
   }
 
   // Resolve the exact request-scoped variant set independently of product lookup.
@@ -63,32 +85,20 @@ export async function syncTracerCatalogFromInternalSupply(args: {
     return { matched: false, catalogId: null, variantId: null, reason: "requested_variant_not_active_orderable_or_in_stock" };
   }
 
-  const { data: products, error: productError } = await db
+  // The exact request-scoped variant IDs establish supplier ownership. Do not require a
+  // duplicate barcode on the parent product: some feeds expose it only on the concrete
+  // variant. Parent title/MPN/ASIN is not proof of a concrete size/color/pack variant.
+  const { data: product, error: productError } = await db
     .from("internal_supply_products")
     .select("*")
+    .eq("id", requestedProductId)
     .eq("active", true)
-    .or(lookupConditions.join(","))
-    .limit(20);
-
+    .maybeSingle();
   if (productError) throw new Error(productError.message);
+  if (!product) return { matched: false, catalogId: null, variantId: null, reason: "owning_internal_supply_product_missing_or_inactive" };
 
-  for (const product of products ?? []) {
-    if (String(product.id) !== requestedProductId) continue;
-    const productIds = identifiersFromRecord(product as Record<string, unknown>);
-    const identity = matchProductIdentity({
-      market: {
-        ...marketIds,
-        brand: str(bestseller.brand),
-        title: String(bestseller.title ?? ""),
-      },
-      supply: {
-        ...productIds,
-        brand: str(product.brand),
-        title: String(product.title ?? ""),
-      },
-    });
+  {
 
-    if (!identity.salesEligible) continue;
 
     const currentRequestVariants = onlyCurrentRequestVariants(
       scopedRows.filter((variant) => String(variant.supply_product_id) === requestedProductId) as Array<{ id: string; [key: string]: unknown }>,
@@ -100,28 +110,32 @@ export async function syncTracerCatalogFromInternalSupply(args: {
     // Count identity proof per variant, then fail closed unless exactly one variant is proven.
     const variantCandidates = currentRequestVariants.map((variant) => {
       const ids = identifiersFromRecord(variant as Record<string, unknown>);
+      const barcodeMethod = exactVariantBarcodeMethod(marketIds, ids);
       return {
         variant,
-        identity: matchProductIdentity({
-          market: {
-            ...marketIds,
-            brand: str(bestseller.brand),
-            title: String(bestseller.title ?? ""),
-          },
-          supply: {
-            ...ids,
-            brand: str(product.brand),
-            title: String(variant.title ?? product.title ?? ""),
-          },
-        }),
+        // Variant identity is proven only by an exact barcode-family match.
+        // Product-level ASIN/MPN, title, and image similarity cannot select a variant.
+        identity: {
+          linked: barcodeMethod !== null,
+          salesEligible: barcodeMethod !== null,
+          method: barcodeMethod ?? "none",
+          confidence: barcodeMethod ? 0.98 : 0,
+          rationale: barcodeMethod ? "exact canonical-to-supplier variant barcode match" : "no_exact_variant_barcode_match",
+        },
       };
     });
 
-    // Cross-scheme barcode normalization and exact MPN/ASIN are handled by the shared matcher.
-    // With multiple variants, only one exact variant-level identity proof may be selected.
     const selected = selectUniqueIdentityCandidate(variantCandidates);
-
-    if (!selected) continue;
+    if (!selected) {
+      return {
+        matched: false,
+        catalogId: null,
+        variantId: null,
+        reason: variantCandidates.some((candidate) => candidate.identity.linked)
+          ? "multiple_exact_variant_barcode_matches"
+          : "no_exact_variant_barcode_match",
+      };
+    }
 
     const variant = selected.variant;
     const { data: existing, error: existingError } = await db
