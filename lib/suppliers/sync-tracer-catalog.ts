@@ -102,13 +102,17 @@ export async function syncTracerCatalogFromInternalSupply(args: {
       };
     });
 
-    const selected = selectUniqueIdentityCandidate(variantCandidates);
+    const exactVariantCandidates = variantCandidates.filter(
+      (candidate) => candidate.identity.linked && candidate.identity.salesEligible,
+    );
+    // A single candidate is not automatically a match: require exactly one barcode-proven variant.
+    const selected = exactVariantCandidates.length === 1 ? exactVariantCandidates[0] : undefined;
     if (!selected) {
       return {
         matched: false,
         catalogId: null,
         variantId: null,
-        reason: variantCandidates.some((candidate) => candidate.identity.linked)
+        reason: exactVariantCandidates.length > 1
           ? "multiple_exact_variant_barcode_matches"
           : "no_exact_variant_barcode_match",
       };
