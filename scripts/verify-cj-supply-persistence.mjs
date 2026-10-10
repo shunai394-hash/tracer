@@ -67,7 +67,7 @@ class FakeQuery {
     }
     let selected = rows.filter((row) => this.filters.every((test) => test(row)));
     if (this.table === "marketplace_bestseller_variants" && this.orClause) {
-      const terms = this.orClause.split(",").map((term) => { const match = term.match(/^([a-z_]+)\\.eq\\.(.*)$/); return match ? { field: match[1], value: match[2] } : null; }).filter(Boolean);
+      const terms = this.orClause.split(",").map((term) => { const match = term.match(/^([a-z_]+)\.eq\.(.*)$/); return match ? { field: match[1], value: match[2] } : null; }).filter(Boolean);
       selected = selected.filter((row) => terms.some(({ field, value }) => String(row[field] ?? "") === value));
     }
     if (this.limitCount !== null) selected = selected.slice(0, this.limitCount);
