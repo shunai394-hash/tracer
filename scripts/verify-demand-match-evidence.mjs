@@ -17,7 +17,7 @@ import {
   variantsCompatible,
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
-import { exactBarcodeFamilyMatch, EMPTY_IDENTIFIERS, normalizeIdentifier } from "../lib/market/identifiers.ts";
+import { exactBarcodeFamilyMatch, EMPTY_IDENTIFIERS, marketplaceBarcodeCandidates, normalizeIdentifier } from "../lib/market/identifiers.ts";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
@@ -54,6 +54,10 @@ test("exact variant barcode identity", "checks every barcode field and never fal
     { ...EMPTY_IDENTIFIERS, upc: "012345678905" },
     { ...EMPTY_IDENTIFIERS, gtin: "00012345678905" },
   ), "gtin");
+  assert.ok(marketplaceBarcodeCandidates("012345678905").includes("00012345678905"),
+    "UPC lookup must include the zero-padded GTIN-14 candidate before database retrieval");
+  assert.ok(marketplaceBarcodeCandidates("00012345678905").includes("012345678905"),
+    "GTIN-14 lookup must include its safe UPC-width candidate before database retrieval");
 });
 
 // Market product fixtures (JANs carry valid check digits).
