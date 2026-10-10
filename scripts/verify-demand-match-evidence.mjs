@@ -42,6 +42,11 @@ test("cross-scheme supplier identity lookup", "JAN/GTIN/EAN/UPC lookup searches 
   }
   assert.equal(new Set(conditions).size, conditions.length, "lookup conditions must be unique");
 });
+test("variant identity selection", "a lone candidate without exact barcode proof is not selected", () => {
+  assert.equal(selectUniqueIdentityCandidate([
+    { id: "unmatched", identity: { linked: false, salesEligible: false } },
+  ]), undefined);
+});
 test("variant-only barcode identity", "parent identifiers may be empty when exactly one concrete variant has the canonical barcode", () => {
   const market = { ...EMPTY_IDENTIFIERS, jan: "4006381333931" };
   const variantOnly = { ...EMPTY_IDENTIFIERS, ean: "4006381333931" };
