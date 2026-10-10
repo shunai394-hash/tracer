@@ -120,6 +120,12 @@ test("durable internal link retry queue", "route delegates cleanup to tested cat
   assert.ok(failurePersist > syncStart, "failed sync must persist retry state");
   assert.ok(retryDelete > syncStart, "retry cleanup must follow catalog sync");
   assert.ok(lifecycle.indexOf("if (!outcome?.matched)", syncStart) < retryDelete, "unmatched catalog sync must never clear retry");
+  const finalizeCall = route.indexOf("const catalog = await finalizeInternalSupplyLinkRetry");
+  const matchedCount = route.indexOf("internalMatchedIds.push(candidateId)", finalizeCall);
+  const resultRecord = route.indexOf("internalResults.push({", finalizeCall);
+  assert.ok(finalizeCall >= 0, "route must invoke finalizer");
+  assert.ok(matchedCount > finalizeCall, "candidate must not count as fully matched before catalog sync finalizes");
+  assert.ok(resultRecord > matchedCount, "fully matched count must be recorded before result diagnostics");
 });
 
 // Market product fixtures (JANs carry valid check digits).
