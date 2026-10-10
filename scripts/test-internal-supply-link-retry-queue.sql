@@ -3,6 +3,7 @@
 begin;
 
 \ir ../supabase/migrations/20261010190000_internal_supply_link_retry_queue.sql
+\ir ../supabase/migrations/20261010190000_internal_supply_link_retry_queue.sql
 
 insert into public.internal_supply_link_retry_queue (
   bestseller_id, supplier_listing_id, supply_variant_id, reason, link_status,
