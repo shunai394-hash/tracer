@@ -20,7 +20,7 @@ import {
 import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { normalizeIdentifier } from "../lib/market/identifiers.ts";
 import { parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
-import { internalLinkRetryDelayMs, selectDueInternalLinkRetryIds, supplierListingStateForIdentity, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
+import { internalLinkRetryDelayMs, internalProductCandidateStatus, selectDueInternalLinkRetryIds, supplierListingStateForIdentity, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
 const pending = [];
