@@ -151,8 +151,11 @@ export async function syncPublishedListingsToShopify(limit = 150, listingIds?: s
     .select(baseSelect)
     .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
     .or("shopify_sync_status.is.null,shopify_sync_status.neq.syncing")
-    .order("shopify_product_id", { ascending: true, nullsFirst: true })
-    .order("pipeline_updated_at", { ascending: false });
+    // Fair queue: oldest/never-synced rows first. Sorting by product ID first
+    // can repeatedly select the same first page and starve later listings.
+    .order("shopify_synced_at", { ascending: true, nullsFirst: true })
+    .order("pipeline_updated_at", { ascending: false })
+    .order("shopify_product_id", { ascending: true, nullsFirst: true });
 
   if (listingIds?.length) {
     query = query.in("id", listingIds).limit(Math.max(listingIds.length, 1));
@@ -215,8 +218,11 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
     .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_error")
     .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
     .or("shopify_sync_status.is.null,shopify_sync_status.neq.syncing")
-    .order("shopify_product_id", { ascending: true, nullsFirst: true })
+    // Keep dry-run order aligned with execution so the inspected first page
+    // is the same batch the sync will claim.
+    .order("shopify_synced_at", { ascending: true, nullsFirst: true })
     .order("pipeline_updated_at", { ascending: false })
+    .order("shopify_product_id", { ascending: true, nullsFirst: true })
     .limit(Math.min(Math.max(limit, 1), 1000));
   if (error) throw new Error(error.message);
   const reasonCounts: Record<string, number> = {};
