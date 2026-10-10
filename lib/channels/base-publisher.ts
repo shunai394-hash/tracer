@@ -392,7 +392,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         orderable: false,
         base_publication_lease_until: null,
         pipeline_stage: "BASE_RECONCILIATION",
-        pipeline_status: blockError ? "failed" : "blocked",
+        pipeline_status: "blocked",
         pipeline_reason: reason,
         pipeline_error: currentGateReadError?.message ?? null,
         base_last_error: currentGateReadError?.message ?? null,
