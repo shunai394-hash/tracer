@@ -383,5 +383,5 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       results.push({ listingId, ok: false, error: message });
     }
   }
-  return { attempted: listings?.length ?? 0, published: results.filter((r) => r.ok && Boolean(r.baseItemId) && !r.skipped).length, skipped: results.filter((r) => r.skipped).length, failed: results.filter((r) => !r.ok && !r.skipped).length, results };
+  return { attempted: listings?.length ?? 0, published: results.filter((r) => r.ok && Boolean(r.baseItemId) && !r.skipped).length, skipped: results.filter((r) => r.skipped).length, failed: results.filter((r) => !r.ok).length, results };
 }
