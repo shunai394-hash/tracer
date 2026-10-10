@@ -28,8 +28,55 @@ export function marketplaceBarcodeCandidates(value: string): string[] {
   if (!normalized) return [];
   const candidates = new Set<string>([normalized]);
   if (normalized.length === 12 || normalized.length === 13) candidates.add(normalized.padStart(14, "0"));
-  if (normalized.length === 14 && normalized.startsWith("0")) candidates.add(normalized.slice(1));
+  if (normalized.length === 14 && normalized.startsWith("0")) {
+    candidates.add(normalized.slice(1));
+    // Two leading zeros can represent a UPC-A value padded to GTIN-14.
+    if (normalized.startsWith("00")) candidates.add(normalized.slice(2));
+  }
   return [...candidates];
+}
+
+/** Exact variant-level barcode proof across JAN/EAN/UPC/GTIN schemes. Never falls back to ASIN/MPN. */
+export function exactBarcodeFamilyMatch(
+  market: ProductIdentifiers,
+  supply: ProductIdentifiers,
+): "jan" | "gtin" | "ean" | "upc" | null {
+  const schemes = ["jan", "gtin", "ean", "upc"] as const;
+  for (const marketScheme of schemes) {
+    const marketValue = market[marketScheme];
+    if (!marketValue) continue;
+    const marketCandidates = new Set(marketplaceBarcodeCandidates(marketValue));
+    marketCandidates.add(marketValue.padStart(14, "0"));
+    for (const supplyScheme of schemes) {
+      const supplyValue = supply[supplyScheme];
+      if (!supplyValue) continue;
+      const supplyCandidates = new Set(marketplaceBarcodeCandidates(supplyValue));
+      supplyCandidates.add(supplyValue.padStart(14, "0"));
+      if ([...marketCandidates].some((value) => supplyCandidates.has(value))) {
+        return marketScheme === supplyScheme ? marketScheme : "gtin";
+      }
+    }
+  }
+  return null;
+}
+
+/** Build a bounded PostgREST OR filter across barcode schemes, so a JAN can find a GTIN field and vice versa. */
+export function marketplaceIdentifierLookupConditions(ids: ProductIdentifiers): string[] {
+  const conditions = new Set<string>();
+  const barcodeColumns = ["jan", "gtin", "ean", "upc"] as const;
+  for (const scheme of barcodeColumns) {
+    const value = ids[scheme];
+    if (!value) continue;
+    for (const candidate of marketplaceBarcodeCandidates(value)) {
+      for (const column of barcodeColumns) conditions.add(`${column}.eq.${candidate}`);
+    }
+  }
+  // Avoid PostgREST filter grammar delimiters in free-form model numbers. A skipped
+  // MPN is a false negative, not a guessed identity; the exact matcher remains authoritative.
+  if (ids.mpn && /^[A-Z0-9][A-Z0-9._/-]{2,}$/.test(ids.mpn) && !/[(),]/.test(ids.mpn)) {
+    conditions.add(`mpn.eq.${ids.mpn}`);
+  }
+  return [...conditions];
 }
 
 function hasValidGs1CheckDigit(value: string): boolean {

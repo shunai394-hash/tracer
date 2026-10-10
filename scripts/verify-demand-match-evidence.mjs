@@ -17,8 +17,8 @@ import {
   variantsCompatible,
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
-import { normalizeIdentifier } from "../lib/market/identifiers.ts";
-import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
+import { normalizeIdentifier, marketplaceIdentifierLookupConditions, exactBarcodeFamilyMatch, EMPTY_IDENTIFIERS, matchProductIdentity } from "../lib/market/identifiers.ts";
+import { selectUniqueIdentityCandidate, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
 const pending = [];
@@ -33,6 +33,68 @@ function test(group, name, fn) {
     record(false, error instanceof Error ? error.message : String(error));
   }
 }
+
+test("cross-scheme supplier identity lookup", "JAN/GTIN/EAN/UPC lookup searches all barcode columns and normalizes UPC/GTIN-14", () => {
+  const conditions = marketplaceIdentifierLookupConditions({ ...EMPTY_IDENTIFIERS, jan: "4006381333931" });
+  for (const column of ["jan", "gtin", "ean", "upc"]) {
+    assert.ok(conditions.includes(`${column}.eq.4006381333931`), `missing ${column} exact barcode lookup`);
+    assert.ok(conditions.includes(`${column}.eq.04006381333931`), `missing ${column} GTIN-14 lookup`);
+  }
+  assert.equal(new Set(conditions).size, conditions.length, "lookup conditions must be unique");
+});
+test("cross-scheme supplier identity lookup", "GTIN-14 lookup includes the corresponding UPC-12 width", () => {
+  const conditions = marketplaceIdentifierLookupConditions({
+    ...EMPTY_IDENTIFIERS,
+    gtin: "00012345678905",
+  });
+  for (const column of ["jan", "gtin", "ean", "upc"]) {
+    assert.ok(conditions.includes(`${column}.eq.012345678905`), `missing ${column} UPC-12 candidate`);
+  }
+});
+test("variant identity selection", "a lone candidate without exact barcode proof is not selected", () => {
+  assert.equal(selectUniqueIdentityCandidate([
+    { id: "unmatched", identity: { linked: false, salesEligible: false } },
+  ]), undefined);
+});
+test("variant-only barcode identity", "parent identifiers may be empty when exactly one concrete variant has the canonical barcode", () => {
+  const market = { ...EMPTY_IDENTIFIERS, jan: "4006381333931" };
+  const variantOnly = { ...EMPTY_IDENTIFIERS, ean: "4006381333931" };
+  assert.equal(exactBarcodeFamilyMatch(market, variantOnly), "gtin");
+  assert.equal(exactBarcodeFamilyMatch(market, { ...EMPTY_IDENTIFIERS, asin: "B012345678", mpn: "MODEL-123" }), null);
+  assert.equal(exactBarcodeFamilyMatch(
+    { ...EMPTY_IDENTIFIERS, upc: "012345678905" },
+    { ...EMPTY_IDENTIFIERS, gtin: "00012345678905" },
+  ), "gtin");
+  assert.equal(exactBarcodeFamilyMatch(market, { ...EMPTY_IDENTIFIERS, ean: "4006381333932" }), null);
+});
+test("cross-scheme supplier identity lookup", "MPN lookup is included only for grammar-safe exact identifiers", () => {
+  assert.ok(marketplaceIdentifierLookupConditions({ ...EMPTY_IDENTIFIERS, mpn: "WH-1000XM5" }).includes("mpn.eq.WH-1000XM5"));
+  assert.deepEqual(marketplaceIdentifierLookupConditions({ ...EMPTY_IDENTIFIERS, mpn: "MODEL,(A)" }), []);
+});
+test("cross-scheme supplier identity lookup", "cross-scheme exact variant identity counts as identifier proof", () => {
+  const identity = matchProductIdentity({
+    market: { ...EMPTY_IDENTIFIERS, jan: "4006381333931" },
+    supply: { ...EMPTY_IDENTIFIERS, gtin: "4006381333931" },
+  });
+  assert.equal(identity.linked, true);
+  assert.equal(identity.salesEligible, true);
+});
+test("variant identity selection", "two variants sharing the same MPN are not resolved by arbitrary row order", () => {
+  const exact = { linked: true, salesEligible: true };
+  const selected = selectUniqueIdentityCandidate([
+    { id: "variant-black", identity: exact },
+    { id: "variant-white", identity: exact },
+    { id: "variant-red", identity: { linked: false, salesEligible: false } },
+  ]);
+  assert.equal(selected, undefined);
+});
+test("variant identity selection", "one exact variant identity proof is selected from multiple candidates", () => {
+  const selected = selectUniqueIdentityCandidate([
+    { id: "variant-black", identity: { linked: true, salesEligible: true } },
+    { id: "variant-white", identity: { linked: false, salesEligible: false } },
+  ]);
+  assert.equal(selected?.id, "variant-black");
+});
 
 test("CJ identity reverify policy", "retry intervals, candidate selection, raw GTIN audit, and unique-link gate", () => {
   const result = verifyCjIdentityReverifyPolicyInvariants();

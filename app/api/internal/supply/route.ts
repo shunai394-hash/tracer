@@ -53,6 +53,7 @@ export async function POST(request: Request) {
   const errors: string[] = [];
 
   for (const [itemIndex, x] of items.entries()) {
+    const itemErrorStart = errors.length;
     const cost = finiteNumber(x.cost);
     const shipping = finiteNumber(x.shippingCost);
     const inventory = Math.max(0, finiteNumber(x.inventory) ?? 0);
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
         submitted_variant_count: submittedVariants.length,
         written_variant_ids: writtenIds,
         catalog_id: catalogId,
-        error_codes: errors.slice(-10),
+        error_codes: errors.slice(itemErrorStart).slice(-10),
         details,
       }, { onConflict: "request_id,item_index" });
       if (error) errors.push("ingestion_audit_write_failed: " + error.message);
@@ -163,6 +164,7 @@ export async function POST(request: Request) {
     const writtenVariantIds: string[] = [];
     let auditOutcome: "draft_ingested" | "sync_blocked" | "synced" | "failed" = "draft_ingested";
     let auditCatalogId: string | null = null;
+    let catalogSyncReason: string | null = null;
     // Retire the previous variant set first. This request is the only variant set
     // eligible for reactivation and catalog sync; a crash leaves the product unsellable.
     const retiredVariants = await db
@@ -266,6 +268,7 @@ export async function POST(request: Request) {
           salePrice,
           variantIds: writtenVariantIds,
         });
+        catalogSyncReason = synced.reason ?? (synced.matched ? "matched" : "no_unique_eligible_match");
         if (synced.matched) {
           auditOutcome = "synced";
           auditCatalogId = synced.catalogId;
@@ -278,9 +281,11 @@ export async function POST(request: Request) {
         }
       } catch (error) {
         auditOutcome = "failed";
+        catalogSyncReason = "catalog_sync_exception";
         errors.push(error instanceof Error ? error.message : String(error));
       }
     } else if (bestsellerId && !productActivated) {
+      catalogSyncReason = "variant_write_incomplete_or_product_activation_failed";
       auditOutcome = "sync_blocked";
       errors.push("catalog sync withheld: variants missing, incomplete, or product activation failed");
       const deactivated = await db
@@ -299,6 +304,7 @@ export async function POST(request: Request) {
       product_activated: productActivated,
       variant_write_errors: itemVariantErrors,
       variant_write_count: itemVariantsWritten,
+      catalog_sync_reason: catalogSyncReason,
     });
   }
 

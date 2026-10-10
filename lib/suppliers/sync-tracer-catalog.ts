@@ -1,8 +1,8 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { identifiersFromRecord, matchProductIdentity } from "@/lib/market/identifiers";
-import { hasExactCurrentRequestVariantSet, hasUniqueIdentitySelection, onlyCurrentRequestVariants } from "@/lib/suppliers/cj-identity-reverify-policy";
+import { exactBarcodeFamilyMatch, identifiersFromRecord } from "@/lib/market/identifiers";
+import { hasExactCurrentRequestVariantSet, onlyCurrentRequestVariants } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 function num(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -42,15 +42,9 @@ export async function syncTracerCatalogFromInternalSupply(args: {
   if (!bestseller) return { matched: false, catalogId: null, variantId: null, reason: "bestseller_not_found" };
 
   const marketIds = identifiersFromRecord(bestseller as Record<string, unknown>);
-  const queries = [
-    ["jan", marketIds.jan],
-    ["gtin", marketIds.gtin],
-    ["ean", marketIds.ean],
-    ["upc", marketIds.upc],
-    ["mpn", marketIds.mpn],
-  ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
-
-  if (!queries.length) return { matched: false, catalogId: null, variantId: null, reason: "no_identifier" };
+  if (![marketIds.jan, marketIds.gtin, marketIds.ean, marketIds.upc].some(Boolean)) {
+    return { matched: false, catalogId: null, variantId: null, reason: "no_canonical_barcode_for_variant_proof" };
+  }
 
   // Resolve the exact request-scoped variant set independently of product lookup.
   // Never use a product's other/older variants as fallback when IDs are missing or mismatched.
@@ -68,86 +62,79 @@ export async function syncTracerCatalogFromInternalSupply(args: {
     return { matched: false, catalogId: null, variantId: null, reason: "requested_variant_not_active_orderable_or_in_stock" };
   }
 
-  const or = queries.map(([column, value]) => `${column}.eq.${value.replace(/[,()]/g, "")}`).join(",");
-
-  const { data: products, error: productError } = await db
+  // The exact request-scoped variant IDs establish supplier ownership. Do not require a
+  // duplicate barcode on the parent product: some feeds expose it only on the concrete
+  // variant. Parent title/MPN/ASIN is not proof of a concrete size/color/pack variant.
+  const { data: product, error: productError } = await db
     .from("internal_supply_products")
     .select("*")
+    .eq("id", requestedProductId)
     .eq("active", true)
-    .or(or)
-    .limit(20);
-
+    .maybeSingle();
   if (productError) throw new Error(productError.message);
+  if (!product) return { matched: false, catalogId: null, variantId: null, reason: "owning_internal_supply_product_missing_or_inactive" };
 
-  for (const product of products ?? []) {
-    if (String(product.id) !== requestedProductId) continue;
-    const productIds = identifiersFromRecord(product as Record<string, unknown>);
-    const identity = matchProductIdentity({
-      market: {
-        ...marketIds,
-        brand: str(bestseller.brand),
-        title: String(bestseller.title ?? ""),
-      },
-      supply: {
-        ...productIds,
-        brand: str(product.brand),
-        title: String(product.title ?? ""),
-      },
-    });
+  {
 
-    if (!identity.salesEligible) continue;
 
     const currentRequestVariants = onlyCurrentRequestVariants(
       scopedRows.filter((variant) => String(variant.supply_product_id) === requestedProductId) as Array<{ id: string; [key: string]: unknown }>,
       variantIds,
     );
-    const confirmed = currentRequestVariants.map((variant) => {
+    // Keep all current-request variants in the denominator. Filtering to sales-eligible
+    // variants first makes exactIdentifierMatches.length equal confirmed.length, which
+    // accidentally selects the first row when multiple variants share a product-level MPN.
+    // Count identity proof per variant, then fail closed unless exactly one variant is proven.
+    const variantCandidates = currentRequestVariants.map((variant) => {
       const ids = identifiersFromRecord(variant as Record<string, unknown>);
+      const barcodeMethod = exactBarcodeFamilyMatch(marketIds, ids);
       return {
         variant,
-        identity: matchProductIdentity({
-          market: {
-            ...marketIds,
-            brand: str(bestseller.brand),
-            title: String(bestseller.title ?? ""),
-          },
-          supply: {
-            ...ids,
-            brand: str(product.brand),
-            title: String(variant.title ?? product.title ?? ""),
-          },
-        }),
+        // Variant identity is proven only by an exact barcode-family match.
+        // Product-level ASIN/MPN, title, and image similarity cannot select a variant.
+        identity: {
+          linked: barcodeMethod !== null,
+          salesEligible: barcodeMethod !== null,
+          method: barcodeMethod ?? "none",
+          confidence: barcodeMethod ? 0.98 : 0,
+          rationale: barcodeMethod ? "exact canonical-to-supplier variant barcode match" : "no_exact_variant_barcode_match",
+        },
       };
-    }).filter((x) => x.identity.salesEligible);
+    });
 
-    const exactIdentifierMatches = confirmed.filter((x) =>
-      Boolean(
-        (marketIds.jan && identifiersFromRecord(x.variant as Record<string, unknown>).jan === marketIds.jan) ||
-        (marketIds.gtin && identifiersFromRecord(x.variant as Record<string, unknown>).gtin === marketIds.gtin) ||
-        (marketIds.ean && identifiersFromRecord(x.variant as Record<string, unknown>).ean === marketIds.ean) ||
-        (marketIds.upc && identifiersFromRecord(x.variant as Record<string, unknown>).upc === marketIds.upc),
-      ),
+    const exactVariantCandidates = variantCandidates.filter(
+      (candidate) => candidate.identity.linked && candidate.identity.salesEligible,
     );
-    const selected = hasUniqueIdentitySelection(confirmed.length, exactIdentifierMatches.length)
-      ? confirmed.length === 1 ? confirmed[0] : exactIdentifierMatches[0]
-      : undefined;
-
-    if (!selected) continue;
+    // A single candidate is not automatically a match: require exactly one barcode-proven variant.
+    const selected = exactVariantCandidates.length === 1 ? exactVariantCandidates[0] : undefined;
+    if (!selected) {
+      return {
+        matched: false,
+        catalogId: null,
+        variantId: null,
+        reason: exactVariantCandidates.length > 1
+          ? "multiple_exact_variant_barcode_matches"
+          : "no_exact_variant_barcode_match",
+      };
+    }
 
     const variant = selected.variant;
-    const inventory = num(variant.inventory) ?? num(product.inventory) ?? 0;
-    const cost = num(variant.cost) ?? num(product.cost);
-    const shipping = num(variant.shipping_cost) ?? num(product.shipping_cost);
-    const salePrice = num(args.salePrice);
-    const tracking = variant.tracking_available === true || product.tracking_available === true;
-    const orderable = inventory > 0 && cost !== null && shipping !== null
-      && salePrice !== null && salePrice > cost + shipping && tracking;
-
-    const { data: existing } = await db
+    const { data: existing, error: existingError } = await db
       .from("tracer_supply_catalog")
       .select("id,sale_price,tracer_sku")
       .eq("bestseller_id", bestseller.id)
       .maybeSingle();
+    if (existingError) throw new Error(existingError.message);
+
+    const inventory = num(variant.inventory) ?? num(product.inventory) ?? 0;
+    const cost = num(variant.cost) ?? num(product.cost);
+    const shipping = num(variant.shipping_cost) ?? num(product.shipping_cost);
+    // Preserve a previously validated catalog price when this invocation does not
+    // submit a new one, but still recompute margin against fresh supplier economics.
+    const salePrice = num(args.salePrice) ?? num(existing?.sale_price);
+    const tracking = variant.tracking_available === true || product.tracking_available === true;
+    const orderable = inventory > 0 && cost !== null && shipping !== null
+      && salePrice !== null && salePrice > cost + shipping && tracking;
 
     const tracerSku = existing?.tracer_sku ??
       `TRC-${String(bestseller.id).replace(/-/g, "").slice(0, 16).toUpperCase()}`;
