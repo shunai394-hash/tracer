@@ -24,4 +24,7 @@ const route = readFileSync(new URL("../app/api/admin/shopify/auth-check/route.ts
 assert.match(route, /ok: readiness\.ready/);
 assert.match(route, /authenticated: readiness\.authenticated/);
 assert.doesNotMatch(route, /ok: shopifyProbe\.ok/);
+assert.doesNotMatch(route, /currentAppInstallation\s*\{/);
+assert.match(route, /tokenExchange\?\.grantedScopeHandles/);
+assert.match(route, /scopeSource: scopesVerified \? "oauth_token_exchange" : "unavailable"/);
 console.log("PASS: Shopify readiness requires a successful Admin API scope query and all required scopes");
