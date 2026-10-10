@@ -11,9 +11,10 @@ import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-id
 export type BasePublicationResult = {
   attempted: number;
   published: number;
+  hidden: number;
   skipped: number;
   failed: number;
-  results: Array<{ listingId: string; ok: boolean; baseItemId?: string | null; skipped?: boolean; error?: string }>;
+  results: Array<{ listingId: string; ok: boolean; baseItemId?: string | null; hidden?: boolean; skipped?: boolean; error?: string }>;
 };
 
 type JapaneseCatalogCopy = { title: string; detail: string; };
@@ -54,8 +55,8 @@ function validHttpUrl(value: unknown): boolean {
 }
 
 export async function publishPublishedListingsToBase(limit = 10, listingIds?: string[]): Promise<BasePublicationResult> {
-  if (!isBaseConfigured()) return { attempted: 0, published: 0, skipped: 0, failed: 0, results: [] };
-  if (listingIds !== undefined && listingIds.length === 0) return { attempted: 0, published: 0, skipped: 0, failed: 0, results: [] };
+  if (!isBaseConfigured()) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
+  if (listingIds !== undefined && listingIds.length === 0) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
   const supabase = createSupabaseAdminClient();
   let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons");
   if (listingIds && listingIds.length > 0) {
@@ -83,6 +84,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     .filter((listing) => !listing.supplier_listing_id || !linkedSupplierIds.has(String(listing.supplier_listing_id)))
     .map((listing) => String(listing.id)));
   const results: BasePublicationResult["results"] = [];
+  let unpublishFailed = 0;
 
   // Mark unlinked catalog rows blocked before any downstream publication work.
   if (identityUnlinkedIds.size > 0) {
@@ -107,6 +109,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked)) continue;
     if (listing.published !== true && ["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
     if (listing.selling_price === null) {
+      unpublishFailed += 1;
       results.push({ listingId: String(listing.id), ok: false, skipped: true, error: "base_hide_price_unknown" });
       continue;
     }
@@ -132,9 +135,13 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         pipeline_updated_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", String(listing.id));
-      results.push({ listingId: String(listing.id), ok: true, baseItemId: String(listing.base_item_id) });
+      results.push({ listingId: String(listing.id), ok: true, baseItemId: String(listing.base_item_id), hidden: true });
     } catch (error) {
-      results.push({ listingId: String(listing.id), ok: false, error: error instanceof Error ? error.message : String(error) });
+      const message = error instanceof Error ? error.message : String(error);
+      results.push({ listingId: String(listing.id), ok: false, error: message });
+      // A rejected/expired BASE token will fail every item in this batch; stop
+      // immediately to avoid hammering the API while credentials are repaired.
+      if (/アクセストークンが無効|invalid_request|BASE OAuth refresh HTTP 4\d\d/i.test(message)) break;
     }
   }
 
@@ -352,5 +359,12 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       results.push({ listingId, ok: false, error: message });
     }
   }
-  return { attempted: listings?.length ?? 0, published: results.filter((r) => r.ok && r.baseItemId).length, skipped: results.filter((r) => r.skipped).length, failed: results.filter((r) => !r.ok && !r.skipped).length, results };
+  return {
+    attempted: listings?.length ?? 0,
+    published: results.filter((r) => r.ok && r.baseItemId && !r.hidden).length,
+    hidden: results.filter((r) => r.ok && r.hidden).length,
+    skipped: results.filter((r) => r.skipped).length,
+    failed: unpublishFailed + results.filter((r) => !r.ok && !r.skipped).length,
+    results,
+  };
 }

@@ -45,12 +45,29 @@ export async function GET(request: Request) {
   let base: unknown = { skipped: true };
   const errors: string[] = [];
   if (shopifyPending.length > 0) {
-    try { shopify = await syncPublishedListingsToShopify(15, shopifyPending.map((row) => String(row.id))); }
-    catch (cause) { errors.push(`shopify:${cause instanceof Error ? cause.message : String(cause)}`); }
+    try {
+      shopify = await syncPublishedListingsToShopify(15, shopifyPending.map((row) => String(row.id)));
+      const result = shopify as { failed?: number; errors?: Array<{ listingId: string; error: string }> };
+      if ((result.failed ?? 0) > 0) errors.push(`shopify_unpublish_failed:${JSON.stringify(result.errors?.slice(0, 5) ?? [])}`);
+    } catch (cause) { errors.push(`shopify:${cause instanceof Error ? cause.message : String(cause)}`); }
   }
   if (basePending.length > 0) {
-    try { base = await publishPublishedListingsToBase(50, basePending.map((row) => String(row.id))); }
-    catch (cause) { errors.push(`base:${cause instanceof Error ? cause.message : String(cause)}`); }
+    try {
+      base = await publishPublishedListingsToBase(50, basePending.map((row) => String(row.id)));
+      const result = base as { attempted?: number; failed?: number; results?: Array<{ listingId: string; ok: boolean; error?: string }> };
+      if ((result.attempted ?? 0) === 0 && (result.results?.length ?? 0) === 0) errors.push("base_unpublish_not_attempted:credentials_not_configured_or_no_result");
+      if ((result.failed ?? 0) > 0) errors.push(`base_unpublish_failed:${JSON.stringify(result.results?.filter((item) => !item.ok).slice(0, 5) ?? [])}`);
+    } catch (cause) { errors.push(`base:${cause instanceof Error ? cause.message : String(cause)}`); }
+  }
+
+  if (errors.length > 0) {
+    console.error("[unpublish-unlinked] external channel reconciliation incomplete", {
+      candidatesChecked: (data ?? []).length,
+      unlinkedFound: unlinked.length,
+      shopifyAttempted: shopifyPending.length,
+      baseAttempted: basePending.length,
+      errors,
+    });
   }
 
   return NextResponse.json({
