@@ -112,7 +112,8 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         return { kind: "no_match" as const, supplierListingId };
       }
       const canonicalProductId = identity.productId;
-      const { data: intelligence } = await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle();
+      const { data: intelligence, error: intelligenceError } = await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle();
+      if (intelligenceError) throw new Error(`canonical product intelligence read failed: ${intelligenceError.message}`);
       const metadata = record(intelligence?.metadata);
       const cost = num(row.cost); const shippingCost = num(row.shipping_cost); const inventory = num(row.inventory);
       const storedFxRate = num(metadata.fx_rate);
@@ -156,6 +157,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   };
   for (let offset = 0; offset < selectedRows.length; offset += CONCURRENCY) { if (Date.now() >= deadlineAt) break; const batch = selectedRows.slice(offset, offset + CONCURRENCY); const results = await Promise.all(batch.map(processRow)); for (const item of results) { result.checked += 1; if (item.kind === "promoted") { result.promoted += 1; result.promotedListings.push({ supplierListingId: item.supplierListingId, bestsellerId: item.bestsellerId, method: item.method }); } else if (item.kind === "no_match") result.noUniqueBarcodeMatch += 1; else if (item.kind === "missing_economics") result.missingEconomics += 1; else result.errors.push({ supplierListingId: item.supplierListingId, error: item.error }); } }
   const now = new Date().toISOString();
-  await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: "cursor_rotation_womens_priority", candidateCount: total, womensCandidates: womensRows.length, womensSelected: selectedWomens.length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
+  const { error: runInsertError } = await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: result.errors.length ? "failed" : "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: "cursor_rotation_womens_priority", candidateCount: total, womensCandidates: womensRows.length, womensSelected: selectedWomens.length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
+  if (runInsertError) throw new Error(`identity reverify run log insert failed: ${runInsertError.message}`);
   return result;
 }
