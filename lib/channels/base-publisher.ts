@@ -6,6 +6,7 @@ import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sal
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
+import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -77,12 +78,34 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   const { data: listings, error } = await query.order("created_at", { ascending: true }).limit(safeLimit);
   if (error) throw new Error(error.message);
 
+  const linkedSupplierIds = await getLinkedSupplierListingIds((listings ?? []).map((listing) => listing.supplier_listing_id));
+  const identityUnlinkedIds = new Set((listings ?? [])
+    .filter((listing) => !listing.supplier_listing_id || !linkedSupplierIds.has(String(listing.supplier_listing_id)))
+    .map((listing) => String(listing.id)));
   const results: BasePublicationResult["results"] = [];
+
+  // Mark unlinked catalog rows blocked before any downstream publication work.
+  if (identityUnlinkedIds.size > 0) {
+    const now = new Date().toISOString();
+    const { error: blockError } = await supabase.from("shop_listings").update({
+      published: false,
+      orderable: false,
+      published_at: null,
+      pipeline_stage: "BLOCKED",
+      pipeline_status: "blocked",
+      pipeline_reason: "supplier_identity_unlinked",
+      pipeline_updated_at: now,
+      updated_at: now,
+    }).in("id", [...identityUnlinkedIds]);
+    if (blockError) throw new Error(`supplier_identity_block_failed:${blockError.message}`);
+  }
 
   // Hide stale BASE items immediately. Do not spend Gemini time translating
   // listings that TRACER has already blocked/unpublished.
   for (const listing of listings ?? []) {
-    if (!listing.base_item_id || listing.published === true) continue;
+    const isIdentityUnlinked = identityUnlinkedIds.has(String(listing.id));
+    if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked)) continue;
+    if (!isIdentityUnlinked && listing.base_publication_status === "hidden") continue;
     if (listing.selling_price === null) {
       results.push({ listingId: String(listing.id), ok: false, skipped: true, error: "base_hide_price_unknown" });
       continue;
@@ -97,13 +120,17 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         visible: false,
       });
       await supabase.from("shop_listings").update({
-        base_publication_status: "published",
+        published: false,
+        orderable: false,
+        published_at: null,
+        base_publication_status: "hidden",
         base_publication_lease_until: null,
         base_last_error: null,
-        pipeline_stage: "BASE_RECONCILED",
+        pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
-        pipeline_reason: "tracer_unpublished",
+        pipeline_reason: isIdentityUnlinked ? "supplier_identity_unlinked" : "tracer_unpublished",
         pipeline_updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       }).eq("id", String(listing.id));
       results.push({ listingId: String(listing.id), ok: true, baseItemId: String(listing.base_item_id) });
     } catch (error) {
@@ -111,7 +138,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
   }
 
-  const activeListings = (listings ?? []).filter((listing) => !listing.base_item_id || listing.published === true);
+  const activeListings = (listings ?? []).filter((listing) => !identityUnlinkedIds.has(String(listing.id)) && listing.base_publication_status !== "hidden" && (!listing.base_item_id || listing.published === true));
   // Generate Japanese copy concurrently only for listings that can remain visible.
   // spend the full serverless timeout waiting on Gemini one listing at a time.
   const copyResults = await Promise.all(activeListings.map(async (listing) => {
@@ -136,7 +163,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const listingId = String(listing.id);
     // Already-hidden BASE items were reconciled above; do not process them a
     // second time as missing-copy failures or overwrite their reconciliation reason.
-    if (listing.base_item_id && listing.published !== true) continue;
+    if (identityUnlinkedIds.has(listingId) || listing.base_publication_status === "hidden" || (listing.base_item_id && listing.published !== true)) continue;
     const copyResult = copyByListingId.get(listingId);
     if (!copyResult?.copy) {
       const message = copyResult?.error ?? "japanese_catalog_copy_required";
