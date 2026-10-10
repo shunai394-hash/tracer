@@ -228,6 +228,10 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
     { name: "internal link readback rejects mismatched identity rationale", expected: false, actual: isVerifiedInternalSupplyLink({ bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "different evidence", status: "verified" }, { bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }) },
     { name: "zero eligible internal products is a missing candidate", expected: true, actual: internalProductCandidateStatus(0) === "no_product_candidate" },
     { name: "multiple eligible internal products remain ambiguous", expected: true, actual: internalProductCandidateStatus(2) === "ambiguous_product" },
+    { name: "negative internal product candidate count fails closed", expected: true, actual: internalProductCandidateStatus(-1) === "ambiguous_product" },
+    { name: "fractional internal product candidate count fails closed", expected: true, actual: internalProductCandidateStatus(0.5) === "ambiguous_product" },
+    { name: "NaN internal product candidate count fails closed", expected: true, actual: internalProductCandidateStatus(Number.NaN) === "ambiguous_product" },
+    { name: "infinite internal product candidate count fails closed", expected: true, actual: internalProductCandidateStatus(Number.POSITIVE_INFINITY) === "ambiguous_product" },
     { name: "internal link readback rejects missing row", expected: false, actual: isVerifiedInternalSupplyLink(null, { bestseller_id: "b1", supply_product_id: "p1", supply_variant_id: "v1", identity_method: "exact_gtin", identity_confidence: 1, identity_rationale: "exact barcode", status: "verified" }) },
   ];
   return { ok: cases.every((item) => item.actual === item.expected), cases };
