@@ -27,6 +27,9 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
   inserted: number;
   productsCreated: number;
   canonicalVariantEvidenceSchemaAvailable: boolean;
+  canonicalVariantEvidenceSchemaStatus: "available" | "missing" | "probe_error";
+  canonicalVariantEvidenceSchemaErrorCode: string | null;
+  canonicalVariantEvidenceSchemaErrorMessage: string | null;
   canonicalVariantEvidenceParsed: number;
   canonicalVariantEvidenceWritten: number;
   canonicalVariantEvidenceWriteFailures: number;
@@ -55,7 +58,13 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
   // variants. Otherwise a missing migration could be reported as a clean run
   // simply because there were zero rows to write.
   const evidenceSchemaProbe = await supabase.from("marketplace_bestseller_variants").select("id").limit(1);
-  const canonicalVariantEvidenceSchemaAvailable = !evidenceSchemaProbe.error;
+  const schemaErrorCode = evidenceSchemaProbe.error?.code ?? null;
+  const canonicalVariantEvidenceSchemaStatus = !evidenceSchemaProbe.error
+    ? "available"
+    : schemaErrorCode === "42P01" || schemaErrorCode === "PGRST205"
+      ? "missing"
+      : "probe_error";
+  const canonicalVariantEvidenceSchemaAvailable = canonicalVariantEvidenceSchemaStatus === "available";
   if (evidenceSchemaProbe.error) {
     console.error("[TRACER CANONICAL VARIANT EVIDENCE SCHEMA UNAVAILABLE]", {
       code: evidenceSchemaProbe.error.code,
@@ -344,6 +353,9 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
     inserted,
     productsCreated,
     canonicalVariantEvidenceSchemaAvailable,
+    canonicalVariantEvidenceSchemaStatus,
+    canonicalVariantEvidenceSchemaErrorCode: schemaErrorCode,
+    canonicalVariantEvidenceSchemaErrorMessage: evidenceSchemaProbe.error?.message ?? null,
     canonicalVariantEvidenceParsed,
     canonicalVariantEvidenceWritten,
     canonicalVariantEvidenceWriteFailures,
