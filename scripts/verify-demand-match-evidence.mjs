@@ -111,7 +111,7 @@ test("durable internal link retry queue", "failed candidate is deferred then res
 
 test("durable internal link retry queue", "catalog sync failure keeps the retry and success cleanup runs only after sync", () => {
   const route = readFileSync(new URL("../app/api/cron/supplier-investigation/route.ts", import.meta.url), "utf8");
-  const syncStart = route.indexOf("const catalog = await syncTracerCatalogFromInternalSupply({", route.indexOf("if (!internal.matched)"));
+  const syncStart = route.indexOf("let catalog: Awaited<ReturnType<typeof syncTracerCatalogFromInternalSupply>>;", route.indexOf("if (!internal.matched)"));
   const syncFailureGate = route.indexOf("if (!catalog.matched)", syncStart);
   const failureRetryWrite = route.indexOf(".upsert(syncFailure, { onConflict: \"bestseller_id\" })", syncFailureGate);
   const failureThrow = route.indexOf('throw new Error(`catalog sync failed for ${candidateId}', failureRetryWrite);
@@ -119,6 +119,7 @@ test("durable internal link retry queue", "catalog sync failure keeps the retry 
   const cleanupOperation = route.indexOf(".delete()", cleanupDelete);
   assert.ok(syncStart >= 0, "catalog sync must run after canonical link verification");
   assert.ok(syncFailureGate > syncStart, "catalog sync result must be checked");
+  assert.ok(route.indexOf("catch (error)", syncStart) < syncFailureGate, "thrown catalog sync errors must enter the retry-preserving failure path");
   assert.ok(failureRetryWrite > syncFailureGate, "failed catalog sync must be durably rescheduled");
   assert.ok(failureThrow > failureRetryWrite, "cron must fail visibly after retaining the retry");
   assert.ok(cleanupDelete > failureThrow && cleanupOperation > cleanupDelete, "retry cleanup must occur only after the catalog-sync failure branch");
