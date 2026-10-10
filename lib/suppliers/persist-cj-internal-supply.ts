@@ -40,7 +40,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
   productId: string;
   variantId: string;
   sourceRef: string;
-  identityLink: { bestsellerId: string; method: string; rationale: string } | null;
+  identityLink: { bestsellerId: string; canonicalVariantEvidenceId: string; method: string; rationale: string } | null;
   auditStatus: "written" | "table_missing" | "write_failed";
 }> {
   if (!args.supplierProductId.trim() || !args.supplierVariantId.trim()) {
@@ -234,37 +234,57 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     throw new Error("cj_internal_supply_product_activation_failed: " + (activate.error?.message ?? "no row returned"));
   }
 
-  // Record a canonical product+variant identity link only for a unique exact
-  // barcode match. This evidence is independent of orderability: the variant
-  // remains blocked from selling until the live supplier-order contract passes.
-  let identityLink: { bestsellerId: string; method: string; rationale: string } | null = null;
+  // Link only against independently stored marketplace CHILD-variant evidence.
+  // Parent product barcodes, titles, and MPNs are not variant identity proof.
+  let identityLink: {
+    bestsellerId: string;
+    canonicalVariantEvidenceId: string;
+    method: string;
+    rationale: string;
+  } | null = null;
   if (Object.values(ids).some(Boolean)) {
     const clauses = ["jan", "gtin", "ean", "upc"]
-      .flatMap((column) => Object.entries(ids)
-        .filter(([, value]) => Boolean(value))
-        .map(([, value]) => `${column}.eq.${value}`))
+      .flatMap((column) => Object.values(ids)
+        .filter((value): value is string => Boolean(value))
+        .map((value) => `${column}.eq.${value}`))
       .filter((clause, index, all) => all.indexOf(clause) === index);
-    const { data: marketRows, error: marketError } = await db
-      .from("marketplace_bestsellers")
-      .select("id,product_id,jan,gtin,ean,upc,mpn,title,brand")
+    const { data: canonicalRows, error: canonicalError } = await db
+      .from("marketplace_bestseller_variants")
+      .select("id,bestseller_id,source_variant_id,jan,gtin,ean,upc,evidence_source")
       .or(clauses.join(","))
       .limit(51);
-    if (marketError) {
-      console.warn("[cj-internal-supply] exact identity lookup failed", { sourceRef, error: marketError.message });
-    } else if ((marketRows ?? []).length <= 50) {
-      const matched = (marketRows ?? []).map((row: Record<string, unknown>) => {
+
+    if (canonicalError) {
+      console.warn("[cj-internal-supply] canonical child-variant evidence lookup failed", {
+        sourceRef,
+        error: canonicalError.message,
+      });
+    } else if ((canonicalRows ?? []).length <= 50) {
+      const matched = (canonicalRows ?? []).map((row: Record<string, unknown>) => {
         const identity = matchProductIdentity({
-          market: { ...identifiersFromRecord(row), brand: typeof row.brand === "string" ? row.brand : null, title: typeof row.title === "string" ? row.title : null },
-          supply: { ...identifiersFromRecord({ ...ids, title: args.title }), title: args.title },
+          market: identifiersFromRecord(row),
+          supply: identifiersFromRecord(ids as unknown as Record<string, unknown>),
         });
-        return { row, identity };
-      }).filter((item) => item.identity.salesEligible);
+        const barcodeMethod = ["jan", "gtin", "ean", "upc"].includes(identity.method);
+        return { row, identity, barcodeMethod };
+      }).filter((item) =>
+        item.barcodeMethod
+        && item.identity.salesEligible
+        && item.row.evidence_source === "schema_org_product_group_has_variant"
+        && typeof item.row.id === "string"
+        && typeof item.row.bestseller_id === "string"
+        && typeof item.row.source_variant_id === "string",
+      );
+
+      // The supplier variant must have exactly one matching canonical child
+      // variant across all stored evidence. Parent-only matches are never queried.
       if (matched.length === 1) {
         const row = matched[0].row;
         const linkPayload = {
-          bestseller_id: String(row.id),
+          bestseller_id: String(row.bestseller_id),
           supply_product_id: productId,
           supply_variant_id: variantId,
+          marketplace_variant_evidence_id: String(row.id),
           identity_method: matched[0].identity.method,
           identity_confidence: matched[0].identity.confidence,
           identity_rationale: matched[0].identity.rationale,
@@ -273,41 +293,46 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
         const link = await db.from("internal_supply_links").insert(linkPayload);
         if (!link.error) {
           identityLink = {
-            bestsellerId: String(row.id),
+            bestsellerId: String(row.bestseller_id),
+            canonicalVariantEvidenceId: String(row.id),
             method: matched[0].identity.method,
             rationale: matched[0].identity.rationale,
           };
         } else if (/duplicate|unique/i.test(link.error.message)) {
-          // A unique violation alone does not prove that the existing row is the
-          // same reviewed identity evidence. Only treat it as an idempotent retry
-          // when the exact relationship and evidence already persisted match.
+          // A duplicate is an idempotent retry only when the persisted link
+          // points to this exact canonical child evidence row and method.
           const existingLink = await db
             .from("internal_supply_links")
-            .select("identity_method,identity_confidence,identity_rationale,status")
+            .select("marketplace_variant_evidence_id,identity_method,identity_confidence,identity_rationale,status")
             .eq("bestseller_id", linkPayload.bestseller_id)
             .eq("supply_product_id", linkPayload.supply_product_id)
             .eq("supply_variant_id", linkPayload.supply_variant_id)
             .maybeSingle();
           const sameEvidence = !existingLink.error
             && existingLink.data?.status === "verified"
+            && existingLink.data?.marketplace_variant_evidence_id === linkPayload.marketplace_variant_evidence_id
             && existingLink.data?.identity_method === linkPayload.identity_method
             && Number(existingLink.data?.identity_confidence) === linkPayload.identity_confidence
             && existingLink.data?.identity_rationale === linkPayload.identity_rationale;
           if (sameEvidence) {
             identityLink = {
-              bestsellerId: String(row.id),
+              bestsellerId: String(row.bestseller_id),
+              canonicalVariantEvidenceId: String(row.id),
               method: matched[0].identity.method,
               rationale: matched[0].identity.rationale,
             };
           } else {
-            console.warn("[cj-internal-supply] identity link duplicate did not match intended evidence", {
+            console.warn("[cj-internal-supply] duplicate link does not match canonical child evidence", {
               sourceRef,
               error: link.error.message,
               existingError: existingLink.error?.message ?? null,
             });
           }
         } else {
-          console.warn("[cj-internal-supply] identity link persistence failed", { sourceRef, error: link.error.message });
+          console.warn("[cj-internal-supply] canonical child-variant link persistence failed", {
+            sourceRef,
+            error: link.error.message,
+          });
         }
       }
     }
