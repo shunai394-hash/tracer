@@ -1,0 +1,44 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { EMPTY_IDENTIFIERS, identifierQueryEntries, hasExactMarketplaceVariantIdentifierMatch, matchProductIdentity } from "../lib/market/identifiers.ts";
+import { hasUniqueIdentitySelection } from "../lib/suppliers/cj-identity-reverify-policy.ts";
+
+const marketAsin = "B0TESTASIN1";
+const supplyAsin = "B0TESTASIN1";
+
+assert.deepEqual(identifierQueryEntries({ ...EMPTY_IDENTIFIERS, asin: marketAsin }), [["asin", marketAsin]]);
+assert.deepEqual(
+  identifierQueryEntries({ ...EMPTY_IDENTIFIERS, asin: marketAsin, jan: "4573138107287", mpn: "MODEL-123" }),
+  [["asin", marketAsin], ["jan", "4573138107287"], ["mpn", "MODEL-123"]],
+);
+const exact = matchProductIdentity({
+  market: { ...EMPTY_IDENTIFIERS, asin: marketAsin, title: "Marketplace title" },
+  supply: { ...EMPTY_IDENTIFIERS, asin: supplyAsin, title: "Supplier title" },
+});
+assert.equal(exact.salesEligible, true);
+assert.equal(exact.method, "asin");
+assert.equal(hasExactMarketplaceVariantIdentifierMatch(
+  { ...EMPTY_IDENTIFIERS, jan: "4006381333931" },
+  { ...EMPTY_IDENTIFIERS, gtin: "4006381333931" },
+), true);
+assert.equal(hasExactMarketplaceVariantIdentifierMatch(
+  { ...EMPTY_IDENTIFIERS, asin: marketAsin },
+  { ...EMPTY_IDENTIFIERS, asin: "B0OTHERASIN" },
+), false);
+assert.equal(hasUniqueIdentitySelection(3, 1), true);
+assert.equal(hasUniqueIdentitySelection(3, 2), false);
+
+const ingestion = readFileSync(new URL("../app/api/internal/supply/route.ts", import.meta.url), "utf8");
+assert.match(ingestion, /asin:\s*x\.asin\s*\?\?\s*null/);
+assert.match(ingestion, /asin:\s*v\.asin\s*\?\?\s*null/);
+const matcher = readFileSync(new URL("../lib/suppliers/internal-catalog.ts", import.meta.url), "utf8");
+const sync = readFileSync(new URL("../lib/suppliers/sync-tracer-catalog.ts", import.meta.url), "utf8");
+const migration = readFileSync(new URL("../supabase/migrations/20261010200000_internal_supply_asin_identity.sql", import.meta.url), "utf8");
+assert.match(migration, /internal_supply_products\s+add column if not exists asin text/i);
+assert.match(migration, /internal_supply_variants\s+add column if not exists asin text/i);
+assert.match(matcher, /identifierQueryEntries\(marketIds\)/);
+assert.match(sync, /identifierQueryEntries\(marketIds\)/);
+assert.match(matcher, /hasExactMarketplaceVariantIdentifierMatch/);
+assert.match(sync, /hasExactMarketplaceVariantIdentifierMatch/);
+
+console.log("PASS: ASIN-only lookup, exact identity, ambiguous variant rejection, and persistence checks");
