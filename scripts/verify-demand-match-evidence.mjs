@@ -45,6 +45,12 @@ test("canonical marketplace variant evidence", "does not use the parent ASIN as 
   assert.deepEqual(variants.map((variant) => variant.sourceVariantId), ["ITEM-S", "ITEM-L"]);
   assert.equal(variants.every((variant) => variant.asin === null), true, "parent ASIN must not be assigned to child variant evidence");
   assert.equal(variants.every((variant) => variant.gtin === null), true, "parent GTIN must not be inherited by child variants");
+
+  const sameParentUrlHtml = '<script type="application/ld+json">{"@context":"https://schema.org","@type":"ProductGroup","hasVariant":[{"@type":"Product","name":"Variant repeats parent URL","sku":"ITEM-SAME-PARENT-URL","url":"https://www.amazon.co.jp/dp/B0PARENT01"}]}</script>';
+  const sameParentUrlVariants = parseCanonicalMarketplaceVariantEvidence(sameParentUrlHtml, "https://www.amazon.co.jp/dp/B0PARENT01");
+  assert.equal(sameParentUrlVariants.length, 1);
+  assert.equal(sameParentUrlVariants[0].sourceVariantId, "ITEM-SAME-PARENT-URL");
+  assert.equal(sameParentUrlVariants[0].asin, null, "explicitly repeated parent URL must not become child ASIN evidence");
 });
 
 
