@@ -17,7 +17,7 @@ import {
   variantsCompatible,
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
-import { normalizeIdentifier, marketplaceIdentifierLookupConditions, EMPTY_IDENTIFIERS, matchProductIdentity } from "../lib/market/identifiers.ts";
+import { normalizeIdentifier, marketplaceIdentifierLookupConditions, exactBarcodeFamilyMatch, EMPTY_IDENTIFIERS, matchProductIdentity } from "../lib/market/identifiers.ts";
 import { selectUniqueIdentityCandidate, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
@@ -41,6 +41,17 @@ test("cross-scheme supplier identity lookup", "JAN/GTIN/EAN/UPC lookup searches 
     assert.ok(conditions.includes(`${column}.eq.04006381333931`), `missing ${column} GTIN-14 lookup`);
   }
   assert.equal(new Set(conditions).size, conditions.length, "lookup conditions must be unique");
+});
+test("variant-only barcode identity", "parent identifiers may be empty when exactly one concrete variant has the canonical barcode", () => {
+  const market = { ...EMPTY_IDENTIFIERS, jan: "4006381333931" };
+  const variantOnly = { ...EMPTY_IDENTIFIERS, ean: "4006381333931" };
+  assert.equal(exactBarcodeFamilyMatch(market, variantOnly), "gtin");
+  assert.equal(exactBarcodeFamilyMatch(market, { ...EMPTY_IDENTIFIERS, asin: "B012345678", mpn: "MODEL-123" }), null);
+  assert.equal(exactBarcodeFamilyMatch(
+    { ...EMPTY_IDENTIFIERS, upc: "012345678905" },
+    { ...EMPTY_IDENTIFIERS, gtin: "00012345678905" },
+  ), "gtin");
+  assert.equal(exactBarcodeFamilyMatch(market, { ...EMPTY_IDENTIFIERS, ean: "4006381333932" }), null);
 });
 test("cross-scheme supplier identity lookup", "MPN lookup is included only for grammar-safe exact identifiers", () => {
   assert.ok(marketplaceIdentifierLookupConditions({ ...EMPTY_IDENTIFIERS, mpn: "WH-1000XM5" }).includes("mpn.eq.WH-1000XM5"));
