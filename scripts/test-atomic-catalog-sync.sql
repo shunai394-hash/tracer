@@ -80,6 +80,8 @@ declare
   v_other_variant uuid := '20000000-0000-4000-8000-000000000002';
   v_catalog jsonb;
   v_catalog_variant jsonb;
+  v_product_generation bigint;
+  v_variant_generation bigint;
 begin
   v_catalog := jsonb_build_object(
     'tracer_sku','TRACER-TEST-001','title','テスト商品','brand','Test','category','test',
@@ -142,11 +144,7 @@ begin
 
   -- Source UPDATE triggers must bump generation. Use the new generation so this
   -- test exercises the stock gate, not the stale-generation gate.
-  declare
-    v_product_generation bigint;
-    v_variant_generation bigint;
-  begin
-    select generation into v_variant_generation
+  select generation into v_variant_generation
       from public.internal_supply_variants where id=v_variant;
     update public.internal_supply_variants set inventory=0 where id=v_variant;
     if (select generation from public.internal_supply_variants where id=v_variant) <> v_variant_generation + 1 then
@@ -187,8 +185,7 @@ begin
         and (c.status <> 'draft' or c.orderable is distinct from false or c.inventory <> 0)
     ) then
       raise exception 'source variant mutation did not quarantine catalog product';
-    end if;
-  end;
+  end if;
 
   -- SKU collision with a different bestseller must throw and roll back both writes.
   v_catalog := jsonb_set(v_catalog,'{tracer_sku}','"TRACER-TEST-001"'::jsonb);
