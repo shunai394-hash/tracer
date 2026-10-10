@@ -300,16 +300,14 @@ async function syncListingRows(
         continue;
       }
       results.failed += 1;
-      results.errors.push({ listingId: row.id, error: `unpublish_failed:${message}` });
+      const failureCode = "shopify_unpublish_failed_manual_action_required";
+      results.errors.push({ listingId: row.id, error: `${failureCode}:${message}` });
+      // Shopify remains the source of truth for publication state when the API
+      // refused to unpublish. Do not falsely mark the listing unpublished in
+      // our database; surface the manual-action blocker instead.
       await supabase.from("shop_listings").update({
-        published: false,
-        pipeline_stage: "BLOCKED",
-        pipeline_status: "blocked",
-        pipeline_reason: "sales_test_gate_unpublish_failed",
-        pipeline_updated_at: new Date().toISOString(),
-        published_at: null,
         shopify_sync_status: "failed",
-        shopify_sync_error: `unpublish_failed:${message}`.slice(0, 2000),
+        shopify_sync_error: `${failureCode}:${message}`.slice(0, 2000),
         shopify_synced_at: new Date().toISOString(),
       }).eq("id", row.id);
     }
