@@ -15,8 +15,21 @@ const exact = matchProductIdentity({
   market: { ...EMPTY_IDENTIFIERS, asin: marketAsin, title: "Marketplace title" },
   supply: { ...EMPTY_IDENTIFIERS, asin: supplyAsin, title: "Supplier title" },
 });
-assert.equal(exact.salesEligible, true);
+// ASIN is a search entry point only: it surfaces the candidate but never
+// confirms the same product/variant or permission to sell on its own.
 assert.equal(exact.method, "asin");
+assert.equal(exact.linked, true);
+assert.equal(exact.salesEligible, false);
+const confirmed = matchProductIdentity({
+  market: { ...EMPTY_IDENTIFIERS, asin: marketAsin, jan: "4573138107287" },
+  supply: { ...EMPTY_IDENTIFIERS, asin: supplyAsin, jan: "4573138107287" },
+});
+assert.equal(confirmed.salesEligible, true);
+assert.equal(confirmed.method, "jan");
+assert.equal(hasExactMarketplaceVariantIdentifierMatch(
+  { ...EMPTY_IDENTIFIERS, asin: marketAsin },
+  { ...EMPTY_IDENTIFIERS, asin: supplyAsin },
+), false);
 assert.equal(hasExactMarketplaceVariantIdentifierMatch(
   { ...EMPTY_IDENTIFIERS, jan: "4006381333931" },
   { ...EMPTY_IDENTIFIERS, gtin: "4006381333931" },
@@ -41,4 +54,4 @@ assert.match(sync, /identifierQueryEntries\(marketIds\)/);
 assert.match(matcher, /hasExactMarketplaceVariantIdentifierMatch/);
 assert.match(sync, /hasExactMarketplaceVariantIdentifierMatch/);
 
-console.log("PASS: ASIN-only lookup, exact identity, ambiguous variant rejection, and persistence checks");
+console.log("PASS: ASIN-only lookup as search entry, ASIN never sales-eligible alone, exact barcode identity, ambiguous variant rejection, and persistence checks");

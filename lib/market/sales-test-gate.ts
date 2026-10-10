@@ -19,10 +19,13 @@ export type SalesTestGateInput = {
   orderable?: boolean;
   supplierProductId?: string | null;
   supplierVariantId?: string | null;
+  /** Distinct supplier variants that claim the same demand item; anything but 1 is ambiguous. */
+  supplierCandidateCount?: number;
   requireRank?: boolean;
 };
 
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+import { isPublishGradeIdentityMethod } from "@/lib/market/identifiers";
 
 const NON_PHYSICAL_TITLE_PATTERNS = [
   /商品券/i,
@@ -49,7 +52,12 @@ export function evaluateSalesTestGate(input: SalesTestGateInput): { eligible: bo
   if (isNonPhysicalProductTitle(input.title)) reasons.push("non_physical_product");
   if (input.sellingPrice === null) reasons.push("selling_price_unknown");
   else if (!Number.isFinite(input.sellingPrice) || input.sellingPrice <= 0) reasons.push("selling_price_invalid");
-  if (!input.identityLinked || input.identityMethod === "title") reasons.push("identity_not_confirmed");
+  // Only barcode or brand+MPN identity may publish. ASIN, bare MPN, title,
+  // image and supply discovery are candidate evidence, never a sale permit.
+  if (!input.identityLinked || !isPublishGradeIdentityMethod(input.identityMethod)) reasons.push("identity_not_confirmed");
+  if (input.supplierCandidateCount !== undefined && input.supplierCandidateCount !== 1) {
+    reasons.push(input.supplierCandidateCount === 0 ? "supplier_candidate_missing" : "supplier_candidate_ambiguous");
+  }
   if (input.identityConfidence !== undefined && (input.identityConfidence === null || !Number.isFinite(input.identityConfidence) || input.identityConfidence < 0.88)) reasons.push("identity_confidence_low");
   if (input.sourceCost === null) reasons.push("source_cost_unknown");
   else if (!Number.isFinite(input.sourceCost) || input.sourceCost < 0) reasons.push("source_cost_invalid");

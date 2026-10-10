@@ -52,6 +52,10 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/test-internal-link-retry-lifecycle.mjs
       - name: Run ASIN-aware internal supply identity tests
         run: node --experimental-strip-types --no-warnings scripts/test-internal-supply-asin-linking.mjs
+      - name: Run publication gate identity/variant/supply regression tests (in-memory database only)
+        run: node --experimental-strip-types --no-warnings --import ./scripts/lib/register-ts-alias.mjs scripts/test-publish-gate-identity.mjs
+      - name: Audit that only the canonical Sales Test Gate writer publishes listings
+        run: node scripts/audit-publish-paths.mjs
       - name: Run durable internal supply link retry queue tests (disposable CI database only)
         env:
           PGHOST: 127.0.0.1

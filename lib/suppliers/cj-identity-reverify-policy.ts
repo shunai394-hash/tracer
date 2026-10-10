@@ -81,12 +81,17 @@ export function hasUniqueIdentitySelection(candidateCount: number, exactMatchCou
  * Parent-level identity can select a sole active, orderable, in-stock variant
  * only when the parent was matched by a strong marketplace identifier.
  */
+/**
+ * A parent product's ASIN or barcode is never inherited by a child variant:
+ * the variant row must carry its own exact identifier. Kept as a function so
+ * callers and tests state the policy explicitly.
+ */
 export function canUseParentIdentityForSingleVariant(args: {
   identityMethod: string;
   activeVariantCount: number;
 }): boolean {
-  return ["asin", "jan", "gtin", "ean", "upc", "exact_asin", "exact_jan", "exact_gtin", "exact_ean", "exact_upc"].includes(args.identityMethod)
-    && args.activeVariantCount === 1;
+  void args;
+  return false;
 }
 
 export type InternalLinkRetryState = {
@@ -209,7 +214,8 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
     { name: "multiple_variants_without_unique_identifier_match_are_rejected", expected: false, actual: hasUniqueIdentitySelection(3, 0) },
     { name: "multiple_variants_with_one_exact_identifier_match_select_one", expected: true, actual: hasUniqueIdentitySelection(3, 1) },
     { name: "multiple_variants_with_duplicate_exact_matches_are_rejected", expected: false, actual: hasUniqueIdentitySelection(3, 2) },
-    { name: "exact parent barcode may select sole variant", expected: true, actual: canUseParentIdentityForSingleVariant({ identityMethod: "exact_gtin", activeVariantCount: 1 }) },
+    { name: "parent barcode is not inherited by sole variant", expected: false, actual: canUseParentIdentityForSingleVariant({ identityMethod: "exact_gtin", activeVariantCount: 1 }) },
+    { name: "parent ASIN is not inherited by sole variant", expected: false, actual: canUseParentIdentityForSingleVariant({ identityMethod: "asin", activeVariantCount: 1 }) },
     { name: "parent model number cannot select sole variant", expected: false, actual: canUseParentIdentityForSingleVariant({ identityMethod: "mpn", activeVariantCount: 1 }) },
     { name: "multiple variants block parent identity fallback", expected: false, actual: canUseParentIdentityForSingleVariant({ identityMethod: "exact_gtin", activeVariantCount: 2 }) },
     { name: "due retry is selected before future retry", expected: true, actual: JSON.stringify(selectDueInternalLinkRetryIds([{ bestseller_id: "future", next_attempt_at: "2026-01-02T00:00:00.000Z" }, { bestseller_id: "due", next_attempt_at: "2026-01-01T00:00:00.000Z" }], Date.parse("2026-01-01T12:00:00.000Z"), 1)) === JSON.stringify(["due"]) },

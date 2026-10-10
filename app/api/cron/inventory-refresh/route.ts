@@ -7,6 +7,7 @@ import { getSupplierAdapter } from "@/lib/procurement/registry";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { decideInventoryRefresh, isInventoryRefreshTarget, type InventoryObservation } from "@/lib/ops/inventory-refresh-policy";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -18,185 +19,96 @@ export async function GET(request: Request) {
   try {
     initializeProcurement();
     const supabase = createSupabaseAdminClient();
-    const { data: listings, error } = await supabase
+    // Only published, gate-passed listings are refreshed. A BASE item id alone
+    // (e.g. an unpublished or withdrawn listing) never makes a row a target.
+    const { data: gatedListings, error } = await supabase
       .from("shop_listings")
-      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason")
-      .not("supplier_name", "is", null)
-      .not("supplier_variant_id", "is", null)
-      .or("base_item_id.not.is.null,and(pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published,pipeline_reason.eq.sales_test_gate_passed)")
-      .order("updated_at", { ascending: true })
-      .limit(20);
-
-    if (error) throw new Error(error.message);
-
-    // Gate-passed listings whose pipeline_* moved on (e.g. temporarily
-    // blocked for zero stock) must keep being refreshed, or they could never
-    // become orderable again. selection_reasons carries the durable marker.
-    const { data: gatedListings, error: gatedError } = await supabase
-      .from("shop_listings")
-      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason")
+      .select("id, published, selection_reasons, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason")
       .not("supplier_name", "is", null)
       .not("supplier_variant_id", "is", null)
       .eq("published", true)
       .filter("selection_reasons", "cs", JSON.stringify([SALES_TEST_GATE_PASSED]))
       .order("updated_at", { ascending: true })
-      .limit(20);
-    if (gatedError) throw new Error(gatedError.message);
-
-    const seen = new Set<string>();
-    const refreshTargets = [...(listings ?? []), ...(gatedListings ?? [])].filter((row) => {
-      const id = String(row.id);
-      if (seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    });
+      .limit(40);
+    if (error) throw new Error(error.message);
+    const refreshTargets = (gatedListings ?? []).filter((row) => isInventoryRefreshTarget(row));
 
     const results = [];
     let baseUpdated = 0;
     let baseErrors = 0;
+    async function syncBase(listing: Record<string, unknown>, listingId: string, stock: number, visible: boolean): Promise<string | null> {
+      if (!listing.base_item_id || listing.selling_price === null || !isBaseConfigured()) return null;
+      try {
+        await editBaseItem({
+          itemId: String(listing.base_item_id),
+          title: String(listing.title ?? ""),
+          detail: String(listing.description ?? listing.title ?? ""),
+          price: Number(listing.selling_price),
+          stock,
+          visible,
+        });
+        baseUpdated++;
+        await supabase.from("shop_listings").update({ base_last_error: null }).eq("id", listingId);
+        return null;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        baseErrors++;
+        await supabase.from("shop_listings").update({ base_last_error: message }).eq("id", listingId);
+        return message;
+      }
+    }
+
     for (const listing of refreshTargets) {
       const listingId = String(listing.id);
       const supplierName = String(listing.supplier_name ?? "").trim();
       const variantId = String(listing.supplier_variant_id);
       const adapter = getSupplierAdapter(supplierName);
       try {
-        if (!supplierName || !adapter) {
-          results.push({ listingId, ok: false, blocked: true, reason: "supplier_adapter_not_registered" });
-          continue;
-        }
-        if (!isSupplierConfigured(supplierName)) {
-          results.push({ listingId, ok: false, blocked: true, reason: "supplier_not_configured", supplier: supplierName });
-          continue;
-        }
-
-        const autoProcurement = getAutoProcurementEligibility(supplierName);
-        if (!autoProcurement.eligible) {
-          const now = new Date().toISOString();
-          const { error: blockError } = await supabase
-            .from("shop_listings")
-            .update({
-              published: false,
-              orderable: false,
-              pipeline_error: autoProcurement.missing.join("|"),
-              pipeline_updated_at: now,
-              updated_at: now,
-            })
-            .eq("id", listingId);
-          if (blockError) throw new Error(blockError.message);
-
-          if (listing.supplier_listing_id) {
-            const { error: supplierError } = await supabase
-              .from("supplier_listings")
-              .update({
-                orderable: false,
-                fetched_at: now,
-              })
-              .eq("id", String(listing.supplier_listing_id));
-            if (supplierError) throw new Error(supplierError.message);
-          }
-
-          let baseSyncError: string | null = null;
-          if (listing.base_item_id && listing.selling_price !== null && isBaseConfigured()) {
-            try {
-              await editBaseItem({
-                itemId: String(listing.base_item_id),
-                title: String(listing.title ?? ""),
-                detail: String(listing.description ?? listing.title ?? ""),
-                price: Number(listing.selling_price),
-                stock: 0,
-                visible: false,
-              });
-              baseUpdated++;
-            } catch (error) {
-              baseSyncError = error instanceof Error ? error.message : String(error);
-              baseErrors++;
-              await supabase.from("shop_listings").update({
-                base_last_error: baseSyncError,
-              }).eq("id", listingId);
+        // A supplier that can no longer be auto-procured is withdrawn from sale.
+        if (supplierName && adapter && isSupplierConfigured(supplierName)) {
+          const autoProcurement = getAutoProcurementEligibility(supplierName);
+          if (!autoProcurement.eligible) {
+            const now = new Date().toISOString();
+            const { error: blockError } = await supabase
+              .from("shop_listings")
+              .update({ published: false, orderable: false, pipeline_error: autoProcurement.missing.join("|"), pipeline_updated_at: now, updated_at: now })
+              .eq("id", listingId);
+            if (blockError) throw new Error(blockError.message);
+            if (listing.supplier_listing_id) {
+              const { error: supplierError } = await supabase.from("supplier_listings").update({ orderable: false, fetched_at: now }).eq("id", String(listing.supplier_listing_id));
+              if (supplierError) throw new Error(supplierError.message);
             }
+            const baseSyncError = await syncBase(listing, listingId, 0, false);
+            results.push({ listingId, ok: false, blocked: true, reason: "supplier_auto_procurement_capability_missing", missing: autoProcurement.missing, baseSyncError });
+            continue;
           }
+        }
 
-          results.push({
-            listingId,
-            ok: false,
-            blocked: true,
-            reason: "supplier_auto_procurement_capability_missing",
-            missing: autoProcurement.missing,
-            baseSyncError,
-          });
-          continue;
+        // Every path that cannot observe live stock stops the sale (safe side).
+        let observation: InventoryObservation;
+        if (!supplierName || !adapter) observation = { kind: "unavailable", reason: "supplier_adapter_not_registered" };
+        else if (!isSupplierConfigured(supplierName)) observation = { kind: "unavailable", reason: "supplier_not_configured" };
+        else if (supplierName.toLowerCase() === "dsers") observation = { kind: "unavailable", reason: "supplier_inventory_contract_unverified" };
+        else {
+          try {
+            const inventoryResult = await adapter.getInventory(String(listing.supplier_product_id ?? ""), variantId);
+            const quantity = inventoryResult?.quantity;
+            observation = typeof quantity === "number"
+              ? { kind: "observed", quantity }
+              : { kind: "unavailable", reason: "inventory_unknown" };
+          } catch (error) {
+            observation = { kind: "unavailable", reason: `inventory_lookup_failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300) };
+          }
         }
-        if (supplierName.toLowerCase() === "dsers") {
-          results.push({ listingId, ok: false, blocked: true, reason: "supplier_inventory_contract_unverified", supplier: supplierName });
-          continue;
-        }
-        const inventoryResult = await adapter.getInventory(
-          String(listing.supplier_product_id ?? ""),
-          variantId,
-        );
-        const inventory = inventoryResult?.quantity ?? null;
+
+        const decision = decideInventoryRefresh(observation);
         const now = new Date().toISOString();
-
-        if (inventory === null) {
-          const { error: listingError } = await supabase
-            .from("shop_listings")
-            .update({
-              inventory: null,
-              orderable: false,
-              pipeline_error: "Supplier variant stock could not be verified",
-              pipeline_updated_at: now,
-              updated_at: now,
-            })
-            .eq("id", listingId);
-          if (listingError) throw new Error(listingError.message);
-
-          if (listing.supplier_listing_id) {
-            const { error: supplierError } = await supabase
-              .from("supplier_listings")
-              .update({
-                inventory: null,
-                inventory_confirmed: false,
-                orderable: false,
-                fetched_at: now,
-              })
-              .eq("id", String(listing.supplier_listing_id));
-            if (supplierError) throw new Error(supplierError.message);
-          }
-
-          let baseSyncError: string | null = null;
-          if (listing.base_item_id && listing.selling_price !== null && isBaseConfigured()) {
-            try {
-              await editBaseItem({
-                itemId: String(listing.base_item_id),
-                title: String(listing.title ?? ""),
-                detail: String(listing.description ?? listing.title ?? ""),
-                price: Number(listing.selling_price),
-                stock: 0,
-                visible: false,
-              });
-              baseUpdated++;
-              await supabase.from("shop_listings").update({
-                base_last_error: null,
-              }).eq("id", listingId);
-            } catch (error) {
-              baseSyncError = error instanceof Error ? error.message : String(error);
-              baseErrors++;
-              await supabase.from("shop_listings").update({
-                base_last_error: baseSyncError,
-              }).eq("id", listingId);
-            }
-          }
-
-          results.push({ listingId, ok: false, blocked: true, reason: "inventory_unknown", baseSyncError });
-          continue;
-        }
-
-        const orderable = inventory > 0;
         const { error: listingError } = await supabase
           .from("shop_listings")
           .update({
-            inventory,
-            orderable,
+            inventory: decision.inventory,
+            orderable: decision.orderable,
+            ...(decision.stopSale ? { pipeline_error: decision.reason, pipeline_updated_at: now } : {}),
             updated_at: now,
           })
           .eq("id", listingId);
@@ -205,41 +117,15 @@ export async function GET(request: Request) {
         if (listing.supplier_listing_id) {
           const { error: supplierError } = await supabase
             .from("supplier_listings")
-            .update({
-              inventory,
-              inventory_confirmed: true,
-              orderable,
-              fetched_at: now,
-            })
+            .update({ inventory: decision.inventory, inventory_confirmed: decision.inventoryConfirmed, orderable: decision.orderable, fetched_at: now })
             .eq("id", String(listing.supplier_listing_id));
           if (supplierError) throw new Error(supplierError.message);
         }
 
-        let baseSyncError: string | null = null;
-        if (listing.base_item_id && listing.selling_price !== null && isBaseConfigured()) {
-          try {
-            await editBaseItem({
-              itemId: String(listing.base_item_id),
-              title: String(listing.title ?? ""),
-              detail: String(listing.description ?? listing.title ?? ""),
-              price: Number(listing.selling_price),
-              stock: orderable ? Math.max(0, Math.floor(inventory)) : 0,
-              visible: orderable,
-            });
-            baseUpdated++;
-            await supabase.from("shop_listings").update({
-              base_last_error: null,
-            }).eq("id", listingId);
-          } catch (error) {
-            baseSyncError = error instanceof Error ? error.message : String(error);
-            baseErrors++;
-            await supabase.from("shop_listings").update({
-              base_last_error: baseSyncError,
-            }).eq("id", listingId);
-          }
-        }
-
-        results.push({ listingId, ok: true, inventory, orderable, baseSyncError });
+        const baseSyncError = await syncBase(listing, listingId, decision.baseStock, decision.baseVisible);
+        results.push(decision.stopSale
+          ? { listingId, ok: false, blocked: true, reason: decision.reason, inventory: decision.inventory, orderable: false, baseSyncError }
+          : { listingId, ok: true, inventory: decision.inventory, orderable: true, baseSyncError });
       } catch (error) {
         results.push({
           listingId,
@@ -251,7 +137,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       ok: true,
-      configured: (listings ?? []).length > 0,
+      configured: refreshTargets.length > 0,
       inspected: results.length,
       updated: results.filter((item) => item.ok).length,
       blocked: results.filter((item) => item.blocked).length,

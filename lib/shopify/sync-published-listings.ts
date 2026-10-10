@@ -170,10 +170,19 @@ export async function syncPublishedListingsToShopify(limit = 150, listingIds?: s
  * Why a listing may not be written to Shopify. Empty means it passes the same
  * gate, supplier, inventory and economics checks the sync applies.
  */
+export function shopifySyncBlockReasons(row: Listing): string[] {
+  return blockReasons(row);
+}
+
 function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
   if (row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") reasons.push("pipeline_blocked");
   if (!hasGateProvenance(row)) reasons.push("sales_test_gate_not_passed");
+  // Shopify is downstream delivery only: it never decides publication. A row
+  // must already be published by the canonical Sales Test Gate writer.
+  if (row.published !== true || row.pipeline_status !== "published" || !["PUBLISHED", "BASE_PUBLISHED"].includes(String(row.pipeline_stage ?? ""))) {
+    reasons.push("not_published_by_canonical_gate");
+  }
   if (row.orderable !== true) reasons.push("not_orderable");
   if (row.tracking_available !== true) reasons.push("tracking_unavailable");
   if (!(Number(row.inventory) > 0)) reasons.push("inventory_zero_or_unknown");
@@ -393,13 +402,6 @@ async function syncListingRows(
         shopify_synced_at: new Date().toISOString(),
         shopify_sync_status: "synced",
         shopify_sync_error: null,
-        ...(publication.published ? {
-          published: true,
-          pipeline_stage: "PUBLISHED",
-          pipeline_status: "published",
-          pipeline_reason: "sales_test_gate_passed",
-          pipeline_updated_at: new Date().toISOString(),
-        } : {}),
       }).eq("id", row.id);
       if (updateError) throw new Error(updateError.message);
 
