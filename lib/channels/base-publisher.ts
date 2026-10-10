@@ -122,7 +122,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         stock: 0,
         visible: false,
       });
-      await supabase.from("shop_listings").update({
+      const { error: stateError } = await supabase.from("shop_listings").update({
         published: false,
         orderable: false,
         published_at: null,
@@ -132,9 +132,11 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
         pipeline_reason: isIdentityUnlinked ? "supplier_identity_unlinked" : "tracer_unpublished",
+        pipeline_error: null,
         pipeline_updated_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", String(listing.id));
+      if (stateError) throw new Error(`base_hidden_db_reconciliation_failed:${stateError.message}`);
       results.push({ listingId: String(listing.id), ok: true, baseItemId: String(listing.base_item_id), hidden: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -188,33 +190,53 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
           });
         } catch (hideError) {
           const hideMessage = hideError instanceof Error ? hideError.message : String(hideError);
-          await supabase.from("shop_listings").update({
+          const { error: stateError } = await supabase.from("shop_listings").update({
             published: false,
             orderable: false,
+            base_publication_status: "failed",
+            base_publication_lease_until: null,
             base_last_error: `${message};base_hide_failed:${hideMessage}`.slice(0, 2000),
             pipeline_stage: "BASE_RECONCILIATION",
             pipeline_status: "failed",
             pipeline_reason: "base_hide_failed_after_catalog_validation",
             pipeline_error: hideMessage.slice(0, 2000),
             pipeline_updated_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
           }).eq("id", listingId);
-          results.push({ listingId, ok: false, error: "base_hide_failed_after_catalog_validation" });
+          results.push({
+            listingId,
+            ok: false,
+            error: stateError
+              ? `base_hide_failed_and_db_reconciliation_failed:${hideMessage};${stateError.message}`.slice(0, 2000)
+              : "base_hide_failed_after_catalog_validation",
+          });
           continue;
         }
       }
-      await supabase.from("shop_listings").update({
+      const { error: stateError } = await supabase.from("shop_listings").update({
         published: false,
         orderable: false,
-        base_publication_status: listing.base_item_id ? "published" : "blocked",
+        // A BASE item was successfully hidden above; it is not published even
+        // though the external item ID remains attached for future reconciliation.
+        base_publication_status: "failed",
         base_publication_lease_until: null,
         base_last_error: message,
-        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
         pipeline_reason: "japanese_catalog_copy_required",
-        pipeline_error: message,
+        pipeline_error: null,
         pipeline_updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       }).eq("id", listingId);
-      results.push({ listingId, ok: false, skipped: true, error: "japanese_catalog_copy_required" });
+      if (stateError) {
+        results.push({
+          listingId,
+          ok: false,
+          error: `base_hide_succeeded_db_reconciliation_failed:${stateError.message}`.slice(0, 2000),
+        });
+        continue;
+      }
+      results.push({ listingId, ok: false, skipped: true, hidden: Boolean(listing.base_item_id), error: "japanese_catalog_copy_required" });
       continue;
     }
     const catalogCopy = copyResult.copy;
