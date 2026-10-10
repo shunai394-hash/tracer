@@ -31,6 +31,7 @@ jobs:
           sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'ci-postgres-password';"
           sudo -u postgres createdb tracer_test
       - run: npx tsc --noEmit
+      - run: node scripts/verify-base-gate-revalidation.mjs
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
       - name: Run atomic catalog sync PostgreSQL integration tests (disposable CI database only)
         env:
