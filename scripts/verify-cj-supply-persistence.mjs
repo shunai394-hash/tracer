@@ -54,7 +54,8 @@ class FakeQuery {
       return { data: matched, error: null };
     }
     if (this.action === "update") {
-      if (this.db.failUpdateTable === this.table) return { data: null, error: { message: "injected update failure" } };
+      this.db.updateCount += 1;
+      if (this.db.failUpdateTable === this.table || this.db.failUpdateAt === this.db.updateCount) return { data: null, error: { message: "injected update failure" } };
       const matched = rows.filter((row) => this.filters.every((test) => test(row)));
       for (const row of matched) Object.assign(row, this.payload);
       return { data: this.returning ? matched : null, error: null };
@@ -82,8 +83,8 @@ class FakeQuery {
   }
 }
 class FakeDb {
-  constructor({ identityRows = [identityEvidence], failUpdateTable = null, failWriteTable = null } = {}) {
-    this.sequence = 1; this.variantBarcodeFilter = barcode; this.failUpdateTable = failUpdateTable; this.failWriteTable = failWriteTable;
+  constructor({ identityRows = [identityEvidence], failUpdateTable = null, failWriteTable = null, failUpdateAt = null } = {}) {
+    this.sequence = 1; this.updateCount = 0; this.variantBarcodeFilter = barcode; this.failUpdateTable = failUpdateTable; this.failWriteTable = failWriteTable; this.failUpdateAt = failUpdateAt;
     this.tables = {
       supplier_listings: [{ id: listingId, metadata: { prior: true }, product_id: "stale-product", bestseller_id: "stale-bestseller", orderable: true, api_available: true, tracking_available: true }],
       marketplace_bestseller_variants: identityRows,
@@ -214,7 +215,7 @@ const args = {
 
 {
   const db = new FakeDb({ failUpdateTable: "supplier_listings" });
-  await assert.rejects(() => persistCjSupplyIntelligence(args, { db, identity: null }), /supplier evidence persistence failed/);
+  await assert.rejects(() => persistCjSupplyIntelligence(args, { db, identity: null }), /supplier identity reset failed/);
   assert.equal(db.tables.product_offers.length, 0, "failed listing write must not continue to offer persistence");
   assert.equal(db.tables.product_intelligence.length, 0, "failed listing write must not continue to intelligence persistence");
 }
@@ -237,6 +238,11 @@ const args = {
   );
   assert.equal(db.tables.product_offers.length, 0, "new offer must be removed when intelligence write fails");
   assert.equal(db.tables.product_intelligence.length, 0);
+  assert.equal(db.tables.supplier_listings[0].product_id, null, "failed intelligence write must leave listing detached");
+  assert.equal(db.tables.supplier_listings[0].identity_status, "unverified");
+  assert.equal(db.tables.supplier_listings[0].orderable, false);
+  assert.equal(db.tables.supplier_listings[0].api_available, false);
+  assert.equal(db.tables.supplier_listings[0].tracking_available, false);
 }
 
 {
@@ -251,4 +257,39 @@ const args = {
   assert.equal(db.tables.product_intelligence.length, 0);
 }
 
-console.log("PASS: actual persistence function + real identity policies; exact unique match; duplicate/mismatched/blank barcode rejected; stale link cleared; procurement flags remain false; no canonical writes on no-match; failed listing write halts downstream writes.");
+
+{
+  const db = new FakeDb();
+  const result = await persistCjSupplyIntelligence(args, { db, fetchProductVariants: async () => [], fetchVariantByVid: async () => ({ vid: supplierVariantId, barcode: "" }) });
+  assert.equal(result.identity, null, "missing exact-variant barcode must fail closed");
+  assert.equal(db.tables.supplier_listings[0].product_id, null);
+  assert.equal(db.tables.product_offers.length, 0);
+  assert.equal(db.tables.product_intelligence.length, 0);
+}
+
+{
+  const db = new FakeDb();
+  const invalidArgs = { ...args, supplierProductId: "", supplierVariantId: "" };
+  const result = await persistCjSupplyIntelligence(invalidArgs, { db, fetchProductVariants: async () => [{ vid: "", barcode }], fetchVariantByVid: async (vid) => ({ vid, barcode }) });
+  assert.equal(result.identity, null, "empty supplier product/variant IDs must fail closed");
+  assert.equal(db.tables.supplier_listings[0].product_id, null);
+  assert.equal(db.tables.product_offers.length, 0);
+  assert.equal(db.tables.product_intelligence.length, 0);
+}
+
+{
+  const db = new FakeDb({ failUpdateAt: 2 });
+  await assert.rejects(
+    () => persistCjSupplyIntelligence(args, { db, fetchProductVariants: async () => [{ vid: supplierVariantId, barcode }], fetchVariantByVid: async (vid) => ({ vid, barcode }) }),
+    /identity link persistence failed/,
+  );
+  const listing = db.tables.supplier_listings[0];
+  assert.equal(listing.product_id, null, "failed final link write must leave listing detached");
+  assert.equal(listing.identity_status, "unverified");
+  assert.equal(listing.orderable, false);
+  assert.equal(listing.api_available, false);
+  assert.equal(listing.tracking_available, false);
+}
+
+console.log("PASS: actual resolver/persistence functions with isolated in-memory DB; exact unique match; duplicate/missing/blank/mismatched evidence and empty IDs rejected; stale links cleared before writes; offer/intelligence/final-link failures leave listing unlinked and sale/order gates false.");
+
