@@ -28,8 +28,8 @@ insert into public.marketplace_bestseller_variants(
  bestseller_id, marketplace, source, source_variant_id, title, gtin,
  evidence_source, raw_evidence, fetched_at
 ) values
- ('30000000-0000-4000-8000-000000000001','amazon.co.jp','ci_fixture','B0CHILD-A','Child A','5901234123457','schema_org_product_group_has_variant','{"fixture":true}'::jsonb,now()),
- ('30000000-0000-4000-8000-000000000002','amazon.co.jp','ci_fixture','B0CHILD-B','Child B','5901234123457','schema_org_product_group_has_variant','{"fixture":true}'::jsonb,now())
+ ('30000000-0000-4000-8000-000000000001','amazon.co.jp','ci_fixture','B0CHILD-A','Child A','9991234567890','schema_org_product_group_has_variant','{"fixture":true}'::jsonb,now()),
+ ('30000000-0000-4000-8000-000000000002','amazon.co.jp','ci_fixture','B0CHILD-B','Child B','9991234567890','schema_org_product_group_has_variant','{"fixture":true}'::jsonb,now())
 on conflict (bestseller_id, source_variant_id) do nothing;
 
 insert into public.supplier_listings(id,bestseller_id,product_id,identity_method,identity_status,identity_confidence,orderable,api_available,tracking_available,verification_status,metadata)
@@ -50,7 +50,7 @@ declare
 begin
   -- Exact barcode must be unique across child evidence, not merely unique per parent.
   select count(*) into v_exact from public.marketplace_bestseller_variants
-   where gtin='5901234123457' and evidence_source='schema_org_product_group_has_variant';
+   where gtin='9991234567890' and evidence_source='schema_org_product_group_has_variant';
   if v_exact <> 2 then raise exception 'fixture expected 2 matching child rows, got %',v_exact; end if;
 
   -- Ambiguous match is refused; stale linked identity must be cleared rather than retained.
