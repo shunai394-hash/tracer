@@ -53,6 +53,7 @@ export async function POST(request: Request) {
   const errors: string[] = [];
 
   for (const [itemIndex, x] of items.entries()) {
+    const itemErrorStart = errors.length;
     const cost = finiteNumber(x.cost);
     const shipping = finiteNumber(x.shippingCost);
     const inventory = Math.max(0, finiteNumber(x.inventory) ?? 0);
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
         submitted_variant_count: submittedVariants.length,
         written_variant_ids: writtenIds,
         catalog_id: catalogId,
-        error_codes: errors.slice(-10),
+        error_codes: errors.slice(itemErrorStart).slice(-10),
         details,
       }, { onConflict: "request_id,item_index" });
       if (error) errors.push("ingestion_audit_write_failed: " + error.message);
