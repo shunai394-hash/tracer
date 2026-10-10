@@ -1,6 +1,7 @@
 // Demand match precision tests (pure logic, no DB, no network).
 // Run: node --experimental-strip-types scripts/verify-demand-match-evidence.mjs
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   buildIdentifierIndex,
   canonicalGtin,
@@ -22,6 +23,31 @@ import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-id
 
 const results = [];
 const pending = [];
+
+test("internal supplier link fail-closed contract", "listing stays non-orderable until exact verified link persists", () => {
+  const source = readFileSync(new URL("../lib/suppliers/internal-catalog.ts", import.meta.url), "utf8");
+  const listingWrite = source.indexOf("const listingPayload = {");
+  const nonOrderable = source.indexOf("orderable: false", listingWrite);
+  const listingPersist = source.indexOf("const listingResult =", listingWrite);
+  const linkPersist = source.indexOf('from("internal_supply_links").insert(linkPayload)', listingPersist);
+  const failureGate = source.indexOf("if (!verifiedLinkPersisted)", linkPersist);
+  const activation = source.indexOf(".update({ orderable: true })", failureGate);
+  const liveOrderGate = source.indexOf("const liveOrderReady =", failureGate);
+  assert.ok(listingWrite >= 0 && nonOrderable > listingWrite, "listing payload must default to orderable=false");
+  assert.ok(listingPersist > nonOrderable, "non-orderable payload must be persisted before the link write");
+  assert.ok(linkPersist > listingPersist, "verified identity link must be written after the listing is blocked");
+  assert.ok(failureGate > linkPersist && liveOrderGate > failureGate && activation > liveOrderGate, "identity persistence and independent live-order gate must precede activation");
+  assert.match(source.slice(liveOrderGate, activation), /isSupplierLiveOrderingEnabled\("TRACER_INTERNAL"\)/, "live ordering switch must be required before activation");
+  assert.match(source.slice(liveOrderGate, activation), /product\.api_available === true/, "supplier API evidence must be required before activation");
+  assert.match(source.slice(liveOrderGate, activation), /tracking_available === true/, "tracking evidence must be required before activation");
+  assert.match(source.slice(liveOrderGate, activation), /Number\.isFinite\(shippingCost\)/, "known shipping cost must be required before activation");
+  assert.match(source.slice(liveOrderGate, activation), /shipTo === "JP"/, "explicit Japan shipping evidence must be required before activation");
+  assert.match(source.slice(liveOrderGate, activation), /supplyVariantId: null/, "non-orderable identity matches must not pass a variant ID into downstream catalog sync");
+  assert.ok(source.includes('ship_to: typeof product.ship_to === "string" ? product.ship_to : null'), "missing Japan shipping must not be fabricated into the persisted listing");
+  assert.match(source.slice(failureGate, activation), /return \{ matched: false/, "failed audit persistence must return unmatched without activation");
+});
+
+
 function test(group, name, fn) {
   const record = (ok, error) => results.push({ group, name, ok, error });
   try {
