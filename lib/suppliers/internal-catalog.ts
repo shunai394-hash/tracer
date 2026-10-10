@@ -2,6 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
+  exactBarcodeFamilyMatch,
   identifiersFromRecord,
   matchProductIdentity,
 } from "@/lib/market/identifiers";
@@ -70,32 +71,33 @@ export async function linkInternalSupplyForBestseller(args: {
 
     if (variantError) throw new Error(variantError.message);
 
-    const confirmedVariants = (variants ?? []).map((variant) => {
-      const variantIds = identifiersFromRecord(variant as Record<string, unknown>);
-      return {
-        variant,
-        identity: matchProductIdentity({
-          market: {
-            ...marketIds,
-            brand: typeof args.bestseller.brand === "string" ? args.bestseller.brand : null,
-            title: String(args.bestseller.title ?? ""),
-          },
-          supply: {
-            ...variantIds,
-            brand: typeof product.brand === "string" ? product.brand : null,
-            title: String(variant.title ?? product.title ?? ""),
-          },
-        }),
-      };
-    }).filter((item) => item.identity.salesEligible);
+    // A product-level ASIN/MPN can identify the model, but cannot prove
+    // which concrete variant is the same color, size, or pack count. Require
+    // exactly one variant with a valid exact barcode-family match. Compare all
+    // populated barcode fields to avoid first-field masking.
+    const confirmedVariants = (variants ?? []).map((variant) => ({
+      variant,
+      method: exactBarcodeFamilyMatch(
+        marketIds,
+        identifiersFromRecord(variant as Record<string, unknown>),
+      ),
+    })).filter((item) => item.method !== null);
 
-    const selected = confirmedVariants.length === 1
-      ? confirmedVariants[0]
-      : confirmedVariants.length > 1
-        ? confirmedVariants.find((item) => item.variant.jan === marketIds.jan || item.variant.gtin === marketIds.gtin)
-        : null;
+    const uniqueVariant = confirmedVariants.length === 1 ? confirmedVariants[0] : null;
+    if (!uniqueVariant) continue;
 
-    if (!selected) continue;
+    const selected = {
+      variant: uniqueVariant.variant,
+      identity: {
+        linked: true,
+        salesEligible: true,
+        method: uniqueVariant.method,
+        confidence: 0.98,
+        rationale: uniqueVariant.method === "gtin"
+          ? "exact barcode-family match across JAN/EAN/UPC/GTIN (GTIN-14 normalized)"
+          : `${uniqueVariant.method.toUpperCase()} matches exact canonical variant barcode`,
+      },
+    };
 
     const variant = selected.variant as Record<string, unknown>;
     const inventory = Number(variant.inventory ?? product.inventory ?? 0);
