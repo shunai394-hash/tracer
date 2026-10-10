@@ -5,6 +5,7 @@ import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { normalizeIdentifier } from "@/lib/market/identifiers";
 import { isCjIdentityReverifyCandidate, isCjIdentityReverifyDue, CJ_IDENTITY_RETRY_DELAYS_MS, supplierBarcodeAudit, readExactSupplierVariantBarcode } from "@/lib/suppliers/cj-identity-reverify-policy";
+import { clearCjIdentityLinkOnFailure } from "@/lib/suppliers/clear-cj-identity-link";
 
 const CURSOR_JOB = "cj-identity-reverify-cursor";
 const DEFAULT_LIMIT = 25;
@@ -99,8 +100,18 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const listingMetadata = record(row.metadata);
       const variantBarcode = await readPersistableBarcode(String(row.supplier_product_id), String(row.supplier_variant_id));
       const identity = await resolveMarketplaceIdentity({ db, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } });
-      const canonicalProductId = identity?.productId ?? String(row.product_id);
-      if (!canonicalProductId) { await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), last_identity_reverify_at: new Date().toISOString() } }).eq("id", supplierListingId); return { kind: "no_match" as const, supplierListingId }; }
+      if (!identity) {
+        const checkedAt = new Date();
+        await clearCjIdentityLinkOnFailure(db, supplierListingId, listingMetadata, {
+          reason: variantBarcode && normalizeIdentifier("gtin", variantBarcode) === null ? "invalid_supplier_barcode" : "no_unique_marketplace_identifier_match",
+          retryDelayMs: NO_MATCH_RETRY_MS,
+          checkedAt,
+          variantBarcode,
+          barcodeAudit: supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null),
+        });
+        return { kind: "no_match" as const, supplierListingId };
+      }
+      const canonicalProductId = identity.productId;
       const { data: intelligence } = await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle();
       const metadata = record(intelligence?.metadata);
       const cost = num(row.cost); const shippingCost = num(row.shipping_cost); const inventory = num(row.inventory);
@@ -112,21 +123,35 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const sellingPriceJpy = storedSellingPriceJpy ?? (landedCostJpy !== null && Number.isFinite(landedCostJpy) && landedCostJpy >= 0 ? Math.ceil(Math.max(1980, landedCostJpy * 2.5) / 100) * 100 : null);
       const listingImage = [listingMetadata.image_url, listingMetadata.product_image, listingMetadata.productImage, listingMetadata.image].find((value) => typeof value === "string" && /^https?:\/\//i.test(value.trim()));
       const imageUrl = typeof intelligence?.image_url === "string" && /^https?:\/\//i.test(intelligence.image_url.trim()) ? intelligence.image_url.trim() : typeof listingImage === "string" ? listingImage.trim() : "";
-      if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) { const checkedAt = new Date(); await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode, variant_barcode_raw: variantBarcode } : {}), ...supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null), last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + MISSING_DATA_RETRY_MS).toISOString(), identity_hold_reason: "missing_economics_or_image" } }).eq("id", supplierListingId); return { kind: "missing_economics" as const, supplierListingId }; }
-      await persistCjSupplyIntelligence({ productId: identity?.productId ?? String(row.product_id), title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
-      if (!identity) {
-        const { data: latest } = await db.from("supplier_listings").select("metadata").eq("id", supplierListingId).maybeSingle();
-        const latestMetadata = record(latest?.metadata);
+      if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) {
         const checkedAt = new Date();
-        await db.from("supplier_listings").update({ metadata: { ...latestMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), ...supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null), last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + NO_MATCH_RETRY_MS).toISOString(), identity_hold_reason: variantBarcode && normalizeIdentifier("gtin", variantBarcode) === null ? "invalid_supplier_barcode" : "no_unique_marketplace_identifier_match" } }).eq("id", supplierListingId);
+        await clearCjIdentityLinkOnFailure(db, supplierListingId, listingMetadata, {
+          reason: "missing_economics_or_image",
+          retryDelayMs: MISSING_DATA_RETRY_MS,
+          checkedAt,
+          variantBarcode,
+          barcodeAudit: supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null),
+        });
+        return { kind: "missing_economics" as const, supplierListingId };
       }
-      return identity ? { kind: "promoted" as const, supplierListingId, bestsellerId: identity.bestsellerId, method: identity.method } : { kind: "supplier_verified" as const, supplierListingId };
+      await persistCjSupplyIntelligence({ productId: identity?.productId ?? String(row.product_id), title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
+      return { kind: "promoted" as const, supplierListingId, bestsellerId: identity.bestsellerId, method: identity.method };
     } catch (rowError) {
-      const { data: latest } = await db.from("supplier_listings").select("metadata").eq("id", supplierListingId).maybeSingle();
-      const latestMetadata = record(latest?.metadata);
       const checkedAt = new Date();
-      await db.from("supplier_listings").update({ metadata: { ...latestMetadata, last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + ERROR_RETRY_MS).toISOString(), identity_hold_reason: "reverify_error" } }).eq("id", supplierListingId);
-      return { kind: "error" as const, supplierListingId, error: rowError instanceof Error ? rowError.message : String(rowError) };
+      const originalError = rowError instanceof Error ? rowError.message : String(rowError);
+      let errorMessage = originalError;
+      try {
+        await clearCjIdentityLinkOnFailure(db, supplierListingId, record(row.metadata), {
+          reason: "reverify_error",
+          retryDelayMs: ERROR_RETRY_MS,
+          checkedAt,
+          variantBarcode: null,
+          barcodeAudit: supplierBarcodeAudit(null, false),
+        });
+      } catch (resetError) {
+        errorMessage += `; fail-closed identity reset failed: ${resetError instanceof Error ? resetError.message : String(resetError)}`;
+      }
+      return { kind: "error" as const, supplierListingId, error: errorMessage };
     }
   };
   for (let offset = 0; offset < selectedRows.length; offset += CONCURRENCY) { if (Date.now() >= deadlineAt) break; const batch = selectedRows.slice(offset, offset + CONCURRENCY); const results = await Promise.all(batch.map(processRow)); for (const item of results) { result.checked += 1; if (item.kind === "promoted") { result.promoted += 1; result.promotedListings.push({ supplierListingId: item.supplierListingId, bestsellerId: item.bestsellerId, method: item.method }); } else if (item.kind === "supplier_verified") { result.supplierVerified += 1; } else if (item.kind === "no_match") result.noUniqueBarcodeMatch += 1; else if (item.kind === "missing_economics") result.missingEconomics += 1; else result.errors.push({ supplierListingId: item.supplierListingId, error: item.error }); } }
