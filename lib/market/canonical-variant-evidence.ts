@@ -105,7 +105,7 @@ export function parseCanonicalMarketplaceVariantEvidence(
       // is not a child-variant identifier. Prefer identifiers declared on the
       // child node; accept a URL-derived ASIN only when it differs from parent.
       const urlAsinIsVariantSpecific = Boolean(asin && asin !== parentAsin);
-      const sourceVariantId = productId ?? sku ?? (urlAsinIsVariantSpecific ? asin : null);
+      const sourceVariantId = (urlAsinIsVariantSpecific ? asin : null) ?? productId ?? sku;
       if (!sourceVariantId || seen.has(sourceVariantId)) continue;
 
       const gtinRaw =
