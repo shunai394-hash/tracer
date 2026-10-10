@@ -32,6 +32,7 @@ jobs:
           sudo -u postgres createdb tracer_test
           sudo -u postgres createdb tracer_ingestion_test
           sudo -u postgres createdb tracer_variant_link_test
+          sudo -u postgres createdb tracer_publish_guard_test
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-publishable-title.mjs
