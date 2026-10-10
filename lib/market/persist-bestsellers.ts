@@ -26,6 +26,10 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
   itemCount: number;
   inserted: number;
   productsCreated: number;
+  canonicalVariantEvidenceSchemaAvailable: boolean;
+  canonicalVariantEvidenceSchemaStatus: "available" | "missing" | "probe_error";
+  canonicalVariantEvidenceSchemaErrorCode: string | null;
+  canonicalVariantEvidenceSchemaErrorMessage: string | null;
   canonicalVariantEvidenceParsed: number;
   canonicalVariantEvidenceWritten: number;
   canonicalVariantEvidenceWriteFailures: number;
@@ -50,6 +54,23 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
   let collectionIndex = 0;
   let processedCount = 0;
   const supabase = createSupabaseAdminClient();
+  // Probe the canonical-variant evidence table even when this batch contains no
+  // variants. Otherwise a missing migration could be reported as a clean run
+  // simply because there were zero rows to write.
+  const evidenceSchemaProbe = await supabase.from("marketplace_bestseller_variants").select("id").limit(1);
+  const schemaErrorCode = evidenceSchemaProbe.error?.code ?? null;
+  const canonicalVariantEvidenceSchemaStatus = !evidenceSchemaProbe.error
+    ? "available"
+    : schemaErrorCode === "42P01" || schemaErrorCode === "PGRST205"
+      ? "missing"
+      : "probe_error";
+  const canonicalVariantEvidenceSchemaAvailable = canonicalVariantEvidenceSchemaStatus === "available";
+  if (evidenceSchemaProbe.error) {
+    console.error("[TRACER CANONICAL VARIANT EVIDENCE SCHEMA UNAVAILABLE]", {
+      code: evidenceSchemaProbe.error.code,
+      message: evidenceSchemaProbe.error.message,
+    });
+  }
   let inserted = 0;
   let productsCreated = 0;
   let canonicalVariantEvidenceParsed = 0;
@@ -331,6 +352,10 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
     itemCount: collected.itemCount,
     inserted,
     productsCreated,
+    canonicalVariantEvidenceSchemaAvailable,
+    canonicalVariantEvidenceSchemaStatus,
+    canonicalVariantEvidenceSchemaErrorCode: schemaErrorCode,
+    canonicalVariantEvidenceSchemaErrorMessage: evidenceSchemaProbe.error?.message ?? null,
     canonicalVariantEvidenceParsed,
     canonicalVariantEvidenceWritten,
     canonicalVariantEvidenceWriteFailures,

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
+import { getMarketSourcingCursor } from "@/lib/market/market-sourcing-cursor";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -60,7 +61,8 @@ export async function GET(request: Request) {
       .from("cron_runs")
       .select("metadata")
       .eq("job_name", "market-sourcing")
-      .eq("status", "succeeded")
+      .in("status", ["succeeded", "failed"])
+      .not("metadata->>sourceIndex", "is", null)
       .order("started_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -98,37 +100,76 @@ export async function GET(request: Request) {
       ? observation.sourceIndex
       : (observation.sourceIndex + 1) % 8;
     const nextStartIndex = observation.hasMore ? observation.nextIndex : 0;
+    const evidenceWriteFailed =
+      !observation.canonicalVariantEvidenceSchemaAvailable ||
+      observation.canonicalVariantEvidenceWriteFailures > 0;
+    const failureKind = observation.canonicalVariantEvidenceSchemaStatus === "missing"
+      ? "schema_missing"
+      : observation.canonicalVariantEvidenceSchemaStatus === "probe_error"
+        ? "schema_probe_error"
+        : observation.canonicalVariantEvidenceWriteFailures > 0
+          ? "write_failed"
+          : "none";
+    // Row-write and transient probe failures retry the same page. A confirmed
+    // missing table advances to avoid a hot loop and is explicitly flagged for replay.
+    const cursor = getMarketSourcingCursor({
+      failureKind,
+      currentSourceIndex: observation.sourceIndex,
+      nextSourceIndex,
+      currentStartIndex: observation.startIndex,
+      nextStartIndex,
+    });
+    const cursorSourceIndex = cursor.sourceIndex;
+    const cursorNextIndex = cursor.nextIndex;
 
     const metadata = {
       phase: "market_observation",
       itemCount: observation.itemCount,
       inserted: observation.inserted,
       batchSize: MARKET_SOURCING_BATCH_SIZE,
-      sourceIndex: nextSourceIndex,
+      sourceIndex: cursorSourceIndex,
       startIndex: observation.startIndex,
       processedCount: observation.processedCount,
-      nextIndex: nextStartIndex,
+      nextIndex: cursorNextIndex,
       hasMore: observation.hasMore,
       enrichment: observation.enrichment,
       supplierCandidateCount: observation.supplierCandidateIds.length,
+      canonicalVariantEvidenceSchemaAvailable: observation.canonicalVariantEvidenceSchemaAvailable,
+      canonicalVariantEvidenceSchemaStatus: observation.canonicalVariantEvidenceSchemaStatus,
+      canonicalVariantEvidenceSchemaErrorCode: observation.canonicalVariantEvidenceSchemaErrorCode,
+      canonicalVariantEvidenceSchemaErrorMessage: observation.canonicalVariantEvidenceSchemaErrorMessage,
+      canonicalVariantEvidenceReplayRequired: observation.canonicalVariantEvidenceSchemaStatus === "missing",
+      canonicalVariantEvidenceParsed: observation.canonicalVariantEvidenceParsed,
+      canonicalVariantEvidenceWritten: observation.canonicalVariantEvidenceWritten,
+      canonicalVariantEvidenceWriteFailures: observation.canonicalVariantEvidenceWriteFailures,
+      canonicalVariantEvidenceStatus: observation.canonicalVariantEvidenceSchemaStatus === "missing"
+        ? "schema_unavailable"
+        : observation.canonicalVariantEvidenceSchemaStatus === "probe_error"
+          ? "schema_probe_failed"
+          : observation.canonicalVariantEvidenceWriteFailures > 0
+            ? "write_failed"
+            : "ok",
     };
-
     if (cronRunId) {
       await supabase
         .from("cron_runs")
         .update({
-          status: "succeeded",
+          status: evidenceWriteFailed ? "failed" : "succeeded",
           finished_at: new Date().toISOString(),
           duration_ms: Date.now() - startedAt,
           processed: observation.inserted,
-          failed: 0,
+          failed: observation.canonicalVariantEvidenceWriteFailures +
+            (observation.canonicalVariantEvidenceSchemaAvailable ? 0 : 1),
+          error: evidenceWriteFailed
+            ? "Canonical marketplace variant evidence was not fully persisted"
+            : null,
           metadata,
         })
         .eq("id", cronRunId);
     }
 
     return NextResponse.json({
-      ok: true,
+      ok: !evidenceWriteFailed,
       phase: "market_observation",
       elapsedMs: Date.now() - startedAt,
       observation: {
@@ -136,15 +177,24 @@ export async function GET(request: Request) {
         inserted: observation.inserted,
         productsCreated: observation.productsCreated,
         supplierCandidateCount: observation.supplierCandidateIds.length,
+        canonicalVariantEvidenceSchemaAvailable: observation.canonicalVariantEvidenceSchemaAvailable,
+        canonicalVariantEvidenceSchemaStatus: observation.canonicalVariantEvidenceSchemaStatus,
+        canonicalVariantEvidenceSchemaErrorCode: observation.canonicalVariantEvidenceSchemaErrorCode,
+        canonicalVariantEvidenceSchemaErrorMessage: observation.canonicalVariantEvidenceSchemaErrorMessage,
+        canonicalVariantEvidenceReplayRequired: observation.canonicalVariantEvidenceSchemaStatus === "missing",
+        canonicalVariantEvidenceParsed: observation.canonicalVariantEvidenceParsed,
+        canonicalVariantEvidenceWritten: observation.canonicalVariantEvidenceWritten,
+        canonicalVariantEvidenceWriteFailures: observation.canonicalVariantEvidenceWriteFailures,
+        canonicalVariantEvidenceStatus: metadata.canonicalVariantEvidenceStatus,
         enrichment: observation.enrichment,
-        sourceIndex: nextSourceIndex,
+        sourceIndex: cursorSourceIndex,
         startIndex: observation.startIndex,
         processedCount: observation.processedCount,
-        nextIndex: nextStartIndex,
+        nextIndex: cursorNextIndex,
         hasMore: observation.hasMore,
       },
       nextPhase: "supplier_investigation",
-    });
+    }, { status: evidenceWriteFailed ? 500 : 200 });
   } catch (error) {
     if (cronRunId) {
       try {
