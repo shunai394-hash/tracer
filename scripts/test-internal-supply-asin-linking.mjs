@@ -38,7 +38,7 @@ assert.match(migration, /internal_supply_products\s+add column if not exists asi
 assert.match(migration, /internal_supply_variants\s+add column if not exists asin text/i);
 assert.match(matcher, /identifierQueryEntries\(marketIds\)/);
 assert.match(sync, /identifierQueryEntries\(marketIds\)/);
-assert.match(matcher, /variantIds\.asin === marketIds\.asin/);
-assert.match(sync, /variantIds\.asin === marketIds\.asin/);
+assert.match(matcher, /hasExactMarketplaceVariantIdentifierMatch/);
+assert.match(sync, /hasExactMarketplaceVariantIdentifierMatch/);
 
 console.log("PASS: ASIN-only lookup, exact identity, ambiguous variant rejection, and persistence checks");
