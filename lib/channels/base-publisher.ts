@@ -90,7 +90,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         base_publication_lease_until: null,
         base_last_error: blockError?.message ?? null,
         pipeline_stage: blockError ? "BASE_RECONCILIATION" : "BASE_RECONCILED",
-        pipeline_status: blockError ? "failed" : "blocked",
+        pipeline_status: "blocked",
         pipeline_reason: blockError ? "base_local_block_write_failed" : "tracer_unpublished",
         pipeline_error: blockError?.message ?? null,
         pipeline_updated_at: new Date().toISOString(),
