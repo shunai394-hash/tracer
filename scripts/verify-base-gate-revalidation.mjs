@@ -21,6 +21,13 @@ const checks = [
       && source.includes("failed: results.filter((r) => !r.ok).length")],
   ["hidden/reconciled rows do not inflate the published count",
     source.includes("published: results.filter((r) => r.ok && Boolean(r.baseItemId) && !r.skipped).length")],
+  ["durable Sales Test Gate is re-read immediately before visible BASE writes",
+    source.includes("Re-read the durable gate immediately before any BASE create/edit with visible=true.")
+      && source.indexOf("Re-read the durable gate immediately before any BASE create/edit with visible=true.")
+        < source.indexOf("const created = await createBaseItem")],
+  ["gate-read failures fail closed and are surfaced",
+    source.includes("sales_test_gate_revalidation_read_failed")
+      && source.includes("currentGateReadError")],
 ];
 
 const failures = checks.filter(([, ok]) => !ok);
