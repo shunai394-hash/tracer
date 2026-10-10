@@ -15,7 +15,7 @@ export async function GET(request: Request) {
 
   const db = createSupabaseAdminClient();
   const { data, error } = await db.from("shop_listings")
-    .select("id,supplier_listing_id,published,orderable,pipeline_reason,shopify_product_id,shopify_sync_status,base_item_id,base_publication_status")
+    .select("id,supplier_listing_id,published,orderable,pipeline_reason,shopify_product_id,shopify_sync_status,base_item_id,base_publication_status,base_last_error")
     .or("published.eq.true,shopify_product_id.not.is.null,base_item_id.not.is.null")
     .order("created_at", { ascending: true })
     .limit(1000);
@@ -40,7 +40,7 @@ export async function GET(request: Request) {
   }
 
   const shopifyPending = unlinked.filter((row) => row.shopify_product_id && row.shopify_sync_status !== "blocked").slice(0, 15);
-  const basePending = unlinked.filter((row) => row.base_item_id && row.base_publication_status !== "hidden").slice(0, 50);
+  const basePending = unlinked.filter((row) => row.base_item_id && row.base_last_error !== "supplier_identity_unlinked_hidden").slice(0, 50);
   let shopify: unknown = { skipped: true };
   let base: unknown = { skipped: true };
   const errors: string[] = [];

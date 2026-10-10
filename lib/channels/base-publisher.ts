@@ -57,7 +57,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   if (!isBaseConfigured()) return { attempted: 0, published: 0, skipped: 0, failed: 0, results: [] };
   if (listingIds !== undefined && listingIds.length === 0) return { attempted: 0, published: 0, skipped: 0, failed: 0, results: [] };
   const supabase = createSupabaseAdminClient();
-  let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons");
+  let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons");
   if (listingIds && listingIds.length > 0) {
     // Explicit admin retries can target an exact listing regardless of its
     // current publication status.
@@ -105,7 +105,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   for (const listing of listings ?? []) {
     const isIdentityUnlinked = identityUnlinkedIds.has(String(listing.id));
     if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked)) continue;
-    if (!isIdentityUnlinked && listing.base_publication_status === "hidden") continue;
+    if (listing.published !== true && ["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
     if (listing.selling_price === null) {
       results.push({ listingId: String(listing.id), ok: false, skipped: true, error: "base_hide_price_unknown" });
       continue;
@@ -123,9 +123,9 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         published: false,
         orderable: false,
         published_at: null,
-        base_publication_status: "hidden",
+        base_publication_status: "failed",
         base_publication_lease_until: null,
-        base_last_error: null,
+        base_last_error: isIdentityUnlinked ? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden",
         pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
         pipeline_reason: isIdentityUnlinked ? "supplier_identity_unlinked" : "tracer_unpublished",
@@ -138,7 +138,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
   }
 
-  const activeListings = (listings ?? []).filter((listing) => !identityUnlinkedIds.has(String(listing.id)) && listing.base_publication_status !== "hidden" && (!listing.base_item_id || listing.published === true));
+  const activeListings = (listings ?? []).filter((listing) => !identityUnlinkedIds.has(String(listing.id)) && !["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? "")) && (!listing.base_item_id || listing.published === true));
   // Generate Japanese copy concurrently only for listings that can remain visible.
   // spend the full serverless timeout waiting on Gemini one listing at a time.
   const copyResults = await Promise.all(activeListings.map(async (listing) => {
@@ -163,7 +163,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const listingId = String(listing.id);
     // Already-hidden BASE items were reconciled above; do not process them a
     // second time as missing-copy failures or overwrite their reconciliation reason.
-    if (identityUnlinkedIds.has(listingId) || listing.base_publication_status === "hidden" || (listing.base_item_id && listing.published !== true)) continue;
+    if (identityUnlinkedIds.has(listingId) || ["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? "")) || (listing.base_item_id && listing.published !== true)) continue;
     const copyResult = copyByListingId.get(listingId);
     if (!copyResult?.copy) {
       const message = copyResult?.error ?? "japanese_catalog_copy_required";

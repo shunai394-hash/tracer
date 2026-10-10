@@ -13,7 +13,7 @@ assert.match(helper, /identity_status === "linked"/);
 assert.match(shopify, /supplier_identity_unlinked/);
 assert.match(shopify, /identity_status !== "linked"/);
 assert.match(base, /identityUnlinkedIds/);
-assert.match(base, /base_publication_status: "hidden"/);
+assert.match(base, /base_last_error: isIdentityUnlinked \? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden"/);
 assert.match(store, /supplierListingId && linkedSupplierIds\.has/);
 assert.match(store, /supplier_identity_unlinked/);
 assert.match(route, /published: false/);
