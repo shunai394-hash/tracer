@@ -109,21 +109,17 @@ test("durable internal link retry queue", "failed candidate is deferred then res
   assert.deepEqual(selectDueInternalLinkRetryIds(secondFailureState, secondDue, 50), ["same-candidate"]);
 });
 
-test("durable internal link retry queue", "catalog sync failure keeps the retry and success cleanup runs only after sync", () => {
+test("durable internal link retry queue", "route delegates cleanup to tested catalog-sync finalizer", () => {
   const route = readFileSync(new URL("../app/api/cron/supplier-investigation/route.ts", import.meta.url), "utf8");
-  const syncStart = route.indexOf("let catalog: Awaited<ReturnType<typeof syncTracerCatalogFromInternalSupply>>;", route.indexOf("if (!internal.matched)"));
-  const syncFailureGate = route.indexOf("if (!catalog.matched)", syncStart);
-  const failureRetryWrite = route.indexOf(".upsert(syncFailure, { onConflict: \"bestseller_id\" })", syncFailureGate);
-  const failureThrow = route.indexOf('throw new Error(`catalog sync failed for ${candidateId}', failureRetryWrite);
-  const cleanupDelete = route.indexOf('.from("internal_supply_link_retry_queue")', failureThrow);
-  const cleanupOperation = route.indexOf(".delete()", cleanupDelete);
-  assert.ok(syncStart >= 0, "catalog sync must run after canonical link verification");
-  assert.ok(syncFailureGate > syncStart, "catalog sync result must be checked");
-  assert.ok(route.indexOf("catch (error)", syncStart) < syncFailureGate, "thrown catalog sync errors must enter the retry-preserving failure path");
-  assert.ok(failureRetryWrite > syncFailureGate, "failed catalog sync must be durably rescheduled");
-  assert.ok(failureThrow > failureRetryWrite, "cron must fail visibly after retaining the retry");
-  assert.ok(cleanupDelete > failureThrow && cleanupOperation > cleanupDelete, "retry cleanup must occur only after the catalog-sync failure branch");
-  assert.ok(route.indexOf("if (!catalog.matched)", syncStart) < cleanupOperation, "cleanup must be guarded by successful catalog sync");
+  const lifecycle = readFileSync(new URL("../lib/suppliers/internal-link-retry-lifecycle.ts", import.meta.url), "utf8");
+  assert.ok(route.includes("finalizeInternalSupplyLinkRetry"), "route must use the retry finalizer");
+  const syncStart = lifecycle.indexOf("outcome = await args.syncCatalog()");
+  const failurePersist = lifecycle.indexOf("await args.persistFailure", syncStart);
+  const retryDelete = lifecycle.indexOf("await args.clearRetry()", syncStart);
+  assert.ok(syncStart >= 0, "finalizer must run catalog sync first");
+  assert.ok(failurePersist > syncStart, "failed sync must persist retry state");
+  assert.ok(retryDelete > syncStart, "retry cleanup must follow catalog sync");
+  assert.ok(lifecycle.indexOf("if (!outcome?.matched)", syncStart) < retryDelete, "unmatched catalog sync must never clear retry");
 });
 
 // Market product fixtures (JANs carry valid check digits).
