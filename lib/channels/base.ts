@@ -22,6 +22,11 @@ const BASE_CLIENT_ID = process.env.BASE_CLIENT_ID?.trim() || "";
 const BASE_CLIENT_SECRET = process.env.BASE_CLIENT_SECRET?.trim() || "";
 const BASE_REFRESH_TOKEN = process.env.BASE_REFRESH_TOKEN?.trim() || "";
 
+// Cache the short-lived access token so a single sync run does not exchange
+// the same refresh token once for every order detail request.
+let cachedBaseAccessToken: string | null = null;
+let cachedBaseAccessTokenExpiresAt = 0;
+
 export function isBaseConfigured() {
   return Boolean(BASE_ACCESS_TOKEN || (
     BASE_CLIENT_ID && BASE_CLIENT_SECRET && BASE_REFRESH_TOKEN
@@ -30,6 +35,9 @@ export function isBaseConfigured() {
 
 async function getBaseAccessToken() {
   if (BASE_CLIENT_ID && BASE_CLIENT_SECRET && BASE_REFRESH_TOKEN) {
+    if (cachedBaseAccessToken && Date.now() < cachedBaseAccessTokenExpiresAt) {
+      return cachedBaseAccessToken;
+    }
     const body = new URLSearchParams({
       grant_type: "refresh_token",
       client_id: BASE_CLIENT_ID,
@@ -43,14 +51,28 @@ async function getBaseAccessToken() {
       headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
       body,
       cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
     });
     const text = await response.text();
-    if (!response.ok) {
-      throw new Error(`BASE OAuth refresh HTTP ${response.status}: ${text.slice(0, 500)}`);
+    let data: { access_token?: string; expires_in?: number; error?: string } | null = null;
+    try {
+      data = JSON.parse(text) as { access_token?: string; expires_in?: number; error?: string };
+    } catch {
+      data = null;
     }
-    const data = JSON.parse(text) as { access_token?: string };
-    if (!data.access_token) throw new Error("BASE OAuth refresh did not return access_token");
-    return data.access_token;
+    if (!response.ok) {
+      // Do not echo arbitrary OAuth response bodies into cron logs.
+      const code = typeof data?.error === "string" ? data.error.slice(0, 80) : "oauth_refresh_failed";
+      throw new Error(`BASE OAuth refresh HTTP ${response.status}: ${code}`);
+    }
+    if (!data?.access_token?.trim()) throw new Error("BASE OAuth refresh did not return access_token");
+    const expiresIn = Number(data.expires_in);
+    const ttlSeconds = Number.isFinite(expiresIn) && expiresIn > 0
+      ? Math.max(1, expiresIn - 60)
+      : 300;
+    cachedBaseAccessToken = data.access_token.trim();
+    cachedBaseAccessTokenExpiresAt = Date.now() + ttlSeconds * 1000;
+    return cachedBaseAccessToken;
   }
 
   if (!BASE_ACCESS_TOKEN) {
@@ -73,6 +95,7 @@ async function requestBase(
     },
     body,
     cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
   });
 
   const text = await response.text();
@@ -210,6 +233,7 @@ export async function listBaseOrders(options?: {
     method: "GET",
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
     cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
   });
   const text = await response.text();
   if (!response.ok) throw new Error(`BASE orders HTTP ${response.status}: ${text.slice(0, 500)}`);
@@ -225,6 +249,7 @@ export async function getBaseOrderDetail(uniqueKey: string): Promise<BaseOrderDe
       method: "GET",
       headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
     },
   );
   const text = await response.text();

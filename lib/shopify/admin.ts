@@ -53,9 +53,11 @@ function safeShopifyErrorDetail(payload: unknown): string {
 
 let cachedShopifyAccessToken: string | null = null;
 let cachedShopifyAccessTokenExpiresAt = 0;
+let preferStaticShopifyAccessToken = false;
 
 async function getShopifyAccessToken(): Promise<string> {
   const { storeDomain, adminAccessToken, clientId, clientSecret } = getShopifyConfig();
+  if (preferStaticShopifyAccessToken && adminAccessToken) return adminAccessToken;
   if (clientId && clientSecret) {
     if (cachedShopifyAccessToken && Date.now() < cachedShopifyAccessTokenExpiresAt) {
       return cachedShopifyAccessToken;
@@ -173,7 +175,7 @@ export async function shopifyGraphQL<T>(
   // Use the same token provider as the auth probe. When client credentials
   // are configured, a legacy static admin token may be stale or belong to a
   // different app; all Admin API operations must use the exchanged token.
-  const token = (await getShopifyAccessToken()).trim();
+  let token = (await getShopifyAccessToken()).trim();
 
   if (!token) {
     throw new Error("SHOPIFY_ADMIN_ACCESS_TOKEN or SHOPIFY_CLIENT_ID/SHOPIFY_CLIENT_SECRET is not configured");
@@ -186,16 +188,34 @@ export async function shopifyGraphQL<T>(
     );
   }
 
-  const response = await fetch(shopifyEndpoint(), {
+  const makeRequest = (accessToken: string) => fetch(shopifyEndpoint(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Shopify-Access-Token": token,
+      "X-Shopify-Access-Token": accessToken,
     },
     body: JSON.stringify({ query, variables }),
     cache: "no-store",
     signal: AbortSignal.timeout(30_000),
   });
+
+  let response = await makeRequest(token);
+  // When both auth methods are configured, the exchanged app token may no
+  // longer be valid for this store. A 401 means Shopify rejected the request
+  // before executing it, so try the explicitly configured static admin token
+  // once. Never fall back on 403 or GraphQL/user errors.
+  const staticToken = getShopifyConfig().adminAccessToken.trim();
+  if (response.status === 401 && staticToken && staticToken !== token
+      && !/\s/.test(staticToken) && !/^["']|["']$/.test(staticToken)) {
+    const fallbackResponse = await makeRequest(staticToken);
+    if (fallbackResponse.ok) {
+      response = fallbackResponse;
+      token = staticToken;
+      preferStaticShopifyAccessToken = true;
+      cachedShopifyAccessToken = staticToken;
+      cachedShopifyAccessTokenExpiresAt = Date.now() + 60 * 60 * 1000;
+    }
+  }
 
   const requestId = response.headers.get("x-request-id");
   const responseText = await response.text();
