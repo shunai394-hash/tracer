@@ -67,6 +67,26 @@ export async function GET(request: Request) {
 
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
+    // Durable internal-link retries are selected first. The retry table is
+    // the source of truth for failure reason, identifiers, attempt count and due time.
+    const nowIso = new Date().toISOString();
+    const { data: retryStateRows, error: retryStateError } = await supabase
+      .from("internal_supply_link_retry_queue")
+      .select("bestseller_id,supplier_listing_id,supply_variant_id,reason,link_status,retry_count,next_attempt_at")
+      .order("next_attempt_at", { ascending: true })
+      .limit(5000);
+    if (retryStateError) throw new Error(`internal link retry queue lookup failed: ${retryStateError.message}`);
+
+    const retryStateById = new Map(
+      (retryStateRows ?? []).map((row) => [String(row.bestseller_id), row]),
+    );
+    const dueRetryRows = (retryStateRows ?? []).filter((row) =>
+      !row.next_attempt_at || String(row.next_attempt_at) <= nowIso
+    );
+    const dueRetryIds = dueRetryRows
+      .slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE)
+      .map((row) => String(row.bestseller_id));
+
     // Pull a wider queue, then spend the limited supplier-call budget on the
     // strongest strict identity evidence first. ASIN/MPN are intentionally
     // retained because investigate-dropship can enrich them before matching.
@@ -81,11 +101,18 @@ export async function GET(request: Request) {
 
     if (freshError) throw new Error(freshError.message);
 
-    let candidateIds = prioritizeRows(
+    const freshCandidateIds = prioritizeRows(
       (freshRows ?? []) as unknown as Record<string, unknown>[],
     )
-      .slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE)
+      .filter((row) => {
+        const queued = retryStateById.get(String(row.id));
+        return !queued || !queued.next_attempt_at || String(queued.next_attempt_at) <= nowIso;
+      })
       .map((row) => String(row.id));
+
+    let candidateIds = [...dueRetryIds, ...freshCandidateIds]
+      .filter((id, index, ids) => ids.indexOf(id) === index)
+      .slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
 
     if (candidateIds.length < BESTSELLER_CANDIDATE_BATCH_SIZE) {
       const retrySlots = BESTSELLER_CANDIDATE_BATCH_SIZE - candidateIds.length;
@@ -110,18 +137,15 @@ export async function GET(request: Request) {
       ).slice(0, retrySlots);
 
       candidateIds = [...candidateIds, ...prioritizedRetries.map((row) => String(row.id))]
-        .filter((id, index, ids) => ids.indexOf(id) === index);
+        .filter((id, index, ids) => ids.indexOf(id) === index)
+        .slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE);
     }
 
     const internalMatchedIds: string[] = [];
     const internalResults: Record<string, unknown>[] = [];
-    const internalLinkFailures: Array<{
-      bestsellerId: string;
-      title: string;
-      linkStatus: string;
-      supplierListingId: string | null;
-      supplyVariantId: string | null;
-    }> = [];
+    const internalLinkFailures: Array<Record<string, unknown>> = [];
+    const internalLinkReasonCounts: Record<string, number> = {};
+    const internalLinkStatusCounts: Record<string, number> = {};
     const externalCandidateIds: string[] = [];
 
     for (const candidateId of candidateIds) {
@@ -142,23 +166,54 @@ export async function GET(request: Request) {
         fetchedAt: String(bestseller.fetched_at ?? new Date().toISOString()),
       });
 
+      internalLinkReasonCounts[internal.reason] = (internalLinkReasonCounts[internal.reason] ?? 0) + 1;
+      if (internal.linkStatus) {
+        internalLinkStatusCounts[internal.linkStatus] = (internalLinkStatusCounts[internal.linkStatus] ?? 0) + 1;
+      }
+
       if (!internal.matched) {
-        // Preserve canonical-link write/readback failures in durable cron
-        // telemetry instead of silently collapsing them into "no match".
-        // The candidate remains eligible for the normal external/blocked-row
-        // retry path; this record makes the reason auditable after the run.
-        if (internal.linkStatus) {
-          internalLinkFailures.push({
-            bestsellerId: candidateId,
-            title: String(bestseller.title ?? ""),
-            linkStatus: internal.linkStatus,
-            supplierListingId: internal.supplierListingId,
-            supplyVariantId: internal.supplyVariantId,
-          });
-        }
+        const priorRetry = retryStateById.get(candidateId);
+        const retryCount = Number(priorRetry?.retry_count ?? 0) + 1;
+        const delayMs = Math.min(7 * 24 * 60 * 60 * 1000, 15 * 60 * 1000 * (2 ** Math.min(retryCount - 1, 9)));
+        const nextAttemptAt = new Date(Date.now() + delayMs).toISOString();
+        const failureRecord = {
+          bestseller_id: candidateId,
+          supplier_listing_id: internal.supplierListingId,
+          supply_variant_id: internal.supplyVariantId,
+          reason: internal.reason,
+          link_status: internal.linkStatus ?? null,
+          retry_count: retryCount,
+          last_attempt_at: new Date().toISOString(),
+          next_attempt_at: nextAttemptAt,
+          last_error: internal.reason === "lookup_failed" || internal.reason === "variant_lookup_failed"
+            ? "Supplier identity lookup failed; see cron telemetry"
+            : null,
+          updated_at: new Date().toISOString(),
+        };
+        const { error: retryWriteError } = await supabase
+          .from("internal_supply_link_retry_queue")
+          .upsert(failureRecord, { onConflict: "bestseller_id" });
+        if (retryWriteError) throw new Error(`internal link retry persistence failed for ${candidateId}: ${retryWriteError.message}`);
+
+        internalLinkFailures.push({
+          bestsellerId: candidateId,
+          title: String(bestseller.title ?? ""),
+          supplierListingId: internal.supplierListingId,
+          supplyVariantId: internal.supplyVariantId,
+          reason: internal.reason,
+          linkStatus: internal.linkStatus ?? null,
+          retryCount,
+          nextAttemptAt,
+        });
         externalCandidateIds.push(candidateId);
         continue;
       }
+
+      const { error: clearRetryError } = await supabase
+        .from("internal_supply_link_retry_queue")
+        .delete()
+        .eq("bestseller_id", candidateId);
+      if (clearRetryError) throw new Error(`verified link saved but retry queue cleanup failed for ${candidateId}: ${clearRetryError.message}`);
 
       internalMatchedIds.push(candidateId);
       const catalog = await syncTracerCatalogFromInternalSupply({
@@ -212,6 +267,17 @@ export async function GET(request: Request) {
       internalMatched: internalMatchedIds.length,
       internalLinkFailureCount: internalLinkFailures.length,
       internalLinkFailures,
+      internalLinkDiagnostics: {
+        evaluated: Object.values(internalLinkReasonCounts).reduce((sum, count) => sum + count, 0),
+        matched: internalMatchedIds.length,
+        unmatched: Object.entries(internalLinkReasonCounts)
+          .filter(([reason]) => !["canonical_link_saved", "canonical_link_existing_verified"].includes(reason))
+          .reduce((sum, [, count]) => sum + count, 0),
+        reasonCounts: internalLinkReasonCounts,
+        linkStatusCounts: internalLinkStatusCounts,
+        dueRetryQueueCount: dueRetryIds.length,
+        pendingRetryQueueCount: retryStateRows?.length ?? 0,
+      },
       externalCandidates: externalCandidateIds.length,
       externalMatched: result.matched,
       totalMatched,
@@ -249,6 +315,14 @@ export async function GET(request: Request) {
       internalResults,
       internalLinkFailureCount: internalLinkFailures.length,
       internalLinkFailures,
+      internalLinkDiagnostics: {
+        evaluated: Object.values(internalLinkReasonCounts).reduce((sum, count) => sum + count, 0),
+        matched: internalMatchedIds.length,
+        reasonCounts: internalLinkReasonCounts,
+        linkStatusCounts: internalLinkStatusCounts,
+        dueRetryQueueCount: dueRetryIds.length,
+        pendingRetryQueueCount: retryStateRows?.length ?? 0,
+      },
       ...result,
       totalMatched,
       nextPhase: "sales_test_publication",
