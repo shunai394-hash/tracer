@@ -32,6 +32,8 @@ jobs:
           sudo -u postgres createdb tracer_test
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
+      - name: Verify exact CJ variant barcode proof and ambiguous-match rejection
+        run: node --experimental-strip-types --no-warnings scripts/verify-cj-variant-barcode-proof.mjs
       - name: Exercise CJ supply identity and persistence application path (in-memory disposable DB)
         run: node --experimental-strip-types --no-warnings scripts/verify-cj-supply-persistence.mjs
       - name: Exercise failed CJ reverify stale-link reset path (in-memory disposable DB)
