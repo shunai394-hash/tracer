@@ -33,7 +33,7 @@ jobs:
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-publishable-title.mjs
-      - run: node --experimental-strip-types --no-warnings scripts/test-cj-query-fallback.mjs
+      - run: node --experimental-strip-types --no-warnings --import ./scripts/lib/register-ts-alias.mjs scripts/test-cj-query-fallback.mjs
       - name: Run atomic catalog sync PostgreSQL integration tests (disposable CI database only)
         env:
           PGHOST: 127.0.0.1
