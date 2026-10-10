@@ -6,10 +6,18 @@ import { initializeProcurement } from "@/lib/procurement/init";
 import { getSupplierAdapter } from "@/lib/procurement/registry";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+function hasDurableSalesTestGate(listing: { title?: unknown; pipeline_reason?: unknown; selection_reasons?: unknown }): boolean {
+  return listing.pipeline_reason === SALES_TEST_GATE_PASSED
+    && Array.isArray(listing.selection_reasons)
+    && listing.selection_reasons.includes(SALES_TEST_GATE_PASSED)
+    && isJapaneseProductTitle(String(listing.title ?? ""));
+}
 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -20,7 +28,7 @@ export async function GET(request: Request) {
     const supabase = createSupabaseAdminClient();
     const { data: listings, error } = await supabase
       .from("shop_listings")
-      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason")
+      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
       .not("supplier_name", "is", null)
       .not("supplier_variant_id", "is", null)
       .or("base_item_id.not.is.null,and(pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published,pipeline_reason.eq.sales_test_gate_passed)")
@@ -193,19 +201,21 @@ export async function GET(request: Request) {
         }
 
         const orderable = inventory > 0;
+        const durableGatePassed = hasDurableSalesTestGate(listing);
+        // Stock recovery alone never republishes a previously blocked listing.
+        // Only an already-published listing with durable sales-gate evidence may
+        // remain eligible for storefront visibility.
+        const listingCanRemainPublished = listing.published === true && durableGatePassed && orderable;
         const { error: listingError } = await supabase
           .from("shop_listings")
           .update({
             inventory,
             orderable,
-            // Zero stock must revoke the DB publication flag as well as ordering.
-            // Positive stock never grants publication by itself; the existing
-            // publication state and unrelated pipeline errors are preserved.
-            ...(orderable ? {} : {
-              published: false,
+            published: listingCanRemainPublished,
+            ...(!orderable ? {
               pipeline_error: "Supplier variant has no available inventory",
               pipeline_updated_at: now,
-            }),
+            } : {}),
             updated_at: now,
           })
           .eq("id", listingId);
@@ -232,8 +242,8 @@ export async function GET(request: Request) {
               title: String(listing.title ?? ""),
               detail: String(listing.description ?? listing.title ?? ""),
               price: Number(listing.selling_price),
-              stock: orderable ? Math.max(0, Math.floor(inventory)) : 0,
-              visible: orderable,
+              stock: listingCanRemainPublished ? Math.max(0, Math.floor(inventory)) : 0,
+              visible: listingCanRemainPublished,
             });
             baseUpdated++;
             await supabase.from("shop_listings").update({
