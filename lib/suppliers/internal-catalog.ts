@@ -8,10 +8,23 @@ import {
 } from "@/lib/market/identifiers";
 import { hasUniqueIdentitySelection, hasUniqueMarketplaceIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
 
+export type InternalSupplyLinkStatus =
+  | "saved"
+  | "existing_verified"
+  | "write_failed"
+  | "table_missing"
+  | "duplicate_unverified"
+  | "readback_failed";
+
 export async function linkInternalSupplyForBestseller(args: {
   bestseller: Record<string, unknown>;
   fetchedAt: string;
-}): Promise<{ matched: boolean; supplierListingId: string | null; supplyVariantId: string | null }> {
+}): Promise<{
+  matched: boolean;
+  supplierListingId: string | null;
+  supplyVariantId: string | null;
+  linkStatus?: InternalSupplyLinkStatus;
+}> {
   const supabase = createSupabaseAdminClient();
   const marketIds = identifiersFromRecord(args.bestseller);
   const queries = [
@@ -214,18 +227,84 @@ export async function linkInternalSupplyForBestseller(args: {
       status: "verified",
     };
 
-    // This link is telemetry/cache, not a prerequisite for creating the
-    // supplier listing. Older production databases may not yet have the
-    // composite unique constraint required by PostgREST upsert(onConflict).
-    // Never let that schema drift discard an otherwise valid supplier match.
+    // A supplier listing alone is not proof of a canonical internal link.
+    // Only report matched after a successful insert or a read-back that
+    // confirms the existing row is exactly the link requested by this run.
     const linkResult = await supabase
       .from("internal_supply_links")
-      .insert(linkPayload);
-    if (linkResult.error && !/duplicate|unique/i.test(linkResult.error.message)) {
-      console.warn("[TRACER INTERNAL SUPPLY LINK SKIPPED]", linkResult.error.message);
+      .insert(linkPayload)
+      .select("bestseller_id,supply_product_id,supply_variant_id,identity_method,identity_confidence,identity_rationale,status")
+      .single();
+
+    if (!linkResult.error && linkResult.data) {
+      return {
+        matched: true,
+        supplierListingId: String(listing.id),
+        supplyVariantId: String(variant.id),
+        linkStatus: "saved",
+      };
     }
 
-    return { matched: true, supplierListingId: String(listing.id), supplyVariantId: String(variant.id) };
+    const linkError = linkResult.error;
+    const isDuplicate = linkError?.code === "23505"
+      || /duplicate key|unique constraint|already exists/i.test(linkError?.message ?? "");
+    const isMissingTable = linkError?.code === "42P01"
+      || linkError?.code === "PGRST205"
+      || /relation .*internal_supply_links.* does not exist|could not find the table .*internal_supply_links/i.test(linkError?.message ?? "");
+
+    if (isDuplicate) {
+      const readback = await supabase
+        .from("internal_supply_links")
+        .select("bestseller_id,supply_product_id,supply_variant_id,identity_method,identity_confidence,identity_rationale,status")
+        .eq("bestseller_id", String(linkPayload.bestseller_id))
+        .eq("supply_product_id", String(linkPayload.supply_product_id))
+        .eq("supply_variant_id", String(linkPayload.supply_variant_id))
+        .maybeSingle();
+
+      const row = readback.data as Record<string, unknown> | null;
+      const exactExistingLink = !readback.error && Boolean(row)
+        && String(row?.bestseller_id) === String(linkPayload.bestseller_id)
+        && String(row?.supply_product_id) === String(linkPayload.supply_product_id)
+        && String(row?.supply_variant_id) === String(linkPayload.supply_variant_id)
+        && row?.identity_method === linkPayload.identity_method
+        && Number(row?.identity_confidence) === Number(linkPayload.identity_confidence)
+        && row?.identity_rationale === linkPayload.identity_rationale
+        && row?.status === linkPayload.status;
+
+      if (exactExistingLink) {
+        return {
+          matched: true,
+          supplierListingId: String(listing.id),
+          supplyVariantId: String(variant.id),
+          linkStatus: "existing_verified",
+        };
+      }
+
+      console.warn("[TRACER INTERNAL SUPPLY LINK DUPLICATE UNVERIFIED]", {
+        bestsellerId: String(linkPayload.bestseller_id),
+        supplyProductId: String(linkPayload.supply_product_id),
+        supplyVariantId: String(linkPayload.supply_variant_id),
+        readbackError: readback.error?.message ?? null,
+      });
+      return {
+        matched: false,
+        supplierListingId: String(listing.id),
+        supplyVariantId: String(variant.id),
+        linkStatus: readback.error ? "readback_failed" : "duplicate_unverified",
+      };
+    }
+
+    console.warn("[TRACER INTERNAL SUPPLY LINK WRITE FAILED]", {
+      code: linkError?.code ?? null,
+      message: linkError?.message ?? "No link row returned after insert",
+      missingTable: isMissingTable,
+    });
+    return {
+      matched: false,
+      supplierListingId: String(listing.id),
+      supplyVariantId: String(variant.id),
+      linkStatus: isMissingTable ? "table_missing" : "write_failed",
+    };
   }
 
   return { matched: false, supplierListingId: null, supplyVariantId: null };
