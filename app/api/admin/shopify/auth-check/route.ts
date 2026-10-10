@@ -82,24 +82,35 @@ export async function GET(request: Request) {
   // not the outer diagnostic endpoint status. No raw response body or credentials are returned.
   const shopifyProbe = await probeShopifyAuth();
 
-  // 3) Read-only Admin API call for app identity and granted scopes.
+  // 3) Read-only Admin API call for shop identity. The previous query also
+  // requested currentAppInstallation; that query returned HTTP 401 in
+  // production even though the simple shop probe and token exchange returned
+  // HTTP 200. Use the OAuth token-exchange scope list instead of letting that
+  // optional app-installation field masquerade as a general Admin API failure.
+  const tokenGrantedScopes = Array.isArray(tokenExchange?.grantedScopeHandles)
+    ? tokenExchange.grantedScopeHandles.filter((scope): scope is string => typeof scope === "string")
+    : [];
+  const scopesVerified = tokenExchange?.ok === true && tokenGrantedScopes.length > 0;
   let adminApi: Record<string, unknown>;
   try {
     const data = await shopifyGraphQL<{
       shop: { name: string; myshopifyDomain: string; plan: { displayName: string | null } | null };
-      currentAppInstallation: { app: { title: string; handle: string | null } | null; accessScopes: Array<{ handle: string }> } | null;
     }>(`query TracerShopifyAuthCheck {
       shop { name myshopifyDomain plan { displayName } }
-      currentAppInstallation { app { title handle } accessScopes { handle } }
     }`);
-    const granted = new Set((data.currentAppInstallation?.accessScopes ?? []).map((s) => s.handle));
+    const granted = new Set(tokenGrantedScopes);
+    const missingScopes = scopesVerified
+      ? REQUIRED_SCOPES.filter((r) => !r.satisfiedBy.some((s) => granted.has(s))).map((r) => r.scope)
+      : REQUIRED_SCOPES.map((r) => r.scope);
     adminApi = {
       ok: true,
       shop: data.shop,
-      app: data.currentAppInstallation?.app ?? null,
-      grantedScopes: [...granted].sort(),
-      requiredScopes: REQUIRED_SCOPES.map((r) => ({ ...r, granted: r.satisfiedBy.some((s) => granted.has(s)) })),
-      missingScopes: REQUIRED_SCOPES.filter((r) => !r.satisfiedBy.some((s) => granted.has(s))).map((r) => r.scope),
+      app: null,
+      grantedScopes: scopesVerified ? [...granted].sort() : [],
+      requiredScopes: REQUIRED_SCOPES.map((r) => ({ ...r, granted: scopesVerified && r.satisfiedBy.some((s) => granted.has(s)) })),
+      missingScopes,
+      scopesVerified,
+      scopeSource: scopesVerified ? "oauth_token_exchange" : "unavailable",
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
