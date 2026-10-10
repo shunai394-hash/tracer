@@ -160,12 +160,20 @@ export function matchProductIdentity(args: {
   }
 
   if (eq(market.mpn, supply.mpn)) {
-    const brandMarket = (market.brand ?? "").trim().toLowerCase();
-    const brandSupply = (supply.brand ?? "").trim().toLowerCase();
+    const brandMarket = (market.brand ?? "").normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US");
+    const brandSupply = (supply.brand ?? "").normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US");
     if (brandMarket && brandSupply && brandMarket === brandSupply) {
       return { linked: true, salesEligible: true, method: "brand_mpn", confidence: 0.92, rationale: "brand and model match" };
     }
-    return { linked: true, salesEligible: true, method: "mpn", confidence: 0.88, rationale: "model/MPN matches" };
+    return {
+      linked: false,
+      salesEligible: false,
+      method: "mpn",
+      confidence: 0.5,
+      rationale: !brandMarket || !brandSupply
+        ? "model/MPN matches but brand evidence is missing"
+        : "model/MPN matches but brand conflicts",
+    };
   }
 
   if (market.imageUrl && supply.imageUrl && market.imageUrl === supply.imageUrl) {
@@ -244,6 +252,36 @@ export function verifyIdentifierMatchInvariants(): {
       actual: (() => {
         const r = matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, jan: "4573138107287" }, supply: { ...EMPTY_IDENTIFIERS, gtin: "1111111111111" } });
         return r.method === "none" && !r.salesEligible;
+      })(),
+    },
+    {
+      name: "mpn_match_requires_same_nonempty_brand",
+      expected: true,
+      actual: matchProductIdentity({
+        market: { ...EMPTY_IDENTIFIERS, mpn: "ABC-123", brand: "Acme Co" },
+        supply: { ...EMPTY_IDENTIFIERS, mpn: "ABC-123", brand: "  ACME   CO " },
+      }).salesEligible,
+    },
+    {
+      name: "mpn_match_with_conflicting_brands_is_not_sales_eligible",
+      expected: true,
+      actual: (() => {
+        const r = matchProductIdentity({
+          market: { ...EMPTY_IDENTIFIERS, mpn: "ABC-123", brand: "Brand A" },
+          supply: { ...EMPTY_IDENTIFIERS, mpn: "ABC-123", brand: "Brand B" },
+        });
+        return !r.linked && !r.salesEligible && r.method === "mpn";
+      })(),
+    },
+    {
+      name: "mpn_match_without_brand_evidence_is_not_sales_eligible",
+      expected: true,
+      actual: (() => {
+        const r = matchProductIdentity({
+          market: { ...EMPTY_IDENTIFIERS, mpn: "ABC-123" },
+          supply: { ...EMPTY_IDENTIFIERS, mpn: "ABC-123" },
+        });
+        return !r.linked && !r.salesEligible && r.method === "mpn";
       })(),
     },
     {
