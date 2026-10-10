@@ -216,7 +216,7 @@ export async function linkInternalSupplyForBestseller(args: {
 
     if (existingListingError) {
       console.error("[TRACER INTERNAL SUPPLY LISTING LOOKUP FAILED]", { code: existingListingError.code ?? null, message: existingListingError.message });
-      return { matched: false, supplierListingId: null, supplyVariantId: String(variant.id), linkStatus: "lookup_failed", reason: "lookup_failed" };
+      return { matched: false, supplierListingId: null, supplyVariantId: String(variant.id), linkStatus: "lookup_failed", reason: "variant_lookup_failed" };
     }
 
     const listingPayload = {
@@ -339,7 +339,7 @@ export async function linkInternalSupplyForBestseller(args: {
           .single();
         if (activationError || !activatedListing?.id) {
           console.error("[TRACER INTERNAL SUPPLY LISTING ACTIVATION FAILED]", { code: activationError?.code ?? null, message: activationError?.message ?? "no activated row returned" });
-          return { matched: false, supplierListingId: String(listing.id), supplyVariantId: String(variant.id), linkStatus: "listing_activation_failed" };
+          return { matched: false, supplierListingId: String(listing.id), supplyVariantId: String(variant.id), linkStatus: "listing_activation_failed", reason: "listing_activation_failed" };
         }
         return {
           matched: true,
