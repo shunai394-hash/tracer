@@ -101,6 +101,61 @@ export function isShopifyConfigured(): boolean {
   return Boolean(storeDomain && (adminAccessToken || (clientId && clientSecret)));
 }
 
+async function getShopifyAccessTokenCandidates(): Promise<string[]> {
+  const { adminAccessToken, clientId, clientSecret } = getShopifyConfig();
+  const candidates: string[] = [];
+
+  // Prefer the current client-credentials flow, but retain the configured
+  // static Admin token as a fallback. A rejected OAuth token must not permanently
+  // block a valid static token during credential rotation.
+  if (clientId && clientSecret) {
+    try {
+      const token = (await getShopifyAccessToken()).trim();
+      if (token) candidates.push(token);
+    } catch (error) {
+      if (!adminAccessToken) throw error;
+    }
+  }
+
+  const staticToken = adminAccessToken.trim();
+  if (staticToken && !candidates.includes(staticToken)) candidates.push(staticToken);
+  if (candidates.length === 0) {
+    const token = (await getShopifyAccessToken()).trim();
+    if (token) candidates.push(token);
+  }
+  return candidates;
+}
+
+async function shopifyAdminRequest(body: { query: string; variables?: Record<string, unknown> }): Promise<{ response: Response; token: string }> {
+  const candidates = await getShopifyAccessTokenCandidates();
+  let lastTokenError: Error | null = null;
+
+  for (let index = 0; index < candidates.length; index++) {
+    const token = candidates[index].trim();
+    if (!token || /\s/.test(token) || /^["']|["']$/.test(token)) {
+      lastTokenError = new Error("Shopify access token is missing or malformed");
+      continue;
+    }
+
+    const response = await fetch(shopifyEndpoint(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": token,
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    // Only authentication/authorization failures trigger credential fallback.
+    if ((response.status === 401 || response.status === 403) && index < candidates.length - 1) continue;
+    return { response, token };
+  }
+
+  throw lastTokenError ?? new Error("No usable Shopify Admin API credential is configured");
+}
+
 export type ShopifyAuthProbeResult = {
   shopifyHttpStatus: number | null;
   shopifyRequestId: string | null;
@@ -115,17 +170,8 @@ export async function probeShopifyAuth(): Promise<ShopifyAuthProbeResult> {
   let responseText = "";
   let requestId: string | null = null;
   try {
-    const token = (await getShopifyAccessToken()).trim();
-    if (!token || /\s/.test(token) || /^["']|["']$/.test(token)) {
-      return { shopifyHttpStatus: null, shopifyRequestId: null, graphqlErrors: ["Shopify access token is missing or malformed"], shopId: null, ok: false };
-    }
-    response = await fetch(shopifyEndpoint(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": token },
-      body: JSON.stringify({ query: "query { shop { id } }" }),
-      cache: "no-store",
-      signal: AbortSignal.timeout(30_000),
-    });
+    const result = await shopifyAdminRequest({ query: "query { shop { id } }" });
+    response = result.response;
     requestId = response.headers.get("x-request-id");
     responseText = await response.text();
   } catch (error) {
@@ -170,32 +216,9 @@ export async function shopifyGraphQL<T>(
   query: string,
   variables: Record<string, unknown> = {},
 ): Promise<T> {
-  // Use the same token provider as the auth probe. When client credentials
-  // are configured, a legacy static admin token may be stale or belong to a
-  // different app; all Admin API operations must use the exchanged token.
-  const token = (await getShopifyAccessToken()).trim();
-
-  if (!token) {
-    throw new Error("SHOPIFY_ADMIN_ACCESS_TOKEN or SHOPIFY_CLIENT_ID/SHOPIFY_CLIENT_SECRET is not configured");
-  }
-
-  // Never expose the token itself in errors or logs.
-  if (/\s/.test(token) || /^["']|["']$/.test(token)) {
-    throw new Error(
-      "SHOPIFY_ADMIN_ACCESS_TOKEN contains whitespace or surrounding quotes",
-    );
-  }
-
-  const response = await fetch(shopifyEndpoint(), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": token,
-    },
-    body: JSON.stringify({ query, variables }),
-    cache: "no-store",
-    signal: AbortSignal.timeout(30_000),
-  });
+  // Prefer client credentials, but retry with the static Admin token if Shopify
+  // rejects the exchanged token with 401/403. Other failures are not retried.
+  const { response, token } = await shopifyAdminRequest({ query, variables });
 
   const requestId = response.headers.get("x-request-id");
   const responseText = await response.text();

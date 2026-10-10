@@ -29,6 +29,7 @@ type Listing = {
   shopify_product_id: string | null;
   shopify_variant_id: string | null;
   shopify_handle: string | null;
+  shopify_sync_status: string | null;
   shipping_cost?: number | string | null;
   source_cost?: number | string | null;
   contribution_profit?: number | string | null;
@@ -122,7 +123,7 @@ async function findByHandle(handle: string): Promise<ShopifyProductNode | null> 
 export type ShopifySyncResult = { configured: boolean; considered: number; synced: number; failed: number; listingIds: string[]; errors: Array<{ listingId: string; error: string }> };
 
 /** Shopify is downstream-only: canonical Sales Test Gate plus live fulfillment evidence are mandatory. */
-export async function syncPublishedListingsToShopify(limit = 150, listingIds?: string[]): Promise<ShopifySyncResult> {
+export async function syncPublishedListingsToShopify(limit = 10, listingIds?: string[]): Promise<ShopifySyncResult> {
   if (!isShopifyConfigured()) {
     const message = "shopify_not_configured: SHOPIFY_STORE_DOMAIN and SHOPIFY_ADMIN_ACCESS_TOKEN are required in production";
     return { configured: false, considered: 0, synced: 0, failed: 1, listingIds: [], errors: [{ listingId: "SYSTEM", error: message }] };
@@ -146,25 +147,44 @@ export async function syncPublishedListingsToShopify(limit = 150, listingIds?: s
   }
 
   const supabase = createSupabaseAdminClient();
-  const baseSelect = "id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle";
+  const baseSelect = "id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_status";
   let query = supabase
     .from("shop_listings")
     .select(baseSelect)
     .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
-    .or("shopify_sync_status.is.null,shopify_sync_status.neq.syncing")
-    .order("shopify_product_id", { ascending: true, nullsFirst: true })
-    .order("pipeline_updated_at", { ascending: false });
+    .order("pipeline_updated_at", { ascending: true });
 
   if (listingIds?.length) {
-    query = query.in("id", listingIds).limit(Math.max(listingIds.length, 1));
+    query = query.in("id", listingIds).limit(Math.min(listingIds.length, Math.min(Math.max(limit, 1), 15)));
   } else {
-    query = query.limit(Math.min(Math.max(limit, 1), 150));
+    // Fetch a bounded work pool, then exclude already-synced/blocked rows before
+    // applying the per-run cap. Applying the cap in SQL first used to starve
+    // later listings by repeatedly selecting the same first 150 synced rows.
+    query = query.limit(1000);
   }
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
+  const rows = (data ?? []) as Listing[];
+  const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 15);
+  const actionable = listingIds?.length
+    ? rows.slice(0, safeLimit)
+    : rows.filter((row) => {
+        const status = String(row.shopify_sync_status ?? "");
+        if (status === "syncing") return false;
+        if (row.published === true && row.pipeline_stage === "PUBLISHED" && row.pipeline_status === "published") {
+          return status !== "synced";
+        }
+        if (row.published === false && row.pipeline_stage === "SELECTED" && row.pipeline_status === "selected") {
+          return status !== "synced";
+        }
+        if (row.published === false && row.pipeline_stage === "BLOCKED" && row.shopify_product_id) {
+          return status !== "blocked";
+        }
+        return false;
+      }).slice(0, safeLimit);
 
-  return syncListingRows((data ?? []) as Listing[], supabase);
+  return syncListingRows(actionable, supabase);
 }
 
 /**
@@ -340,7 +360,7 @@ async function syncListingRows(
       if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) throw new Error("image_url_invalid");
 
       const shippingText = `日本向け配送：${asNumber(row.shipping_cost) === 0 ? "送料無料" : "送料別（仕入先確認済み）"}。配送状況は追跡可能です。`;
-      const productInput = {
+      let productInput = {
         title: copy.title,
         descriptionHtml: html(`${copy.description}\n\n${shippingText}`),
         handle: row.shopify_handle || row.slug,
@@ -361,10 +381,22 @@ async function syncListingRows(
         : null;
       // A stored id whose product no longer exists in Shopify is stale: fall
       // back to an exact handle match, otherwise create the product afresh.
-      const existing = existingById ?? (await findByHandle(productInput.handle));
+      let existing = existingById ?? (await findByHandle(productInput.handle));
 
-      if (existing && existing.vendor && existing.vendor !== "TRACER" && !existing.tags.includes("TRACER")) {
-        throw new Error("shopify_handle_owned_by_non_tracer_product");
+      // Never overwrite a product owned by another vendor. Recover from a
+      // stale/colliding handle by choosing a deterministic TRACER-owned handle.
+      if (existing && existing.vendor !== "TRACER" && !existing.tags.includes("TRACER")) {
+        const safeHandle = `tracer-${row.slug}-${row.id.slice(0, 8)}`
+          .toLowerCase()
+          .replace(/[^a-z0-9-]+/g, "-")
+          .replace(/-+/g, "-")
+          .replace(/^-|-$/g, "")
+          .slice(0, 240);
+        productInput = { ...productInput, handle: safeHandle };
+        existing = await findByHandle(safeHandle);
+        if (existing && existing.vendor !== "TRACER" && !existing.tags.includes("TRACER")) {
+          throw new Error("shopify_fallback_handle_owned_by_non_tracer_product");
+        }
       }
 
       const product = existing
