@@ -45,9 +45,11 @@ jobs:
             if [ "$code" = "$want" ]; then echo "PASS $label: HTTP $code"; else echo "FAIL $label: HTTP $code (want $want)"; head -c 400 body.txt; echo; failures="$failures $label"; fi
           }
 
-          OIDC="$(token)"
-          curl -sS --max-time 60 -H "Authorization: Bearer $OIDC" "$BASE/api/intelligence/pipeline-audit" > audit.json
-          SLUG="$(python3 -c 'import json; d=json.load(open("audit.json")); r=d.get("recentPublished") or []; print(r[0]["slug"] if r else "")')"
+          # Select the first link actually rendered by the public storefront. The admin
+          # pipeline audit can include published DB rows that the storefront correctly
+          # filters out for invalid title/description, which would create a false 404.
+          curl -sS --max-time 60 "$BASE/shop" > shop.html
+          SLUG="$(grep -oE 'href="/shop/[^"]+' shop.html | sed 's#href="/shop/##' | grep -vE '^(cart|checkout)(/|$)' | head -n 1 || true)"
 
           expect top 200 "$BASE/"
           expect shop 200 "$BASE/shop"

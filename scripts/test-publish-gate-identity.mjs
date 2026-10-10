@@ -276,7 +276,7 @@ await test("canonical writer refuses an ASIN-only request even if the caller ins
 });
 
 // ---------------------------------------------------------------- downstream separation
-const PUBLISHED_ROW = { published: true, pipeline_stage: "PUBLISHED", pipeline_status: "published", selection_reasons: ["sales_test_gate_passed"], orderable: true, tracking_available: true, inventory: 5, currency: "JPY", supplier_name: "CJ", shipping_cost: 300, source_cost: 1000, contribution_profit: 2000, contribution_margin: 40 };
+const PUBLISHED_ROW = { title: "ワイヤレスイヤホン", description: "ノイズキャンセリング機能を備え、通勤や移動中の音楽鑑賞に適したワイヤレスイヤホンです。", published: true, pipeline_stage: "PUBLISHED", pipeline_status: "published", selection_reasons: ["sales_test_gate_passed"], orderable: true, tracking_available: true, inventory: 5, currency: "JPY", supplier_name: "CJ", shipping_cost: 300, source_cost: 1000, contribution_profit: 2000, contribution_margin: 40 };
 await test("Shopify sync delivers only rows already published by the gate", () => {
   assert.deepEqual(shopifySyncBlockReasons(PUBLISHED_ROW), []);
   assert.ok(shopifySyncBlockReasons({ ...PUBLISHED_ROW, published: false, pipeline_stage: "SELECTED", pipeline_status: "selected" }).includes("not_published_by_canonical_gate"));
