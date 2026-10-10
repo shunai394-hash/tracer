@@ -192,6 +192,38 @@ export async function linkInternalSupplyForBestseller(args: {
 
   const { product, productIds, variant, method: exactMethod } = uniqueCandidate;
   const variantIds = identifiersFromRecord(variant);
+  // Persist the actual pair that proved identity. Do not report the first
+  // populated variant barcode when a later field was the one that matched.
+  const barcodeSchemes = ["jan", "gtin", "ean", "upc"] as const;
+  let matchedBarcodeEvidence: {
+    marketScheme: (typeof barcodeSchemes)[number];
+    supplierScheme: (typeof barcodeSchemes)[number];
+    marketValue: string;
+    supplierValue: string;
+    normalizedGtin14: string;
+  } | null = null;
+  for (const marketScheme of barcodeSchemes) {
+    const marketValue = marketIds[marketScheme];
+    if (!marketValue) continue;
+    for (const supplierScheme of barcodeSchemes) {
+      const supplierValue = variantIds[supplierScheme];
+      if (!supplierValue || marketValue.padStart(14, "0") !== supplierValue.padStart(14, "0")) continue;
+      matchedBarcodeEvidence = {
+        marketScheme,
+        supplierScheme,
+        marketValue,
+        supplierValue,
+        normalizedGtin14: marketValue.padStart(14, "0"),
+      };
+      break;
+    }
+    if (matchedBarcodeEvidence) break;
+  }
+  // Defensive invariant: a listing must never be written if the proof cannot
+  // be reconstructed for its audit record.
+  if (!matchedBarcodeEvidence) {
+    return { matched: false, supplierListingId: null, supplyVariantId: null };
+  }
   const rationale = exactMethod === "gtin"
     ? "exact barcode-family match across JAN/EAN/UPC/GTIN (GTIN-14 normalized)"
     : `${exactMethod.toUpperCase()} matches exact canonical variant barcode`;
@@ -250,7 +282,8 @@ export async function linkInternalSupplyForBestseller(args: {
       source_name: product.source_name,
       canonical_product_identifiers: productIds,
       matched_variant_identifiers: variantIds,
-      matched_variant_barcode: variantIds.jan ?? variantIds.gtin ?? variantIds.ean ?? variantIds.upc,
+      matched_variant_barcode: matchedBarcodeEvidence.supplierValue,
+      exact_barcode_evidence: matchedBarcodeEvidence,
     },
   };
 
