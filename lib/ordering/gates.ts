@@ -4,7 +4,7 @@ import {
   type OrderMode,
   type OrderState,
   type OrderingSettings,
-} from "./types";
+} from "./types.ts";
 
 export type OrderGateInput = {
   identityConfirmed: boolean;
