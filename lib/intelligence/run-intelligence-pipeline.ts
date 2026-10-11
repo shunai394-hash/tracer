@@ -408,13 +408,19 @@ export async function runIntelligencePipeline(options: {
   }, { budgetMs: 25_000 });
   steps.push(bestsellerStep);
 
+  // A deferred/retryable bestseller stage may still carry raw candidate IDs.
+  // Never pass those candidates into downstream sales or supplier investigation
+  // until canonical variant evidence has been persisted successfully.
+  const bestsellerCanFeedSalesGate =
+    bestsellerStep.ok && !bestsellerStep.skipped && bestsellerStep.retryable !== true;
+
   const bestsellerIds =
-    bestsellerStep.ok && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { bestsellerIds?: unknown }).bestsellerIds)
+    bestsellerCanFeedSalesGate && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { bestsellerIds?: unknown }).bestsellerIds)
       ? ((bestsellerStep.result as { bestsellerIds: string[] }).bestsellerIds)
       : [];
 
   const supplierCandidateIds =
-    bestsellerStep.ok && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { supplierCandidateIds?: unknown }).supplierCandidateIds)
+    bestsellerCanFeedSalesGate && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { supplierCandidateIds?: unknown }).supplierCandidateIds)
       ? (bestsellerStep.result as { supplierCandidateIds: string[] }).supplierCandidateIds
       : [];
 
