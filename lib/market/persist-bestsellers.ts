@@ -42,7 +42,16 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
     groupsWithVariantCount: number;
     variantProductNodeCount: number;
     absoluteTypeIriCount: number;
+    variationAsinsFound: number;
+    childDetailAttempted: number;
+    childDetailFetched: number;
+    childBarcodeFound: number;
   }>;
+  /** Aggregate child-page diagnostics, safe for bounded production logs. */
+  childVariationAsinsFound: number;
+  childDetailAttempted: number;
+  childDetailFetched: number;
+  childBarcodeFound: number;
   /** Exact bestseller row IDs inserted by this run; downstream stages must use these IDs. */
   bestsellerIds: string[];
   /** Exact current-run rows carrying at least one verified marketplace identifier. */
@@ -344,6 +353,16 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
     }
   }
 
+  const childVariantTelemetry = collected.marketplaces.reduce((totals, marketplace) => {
+    const enrichment = marketplace.enrichment;
+    if (!enrichment) return totals;
+    totals.variationAsinsFound += enrichment.variationAsinsFound;
+    totals.childDetailAttempted += enrichment.childDetailAttempted;
+    totals.childDetailFetched += enrichment.childDetailFetched;
+    totals.childBarcodeFound += enrichment.childBarcodeFound;
+    return totals;
+  }, { variationAsinsFound: 0, childDetailAttempted: 0, childDetailFetched: 0, childBarcodeFound: 0 });
+
   return {
     itemCount: collected.itemCount,
     inserted,
@@ -351,6 +370,10 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
     canonicalVariantEvidenceParsed,
     canonicalVariantEvidenceWritten,
     canonicalVariantEvidenceWriteFailures,
+    childVariationAsinsFound: childVariantTelemetry.variationAsinsFound,
+    childDetailAttempted: childVariantTelemetry.childDetailAttempted,
+    childDetailFetched: childVariantTelemetry.childDetailFetched,
+    childBarcodeFound: childVariantTelemetry.childBarcodeFound,
     skippedMarketplaces,
     enrichment: collected.marketplaces
       .filter((marketplace) => marketplace.enrichment)
