@@ -1,10 +1,6 @@
 ﻿import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import {
-  assessCanonicalIdentity,
-  CANONICAL_LINK_THRESHOLD,
-} from "@/lib/intelligence/identity-confidence";
 import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence";
 import { scoreDemandCJSelection } from "@/lib/intelligence/cj-selection";
 
@@ -100,28 +96,6 @@ export async function persistDemandCJProducts(
     throw new Error(`Failed to load CJ products: ${rowsError.message}`);
   }
 
-  const { data: catalog, error: catalogError } = await supabase
-    .from("products")
-    .select("id, canonical_name, identity_key");
-
-  if (catalogError) {
-    throw new Error(`Failed to load products: ${catalogError.message}`);
-  }
-
-  const { data: intelligenceRows, error: intelligenceError } = await supabase
-    .from("product_intelligence")
-    .select("product_id, brand_name");
-
-  if (intelligenceError) {
-    throw new Error(
-      `Failed to load product intelligence: ${intelligenceError.message}`,
-    );
-  }
-
-  const brandByProduct = new Map(
-    (intelligenceRows ?? []).map((row) => [row.product_id, row.brand_name]),
-  );
-
   let productsCreated = 0;
   let productsReused = 0;
   let offersCreated = 0;
@@ -208,64 +182,61 @@ export async function persistDemandCJProducts(
       continue;
     }
 
-    let productId: string | null = null;
-    let linkedExisting = false;
-
-    for (const product of catalog ?? []) {
-      const canonical = assessCanonicalIdentity({
-        sourceTitle: title,
-        sourceSku: row.sku,
-        canonicalName: product.canonical_name,
-        canonicalBrand: brandByProduct.get(product.id) ?? null,
-      });
-
-      if (canonical.score >= CANONICAL_LINK_THRESHOLD) {
-        productId = product.id;
-        linkedExisting = true;
-        break;
-      }
+    const sourceProductId = String(row.cj_product_id ?? "").trim();
+    if (!sourceProductId) {
+      const stampMissingId = await supabase
+        .from("demand_cj_products")
+        .update({
+          product_id: null,
+          identity_confidence: relevance.score,
+          identity_status: "unlinked",
+          identity_rationale: "Missing stable CJ product ID; canonical offer persistence blocked",
+          identity_metadata: { ...relevance.signals, selection_score: selectionScore },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", row.id);
+      if (stampMissingId.error) throw new Error(`Failed to stamp missing CJ identity: ${stampMissingId.error.message}`);
+      continue;
     }
 
-    const identityKey = `cj::${row.cj_product_id}`;
+    // Reuse only the exact source-scoped canonical key. Fuzzy title/SKU
+    // similarity is demand relevance, not proof that two catalog products are identical.
+    const identityKey = `cj::${sourceProductId}`;
+    const existingProduct = await supabase
+      .from("products")
+      .select("id")
+      .eq("identity_key", identityKey)
+      .maybeSingle();
 
-    if (!productId) {
-      const existingProduct = await supabase
+    if (existingProduct.error) {
+      throw new Error(
+        `Failed to find CJ product "${sourceProductId}": ${existingProduct.error.message}`,
+      );
+    }
+
+    let productId: string;
+    if (existingProduct.data) {
+      productId = String(existingProduct.data.id);
+      productsReused += 1;
+    } else {
+      const productResult = await supabase
         .from("products")
+        .insert({
+          brand_id: null,
+          canonical_name: title,
+          identity_key: identityKey,
+        })
         .select("id")
-        .eq("identity_key", identityKey)
-        .maybeSingle();
+        .single();
 
-      if (existingProduct.error) {
+      if (productResult.error) {
         throw new Error(
-          `Failed to find CJ product "${row.cj_product_id}": ${existingProduct.error.message}`,
+          `Failed to insert CJ product "${title}": ${productResult.error.message}`,
         );
       }
 
-      if (existingProduct.data) {
-        productId = existingProduct.data.id;
-        productsReused += 1;
-      } else {
-        const productResult = await supabase
-          .from("products")
-          .insert({
-            brand_id: null,
-            canonical_name: title,
-            identity_key: identityKey,
-          })
-          .select("id")
-          .single();
-
-        if (productResult.error) {
-          throw new Error(
-            `Failed to insert CJ product "${title}": ${productResult.error.message}`,
-          );
-        }
-
-        productId = productResult.data.id;
-        productsCreated += 1;
-      }
-    } else if (linkedExisting) {
-      productsReused += 1;
+      productId = String(productResult.data.id);
+      productsCreated += 1;
     }
 
     const stampLinked = await supabase
@@ -274,9 +245,7 @@ export async function persistDemandCJProducts(
         product_id: productId,
         identity_confidence: relevance.score,
         identity_status: "linked",
-        identity_rationale: linkedExisting
-          ? "Linked to an existing canonical product after identity check"
-          : "Created or reused a CJ-native canonical product after demand relevance check",
+        identity_rationale: "Linked by exact CJ source product identity key; demand relevance is not used as canonical identity proof",
         identity_metadata: {
           ...relevance.signals,
           selection_score: selectionScore,
