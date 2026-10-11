@@ -87,3 +87,19 @@ The source tree also contains `/api/cron/ai-patrol`, `base-publish`, `core-engin
 - The order automation run row is telemetry/idempotency support, not a proven distributed lease. Concurrent runs may both inspect the same paid order; PO and supplier-attempt uniqueness are the downstream protections. A dedicated claim/lease integration test remains desirable.
 - A supplier attempt left in `in_progress` deliberately blocks another external order attempt. This favors no-duplicate safety over automatic recovery; stale attempts require reconciliation until a reviewed lease/recovery policy exists.
 - No production credentials, Cron settings, database rows, channel listings, customer fulfillment, or supplier orders were changed during these checks.
+
+
+## Ten-pass self-audit record
+
+1. **Fail-closed policy:** missing/invalid mode, disabled mode, and global stop deny capability; covered by CI policy tests.
+2. **Scheduled route inventory:** all 19 unique routes from `vercel.json` have a declared capability and route-level guard.
+3. **Non-Cron write endpoints:** eight additional write-capable endpoints are mapped and checked by CI.
+4. **Workflow admission:** eight production-write workflows are manual-only and require `allow_production_writes=true`; CI checks their trigger and job guards.
+5. **Shopify order race:** order-level unique-constraint recovery re-reads the winner; it does not attempt a second parent insert.
+6. **Shopify line identity:** stable line-item IDs are persisted and globally unique when non-null; a code-level regression test covers the mapping.
+7. **Database constraint:** a disposable-PostgreSQL test checks duplicate IDs fail and null legacy IDs remain valid. No production migration was run.
+8. **Fulfillment recovery:** paid `fulfillment_pending` orders are eligible for recovery, while unpaid and cancelled/refunded orders remain blocked by the dropship gate; static regression checks cover the conditions.
+9. **Cross-entry idempotency:** BASE item repair uses `base_order_item_key`; dropship POs use stable per-item keys; supplier attempts have unique keys and fail closed on ambiguous/in-progress states. Remaining stale-attempt recovery is documented rather than guessed.
+10. **Runtime/build and deployment boundary:** CI on commit `9d8a7cac352e6f4d60120fa5eacb15b1c3d78445` passed, including TypeScript, lint, build and the new disposable DB test. A further docs-only commit is undergoing its own CI run. Read-only Vercel inspection confirms the linked project domain is `tracer-pied-alpha.vercel.app`; the branch deployments observed have `target=null` (preview), not production.
+
+**Exit criteria:** keep PR #234 Draft until CI on the final head is green, the production database is read-only checked for duplicate non-null Shopify line IDs before migration, and the production environment/cron transition is reviewed. No production writes or merge are authorized by this audit.
