@@ -21,7 +21,6 @@ import {
 import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { readMarketCursor, writeMarketCursor } from "@/lib/market/market-cursor";
-import { reverifyCjSupplyIdentities } from "@/lib/suppliers/reverify-cj-identity";
 import {
   GeminiConfigError,
   GeminiRequestError,
@@ -399,16 +398,9 @@ export async function runIntelligencePipeline(options: {
 
   steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand(), { budgetMs: 5_000 }));
 
-  // Identity linking is a publication-critical path. Run it before the
-  // rotating normalization/intelligence work so a slow normalization batch
-  // cannot starve exact supplier->marketplace barcode verification.
-  // Keep slow supplier verification from starving independent intelligence work.
-  // Sales-test gates still block any listing without verified identity/economics/stock.
-  steps.push(await runStep("identity_reverify", () =>
-    reverifyCjSupplyIdentities({
-      limit: 5,
-      deadlineAt: Math.min(pipelineDeadlineAt - 1_000, Date.now() + 25_000),
-    }), { budgetMs: 25_000, stopPipelineOnTimeout: false }));
+  // CJ identity re-verification runs through its dedicated cron endpoint only.
+  // Keeping it out of this pipeline prevents timed-out network requests from
+  // overlapping bestseller collection and violating CJ's 1-request/second quota.
 
   const normalizeWindowSize = 200;
   const normalizeProductCount = await db
