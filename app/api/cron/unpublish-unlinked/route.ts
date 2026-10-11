@@ -78,7 +78,6 @@ export async function GET(request: Request) {
         }
         errors.push("base_auth_invalid_reauthorization_required: scheduled BASE retries paused for all currently-unlinked listings; repair credentials and clear the marker before retrying");
       }
-      }
     } catch (cause) { errors.push(`base:${cause instanceof Error ? cause.message : String(cause)}`); }
   }
 
