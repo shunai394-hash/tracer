@@ -35,6 +35,7 @@ assert.match(localizeProductDescription("Bohemian Beach Vacation Flower Hair Cli
 const shopify = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
 const base = await readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8");
 const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
+const japaneseProduct = await readFile(new URL("../lib/intelligence/japanese-product.ts", import.meta.url), "utf8");
 assert.match(shopify, /isPublishableCatalogTitle\(row\.title\)/, "Shopify sync must enforce publishable title guard");
 assert.match(shopify, /catalog_title_not_publishable/, "Shopify sync must report title block reason");
 assert.match(shopify, /isPublishableCatalogDescription\(row\.description\)/, "Shopify sync must reject generic descriptions");
@@ -47,4 +48,6 @@ assert.match(base, /identityUnlinkedIds\.has\(listingId\).*base_last_error.*list
 assert.match(store, /isPublishableCatalogTitle\(listing\.title\)/, "storefront must filter invalid titles");
 assert.match(store, /isPublishableCatalogDescription\(listing\.description\)/, "storefront must filter generic descriptions");
 assert.match(store, /listing title failed catalog quality gate/, "order placement must revalidate title quality");
-console.log(`Catalog title/description quality tests: ${cases.length} cases + 13 channel wiring checks passed.`);
+assert.match(japaneseProduct, /replace\\(\\/\\\\s\\+\\/g, " ")/, "Japanese title validation must collapse real whitespace");
+assert.doesNotMatch(japaneseProduct, /replace\\(\\/\\\\\\\\s\\+\\/g/, "literal backslash-s must not be used as a whitespace matcher");
+console.log(`Catalog title/description quality tests: ${cases.length} cases + 15 channel wiring checks passed.`);
