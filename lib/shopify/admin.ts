@@ -53,10 +53,21 @@ function safeShopifyErrorDetail(payload: unknown): string {
 
 let cachedShopifyAccessToken: string | null = null;
 let cachedShopifyAccessTokenExpiresAt = 0;
+let cachedShopifyCredentialFingerprint = "";
+
+function clearCachedShopifyAccessToken(): void {
+  cachedShopifyAccessToken = null;
+  cachedShopifyAccessTokenExpiresAt = 0;
+  cachedShopifyCredentialFingerprint = "";
+}
 
 async function getShopifyAccessToken(): Promise<string> {
   const { storeDomain, adminAccessToken, clientId, clientSecret } = getShopifyConfig();
   if (clientId && clientSecret) {
+    const fingerprint = crypto.createHash("sha256")
+      .update(`${storeDomain.trim()}\n${clientId}\n${clientSecret}`)
+      .digest("hex");
+    if (cachedShopifyCredentialFingerprint !== fingerprint) clearCachedShopifyAccessToken();
     if (cachedShopifyAccessToken && Date.now() < cachedShopifyAccessTokenExpiresAt) {
       return cachedShopifyAccessToken;
     }
@@ -78,6 +89,7 @@ async function getShopifyAccessToken(): Promise<string> {
     const ttlSeconds = Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 86_399;
     cachedShopifyAccessToken = payload.access_token;
     cachedShopifyAccessTokenExpiresAt = Date.now() + Math.max(30, ttlSeconds - 60) * 1000;
+    cachedShopifyCredentialFingerprint = fingerprint;
     return cachedShopifyAccessToken;
   }
   if (adminAccessToken) return adminAccessToken;
@@ -148,17 +160,19 @@ async function getShopifyAccessTokenCandidates(): Promise<string[]> {
 }
 
 async function shopifyAdminRequest(body: { query: string; variables?: Record<string, unknown> }): Promise<{ response: Response; token: string }> {
+  const config = getShopifyConfig();
+  const mode = resolveShopifyAuthMode(config);
   const candidates = await getShopifyAccessTokenCandidates();
   let lastTokenError: Error | null = null;
 
   for (let index = 0; index < candidates.length; index++) {
-    const token = candidates[index].trim();
+    let token = candidates[index].trim();
     if (!token || /\s/.test(token) || /^["']|["']$/.test(token)) {
       lastTokenError = new Error("Shopify access token is missing or malformed");
       continue;
     }
 
-    const response = await fetch(shopifyEndpoint(), {
+    let response = await fetch(shopifyEndpoint(), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -169,7 +183,28 @@ async function shopifyAdminRequest(body: { query: string; variables?: Record<str
       signal: AbortSignal.timeout(30_000),
     });
 
-    // Only authentication/authorization failures trigger credential fallback.
+    // On 401 only, discard a cached app token and retry the identical request
+    // once with a freshly exchanged token. A 403 is an authorization/scope
+    // failure, so it is reported without retrying or switching auth modes.
+    if (response.status === 401 && mode === "client_credentials") {
+      await response.body?.cancel().catch(() => undefined);
+      clearCachedShopifyAccessToken();
+      token = (await getShopifyAccessToken()).trim();
+      if (!token || /\s/.test(token) || /^["']|["']$/.test(token)) {
+        throw new Error("Fresh Shopify client-credentials token is missing or malformed");
+      }
+      response = await fetch(shopifyEndpoint(), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Shopify-Access-Token": token,
+        },
+        body: JSON.stringify(body),
+        cache: "no-store",
+        signal: AbortSignal.timeout(30_000),
+      });
+    }
+
     if ((response.status === 401 || response.status === 403) && index < candidates.length - 1) continue;
     return { response, token };
   }
