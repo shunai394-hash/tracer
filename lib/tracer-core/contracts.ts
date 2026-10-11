@@ -156,6 +156,109 @@ export function classifyOrderAttempt(
   return { action: "process", reason: "new_order" };
 }
 
+export type OrderExecutionEvidence = {
+  channel: string | null;
+  externalOrderId: string | null;
+  attemptState: OrderAttemptState;
+  paymentStatus: string | null;
+  paymentMethod: string | null;
+  cancellationOrRefundPending: boolean;
+  supplierIdentityVerified: boolean;
+  supplierProductId: string | null;
+  supplierVariantId: string | null;
+  quantity: number | null;
+  inventoryKnown: boolean;
+  inventoryAvailable: number | null;
+  sourceCost: number | null;
+  shippingCost: number | null;
+  sellingPrice: number | null;
+  sourceFxRateToSelling: number | null;
+  addressComplete: boolean | null;
+  supplierConfigured: boolean;
+  liveOrderingEnabled: boolean;
+  killSwitchActive: boolean;
+};
+
+export type OrderExecutionDecision = {
+  eligible: boolean;
+  blockers: string[];
+  estimatedUnitProfit: number | null;
+  attemptDisposition: OrderDisposition;
+};
+
+/**
+ * Pure fail-closed procurement policy. This is a new contract for shadow
+ * comparison; it does not perform I/O or replace the existing executor until
+ * parity tests and an explicit integration review pass.
+ */
+export function evaluateOrderExecution(evidence: OrderExecutionEvidence): OrderExecutionDecision {
+  const blockers: string[] = [];
+  const attemptDisposition = classifyOrderAttempt(
+    evidence.channel,
+    evidence.externalOrderId,
+    evidence.attemptState,
+  );
+
+  if (attemptDisposition.action !== "process") blockers.push(`attempt_${attemptDisposition.reason}`);
+  if (evidence.paymentStatus !== "paid") blockers.push("payment_not_confirmed");
+  const paymentMethod = clean(evidence.paymentMethod).toLowerCase();
+  if (paymentMethod === "cod" || paymentMethod === "cash_on_delivery") {
+    blockers.push("cash_on_delivery_not_confirmed");
+  }
+  if (evidence.cancellationOrRefundPending) blockers.push("order_cancellation_or_refund_pending");
+  if (!evidence.supplierIdentityVerified) blockers.push("supplier_identity_unverified");
+  if (!clean(evidence.supplierProductId)) blockers.push("supplier_product_id_missing");
+  if (!clean(evidence.supplierVariantId)) blockers.push("supplier_variant_id_missing");
+
+  if (evidence.quantity === null || !Number.isFinite(evidence.quantity) || evidence.quantity <= 0) {
+    blockers.push("quantity_invalid");
+  }
+  if (!evidence.inventoryKnown || evidence.inventoryAvailable === null || !Number.isFinite(evidence.inventoryAvailable)) {
+    blockers.push("inventory_unknown");
+  } else if (evidence.inventoryAvailable < 0) {
+    blockers.push("inventory_invalid");
+  } else if (evidence.quantity !== null && Number.isFinite(evidence.quantity) && evidence.inventoryAvailable < evidence.quantity) {
+    blockers.push("insufficient_inventory");
+  }
+
+  const numericInputs = [
+    evidence.sourceCost,
+    evidence.shippingCost,
+    evidence.sellingPrice,
+    evidence.sourceFxRateToSelling,
+  ];
+  const economicsKnown = numericInputs.every((value) => value !== null && Number.isFinite(value));
+  if (!economicsKnown) blockers.push("economics_unknown");
+  else if (
+    (evidence.sourceCost as number) < 0 ||
+    (evidence.shippingCost as number) < 0 ||
+    (evidence.sellingPrice as number) <= 0 ||
+    (evidence.sourceFxRateToSelling as number) <= 0
+  ) {
+    blockers.push("economics_invalid");
+  }
+
+  const estimatedUnitProfit = economicsKnown &&
+    (evidence.sourceCost as number) >= 0 &&
+    (evidence.shippingCost as number) >= 0 &&
+    (evidence.sellingPrice as number) > 0 &&
+    (evidence.sourceFxRateToSelling as number) > 0
+    ? (evidence.sellingPrice as number) -
+      ((evidence.sourceCost as number) + (evidence.shippingCost as number)) *
+      (evidence.sourceFxRateToSelling as number)
+    : null;
+  if (estimatedUnitProfit === null || !Number.isFinite(estimatedUnitProfit)) blockers.push("profit_unknown");
+  else if (estimatedUnitProfit <= 0) blockers.push("non_positive_unit_profit");
+
+  if (evidence.addressComplete === null) blockers.push("address_unknown");
+  else if (evidence.addressComplete === false) blockers.push("address_incomplete");
+  if (!evidence.supplierConfigured) blockers.push("supplier_not_configured");
+  if (!evidence.liveOrderingEnabled) blockers.push("live_ordering_disabled");
+  if (evidence.killSwitchActive) blockers.push("kill_switch_active");
+
+  return { eligible: blockers.length === 0, blockers, estimatedUnitProfit, attemptDisposition };
+}
+
 function clean(value: string | null | undefined): string {
   return typeof value === "string" ? value.trim() : "";
 }
