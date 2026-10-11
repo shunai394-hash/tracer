@@ -400,7 +400,20 @@ export async function createPurchaseOrderFromRecommendation(args: {
     .select("*")
     .single();
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    // Concurrent retries may both pass the read-before-write check. The
+    // database unique index is authoritative; return its winner on conflict.
+    if (error.code === "23505" && /idempotency_key/i.test(error.message)) {
+      const { data: winner, error: winnerError } = await supabase
+        .from("purchase_orders")
+        .select("*")
+        .eq("idempotency_key", idempotencyKey)
+        .maybeSingle();
+      if (winnerError) throw new Error(winnerError.message);
+      if (winner) return mapOrder(winner as Record<string, unknown>);
+    }
+    throw new Error(error.message);
+  }
 
   const itemInsert = await supabase.from("purchase_order_items").insert({
     purchase_order_id: data.id,
