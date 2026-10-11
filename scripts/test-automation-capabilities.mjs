@@ -76,6 +76,10 @@ for (const [routePath, capability] of Object.entries(PROTECTED_AUTOMATION_ENDPOI
 for (const workflowPath of [
   ".github/workflows/tracer-direct-900.yml",
   ".github/workflows/tracer-production-smoke.yml",
+  ".github/workflows/tracer-build-1000.yml",
+  ".github/workflows/tracer-expand-1000.yml",
+  ".github/workflows/tracer-publish-cj-now.yml",
+  ".github/workflows/tracer-run-sales-test-now.yml",
 ]) {
   const workflow = readFileSync(workflowPath, "utf8");
   assert.ok(!/^  push:/m.test(workflow), `production write workflow must not run automatically on push: ${workflowPath}`);
