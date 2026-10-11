@@ -65,7 +65,7 @@ export type CollectedMarketplace = {
   };
 };
 
-async function fetchHtml(url: string, options: { retryBrightDataWhenJsonLdMissing?: boolean } = {}): Promise<string | null> {
+async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVariantsMissing?: boolean } = {}): Promise<string | null> {
   const directFetch = async (): Promise<string | null> => {
     try {
       const response = await fetch(url, {
@@ -100,16 +100,16 @@ async function fetchHtml(url: string, options: { retryBrightDataWhenJsonLdMissin
   // successful. For Amazon child-variant extraction, retry through Bright Data
   // when the direct response has no JSON-LD Product/ProductGroup markup.
   const directHtml = await directFetch();
-  const hasJsonLd = (html: string | null): boolean =>
-    Boolean(html && /<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["'][^>]*>/i.test(html));
-  if (directHtml && (!options.retryBrightDataWhenJsonLdMissing || hasJsonLd(directHtml))) {
+  const hasCanonicalVariants = (html: string | null): boolean =>
+    Boolean(html && parseCanonicalMarketplaceVariantEvidence(html, url).length > 0);
+  if (directHtml && (!options.retryBrightDataWhenCanonicalVariantsMissing || hasCanonicalVariants(directHtml))) {
     return directHtml;
   }
 
   if (isBrightDataConfigured()) {
     try {
       const page = await fetchBrightDataPage(url);
-      if (page.html && (!options.retryBrightDataWhenJsonLdMissing || hasJsonLd(page.html))) {
+      if (page.html && (!options.retryBrightDataWhenCanonicalVariantsMissing || hasCanonicalVariants(page.html))) {
         return page.html;
       }
       // If Bright Data did not improve the response, retain a usable direct
@@ -244,7 +244,7 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
   await Promise.all(details.map(async (item) => {
     if (!item.productUrl) return;
     try {
-      const detailHtml = await fetchHtml(item.productUrl, { retryBrightDataWhenJsonLdMissing: marketplace.marketplace === "amazon.co.jp" });
+      const detailHtml = await fetchHtml(item.productUrl, { retryBrightDataWhenCanonicalVariantsMissing: marketplace.marketplace === "amazon.co.jp" });
       if (!detailHtml) return;
       htmlFetched += 1;
 
