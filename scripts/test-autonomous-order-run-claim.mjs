@@ -3,6 +3,13 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../lib/ordering/autonomous-control.ts", import.meta.url), "utf8");
 
+assert.match(source, /automation_stale_claim_recovery_failed/);
+assert.match(source, /10 \* 60_000/);
+assert.match(source, /\.eq\("status", "running"\)\s*\.lt\("started_at", staleBefore\)/);
+assert.ok(
+  source.indexOf("staleClaims") < source.indexOf("existingRunQuery"),
+  "stale claims must be reclaimed before acquiring a new hourly run claim",
+);
 assert.match(source, /automation_run_claim_lookup_failed/);
 assert.match(source, /automation_run_already_claimed/);
 assert.match(source, /automation_run_claim_lost/);
