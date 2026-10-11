@@ -309,10 +309,6 @@ async function syncShoppingDemandObservations(): Promise<unknown> {
       upserted += batch.length;
       continue;
     }
-
-    // A concurrent patrol can race the pre-read and hit a unique key. Bulk
-    // insert is atomic; on that specific conflict only, fall back to
-    // idempotent single-row inserts and ignore duplicate-key errors.
     if (batchError.code === "23505") {
       for (const payload of batch) {
         const { error: insertError } = await supabase
@@ -327,9 +323,6 @@ async function syncShoppingDemandObservations(): Promise<unknown> {
       }
       continue;
     }
-
-    // Production supports search_result_count. Never downgrade this
-    // semantic signal to "other": a schema mismatch must remain visible.
     throw new Error(batchError.message);
   }
 
