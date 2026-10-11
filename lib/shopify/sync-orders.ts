@@ -199,9 +199,18 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
     : { data: [], error: null };
   if (listingError) throw new Error(listingError.message);
 
-  const listingByVariant = new Map(
-    (listings ?? []).map((row) => [String(row.shopify_variant_id), row as Record<string, unknown>]),
-  );
+  const listingByVariant = new Map<string, Record<string, unknown>>();
+  for (const row of listings ?? []) {
+    const variantId = String(row.shopify_variant_id ?? "").trim();
+    if (!variantId) continue;
+    const existing = listingByVariant.get(variantId);
+    if (existing && String(existing.id) !== String(row.id)) {
+      // A Shopify variant must resolve to exactly one internal listing. Picking
+      // the last duplicate silently attaches a paid order to the wrong product.
+      throw new Error(`shopify_variant_mapping_ambiguous:${variantId}`);
+    }
+    listingByVariant.set(variantId, row as Record<string, unknown>);
+  }
 
   for (const order of orders) {
     let insertedOrderId: string | null = null;
