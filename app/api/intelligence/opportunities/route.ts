@@ -1,4 +1,4 @@
-import { requireCronAuth } from "@/lib/security/cron-auth";
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { NextResponse } from "next/server";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { listOpportunities } from "@/lib/intelligence/opportunity-store";
@@ -15,7 +15,7 @@ const STATES: SellabilityState[] = [
 ];
 
 export async function GET(request: Request) {
-  const authError = requireCronAuth(request);
+  const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   try {
     const url = new URL(request.url);
@@ -48,7 +48,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const authError = requireCronAuth(request);
+  const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   try {
     const result = await buildOpportunityIntelligence();
