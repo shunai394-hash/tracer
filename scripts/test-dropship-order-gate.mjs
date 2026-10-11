@@ -8,5 +8,5 @@ assert.equal(result.ok, true, `Dropship order gate invariant failures: ${JSON.st
 
 const orderControl = await readFile(new URL("../lib/ordering/autonomous-control.ts", import.meta.url), "utf8");
 assert.match(orderControl, /\.in\("order_status", \["placed", "processing", "fulfillment_pending"\]\)/);
-assert.doesNotMatch(orderControl, /\.in\("order_status", \["placed", "processing", "fulfilled"\]\)/);
+assert.doesNotMatch(orderControl, /\.in\("order_status", \[[^\]]*fulfilled/);
 console.log(`Dropship order gate: ${result.cases.length} invariant cases passed; fulfilled orders excluded`);
