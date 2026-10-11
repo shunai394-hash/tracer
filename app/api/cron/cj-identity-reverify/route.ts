@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 import { reverifyCjSupplyIdentities } from "@/lib/suppliers/reverify-cj-identity";
 
 export const runtime = "nodejs";
@@ -11,7 +11,7 @@ export const maxDuration = 300;
  * turns an already orderable CJ variant into identifier-grade canonical supply.
  */
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireAutomationCapability(request, "database_write");
   if (authError) return authError;
 
   const startedAt = Date.now();
