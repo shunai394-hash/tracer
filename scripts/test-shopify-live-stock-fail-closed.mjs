@@ -15,7 +15,7 @@ assert.equal(hasVerifiedPositiveShopifyStock("SKU-123", 3), false, "non-Shopify 
 const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
 const sync = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
 const blockReasonsStart = sync.indexOf("function blockReasons(row: Listing): string[] {");
-const blockReasonsEnd = sync.indexOf("\\n}", blockReasonsStart);
+const blockReasonsEnd = sync.indexOf("\n}", blockReasonsStart);
 const blockReasons = blockReasonsStart >= 0 && blockReasonsEnd > blockReasonsStart ? sync.slice(blockReasonsStart, blockReasonsEnd) : "";
 assert.ok(blockReasons, "Shopify sync must expose its canonical block-reason gate");
 assert.match(blockReasons, /supplier_product_missing/, "Shopify sync must block listings without the supplier product identity");
