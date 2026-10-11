@@ -7,6 +7,10 @@ const migration = await readFile(
   "utf8",
 );
 
+assert.match(source, /orders\(first: \$first, after: \$after,[\s\S]*?reverse: true/);
+assert.match(source, /while \(hasNextOrdersPage && orders\.length < maxNewOrders\)/);
+assert.match(source, /shopify_orders_cursor_not_advancing/);
+assert.match(source, /fetched: scannedOrders/);
 assert.match(source, /shopify_line_item_id:\s*item\.id/);
 assert.match(source, /shopify_order_id:\s*order\.id/);
 assert.match(source, /pageInfo\s*\{\s*hasNextPage\s+endCursor\s*\}/);
