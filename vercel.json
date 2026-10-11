@@ -15,10 +15,6 @@
       "schedule": "7 12 * * *"
     },
     {
-      "path": "/api/cron/cj-identity-reverify",
-      "schedule": "3,18,33,48 * * * *"
-    },
-    {
       "path": "/api/cron/orosy-bulk-import",
       "schedule": "10 12 * * *"
     },
