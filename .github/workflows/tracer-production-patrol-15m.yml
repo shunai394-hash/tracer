@@ -70,7 +70,7 @@ jobs:
           with open("patrol-report.json", encoding="utf-8") as f:
               r=json.load(f)
           actions=r.get("actions") or []
-          pipeline=next((a.get("result") for a in actions if a.get("action")=="run_full_intelligence_pipeline"),{})
+          pipeline=next((a.get("result") for a in actions if a.get("action")=="run_full_intelligence_pipeline"),{}) or {}
           steps=pipeline.get("steps") or []
           def step_summary(s):
               result=s.get("result") if isinstance(s.get("result"),dict) else {}
