@@ -16,6 +16,7 @@ on:
       - "lib/intelligence/japanese-product.ts"
       - "lib/market/collect-bestsellers.ts"
       - "lib/market/persist-bestsellers.ts"
+      - "lib/market/market-cursor.ts"
       - "lib/suppliers/discover-cj-supply.ts"
       - "lib/suppliers/cj-identity-reverify-policy.ts"
   workflow_dispatch:
