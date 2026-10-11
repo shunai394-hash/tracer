@@ -16,4 +16,24 @@ for (const path of routes) {
     assert.match(after, /const authError = await requireAutomationAuth\(request\);\s*if \(authError\) return authError;/, `${path} ${handler[1]}: auth must run before work`);
   }
 }
-console.log("Internal order/intelligence API auth guards: passed");
+const authSource = await readFile(
+  new URL("../lib/security/cron-auth.ts", import.meta.url),
+  "utf8",
+);
+assert.match(authSource, /ALLOWED_GITHUB_OIDC_WORKFLOW_REFS = new Set\\(/, "OIDC workflow allowlist must be explicit");
+assert.match(authSource, /typeof claims\\.workflow_ref !== "string"/, "missing workflow_ref must be rejected");
+assert.match(authSource, /!ALLOWED_GITHUB_OIDC_WORKFLOW_REFS\\.has\\(claims\\.workflow_ref\\)/, "unlisted workflow refs must be rejected");
+assert.doesNotMatch(authSource, /claims\\.workflow_ref\\.startsWith\\(/, "repo-wide workflow prefix is too permissive");
+for (const workflow of [
+  "tracer-production-patrol-15m.yml",
+  "tracer-supply-first.yml",
+  "tracer-production-smoke.yml",
+  "tracer-publish-cj-now.yml",
+  "tracer-product-trace.yml",
+  "tracer-unpublish-unlinked.yml",
+  "tracer-shopify-auth-check.yml",
+  "tracer-reach-500-now.yml",
+]) {
+  assert.ok(authSource.includes(`shunai394-hash/tracer/.github/workflows/${workflow}@refs/heads/main`), `missing explicit OIDC workflow allowlist entry: ${workflow}`);
+}
+console.log("Internal API guards and exact OIDC workflow allowlist: passed");
