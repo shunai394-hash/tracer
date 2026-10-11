@@ -77,7 +77,7 @@ export async function GET(request: Request) {
   };
 
   const identityStatusCounts: Record<string, number> = {};
-  const supplierById = new Map(supplierRows.map((supplier) => [supplier.id, supplier]));
+  const supplierById = new Map(supplierRows.map((supplier) => [supplier.id, supplier] as const));
 
   for (const row of rows) {
     const fk = String(row.supplier_listing_id ?? "").trim();
