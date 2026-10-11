@@ -341,21 +341,15 @@ export async function createPurchaseOrderFromRecommendation(args: {
     );
   }
 
+  // This function only records an internal recommendation. It does not call a supplier API,
+  // so approval/gate success must never be represented as an externally placed order.
   const status = args.approved
     ? settings.mode === "AUTO" && !gates.canAuto
       ? "auto_blocked"
-      : "placed"
+      : "pending_supplier_execution"
     : settings.mode === "APPROVAL"
       ? "pending_approval"
       : "draft";
-
-  const placed =
-    args.approved &&
-    unitCost !== null &&
-    currency !== null &&
-    modeAllowsExecution(settings.mode, true, gates.canAuto) &&
-    gates.orderState !== "ORDER_FORBIDDEN" &&
-    gates.orderState !== "UNKNOWN_BLOCKED";
 
   const { data, error } = await supabase
     .from("purchase_orders")
@@ -376,10 +370,10 @@ export async function createPurchaseOrderFromRecommendation(args: {
       forecast_profit: asNumber(rec.estimated_profit),
       forecast_confidence: asNumber(rec.confidence),
       rationale: rec.rationale,
-      status: placed ? "placed" : status,
+      status,
       mode: settings.mode,
       approved_by: args.approved ? (args.approvedBy ?? "user") : null,
-      placed_at: placed ? new Date().toISOString() : null,
+      placed_at: null,
       metadata: {
         gates,
         note: "supplier_api_not_connected_execution_stays_recorded_only",
