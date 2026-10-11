@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import ts from "typescript";
 
-const root = new URL("../", import.meta.url);
 const [gateSource, typesSource] = await Promise.all([
   readFile(new URL("../lib/ordering/gates.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/ordering/types.ts", import.meta.url), "utf8"),
