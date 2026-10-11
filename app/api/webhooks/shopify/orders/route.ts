@@ -1,13 +1,29 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyShopifyWebhookHmac } from "@/lib/shopify/admin";
+import { resolveShopifySkuListings } from "@/lib/shopify/listing-sku";
 
 export const runtime = "nodejs";
+
+type ListingRow = {
+  id: string;
+  product_id: string;
+  title: string;
+  published: boolean;
+  orderable: boolean;
+  selling_price: number | string | null;
+  supplier_listing_id: string | null;
+  supplier_name: string | null;
+  supplier_product_id: string | null;
+  supplier_variant_id: string | null;
+};
 
 function n(value: unknown): number | null {
   const x = Number(value);
   return Number.isFinite(x) ? x : null;
 }
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function POST(request: Request) {
   const raw = await request.text();
@@ -28,13 +44,47 @@ export async function POST(request: Request) {
     const skus = items.map((item) => String(item.sku ?? "")).filter(Boolean);
     if (!items.length || !skus.length) return NextResponse.json({ ok: true, blocked: true, reason: "listing_sku_missing" });
 
-    const { data: listings, error: listingError } = await db.from("shop_listings")
-      .select("id,product_id,title,published,orderable,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id")
-      .in("id", skus);
-    if (listingError) throw new Error(listingError.message);
-    const byId = new Map((listings ?? []).map((row) => [String(row.id), row]));
-    if (skus.some((sku) => !byId.has(sku))) return NextResponse.json({ ok: true, blocked: true, reason: "listing_mapping_missing" });
-    if ((listings ?? []).some((row) => row.published !== true || row.orderable !== true)) {
+    // Published Shopify SKUs are generated as TRC-{supplier_variant_id || supplier_product_id || listing.id}.
+    // Resolve those external SKUs back to internal listings before creating any order rows.
+    const supplierIds = [...new Set(skus
+      .map((sku) => sku.startsWith("TRC-") ? sku.slice(4) : "")
+      .filter(Boolean))];
+    const listingIds = [...new Set(skus.flatMap((sku) => {
+      const value = sku.startsWith("TRC-") ? sku.slice(4) : sku;
+      return UUID_PATTERN.test(value) ? [value] : [];
+    }))];
+
+    const selectColumns = "id,product_id,title,published,orderable,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id";
+    const queryByVariant = supplierIds.length
+      ? db.from("shop_listings").select(selectColumns).in("supplier_variant_id", supplierIds)
+      : Promise.resolve({ data: [], error: null });
+    const queryByProduct = supplierIds.length
+      ? db.from("shop_listings").select(selectColumns).in("supplier_product_id", supplierIds)
+      : Promise.resolve({ data: [], error: null });
+    const queryById = listingIds.length
+      ? db.from("shop_listings").select(selectColumns).in("id", listingIds)
+      : Promise.resolve({ data: [], error: null });
+    const [variantResult, productResult, idResult] = await Promise.all([queryByVariant, queryByProduct, queryById]);
+    const queryError = variantResult.error ?? productResult.error ?? idResult.error;
+    if (queryError) throw new Error(queryError.message);
+
+    const candidateRows = new Map<string, ListingRow>();
+    for (const row of [
+      ...(variantResult.data ?? []),
+      ...(productResult.data ?? []),
+      ...(idResult.data ?? []),
+    ] as ListingRow[]) {
+      candidateRows.set(String(row.id), row);
+    }
+    const { bySku, ambiguous } = resolveShopifySkuListings(skus, [...candidateRows.values()]);
+    if (ambiguous.length) {
+      return NextResponse.json({ ok: true, blocked: true, reason: "listing_mapping_ambiguous" });
+    }
+    if (skus.some((sku) => !bySku.has(sku))) {
+      return NextResponse.json({ ok: true, blocked: true, reason: "listing_mapping_missing" });
+    }
+    const listings = [...new Map([...bySku.values()].map((row) => [row.id, row])).values()];
+    if (listings.some((row) => row.published !== true || row.orderable !== true)) {
       return NextResponse.json({ ok: true, blocked: true, reason: "listing_not_orderable" });
     }
 
@@ -45,7 +95,7 @@ export async function POST(request: Request) {
     const billing = (order.billing_address ?? {}) as Record<string, unknown>;
     const currency = String(order.currency ?? order.presentment_currency ?? "JPY");
     const inserted = await db.from("shop_orders").insert({
-      listing_id: byId.get(skus[0])?.id ?? null,
+      listing_id: bySku.get(skus[0])?.id ?? null,
       status: "placed",
       payment_method: "shopify",
       payment_status: paid ? "paid" : "pending",
@@ -73,7 +123,7 @@ export async function POST(request: Request) {
     if (inserted.error) throw new Error(inserted.error.message);
 
     for (const item of items) {
-      const listing = byId.get(String(item.sku ?? ""));
+      const listing = bySku.get(String(item.sku ?? ""));
       if (!listing) throw new Error("listing mapping missing during item insert");
       const row = await db.from("shop_order_items").insert({
         order_id: inserted.data.id,
