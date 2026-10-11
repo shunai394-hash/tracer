@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node --experimental-strip-types --no-warnings scripts/test-dropship-order-gate.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
