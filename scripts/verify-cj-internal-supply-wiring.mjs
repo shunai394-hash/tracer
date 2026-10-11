@@ -31,8 +31,10 @@ assert.match(discovery, /seededChecked >= seededVerificationLimit/,
   "seeded verification must have a hard per-run attempt budget");
 assert.match(marketCollector, /retryBrightDataWhenCanonicalVariantsMissing/,
   "Amazon detail fetches must retry Bright Data when direct HTML lacks JSON-LD");
-assert.match(marketCollector, /hasCanonicalVariants\(directHtml\)/,
-  "a non-empty page without child-variant evidence must not suppress the canonical evidence fallback");
+assert.match(marketCollector, /hasAmazonVariantEvidence\(directHtml\)/,
+  "a non-empty Amazon page without JSON-LD or variation-ASIN evidence must not suppress the canonical evidence fallback");
+assert.match(marketCollector, /parseAmazonVariationAsinMap\(html, url\)/,
+  "explicit Amazon child-ASIN maps must count as variant evidence alongside Schema.org child variants");
 assert.match(ingest, /sourceRef = `cj:\$\{args\.supplierProductId\}:\$\{args\.supplierVariantId\}`/,
   "source reference must be deterministic for the concrete supplier product+variant");
 assert.match(ingest, /onConflict: "source_name,source_ref"/,
@@ -67,7 +69,9 @@ assert.match(ingest, /from\("marketplace_bestseller_variants"\)/,
 assert.match(ingest, /marketplace_variant_evidence_id: String\(row\.id\)/,
   "verified links must persist the exact canonical child-variant evidence ID");
 assert.match(ingest, /item\.row\.evidence_source === "schema_org_product_group_has_variant"/,
-  "only explicit canonical child-variant evidence is eligible");
+  "Schema.org canonical child-variant evidence remains eligible");
+assert.match(ingest, /item\.row\.evidence_source === "amazon_variation_asin_map"/,
+  "Amazon child-ASIN evidence is eligible only when explicitly parsed and independently barcode-verified");
 assert.match(ingest, /const barcodeMethod = \["jan", "gtin", "ean", "upc"\]\.includes\(identity\.method\)/,
   "only exact barcode-family proof may establish supplier-to-child-variant identity");
 assert.match(ingest, /automated_order_creation_verified: false/,
