@@ -31,4 +31,6 @@ const beautySourceIndex = collector.indexOf('source: "amazon_bestsellers_beauty"
 const genericAmazonSourceIndex = collector.indexOf('source: "amazon_bestsellers" },');
 assert.ok(beautySourceIndex >= 0 && genericAmazonSourceIndex >= 0 && beautySourceIndex < genericAmazonSourceIndex,
   "Amazon beauty ranking must be collected before the generic Amazon bestseller page");
-console.log("Bounded demand identity stamping and CJ reverify: 16 assertions passed");
+assert.match(collector, /skipped: items\.length === 0/);
+assert.match(collector, /ranking_html_returned_zero_items/);
+console.log("Bounded demand identity stamping and CJ reverify: 18 assertions passed");
