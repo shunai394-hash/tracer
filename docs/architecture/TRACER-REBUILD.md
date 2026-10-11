@@ -51,3 +51,11 @@ This branch is an isolated refactor foundation. It does not change the productio
 ## Non-goals
 
 No production data deletion, bulk unpublish, bulk republish, live order placement, or cron removal as part of this foundation branch.
+
+## Additional verified blockers (read-only, 2026-10-11)
+
+- Listing blocker distribution: 661/767 are supplier_identity_unlinked, 98 supply_gate_missing, 5 japanese_title_required, and 3 japanese_catalog_copy_invalid. All 767 were blocked/unpublished in the queried snapshot.
+- Listing evidence counts: 669 have supplier product/variant IDs and identity method, 654 have positive inventory, only 8 have orderable=true, 669 have tracking=true, 767 have positive selling price, and 691 have an HTTP(S) image URL. The main remaining bottlenecks are canonical identity and actual orderability, not listing count.
+- The 57,063 supplier candidates are not 57,063 sellable products. A CJ group included 551 rows with verification_status=verified but identity_status=supply_discovered; supplier verification does not prove marketplace identity. internal_supply_links and marketplace_bestseller_variants both had zero rows.
+- Production runtime logs contained 14 BASE order API HTTP 400 invalid-access-token errors through 2026-10-10T19:24:38Z, before the required BASE OAuth environment entries were created/updated on 2026-10-11. A fresh read-only BASE list call is needed; historical errors do not prove the new config still fails.
+- A branch-only Shopify auth probe returned outer HTTP 401 because lib/security/cron-auth.ts intentionally only accepts GitHub OIDC tokens from refs/heads/main. That result is an authorization rejection before the Shopify probe, not a Shopify API 401. Keep the production allowlist unchanged; use the existing main-only auth-check workflow with sync_batch=0.
