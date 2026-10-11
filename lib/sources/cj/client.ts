@@ -73,9 +73,10 @@ async function persistCJQuotaCircuit(reason: string): Promise<string> {
       failed: 1,
       metadata: { blockedUntil, reason, source: "cj-client" },
     });
-    if (error) console.error("[cj] quota circuit persistence failed", error.message);
+    if (error) throw new CJRequestError("CJ quota circuit persistence failed; refusing further external requests", "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN");
   } catch (error) {
-    console.error("[cj] quota circuit persistence failed", error instanceof Error ? error.message : String(error));
+    if (error instanceof CJRequestError) throw error;
+    throw new CJRequestError("CJ quota circuit persistence failed; refusing further external requests", "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN");
   }
   return blockedUntil;
 }
