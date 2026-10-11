@@ -117,6 +117,12 @@ export function verifyDropshipOrderGateInvariants(): {
     { name: "negative_cost_blocks_execution", expected: true, actual: evaluateDropshipOrderGate({ ...base, sourceCost: -1 }).blocked.includes("source_cost_invalid") },
     { name: "NaN_inventory_blocks_execution", expected: true, actual: evaluateDropshipOrderGate({ ...base, inventoryQty: Number.NaN }).missing.includes("inventory_unknown") },
     { name: "zero_fx_blocks_execution", expected: true, actual: evaluateDropshipOrderGate({ ...base, sourceFxRateToSelling: 0 }).blocked.includes("fx_rate_invalid") },
+    { name: "infinite_quantity_blocks_execution", expected: true, actual: !evaluateDropshipOrderGate({ ...base, quantity: Number.POSITIVE_INFINITY }).canExecuteLive },
+    { name: "negative_shipping_cost_blocks_execution", expected: true, actual: evaluateDropshipOrderGate({ ...base, shippingCost: -1 }).blocked.includes("shipping_cost_invalid") },
+    { name: "negative_inventory_blocks_execution", expected: true, actual: evaluateDropshipOrderGate({ ...base, inventoryQty: -1 }).blocked.includes("inventory_invalid") },
+    { name: "infinite_fx_blocks_execution", expected: true, actual: evaluateDropshipOrderGate({ ...base, sourceFxRateToSelling: Number.POSITIVE_INFINITY }).blocked.includes("fx_rate_invalid") },
+    { name: "zero_selling_price_blocks_execution", expected: true, actual: evaluateDropshipOrderGate({ ...base, sellingPrice: 0 }).blocked.includes("selling_price_invalid") },
+    { name: "overflowed_profit_is_blocked", expected: true, actual: evaluateDropshipOrderGate({ ...base, sellingPrice: Number.MAX_VALUE, quantity: Number.MAX_VALUE }).blocked.includes("profit_unknown") },
   ];
   return { ok: cases.every((item) => item.actual === item.expected), cases };
 }
