@@ -6,6 +6,7 @@ export type ProviderProbe = {
   provider: "shopify" | "base";
   configComplete: boolean;
   tokenExchangeStatus: number | null;
+  tokenReturned: boolean;
   apiStatus: number | null;
   expectedIdentity: string;
   returnedIdentity: string | null;
@@ -23,7 +24,7 @@ export type ProviderProbeDecision = {
 export function evaluateProviderProbe(probe: ProviderProbe): ProviderProbeDecision {
   const blockers: string[] = [];
   if (!probe.configComplete) blockers.push("configuration_incomplete");
-  if (probe.tokenExchangeStatus !== 200) blockers.push("token_exchange_not_confirmed");
+  if (probe.tokenExchangeStatus !== 200 || !probe.tokenReturned) blockers.push("token_exchange_not_confirmed");
   if (probe.apiStatus !== 200) blockers.push("provider_api_not_confirmed");
   const expected = probe.expectedIdentity.trim().toLowerCase();
   const returned = probe.returnedIdentity?.trim().toLowerCase() ?? "";
