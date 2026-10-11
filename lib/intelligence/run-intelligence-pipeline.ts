@@ -26,6 +26,7 @@ import {
   GeminiRequestError,
   GeminiTimeoutError,
 } from "@/lib/ai/gemini/errors";
+import { canFeedSalesGate } from "@/lib/intelligence/bestseller-sales-gate";
 
 export type PipelineStepResult = {
   name: string;
@@ -408,13 +409,17 @@ export async function runIntelligencePipeline(options: {
   }, { budgetMs: 25_000 });
   steps.push(bestsellerStep);
 
+  // A deferred/retryable stage can still carry raw candidate IDs. Only
+  // canonical evidence persisted by a completed stage may feed downstream gates.
+  const bestsellerCanFeedSalesGate = canFeedSalesGate(bestsellerStep);
+
   const bestsellerIds =
-    bestsellerStep.ok && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { bestsellerIds?: unknown }).bestsellerIds)
+    bestsellerCanFeedSalesGate && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { bestsellerIds?: unknown }).bestsellerIds)
       ? ((bestsellerStep.result as { bestsellerIds: string[] }).bestsellerIds)
       : [];
 
   const supplierCandidateIds =
-    bestsellerStep.ok && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { supplierCandidateIds?: unknown }).supplierCandidateIds)
+    bestsellerCanFeedSalesGate && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { supplierCandidateIds?: unknown }).supplierCandidateIds)
       ? (bestsellerStep.result as { supplierCandidateIds: string[] }).supplierCandidateIds
       : [];
 
@@ -550,6 +555,12 @@ export async function runIntelligencePipeline(options: {
   // earlier patrol were never investigated (only the current run's inserts
   // were). Drain a few per patrol, oldest observations first.
   steps.push(await runStep("dropship", async () => {
+    // The pending-barcode backlog is still raw marketplace evidence. Do not
+    // let it bypass the canonical-variant prerequisite when bestseller intake
+    // was deferred or retryable.
+    if (!bestsellerCanFeedSalesGate) {
+      return { skipped: true, retryable: true, reason: "bestseller_canonical_evidence_deferred" };
+    }
     const { data: backlog, error: backlogError } = await db
       .from("marketplace_bestsellers")
       .select("id")
