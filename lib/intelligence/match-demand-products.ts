@@ -145,47 +145,82 @@ const MAX_GEMINI_CLASSIFICATIONS_PER_RUN = 10;
 export async function matchDemandProductsByCategory(): Promise<DemandProductMatchResult> {
   const supabase = createSupabaseAdminClient();
 
-  // Paged reads: PostgREST caps a plain select at 1000 rows, which silently
-  // dropped products (product_intelligence alone exceeds 1000 rows).
-  const [demandResult, productResult, candidateResult, cjProductResult, sourceOfferResult, bestsellerResult, identifierResult] = await Promise.all([
-    readAll((from, to) => supabase.from("demand_observations").select("id, metadata, value, observed_at").is("product_id", null).in("signal_type", ["search_volume", "search_result_count"]).order("observed_at", { ascending: false }).order("id").range(from, to)),
+  // Count only to choose a rotating, bounded demand page. Do not materialize
+  // the entire demand history or every demand candidate on each patrol.
+  const demandCountResult = await supabase
+    .from("demand_observations")
+    .select("id", { count: "exact", head: true })
+    .is("product_id", null)
+    .in("signal_type", ["search_volume", "search_result_count"]);
+  if (demandCountResult.error) throw new Error(demandCountResult.error.message);
+
+  const demandBatchSize = 100;
+  const demandBatchPages = Math.max(1, Math.ceil((demandCountResult.count ?? 0) / demandBatchSize));
+  const demandBatchPage = Math.floor(Date.now() / (15 * 60_000)) % demandBatchPages;
+  const demandResult = await supabase
+    .from("demand_observations")
+    .select("id, metadata, value, observed_at")
+    .is("product_id", null)
+    .in("signal_type", ["search_volume", "search_result_count"])
+    .order("observed_at", { ascending: false })
+    .order("id")
+    .range(demandBatchPage * demandBatchSize, (demandBatchPage + 1) * demandBatchSize - 1);
+  if (demandResult.error) throw new Error(demandResult.error.message);
+
+  const demandRows = demandResult.data ?? [];
+  if (demandRows.length === 0) {
+    return {
+      processed: 0, intentProduct: 0, intentNonProduct: 0, matched: 0, unmatched: 0,
+      candidatesCreated: 0, candidatesExisting: 0, skippedInvalid: 0, exactMatches: 0,
+      ambiguousIdentifier: 0, variantRejected: 0, brandRejected: 0, geminiCalls: 0,
+      intentDeferred: 0, matchRows: 0, byMethod: {}, persisted: 0,
+      persistSchema: "none", persistErrors: [],
+    };
+  }
+
+  const demandBatchIds = new Set(demandRows.map((row) => String(row.id)));
+  const demandBatchIdList = [...demandBatchIds];
+
+  const [productResult, bestsellerResult, identifierResult] = await Promise.all([
     readAll((from, to) => supabase.from("product_intelligence").select("product_id, normalized_title").order("product_id").range(from, to)),
-    readAll((from, to) => supabase.from("demand_product_candidates").select("id, demand_observation_id").order("id").range(from, to)),
-    readAll((from, to) => supabase.from("demand_cj_products").select("id, demand_product_candidate_id, product_id, identity_status, identity_confidence").order("id").range(from, to)),
-    readAll((from, to) => supabase.from("product_offers").select("id, product_id, metadata, seller_name, observed_at").eq("seller_name", "CJdropshipping").order("id").range(from, to)),
     readAll((from, to) => supabase.from("marketplace_bestsellers").select("product_id, jan, gtin, ean, upc, mpn, model, brand").not("product_id", "is", null).order("id").range(from, to)),
     readAll((from, to) => supabase.from("product_identifiers").select("product_id, scheme, value").not("product_id", "is", null).order("id").range(from, to)),
   ]);
-  if (demandResult.error) throw new Error(demandResult.error.message);
   if (productResult.error) throw new Error(productResult.error.message);
-  if (candidateResult.error) throw new Error(candidateResult.error.message);
-  if (cjProductResult.error) throw new Error(cjProductResult.error.message);
-  if (sourceOfferResult.error) throw new Error(sourceOfferResult.error.message);
   if (bestsellerResult.error) throw new Error(bestsellerResult.error.message);
   if (identifierResult.error) throw new Error(identifierResult.error.message);
 
-  // Process a bounded page of observations that have not yet entered the
-  // candidate-resolution queue. The previous all-history loop compared every
-  // demand row against every product title and issued candidate lookups
-  // serially; with ~1.9k demand rows this exceeded the 25s patrol budget and
-  // prevented every downstream stage from running.
+  // All secondary demand data is scoped to this batch. These tables can grow
+  // much larger than the active demand page; full-table reads caused patrol
+  // timeouts even when only a handful of observations needed matching.
+  const candidateResult = await supabase
+    .from("demand_product_candidates")
+    .select("id, demand_observation_id")
+    .in("demand_observation_id", demandBatchIdList);
+  if (candidateResult.error) throw new Error(candidateResult.error.message);
+  const candidateIds = (candidateResult.data ?? []).map((row) => String(row.id));
+
+  const cjProductResult = candidateIds.length > 0
+    ? await supabase
+        .from("demand_cj_products")
+        .select("id, demand_product_candidate_id, product_id, identity_status, identity_confidence")
+        .in("demand_product_candidate_id", candidateIds)
+    : { data: [], error: null };
+  if (cjProductResult.error) throw new Error(cjProductResult.error.message);
+
+  const sourceOfferResult = await supabase
+    .from("product_offers")
+    .select("id, product_id, metadata, seller_name, observed_at")
+    .eq("seller_name", "CJdropshipping")
+    .in("metadata->>demand_observation_id", demandBatchIdList)
+    .limit(1000);
+  if (sourceOfferResult.error) throw new Error(sourceOfferResult.error.message);
+
   const candidateObservationIds = new Set(
     (candidateResult.data ?? [])
       .map((row) => String(row.demand_observation_id))
       .filter(Boolean),
   );
-  const allDemandRows = demandResult.data ?? [];
-  const demandBatchSize = 100;
-  const demandBatchPages = Math.max(1, Math.ceil(allDemandRows.length / demandBatchSize));
-  // Rotate by patrol interval over a stable, ordered demand set. Filtering
-  // candidates before slicing would let non-product observations at the head
-  // starve older product queries forever; rotation gives every row a turn.
-  const demandBatchPage = Math.floor(Date.now() / (15 * 60_000)) % demandBatchPages;
-  const demandRows = allDemandRows.slice(
-    demandBatchPage * demandBatchSize,
-    (demandBatchPage + 1) * demandBatchSize,
-  );
-  const demandBatchIds = new Set(demandRows.map((row) => String(row.id)));
   const productRows = productResult.data ?? [];
   const allProductNames = productRows.map((product) => product.normalized_title);
   const productTitleById = new Map(productRows.map((product) => [String(product.product_id), product.normalized_title]));
