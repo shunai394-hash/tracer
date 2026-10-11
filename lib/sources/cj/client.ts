@@ -8,8 +8,7 @@ import {
   type CJProductVariant,
 } from "@/lib/sources/cj/variant-select";
 import { firstCJImageUrl, parseCJStockData } from "@/lib/sources/cj/parse";
-import { isCJQuotaExhausted } from "@/lib/sources/cj/rate-limit-policy";
-import { getCJQuotaCooldownUntil } from "@/lib/sources/cj/rate-limit-policy";
+import { getCJQuotaCooldownUntil, isCJQuotaExhausted } from "@/lib/sources/cj/rate-limit-policy";
 
 export { selectUnambiguousVariant, verifyVariantSelectionInvariants };
 export type { CJProductVariant };
@@ -171,6 +170,7 @@ export async function waitForCJRateLimit(): Promise<void> {
   // concurrent instances could still violate CJ's global 1 QPS limit.
   // Claim the next slot in Supabase first; fall back to the old local
   // limiter only if the shared limiter is temporarily unavailable.
+  let circuitChecked = false;
   try {
     if (quotaCircuitIsOpen(localCJQuotaBlockedUntil)) {
       throw new CJRequestError(`CJ API quota cooldown active until ${localCJQuotaBlockedUntil}`, "CJ_QUOTA_EXHAUSTED");
@@ -185,6 +185,7 @@ export async function waitForCJRateLimit(): Promise<void> {
     if (circuitError) {
       throw new CJRequestError("CJ quota circuit state unavailable; refusing external request", "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN");
     }
+    circuitChecked = true;
     const circuitMetadata = circuitRows?.[0]?.metadata;
     const blockedUntil = circuitMetadata && typeof circuitMetadata === "object" && !Array.isArray(circuitMetadata)
       ? (circuitMetadata as Record<string, unknown>).blockedUntil
@@ -210,6 +211,9 @@ export async function waitForCJRateLimit(): Promise<void> {
       (error.code === "CJ_QUOTA_EXHAUSTED" || error.code === "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN")
     ) {
       throw error;
+    }
+    if (!circuitChecked) {
+      throw new CJRequestError("CJ quota circuit state unavailable; refusing external request", "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN");
     }
     console.warn(
       "[cj] shared QPS limiter unavailable; using local fallback",
