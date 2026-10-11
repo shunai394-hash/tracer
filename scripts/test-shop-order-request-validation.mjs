@@ -51,4 +51,4 @@ assert.deepEqual(normalizeShopOrderPaymentMethod("cash_on_delivery"), "cash_on_d
 assert.deepEqual(normalizeShopOrderPaymentMethod("wire_me_money"), null);
 assert.deepEqual(normalizeShopOrderPaymentMethod(1), null);
 
-console.log("Checkout request validation: 18 assertions passed");
+console.log("Checkout request validation: 19 assertions passed");
