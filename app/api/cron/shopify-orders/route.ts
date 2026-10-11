@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   try {
     const imported = await syncPaidShopifyOrders(25);
     const automation = imported.imported > 0
-      ? await runAutonomousOrderControl(`shopify-orders:${new Date().toISOString().slice(0, 13)}`)
+      ? await runAutonomousOrderControl(`shopify-orders:${new Date().toISOString().slice(0, 16)}`)
       : null;
 
     return NextResponse.json({
