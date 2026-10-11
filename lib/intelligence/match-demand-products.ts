@@ -140,7 +140,25 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   if (bestsellerResult.error) throw new Error(bestsellerResult.error.message);
   if (identifierResult.error) throw new Error(identifierResult.error.message);
 
-  const demandRows = demandResult.data ?? [];
+  // Keep each patrol bounded. The prior all-history loop compared every demand
+  // row against every product title and issued candidate lookups serially; with
+  // ~1.9k demand rows this exceeded the patrol budget and starved all later stages.
+  const candidateObservationIds = new Set(
+    (candidateResult.data ?? [])
+      .map((row) => String(row.demand_observation_id))
+      .filter(Boolean),
+  );
+  const allDemandRows = demandResult.data ?? [];
+  const demandBatchSize = 100;
+  const demandBatchPages = Math.max(1, Math.ceil(allDemandRows.length / demandBatchSize));
+  // Rotate on a stable ordered set so non-product rows at the head cannot starve
+  // product queries. Every page gets a turn over successive patrol intervals.
+  const demandBatchPage = Math.floor(Date.now() / (15 * 60_000)) % demandBatchPages;
+  const demandRows = allDemandRows.slice(
+    demandBatchPage * demandBatchSize,
+    (demandBatchPage + 1) * demandBatchSize,
+  );
+  const demandBatchIds = new Set(demandRows.map((row) => String(row.id)));
   const productRows = productResult.data ?? [];
   const allProductNames = productRows.map((product) => product.normalized_title);
   const productTitleById = new Map(productRows.map((product) => [String(product.product_id), product.normalized_title]));
@@ -165,7 +183,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
       ? (offer.metadata as Record<string, unknown>)
       : {};
     const observationId = typeof metadata.demand_observation_id === "string" ? metadata.demand_observation_id : null;
-    if (!observationId || !offer.product_id) continue;
+    if (!observationId || !demandBatchIds.has(observationId) || !offer.product_id) continue;
     keep({
       demandObservationId: observationId,
       productId: offer.product_id,
@@ -185,7 +203,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   for (const cj of cjProductResult.data ?? []) {
     if (!cj.product_id || cj.identity_status !== "linked") continue;
     const observationId = observationByCandidate.get(cj.demand_product_candidate_id);
-    if (!observationId) continue;
+    if (!observationId || !demandBatchIds.has(String(observationId))) continue;
     const confidence = Number(cj.identity_confidence ?? 0);
     if (!Number.isFinite(confidence) || confidence < 0.88) continue;
     keep({
@@ -205,8 +223,6 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   let candidatesCreated = 0, candidatesExisting = 0, skippedInvalid = 0;
   let exactMatches = 0, ambiguousIdentifier = 0, variantRejected = 0, brandRejected = 0;
   let geminiCalls = 0, intentDeferred = 0;
-  const candidateObservationIds = new Set((candidateResult.data ?? []).map((row) => String(row.demand_observation_id)));
-
   for (const demand of demandRows) {
     processed += 1;
     const metadata = demand.metadata && typeof demand.metadata === "object" && !Array.isArray(demand.metadata)
