@@ -1,6 +1,6 @@
-name: TRACER Reach 900 Now
-# Immediate production run for the fixed 900-listing Sales Test Gate target.
-
+name: TRACER Ten-Cycle Supply, Publication & Audit
+# Manual, bounded production run. This discovers supply and publishes only candidates
+# that pass the existing Sales Test Gate; it does not place supplier purchase orders.
 on:
   workflow_dispatch:
 
@@ -8,31 +8,112 @@ permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: tracer-ten-cycle-production-patrol
+  cancel-in-progress: false
+
 jobs:
-  reach-500:
+  ten-cycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 360
     steps:
-      - name: Run supply discovery and Sales Test Gate repeatedly
+      - name: Run ten measured supply / publication / audit cycles
         shell: bash
         run: |
           set -uo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
+          FAILED=0
+
           token() {
-            curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+            curl --fail-with-body --silent --show-error --max-time 30 \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
 
-          for cycle in $(seq 1 8); do
-            echo "===== CYCLE $cycle / 8: SUPPLY DISCOVERY ====="
-            T="$(token)"
-            curl --fail-with-body --silent --show-error --max-time 300               -H "Authorization: Bearer $T"               "$BASE/api/cron/supply-first" | tee "supply-$cycle.json" || true
+          run_endpoint() {
+            local cycle="$1"
+            local label="$2"
+            local path="$3"
+            local max_seconds="$4"
+            local output="cycle-${cycle}-${label}.json"
+            local access_token
+            local http_status
 
-            echo "===== CYCLE $cycle / 8: SALES TEST GATE ====="
-            T="$(token)"
-            curl --fail-with-body --silent --show-error --max-time 300               -H "Authorization: Bearer $T"               "$BASE/api/cron/sales-test-publication" | tee "sales-$cycle.json" || true
+            echo "===== CYCLE ${cycle} / 10: ${label} ====="
+            if ! access_token="$(token)"; then
+              printf '{"ok":false,"error":"oidc_token_failed","path":"%s"}\n' "$path" > "$output"
+              echo "::error::Cycle ${cycle} ${label}: could not obtain deployment token"
+              FAILED=1
+              return 0
+            fi
 
-            echo "===== CYCLE $cycle / 8: PRODUCTION AUDIT ====="
-            T="$(token)"
-            curl --fail-with-body --silent --show-error --max-time 60               -H "Authorization: Bearer $T"               "$BASE/api/intelligence/pipeline-audit" | tee "audit-$cycle.json" || true
+            if ! http_status="$(curl --silent --show-error --max-time "$max_seconds" \
+              -o "$output" -w '%{http_code}' \
+              -H "Authorization: Bearer ${access_token}" \
+              "${BASE}${path}")"; then
+              echo "::error::Cycle ${cycle} ${label}: request failed or timed out"
+              FAILED=1
+              return 0
+            fi
+
+            if ! python3 - "$output" "$http_status" "$label" <<'PY'
+          import json, sys
+          path, status, label = sys.argv[1:]
+          try:
+              with open(path, encoding="utf-8") as f:
+                  body = json.load(f)
+          except Exception as exc:
+              print(f"::error::{label}: response is not valid JSON: {exc}")
+              raise SystemExit(1)
+          if not status.isdigit() or not 200 <= int(status) < 300:
+              print(f"::error::{label}: HTTP {status}")
+              raise SystemExit(1)
+          if not isinstance(body, dict) or body.get("ok") is not True:
+              print(f"::error::{label}: endpoint did not report ok=true")
+              raise SystemExit(1)
+          print(f"{label}: HTTP {status}, ok=true")
+          if label == "audit":
+              counts = body.get("counts", {})
+              for key in ("shop_listings", "shop_listings_published", "shop_listings_published_orderable", "shop_listings_on_base_published"):
+                  print(f"  {key}={counts.get(key, 'not_returned')}")
+          if label == "sales":
+              selected = body.get("supplySelected", body.get("decision", {}))
+              if isinstance(selected, dict):
+                  print(f"  published={selected.get('published', 'not_returned')}")
+              downstream = body.get("downstream", {})
+              shopify = downstream.get("shopify", {}) if isinstance(downstream, dict) else {}
+              if isinstance(shopify, dict) and shopify.get("configured") is False:
+                  print("::error::Shopify sync is not configured for this publication run")
+                  raise SystemExit(1)
+              if isinstance(shopify, dict) and shopify.get("failed", 0):
+                  print(f"::error::Shopify reported {shopify.get('failed')} failed sync(s)")
+                  raise SystemExit(1)
+          PY
+            then
+              FAILED=1
+            fi
+          }
+
+          for cycle in $(seq 1 10); do
+            run_endpoint "$cycle" supply "/api/cron/supply-first" 300
+            run_endpoint "$cycle" sales "/api/cron/sales-test-publication" 300
+            run_endpoint "$cycle" audit "/api/intelligence/pipeline-audit" 60
           done
+
+          echo "===== FINAL SUMMARY ====="
+          echo "cycles=10"
+          echo "failed_endpoint_or_publication_checks=${FAILED}"
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::At least one cycle had a failed endpoint or publication check; inspect the saved cycle JSON artifacts."
+            exit 1
+          fi
+          echo "All ten cycles completed with successful endpoint-level checks."
+      - name: Preserve per-cycle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tracer-ten-cycle-evidence
+          path: cycle-*.json
+          if-no-files-found: warn
+          retention-days: 30
