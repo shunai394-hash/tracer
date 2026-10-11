@@ -32,3 +32,18 @@ The shared `requireAutomationCapability` guard now added on the audit branch is 
 2. Ensure every live-write API endpoint called by a workflow is covered by the same capability guard, not just the 19 Vercel Cron routes.
 3. Add a workflow policy that prevents production-write workflow dispatch unless an explicit reviewed input/approval is supplied; keep production dispatch disabled during this audit.
 4. Do not delete or disable existing workflows or schedules without an approved operational transition plan. No workflow was dispatched and no schedule was changed during this audit.
+
+
+## Live GitHub Actions evidence observed during this audit
+
+Read-only Actions API/log inspection found two recent `TRACER Production Smoke` runs on `main`:
+- Run [38105600205](https://github.com/shunai394-hash/tracer/actions/runs/38105600205), started 2026-10-11 02:34:35 UTC (11:34:35 JST), failed during the post-deploy AI patrol step.
+- Run [38107191022](https://github.com/shunai394-hash/tracer/actions/runs/38107191022), started 2026-10-11 03:04:07 UTC (12:04:07 JST), failed during the post-deploy AI patrol step.
+
+Both runs did perform writes before failing:
+- Demand-match matcher ran twice and persisted 9 evidence rows; the second pass kept the observed counts/classification stable (idempotent for that specific scenario).
+- The patrol pipeline inserted 10 bestseller records and 10 auxiliary trend records in each run and created one product in each run (product count rose 1524→1525 in the first and 1525→1526 in the second).
+- The patrol pipeline then exceeded its 20-second identity-reverification step budget; subsequent steps were deferred and the endpoint returned HTTP 500.
+- Both patrol reports show `publishedListings=0`, `basePublished=0`, and `orders=0` before and after. No listing publication or order creation was reported by those two runs.
+
+This is direct evidence that a workflow called “Production Smoke” was not read-only. It was triggered by `push` to `main` and executed live demand-match and AI-patrol paths before failing. The branch now removes automatic push triggers and adds explicit `allow_production_writes=true` approval guards to `tracer-production-smoke.yml`, `tracer-direct-900.yml`, `tracer-build-1000.yml`, `tracer-expand-1000.yml`, `tracer-publish-cj-now.yml`, and `tracer-run-sales-test-now.yml`. These edits are only on the draft branch; they have not changed main or production.
