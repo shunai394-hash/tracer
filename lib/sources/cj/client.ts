@@ -708,8 +708,13 @@ export async function getCJProductDetail(
 
   const payload = (await response.json()) as {
     result?: boolean;
+    message?: string;
     data?: unknown;
   };
+
+  if (payload.result === false) {
+    throw new CJRequestError(payload.message || "CJ product query failed");
+  }
 
   // product/query has appeared as either a single object or a wrapper
   // containing productList/content in different CJ API responses. Normalize
