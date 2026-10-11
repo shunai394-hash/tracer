@@ -91,7 +91,7 @@ export function verifySalesTestGateInvariants(): { ok: boolean; cases: Array<{ n
 }
 
 function supplyReadyInput(): SalesTestGateInput {
-  return { rank: null, title: "Supply product", sellingPrice: 3980, identityLinked: true, identityMethod: "jan", identityConfidence: 0.95, sourceCost: 1000, shippingCost: 300, trackingAvailable: true, apiAvailable: true, profitCalculable: true, shippingUnknown: false, contributionProfit: 2680, currencyMismatch: false, priceConfirmed: true, inventoryConfirmed: true, inventory: 20, orderable: true, supplierProductId: "pid", supplierVariantId: "vid" };
+  return { rank: null, title: "サプライ商品", sellingPrice: 3980, identityLinked: true, identityMethod: "jan", identityConfidence: 0.95, sourceCost: 1000, shippingCost: 300, trackingAvailable: true, apiAvailable: true, profitCalculable: true, shippingUnknown: false, contributionProfit: 2680, currencyMismatch: false, priceConfirmed: true, inventoryConfirmed: true, inventory: 20, orderable: true, supplierProductId: "pid", supplierVariantId: "vid" };
 }
 
 export const SALES_TEST_GATE_PASSED = "sales_test_gate_passed";
