@@ -9,6 +9,8 @@ export const maxDuration = 120;
 export async function POST(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
+  const readCapabilityError = await requireAutomationCapability(request, "read");
+  if (readCapabilityError) return readCapabilityError;
 
   try {
     const body = (await request.json().catch(() => ({}))) as { listingIds?: unknown; dryRun?: unknown; limit?: unknown };
