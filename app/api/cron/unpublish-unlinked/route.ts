@@ -15,19 +15,53 @@ export async function GET(request: Request) {
   if (authError) return authError;
 
   const db = createSupabaseAdminClient();
-  const { data, error } = await db.from("shop_listings")
-    .select("id,supplier_listing_id,published,orderable,pipeline_reason,shopify_product_id,shopify_sync_status,base_item_id,base_publication_status,base_last_error")
-    .or("published.eq.true,and(shopify_product_id.not.is.null,shopify_sync_status.is.null),and(shopify_product_id.not.is.null,shopify_sync_status.neq.blocked,shopify_sync_status.neq.synced),and(base_item_id.not.is.null,base_last_error.is.null),and(base_item_id.not.is.null,base_last_error.neq.supplier_identity_unlinked_hidden,base_last_error.neq.tracer_unpublished_hidden,base_last_error.neq.base_auth_invalid_reauthorization_required)")
-    .order("created_at", { ascending: true })
-    .limit(1000);
-  if (error) return NextResponse.json({ ok: false, stage: "read", error: error.message }, { status: 500 });
+  // PostgREST caps each response at 1,000 rows by default. Page through the
+  // complete ordered candidate set so rows after the first page are not silently skipped.
+  const pageSize = 1000;
+  const data: Array<{
+    id: string | number;
+    supplier_listing_id: string | null;
+    published: boolean | null;
+    orderable: boolean | null;
+    pipeline_reason: string | null;
+    shopify_product_id: string | null;
+    shopify_sync_status: string | null;
+    base_item_id: string | null;
+    base_publication_status: string | null;
+    base_last_error: string | null;
+  }> = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data: page, error } = await db.from("shop_listings")
+      .select("id,supplier_listing_id,published,orderable,pipeline_reason,shopify_product_id,shopify_sync_status,base_item_id,base_publication_status,base_last_error")
+      .or("published.eq.true,and(shopify_product_id.not.is.null,shopify_sync_status.is.null),and(shopify_product_id.not.is.null,shopify_sync_status.neq.blocked,shopify_sync_status.neq.synced),and(base_item_id.not.is.null,base_last_error.is.null),and(base_item_id.not.is.null,base_last_error.neq.supplier_identity_unlinked_hidden,base_last_error.neq.tracer_unpublished_hidden,base_last_error.neq.base_auth_invalid_reauthorization_required)")
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) return NextResponse.json({ ok: false, stage: "read", offset: from, error: error.message }, { status: 500 });
+    const rows = page ?? [];
+    data.push(...rows);
+    if (rows.length < pageSize) break;
+  }
 
-  const linkedIds = await getLinkedSupplierListingIds((data ?? []).map((row) => row.supplier_listing_id));
-  const unlinked = (data ?? []).filter((row) => !row.supplier_listing_id || !linkedIds.has(String(row.supplier_listing_id)));
+  const updateInChunks = async (
+    ids: Array<string | number>,
+    values: Record<string, unknown>,
+  ) => {
+    for (let offset = 0; offset < ids.length; offset += 500) {
+      const { error: updateError } = await db.from("shop_listings")
+        .update(values)
+        .in("id", ids.slice(offset, offset + 500));
+      if (updateError) return updateError;
+    }
+    return null;
+  };
+
+  const linkedIds = await getLinkedSupplierListingIds(data.map((row) => row.supplier_listing_id));
+  const unlinked = data.filter((row) => !row.supplier_listing_id || !linkedIds.has(String(row.supplier_listing_id)));
   const needsBlock = unlinked.filter((row) => row.published === true || row.orderable !== false || row.pipeline_reason !== "supplier_identity_unlinked");
   if (needsBlock.length > 0) {
     const now = new Date().toISOString();
-    const { error: updateError } = await db.from("shop_listings").update({
+    const updateError = await updateInChunks(needsBlock.map((row) => row.id), {
       published: false,
       orderable: false,
       published_at: null,
@@ -36,7 +70,7 @@ export async function GET(request: Request) {
       pipeline_reason: "supplier_identity_unlinked",
       pipeline_updated_at: now,
       updated_at: now,
-    }).in("id", needsBlock.map((row) => row.id));
+    });
     if (updateError) return NextResponse.json({ ok: false, stage: "block", error: updateError.message }, { status: 500 });
   }
 
@@ -69,11 +103,11 @@ export async function GET(request: Request) {
           .filter((row) => row.base_item_id)
           .map((row) => String(row.id));
         if (baseRowsToPause.length > 0) {
-          const { error: markerError } = await db.from("shop_listings").update({
+          const markerError = await updateInChunks(baseRowsToPause, {
             base_last_error: BASE_AUTH_REAUTH_REQUIRED,
             base_publication_status: "failed",
             updated_at: new Date().toISOString(),
-          }).in("id", baseRowsToPause);
+          });
           if (markerError) errors.push(`base_auth_circuit_marker_failed:${markerError.message}`);
         }
         errors.push("base_auth_invalid_reauthorization_required: scheduled BASE retries paused for all currently-unlinked listings; repair credentials and clear the marker before retrying");
@@ -83,7 +117,7 @@ export async function GET(request: Request) {
 
   if (errors.length > 0) {
     console.error("[unpublish-unlinked] external channel reconciliation incomplete", {
-      candidatesChecked: (data ?? []).length,
+      candidatesChecked: data.length,
       unlinkedFound: unlinked.length,
       shopifyAttempted: shopifyPending.length,
       baseAttempted: basePending.length,
