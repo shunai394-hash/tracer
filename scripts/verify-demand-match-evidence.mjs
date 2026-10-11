@@ -38,6 +38,13 @@ test("canonical marketplace variant evidence", "captures only explicit ProductGr
 });
 
 
+test("canonical marketplace variant evidence", "accepts absolute Schema.org type IRIs inside @graph", () => {
+  const html = '<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"https://schema.org/ProductGroup","hasVariant":[{"@type":"https://schema.org/Product","name":"Variant IRI","sku":"IRI-SKU","url":"https://www.amazon.co.jp/dp/B0IRI12345"}]}]}</script>';
+  const variants = parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01");
+  assert.equal(variants.length, 1);
+  assert.equal(variants[0].sourceVariantId, "B0IRI12345");
+});
+
 test("canonical marketplace variant evidence", "does not use the parent ASIN as a child ID when variants omit their own URL", () => {
   const html = '<script type="application/ld+json">{"@context":"https://schema.org","@type":"ProductGroup","gtin13":"4006381333931","hasVariant":[{"@type":"Product","name":"Size Small","sku":"ITEM-S"},{"@type":"Product","name":"Size Large","sku":"ITEM-L"}]}</script>';
   const variants = parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01");
