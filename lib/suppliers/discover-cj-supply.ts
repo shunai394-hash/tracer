@@ -21,16 +21,24 @@ function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
   return Math.ceil(withMargin / 100) * 100;
 }
 
+// Commercial priority: women's bags first, then practical beauty tools,
+ // then hair accessories. Specific intent queries beat broad category searches.
 const CATALOG_QUERIES = [
-  "skincare", "beauty", "makeup", "hair care", "hair tools", "women fashion",
-  "women shoes", "women accessories", "jewelry", "handbag", "period care",
-  "wellness", "self care", "beauty organizer", "cosmetic organizer",
-  "jewelry organizer", "closet organizer", "garment steamer", "bathroom organization",
-  "home organization", "kitchen", "pet", "phone accessories", "fitness",
-  "lighting", "garden", "office", "outdoor", "car accessories",
+  "women handbag", "women crossbody bag", "women shoulder bag", "women tote bag",
+  "women mini bag", "women work bag", "women cosmetic bag", "travel makeup bag",
+  "beauty tools", "facial cleansing brush", "makeup brush cleaner", "makeup organizer",
+  "hair styling tools", "hair clip women", "claw clip women", "flower hair clip",
+  "hair accessories women", "heatless curling rod", "skincare tools", "beauty",
+  "makeup", "hair care", "hair tools", "women fashion", "women accessories",
+  "jewelry", "period care", "wellness", "self care", "beauty organizer",
+  "cosmetic organizer", "jewelry organizer", "closet organizer", "garment steamer",
+  "bathroom organization", "home organization", "kitchen", "pet", "phone accessories",
+  "fitness", "lighting", "garden", "office", "outdoor", "car accessories",
 ];
 const MAX_CATALOG_PAGES = 50;
-const CATALOG_CURSOR_JOB = "supply-first-catalog-cursor";
+// Version the cursor because query order changed; don't reinterpret an old
+// index as a different category and silently skip the highest-priority searches.
+const CATALOG_CURSOR_JOB = "supply-first-catalog-cursor-v2";
 
 type CatalogCursor = { queryIndex: number; page: number };
 
