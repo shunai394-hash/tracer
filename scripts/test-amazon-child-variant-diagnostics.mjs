@@ -7,4 +7,6 @@ for (const signal of requiredSignals) assert.ok(source.includes(signal), `missin
 assert.ok(source.indexOf("if (!jan && !gtin && !ean && !upc) return null;") < source.indexOf("childBarcodeFound += 1;"), "barcode count must follow concrete barcode validation");
 assert.ok(source.includes("childDetailAttempted += childAsins.length;"), "count child attempts before fetch");
 assert.ok(source.includes("childDetailFetched += 1;"), "count successful detail fetches");
-console.log("Amazon child variant diagnostics: 7 assertions passed");
+assert.ok(source.includes("fetchHtml(childUrl, { retryBrightDataWhenAmazonIdentifierMissing: true })"), "child detail pages must retry through Bright Data when direct HTML has no barcode");
+assert.ok(source.includes("hasAmazonBarcodeEvidence"), "Bright Data child detail pages must be checked for their own barcode");
+console.log("Amazon child variant diagnostics: 9 assertions passed");
