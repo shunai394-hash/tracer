@@ -81,4 +81,13 @@ const invalidMonthlySpend = evaluateOrderGates({
 }, 0.82);
 assert.equal(invalidMonthlySpend.canAuto, false, "invalid monthly spend must fail closed");
 assert.equal(invalidMonthlySpend.missing.includes("monthly_spend_unknown"), true);
+
+const unknownCostWithCategoryBudget = evaluateOrderGates({
+  ...base,
+  estimatedCost: null,
+  settings: { ...base.settings, categoryBudgets: { auto: 500 } },
+  category: "auto",
+}, 0.82);
+assert.equal(unknownCostWithCategoryBudget.canPropose, false, "unknown cost must block configured category budgets");
+assert.equal(unknownCostWithCategoryBudget.missing.includes("budget_check_cost_unknown"), true);
 console.log(`Order gate: ${invariantResult.cases.length} existing invariants + 6 forecast-profit checks passed`);
