@@ -13,7 +13,7 @@ This branch is an isolated refactor foundation. It does not change the productio
 - `app/api/cron/dropship-execution/route.ts` combines BASE order sync and autonomous supplier-order control in one route. Separate these responsibilities behind explicit stages and durable idempotency.
 - `lib/channels/base-publisher.ts` combines catalog copy validation, identity checks, database state changes, BASE visibility changes, and remote item creation/editing. Split policy evaluation from the external adapter and persistence/reconciliation.
 - `app/api/cron/shopify-publish/route.ts` invokes synchronization directly after its automation auth/config checks. A future write executor must additionally require a recorded passing preflight and explicit mode.
-- The available Supabase connector currently exposes the project named **Zenova Project**, not a confirmed TRACER database. Do not treat that database listing as TRACER schema evidence or run migrations against it.
+- Confirmed TRACER Supabase project: `lysavahpadzrhpounjgi` (Tokyo). Read-only schema/data audit observed products=1,525; supplier_listings=57,063; shop_listings=767; shop_orders=0; purchase_orders=0; internal_supply_products/variants=60/60; internal_supply_links=0; marketplace_bestseller_variants=0. All 767 listings were blocked/unpublished at audit time. These counts are a dated snapshot, not a live guarantee.
 
 ## Target boundaries
 
@@ -30,8 +30,8 @@ This branch is an isolated refactor foundation. It does not change the productio
 - [x] Create isolated branch and initial architecture notes.
 - [x] Add pure identity, publication-gate, and order-idempotency contracts with no I/O.
 - [ ] Inspect all cron routes and map each route to read-only / DB-write / external-write / purchase side effects.
-- [ ] Confirm the actual TRACER Supabase project through its configured project URL/ref before schema inspection; do not use the currently connected Zenova project.
-- [ ] Add tests for duplicate identities, missing variant IDs, unknown inventory/cost, non-positive margin, duplicate orders, and ambiguous external timeouts.
+- [x] Confirm the actual TRACER Supabase project through read-only production schema inspection; preserve the existing tables and identifiers.
+- [x] Add tests for duplicate identities, missing variant IDs, unknown inventory/cost, non-positive margin, duplicate orders, ambiguous attempts, unpaid/COD orders, unknown/insufficient inventory, kill switch and invalid quantity.
 - [ ] Add read-only Shopify and BASE probes that report HTTP status, provider identity, scopes/permissions, and sanitized error stage only.
 - [ ] Run a dry-run reconciliation against a snapshot and compare proposed actions with existing IDs.
 - [ ] Introduce a kill switch / write-mode gate and explicit per-provider write enablement.
