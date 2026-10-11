@@ -55,6 +55,8 @@ export type CollectedMarketplace = {
     attempted: number;
     htmlFetched: number;
     identifierFound: number;
+    /** Explicit ProductGroup.hasVariant child rows extracted from fetched detail HTML. */
+    canonicalVariantCount: number;
   };
 };
 
@@ -211,6 +213,7 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
   const details = marketplace.items.slice(0, limit);
   let htmlFetched = 0;
   let identifierFound = 0;
+  let canonicalVariantCount = 0;
 
   await Promise.all(details.map(async (item) => {
     if (!item.productUrl) return;
@@ -222,6 +225,7 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
       if (marketplace.marketplace === "amazon.co.jp") {
         const detail = parseAmazonProductDetail(detailHtml);
         item.canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl);
+        canonicalVariantCount += item.canonicalVariants.length;
         item.brand = detail.brand;
         item.model = detail.model;
         item.jan = normalizeIdentifier("jan", detail.jan);
@@ -250,7 +254,7 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
 
   return {
     ...marketplace,
-    enrichment: { attempted: details.length, htmlFetched, identifierFound },
+    enrichment: { attempted: details.length, htmlFetched, identifierFound, canonicalVariantCount },
   };
 }
 

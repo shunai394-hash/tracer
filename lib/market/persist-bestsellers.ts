@@ -31,7 +31,7 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
   canonicalVariantEvidenceWriteFailures: number;
   skippedMarketplaces: string[];
   /** Per-marketplace detail-page enrichment telemetry (see collect-bestsellers.ts). */
-  enrichment: Array<{ marketplace: string; attempted: number; htmlFetched: number; identifierFound: number }>;
+  enrichment: Array<{ marketplace: string; attempted: number; htmlFetched: number; identifierFound: number; canonicalVariantCount: number }>;
   /** Exact bestseller row IDs inserted by this run; downstream stages must use these IDs. */
   bestsellerIds: string[];
   /** Exact current-run rows carrying at least one verified marketplace identifier. */

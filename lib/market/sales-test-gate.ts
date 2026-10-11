@@ -58,7 +58,7 @@ export function evaluateSalesTestGate(input: SalesTestGateInput): { eligible: bo
   if (input.trackingAvailable !== true) reasons.push("tracking_unknown");
   if (input.apiAvailable !== true) reasons.push("supplier_api_unknown");
   if (!input.profitCalculable || input.currencyMismatch) reasons.push("profit_unknown");
-  if (input.contributionProfit !== null && (!Number.isFinite(input.contributionProfit) || input.contributionProfit <= 0)) reasons.push("profit_not_positive");
+  if (input.contributionProfit === null || !Number.isFinite(input.contributionProfit) || input.contributionProfit <= 0) reasons.push("profit_not_positive");
   if (input.priceConfirmed !== undefined && input.priceConfirmed !== true) reasons.push("price_unconfirmed");
   if (input.inventoryConfirmed !== undefined && input.inventoryConfirmed !== true) reasons.push("inventory_unknown");
   if (input.inventory !== undefined && (input.inventory === null || !Number.isFinite(input.inventory) || input.inventory <= 0)) reasons.push("inventory_zero");
@@ -69,13 +69,14 @@ export function evaluateSalesTestGate(input: SalesTestGateInput): { eligible: bo
 }
 
 export function verifySalesTestGateInvariants(): { ok: boolean; cases: Array<{ name: string; expected: boolean; actual: boolean }> } {
-  const ready = evaluateSalesTestGate({ rank: 1, title: "Floor Mat", sellingPrice: 3980, identityLinked: true, identityMethod: "jan", sourceCost: 12, shippingCost: 4, trackingAvailable: true, apiAvailable: true, profitCalculable: true, shippingUnknown: false, contributionProfit: 8, currencyMismatch: false });
+  const ready = evaluateSalesTestGate({ rank: 1, title: "バスマット", sellingPrice: 3980, identityLinked: true, identityMethod: "jan", sourceCost: 12, shippingCost: 4, trackingAvailable: true, apiAvailable: true, profitCalculable: true, shippingUnknown: false, contributionProfit: 8, currencyMismatch: false });
   const englishTitle = evaluateSalesTestGate({ rank: 1, title: "Floor Mat", sellingPrice: 3980, identityLinked: false, identityMethod: "title", sourceCost: 12, shippingCost: 4, trackingAvailable: true, apiAvailable: true, profitCalculable: true, shippingUnknown: false, contributionProfit: 8, currencyMismatch: false });
   const supplyReady = evaluateSalesTestGate({ ...supplyReadyInput(), requireRank: false });
   const supplyInventoryBlocked = evaluateSalesTestGate({ ...supplyReadyInput(), inventory: 0, requireRank: false });
   const invalidPrice = evaluateSalesTestGate({ ...supplyReadyInput(), sellingPrice: 0, requireRank: false });
   const invalidEconomics = evaluateSalesTestGate({ ...supplyReadyInput(), sourceCost: -1, shippingCost: -1, requireRank: false });
   const giftCard = evaluateSalesTestGate({ ...supplyReadyInput(), title: "Amazon Gift Card", requireRank: false });
+  const unknownProfit = evaluateSalesTestGate({ ...supplyReadyInput(), contributionProfit: null, requireRank: false });
   const cases = [
     { name: "complete_observed_product_is_eligible", expected: true, actual: ready.eligible },
     { name: "english_title_is_not_eligible", expected: true, actual: englishTitle.eligible === false && englishTitle.reasons.includes("japanese_title_required") },
@@ -84,6 +85,7 @@ export function verifySalesTestGateInvariants(): { ok: boolean; cases: Array<{ n
     { name: "zero_price_is_blocked", expected: true, actual: invalidPrice.eligible === false && invalidPrice.reasons.includes("selling_price_invalid") },
     { name: "negative_economics_are_blocked", expected: true, actual: invalidEconomics.eligible === false && invalidEconomics.reasons.includes("source_cost_invalid") && invalidEconomics.reasons.includes("shipping_invalid") },
     { name: "gift_card_is_blocked", expected: true, actual: giftCard.eligible === false && giftCard.reasons.includes("non_physical_product") },
+    { name: "unknown_contribution_profit_is_blocked", expected: true, actual: unknownProfit.eligible === false && unknownProfit.reasons.includes("profit_not_positive") },
   ];
   return { ok: cases.every((item) => item.actual === item.expected), cases };
 }
