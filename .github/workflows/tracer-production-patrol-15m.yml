@@ -1,0 +1,48 @@
+name: TRACER Production Patrol (15m)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *" # continuous patrol every 15 minutes; times are UTC
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tracer-production-patrol
+  cancel-in-progress: false
+
+jobs:
+  patrol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Measure, repair, and report
+        shell: bash
+        run: |
+          set -euo pipefail
+          OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app"
+          OIDC_TOKEN="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "$OIDC_URL" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          test -n "$OIDC_TOKEN"
+
+          curl --fail-with-body --silent --show-error --max-time 310 \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            "https://tracer-pied-alpha.vercel.app/api/cron/patrol-ai" | tee patrol-report.json
+
+          python3 - <<'PY'
+          import json
+          with open("patrol-report.json", encoding="utf-8") as f:
+              r=json.load(f)
+          print("=== TRACER AI PATROL REPORT ===")
+          print("status:", r.get("status"))
+          print("decision:", r.get("decision"))
+          print("errors:", r.get("errors", []))
+          print("published before:", r.get("before",{}).get("publishedListings"))
+          print("published after:", r.get("after",{}).get("publishedListings"))
+          print("BASE published before:", r.get("before",{}).get("basePublished"))
+          print("BASE published after:", r.get("after",{}).get("basePublished"))
+          print("progress:", r.get("progress", {}))
+          PY
