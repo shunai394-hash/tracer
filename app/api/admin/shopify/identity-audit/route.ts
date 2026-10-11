@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     const batch = productIds.slice(offset, offset + 100);
     const { data, error } = await db
       .from("supplier_listings")
-      .select("id,product_id,supplier,supplier_product_id,supplier_variant_id,identity_status")
+      .select("id,product_id,supplier,supplier_product_id,supplier_variant_id,identity_status,verification_status,identity_method,identity_confidence,inventory_confirmed,orderable,inventory,cost,currency,shipping_cost,tracking_available,api_available,price_confirmed,last_verified_at,verification_error")
       .eq("supplier", "cj")
       .in("supplier_product_id", batch);
     if (error) {
@@ -68,6 +68,8 @@ export async function GET(request: Request) {
     linkedForeignKeyExact: 0,
     foreignKeyStatusNotLinked: 0,
     foreignKeyExactUnlinked: 0,
+    foreignKeyExactUnlinkedSameProduct: 0,
+    foreignKeyInternalProductMismatch: 0,
     foreignKeyMismatch: 0,
     missingExternalIdentity: 0,
     repairableExactUnique: 0,
@@ -77,7 +79,26 @@ export async function GET(request: Request) {
   };
 
   const identityStatusCounts: Record<string, number> = {};
-  const supplierById = new Map(supplierRows.map((supplier) => [supplier.id, supplier] as const));
+  const verificationStatusCounts: Record<string, number> = {};
+  const identityMethodCounts: Record<string, number> = {};
+  const evidenceCounts = {
+    referencedRows: 0,
+    inventoryConfirmedTrue: 0,
+    orderableTrue: 0,
+    trackingAvailableTrue: 0,
+    apiAvailableTrue: 0,
+    priceConfirmedTrue: 0,
+    positiveInventory: 0,
+    nonNegativeCostPresent: 0,
+    shippingCostPresent: 0,
+    lastVerifiedAtPresent: 0,
+    verificationErrorPresent: 0,
+  };
+  // The generated Supabase schema types lag these audit-only evidence columns.
+  // Keep the read-only aggregate probe typed as unknown-valued records; each field is narrowed below.
+  const supplierById = new Map<string, Record<string, unknown>>(
+    supplierRows.map((supplier) => [supplier.id, supplier as unknown as Record<string, unknown>] as const),
+  );
 
   for (const row of rows) {
     const fk = String(row.supplier_listing_id ?? "").trim();
@@ -96,17 +117,37 @@ export async function GET(request: Request) {
         counts.foreignKeyMismatch += 1;
       } else {
         const status = String(referenced.identity_status ?? "null");
+        const verificationStatus = String(referenced.verification_status ?? "null");
+        const identityMethod = String(referenced.identity_method ?? "null");
         identityStatusCounts[status] = (identityStatusCounts[status] ?? 0) + 1;
+        verificationStatusCounts[verificationStatus] = (verificationStatusCounts[verificationStatus] ?? 0) + 1;
+        identityMethodCounts[identityMethod] = (identityMethodCounts[identityMethod] ?? 0) + 1;
+        evidenceCounts.referencedRows += 1;
+        if (referenced.inventory_confirmed === true) evidenceCounts.inventoryConfirmedTrue += 1;
+        if (referenced.orderable === true) evidenceCounts.orderableTrue += 1;
+        if (referenced.tracking_available === true) evidenceCounts.trackingAvailableTrue += 1;
+        if (referenced.api_available === true) evidenceCounts.apiAvailableTrue += 1;
+        if (referenced.price_confirmed === true) evidenceCounts.priceConfirmedTrue += 1;
+        if (Number(referenced.inventory) > 0) evidenceCounts.positiveInventory += 1;
+        if (referenced.cost !== null && Number.isFinite(Number(referenced.cost)) && Number(referenced.cost) >= 0) evidenceCounts.nonNegativeCostPresent += 1;
+        if (referenced.shipping_cost !== null && Number.isFinite(Number(referenced.shipping_cost)) && Number(referenced.shipping_cost) >= 0) evidenceCounts.shippingCostPresent += 1;
+        if (referenced.last_verified_at) evidenceCounts.lastVerifiedAtPresent += 1;
+        if (referenced.verification_error) evidenceCounts.verificationErrorPresent += 1;
         const exactPair =
           String(referenced.supplier_product_id ?? "").trim() === product &&
           String(referenced.supplier_variant_id ?? "").trim() === variant;
+        const sameInternalProduct = String(referenced.product_id ?? "") === String(row.product_id ?? "");
         if (!exactPair) {
           counts.foreignKeyMismatch += 1;
+        } else if (!sameInternalProduct) {
+          counts.foreignKeyMismatch += 1;
+          counts.foreignKeyInternalProductMismatch += 1;
         } else if (status === "linked") {
           counts.linkedForeignKeyExact += 1;
         } else {
           counts.foreignKeyStatusNotLinked += 1;
           counts.foreignKeyExactUnlinked += 1;
+          counts.foreignKeyExactUnlinkedSameProduct += 1;
         }
       }
       continue;
@@ -123,6 +164,9 @@ export async function GET(request: Request) {
     matchingRule: "exact supplier_product_id + supplier_variant_id + supplier=cj + identity_status=linked",
     counts,
     referencedSupplierIdentityStatusCounts: identityStatusCounts,
+    referencedSupplierVerificationStatusCounts: verificationStatusCounts,
+    referencedSupplierIdentityMethodCounts: identityMethodCounts,
+    referencedSupplierEvidenceCounts: evidenceCounts,
     repairPolicy: "No rows were changed. Only repairableExactUnique rows may be considered for a separately audited, idempotent link repair.",
   }, { headers: { "Cache-Control": "no-store" } });
 }
