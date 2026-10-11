@@ -166,7 +166,10 @@ export function verifyOrderGateInvariants(): {
     defaultSafetyStock: 10,
   };
 
-  const evaluateWithEstimatedCost = (estimatedCost: number) =>
+  const evaluateWithEstimatedCost = (
+    estimatedCost: number,
+    overrides: Partial<OrderGateInput> = {},
+  ) =>
     evaluateOrderGates(
       {
         identityConfirmed: true,
@@ -190,6 +193,7 @@ export function verifyOrderGateInvariants(): {
         spentProduct: 0,
         spentCategory: 0,
         category: "auto",
+        ...overrides,
       },
       0.82,
     );
@@ -198,6 +202,10 @@ export function verifyOrderGateInvariants(): {
   const negativeEstimatedCost = evaluateWithEstimatedCost(-1);
   const nanEstimatedCost = evaluateWithEstimatedCost(Number.NaN);
   const infiniteEstimatedCost = evaluateWithEstimatedCost(Number.POSITIVE_INFINITY);
+  const unknownDailySpend = evaluateWithEstimatedCost(75, {
+    settings: { ...settings, dailyOrderLimit: 100 },
+    spentToday: null,
+  });
 
   const unknownProfit = evaluateOrderGates(
     {
@@ -344,6 +352,11 @@ export function verifyOrderGateInvariants(): {
       name: "invalid_estimated_cost_infinity_blocks_order",
       expected: true,
       actual: !infiniteEstimatedCost.canPropose && infiniteEstimatedCost.blocked.includes("order_cost_invalid"),
+    },
+    {
+      name: "configured_daily_budget_blocks_when_spend_unknown",
+      expected: true,
+      actual: !unknownDailySpend.canPropose && unknownDailySpend.missing.includes("daily_spend_unknown"),
     },
     {
       name: "complete_high_confidence_can_auto",
