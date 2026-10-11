@@ -1,3 +1,4 @@
+import { requireCronAuth } from "@/lib/security/cron-auth";
 import { NextResponse } from "next/server";
 import {
   getOrderingSettings,
@@ -7,7 +8,9 @@ import { parseOrderingSettings } from "@/lib/ordering/types";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authError = requireCronAuth(request);
+  if (authError) return authError;
   try {
     const settings = await getOrderingSettings();
     return NextResponse.json({ ok: true, settings });
@@ -20,6 +23,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const authError = requireCronAuth(request);
+  if (authError) return authError;
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const settings = await saveOrderingSettings(
