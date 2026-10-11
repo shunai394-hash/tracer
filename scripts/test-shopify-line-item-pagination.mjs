@@ -26,4 +26,9 @@ assert.ok(source.indexOf("shopify_line_item_duplicate_id") < source.indexOf("con
 // Concurrent runs: a unique external order conflict is reconciled, not retried blindly.
 assert.ok(source.includes('inserted.error?.code === "23505"'));
 assert.ok(source.includes('.eq("shopify_order_id", order.id)'));
-console.log("Shopify order pagination and idempotency: 15 assertions passed");
+
+// A Shopify variant may not silently map to the last of several internal listings.
+assert.match(source, /shopify_variant_mapping_ambiguous/);
+assert.ok(source.indexOf("shopify_variant_mapping_ambiguous") < source.indexOf("let insertedOrderId"),
+  "ambiguous variant mappings must fail before order insertion");
+console.log("Shopify order pagination and idempotency: 17 assertions passed");
