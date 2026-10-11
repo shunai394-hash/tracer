@@ -319,6 +319,9 @@ export async function createPurchaseOrderFromRecommendation(args: {
     asNumber(rec.confidence),
   );
 
+  if (args.approved && !args.approvedBy?.trim()) {
+    throw new Error("verified approver identity is required");
+  }
   if (qty === null || qty <= 0) {
     throw new Error("recommended quantity is unknown");
   }
@@ -386,7 +389,7 @@ export async function createPurchaseOrderFromRecommendation(args: {
       rationale: rec.rationale,
       status,
       mode: settings.mode,
-      approved_by: args.approved ? (args.approvedBy ?? "user") : null,
+      approved_by: args.approved ? args.approvedBy!.trim() : null,
       placed_at: null,
       metadata: {
         gates,
