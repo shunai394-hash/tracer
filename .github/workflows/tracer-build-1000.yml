@@ -1,8 +1,13 @@
 name: TRACER Build 1000 Supply
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      allow_production_writes:
+        description: "Explicitly authorize this production sourcing/publication workflow"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   id-token: write
@@ -14,7 +19,7 @@ concurrency:
 
 jobs:
   build:
-    if: contains(github.event.head_commit.message, '[supply-1000]')
+    if: ${{ inputs.allow_production_writes == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:

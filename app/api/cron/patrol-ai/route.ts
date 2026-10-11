@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { runIntelligencePipeline } from "@/lib/intelligence/run-intelligence-pipeline";
@@ -127,7 +127,7 @@ async function withinBudget<T>(work: Promise<T>, deadlineAt: number, label: stri
 }
 
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireAutomationCapability(request, "channel_write");
   if (authError) return authError;
 
   const db = createSupabaseAdminClient();

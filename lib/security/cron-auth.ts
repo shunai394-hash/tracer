@@ -1,6 +1,7 @@
 import "server-only";
 
 import { NextResponse } from "next/server";
+import { evaluateAutomationCapability, parseAutomationMode, type AutomationCapability } from "@/lib/ops/automation-capabilities";
 
 type GitHubOidcClaims = {
   iss?: string;
@@ -153,5 +154,48 @@ export async function requireAutomationAuth(
         : "cron_secret_not_configured_and_github_oidc_invalid",
     },
     { status: 401 },
+  );
+}
+
+
+/**
+ * Authenticate a scheduled automation request and enforce its declared
+ * side-effect capability. This is intentionally separate from auth:
+ * a valid caller is not automatically authorized to write.
+ *
+ * Missing/invalid TRACER_AUTOMATION_MODE denies all capabilities.
+ * TRACER_GLOBAL_STOP=1 (or true) blocks all capabilities even in live mode.
+ */
+export async function requireAutomationCapability(
+  request: Request,
+  capability: AutomationCapability,
+): Promise<NextResponse | null> {
+  const authError = await requireAutomationAuth(request);
+  if (authError) return authError;
+
+  const rawMode = process.env.TRACER_AUTOMATION_MODE;
+  const mode = parseAutomationMode(rawMode);
+  const globalStop = ["1", "true", "yes", "on"].includes(
+    (process.env.TRACER_GLOBAL_STOP ?? "").trim().toLowerCase(),
+  );
+  const decision = evaluateAutomationCapability({ mode, capability, globalStop });
+
+  if (decision.allowed) return null;
+
+  const reason = rawMode == null || rawMode.trim() === ""
+    ? "automation_mode_not_configured"
+    : mode === null
+      ? "automation_mode_invalid"
+      : decision.reason;
+
+  return NextResponse.json(
+    {
+      ok: false,
+      error: "automation_capability_blocked",
+      capability,
+      reason,
+      // Never echo environment values or credentials in this response.
+    },
+    { status: 503, headers: { "Cache-Control": "no-store" } },
   );
 }

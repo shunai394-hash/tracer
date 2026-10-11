@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { matchDemandProductsByCategory } from "@/lib/intelligence/match-demand-products";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -8,7 +8,7 @@ export const maxDuration = 300;
 // Writes demand_product_matches / demand_product_candidates, so it requires
 // the same automation auth as the cron routes (it was previously open).
 export async function POST(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireAutomationCapability(request, "database_write");
   if (authError) return authError;
 
   try {

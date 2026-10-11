@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { requireCronAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-listings";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
@@ -10,7 +10,7 @@ export const maxDuration = 300;
 
 /** Reconciles only listings without a verified canonical supplier identity. */
 export async function GET(request: Request) {
-  const authError = requireCronAuth(request);
+  const authError = await requireAutomationCapability(request, "channel_write");
   if (authError) return authError;
 
   const db = createSupabaseAdminClient();

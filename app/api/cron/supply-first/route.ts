@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -13,7 +13,7 @@ const DISCOVERY_BUDGET_MS = 240_000;
 const DISCOVERY_BATCH_SIZE = 40;
 
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireAutomationCapability(request, "database_write");
   if (authError) return authError;
 
   try {

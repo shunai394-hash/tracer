@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 import { reconcileSupplierOrders } from "@/lib/ordering/reconcile";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireAutomationCapability(request, "database_write");
   if (authError) return authError;
 
   try {

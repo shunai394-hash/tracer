@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { repairCjMissingWomenVariants } from "@/lib/suppliers/repair-cj-variants";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireAutomationCapability(request, "database_write");
   if (authError) return authError;
   try {
     const result = await repairCjMissingWomenVariants({ limit: 50 });

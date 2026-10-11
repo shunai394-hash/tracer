@@ -3,13 +3,13 @@ import { runAutonomousOrderControl } from "@/lib/ordering/autonomous-control";
 import { initializeProcurement } from "@/lib/procurement/init";
 import { listSupplierAdapters } from "@/lib/procurement/registry";
 import { syncBaseOrdersToTracer } from "@/lib/channels/base-orders";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireAutomationCapability(request, "supplier_order");
   if (authError) return authError;
 
   try {

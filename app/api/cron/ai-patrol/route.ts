@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 import { decidePatrolAction } from "@/lib/ops/patrol-ai";
 
 export const runtime = "nodejs";
@@ -8,7 +8,7 @@ export const maxDuration = 300;
 const BASE = "https://tracer-pied-alpha.vercel.app";
 
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireAutomationCapability(request, "channel_write");
   if (authError) return authError;
 
   const token = request.headers.get("authorization") ?? "";

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { matchDemandProductsByCategory } from "@/lib/intelligence/match-demand-products";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 
@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireAutomationCapability(request, "database_write");
   if (authError) return authError;
 
   const db = createSupabaseAdminClient();

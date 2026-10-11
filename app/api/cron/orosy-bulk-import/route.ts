@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 import { getOrosyProductDetail, searchOrosyProducts } from "@/lib/sources/orosy";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-listings";
 
@@ -58,7 +58,7 @@ async function upsertProduct(supabase: ReturnType<typeof createSupabaseAdminClie
 }
 
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireAutomationCapability(request, "channel_write");
   if (authError) return authError;
 
   const supabase = createSupabaseAdminClient();
