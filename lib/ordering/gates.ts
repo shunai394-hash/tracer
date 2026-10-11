@@ -4,7 +4,7 @@ import {
   type OrderMode,
   type OrderState,
   type OrderingSettings,
-} from "@/lib/ordering/types";
+} from "./types";
 
 export type OrderGateInput = {
   identityConfirmed: boolean;
