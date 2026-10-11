@@ -302,7 +302,7 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
           childDetailAttempted += childAsins.length;
           const recovered = await Promise.all(childAsins.map(async (child) => {
             const childUrl = `https://www.amazon.co.jp/dp/${child.asin}`;
-            const childHtml = await fetchHtml(childUrl);
+            const childHtml = await fetchHtml(childUrl, { retryBrightDataWhenCanonicalVariantsMissing: true });
             if (!childHtml) return null;
             childDetailFetched += 1;
             const childDetail = parseAmazonProductDetail(childHtml);
