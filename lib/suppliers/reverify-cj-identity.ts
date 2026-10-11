@@ -9,6 +9,7 @@ import { isCjIdentityReverifyCandidate, isCjIdentityReverifyDue, CJ_IDENTITY_RET
 const CURSOR_JOB = "cj-identity-reverify-cursor";
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
+const MAX_CANDIDATE_SCAN = 500;
 const CONCURRENCY = 5;
 const NO_MATCH_RETRY_MS = CJ_IDENTITY_RETRY_DELAYS_MS.noUniqueMatch;
 const MISSING_DATA_RETRY_MS = CJ_IDENTITY_RETRY_DELAYS_MS.missingEvidence;
@@ -69,30 +70,56 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const { count: candidateCount, error: countError } = await candidateFilter;
   if (countError) throw new Error(`identity reverify candidate count failed: ${countError.message}`);
   const total = candidateCount ?? 0;
-  const { data: rows, error } = await db.from("supplier_listings").select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency").eq("supplier", "cj").in("verification_status", ["unverified", "retryable", "verified"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_variant_id", "is", null).order("id", { ascending: true });
-  if (error) throw new Error(`identity reverify candidate query failed: ${error.message}`);
+
+  const { data: priorRuns, error: priorRunsError } = await db
+    .from("cron_runs")
+    .select("metadata")
+    .eq("job_name", CURSOR_JOB)
+    .eq("status", "succeeded")
+    .order("started_at", { ascending: false })
+    .limit(1);
+  if (priorRunsError) throw new Error(`identity reverify cursor read failed: ${priorRunsError.message}`);
+  const priorCursor = typeof record(priorRuns?.[0]?.metadata).nextCursor === "string"
+    ? String(record(priorRuns?.[0]?.metadata).nextCursor)
+    : null;
+
+  const buildCandidateQuery = () => db
+    .from("supplier_listings")
+    .select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency")
+    .eq("supplier", "cj")
+    .in("verification_status", ["unverified", "retryable", "verified"])
+    .in("identity_method", ["supply_discovered", "none"])
+    .not("supplier_variant_id", "is", null)
+    .order("id", { ascending: true })
+    .limit(MAX_CANDIDATE_SCAN);
+
+  let rowsResult = priorCursor
+    ? await buildCandidateQuery().gt("id", priorCursor)
+    : await buildCandidateQuery();
+  if (rowsResult.error) throw new Error(`identity reverify candidate query failed: ${rowsResult.error.message}`);
+
+  // Scan a bounded page after the cursor. If the cursor is at the end of the
+  // eligible set, wrap to the first page; never fetch the whole supplier table.
+  if ((rowsResult.data ?? []).length === 0 && priorCursor) {
+    rowsResult = await buildCandidateQuery();
+    if (rowsResult.error) throw new Error(`identity reverify candidate wrap query failed: ${rowsResult.error.message}`);
+  }
+
+  const rows = rowsResult.data ?? [];
+  const scanCursor = rows.length > 0 ? String(rows[rows.length - 1].id) : priorCursor;
   const nowMs = Date.now();
-  const allRows = (rows ?? []).filter((row) => isCjIdentityReverifyCandidate({ verificationStatus: row.verification_status, identityMethod: row.identity_method, supplierVariantId: row.supplier_variant_id }) && isCjIdentityReverifyDue(row.metadata, nowMs));
+  const allRows = rows.filter((row) => isCjIdentityReverifyCandidate({ verificationStatus: row.verification_status, identityMethod: row.identity_method, supplierVariantId: row.supplier_variant_id }) && isCjIdentityReverifyDue(row.metadata, nowMs));
   const womensRows = allRows.filter((row) => isWomensProductTitle(row.title, row.metadata));
   const otherRows = allRows.filter((row) => !isWomensProductTitle(row.title, row.metadata));
   const priority = (row: typeof allRows[number]) => row.verification_status === "unverified" ? 0 : 1;
   womensRows.sort((a, b) => priority(a) - priority(b) || String(a.id).localeCompare(String(b.id)));
   otherRows.sort((a, b) => priority(a) - priority(b) || String(a.id).localeCompare(String(b.id)));
   const beforeCounts = await readCjIdentityProgressCounts(db);
-  const { data: priorRuns } = await db.from("cron_runs").select("metadata").eq("job_name", CURSOR_JOB).eq("status", "succeeded").order("started_at", { ascending: false }).limit(1);
-  const priorCursor = typeof record(priorRuns?.[0]?.metadata).nextCursor === "string" ? String(record(priorRuns?.[0]?.metadata).nextCursor) : null;
-  const rotateAfterCursor = (items: typeof allRows) => {
-    if (!priorCursor || items.length === 0) return items;
-    const index = items.findIndex((item) => String(item.id) === priorCursor);
-    return index < 0 ? items : [...items.slice(index + 1), ...items.slice(0, index + 1)];
-  };
-  const rotatedWomen = rotateAfterCursor(womensRows);
-  const rotatedOther = rotateAfterCursor(otherRows);
-  const selectedWomens = rotatedWomen.slice(0, Math.min(limit, rotatedWomen.length));
+  const selectedWomens = womensRows.slice(0, Math.min(limit, womensRows.length));
   const remaining = Math.max(0, limit - selectedWomens.length);
-  const selectedOther = remaining > 0 ? rotatedOther.slice(0, Math.min(remaining, rotatedOther.length)) : [];
+  const selectedOther = remaining > 0 ? otherRows.slice(0, Math.min(remaining, otherRows.length)) : [];
   const selectedRows = [...selectedWomens, ...selectedOther];
-  const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, errors: [], promotedListings: [], nextCursor: selectedRows.length ? String(selectedRows[selectedRows.length - 1].id) : null, progress: { before: beforeCounts, after: beforeCounts } };
+  const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, errors: [], promotedListings: [], nextCursor: scanCursor, progress: { before: beforeCounts, after: beforeCounts } };
   const processRow = async (row: NonNullable<typeof rows>[number]) => {
     const supplierListingId = String(row.id);
     try {
@@ -133,7 +160,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   for (let offset = 0; offset < selectedRows.length; offset += CONCURRENCY) { if (Date.now() >= deadlineAt) break; const batch = selectedRows.slice(offset, offset + CONCURRENCY); const results = await Promise.all(batch.map(processRow)); for (const item of results) { result.checked += 1; if (item.kind === "promoted") { result.promoted += 1; result.promotedListings.push({ supplierListingId: item.supplierListingId, bestsellerId: item.bestsellerId, method: item.method }); } else if (item.kind === "supplier_verified") { result.supplierVerified += 1; } else if (item.kind === "no_match") result.noUniqueBarcodeMatch += 1; else if (item.kind === "missing_economics") result.missingEconomics += 1; else result.errors.push({ supplierListingId: item.supplierListingId, error: item.error }); } }
   result.progress.after = await readCjIdentityProgressCounts(db);
   const now = new Date().toISOString();
-  const { error: runInsertError } = await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: "cursor_rotation_womens_priority", candidateCount: total, womensCandidates: womensRows.length, womensSelected: selectedWomens.length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, progress: result.progress, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
+  const { error: runInsertError } = await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: "bounded_cursor_scan_womens_priority", candidateCount: total, womensCandidates: womensRows.length, womensSelected: selectedWomens.length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, progress: result.progress, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
   if (runInsertError) throw new Error("CJ identity progress audit persistence failed: " + runInsertError.message);
   return result;
 }
