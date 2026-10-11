@@ -86,6 +86,8 @@ for (const workflowPath of [
   assert.ok(workflow.includes("allow_production_writes"), `missing explicit production-write approval input: ${workflowPath}`);
   assert.ok(workflow.includes("inputs.allow_production_writes == true"), `missing explicit job approval guard: ${workflowPath}`);
 }
+const shopifySyncRoute = readFileSync("app/api/admin/shopify/sync/route.ts", "utf8");
+assert.ok(shopifySyncRoute.includes('requireAutomationCapability(request, "read")'), "Shopify dry-run must require an explicit diagnostic/live mode");
 const directRunner = readFileSync("scripts/direct-900-gate.ts", "utf8");
 assert.ok(directRunner.includes("evaluateAutomationCapability"), "direct production runner must enforce the capability policy before work");
 
