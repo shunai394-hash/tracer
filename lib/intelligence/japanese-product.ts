@@ -1,5 +1,8 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
-  [/women.{0,60}(crossbody|shoulder|tote|handbag).{0,40}bag|((crossbody|shoulder|tote|handbag).{0,40}bag).{0,60}women/i, "レディース バッグ"],
+  [/women.{0,60}crossbody.{0,40}bag|crossbody.{0,40}bag.{0,60}women/i, "レディース クロスボディバッグ"],
+  [/women.{0,60}shoulder.{0,40}bag|shoulder.{0,40}bag.{0,60}women/i, "レディース ショルダーバッグ"],
+  [/women.{0,60}tote.{0,40}bag|tote.{0,40}bag.{0,60}women/i, "レディース トートバッグ"],
+  [/women.{0,60}handbag|handbag.{0,60}women/i, "レディース ハンドバッグ"],
   [/portable cosmetic bag.*(divider|multi.grid|pockets)|cosmetic bag.*(divider|multi.grid|pockets)/i, "仕切り付き コスメポーチ"],
   [/\b(women|women's|female)\b.{0,50}(cosmetic|makeup) bag|((cosmetic|makeup) bag).{0,50}\b(women|women's|female)\b/i, "レディース コスメポーチ"],
   [/flower.*hair clip|hair clip.*flower|bohemian.*hair clip/i, "フラワーモチーフ ヘアクリップ"],
