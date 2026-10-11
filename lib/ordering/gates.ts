@@ -16,6 +16,7 @@ export type OrderGateInput = {
   shippable: boolean | null;
   complianceRisk: boolean | null;
   profitCalculable: boolean;
+  forecastProfit30d: number | null;
   forecastUnits30d: number | null;
   onHand: number | null;
   recommendedQty: number | null;
@@ -57,6 +58,8 @@ export function evaluateOrderGates(
   if (input.complianceRisk === null) missing.push("compliance_unknown");
   if (input.complianceRisk === true) blocked.push("compliance_risk");
   if (!input.profitCalculable) missing.push("profit_unknown");
+  if (input.forecastProfit30d === null) missing.push("profit_amount_unknown");
+  else if (!Number.isFinite(input.forecastProfit30d) || input.forecastProfit30d <= 0) blocked.push("non_positive_profit");
   if (input.forecastUnits30d === null) missing.push("forecast_unknown");
   if (input.onHand === null) missing.push("own_inventory_unknown");
   if (input.recommendedQty === null) missing.push("order_qty_unknown");
@@ -169,6 +172,7 @@ export function verifyOrderGateInvariants(): {
       shippable: true,
       complianceRisk: false,
       profitCalculable: false,
+      forecastProfit30d: null,
       forecastUnits30d: 20,
       onHand: 5,
       recommendedQty: 25,
@@ -195,6 +199,7 @@ export function verifyOrderGateInvariants(): {
       shippable: true,
       complianceRisk: false,
       profitCalculable: true,
+      forecastProfit30d: 80,
       forecastUnits30d: 20,
       onHand: 5,
       recommendedQty: 25,
@@ -210,19 +215,36 @@ export function verifyOrderGateInvariants(): {
     0.82,
   );
 
+  const zeroProfit = evaluateOrderGates({
+    identityConfirmed: true, identityUnknown: false, supplierConfirmed: true,
+    sourceCost: 3, currency: "USD", currencyReliable: true, shippable: true,
+    complianceRisk: false, profitCalculable: true, forecastProfit30d: 0,
+    forecastUnits30d: 20, onHand: 5, recommendedQty: 25, estimatedCost: 75,
+    supplierApiAvailable: true, settings, spentToday: 0, spentMonth: 0,
+    spentProduct: 0, spentCategory: 0, category: "auto",
+  }, 0.82);
+  const negativeProfit = evaluateOrderGates({
+    identityConfirmed: true, identityUnknown: false, supplierConfirmed: true,
+    sourceCost: 3, currency: "USD", currencyReliable: true, shippable: true,
+    complianceRisk: false, profitCalculable: true, forecastProfit30d: -1,
+    forecastUnits30d: 20, onHand: 5, recommendedQty: 25, estimatedCost: 75,
+    supplierApiAvailable: true, settings, spentToday: 0, spentMonth: 0,
+    spentProduct: 0, spentCategory: 0, category: "auto",
+  }, 0.82);
+  const unknownAmount = evaluateOrderGates({
+    identityConfirmed: true, identityUnknown: false, supplierConfirmed: true,
+    sourceCost: 3, currency: "USD", currencyReliable: true, shippable: true,
+    complianceRisk: false, profitCalculable: true, forecastProfit30d: null,
+    forecastUnits30d: 20, onHand: 5, recommendedQty: 25, estimatedCost: 75,
+    supplierApiAvailable: true, settings, spentToday: 0, spentMonth: 0,
+    spentProduct: 0, spentCategory: 0, category: "auto",
+  }, 0.82);
   const cases = [
-    {
-      name: "unknown_profit_blocks_auto",
-      expected: true,
-      actual:
-        unknownProfit.canAuto === false &&
-        unknownProfit.missing.includes("profit_unknown"),
-    },
-    {
-      name: "complete_high_confidence_can_auto",
-      expected: true,
-      actual: ready.canAuto === true && ready.orderState === "AUTO_CANDIDATE",
-    },
+    { name: "unknown_profit_blocks_auto", expected: true, actual: unknownProfit.canAuto === false && unknownProfit.missing.includes("profit_unknown") },
+    { name: "zero_profit_blocks_order", expected: true, actual: zeroProfit.canAuto === false && zeroProfit.blocked.includes("non_positive_profit") },
+    { name: "negative_profit_blocks_order", expected: true, actual: negativeProfit.canAuto === false && negativeProfit.blocked.includes("non_positive_profit") },
+    { name: "unknown_profit_amount_blocks_order", expected: true, actual: unknownAmount.canAuto === false && unknownAmount.missing.includes("profit_amount_unknown") },
+    { name: "complete_high_confidence_can_auto", expected: true, actual: ready.canAuto === true && ready.orderState === "AUTO_CANDIDATE" },
   ];
 
   return {
