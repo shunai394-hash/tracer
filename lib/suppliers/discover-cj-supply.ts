@@ -258,13 +258,19 @@ export async function discoverAndCreateCjSupply(
     attempts: Number(row.verification_attempts ?? 0),
   }));
 
-  const seededVerificationLimit = Math.min(10, limit);
+  // Reserve most of the invocation budget for NEW catalog discovery. A
+  // failed seeded refresh previously did not increment `verified`, so the
+  // loop could spend the entire deadline on repeated failures and never reach
+  // the priority query cursor. Count attempts separately from successes.
+  const seededVerificationLimit = Math.min(1, Math.max(0, limit));
+  let seededChecked = 0;
   for (const seededCandidate of candidateInputs) {
-    if (verified >= seededVerificationLimit) break;
+    if (seededChecked >= seededVerificationLimit) break;
     if (Date.now() >= deadlineAt) {
       deadlineReached = true;
       break;
     }
+    seededChecked += 1;
     const candidate = {
       id: seededCandidate.id,
       variantId: seededCandidate.variantId,
