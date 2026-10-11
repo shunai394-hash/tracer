@@ -12,9 +12,12 @@ export async function GET(request: Request) {
 
   try {
     const imported = await syncPaidShopifyOrders(25);
-    const automation = imported.imported > 0
-      ? await runAutonomousOrderControl(`shopify-orders:${new Date().toISOString().slice(0, 16)}`)
-      : null;
+    // Always run the idempotent control plane, not only when a new Shopify
+    // order was imported. A prior run may have failed after ingestion, leaving
+    // a paid local order awaiting PO creation/execution on the next cron tick.
+    const automation = await runAutonomousOrderControl(
+      `shopify-orders:${new Date().toISOString().slice(0, 16)}`,
+    );
 
     return NextResponse.json({
       ok: true,
