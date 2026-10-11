@@ -70,6 +70,41 @@ function isType(record: Record<string, unknown>, expected: string): boolean {
   return Array.isArray(type) ? type.some(matches) : matches(type);
 }
 
+export type CanonicalVariantMarkupDiagnostics = {
+  jsonLdNodeCount: number;
+  productGroupCount: number;
+  groupsWithVariantCount: number;
+  variantProductNodeCount: number;
+  absoluteTypeIriCount: number;
+};
+
+/** Aggregate-only diagnostics; never returns source HTML or product/customer payloads. */
+export function inspectCanonicalMarketplaceVariantMarkup(html: string): CanonicalVariantMarkupDiagnostics {
+  const nodes = jsonLdNodes(html);
+  const groups = nodes.filter((node) => isType(node, "ProductGroup"));
+  let groupsWithVariantCount = 0;
+  let variantProductNodeCount = 0;
+  for (const group of groups) {
+    const variants = nodeList(group.hasVariant);
+    if (variants.length > 0) groupsWithVariantCount += 1;
+    variantProductNodeCount += variants.filter((value) => {
+      const record = asRecord(value);
+      return Boolean(record && isType(record, "Product"));
+    }).length;
+  }
+  const absoluteTypeIriCount = nodes.reduce((count, node) => {
+    const types = nodeList(node["@type"]);
+    return count + types.filter((value) => typeof value === "string" && /^https?:\\/\\/schema\\.org\\//i.test(value.trim())).length;
+  }, 0);
+  return {
+    jsonLdNodeCount: nodes.length,
+    productGroupCount: groups.length,
+    groupsWithVariantCount,
+    variantProductNodeCount,
+    absoluteTypeIriCount,
+  };
+}
+
 function variantUrl(record: Record<string, unknown>, fallbackUrl: string | null): string | null {
   const direct = asString(record.url);
   if (direct) {
