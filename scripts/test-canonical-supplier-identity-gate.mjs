@@ -22,6 +22,7 @@ assert.match(persist, /verification_error: marketplaceIdentity \? null : "no_uni
 assert.match(persist, /verification_status: marketplaceIdentity \? "verified" : "unverified"/, "unlinked CJ discovery must use a database-allowed verification status");
 assert.match(persist, /last_verified_at: now/, "CJ verification must refresh its timestamp");
 assert.match(persist, /bestseller_id: marketplaceIdentity\?\.bestsellerId \?\? null/, "unmatched or ambiguous CJ identity must clear any stale canonical parent link");
+assert.match(persist, /\["schema_org_product_group_has_variant", "amazon_variation_asin_map"\]\.includes\(String\(row\.evidence_source\)\)/, "CJ identity must accept only independently proven child-variant evidence sources");
 assert.match(persist, /identity_status: marketplaceIdentity \? "linked" : "supply_discovered"/, "CJ discovery alone must not promote supplier identity to linked");
 assert.match(persist, /orderable: false, tracking_available: false, api_available: false/, "identity recheck must not enable purchasing or claim order-path verification");
 assert.match(pipelineSource, /nonBlockingDeferredSteps = new Set\(\["identity_reverify", "identity"\]\)/, "bounded identity scans may retry on later patrols without marking independent stages incomplete");
