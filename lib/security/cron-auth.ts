@@ -10,6 +10,7 @@ type GitHubOidcClaims = {
   repository?: string;
   ref?: string;
   workflow_ref?: string;
+  job_workflow_ref?: string;
 };
 
 type GitHubJwk = {
@@ -75,12 +76,24 @@ async function verifyGitHubOidcToken(token: string): Promise<boolean> {
     if (claims.nbf && claims.nbf > now + 30) return false;
     if (claims.repository !== "shunai394-hash/tracer") return false;
     if (claims.ref !== "refs/heads/main") return false;
-    if (
-      claims.workflow_ref &&
-      !claims.workflow_ref.startsWith(
-        "shunai394-hash/tracer/.github/workflows/",
-      )
-    ) return false;
+    // Fail closed: only explicitly configured workflow files may use OIDC.
+    // Values must exactly match the GitHub workflow_ref claim, including @ref.
+    const allowedWorkflowRefs = (process.env.GITHUB_OIDC_ALLOWED_WORKFLOW_REFS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (!claims.workflow_ref || allowedWorkflowRefs.length === 0) return false;
+    if (!allowedWorkflowRefs.includes(claims.workflow_ref)) return false;
+
+    // If a reusable workflow is in use, require its exact ref to be separately
+    // allowlisted; never infer trust from a repository/path prefix.
+    if (claims.job_workflow_ref) {
+      const allowedJobWorkflowRefs = (process.env.GITHUB_OIDC_ALLOWED_JOB_WORKFLOW_REFS ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+      if (!allowedJobWorkflowRefs.includes(claims.job_workflow_ref)) return false;
+    }
 
     const jwk = await getGitHubSigningKey(header.kid);
     if (!jwk) return false;
