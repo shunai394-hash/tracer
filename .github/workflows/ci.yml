@@ -36,6 +36,8 @@ jobs:
         run: npm run test:bounded-product-scoring
       - name: Test bounded reorder recommendation writes
         run: npm run test:bounded-reorder-recommendations
+      - name: Test bounded demand identity stamping
+        run: npm run test:bounded-identity-stamping
       - name: Set up disposable local PostgreSQL for integration tests
         run: |
           sudo apt-get update
