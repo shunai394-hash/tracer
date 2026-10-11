@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     const supabase = createSupabaseAdminClient();
     const { data: listings, error } = await supabase
       .from("shop_listings")
-      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason")
+      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, published")
       .not("supplier_name", "is", null)
       .not("supplier_variant_id", "is", null)
       .or("base_item_id.not.is.null,and(pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published,pipeline_reason.eq.sales_test_gate_passed)")
@@ -34,10 +34,9 @@ export async function GET(request: Request) {
     // become orderable again. selection_reasons carries the durable marker.
     const { data: gatedListings, error: gatedError } = await supabase
       .from("shop_listings")
-      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason")
+      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, published")
       .not("supplier_name", "is", null)
       .not("supplier_variant_id", "is", null)
-      .eq("published", true)
       .filter("selection_reasons", "cs", JSON.stringify([SALES_TEST_GATE_PASSED]))
       .order("updated_at", { ascending: true })
       .limit(20);
@@ -141,8 +140,11 @@ export async function GET(request: Request) {
           const { error: listingError } = await supabase
             .from("shop_listings")
             .update({
+              published: false,
               inventory: null,
               orderable: false,
+              pipeline_status: "blocked",
+              pipeline_reason: "inventory_unknown",
               pipeline_error: "Supplier variant stock could not be verified",
               pipeline_updated_at: now,
               updated_at: now,
@@ -192,13 +194,33 @@ export async function GET(request: Request) {
         }
 
         const orderable = inventory > 0;
+        const hasSalesTestGate = Array.isArray(listing.selection_reasons)
+          && listing.selection_reasons.includes(SALES_TEST_GATE_PASSED);
+        const recoveringFromInventoryBlock = hasSalesTestGate
+          && (listing.pipeline_reason === "inventory_unknown" || listing.pipeline_reason === "inventory_zero");
+        const listingPatch: Record<string, unknown> = {
+          inventory,
+          orderable,
+          updated_at: now,
+        };
+        if (!orderable) {
+          listingPatch.published = false;
+          listingPatch.pipeline_status = "blocked";
+          listingPatch.pipeline_reason = "inventory_zero";
+          listingPatch.pipeline_error = "Supplier variant inventory is zero";
+        } else if (recoveringFromInventoryBlock) {
+          // Restore only listings carrying the durable sales-test proof and
+          // blocked specifically by this inventory refresher; do not revive
+          // manually or otherwise unpublished listings.
+          listingPatch.published = true;
+          listingPatch.pipeline_stage = "PUBLISHED";
+          listingPatch.pipeline_status = "published";
+          listingPatch.pipeline_reason = SALES_TEST_GATE_PASSED;
+          listingPatch.pipeline_error = null;
+        }
         const { error: listingError } = await supabase
           .from("shop_listings")
-          .update({
-            inventory,
-            orderable,
-            updated_at: now,
-          })
+          .update(listingPatch)
           .eq("id", listingId);
         if (listingError) throw new Error(listingError.message);
 
@@ -224,7 +246,7 @@ export async function GET(request: Request) {
               detail: String(listing.description ?? listing.title ?? ""),
               price: Number(listing.selling_price),
               stock: orderable ? Math.max(0, Math.floor(inventory)) : 0,
-              visible: orderable,
+              visible: orderable && (listing.published === true || recoveringFromInventoryBlock),
             });
             baseUpdated++;
             await supabase.from("shop_listings").update({
