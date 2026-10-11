@@ -129,8 +129,20 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         throw new Error(`shopify_line_items_page_missing:${order.id}`);
       }
       order.lineItems.nodes.push(...connection.nodes);
+      const nextCursor = connection.pageInfo.endCursor;
+      if (connection.pageInfo.hasNextPage && (!nextCursor || nextCursor === after)) {
+        throw new Error(`shopify_line_items_cursor_not_advancing:${order.id}`);
+      }
       hasNextPage = connection.pageInfo.hasNextPage;
-      after = connection.pageInfo.endCursor;
+      after = nextCursor;
+    }
+
+    const seenLineItemIds = new Set<string>();
+    for (const item of order.lineItems.nodes) {
+      if (seenLineItemIds.has(item.id)) {
+        throw new Error(`shopify_line_item_duplicate_id:${order.id}:${item.id}`);
+      }
+      seenLineItemIds.add(item.id);
     }
   }
 
