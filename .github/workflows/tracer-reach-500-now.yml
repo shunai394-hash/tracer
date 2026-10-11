@@ -93,20 +93,33 @@ jobs:
               downstream = body.get("downstream", {})
               if not isinstance(downstream, dict):
                   downstream = {}
+              selected_ids = selected.get("selectedListingIds", []) if isinstance(selected, dict) else []
+              expected_selected = len(selected_ids) if isinstance(selected_ids, list) else 0
               shopify = downstream.get("shopify", {})
-              if isinstance(shopify, dict) and (shopify.get("error") or shopify.get("configured") is False or shopify.get("failed", 0)):
-                  print("::error::Shopify sync reported a failure or is not configured")
+              if not isinstance(shopify, dict):
+                  print("::error::Shopify sync response is missing or malformed")
+                  raise SystemExit(1)
+              shopify_failed = shopify.get("failed", [])
+              if (shopify.get("error") or shopify.get("configured") is not True
+                      or not isinstance(shopify_failed, list) or len(shopify_failed) > 0
+                      or (expected_selected > 0 and shopify.get("attempted", 0) == 0)):
+                  print("::error::Shopify sync failed, is not configured, or attempted no selected listings")
                   raise SystemExit(1)
               base = downstream.get("base", {})
-              if isinstance(base, dict) and base.get("error"):
-                  print("::error::BASE publication reported a failure")
+              if not isinstance(base, dict):
+                  print("::error::BASE publication response is missing or malformed")
                   raise SystemExit(1)
-              if isinstance(base, dict):
-                  results = base.get("results", [])
-                  failed = [row for row in results if not row.get("ok") or not row.get("baseItemId")]
-                  if failed:
-                      print(f"::error::BASE reported {len(failed)} failed/unlinked publication result(s)")
-                      raise SystemExit(1)
+              results = base.get("results", [])
+              if (base.get("error") or base.get("failed", 0) > 0
+                      or not isinstance(results, list)
+                      or (expected_selected > 0 and base.get("attempted", 0) == 0)
+                      or (isinstance(base.get("attempted"), int) and base.get("attempted") != len(results))):
+                  print("::error::BASE publication failed, was not configured, or returned incomplete per-item evidence")
+                  raise SystemExit(1)
+              failed = [row for row in results if not isinstance(row, dict) or not row.get("ok") or not row.get("baseItemId")]
+              if failed:
+                  print(f"::error::BASE reported {len(failed)} failed/unlinked publication result(s)")
+                  raise SystemExit(1)
           PY
             then
               FAILED=1
