@@ -592,7 +592,20 @@ export async function runIntelligencePipeline(options: {
     // let it bypass the canonical-variant prerequisite when bestseller intake
     // was deferred or retryable.
     if (!bestsellerCanFeedSalesGate) {
-      return { skipped: true, retryable: true, reason: "bestseller_canonical_evidence_deferred" };
+      const bestsellerResult = bestsellerStep.result && typeof bestsellerStep.result === "object"
+        ? bestsellerStep.result as { reason?: unknown }
+        : {};
+      const observationOnlySource =
+        bestsellerStep.skipped === true &&
+        bestsellerStep.retryable !== true &&
+        bestsellerResult.reason === "source_has_no_canonical_child_variant_contract";
+      return {
+        skipped: true,
+        retryable: bestsellerStep.retryable === true,
+        reason: observationOnlySource
+          ? "bestseller_source_has_no_canonical_child_variant_contract"
+          : "bestseller_canonical_evidence_deferred",
+      };
     }
     const { data: backlog, error: backlogError } = await db
       .from("marketplace_bestsellers")
