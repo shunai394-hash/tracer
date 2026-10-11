@@ -22,41 +22,65 @@ const BASE_CLIENT_ID = process.env.BASE_CLIENT_ID?.trim() || "";
 const BASE_CLIENT_SECRET = process.env.BASE_CLIENT_SECRET?.trim() || "";
 const BASE_REFRESH_TOKEN = process.env.BASE_REFRESH_TOKEN?.trim() || "";
 
-export function isBaseConfigured() {
-  return Boolean(BASE_ACCESS_TOKEN || (
-    BASE_CLIENT_ID && BASE_CLIENT_SECRET && BASE_REFRESH_TOKEN
-  ));
+const BASE_REDIRECT_URI = process.env.BASE_REDIRECT_URI?.trim() || "";
+
+function baseOAuthConfigReady(): boolean {
+  return Boolean(BASE_CLIENT_ID && BASE_CLIENT_SECRET && BASE_REFRESH_TOKEN && BASE_REDIRECT_URI);
 }
 
-async function getBaseAccessToken() {
-  if (BASE_CLIENT_ID && BASE_CLIENT_SECRET && BASE_REFRESH_TOKEN) {
-    const body = new URLSearchParams({
-      grant_type: "refresh_token",
-      client_id: BASE_CLIENT_ID,
-      client_secret: BASE_CLIENT_SECRET,
-      refresh_token: BASE_REFRESH_TOKEN,
-      redirect_uri: process.env.BASE_REDIRECT_URI?.trim() || "",
-    });
+function safeBaseError(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "unknown_error";
+  const record = payload as Record<string, unknown>;
+  const value = [record.error_description, record.error, record.message]
+    .find((item) => typeof item === "string");
+  return typeof value === "string"
+    ? value.replace(/(?:access|refresh)_token[=: ]+[^\\s,;]+/gi, "[REDACTED]")
+        .replace(/client_secret[=: ]+[^\\s,;]+/gi, "[REDACTED]")
+        .slice(0, 180)
+    : "unknown_error";
+}
 
-    const response = await fetch(`${BASE_API_URL}/oauth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-      body,
-      cache: "no-store",
-    });
-    const text = await response.text();
-    if (!response.ok) {
-      throw new Error(`BASE OAuth refresh HTTP ${response.status}: ${text.slice(0, 500)}`);
-    }
-    const data = JSON.parse(text) as { access_token?: string };
-    if (!data.access_token) throw new Error("BASE OAuth refresh did not return access_token");
-    return data.access_token;
+export function isBaseConfigured() {
+  // A standalone access token is not accepted as proof of a working BASE
+  // integration. Only the complete OAuth refresh configuration is supported.
+  return baseOAuthConfigReady();
+}
+
+async function getBaseAccessToken(): Promise<string> {
+  if (!baseOAuthConfigReady()) {
+    throw new Error("BASE_OAUTH_CONFIG_INCOMPLETE: configure BASE_CLIENT_ID, BASE_CLIENT_SECRET, BASE_REFRESH_TOKEN, and BASE_REDIRECT_URI");
   }
 
-  if (!BASE_ACCESS_TOKEN) {
-    throw new Error("BASE API credentials are not configured");
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: BASE_CLIENT_ID,
+    client_secret: BASE_CLIENT_SECRET,
+    refresh_token: BASE_REFRESH_TOKEN,
+    redirect_uri: BASE_REDIRECT_URI,
+  });
+
+  const response = await fetch(`${BASE_API_URL}/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+    body,
+    cache: "no-store",
+    signal: AbortSignal.timeout(20_000),
+  });
+  const text = await response.text();
+  let payload: Record<string, unknown> | null = null;
+  try {
+    payload = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    payload = null;
   }
-  return BASE_ACCESS_TOKEN;
+  if (!response.ok) {
+    throw new Error(`BASE_OAUTH_REFRESH_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
+  }
+  const accessToken = payload?.access_token;
+  if (typeof accessToken !== "string" || !accessToken.trim()) {
+    throw new Error("BASE_OAUTH_REFRESH_FAILED:ACCESS_TOKEN_MISSING");
+  }
+  return accessToken.trim();
 }
 
 async function requestBase(
@@ -85,7 +109,7 @@ async function requestBase(
   }
 
   if (!response.ok) {
-    throw new Error(`BASE API HTTP ${response.status}: ${text.slice(0, 500)}`);
+    throw new Error(`BASE_API_REQUEST_FAILED:HTTP_${response.status}:${safeBaseError(data)}`);
   }
 
   return data ?? { raw: text };
@@ -212,7 +236,11 @@ export async function listBaseOrders(options?: {
     cache: "no-store",
   });
   const text = await response.text();
-  if (!response.ok) throw new Error(`BASE orders HTTP ${response.status}: ${text.slice(0, 500)}`);
+  if (!response.ok) {
+    let payload: unknown = null;
+    try { payload = JSON.parse(text); } catch { payload = null; }
+    throw new Error(`BASE_ORDERS_REQUEST_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
+  }
   const data = JSON.parse(text) as { orders?: BaseOrderSummary[] };
   return data.orders ?? [];
 }
@@ -228,7 +256,11 @@ export async function getBaseOrderDetail(uniqueKey: string): Promise<BaseOrderDe
     },
   );
   const text = await response.text();
-  if (!response.ok) throw new Error(`BASE order detail HTTP ${response.status}: ${text.slice(0, 500)}`);
+  if (!response.ok) {
+    let payload: unknown = null;
+    try { payload = JSON.parse(text); } catch { payload = null; }
+    throw new Error(`BASE_ORDER_DETAIL_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
+  }
   const data = JSON.parse(text) as { order?: BaseOrderDetail };
   if (!data.order) throw new Error("BASE order detail missing order");
   return data.order;
