@@ -5,6 +5,7 @@ import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { hasVerifiedPositiveShopifyStock } from "@/lib/shop/live-stock-policy";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -83,11 +84,11 @@ type ShopifyVariantStock = {
 };
 
 async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, number>> {
-  const liveStock = new Map<string, number>();
-  if (!isShopifyConfigured() || variantIds.length === 0) return liveStock;
-
-  const ids = [...new Set(variantIds)].filter((id) => /^gid:\/\/shopify\/ProductVariant\//.test(id));
-  if (ids.length === 0) return liveStock;
+  if (!isShopifyConfigured()) throw new Error("shopify_live_stock_not_configured");
+  const requestedIds = [...new Set(variantIds)];
+  if (requestedIds.length === 0) throw new Error("shopify_live_stock_no_variant_ids");
+  const ids = requestedIds.filter((id) => /^gid:\/\/shopify\/ProductVariant\//.test(id));
+  if (ids.length !== requestedIds.length) throw new Error("shopify_live_stock_invalid_variant_id");
 
   const data = await shopifyGraphQL<{
     nodes: Array<ShopifyVariantStock | null>;
@@ -103,11 +104,15 @@ async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, nu
     { ids },
   );
 
+  const liveStock = new Map<string, number>();
   for (const node of data.nodes ?? []) {
-    if (!node?.id) continue;
+    if (!node?.id || !ids.includes(node.id)) continue;
     const quantity = asNumber(node.inventoryQuantity);
-    liveStock.set(node.id, Math.max(0, Math.floor(quantity ?? 0)));
+    if (quantity === null) throw new Error("shopify_live_stock_quantity_unknown");
+    // A negative quantity is sold out for this variant, not a failure for all listings.
+    liveStock.set(node.id, Math.max(0, Math.floor(quantity)));
   }
+  if (ids.some((id) => !liveStock.has(id))) throw new Error("shopify_live_stock_incomplete_response");
   return liveStock;
 }
 
@@ -131,6 +136,8 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
     );
   } catch (error) {
     console.error("[shopify-live-stock-unavailable]", error instanceof Error ? error.message.slice(0, 300) : String(error));
+    // A stale database quantity is not proof of current Shopify availability.
+    return [];
   }
 
   const staleSoldOut = listings.filter((listing) => {
@@ -157,11 +164,11 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
   return listings
     .filter((listing) => {
       const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : undefined;
-      return live === undefined || live > 0;
+      return hasVerifiedPositiveShopifyStock(listing.shopifyVariantId, live);
     })
     .map((listing) => {
-      const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : undefined;
-      return live === undefined ? listing : { ...listing, inventory: live };
+      const live = liveStock.get(listing.shopifyVariantId!);
+      return { ...listing, inventory: live! };
     });
 }
 
@@ -264,6 +271,14 @@ export async function placeShopOrder(args: {
     throw new Error("supplier_identity_unlinked");
   }
 
+  // Revalidate live channel stock at order time. If live stock is unavailable,
+  // incomplete, or sold out, reject before inserting an order.
+  const verifiedListings = await loadLiveListings(listings as Record<string, unknown>[]);
+  const verifiedListingsById = new Map(verifiedListings.map((listing) => [listing.id, listing]));
+  if (verifiedListingsById.size !== new Set(listingIds).size) {
+    throw new Error("listing inventory could not be verified against current channel state");
+  }
+
   let subtotal = 0;
   let currency: string | null = null;
   const lines: Array<{ listing: Record<string, unknown>; qty: number; unitPrice: number | null }> = [];
@@ -274,7 +289,9 @@ export async function placeShopOrder(args: {
     if (!isPublishableCatalogTitle(listing.title)) throw new Error("listing title failed catalog quality gate");
     if (!isPublishableCatalogDescription(listing.description)) throw new Error("listing description failed catalog quality gate");
     if (listing.orderable !== true) throw new Error("listing is not currently orderable");
-    const inventory = asNumber(listing.inventory) ?? 0;
+    const verifiedListing = verifiedListingsById.get(item.listingId);
+    if (!verifiedListing) throw new Error("listing inventory could not be verified against current channel state");
+    const inventory = verifiedListing.inventory;
     if (inventory < item.qty) throw new Error("requested quantity exceeds current inventory");
     if (!Number.isFinite(item.qty) || item.qty <= 0) throw new Error("quantity must be greater than zero");
     const unitPrice = asNumber(listing.selling_price);
