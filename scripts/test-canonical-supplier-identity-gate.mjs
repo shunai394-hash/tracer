@@ -20,6 +20,7 @@ assert.match(helper, /identity_status === "linked"/);
 assert.match(reverify, /typeof row\.product_id === "string" && row\.product_id\.trim\(\) \? row\.product_id : ""/, "null or blank legacy product IDs must not become truthy fallback IDs");
 assert.match(reverify, /productId: identity\?\.productId \?\? fallbackProductId/, "identity persistence must use the validated fallback product ID");
 assert.doesNotMatch(reverify, /String\(row\.product_id\)/, "reverification must not coerce a null product ID to the string null");
+assert.ok(reverify.indexOf("if (!canonicalProductId)") < reverify.indexOf('.from("product_intelligence")'), "missing canonical product ID must exit before reading product-linked intelligence");
 assert.match(persist, /verification_error: marketplaceIdentity \? null : "no_unique_canonical_child_variant_match"/, "unmatched CJ identity must persist an explicit reason rather than retaining stale verification state");
 assert.match(persist, /schema_org_product_is_variant_of/, "CJ canonical identity resolution must accept isVariantOf evidence");
 assert.match(persist, /last_verified_at: now/, "CJ verification must refresh its timestamp");
