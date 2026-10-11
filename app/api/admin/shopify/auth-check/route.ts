@@ -48,9 +48,7 @@ export async function GET(request: Request) {
     clientIdPresent: Boolean(cfg.clientId),
     clientSecretPresent: Boolean(cfg.clientSecret),
     authMode: process.env.SHOPIFY_AUTH_MODE?.trim() || (
-      cfg.clientId && cfg.clientSecret && cfg.adminAccessToken
-        ? "ambiguous_requires_SHOPIFY_AUTH_MODE"
-        : cfg.clientId && cfg.clientSecret ? "client_credentials"
+      cfg.clientId && cfg.clientSecret ? "client_credentials"
         : cfg.adminAccessToken ? "static_admin_token" : "none"
     ),
     vercelEnv: process.env.VERCEL_ENV ?? null,
