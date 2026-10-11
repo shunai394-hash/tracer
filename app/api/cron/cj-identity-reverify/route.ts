@@ -17,10 +17,10 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
   try {
     const result = await reverifyCjSupplyIdentities({
-      limit: 100,
+      limit: 50,
       // Keep a hard safety margin, but do not inherit a caller's earlier
       // pipeline deadline. This job owns the full function budget.
-      deadlineAt: startedAt + 240_000,
+      deadlineAt: startedAt + 180_000,
     });
 
     console.info("[cj-identity-reverify] completed", {
