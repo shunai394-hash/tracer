@@ -15,6 +15,12 @@ on:
       - "app/api/admin/shopify/identity-audit/route.ts"
       - "app/api/admin/shopify/auth-check/route.ts"
       - "app/api/channels/base/diagnostics/route.ts"
+      - "lib/config/env.ts"
+      - "lib/channels/base.ts"
+      - "lib/channels/base-orders.ts"
+      - "lib/shopify/admin.ts"
+      - "lib/shopify/sync-orders.ts"
+      - "app/api/cron/shopify-orders/route.ts"
   workflow_dispatch:
     inputs:
       sync_batch:
