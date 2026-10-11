@@ -94,7 +94,7 @@ export function inspectCanonicalMarketplaceVariantMarkup(html: string): Canonica
   }
   const absoluteTypeIriCount = nodes.reduce((count, node) => {
     const types = nodeList(node["@type"]);
-    return count + types.filter((value) => typeof value === "string" && /^https?:\\/\\/schema\\.org\\//i.test(value.trim())).length;
+    return count + types.filter((value) => typeof value === "string" && /^https?:\/\/schema\.org\//i.test(value.trim())).length;
   }, 0);
   return {
     jsonLdNodeCount: nodes.length,
