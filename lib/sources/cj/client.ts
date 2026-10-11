@@ -41,6 +41,17 @@ export function isCJQuotaExhaustedError(error: unknown): boolean {
   );
 }
 
+export function isCJQuotaCircuitBlockingError(error: unknown): boolean {
+  return Boolean(
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    ["CJ_QUOTA_EXHAUSTED", "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN"].includes(
+      String((error as { code?: unknown }).code ?? ""),
+    ),
+  );
+}
+
 let localCJQuotaBlockedUntil: string | null = null;
 
 function quotaCircuitIsOpen(blockedUntil: unknown): blockedUntil is string {
