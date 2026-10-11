@@ -5,6 +5,7 @@ import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { hasVerifiedPositiveShopifyStock } from "@/lib/shop/live-stock-policy";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -163,7 +164,7 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
   return listings
     .filter((listing) => {
       const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : undefined;
-      return live !== undefined && live > 0;
+      return hasVerifiedPositiveShopifyStock(listing.shopifyVariantId, live);
     })
     .map((listing) => {
       const live = liveStock.get(listing.shopifyVariantId!);
