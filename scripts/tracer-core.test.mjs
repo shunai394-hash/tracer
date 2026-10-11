@@ -170,3 +170,9 @@ test("supplier write port rejects unpaid, COD, ambiguous and unprofitable order 
   assert.equal(ports.approveOrderExecutionDecision(core.evaluateOrderExecution({ ...base, attemptState: "unknown" })), null);
   assert.equal(ports.approveOrderExecutionDecision(core.evaluateOrderExecution({ ...base, sellingPrice: 400 })), null);
 });
+
+test("adapter ports define boundaries without implementing network or database access", () => {
+  assert.equal(portsSource.includes("fetch("), false);
+  assert.equal(portsSource.includes("createSupabaseAdminClient"), false);
+  assert.equal(portsSource.includes("process.env"), false);
+});
