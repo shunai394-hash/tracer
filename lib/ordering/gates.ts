@@ -65,12 +65,13 @@ export function evaluateOrderGates(
   if (input.onHand === null) missing.push("own_inventory_unknown");
   if (input.recommendedQty === null) missing.push("order_qty_unknown");
   if (input.estimatedCost === null) missing.push("order_cost_unknown");
+  else if (!Number.isFinite(input.estimatedCost) || input.estimatedCost <= 0) blocked.push("order_cost_invalid");
   if (input.supplierApiAvailable === null) missing.push("supplier_api_unknown");
   if (input.supplierApiAvailable === false) blocked.push("supplier_api_unavailable");
 
   const cost = input.estimatedCost;
   let budgetExceeded = false;
-  if (cost !== null) {
+  if (cost !== null && Number.isFinite(cost) && cost > 0) {
     if (
       input.settings.dailyOrderLimit !== null &&
       input.spentToday !== null &&
@@ -104,11 +105,11 @@ export function evaluateOrderGates(
       blocked.push("category_budget_exceeded");
       budgetExceeded = true;
     }
-  } else if (
+  } else if (cost === null && (
     input.settings.dailyOrderLimit !== null ||
     input.settings.monthlyOrderBudget !== null ||
     input.settings.perProductOrderLimit !== null
-  ) {
+  )) {
     missing.push("budget_check_cost_unknown");
   }
 
