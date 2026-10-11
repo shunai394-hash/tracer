@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { getCJQuotaCooldownUntil, isCJQuotaExhausted } from "../lib/sources/cj/rate-limit-policy.ts";
+import {
+  getCJQuotaCooldownUntil,
+  getCJSharedLimiterFailureCode,
+  isCJQuotaExhausted,
+} from "../lib/sources/cj/rate-limit-policy.ts";
 
 assert.equal(isCJQuotaExhausted({
   code: 1600200,
@@ -17,4 +21,10 @@ assert.equal(
   getCJQuotaCooldownUntil(Date.parse("2026-10-12T00:00:00.000Z")),
   "2026-10-13T00:00:00.000Z",
 );
-console.log("CJ quota policy: 5 assertions passed");
+
+// Shared limiter failures must map to the circuit-unknown blocking code.
+// The client uses this policy when the shared RPC fails; callers must not
+// fall back to a process-local limiter that cannot coordinate Vercel instances.
+assert.equal(getCJSharedLimiterFailureCode(), "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN");
+
+console.log("CJ quota policy: 6 assertions passed");
