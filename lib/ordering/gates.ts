@@ -94,8 +94,12 @@ export function evaluateOrderGates(
         budgetExceeded = true;
       }
     }
+    const hasCategoryBudgets = Object.keys(input.settings.categoryBudgets).length > 0;
     const categoryBudget =
       input.category === null ? undefined : input.settings.categoryBudgets[input.category];
+    if (hasCategoryBudgets && input.category === null) {
+      missing.push("category_unknown_for_budget");
+    }
     if (categoryBudget !== undefined) {
       if (input.spentCategory === null || !Number.isFinite(input.spentCategory) || input.spentCategory < 0) {
         missing.push("category_spend_unknown");
@@ -108,8 +112,7 @@ export function evaluateOrderGates(
     input.settings.dailyOrderLimit !== null ||
     input.settings.monthlyOrderBudget !== null ||
     input.settings.perProductOrderLimit !== null ||
-    (input.category !== null &&
-      input.settings.categoryBudgets[input.category] !== undefined)
+    Object.keys(input.settings.categoryBudgets).length > 0
   ) {
     missing.push("budget_check_cost_unknown");
   }
