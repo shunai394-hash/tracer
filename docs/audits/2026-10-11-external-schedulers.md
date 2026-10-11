@@ -46,7 +46,7 @@ Both runs did perform writes before failing:
 - The patrol pipeline then exceeded its 20-second identity-reverification step budget; subsequent steps were deferred and the endpoint returned HTTP 500.
 - Both patrol reports show `publishedListings=0`, `basePublished=0`, and `orders=0` before and after. No listing publication or order creation was reported by those two runs.
 
-This is direct evidence that a workflow called “Production Smoke” was not read-only. It was triggered by `push` to `main` and executed live demand-match and AI-patrol paths before failing. The branch now removes automatic push triggers and adds explicit `allow_production_writes=true` approval guards to `tracer-production-smoke.yml`, `tracer-direct-900.yml`, `tracer-build-1000.yml`, `tracer-expand-1000.yml`, `tracer-publish-cj-now.yml`, and `tracer-run-sales-test-now.yml`. These edits are only on the draft branch; they have not changed main or production.
+This is direct evidence that a workflow called “Production Smoke” was not read-only. It was triggered by `push` to `main` and executed live demand-match and AI-patrol paths before failing. The branch now removes automatic push triggers and adds explicit `allow_production_writes=true` approval guards to `tracer-production-smoke.yml`, `tracer-direct-900.yml`, `tracer-build-1000.yml`, `tracer-expand-1000.yml`, `tracer-publish-cj-now.yml`, `tracer-run-sales-test-now.yml`, `tracer-live-shopify-sync.yml`, and `tracer-one-shot-supply-recovery.yml. These edits are only on the draft branch; they have not changed main or production.
 
 
 ## Historical scheduled workflow evidence (read-only run-log inspection)
