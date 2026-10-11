@@ -202,6 +202,7 @@ export function evaluateOrderExecution(evidence: OrderExecutionEvidence): OrderE
   if (attemptDisposition.action !== "process") blockers.push(`attempt_${attemptDisposition.reason}`);
   if (evidence.paymentStatus !== "paid") blockers.push("payment_not_confirmed");
   const paymentMethod = clean(evidence.paymentMethod).toLowerCase();
+  if (!paymentMethod) blockers.push("payment_method_unknown");
   if (paymentMethod === "cod" || paymentMethod === "cash_on_delivery") {
     blockers.push("cash_on_delivery_not_confirmed");
   }
