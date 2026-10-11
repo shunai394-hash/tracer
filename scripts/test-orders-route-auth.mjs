@@ -33,5 +33,8 @@ assert.match(store, /placed_at:\s*null/, "supplier-unconnected records must not 
 assert.match(store, /supplier_api_not_connected_no_external_order_placed/, "unconnected supplier status must be explicit");
 assert.doesNotMatch(store, /status:\s*placed\s*\?\s*"placed"/, "database-only records must never be marked placed");
 assert.match(store, /if \(args\.approved && !args\.approvedBy\?\.trim\(\)\)/, "approved writes require a verified approver identity");
+assert.match(store, /error\.code === "23505" && \/idempotency_key\/i\.test\(error\.message\)/, "concurrent retries must resolve through the unique idempotency key");
+assert.match(store, /\.eq\("idempotency_key", idempotencyKey\)\s*\.maybeSingle\(\)/, "unique-key conflict must return the already-created order");
+
 
 console.log("PASS: orders GET/POST require trusted automation auth; unverified approval is rejected before writes; supplier orders remain unplaced and idempotent");
