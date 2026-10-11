@@ -1,6 +1,7 @@
 // Demand match precision tests (pure logic, no DB, no network).
 // Run: node --experimental-strip-types scripts/verify-demand-match-evidence.mjs
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   buildIdentifierIndex,
   canonicalGtin,
@@ -23,6 +24,17 @@ import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-id
 
 const results = [];
 const pending = [];
+
+test("demand match bounds", "rotates a bounded observation page and scopes large secondary tables to that page", async () => {
+  const source = await readFile(new URL("../lib/intelligence/match-demand-products.ts", import.meta.url), "utf8");
+  assert.match(source, /select\("id", \{ count: "exact", head: true \}\)/);
+  assert.match(source, /\.range\(demandBatchPage \* demandBatchSize, \(demandBatchPage \+ 1\) \* demandBatchSize - 1\)/);
+  assert.match(source, /\.in\("demand_observation_id", demandBatchIdList\)/);
+  assert.match(source, /\.in\("demand_product_candidate_id", candidateIds\)/);
+  assert.match(source, /\.in\("metadata->>demand_observation_id", demandBatchIdList\)/);
+  assert.doesNotMatch(source, /readAll\(\(from, to\) => supabase\.from\("product_offers"/);
+  assert.doesNotMatch(source, /readAll\(\(from, to\) => supabase\.from\("demand_product_candidates"/);
+});
 
 test("canonical marketplace variant evidence", "captures only explicit ProductGroup child variants and never copies parent barcodes", () => {
   const html = '<script type="application/ld+json">{"@context":"https://schema.org","@type":"ProductGroup","productGroupID":"PARENT-MODEL","gtin13":"4006381333931","hasVariant":[{"@type":"Product","name":"Bottle 500 ml","sku":"BOTTLE-500","url":"https://www.amazon.co.jp/dp/B0VARIANT1","gtin13":"4006381333931"},{"@type":"Product","name":"Bottle 1 L","sku":"BOTTLE-1000","url":"https://www.amazon.co.jp/dp/B0VARIANT2","gtin13":"4006381333932"}]}</script>';
