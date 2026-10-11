@@ -62,6 +62,11 @@ export type CollectedMarketplace = {
     groupsWithVariantCount: number;
     variantProductNodeCount: number;
     absoluteTypeIriCount: number;
+    /** Aggregate-only child-variant recovery counters; never log child identifiers or raw HTML. */
+    variationAsinsFound: number;
+    childDetailAttempted: number;
+    childDetailFetched: number;
+    childBarcodeFound: number;
   };
 };
 
@@ -256,6 +261,10 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
   let groupsWithVariantCount = 0;
   let variantProductNodeCount = 0;
   let absoluteTypeIriCount = 0;
+  let variationAsinsFound = 0;
+  let childDetailAttempted = 0;
+  let childDetailFetched = 0;
+  let childBarcodeFound = 0;
 
   await Promise.all(details.map(async (item) => {
     if (!item.productUrl) return;
@@ -279,16 +288,20 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
         // JAN/GTIN, and persist only child pages with a valid concrete barcode.
         if (item.canonicalVariants.length === 0) {
           const childAsins = parseAmazonVariationAsinMap(detailHtml, item.productUrl).slice(0, 6);
+          variationAsinsFound += childAsins.length;
+          childDetailAttempted += childAsins.length;
           const recovered = await Promise.all(childAsins.map(async (child) => {
             const childUrl = `https://www.amazon.co.jp/dp/${child.asin}`;
             const childHtml = await fetchHtml(childUrl);
             if (!childHtml) return null;
+            childDetailFetched += 1;
             const childDetail = parseAmazonProductDetail(childHtml);
             const jan = normalizeIdentifier("jan", childDetail.jan);
             const gtin = normalizeIdentifier("gtin", childDetail.gtin);
             const ean = normalizeIdentifier("ean", childDetail.ean);
             const upc = normalizeIdentifier("upc", childDetail.upc);
             if (!jan && !gtin && !ean && !upc) return null;
+            childBarcodeFound += 1;
             return {
               sourceVariantId: child.asin,
               sku: null,
@@ -355,6 +368,10 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
       groupsWithVariantCount,
       variantProductNodeCount,
       absoluteTypeIriCount,
+      variationAsinsFound,
+      childDetailAttempted,
+      childDetailFetched,
+      childBarcodeFound,
     },
   };
 }
