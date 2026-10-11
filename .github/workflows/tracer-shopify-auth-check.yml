@@ -39,7 +39,7 @@ jobs:
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
           SYNC_BATCH="${{ inputs.sync_batch || 0 }}"
-          for path in api/admin/shopify/auth-check api/admin/shopify/readiness api/admin/shopify/catalog api/admin/shopify/reconcile; do
+          for path in api/admin/shopify/auth-check api/admin/shopify/readiness api/admin/shopify/catalog api/admin/shopify/reconcile api/channels/base/diagnostics; do
             code=$(curl -sS -o out.json -w "%{http_code}" --max-time 60 -H "Authorization: Bearer $(token)" "$BASE/$path" || echo 000)
             echo "=== $path HTTP $code ==="
             python3 - "$path" <<'PY'
