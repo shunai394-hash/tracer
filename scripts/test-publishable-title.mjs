@@ -43,8 +43,12 @@ assert.match(base, /isPublishableCatalogTitle\(translatedTitle\)/, "BASE must re
 assert.match(base, /isPublishableCatalogDescription\(sourceDetail\)/, "BASE must reject generic source descriptions");
 assert.match(base, /isPublishableCatalogDescription\(translatedDetail\)/, "BASE must reject generic translated descriptions");
 assert.match(base, /base_hide_failed_after_catalog_validation/, "BASE hide failure must be surfaced");
+assert.match(base, /base_hide_succeeded_db_reconciliation_failed/, "BASE DB persistence failure after a successful external hide must be surfaced");
+assert.match(base, /base_hidden_db_reconciliation_failed/, "BASE must not report a successful hide when DB reconciliation fails");
+assert.match(base, /base_publication_status: "failed",[\s\S]*?pipeline_reason: "japanese_catalog_copy_required"/, "A successfully hidden invalid BASE item must not remain marked published");
+assert.doesNotMatch(base, /base_publication_status: listing\\.base_item_id \\? "published" : "blocked"/, "Hidden BASE items must not be marked published");
 assert.match(base, /identityUnlinkedIds\.has\(listingId\).*base_last_error.*listing\.base_item_id && listing\.published !== true/s, "BASE must keep unlinked and already-hidden rows out of the publish path");
 assert.match(store, /isPublishableCatalogTitle\(listing\.title\)/, "storefront must filter invalid titles");
 assert.match(store, /isPublishableCatalogDescription\(listing\.description\)/, "storefront must filter generic descriptions");
 assert.match(store, /listing title failed catalog quality gate/, "order placement must revalidate title quality");
-console.log(`Catalog title/description quality tests: ${cases.length} cases + 13 channel wiring checks passed.`);
+console.log(`Catalog title/description quality tests: ${cases.length} cases + 17 channel wiring checks passed.`);
