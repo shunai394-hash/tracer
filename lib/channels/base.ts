@@ -17,46 +17,54 @@ type BaseItemResponse = {
 };
 
 const BASE_API_URL = process.env.BASE_API_URL?.trim() || "https://api.thebase.in/1";
-const BASE_ACCESS_TOKEN = process.env.BASE_ACCESS_TOKEN?.trim() || "";
 const BASE_CLIENT_ID = process.env.BASE_CLIENT_ID?.trim() || "";
 const BASE_CLIENT_SECRET = process.env.BASE_CLIENT_SECRET?.trim() || "";
 const BASE_REFRESH_TOKEN = process.env.BASE_REFRESH_TOKEN?.trim() || "";
+const BASE_REDIRECT_URI = process.env.BASE_REDIRECT_URI?.trim() || "";
+
+function hasBaseRefreshCredentials() {
+  return Boolean(BASE_CLIENT_ID && BASE_CLIENT_SECRET && BASE_REFRESH_TOKEN && BASE_REDIRECT_URI);
+}
 
 export function isBaseConfigured() {
-  return Boolean(BASE_ACCESS_TOKEN || (
-    BASE_CLIENT_ID && BASE_CLIENT_SECRET && BASE_REFRESH_TOKEN
-  ));
+  // BASE access tokens expire. A lone BASE_ACCESS_TOKEN is not a durable configuration.
+  return hasBaseRefreshCredentials();
 }
 
 async function getBaseAccessToken() {
-  if (BASE_CLIENT_ID && BASE_CLIENT_SECRET && BASE_REFRESH_TOKEN) {
-    const body = new URLSearchParams({
-      grant_type: "refresh_token",
-      client_id: BASE_CLIENT_ID,
-      client_secret: BASE_CLIENT_SECRET,
-      refresh_token: BASE_REFRESH_TOKEN,
-      redirect_uri: process.env.BASE_REDIRECT_URI?.trim() || "",
-    });
-
-    const response = await fetch(`${BASE_API_URL}/oauth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-      body,
-      cache: "no-store",
-    });
-    const text = await response.text();
-    if (!response.ok) {
-      throw new Error(`BASE OAuth refresh HTTP ${response.status}: ${text.slice(0, 500)}`);
-    }
-    const data = JSON.parse(text) as { access_token?: string };
-    if (!data.access_token) throw new Error("BASE OAuth refresh did not return access_token");
-    return data.access_token;
+  if (!hasBaseRefreshCredentials()) {
+    throw new Error(
+      "BASE OAuth is not fully configured. Set BASE_CLIENT_ID, BASE_CLIENT_SECRET, BASE_REFRESH_TOKEN, and BASE_REDIRECT_URI, then reconnect BASE. A standalone access token is not used.",
+    );
   }
 
-  if (!BASE_ACCESS_TOKEN) {
-    throw new Error("BASE API credentials are not configured");
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: BASE_CLIENT_ID,
+    client_secret: BASE_CLIENT_SECRET,
+    refresh_token: BASE_REFRESH_TOKEN,
+    redirect_uri: BASE_REDIRECT_URI,
+  });
+
+  const response = await fetch(`${BASE_API_URL}/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+    body,
+    cache: "no-store",
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    // Do not include provider response bodies in thrown errors; they may contain sensitive details.
+    throw new Error(`BASE OAuth refresh failed with HTTP ${response.status}`);
   }
-  return BASE_ACCESS_TOKEN;
+  let data: { access_token?: string };
+  try {
+    data = JSON.parse(text) as { access_token?: string };
+  } catch {
+    throw new Error("BASE OAuth refresh returned an invalid response");
+  }
+  if (!data.access_token) throw new Error("BASE OAuth refresh did not return access_token");
+  return data.access_token;
 }
 
 async function requestBase(
