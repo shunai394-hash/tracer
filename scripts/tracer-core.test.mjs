@@ -118,3 +118,10 @@ test("order execution requires paid non-COD order, exact supplier identity, stoc
   const ambiguous = core.evaluateOrderExecution({ ...base, attemptState: "unknown" });
   assert.equal(ambiguous.blockers.includes("attempt_ambiguous_or_in_progress_attempt"), true);
 });
+
+test("commerce core contracts remain pure and have no network or database dependencies", () => {
+  assert.doesNotMatch(source, /^\s*import\s/m);
+  assert.doesNotMatch(source, /\bfetch\s*\(/);
+  assert.doesNotMatch(source, /createSupabaseAdminClient|\.from\s*\(/);
+  assert.doesNotMatch(source, /process\.env/);
+});
