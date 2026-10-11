@@ -7,6 +7,10 @@ const CLIENT_ID = process.env.BASE_CLIENT_ID?.trim() || "";
 const CLIENT_SECRET = process.env.BASE_CLIENT_SECRET?.trim() || "";
 const REDIRECT_URI = process.env.BASE_REDIRECT_URI?.trim() || "";
 
+function escapeHtml(value: unknown): string {
+  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 function html(message: string, status = 200) {
   return new NextResponse(
     `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TRACER × BASE</title><style>body{font-family:system-ui,sans-serif;max-width:760px;margin:48px auto;padding:0 20px;line-height:1.7}code,pre{background:#f4f4f5;border-radius:8px;padding:12px;display:block;overflow:auto;white-space:pre-wrap;word-break:break-all}</style></head><body>${message}</body></html>`,
@@ -25,7 +29,7 @@ export async function GET(request: Request) {
   const expectedState = stateMatch?.[1];
 
   if (oauthError) {
-    return html(`<h1>BASE認証が拒否されました</h1><p>${oauthErrorDescription || oauthError}</p>`, 400);
+    return html(`<h1>BASE認証が拒否されました</h1><p>${escapeHtml(oauthErrorDescription || oauthError)}</p>`, 400);
   }
 
   if (!code || !state) {
@@ -68,18 +72,18 @@ export async function GET(request: Request) {
   try {
     tokenData = JSON.parse(raw);
   } catch {
-    return html(`<h1>BASEトークン取得エラー</h1><pre>${raw.slice(0, 1000)}</pre>`, 502);
+    return html("<h1>BASEトークン取得エラー</h1><p>BASEからJSON形式の応答が返りませんでした。生の応答は表示していません。</p>", 502);
   }
 
   if (!tokenResponse.ok || !tokenData.refresh_token) {
-    return html(`<h1>BASEトークン取得エラー</h1><pre>${JSON.stringify(tokenData, null, 2)}</pre>`, 502);
+    return html("<h1>BASEトークン取得エラー</h1><p>トークン交換に失敗しました。BASEアプリ設定とリダイレクトURIを確認してください。</p>", 502);
   }
 
   const response = html(
     `<h1>BASE連携に成功しました</h1>
 <p>次の <strong>Refresh Token</strong> をVercelのProduction Environment Variableに登録してください。</p>
 <p>Key: <code>BASE_REFRESH_TOKEN</code></p>
-<pre>${tokenData.refresh_token}</pre>
+<pre>${escapeHtml(tokenData.refresh_token)}</pre>
 <p>登録後、この画面を閉じて構いません。Refresh Tokenはこの画面以外に保存していません。</p>`,
   );
 
