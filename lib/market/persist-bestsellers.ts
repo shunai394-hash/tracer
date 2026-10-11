@@ -53,8 +53,11 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
   nextIndex: number;
   hasMore: boolean;
 }> {
-  const sourceIndex = Math.max(0, options.sourceIndex ?? 0);
-  const collected = await collectMarketplaceBestsellers({ sourceIndex });
+  const requestedSourceIndex = Math.max(0, options.sourceIndex ?? 0);
+  const collected = await collectMarketplaceBestsellers({ sourceIndex: requestedSourceIndex });
+  // The collector may skip empty/challenge pages and succeed on a later source.
+  // Persist that effective index so the next cursor resumes where real items were found.
+  const sourceIndex = collected.sourceIndex;
   const startIndex = Math.max(0, options.startIndex ?? 0);
   const batchSize = Math.max(1, options.batchSize ?? 50);
   const endIndex = startIndex + batchSize;
