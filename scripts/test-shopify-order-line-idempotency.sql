@@ -4,8 +4,7 @@
 drop table if exists public.shop_order_items cascade;
 create table public.shop_order_items (
   id uuid primary key default gen_random_uuid(),
-  order_id uuid not null,
-  shopify_line_item_id text
+  order_id uuid not null
 );
 
 \ir ../supabase/migrations/20261011110000_shopify_order_line_idempotency.sql
