@@ -55,6 +55,20 @@ export async function runAutonomousOrderControl(runKey: string): Promise<RunResu
   initializeProcurement();
   const supabase = createSupabaseAdminClient();
 
+  // Vercel can terminate a request before its run row is finalized. Reclaim
+  // only rows older than ten minutes: every caller of this control plane has
+  // a shorter execution budget (60–300s), so this cannot steal a live claim.
+  // This is run-ledger maintenance only; it never retries a supplier order.
+  const staleBefore = new Date(Date.now() - 10 * 60_000).toISOString();
+  const staleClaims = await supabase
+    .from("order_automation_runs")
+    .update({ status: "failed", finished_at: new Date().toISOString() })
+    .eq("status", "running")
+    .lt("started_at", staleBefore);
+  if (staleClaims.error) {
+    throw new Error(`automation_stale_claim_recovery_failed:${staleClaims.error.message}`);
+  }
+
   // The run row is an execution claim, not optional telemetry. If it cannot
   // be persisted, stop before reading orders or calling suppliers.
   const existingRunQuery = await supabase
