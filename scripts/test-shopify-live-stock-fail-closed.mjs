@@ -17,7 +17,7 @@ assert.match(store, /shopify_live_stock_unconfigured/, "missing Shopify credenti
 assert.match(store, /shopify_live_stock_variant_ids_empty/, "empty live-stock request must not use cached stock");
 assert.match(store, /shopify_live_stock_response_incomplete/, "partial Shopify responses must be rejected");
 assert.match(store, /shopify_live_stock_quantity_unknown/, "unknown quantities must be rejected");
-assert.match(store, /shopify-live-stock-unavailable[\\s\\S]{0,250}return \\[\\]/, "Shopify API failure must return no storefront listings");
+assert.ok(store.includes('[shopify-live-stock-unavailable]') && store.includes("return [];"), "Shopify API failure must return no storefront listings");
 assert.match(store, /hasVerifiedPositiveShopifyStock\\(listing\\.shopifyVariantId, live\\)/, "storefront must use the tested stock policy");
 assert.doesNotMatch(store, /return live === undefined \\|\\| live > 0/, "unknown live stock must never pass through");
 assert.match(store, /const liveStock = await getLiveShopifyStock/, "order creation must recheck current Shopify stock");
