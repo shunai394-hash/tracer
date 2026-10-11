@@ -5,6 +5,7 @@ import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-id
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-listings";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { BASE_AUTH_REAUTH_REQUIRED, isBaseAuthenticationFailure } from "@/lib/channels/base-auth-failure";
+import { collectAllPages } from "@/lib/db/collect-all-pages";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -18,30 +19,19 @@ export async function GET(request: Request) {
   // PostgREST caps each response at 1,000 rows by default. Page through the
   // complete ordered candidate set so rows after the first page are not silently skipped.
   const pageSize = 1000;
-  const data: Array<{
-    id: string | number;
-    supplier_listing_id: string | null;
-    published: boolean | null;
-    orderable: boolean | null;
-    pipeline_reason: string | null;
-    shopify_product_id: string | null;
-    shopify_sync_status: string | null;
-    base_item_id: string | null;
-    base_publication_status: string | null;
-    base_last_error: string | null;
-  }> = [];
-  for (let from = 0; ; from += pageSize) {
-    const { data: page, error } = await db.from("shop_listings")
+  const scan = await collectAllPages(async (from, size) => {
+    const { data, error } = await db.from("shop_listings")
       .select("id,supplier_listing_id,published,orderable,pipeline_reason,shopify_product_id,shopify_sync_status,base_item_id,base_publication_status,base_last_error")
       .or("published.eq.true,and(shopify_product_id.not.is.null,shopify_sync_status.is.null),and(shopify_product_id.not.is.null,shopify_sync_status.neq.blocked,shopify_sync_status.neq.synced),and(base_item_id.not.is.null,base_last_error.is.null),and(base_item_id.not.is.null,base_last_error.neq.supplier_identity_unlinked_hidden,base_last_error.neq.tracer_unpublished_hidden,base_last_error.neq.base_auth_invalid_reauthorization_required)")
       .order("created_at", { ascending: true })
       .order("id", { ascending: true })
-      .range(from, from + pageSize - 1);
-    if (error) return NextResponse.json({ ok: false, stage: "read", offset: from, error: error.message }, { status: 500 });
-    const rows = page ?? [];
-    data.push(...rows);
-    if (rows.length < pageSize) break;
+      .range(from, from + size - 1);
+    return { data, error };
+  }, pageSize);
+  if (scan.error) {
+    return NextResponse.json({ ok: false, stage: "read", offset: scan.offset, error: scan.error.message }, { status: 500 });
   }
+  const data = scan.data;
 
   const updateInChunks = async (
     ids: Array<string | number>,
