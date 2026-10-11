@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { linkInternalSupplyForBestseller } from "@/lib/suppliers/internal-catalog";
 import { syncTracerCatalogFromInternalSupply } from "@/lib/suppliers/sync-tracer-catalog";
@@ -35,7 +35,7 @@ function prioritizeRows<T extends Record<string, unknown>>(rows: T[]): T[] {
 }
 
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireAutomationCapability(request, "database_write");
   if (authError) return authError;
 
   const supabase = createSupabaseAdminClient();
