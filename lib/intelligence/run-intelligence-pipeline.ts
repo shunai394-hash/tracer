@@ -406,7 +406,13 @@ export async function runIntelligencePipeline(options: {
       startIndex: cursor.startIndex,
       batchSize: 10,
     });
-    const next = await writeMarketCursor(db, observation, "patrol-ai");
+    // Yahoo/Rakuten are useful for demand observation, but their rows cannot
+    // satisfy the canonical child-variant sales gate. After one bounded batch,
+    // rotate to the next source instead of exhausting every page before Amazon.
+    const next = await writeMarketCursor(db, {
+      ...observation,
+      hasMore: observation.hasMore && observation.sourceIndex >= 2,
+    }, "patrol-ai");
     // A non-empty ranking batch is not enough to unblock canonical identity.
     // If no child-variant evidence was parsed (or all parsed evidence writes failed),
     // defer the pipeline so publication/procurement never treats source coverage as identity proof.
