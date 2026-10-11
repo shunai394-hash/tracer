@@ -17,6 +17,7 @@ const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSup
 ]);
 assert.match(helper, /identity_status === "linked"/);
 assert.match(persist, /verification_error: marketplaceIdentity \? null : "no_unique_canonical_child_variant_match"/, "unmatched CJ identity must persist an explicit reason rather than retaining stale verification state");
+assert.match(persist, /verification_status: marketplaceIdentity \? "verified" : "unverified"/, "unlinked CJ discovery must use a database-allowed verification status");
 assert.match(persist, /last_verified_at: now/, "CJ verification must refresh its timestamp");
 assert.match(persist, /bestseller_id: marketplaceIdentity\?\.bestsellerId \?\? null/, "unmatched or ambiguous CJ identity must clear any stale canonical parent link");
 assert.match(persist, /identity_status: marketplaceIdentity \? "linked" : "supply_discovered"/, "CJ discovery alone must not promote supplier identity to linked");
