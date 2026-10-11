@@ -24,4 +24,14 @@ assert.match(route.slice(createOrder, route.indexOf("});", createOrder)), /appro
 assert.match(route.slice(createOrder, route.indexOf("});", createOrder)), /approvedBy: null/);
 assert.doesNotMatch(route, /approvedBy: body\.approved === true \? "user"/);
 
-console.log("PASS: orders GET/POST require trusted automation auth; unverified approval is rejected before writes");
+const store = await readFile(new URL("../lib/ordering/store.ts", import.meta.url), "utf8");
+
+assert.match(store, /idempotency_key:\s*idempotencyKey/, "recommendation order must persist an idempotency key");
+assert.match(store, /\.eq\("idempotency_key", idempotencyKey\)/, "existing recommendation orders must be reused");
+assert.match(store, /live_order:\s*false/, "internal record must not claim a live supplier order");
+assert.match(store, /placed_at:\s*null/, "supplier-unconnected records must not have a placed timestamp");
+assert.match(store, /supplier_api_not_connected_no_external_order_placed/, "unconnected supplier status must be explicit");
+assert.doesNotMatch(store, /status:\s*placed\s*\?\s*"placed"/, "database-only records must never be marked placed");
+assert.match(store, /if \(args\.approved && !args\.approvedBy\?\.trim\(\)\)/, "approved writes require a verified approver identity");
+
+console.log("PASS: orders GET/POST require trusted automation auth; unverified approval is rejected before writes; supplier orders remain unplaced and idempotent");
