@@ -215,6 +215,33 @@ export function verifyOrderGateInvariants(): {
     0.82,
   );
 
+  const nonPositiveProfit = evaluateOrderGates(
+    {
+      identityConfirmed: true,
+      identityUnknown: false,
+      supplierConfirmed: true,
+      sourceCost: 3,
+      currency: "USD",
+      currencyReliable: true,
+      shippable: true,
+      complianceRisk: false,
+      profitCalculable: true,
+      forecastProfit30d: 0,
+      forecastUnits30d: 20,
+      onHand: 5,
+      recommendedQty: 25,
+      estimatedCost: 75,
+      supplierApiAvailable: true,
+      settings,
+      spentToday: 0,
+      spentMonth: 0,
+      spentProduct: 0,
+      spentCategory: 0,
+      category: "auto",
+    },
+    0.82,
+  );
+
   const cases = [
     {
       name: "unknown_profit_blocks_auto",
@@ -222,6 +249,11 @@ export function verifyOrderGateInvariants(): {
       actual:
         unknownProfit.canAuto === false &&
         unknownProfit.missing.includes("profit_unknown"),
+    },
+    {
+      name: "non_positive_profit_blocks_order",
+      expected: true,
+      actual: !nonPositiveProfit.canPropose && nonPositiveProfit.blocked.includes("non_positive_profit"),
     },
     {
       name: "complete_high_confidence_can_auto",
