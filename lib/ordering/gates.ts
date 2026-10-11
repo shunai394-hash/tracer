@@ -107,7 +107,9 @@ export function evaluateOrderGates(
   } else if (
     input.settings.dailyOrderLimit !== null ||
     input.settings.monthlyOrderBudget !== null ||
-    input.settings.perProductOrderLimit !== null
+    input.settings.perProductOrderLimit !== null ||
+    (input.category !== null &&
+      input.settings.categoryBudgets[input.category] !== undefined)
   ) {
     missing.push("budget_check_cost_unknown");
   }
