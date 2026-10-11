@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
+import { getShopifyGrantedScopes, isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
 
 type FulfillmentOrder = {
   id: string;
@@ -30,11 +30,27 @@ export type ShopifyFulfillmentSyncResult = {
   skipped: number;
   failed: number;
   errors: Array<{ orderId: string; error: string }>;
+  blockers?: string[];
 };
 
 export async function syncShopifyFulfillments(limit = 25): Promise<ShopifyFulfillmentSyncResult> {
   if (!isShopifyConfigured()) {
     return { configured: false, considered: 0, synced: 0, skipped: 0, failed: 0, errors: [] };
+  }
+
+  const requiredScopes = ["read_merchant_managed_fulfillment_orders", "write_merchant_managed_fulfillment_orders"];
+  const grantedScopes = await getShopifyGrantedScopes();
+  const missingScopes = requiredScopes.filter((scope) => !grantedScopes.includes(scope));
+  if (missingScopes.length > 0) {
+    return {
+      configured: true,
+      considered: 0,
+      synced: 0,
+      skipped: 0,
+      failed: 0,
+      errors: [],
+      blockers: [`shopify_required_scopes_missing:${missingScopes.join(",")}`],
+    };
   }
 
   const supabase = createSupabaseAdminClient();

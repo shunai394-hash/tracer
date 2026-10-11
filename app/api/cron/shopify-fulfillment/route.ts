@@ -11,7 +11,11 @@ export async function GET(request: Request) {
 
   try {
     const result = await syncShopifyFulfillments(25);
-    return NextResponse.json({ ok: true, phase: "shopify_fulfillment_sync", ...result });
+    const blocked = Boolean(result.blockers?.length);
+    return NextResponse.json(
+      { ok: !blocked, phase: "shopify_fulfillment_sync", ...result },
+      { status: blocked ? 409 : 200 },
+    );
   } catch (error) {
     return NextResponse.json(
       { ok: false, phase: "shopify_fulfillment_sync", error: error instanceof Error ? error.message : String(error) },

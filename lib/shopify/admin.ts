@@ -328,6 +328,17 @@ export async function shopifyGraphQL<T>(
   return payload.data;
 }
 
+
+/** Read the scopes granted to this Shopify app installation. Never assume config presence implies permissions. */
+export async function getShopifyGrantedScopes(): Promise<string[]> {
+  const data = await shopifyGraphQL<{
+    currentAppInstallation: { accessScopes: Array<{ handle: string }> } | null;
+  }>(`query TracerGrantedScopes { currentAppInstallation { accessScopes { handle } } }`);
+  return [...new Set((data.currentAppInstallation?.accessScopes ?? [])
+    .map((scope) => scope.handle.trim())
+    .filter(Boolean))].sort();
+}
+
 export function verifyShopifyWebhookHmac(rawBody: string, hmacHeader: string | null): boolean {
   const secret = process.env.SHOPIFY_WEBHOOK_SECRET?.trim();
   if (!secret || !hmacHeader) return false;
