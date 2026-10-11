@@ -72,4 +72,17 @@ for (const [routePath, capability] of Object.entries(PROTECTED_AUTOMATION_ENDPOI
   );
 }
 
+
+for (const workflowPath of [
+  ".github/workflows/tracer-direct-900.yml",
+  ".github/workflows/tracer-production-smoke.yml",
+]) {
+  const workflow = readFileSync(workflowPath, "utf8");
+  assert.ok(!/^  push:/m.test(workflow), `production write workflow must not run automatically on push: ${workflowPath}`);
+  assert.ok(workflow.includes("allow_production_writes"), `missing explicit production-write approval input: ${workflowPath}`);
+  assert.ok(workflow.includes("inputs.allow_production_writes == true"), `missing explicit job approval guard: ${workflowPath}`);
+}
+const directRunner = readFileSync("scripts/direct-900-gate.ts", "utf8");
+assert.ok(directRunner.includes("evaluateAutomationCapability"), "direct production runner must enforce the capability policy before work");
+
 console.log(`automation-capabilities: PASS; ${scheduledPaths.length} scheduled routes and ${Object.keys(PROTECTED_AUTOMATION_ENDPOINTS).length} additional write endpoints covered`);
