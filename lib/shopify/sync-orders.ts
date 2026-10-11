@@ -31,6 +31,7 @@ type ShopifyOrder = {
       originalUnitPriceSet: { shopMoney: { amount: string; currencyCode: string } };
       variant: { id: string; sku: string | null } | null;
     }>;
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
   };
 };
 
@@ -81,6 +82,7 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
               originalUnitPriceSet { shopMoney { amount currencyCode } }
               variant { id sku }
             }
+            pageInfo { hasNextPage endCursor }
           }
         }
       }
@@ -89,6 +91,55 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
   );
 
   const orders = data.orders.nodes ?? [];
+
+  // Shopify paginates nested lineItems independently from the orders connection.
+  // Resolve every page before any local DB read/write so a cursor failure cannot
+  // leave a partial order that looks imported.
+  for (const order of orders) {
+    let after = order.lineItems.pageInfo.endCursor;
+    let hasNextPage = order.lineItems.pageInfo.hasNextPage;
+    while (hasNextPage) {
+      if (!after) throw new Error(`shopify_line_items_cursor_missing:${order.id}`);
+      const nextPage = await shopifyGraphQL<{
+        order: {
+          lineItems: {
+            nodes: ShopifyOrder["lineItems"]["nodes"];
+            pageInfo: { hasNextPage: boolean; endCursor: string | null };
+          };
+        } | null;
+      }>(
+        `query PaidOrderLineItems($id: ID!, $first: Int!, $after: String!) {
+          order(id: $id) {
+            lineItems(first: $first, after: $after) {
+              nodes {
+                id title quantity
+                originalUnitPriceSet { shopMoney { amount currencyCode } }
+                variant { id sku }
+              }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+        }`,
+        { id: order.id, first: 100, after },
+      );
+      const connection = nextPage.order?.lineItems;
+      if (!connection) throw new Error(`shopify_line_items_page_missing:${order.id}`);
+      order.lineItems.nodes.push(...connection.nodes);
+      const nextCursor = connection.pageInfo.endCursor;
+      if (connection.pageInfo.hasNextPage && (!nextCursor || nextCursor === after)) {
+        throw new Error(`shopify_line_items_cursor_not_advancing:${order.id}`);
+      }
+      hasNextPage = connection.pageInfo.hasNextPage;
+      after = nextCursor;
+    }
+
+    const seenLineItemIds = new Set<string>();
+    for (const item of order.lineItems.nodes) {
+      if (seenLineItemIds.has(item.id)) throw new Error(`shopify_line_item_duplicate_id:${order.id}:${item.id}`);
+      seenLineItemIds.add(item.id);
+    }
+  }
+
   const result: ShopifyOrderSyncResult = {
     configured: true,
     fetched: orders.length,
