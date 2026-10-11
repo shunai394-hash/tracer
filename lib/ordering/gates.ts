@@ -163,6 +163,39 @@ export function verifyOrderGateInvariants(): {
     defaultSafetyStock: 10,
   };
 
+  const evaluateWithEstimatedCost = (estimatedCost: number) =>
+    evaluateOrderGates(
+      {
+        identityConfirmed: true,
+        identityUnknown: false,
+        supplierConfirmed: true,
+        sourceCost: 3,
+        currency: "USD",
+        currencyReliable: true,
+        shippable: true,
+        complianceRisk: false,
+        profitCalculable: true,
+        forecastProfit30d: 10,
+        forecastUnits30d: 20,
+        onHand: 5,
+        recommendedQty: 25,
+        estimatedCost,
+        supplierApiAvailable: true,
+        settings,
+        spentToday: 0,
+        spentMonth: 0,
+        spentProduct: 0,
+        spentCategory: 0,
+        category: "auto",
+      },
+      0.82,
+    );
+
+  const zeroEstimatedCost = evaluateWithEstimatedCost(0);
+  const negativeEstimatedCost = evaluateWithEstimatedCost(-1);
+  const nanEstimatedCost = evaluateWithEstimatedCost(Number.NaN);
+  const infiniteEstimatedCost = evaluateWithEstimatedCost(Number.POSITIVE_INFINITY);
+
   const unknownProfit = evaluateOrderGates(
     {
       identityConfirmed: true,
@@ -288,6 +321,26 @@ export function verifyOrderGateInvariants(): {
       name: "non_positive_profit_blocks_order",
       expected: true,
       actual: !nonPositiveProfit.canPropose && nonPositiveProfit.blocked.includes("non_positive_profit"),
+    },
+    {
+      name: "invalid_estimated_cost_zero_blocks_order",
+      expected: true,
+      actual: !zeroEstimatedCost.canPropose && zeroEstimatedCost.blocked.includes("order_cost_invalid"),
+    },
+    {
+      name: "invalid_estimated_cost_negative_blocks_order",
+      expected: true,
+      actual: !negativeEstimatedCost.canPropose && negativeEstimatedCost.blocked.includes("order_cost_invalid"),
+    },
+    {
+      name: "invalid_estimated_cost_nan_blocks_order",
+      expected: true,
+      actual: !nanEstimatedCost.canPropose && nanEstimatedCost.blocked.includes("order_cost_invalid"),
+    },
+    {
+      name: "invalid_estimated_cost_infinity_blocks_order",
+      expected: true,
+      actual: !infiniteEstimatedCost.canPropose && infiniteEstimatedCost.blocked.includes("order_cost_invalid"),
     },
     {
       name: "complete_high_confidence_can_auto",
