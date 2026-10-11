@@ -382,6 +382,28 @@ export async function runIntelligencePipeline(options: {
       batchSize: 10,
     });
     const next = await writeMarketCursor(db, observation, "patrol-ai");
+    // A successful ranking fetch is not proof of canonical child-variant identity.
+    // Empty collection, zero variant evidence, or a complete evidence-write failure
+    // must be visible as retryable rather than marking the patrol complete.
+    const emptyCollection = observation.itemCount === 0;
+    const emptyVariantEvidence = observation.canonicalVariantEvidenceParsed === 0;
+    const evidencePersistenceFailed = observation.canonicalVariantEvidenceParsed > 0
+      && observation.canonicalVariantEvidenceWritten === 0
+      && observation.canonicalVariantEvidenceWriteFailures > 0;
+    if (emptyCollection || emptyVariantEvidence || evidencePersistenceFailed) {
+      return {
+        ...observation,
+        cursor,
+        nextCursor: next,
+        skipped: true,
+        retryable: true,
+        reason: emptyCollection
+          ? "marketplace_collection_empty"
+          : emptyVariantEvidence
+            ? "canonical_variant_evidence_empty"
+            : "canonical_variant_evidence_write_failed",
+      };
+    }
     return { ...observation, cursor, nextCursor: next };
   }, { budgetMs: 25_000 });
   steps.push(bestsellerStep);
