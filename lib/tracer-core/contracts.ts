@@ -127,6 +127,37 @@ export function evaluatePublication(evidence: PublicationEvidence): PublicationD
   return { eligible: blockers.length === 0, blockers, expectedUnitMargin };
 }
 
+export type PublicationShadowComparison = {
+  matches: boolean;
+  classification:
+    | "both_eligible"
+    | "both_blocked"
+    | "legacy_allows_core_blocks"
+    | "core_allows_legacy_blocks";
+  safeToPromote: boolean;
+};
+
+/**
+ * Compares a legacy gate result with the new pure policy during shadow mode.
+ * Any disagreement prevents promotion; the function never authorizes a write.
+ */
+export function comparePublicationEligibility(
+  legacyEligible: boolean,
+  coreDecision: PublicationDecision,
+): PublicationShadowComparison {
+  const coreEligible = coreDecision.eligible === true && coreDecision.blockers.length === 0;
+  if (legacyEligible && coreEligible) {
+    return { matches: true, classification: "both_eligible", safeToPromote: true };
+  }
+  if (!legacyEligible && !coreEligible) {
+    return { matches: true, classification: "both_blocked", safeToPromote: false };
+  }
+  if (legacyEligible) {
+    return { matches: false, classification: "legacy_allows_core_blocks", safeToPromote: false };
+  }
+  return { matches: false, classification: "core_allows_legacy_blocks", safeToPromote: false };
+}
+
 export type OrderAttemptState = "none" | "received" | "processing" | "submitted" | "confirmed" | "failed" | "unknown";
 export type OrderDisposition =
   | { action: "process"; reason: "new_order" }
