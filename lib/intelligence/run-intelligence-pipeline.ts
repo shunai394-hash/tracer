@@ -520,7 +520,7 @@ export async function runIntelligencePipeline(options: {
   // one slow downstream destination cannot consume the entire patrol timeout.
   steps.push(await runStep("newfind_retry", () => retryPendingNewfindPromotions(1), { downstream: true, budgetMs: 4_000 }));
 
-  steps.push(await runStep("ordering", () => persistReorderRecommendations(), { downstream: true, budgetMs: 4_000 }));
+  steps.push(await runStep("ordering", () => persistReorderRecommendations(), { downstream: true, budgetMs: 15_000 }));
   steps.push(await runStep("test_ready", async () => {
     if (!intelligence.ok) {
       return { skipped: true, reason: "intelligence_step_failed", retryable: intelligence.retryable === true };

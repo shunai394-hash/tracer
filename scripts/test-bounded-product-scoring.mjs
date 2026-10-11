@@ -17,4 +17,5 @@ assert.match(pipeline, /runStep\("score", \(\) => scoreProductIntelligence\(\), 
 assert.match(pipeline, /runStep\("shopping_demand_sync", \(\) => syncShoppingDemandObservations\(\), \{ budgetMs: 15_000 \}\)/);
 assert.match(pipeline, /runStep\("demand", \(\) => inspectDemandObservations\(\), \{ budgetMs: 5_000 \}\)/);
 assert.match(pipeline, /runStep\("demand_analyze", \(\) => persistDemandIntelligence\(\), \{ budgetMs: 12_000 \}\)/);
-console.log("Bounded product-intelligence scoring and patrol demand-stage budgets: 9 assertions passed");
+assert.match(pipeline, /runStep\("ordering", \(\) => persistReorderRecommendations\(\), \{ downstream: true, budgetMs: 15_000 \}\)/);
+console.log("Bounded scoring, demand-stage budgets, and reorder-stage budget: 10 assertions passed");
