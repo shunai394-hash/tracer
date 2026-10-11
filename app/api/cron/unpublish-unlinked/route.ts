@@ -85,7 +85,6 @@ export async function GET(request: Request) {
     baseFailed: baseResult.failed ?? null,
     errorCount: errors.length,
   };
-  // Count-only telemetry lets production patrol verify progress without logging listing IDs.
   console.info("[TRACER UNLINKED RECONCILIATION]", report);
   return NextResponse.json({
     ...report,
