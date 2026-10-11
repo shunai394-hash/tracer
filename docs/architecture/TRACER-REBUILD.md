@@ -93,3 +93,19 @@ Shopify synchronization is invoked by the dedicated shopify-publish route and al
 Do not remove schedules or alter production behavior based on this inventory alone. The refactor should introduce a single channel-neutral eligibility decision and one idempotent delivery owner per channel operation, then convert callers to enqueue/reconcile intents instead of performing direct external writes. Keep current production schedules and external IDs unchanged until shadow comparison and rollback checks pass.
 
 The initial pure contracts in lib/tracer-core/contracts.ts and lib/tracer-core/auth-contracts.ts are only the first isolated layer; existing routes do not call them yet. Integration must be a separate, tested step.
+
+### Scheduled overlap (UTC)
+
+| Route | Cron schedule | Note |
+|---|---|---|
+| orosy-bulk-import | 12:10, 18:10 | Both runs can invoke Shopify sync |
+| sales-test-publication | 12:11, 18:11 | Both runs fan out to Shopify, BASE and NEWFIND |
+| shopify-publish | 12:14, 18:14 | Separate Shopify write entry point |
+| intelligence | 12:22, 18:22, 18:57 | Three runs/day; pipeline also invokes Shopify sync |
+| base-orders | 12:25 | BASE order import |
+| dropship-execution | 12:30 | Re-imports BASE orders before supplier control |
+| shopify-orders | 12:33 | Separate paid Shopify order import and possible supplier control |
+| inventory-refresh | 12:15 | Can edit BASE item state |
+| patrol-ai | 12:55, 18:59 | Also reaches BASE publication |
+
+The schedules above are read from vercel.json on main. They have intentionally not been changed. The close sequence around 12:10–12:33 UTC means several publication/order paths execute in one window; any consolidation must first prove idempotency and preserve each channel's external IDs.
