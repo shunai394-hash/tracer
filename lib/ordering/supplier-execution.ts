@@ -139,7 +139,7 @@ export async function executeSupplierPurchaseOrder(
         supplierOrderId: null, reason: "supplier_identity_lookup_failed", gate: null,
       };
     }
-    if (identityRows?.length !== 1 || identityRows[0].identity_status !== "linked" || String(identityRows[0].product_id ?? "") !== canonicalProductId) {
+    if (identityRows?.length !== 1 || identityRows?.[0]?.identity_status !== "linked" || String(identityRows?.[0]?.product_id ?? "") !== canonicalProductId) {
       return {
         purchaseOrderId, supplierName, attempted: false, succeeded: false,
         supplierOrderId: null, reason: "supplier_identity_unlinked_or_ambiguous", gate: null,
