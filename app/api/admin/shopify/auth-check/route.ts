@@ -47,7 +47,12 @@ export async function GET(request: Request) {
     adminAccessTokenPrefix: cfg.adminAccessToken ? (cfg.adminAccessToken.match(/^(shpat|shpca|shppa|shpss|shpua)_/i)?.[1]?.toLowerCase() ?? "other") : null,
     clientIdPresent: Boolean(cfg.clientId),
     clientSecretPresent: Boolean(cfg.clientSecret),
-    authMode: cfg.clientId && cfg.clientSecret ? "client_credentials" : cfg.adminAccessToken ? "static_admin_token" : "none",
+    authMode: process.env.SHOPIFY_AUTH_MODE?.trim() || (
+      cfg.clientId && cfg.clientSecret && cfg.adminAccessToken
+        ? "ambiguous_requires_SHOPIFY_AUTH_MODE"
+        : cfg.clientId && cfg.clientSecret ? "client_credentials"
+        : cfg.adminAccessToken ? "static_admin_token" : "none"
+    ),
     vercelEnv: process.env.VERCEL_ENV ?? null,
     commitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
   };
