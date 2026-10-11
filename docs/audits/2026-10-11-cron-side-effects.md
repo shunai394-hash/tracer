@@ -68,3 +68,22 @@ The source tree also contains `/api/cron/ai-patrol`, `base-publish`, `core-engin
 - `vercel.json` on `main`
 - Static source of each route listed above on `main`
 - Review date: 2026-10-11
+
+
+## Follow-up verification rounds (2026-10-11)
+
+### Order ingestion and procurement
+
+- Shopify order-level race: importer now re-reads the winning `shop_orders.shopify_order_id` row after unique-constraint error `23505`, then records a skip rather than a duplicate failure.
+- Shopify order-line identity: importer now persists `shopify_line_item_id = item.id`; a new partial unique index on non-null Shopify line-item IDs prevents one external line from being imported under multiple local orders. Existing rows with a null line-item ID are not affected.
+- A dedicated PostgreSQL integration test runs only in the disposable CI database. It checks duplicate external line IDs are rejected across orders and that legacy null IDs remain allowed.
+- Order recovery: autonomous control now selects paid `fulfillment_pending` orders in addition to `placed` and `processing`. This matches the status written by Shopify order ingestion.
+- Existing supplier-attempt ledger has a unique idempotency key and unique purchase-order constraint. Concurrent attempt claims fail closed; ambiguous external outcomes move to `unknown` and require manual reconciliation rather than an automatic repeat.
+- Existing dropship PO creation uses stable `dropship:<shop_order_item_id>` keys and handles unique-constraint races by re-reading the winning PO.
+
+### Remaining limits
+
+- These are source-level checks and disposable-CI tests, not a production database duplicate scan. Before applying the new migration to production, run a read-only duplicate preflight for non-null `shopify_line_item_id` values and verify the column/index state.
+- The order automation run row is telemetry/idempotency support, not a proven distributed lease. Concurrent runs may both inspect the same paid order; PO and supplier-attempt uniqueness are the downstream protections. A dedicated claim/lease integration test remains desirable.
+- A supplier attempt left in `in_progress` deliberately blocks another external order attempt. This favors no-duplicate safety over automatic recovery; stale attempts require reconciliation until a reviewed lease/recovery policy exists.
+- No production credentials, Cron settings, database rows, channel listings, customer fulfillment, or supplier orders were changed during these checks.
