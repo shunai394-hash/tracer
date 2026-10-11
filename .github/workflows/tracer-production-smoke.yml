@@ -2,8 +2,12 @@ name: TRACER Production Smoke
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["main"]
+    inputs:
+      allow_production_writes:
+        description: "Explicitly authorize production endpoint checks that may update orders, inventory, or listings"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   id-token: write
@@ -11,6 +15,7 @@ permissions:
 
 jobs:
   smoke:
+    if: ${{ inputs.allow_production_writes == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
