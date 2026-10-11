@@ -32,7 +32,7 @@ export async function GET(request: Request) {
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "BASE_DIAGNOSTIC_FAILED";
-    const status = Number(message.match(/HTTP_(\d{3})/)?.[1] ?? 0) || null;
+    const status = Number(message.match(/HTTP[_ ](\d{3})/)?.[1] ?? 0) || null;
     const stage = message.split(":")[0].slice(0, 100);
     console.error("[TRACER BASE AUTH PROBE FAILED]", { stage, status });
     return NextResponse.json(
