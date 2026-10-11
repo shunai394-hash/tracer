@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyShopifyWebhookHmac } from "@/lib/shopify/admin";
+import { mapShopifySkusToListings, type OrderSkuListing } from "@/lib/shopify/order-sku-mapping";
 
 export const runtime = "nodejs";
 
@@ -25,16 +26,36 @@ export async function POST(request: Request) {
     if (existing.data) return NextResponse.json({ ok: true, duplicate: true, orderId: String(existing.data.id) });
 
     const items = Array.isArray(order.line_items) ? order.line_items as Array<Record<string, unknown>> : [];
-    const skus = items.map((item) => String(item.sku ?? "")).filter(Boolean);
-    if (!items.length || !skus.length) return NextResponse.json({ ok: true, blocked: true, reason: "listing_sku_missing" });
+    const skus = items.map((item) => String(item.sku ?? "").trim().trim());
+    if (!items.length || skus.some((sku) => !sku)) {
+      return NextResponse.json({ ok: true, blocked: true, reason: "listing_sku_missing" });
+    }
 
-    const { data: listings, error: listingError } = await db.from("shop_listings")
-      .select("id,product_id,title,published,orderable,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id")
-      .in("id", skus);
+    // The publisher emits TRC-<supplier_variant_id || supplier_product_id || listing_id>.
+    // Query all possible identifier columns, then require an exact, unique SKU match.
+    const skuTokens = [...new Set(skus.flatMap((value) => [
+      value,
+      value.startsWith("TRC-") ? value.slice(4) : value,
+    ]))];
+    const listingSelect = "id,product_id,title,published,orderable,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id";
+    const [byIdResult, byVariantResult, byProductResult] = await Promise.all([
+      db.from("shop_listings").select(listingSelect).in("id", skuTokens),
+      db.from("shop_listings").select(listingSelect).in("supplier_variant_id", skuTokens),
+      db.from("shop_listings").select(listingSelect).in("supplier_product_id", skuTokens),
+    ]);
+    const listingError = byIdResult.error ?? byVariantResult.error ?? byProductResult.error;
     if (listingError) throw new Error(listingError.message);
-    const byId = new Map((listings ?? []).map((row) => [String(row.id), row]));
-    if (skus.some((sku) => !byId.has(sku))) return NextResponse.json({ ok: true, blocked: true, reason: "listing_mapping_missing" });
-    if ((listings ?? []).some((row) => row.published !== true || row.orderable !== true)) {
+    const candidates = new Map<string, OrderSkuListing>();
+    for (const row of [...(byIdResult.data ?? []), ...(byVariantResult.data ?? []), ...(byProductResult.data ?? [])]) {
+      candidates.set(String(row.id), row as OrderSkuListing);
+    }
+    const mapping = mapShopifySkusToListings(skus, [...candidates.values()]);
+    if (!mapping.ok) {
+      return NextResponse.json({ ok: true, blocked: true, reason: mapping.reason });
+    }
+    const byId = mapping.bySku;
+    const listings = [...new Map(skus.map((sku) => [String(byId.get(sku)!.id), byId.get(sku)!])).values()];
+    if (listings.some((row) => row.published !== true || row.orderable !== true)) {
       return NextResponse.json({ ok: true, blocked: true, reason: "listing_not_orderable" });
     }
 
