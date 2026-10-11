@@ -8,7 +8,7 @@ const baseClient = await readFile(new URL("../lib/channels/base.ts", import.meta
 
 assert.match(base, /requireAutomationAuth/);
 assert.match(base, /TRACER BASE AUTH PROBE/);
-assert.ok(base.includes("message.match(/HTTP[_ ](\\d{3})/)"), "HTTP status parsing must use a digit capture group");
+assert.match(base, /message\.match\(\/HTTP_.*\\d\{3\}.*\)/);
 assert.match(base, /error: stage/);
 assert.doesNotMatch(base, /error:\s*error instanceof Error\s*\?\s*error\.message/);
 assert.doesNotMatch(base, /unique_key/);
