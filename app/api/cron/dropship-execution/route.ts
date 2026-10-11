@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { runAutonomousOrderControl } from "@/lib/ordering/autonomous-control";
 import { initializeProcurement } from "@/lib/procurement/init";
-import { listSupplierAdapters } from "@/lib/procurement/registry";
+import { getSupplierCapabilities, listSupplierAdapters } from "@/lib/procurement/registry";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { syncBaseOrdersToTracer } from "@/lib/channels/base-orders";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
@@ -20,6 +21,26 @@ export async function GET(request: Request) {
     const baseSync = await syncBaseOrdersToTracer(50);
 
     const supportedSuppliers = listSupplierAdapters();
+    const supplierCapabilities = supportedSuppliers.map((name) => {
+      const capabilities = getSupplierCapabilities(name);
+      return {
+        name,
+        orderPreflight: capabilities.orderPreflight,
+        orderCreation: capabilities.orderCreation,
+        payment: capabilities.payment,
+        liveOrdering: capabilities.liveOrdering,
+      };
+    });
+    const externalLiveOrderCapableSupplierCount = supplierCapabilities.filter((supplier) =>
+      supplier.name !== "tracer_internal" && supplier.orderPreflight && supplier.orderCreation &&
+      supplier.payment && supplier.liveOrdering,
+    ).length;
+    const internalVariants = await createSupabaseAdminClient()
+      .from("internal_supply_variants")
+      .select("id", { count: "exact", head: true })
+      .eq("active", true)
+      .eq("orderable", true);
+    const internalOrderableVariantCount = internalVariants.error ? null : (internalVariants.count ?? 0);
 
     const automation = await runAutonomousOrderControl(
       `dropship-cron:${new Date().toISOString().slice(0, 13)}`,
@@ -29,6 +50,12 @@ export async function GET(request: Request) {
       ok: true,
       enabled: true,
       suppliers: supportedSuppliers,
+      supplierCapabilities,
+      supplierReadiness: {
+        externalLiveOrderCapableSupplierCount,
+        internalOrderableVariantCount,
+        internalOrderableVariantQueryOk: !internalVariants.error,
+      },
       baseSync,
       attempted: automation.processed,
       succeeded: automation.succeeded,
