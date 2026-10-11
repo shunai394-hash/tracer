@@ -18,7 +18,7 @@ import {
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { matchProductIdentity, normalizeIdentifier, pickSupplierBarcodeIdentifier, EMPTY_IDENTIFIERS } from "../lib/market/identifiers.ts";
-import { parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
+import { inspectCanonicalMarketplaceVariantMarkup, parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
@@ -43,6 +43,24 @@ test("canonical marketplace variant evidence", "accepts absolute Schema.org type
   const variants = parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01");
   assert.equal(variants.length, 1);
   assert.equal(variants[0].sourceVariantId, "B0IRI12345");
+});
+
+test("canonical marketplace variant diagnostics", "distinguishes missing ProductGroup markup from unrecognized absolute type IRIs", () => {
+  const html = '<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"https://schema.org/ProductGroup","hasVariant":[{"@type":"https://schema.org/Product","name":"Variant IRI","sku":"IRI-SKU","url":"https://www.amazon.co.jp/dp/B0IRI12345"}]}]}</script>';
+  assert.deepEqual(inspectCanonicalMarketplaceVariantMarkup(html), {
+    jsonLdNodeCount: 2,
+    productGroupCount: 1,
+    groupsWithVariantCount: 1,
+    variantProductNodeCount: 1,
+    absoluteTypeIriCount: 2,
+  });
+  assert.deepEqual(inspectCanonicalMarketplaceVariantMarkup("<html></html>"), {
+    jsonLdNodeCount: 0,
+    productGroupCount: 0,
+    groupsWithVariantCount: 0,
+    variantProductNodeCount: 0,
+    absoluteTypeIriCount: 0,
+  });
 });
 
 test("canonical marketplace variant evidence", "does not use the parent ASIN as a child ID when variants omit their own URL", () => {
