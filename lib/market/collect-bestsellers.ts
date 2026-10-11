@@ -14,7 +14,7 @@ import {
   type ParsedBestseller,
 } from "@/lib/market/parse-rankings";
 import { extractAsinFromUrl, normalizeIdentifier } from "@/lib/market/identifiers";
-import { inspectCanonicalMarketplaceVariantMarkup, parseCanonicalMarketplaceVariantEvidence } from "@/lib/market/canonical-variant-evidence";
+import { inspectCanonicalMarketplaceVariantMarkup, parseAmazonVariationAsinMap, parseCanonicalMarketplaceVariantEvidence } from "@/lib/market/canonical-variant-evidence";
 import { decodeHtmlBytes } from "@/lib/market/charset";
 
 export const MARKETPLACE_SOURCES = [
@@ -241,6 +241,49 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
         variantProductNodeCount += markup.variantProductNodeCount;
         absoluteTypeIriCount += markup.absoluteTypeIriCount;
         item.canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl);
+        // Amazon pages often expose child ASINs in their explicit variation map
+        // even when they omit Schema.org ProductGroup.hasVariant. Resolve those
+        // ASINs against each child's own detail page; never inherit the parent's
+        // JAN/GTIN, and persist only child pages with a valid concrete barcode.
+        if (item.canonicalVariants.length === 0) {
+          const childAsins = parseAmazonVariationAsinMap(detailHtml, item.productUrl).slice(0, 6);
+          const recovered = await Promise.all(childAsins.map(async (child) => {
+            const childUrl = `https://www.amazon.co.jp/dp/${child.asin}`;
+            const childHtml = await fetchHtml(childUrl);
+            if (!childHtml) return null;
+            const childDetail = parseAmazonProductDetail(childHtml);
+            const jan = normalizeIdentifier("jan", childDetail.jan);
+            const gtin = normalizeIdentifier("gtin", childDetail.gtin);
+            const ean = normalizeIdentifier("ean", childDetail.ean);
+            const upc = normalizeIdentifier("upc", childDetail.upc);
+            if (!jan && !gtin && !ean && !upc) return null;
+            return {
+              sourceVariantId: child.asin,
+              sku: null,
+              title: child.variationValues.length ? child.variationValues.join(" / ") : null,
+              asin: child.asin,
+              jan,
+              gtin,
+              ean,
+              upc,
+              mpn: normalizeIdentifier("mpn", childDetail.model),
+              productUrl: childUrl,
+              evidenceSource: "amazon_variation_asin_map" as const,
+              rawEvidence: {
+                source_variant_id: child.asin,
+                parent_product_url: item.productUrl,
+                child_product_url: childUrl,
+                variation_values: child.variationValues,
+                child_jan: jan,
+                child_gtin: gtin,
+                child_ean: ean,
+                child_upc: upc,
+                extraction: "child_detail_page",
+              },
+            };
+          }));
+          item.canonicalVariants.push(...recovered.filter((value): value is NonNullable<typeof value> => value !== null));
+        }
         canonicalVariantCount += item.canonicalVariants.length;
         item.brand = detail.brand;
         item.model = detail.model;

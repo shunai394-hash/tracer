@@ -11,7 +11,7 @@ export type CanonicalMarketplaceVariantEvidence = {
   upc: string | null;
   mpn: string | null;
   productUrl: string | null;
-  evidenceSource: "schema_org_product_group_has_variant";
+  evidenceSource: "schema_org_product_group_has_variant" | "amazon_variation_asin_map";
   rawEvidence: Record<string, unknown>;
 };
 
@@ -214,5 +214,48 @@ export function parseCanonicalMarketplaceVariantEvidence(
     }
   }
 
+  return output;
+}
+
+
+export type AmazonVariationAsinEvidence = {
+  asin: string;
+  variationValues: string[];
+};
+
+/**
+ * Extract Amazon's explicit child-ASIN-to-dimension map from embedded page data.
+ * The parent/child relationship is only discovery evidence; a child must still
+ * expose its own valid barcode on its own detail page before supplier linking.
+ */
+export function parseAmazonVariationAsinMap(
+  html: string,
+  parentProductUrl: string | null = null,
+): AmazonVariationAsinEvidence[] {
+  const parentAsin = extractAsinFromUrl(parentProductUrl);
+  const output: AmazonVariationAsinEvidence[] = [];
+  const seen = new Set<string>();
+  const patterns = [
+    /(?:var|let|const)\s+dimensionValuesDisplayData\s*=\s*(\{[\s\S]*?\})\s*;/gi,
+    /dimensionValuesDisplayData\s*:\s*(\{[\s\S]*?\})\s*[,}]/gi,
+  ];
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(html))) {
+      let parsed: unknown;
+      try { parsed = JSON.parse(match[1]); } catch { continue; }
+      const record = asRecord(parsed);
+      if (!record) continue;
+      for (const [rawAsin, rawValues] of Object.entries(record)) {
+        const asin = normalizeIdentifier("asin", rawAsin);
+        if (!asin || asin === parentAsin || seen.has(asin)) continue;
+        const variationValues = nodeList(rawValues)
+          .map(asString)
+          .filter((value): value is string => Boolean(value));
+        seen.add(asin);
+        output.push({ asin, variationValues });
+      }
+    }
+  }
   return output;
 }
