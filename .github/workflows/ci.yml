@@ -34,6 +34,8 @@ jobs:
         run: npm run test:autonomous-order-claim
       - name: Test Shopify order line-item pagination safety
         run: npm run test:shopify-line-item-pagination
+      - name: Test Shopify webhook SKU-to-listing mapping
+        run: npm run test:shopify-webhook-sku-mapping
       - name: Test sanitized provider diagnostics
         run: npm run test:auth-diagnostics
       - name: Test bounded product-intelligence scoring
