@@ -12,6 +12,8 @@ on:
       - main
     paths:
       - ".github/workflows/tracer-shopify-auth-check.yml"
+  issues:
+    types: [opened]
   workflow_dispatch:
     inputs:
       sync_batch:
@@ -26,6 +28,7 @@ permissions:
 
 jobs:
   check:
+    if: github.event_name != 'issues' || github.event.issue.title == '[TRACER RUN READONLY AUTH CHECK]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -92,7 +95,7 @@ jobs:
           fi
 
       - name: Publish sanitized read-only auth result for review
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || (github.event_name == 'issues' && github.event.issue.title == '[TRACER RUN READONLY AUTH CHECK]')
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
