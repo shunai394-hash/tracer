@@ -224,10 +224,9 @@ export type AmazonVariationAsinEvidence = {
 };
 
 /**
- * Extracts Amazon's explicit child-ASIN-to-dimension map from its embedded
- * variation data. This proves a marketplace parent/child relationship only;
- * each child page must still supply its own valid barcode before it can be
- * used for supplier identity matching.
+ * Extract Amazon's explicit child-ASIN-to-dimension map from embedded page data.
+ * The parent/child relationship is only discovery evidence; a child must still
+ * expose its own valid barcode on its own detail page before supplier linking.
  */
 export function parseAmazonVariationAsinMap(
   html: string,
@@ -237,8 +236,8 @@ export function parseAmazonVariationAsinMap(
   const output: AmazonVariationAsinEvidence[] = [];
   const seen = new Set<string>();
   const patterns = [
-    /(?:var|let|const)\\s+dimensionValuesDisplayData\\s*=\\s*(\\{[\\s\\S]*?\\})\\s*;/gi,
-    /dimensionValuesDisplayData\\s*:\\s*(\\{[\\s\\S]*?\\})\\s*[,}]/gi,
+    /(?:var|let|const)\s+dimensionValuesDisplayData\s*=\s*(\{[\s\S]*?\})\s*;/gi,
+    /dimensionValuesDisplayData\s*:\s*(\{[\s\S]*?\})\s*[,}]/gi,
   ];
   for (const pattern of patterns) {
     let match: RegExpExecArray | null;
