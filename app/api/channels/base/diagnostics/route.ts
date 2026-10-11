@@ -1,55 +1,43 @@
 import { NextResponse } from "next/server";
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { listBaseOrders, isBaseConfigured } from "@/lib/channels/base";
 
 export const runtime = "nodejs";
 
+/** Read-only OAuth/API probe. Never returns order IDs, customer data, or credentials. */
 export async function GET(request: Request) {
-  const cronSecret = process.env.CRON_SECRET;
-  const authHeader = request.headers.get("authorization");
-
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json(
-      { ok: false, error: "Unauthorized" },
-      { status: 401 },
-    );
-  }
+  const authError = await requireAutomationAuth(request);
+  if (authError) return authError;
 
   try {
     if (!isBaseConfigured()) {
+      console.info("[TRACER BASE AUTH PROBE]", { configured: false, apiStatus: null, orderCountReturned: null });
       return NextResponse.json(
-        { ok: false, configured: false, error: "BASE is not configured" },
-        { status: 503 },
+        { ok: false, configured: false, baseApi: false, apiStatus: null, error: "BASE_OAUTH_CONFIG_INCOMPLETE" },
+        { status: 503, headers: { "Cache-Control": "no-store" } },
       );
     }
 
     const orders = await listBaseOrders({ limit: 1 });
-
-    return NextResponse.json({
+    const dispatchStatuses = [...new Set(orders.map((order) => String(order.dispatch_status ?? "unknown")))].sort();
+    const result = {
       ok: true,
       configured: true,
       baseApi: true,
+      apiStatus: 200,
       orderCountReturned: orders.length,
-      orders: orders.map((order) => ({
-        unique_key: order.unique_key,
-        dispatch_status: order.dispatch_status,
-        ordered: order.ordered,
-      })),
-    });
+      dispatchStatuses,
+    };
+    console.info("[TRACER BASE AUTH PROBE]", result);
+    return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "BASE_DIAGNOSTIC_FAILED";
-    console.error("[TRACER BASE DIAGNOSTIC ERROR]", {
-      stage: message.split(":")[0],
-      status: message.match(/HTTP_(\\d{3})/)?.[1] ?? null,
-    });
-
+    const status = Number(message.match(/HTTP_(\d{3})/)?.[1] ?? 0) || null;
+    const stage = message.split(":")[0].slice(0, 100);
+    console.error("[TRACER BASE AUTH PROBE FAILED]", { stage, status });
     return NextResponse.json(
-      {
-        ok: false,
-        configured: true,
-        baseApi: false,
-        error: error instanceof Error ? error.message.slice(0, 240) : "BASE_DIAGNOSTIC_FAILED",
-      },
-      { status: 500 },
+      { ok: false, configured: true, baseApi: false, apiStatus: status, error: stage },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }
 }
