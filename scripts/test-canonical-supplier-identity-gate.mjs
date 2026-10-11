@@ -42,9 +42,9 @@ assert.match(base, /invalid_request.*break/s, "BASE auth failures must stop the 
 assert.match(base, /unpublishFailed \+= 1/);
 assert.match(base, /hidden: results\.filter\(\(r\) => r\.ok && r\.hidden\)\.length/);
 assert.match(route, /publishPublishedListingsToBase\(50/);
-// Keep the recurring unpublish job disabled until BASE auth is verified; this PR intentionally removes its schedule.
+// Keep Vercel Cron disabled; guarded 15-minute reconciliation runs through GitHub Actions OIDC.
 assert.doesNotMatch(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/);
 assert.match(unpublishWorkflow, /cron: "\*\/15 \* \* \* \*"/, "guarded unlinked listing reconciliation must retry every 15 minutes via GitHub Actions");
 assert.match(unpublishWorkflow, /api\/cron\/unpublish-unlinked/);
 assert.match(unpublishWorkflow, /id-token: write/);
-console.log("Canonical supplier identity publication gates: 10 assertions passed");
+console.log("Canonical supplier identity publication and reconciliation checks passed");
