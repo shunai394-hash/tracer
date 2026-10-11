@@ -555,6 +555,12 @@ export async function runIntelligencePipeline(options: {
   // earlier patrol were never investigated (only the current run's inserts
   // were). Drain a few per patrol, oldest observations first.
   steps.push(await runStep("dropship", async () => {
+    // The pending-barcode backlog is still raw marketplace evidence. Do not
+    // let it bypass the canonical-variant prerequisite when bestseller intake
+    // was deferred or retryable.
+    if (!bestsellerCanFeedSalesGate) {
+      return { skipped: true, retryable: true, reason: "bestseller_canonical_evidence_deferred" };
+    }
     const { data: backlog, error: backlogError } = await db
       .from("marketplace_bestsellers")
       .select("id")
