@@ -174,9 +174,17 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
       .map((row) => String(row.demand_observation_id))
       .filter(Boolean),
   );
-  const demandRows = (demandResult.data ?? [])
-    .filter((row) => !candidateObservationIds.has(String(row.id)))
-    .slice(0, 100);
+  const allDemandRows = demandResult.data ?? [];
+  const demandBatchSize = 100;
+  const demandBatchPages = Math.max(1, Math.ceil(allDemandRows.length / demandBatchSize));
+  // Rotate by patrol interval over a stable, ordered demand set. Filtering
+  // candidates before slicing would let non-product observations at the head
+  // starve older product queries forever; rotation gives every row a turn.
+  const demandBatchPage = Math.floor(Date.now() / (15 * 60_000)) % demandBatchPages;
+  const demandRows = allDemandRows.slice(
+    demandBatchPage * demandBatchSize,
+    (demandBatchPage + 1) * demandBatchSize,
+  );
   const productRows = productResult.data ?? [];
   const allProductNames = productRows.map((product) => product.normalized_title);
   const productTitleById = new Map(productRows.map((product) => [String(product.product_id), product.normalized_title]));
@@ -279,6 +287,11 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
       // to strong demand evidence; leave the observation on the candidate path.
       variantRejected += 1;
     }
+
+    // Existing candidates have already entered supplier-resolution. Still
+    // allow newly available exact identifiers above to strengthen their match,
+    // but do not repeatedly run O(products) title matching on the same row.
+    if (candidateObservationIds.has(String(demand.id))) continue;
 
     let intent = detectProductIntent(query);
     // Observations that already produced a candidate were classified before;
