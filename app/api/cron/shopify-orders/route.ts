@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 import { syncPaidShopifyOrders } from "@/lib/shopify/sync-orders";
 import { runAutonomousOrderControl } from "@/lib/ordering/autonomous-control";
 
@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireAutomationCapability(request, "supplier_order");
   if (authError) return authError;
 
   try {
