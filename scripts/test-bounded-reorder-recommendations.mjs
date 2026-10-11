@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
+// Source-contract tests only: no live database writes or external provider calls.
 const reorder = await readFile(new URL("../lib/ordering/persist-reorder.ts", import.meta.url), "utf8");
 const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
 
