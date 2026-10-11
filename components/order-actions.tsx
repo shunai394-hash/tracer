@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 export function OrderActions({
   recommendationId,
@@ -11,25 +12,36 @@ export function OrderActions({
 }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const blocked =
-    orderState === "ORDER_FORBIDDEN" || orderState === "UNKNOWN_BLOCKED";
+  const blocked = orderState === "ORDER_FORBIDDEN" || orderState === "UNKNOWN_BLOCKED";
 
   async function submit(approved: boolean) {
     setBusy(true);
     setMessage(null);
     try {
+      const supabase = createSupabaseBrowserClient();
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.access_token) {
+        setMessage("ログインが必要です。管理者アカウントで再ログインしてください。");
+        return;
+      }
+
       const response = await fetch("/api/orders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({ recommendationId, approved }),
       });
       const payload = (await response.json()) as { ok: boolean; error?: string };
       setMessage(
         payload.ok
           ? approved
-            ? "発注を記録しました。仕入先API未接続のため実発注は実行していません。"
+            ? "承認記録を保存しました。仕入先API未接続のため実発注は実行していません。"
             : "発注案を下書きとして保存しました。"
-          : payload.error ?? "処理できませんでした",
+          : payload.error === "admin_access_required"
+            ? "この操作には管理者権限が必要です。"
+            : payload.error ?? "処理できませんでした",
       );
     } catch {
       setMessage("処理できませんでした");
@@ -56,7 +68,7 @@ export function OrderActions({
       >
         発注する
       </button>
-      {message ? <p className="w-full text-xs text-zinc-400">{message}</p> : null}
+      {message ? <p role="status" aria-live="polite" className="w-full text-xs text-zinc-400">{message}</p> : null}
     </div>
   );
 }
