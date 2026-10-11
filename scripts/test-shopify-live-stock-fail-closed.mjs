@@ -14,6 +14,6 @@ assert.doesNotMatch(store, /return live === undefined \|\| live > 0/, "unknown l
 
 assert.match(store, /const verifiedListings = await loadLiveListings/, "order creation must revalidate current stock through the fail-closed loader");
 assert.match(store, /listing inventory could not be verified against current channel state/, "order creation must reject when current stock cannot be verified");
-assert.match(store, /const inventory = verifiedListing\\.inventory/, "quantity checks must use live-verified inventory, not only cached DB quantity");
+assert.match(store, /const inventory = verifiedListing\.inventory/, "quantity checks must use live-verified inventory, not only cached DB quantity");
 
 console.log("Shopify live-stock fail-closed guards: 11 passed");
