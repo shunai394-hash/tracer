@@ -28,4 +28,14 @@ for (const fragment of [
 ]) {
   assert.ok(guard.includes(fragment), `marketplace stage must guard: ${fragment}`);
 }
-console.log("PASS: empty collection/evidence/write failure cannot be reported as a complete patrol");
+const bestsellerIdGuard = source.slice(
+  source.indexOf("const bestsellerIds ="),
+  source.indexOf("const supplierCandidateIds ="),
+);
+const supplierIdGuard = source.slice(
+  source.indexOf("const supplierCandidateIds ="),
+  source.indexOf('steps.push(await runStep("auxiliary_trends"'),
+);
+assert.match(bestsellerIdGuard, /bestsellerStep\.ok && !bestsellerStep\.skipped/);
+assert.match(supplierIdGuard, /bestsellerStep\.ok && !bestsellerStep\.skipped/);
+console.log("PASS: empty collection/evidence/write failure defers patrol and blocks downstream sales candidates");
