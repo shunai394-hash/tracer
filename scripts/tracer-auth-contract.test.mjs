@@ -14,6 +14,7 @@ test("auth is only accepted with HTTP 200, matching identity, and all required p
     provider: "shopify",
     configComplete: true,
     tokenExchangeStatus: 200,
+    tokenReturned: true,
     apiStatus: 200,
     expectedIdentity: "gid://shopify/Shop/123",
     returnedIdentity: "gid://shopify/Shop/123",
@@ -22,6 +23,7 @@ test("auth is only accepted with HTTP 200, matching identity, and all required p
   };
   assert.equal(auth.evaluateProviderProbe(probe).authenticated, true);
   assert.deepEqual(auth.evaluateProviderProbe({ ...probe, apiStatus: 401 }).blockers, ["provider_api_not_confirmed"]);
+  assert.equal(auth.evaluateProviderProbe({ ...probe, tokenReturned: false }).blockers.includes("token_exchange_not_confirmed"), true);
   assert.equal(auth.evaluateProviderProbe({ ...probe, returnedIdentity: "gid://shopify/Shop/999" }).blockers.includes("provider_identity_mismatch"), true);
   assert.deepEqual(auth.evaluateProviderProbe({ ...probe, grantedPermissions: ["read_products"] }).missingPermissions, ["write_products"]);
 });
@@ -31,6 +33,7 @@ test("configuration presence alone never proves authentication", () => {
     provider: "base",
     configComplete: true,
     tokenExchangeStatus: null,
+    tokenReturned: false,
     apiStatus: null,
     expectedIdentity: "base-shop",
     returnedIdentity: null,
