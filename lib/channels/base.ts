@@ -17,7 +17,6 @@ type BaseItemResponse = {
 };
 
 const BASE_API_URL = process.env.BASE_API_URL?.trim() || "https://api.thebase.in/1";
-const BASE_ACCESS_TOKEN = process.env.BASE_ACCESS_TOKEN?.trim() || "";
 const BASE_CLIENT_ID = process.env.BASE_CLIENT_ID?.trim() || "";
 const BASE_CLIENT_SECRET = process.env.BASE_CLIENT_SECRET?.trim() || "";
 const BASE_REFRESH_TOKEN = process.env.BASE_REFRESH_TOKEN?.trim() || "";
@@ -34,8 +33,8 @@ function safeBaseError(payload: unknown): string {
   const value = [record.error_description, record.error, record.message]
     .find((item) => typeof item === "string");
   return typeof value === "string"
-    ? value.replace(/(?:access|refresh)_token[=: ]+[^\\s,;]+/gi, "[REDACTED]")
-        .replace(/client_secret[=: ]+[^\\s,;]+/gi, "[REDACTED]")
+    ? value.replace(/(?:access|refresh)_token[=: ]+[^\s,;]+/gi, "[REDACTED]")
+        .replace(/client_secret[=: ]+[^\s,;]+/gi, "[REDACTED]")
         .slice(0, 180)
     : "unknown_error";
 }
