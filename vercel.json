@@ -87,10 +87,6 @@
       "schedule": "10 18 * * *"
     },
     {
-      "path": "/api/cron/cj-identity-reverify",
-      "schedule": "3,18,33,48 * * * *"
-    },
-    {
       "path": "/api/cron/sales-test-publication",
       "schedule": "11 18 * * *"
     },
