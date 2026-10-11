@@ -18,6 +18,7 @@ assert.ok(route.includes(".range(from, from + size - 1)"), "candidate scan must 
 assert.ok(route.includes(".order(\"id\", { ascending: true })"), "pagination must use a deterministic tie-breaker");
 assert.ok(pagination.includes("if (rows.length < pageSize) return { data, error: null, offset: null };"), "pagination must stop only after the final partial page");
 assert.ok(route.includes("ids.slice(offset, offset + 500)"), "bulk updates must be chunked to bounded ID lists");
-assert.ok(route.includes("stage: \"read\", offset: from"), "page read failures must fail closed with the failing offset");
+assert.ok(route.includes("stage: \"read\", offset: scan.offset"), "page read failures must fail closed with the failing offset");
+assert.ok(pagination.includes("if (result.error) return { data: [], error: result.error, offset: from };"), "page read failures must discard partial rows and return the failing offset");
 assert.ok(route.includes("baseAuthReauthorizationRequired"), "report must surface the authentication circuit state");
 console.log("BASE invalid-token retry circuit verified");
