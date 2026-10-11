@@ -4,6 +4,7 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-listings";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
+import { BASE_AUTH_REAUTH_REQUIRED, isBaseAuthenticationFailure } from "@/lib/channels/base-auth-failure";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
   const db = createSupabaseAdminClient();
   const { data, error } = await db.from("shop_listings")
     .select("id,supplier_listing_id,published,orderable,pipeline_reason,shopify_product_id,shopify_sync_status,base_item_id,base_publication_status,base_last_error")
-    .or("published.eq.true,and(shopify_product_id.not.is.null,shopify_sync_status.is.null),and(shopify_product_id.not.is.null,shopify_sync_status.neq.blocked,shopify_sync_status.neq.synced),and(base_item_id.not.is.null,base_last_error.is.null),and(base_item_id.not.is.null,base_last_error.neq.supplier_identity_unlinked_hidden,base_last_error.neq.tracer_unpublished_hidden)")
+    .or("published.eq.true,and(shopify_product_id.not.is.null,shopify_sync_status.is.null),and(shopify_product_id.not.is.null,shopify_sync_status.neq.blocked,shopify_sync_status.neq.synced),and(base_item_id.not.is.null,base_last_error.is.null),and(base_item_id.not.is.null,base_last_error.neq.supplier_identity_unlinked_hidden,base_last_error.neq.tracer_unpublished_hidden,base_last_error.neq.base_auth_invalid_reauthorization_required)")
     .order("created_at", { ascending: true })
     .limit(1000);
   if (error) return NextResponse.json({ ok: false, stage: "read", error: error.message }, { status: 500 });
@@ -40,10 +41,11 @@ export async function GET(request: Request) {
   }
 
   const shopifyPending = unlinked.filter((row) => row.shopify_product_id && row.shopify_sync_status !== "blocked").slice(0, 15);
-  const basePending = unlinked.filter((row) => row.base_item_id && row.base_last_error !== "supplier_identity_unlinked_hidden").slice(0, 50);
+  const basePending = unlinked.filter((row) => row.base_item_id && row.base_last_error !== "supplier_identity_unlinked_hidden" && row.base_last_error !== BASE_AUTH_REAUTH_REQUIRED).slice(0, 50);
   let shopify: unknown = { skipped: true };
   let base: unknown = { skipped: true };
   const errors: string[] = [];
+  let baseAuthReauthorizationRequired = false;
   if (shopifyPending.length > 0) {
     try {
       shopify = await syncPublishedListingsToShopify(15, shopifyPending.map((row) => String(row.id)));
@@ -57,6 +59,19 @@ export async function GET(request: Request) {
       const result = base as { attempted?: number; failed?: number; results?: Array<{ listingId: string; ok: boolean; error?: string }> };
       if ((result.attempted ?? 0) === 0 && (result.results?.length ?? 0) === 0) errors.push("base_unpublish_not_attempted:credentials_not_configured_or_no_result");
       if ((result.failed ?? 0) > 0) errors.push(`base_unpublish_failed:${JSON.stringify(result.results?.filter((item) => !item.ok).slice(0, 5) ?? [])}`);
+
+      // Invalid credentials are account-wide. Pause retries for this batch until the token is repaired.
+      const authRejected = (result.results ?? []).some((item) => !item.ok && isBaseAuthenticationFailure(item.error));
+      if (authRejected) {
+        baseAuthReauthorizationRequired = true;
+        const { error: markerError } = await db.from("shop_listings").update({
+          base_last_error: BASE_AUTH_REAUTH_REQUIRED,
+          base_publication_status: "failed",
+          updated_at: new Date().toISOString(),
+        }).in("id", basePending.map((row) => String(row.id)));
+        if (markerError) errors.push(`base_auth_circuit_marker_failed:${markerError.message}`);
+        errors.push("base_auth_invalid_reauthorization_required: scheduled BASE retries paused for this batch; repair credentials and clear the marker before retrying");
+      }
     } catch (cause) { errors.push(`base:${cause instanceof Error ? cause.message : String(cause)}`); }
   }
 
@@ -66,6 +81,7 @@ export async function GET(request: Request) {
       unlinkedFound: unlinked.length,
       shopifyAttempted: shopifyPending.length,
       baseAttempted: basePending.length,
+      baseAuthReauthorizationRequired,
       errors,
     });
   }
@@ -79,6 +95,7 @@ export async function GET(request: Request) {
     databaseBlocked: needsBlock.length,
     shopifyAttempted: shopifyPending.length,
     baseAttempted: basePending.length,
+    baseAuthReauthorizationRequired,
     shopifyHidden: shopifyResult.hidden ?? null,
     shopifyFailed: shopifyResult.failed ?? null,
     baseHidden: baseResult.hidden ?? null,
@@ -86,10 +103,5 @@ export async function GET(request: Request) {
     errorCount: errors.length,
   };
   console.info("[TRACER UNLINKED RECONCILIATION]", report);
-  return NextResponse.json({
-    ...report,
-    shopify,
-    base,
-    errors,
-  }, { status: errors.length === 0 ? 200 : 207 });
+  return NextResponse.json({ ...report, shopify, base, errors }, { status: errors.length === 0 ? 200 : 207 });
 }
