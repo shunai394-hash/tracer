@@ -19,6 +19,7 @@ assert.ok(source.indexOf("while (hasNextPage)") < source.indexOf("const supabase
 
 assert.match(source, /inserted\.error\?\.code === "23505"/);
 assert.match(source, /shop_order_items_insert_failed/);
+assert.match(migration, /add column if not exists shopify_line_item_id text/i);
 assert.match(migration, /create unique index if not exists shop_order_items_shopify_line_item_id_uidx/i);
 assert.match(migration, /on public\.shop_order_items\(shopify_line_item_id\)/i);
 assert.match(migration, /where shopify_line_item_id is not null/i);
