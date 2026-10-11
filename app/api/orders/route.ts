@@ -1,4 +1,3 @@
-import { requireCronAuth } from "@/lib/security/cron-auth";
 import { NextResponse } from "next/server";
 import {
   createPurchaseOrderFromRecommendation,
@@ -8,9 +7,7 @@ import {
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
-  const authError = requireCronAuth(request);
-  if (authError) return authError;
+export async function GET() {
   try {
     const [recommendations, orders] = await Promise.all([
       listReorderRecommendations(),
@@ -26,8 +23,6 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const authError = requireCronAuth(request);
-  if (authError) return authError;
   try {
     const body = (await request.json()) as {
       recommendationId?: string;
