@@ -21,8 +21,8 @@ do $$
 begin
   begin
     insert into public.shop_order_items(order_id, shopify_line_item_id)
-    values ('00000000-0000-0000-0000-000000000001', 'gid://shopify/LineItem/101');
-    raise exception 'expected duplicate Shopify line-item key to be rejected';
+    values ('00000000-0000-0000-0000-000000000002', 'gid://shopify/LineItem/101');
+    raise exception 'expected duplicate Shopify line-item key to be rejected across orders';
   exception
     when unique_violation then
       null;
@@ -35,8 +35,8 @@ begin
   if (select count(*) from public.shop_order_items where shopify_line_item_id is null) <> 2 then
     raise exception 'legacy/null Shopify line-item rows should remain allowed';
   end if;
-  if (select count(*) from public.shop_order_items where shopify_line_item_id = 'gid://shopify/LineItem/101') <> 2 then
-    raise exception 'same external line-item ID on distinct orders should remain allowed by the order-scoped index';
+  if (select count(*) from public.shop_order_items where shopify_line_item_id = 'gid://shopify/LineItem/101') <> 1 then
+    raise exception 'a Shopify line-item ID must not be reused across distinct orders';
   end if;
 end
 $$;
