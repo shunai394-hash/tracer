@@ -9,6 +9,7 @@ import {
   searchCJProducts,
   calculateCJFreight,
 } from "@/lib/sources/cj";
+import { isCJQuotaCircuitBlockingError } from "@/lib/sources/cj/client";
 import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/cj/variant-select";
 import { persistCjSupplyIntelligence } from "@/lib/intelligence/persist-cj-supply-intelligence";
 import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
@@ -196,6 +197,10 @@ export async function discoverAndCreateCjSupply(
   let verified = 0;
   let catalogDiscovered = 0;
   let rejected = 0;
+  // Once CJ reports an exhausted/unknown quota circuit, stop this invocation.
+  // Repeating dozens of searches cannot recover the provider quota and only
+  // creates noisy failure records; leave the cursor on the same query to resume later.
+  let cjQuotaBlocked = false;
 
   // Reuse previously discovered CJ IDs first. These rows are only candidates;
   // stock, variant and Japan freight are re-verified live before publication.
@@ -501,9 +506,18 @@ export async function discoverAndCreateCjSupply(
     } catch (error) {
       rejected++;
       const message = error instanceof Error ? error.message : String(error);
-      items.push({ rejectedStage: "error", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, error: message });
-      if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: message.slice(0, 500), attempts: seededCandidate.attempts });
-      console.warn("[supply-first] seeded candidate rejected", { productId: candidate.id, error: message });
+      cjQuotaBlocked = isCJQuotaCircuitBlockingError(error);
+      items.push({
+        rejectedStage: cjQuotaBlocked ? "supplier_quota_cooldown" : "error",
+        supplierProductId: candidate.id,
+        supplierVariantId: candidate.variantId,
+        error: message,
+      });
+      if (seededCandidate.supplierListingId && !cjQuotaBlocked) {
+        await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: message.slice(0, 500), attempts: seededCandidate.attempts });
+      }
+      console.warn("[supply-first] seeded candidate rejected", { productId: candidate.id, error: message, quotaBlocked: cjQuotaBlocked });
+      if (cjQuotaBlocked) break;
     }
   }
 
@@ -518,7 +532,7 @@ export async function discoverAndCreateCjSupply(
   let page = cursor.page;
   let pagesScanned = 0;
   const seenSearchProducts = new Set<string>();
-  while (catalogDiscovered < limit && pagesScanned < queries.length * 2) {
+  while (!cjQuotaBlocked && catalogDiscovered < limit && pagesScanned < queries.length * 2) {
     if (Date.now() >= deadlineAt) {
       deadlineReached = true;
       break;
@@ -530,7 +544,15 @@ export async function discoverAndCreateCjSupply(
     try {
       search = await searchCJProducts(query, { page, size: 20 });
     } catch (error) {
-      items.push({ rejectedStage: "catalog_search_failed", query, page, error: error instanceof Error ? error.message : String(error) });
+      const message = error instanceof Error ? error.message : String(error);
+      cjQuotaBlocked = isCJQuotaCircuitBlockingError(error);
+      items.push({
+        rejectedStage: cjQuotaBlocked ? "supplier_quota_cooldown" : "catalog_search_failed",
+        query,
+        page,
+        error: message,
+      });
+      if (cjQuotaBlocked) break;
       ({ queryIndex, page } = nextCatalogQuery(queryIndex, queries.length));
       continue;
     }

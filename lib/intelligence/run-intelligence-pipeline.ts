@@ -41,20 +41,38 @@ function classifyFailure(error: unknown): {
   retryable: boolean;
   skippable: boolean;
   message: string;
+  category: "gemini" | "supplier_quota" | "transient" | "fatal";
 } {
   const message = error instanceof Error ? error.message : "Unknown error";
+  const errorCode =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+  // CJ quota errors can occur during supplier search after query ideation.
+  // Never mislabel generic "quota"/HTTP 429 text as a Gemini failure.
+  const supplierQuotaFailure =
+    errorCode === "CJ_QUOTA_EXHAUSTED" ||
+    errorCode === "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN" ||
+    /CJ API quota cooldown|CJ quota circuit state/i.test(message);
   const geminiFailure =
     error instanceof GeminiConfigError ||
     error instanceof GeminiRequestError ||
     error instanceof GeminiTimeoutError ||
-    /gemini|429|quota|rate limit/i.test(message);
+    /gemini/i.test(message);
+  const transientFailure =
+    /timeout|temporar|econnreset|503|502|fetch failed|429|quota|rate limit/i.test(message);
 
   return {
-    retryable:
-      geminiFailure ||
-      /timeout|temporar|econnreset|503|502|fetch failed/i.test(message),
-    skippable: geminiFailure,
+    retryable: supplierQuotaFailure || geminiFailure || transientFailure,
+    skippable: supplierQuotaFailure || geminiFailure,
     message,
+    category: supplierQuotaFailure
+      ? "supplier_quota"
+      : geminiFailure
+        ? "gemini"
+        : transientFailure
+          ? "transient"
+          : "fatal",
   };
 }
 
@@ -192,11 +210,15 @@ async function researchLimitedSupply(): Promise<unknown> {
       await recordCandidateResolutionEvidence({
         candidateId: String(candidate.id),
         fieldName: "candidate_resolution_failed",
-        fieldValue: "gemini_failed",
+        fieldValue: classified.category === "supplier_quota" ? "supplier_quota_cooldown" : "gemini_failed",
         evidenceClass: "actual",
         confidence: 1,
         metadata: {
-          stage: "query_ideation",
+          stage: classified.category === "supplier_quota" ? "cj_search" : "query_ideation",
+          failure_category: classified.category,
+          error_code: error && typeof error === "object" && "code" in error
+            ? String((error as { code?: unknown }).code ?? "")
+            : null,
           retryable: classified.retryable,
           error: classified.message,
         },
