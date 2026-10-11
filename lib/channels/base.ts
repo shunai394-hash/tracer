@@ -255,6 +255,7 @@ export type BaseReadOnlyProbeResult = {
     pages: number;
     complete: boolean;
     errorStage: string | null;
+    entries: Array<{ itemId: string | null; visible: boolean | null }>;
   };
 };
 
@@ -302,6 +303,7 @@ export async function probeBaseReadOnly(options?: {
       pages: 0,
       complete: false,
       errorStage: null,
+      entries: [],
     },
   };
 
@@ -320,9 +322,17 @@ export async function probeBaseReadOnly(options?: {
       result.items.pages += 1;
       result.items.countReturned += rows.length;
       for (const item of rows) {
-        if (item.visible === true || item.visible === 1 || item.visible === "1") {
+        const rawId = (item as { item_id?: string | number }).item_id;
+        const itemId = rawId == null ? null : String(rawId);
+        const visible = item.visible === true || item.visible === 1 || item.visible === "1"
+          ? true
+          : item.visible === false || item.visible === 0 || item.visible === "0"
+            ? false
+            : null;
+        result.items.entries.push({ itemId, visible });
+        if (visible === true) {
           result.items.visibleCount += 1;
-        } else if (item.visible === false || item.visible === 0 || item.visible === "0") {
+        } else if (visible === false) {
           result.items.hiddenCount += 1;
         } else {
           result.items.unknownVisibilityCount += 1;
