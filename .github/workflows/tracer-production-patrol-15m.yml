@@ -8,6 +8,7 @@ on:
       - ".github/workflows/tracer-production-patrol-15m.yml"
       - "app/api/cron/patrol-ai/route.ts"
       - "app/api/cron/cj-identity-reverify/route.ts"
+      - "scripts/test-bounded-identity-stamping.mjs"
       - "vercel.json"
       - "lib/intelligence/run-intelligence-pipeline.ts"
       - "lib/intelligence/match-demand-products.ts"
@@ -68,8 +69,8 @@ jobs:
           test -n "$OIDC_TOKEN"
 
           # Keep CJ identity lookups sequential with the main patrol. The
-          # endpoint is bounded to 180s; do not start patrol if the request
-          # itself times out, because the server-side CJ calls may still run.
+          # endpoint is capped at 150s; do not start patrol if the request
+          # itself times out, because server-side CJ calls may still run.
           identity_code="$(curl -sS -o identity-report.json -w "%{http_code}" --max-time 190 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
             "https://tracer-pied-alpha.vercel.app/api/cron/cj-identity-reverify" || true)"
