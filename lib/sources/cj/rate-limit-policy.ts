@@ -25,14 +25,6 @@ export function isCJQuotaExhausted(diagnostic: CJRateLimitDiagnostic): boolean {
   return messageIsThrottle && Number.isFinite(remaining) && remaining <= 0;
 }
 
-/** Shared coordination failure must block external calls, never trigger a local-only fallback. */
-export function createCJSharedLimiterUnavailableError(): Error & { code: string } {
-  const error = new Error("CJ shared QPS limiter unavailable; refusing external request") as Error & { code: string };
-  error.name = "CJRequestError";
-  error.code = "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN";
-  return error;
-}
-
 /** Use a conservative cooldown because CJ's quota reset timezone is not guaranteed. */
 export function getCJQuotaCooldownUntil(nowMs = Date.now()): string {
   return new Date(nowMs + 24 * 60 * 60 * 1000).toISOString();
