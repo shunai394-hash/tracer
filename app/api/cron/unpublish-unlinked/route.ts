@@ -64,11 +64,17 @@ export async function GET(request: Request) {
       const authRejected = (result.results ?? []).some((item) => !item.ok && isBaseAuthenticationFailure(item.error));
       if (authRejected) {
         baseAuthReauthorizationRequired = true;
+        // BASE credentials are account-wide. Mark every currently discovered
+        // unlinked listing with a BASE item, not only this 50-item batch, so
+        // later cron runs do not keep retrying the same invalid token.
+        const authBlockedIds = unlinked
+          .filter((row) => row.base_item_id && row.base_last_error !== "supplier_identity_unlinked_hidden" && row.base_last_error !== "tracer_unpublished_hidden")
+          .map((row) => String(row.id));
         const { error: markerError } = await db.from("shop_listings").update({
           base_last_error: BASE_AUTH_REAUTH_REQUIRED,
           base_publication_status: "failed",
           updated_at: new Date().toISOString(),
-        }).in("id", basePending.map((row) => String(row.id)));
+        }).in("id", authBlockedIds);
         if (markerError) errors.push(`base_auth_circuit_marker_failed:${markerError.message}`);
         errors.push("base_auth_invalid_reauthorization_required: scheduled BASE retries paused for this batch; repair credentials and clear the marker before retrying");
       }

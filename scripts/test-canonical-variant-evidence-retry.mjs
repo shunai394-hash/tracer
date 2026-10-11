@@ -13,7 +13,7 @@ const guarded = source.slice(guard, finalReturn);
 assert.ok(guarded.includes("observation.canonicalVariantEvidenceParsed === 0"), "zero canonical variant evidence must defer the stage");
 assert.ok(guarded.includes("observation.canonicalVariantEvidenceWriteFailures > 0"), "evidence write failures must be detectable");
 assert.ok(guarded.includes("skipped: true"), "unusable collection must not be treated as a completed stage");
-assert.ok(guarded.includes("retryable: true"), "unusable collection must be retried on a later patrol");
+assert.ok(guarded.includes("retryable: true") || guarded.includes("retryable: !nonBlockingSourceCoverageSkip"), "unusable collection must be retried unless this source intentionally provides observation-only coverage");
 assert.ok(guarded.includes('"canonical_variant_evidence_empty"'), "zero-evidence reason must be explicit");
 assert.ok(guarded.includes('"canonical_variant_evidence_write_failed"'), "persistence failure reason must be explicit");
 console.log("PASS: empty or unpersisted canonical variant evidence defers the intelligence pipeline");
