@@ -12,10 +12,13 @@ export async function GET(request: Request) {
 
   try {
     const imported = await syncPaidShopifyOrders(25);
-    // Always retry the autonomous control plane, even when this poll imported
-    // no new orders. Previously failed paid orders must be able to resume.
+    // Retry the control plane even when no new order was imported. Use a
+    // per-invocation key: an hourly key would return the prior completed run
+    // and silently skip retries on subsequent polls in the same hour.
+    const invocationId =
+      request.headers.get("x-vercel-id") ?? crypto.randomUUID();
     const automation = await runAutonomousOrderControl(
-      `shopify-orders:${new Date().toISOString().slice(0, 13)}`,
+      `shopify-orders:${invocationId}`,
     );
 
     return NextResponse.json({
