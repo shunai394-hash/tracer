@@ -59,3 +59,27 @@ export function canPerformAutomationCapability(input: {
 }): boolean {
   return evaluateAutomationCapability(input).allowed;
 }
+
+
+/** Every Vercel-scheduled route must declare the strongest capability it needs. */
+export const CRON_CAPABILITIES = {
+  "/api/cron/market-sourcing": "database_write",
+  "/api/cron/supplier-investigation": "database_write",
+  "/api/cron/cj-variant-repair": "database_write",
+  "/api/cron/cj-identity-reverify": "database_write",
+  "/api/cron/orosy-bulk-import": "channel_write",
+  "/api/cron/sales-test-publication": "channel_write",
+  "/api/cron/shopify-publish": "channel_write",
+  "/api/cron/inventory-refresh": "channel_write",
+  "/api/cron/demand-match": "database_write",
+  "/api/cron/intelligence": "channel_write",
+  "/api/cron/base-orders": "internal_fulfillment",
+  "/api/cron/dropship-execution": "supplier_order",
+  "/api/cron/shopify-orders": "supplier_order",
+  "/api/cron/supplier-reconciliation": "database_write",
+  "/api/cron/shopify-fulfillment": "channel_write",
+  "/api/cron/supplier-orders": "database_write",
+  "/api/cron/newfind-retry": "channel_write",
+  "/api/cron/supply-first": "database_write",
+  "/api/cron/patrol-ai": "channel_write",
+} as const satisfies Record<string, AutomationCapability>;
