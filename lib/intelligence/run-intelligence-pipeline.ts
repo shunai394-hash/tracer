@@ -270,40 +270,67 @@ async function syncShoppingDemandObservations(): Promise<unknown> {
     }),
   );
 
-  let upserted = 0;
+  const pendingPayloads: Array<{
+    product_id: string | null;
+    source_id: string;
+    signal_type: "search_result_count";
+    value: number;
+    unit: string;
+    observed_at: string;
+    metadata: Record<string, string>;
+  }> = [];
+
   for (const item of grouped.values()) {
     const key = `${item.query}|${item.observedAt.slice(0, 10)}`;
     if (existingKeys.has(key)) continue;
-
-    const metadata = {
-      query: item.query,
-      provider: "google_shopping",
-      source: "observations",
-      proxy: "count_of_observed_product_results",
-    };
-    const payload = {
+    pendingPayloads.push({
       product_id: item.productId,
       source_id: item.sourceId,
-      signal_type: "search_result_count" as const,
+      signal_type: "search_result_count",
       value: item.count,
       unit: "google_shopping_results_observed",
       observed_at: item.observedAt,
-      metadata,
-    };
+      metadata: {
+        query: item.query,
+        provider: "google_shopping",
+        source: "observations",
+        proxy: "count_of_observed_product_results",
+      },
+    });
+  }
 
-    const { error: insertError } = await supabase
+  let upserted = 0;
+  for (let offset = 0; offset < pendingPayloads.length; offset += 50) {
+    const batch = pendingPayloads.slice(offset, offset + 50);
+    const { error: batchError } = await supabase
       .from("demand_observations")
-      .insert(payload);
-    if (!insertError) {
-      upserted += 1;
+      .insert(batch);
+    if (!batchError) {
+      upserted += batch.length;
       continue;
     }
-    if (insertError.code === "23505") continue;
+
+    // A concurrent patrol can race the pre-read and hit a unique key. Bulk
+    // insert is atomic; on that specific conflict only, fall back to
+    // idempotent single-row inserts and ignore duplicate-key errors.
+    if (batchError.code === "23505") {
+      for (const payload of batch) {
+        const { error: insertError } = await supabase
+          .from("demand_observations")
+          .insert(payload);
+        if (!insertError) {
+          upserted += 1;
+          continue;
+        }
+        if (insertError.code === "23505") continue;
+        throw new Error(insertError.message);
+      }
+      continue;
+    }
 
     // Production supports search_result_count. Never downgrade this
-    // semantic signal to "other": a schema mismatch is a deployment/data
-    // contract failure and must remain visible.
-    throw new Error(insertError.message);
+    // semantic signal to "other": a schema mismatch must remain visible.
+    throw new Error(batchError.message);
   }
 
   return {
@@ -419,10 +446,10 @@ export async function runIntelligencePipeline(options: {
   const normalizeOffset = (Math.floor(Date.now() / 60_000) % normalizePages) * normalizeWindowSize;
   steps.push(await runStep("normalize", () => normalizeProductIntelligence({ limit: normalizeWindowSize, offset: normalizeOffset }), { budgetMs: 10_000 }));
   steps.push(await runStep("identity", () => stampDemandCJIdentities(), {
-    budgetMs: 20_000,
+    budgetMs: 25_000,
     stopPipelineOnTimeout: false,
   }));
-  steps.push(await runStep("shopping_demand_sync", () => syncShoppingDemandObservations(), { budgetMs: 4_000 }));
+  steps.push(await runStep("shopping_demand_sync", () => syncShoppingDemandObservations(), { budgetMs: 10_000 }));
   steps.push(await runStep("demand", () => inspectDemandObservations(), { budgetMs: 2_000 }));
   steps.push(await runStep("demand_analyze", () => persistDemandIntelligence(), { budgetMs: 6_000 }));
   steps.push(await runStep("supply", () => researchLimitedSupply(), { budgetMs: 18_000 }));
