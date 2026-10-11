@@ -123,7 +123,7 @@ export async function runAutonomousOrderControl(runKey: string): Promise<RunResu
     .from("shop_orders")
     .select("id,payment_status,order_status")
     .eq("payment_status", "paid")
-    .in("order_status", ["placed", "processing", "fulfilled"])
+    .in("order_status", ["placed", "processing"])
     .order("created_at", { ascending: true })
     .limit(25);
 
