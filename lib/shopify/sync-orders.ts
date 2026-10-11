@@ -77,7 +77,12 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
   // Search newest paid orders first and skip orders already imported. Without
   // this outer pagination, the same first page can starve all later orders.
   while (hasNextOrdersPage && orders.length < maxNewOrders) {
-    const data = await shopifyGraphQL<{
+    const data: {
+      orders: {
+        nodes: ShopifyOrder[];
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      };
+    } = await shopifyGraphQL<{
       orders: {
         nodes: ShopifyOrder[];
         pageInfo: { hasNextPage: boolean; endCursor: string | null };
@@ -104,7 +109,7 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
       { first: 100, after },
     );
 
-    const pageOrders = data.orders.nodes ?? [];
+    const pageOrders: ShopifyOrder[] = data.orders.nodes ?? [];
     scannedOrders += pageOrders.length;
     if (pageOrders.length > 0) {
       const { data: existingRows, error: existingRowsError } = await supabase
@@ -119,7 +124,7 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
     }
 
     hasNextOrdersPage = data.orders.pageInfo.hasNextPage;
-    const nextCursor = data.orders.pageInfo.endCursor;
+    const nextCursor: string | null = data.orders.pageInfo.endCursor;
     if (hasNextOrdersPage && (!nextCursor || nextCursor === after)) {
       throw new Error("shopify_orders_cursor_not_advancing");
     }
