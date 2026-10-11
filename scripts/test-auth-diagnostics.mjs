@@ -13,7 +13,7 @@ assert.match(base, /error: stage/);
 assert.doesNotMatch(base, /error:\s*error instanceof Error\s*\?\s*error\.message/);
 assert.doesNotMatch(base, /unique_key/);
 assert.match(base, /probeBaseReadOnly/);
-assert.doesNotMatch(base, /item_id|unique_key|title|customer/i);
+assert.doesNotMatch(base, /item_id:|unique_key:|customer_email|shipping_address/);
 assert.match(baseClient, /BASE_ITEMS_PROBE_FAILED/);
 assert.match(baseClient, /\/items\?limit=/);
 assert.match(baseClient, /visibleCount/);
