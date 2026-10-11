@@ -24,5 +24,6 @@ assert.match(base, /invalid_request.*break/s, "BASE auth failures must stop the 
 assert.match(base, /unpublishFailed \+= 1/);
 assert.match(base, /hidden: results\.filter\(\(r\) => r\.ok && r\.hidden\)\.length/);
 assert.match(route, /publishPublishedListingsToBase\(50/);
-assert.match(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/);
+// Keep the recurring unpublish job disabled until BASE auth is verified; this PR intentionally removes its schedule.
+assert.doesNotMatch(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/);
 console.log("Canonical supplier identity publication gates: 10 assertions passed");
