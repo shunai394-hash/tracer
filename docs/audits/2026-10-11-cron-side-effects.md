@@ -103,3 +103,19 @@ The source tree also contains `/api/cron/ai-patrol`, `base-publish`, `core-engin
 10. **Runtime/build and deployment boundary:** CI on commit `9d8a7cac352e6f4d60120fa5eacb15b1c3d78445` passed, including TypeScript, lint, build and the new disposable DB test. A further docs-only commit is undergoing its own CI run. Read-only Vercel inspection confirms the linked project domain is `tracer-pied-alpha.vercel.app`; the branch deployments observed have `target=null` (preview), not production.
 
 **Exit criteria:** keep PR #234 Draft until CI on the final head is green, the production database is read-only checked for duplicate non-null Shopify line IDs before migration, and the production environment/cron transition is reviewed. No production writes or merge are authorized by this audit.
+
+
+## Follow-up audit — 2026-10-11
+
+### Additional fixes on the draft branch
+- Shopify order ingestion now walks the paid-order connection until it has enough not-yet-imported candidates, rather than repeatedly querying only the same first page. It scans newest-first and records the number of orders examined.
+- Both order-level and nested line-item pagination fail closed if Shopify claims another page but does not advance its cursor.
+- Nested line-item pages are fully retrieved before any local order insert. Duplicate line-item GIDs within the fetched order are rejected.
+- The line-item migration now adds `shopify_line_item_id text` if the column is absent before creating the partial unique index. The disposable PostgreSQL test now starts with a table lacking that column so the migration itself must create it.
+- Autonomous order runs now require a durable unique-key claim. Existing running/failed claims, claim lookup/insert failures, unique-key races, and finalization failures stop processing. Completed run keys return idempotently; ambiguous runs require reconciliation and a new key.
+- The Shopify order route uses a minute-scoped run key rather than an hour-scoped key to reduce delay before newly imported orders are picked up.
+
+### Validation boundary
+- Final-head CI must be green on the latest PR head; earlier heads have failed TypeScript during the order-pagination refactor and were corrected with explicit response/cursor types.
+- The connected Supabase read-only check found `shop_order_items` exists with zero rows and does not yet have `shopify_line_item_id`. This observation is for the connected project only; production target equivalence is not independently established.
+- No production migration, publication, supplier order, or production deployment was initiated by this audit.
