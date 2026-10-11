@@ -4,7 +4,7 @@ import {
   type OrderMode,
   type OrderState,
   type OrderingSettings,
-} from "@/lib/ordering/types";
+} from "./types";
 
 export type OrderGateInput = {
   identityConfirmed: boolean;
@@ -16,6 +16,7 @@ export type OrderGateInput = {
   shippable: boolean | null;
   complianceRisk: boolean | null;
   profitCalculable: boolean;
+  forecastProfit30d: number | null;
   forecastUnits30d: number | null;
   onHand: number | null;
   recommendedQty: number | null;
@@ -50,6 +51,7 @@ export function evaluateOrderGates(
   if (!input.identityConfirmed) blocked.push("identity_not_confirmed");
   if (!input.supplierConfirmed) missing.push("supplier_unconfirmed");
   if (input.sourceCost === null) missing.push("source_cost_unknown");
+  else if (!Number.isFinite(input.sourceCost) || input.sourceCost <= 0) blocked.push("source_cost_invalid");
   if (!input.currency) missing.push("currency_unknown");
   if (!input.currencyReliable) blocked.push("currency_unreliable");
   if (input.shippable === null) missing.push("shippable_unknown");
@@ -57,6 +59,8 @@ export function evaluateOrderGates(
   if (input.complianceRisk === null) missing.push("compliance_unknown");
   if (input.complianceRisk === true) blocked.push("compliance_risk");
   if (!input.profitCalculable) missing.push("profit_unknown");
+  if (input.forecastProfit30d === null) missing.push("profit_amount_unknown");
+  else if (!Number.isFinite(input.forecastProfit30d) || input.forecastProfit30d <= 0) blocked.push("non_positive_profit");
   if (input.forecastUnits30d === null) missing.push("forecast_unknown");
   if (input.onHand === null) missing.push("own_inventory_unknown");
   if (input.recommendedQty === null) missing.push("order_qty_unknown");
@@ -169,6 +173,7 @@ export function verifyOrderGateInvariants(): {
       shippable: true,
       complianceRisk: false,
       profitCalculable: false,
+      forecastProfit30d: 10,
       forecastUnits30d: 20,
       onHand: 5,
       recommendedQty: 25,
@@ -195,10 +200,65 @@ export function verifyOrderGateInvariants(): {
       shippable: true,
       complianceRisk: false,
       profitCalculable: true,
+      forecastProfit30d: 10,
       forecastUnits30d: 20,
       onHand: 5,
       recommendedQty: 25,
       estimatedCost: 75,
+      supplierApiAvailable: true,
+      settings,
+      spentToday: 0,
+      spentMonth: 0,
+      spentProduct: 0,
+      spentCategory: 0,
+      category: "auto",
+    },
+    0.82,
+  );
+
+  const nonPositiveProfit = evaluateOrderGates(
+    {
+      identityConfirmed: true,
+      identityUnknown: false,
+      supplierConfirmed: true,
+      sourceCost: 3,
+      currency: "USD",
+      currencyReliable: true,
+      shippable: true,
+      complianceRisk: false,
+      profitCalculable: true,
+      forecastProfit30d: 0,
+      forecastUnits30d: 20,
+      onHand: 5,
+      recommendedQty: 25,
+      estimatedCost: 75,
+      supplierApiAvailable: true,
+      settings,
+      spentToday: 0,
+      spentMonth: 0,
+      spentProduct: 0,
+      spentCategory: 0,
+      category: "auto",
+    },
+    0.82,
+  );
+
+  const zeroSourceCost = evaluateOrderGates(
+    {
+      identityConfirmed: true,
+      identityUnknown: false,
+      supplierConfirmed: true,
+      sourceCost: 0,
+      currency: "USD",
+      currencyReliable: true,
+      shippable: true,
+      complianceRisk: false,
+      profitCalculable: true,
+      forecastProfit30d: 10,
+      forecastUnits30d: 20,
+      onHand: 5,
+      recommendedQty: 25,
+      estimatedCost: 0,
       supplierApiAvailable: true,
       settings,
       spentToday: 0,
@@ -217,6 +277,16 @@ export function verifyOrderGateInvariants(): {
       actual:
         unknownProfit.canAuto === false &&
         unknownProfit.missing.includes("profit_unknown"),
+    },
+    {
+      name: "zero_source_cost_blocks_order",
+      expected: true,
+      actual: !zeroSourceCost.canPropose && zeroSourceCost.blocked.includes("source_cost_invalid"),
+    },
+    {
+      name: "non_positive_profit_blocks_order",
+      expected: true,
+      actual: !nonPositiveProfit.canPropose && nonPositiveProfit.blocked.includes("non_positive_profit"),
     },
     {
       name: "complete_high_confidence_can_auto",
