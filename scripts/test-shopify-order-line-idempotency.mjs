@@ -9,6 +9,14 @@ const migration = await readFile(
 
 assert.match(source, /shopify_line_item_id:\s*item\.id/);
 assert.match(source, /shopify_order_id:\s*order\.id/);
+assert.match(source, /pageInfo\s*\{\s*hasNextPage\s+endCursor\s*\}/);
+assert.match(source, /while \(hasNextPage\)/);
+assert.match(source, /lineItems\(first: \$first, after: \$after\)/);
+assert.match(source, /shopify_line_items_cursor_missing/);
+assert.match(source, /shopify_line_items_page_missing/);
+// Pagination must finish before any local DB reads/writes begin.
+assert.ok(source.indexOf("while (hasNextPage)") < source.indexOf("const supabase = createSupabaseAdminClient()"));
+
 assert.match(source, /inserted\.error\?\.code === "23505"/);
 assert.match(source, /shop_order_items_insert_failed/);
 assert.match(migration, /create unique index if not exists shop_order_items_shopify_line_item_id_uidx/i);
