@@ -7,6 +7,8 @@ on:
     paths:
       - ".github/workflows/tracer-production-patrol-15m.yml"
       - "app/api/cron/patrol-ai/route.ts"
+      - "app/api/cron/cj-identity-reverify/route.ts"
+      - "vercel.json"
       - "lib/intelligence/run-intelligence-pipeline.ts"
       - "lib/intelligence/match-demand-products.ts"
       - "lib/intelligence/persist-cj-supply-intelligence.ts"
@@ -64,6 +66,33 @@ jobs:
             -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
             "$OIDC_URL" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           test -n "$OIDC_TOKEN"
+
+          # Keep CJ identity lookups sequential with the main patrol. The
+          # endpoint is bounded to 180s; do not start patrol if the request
+          # itself times out, because the server-side CJ calls may still run.
+          identity_code="$(curl -sS -o identity-report.json -w "%{http_code}" --max-time 190 \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            "https://tracer-pied-alpha.vercel.app/api/cron/cj-identity-reverify" || true)"
+          echo "=== CJ IDENTITY RECOVERY HTTP $identity_code ==="
+          if [ "$identity_code" = "000" ]; then
+            echo "CJ identity recovery timed out; skip patrol to avoid overlapping CJ API requests."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json
+          try:
+              with open("identity-report.json", encoding="utf-8") as f:
+                  r=json.load(f)
+              print("CJ identity:", json.dumps({
+                  "ok": r.get("ok"),
+                  "checked": r.get("checked"),
+                  "promoted": r.get("promoted"),
+                  "supplierVerified": r.get("supplierVerified"),
+                  "errors": len(r.get("errors") or []),
+              }, ensure_ascii=False))
+          except Exception as e:
+              print("CJ identity response could not be summarized:", str(e))
+          PY
 
           code="$(curl -sS -o patrol-report.json -w "%{http_code}" --max-time 310 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
