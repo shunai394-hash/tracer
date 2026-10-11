@@ -47,4 +47,5 @@ assert.doesNotMatch(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/);
 assert.match(unpublishWorkflow, /cron: "\*\/15 \* \* \* \*"/, "guarded unlinked listing reconciliation must retry every 15 minutes via GitHub Actions");
 assert.match(unpublishWorkflow, /api\/cron\/unpublish-unlinked/);
 assert.match(unpublishWorkflow, /id-token: write/);
+assert.match(unpublishWorkflow, /result\.get\("ok"\) is not True/, "HTTP 207 partial reconciliation results must fail the scheduled job");
 console.log("Canonical supplier identity publication and reconciliation checks passed");
