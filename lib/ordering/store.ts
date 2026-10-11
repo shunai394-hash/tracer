@@ -240,6 +240,13 @@ export async function createPurchaseOrderFromRecommendation(args: {
   approved: boolean;
   approvedBy?: string | null;
 }): Promise<PurchaseOrderItem> {
+  // No verified administrator-session identity is wired into this service yet.
+  // Keep approval disabled here too, so another internal caller cannot bypass
+  // the route-level guard with a caller-supplied name.
+  if (args.approved) {
+    throw new Error("human_admin_approval_not_supported");
+  }
+
   const supabase = createSupabaseAdminClient();
   const settings = await getOrderingSettings();
 
