@@ -2,11 +2,14 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { persistCjSupplyIntelligence, resolveMarketplaceIdentity } from "@/lib/intelligence/persist-cj-supply-intelligence";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
+import { isCJQuotaCircuitBlockingError, isCJQuotaExhaustedError } from "@/lib/sources/cj/client";
+import { getCJQuotaCooldownUntil } from "@/lib/sources/cj/rate-limit-policy";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { normalizeIdentifier } from "@/lib/market/identifiers";
 import { isCjIdentityReverifyCandidate, isCjIdentityReverifyDue, CJ_IDENTITY_RETRY_DELAYS_MS, supplierBarcodeAudit } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 const CURSOR_JOB = "cj-identity-reverify-cursor";
+const QUOTA_CIRCUIT_JOB = "cj-api-quota-circuit";
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 const MAX_CANDIDATE_SCAN = 500;
@@ -39,7 +42,7 @@ export type CjIdentityProgressCounts = {
   linkedInStockCatalogVariants: number;
   publishedOrderableListings: number;
 };
-export type CjIdentityReverifyResult = { checked: number; promoted: number; supplierVerified: number; noUniqueBarcodeMatch: number; missingEconomics: number; errors: Array<{ supplierListingId: string; error: string }>; promotedListings: Array<{ supplierListingId: string; bestsellerId: string; method: string }>; nextCursor: string | null; progress: { before: CjIdentityProgressCounts; after: CjIdentityProgressCounts } };
+export type CjIdentityReverifyResult = { checked: number; promoted: number; supplierVerified: number; noUniqueBarcodeMatch: number; missingEconomics: number; errors: Array<{ supplierListingId: string; error: string }>; promotedListings: Array<{ supplierListingId: string; bestsellerId: string; method: string }>; nextCursor: string | null; quotaBlockedUntil: string | null; progress: { before: CjIdentityProgressCounts; after: CjIdentityProgressCounts } };
 
 async function readCjIdentityProgressCounts(db: ReturnType<typeof createSupabaseAdminClient>): Promise<CjIdentityProgressCounts> {
   const [linked, products, variants, published] = await Promise.all([
@@ -62,11 +65,35 @@ function record(value: unknown): Record<string, unknown> { return value && typeo
 async function readPersistableBarcode(supplierProductId: string, supplierVariantId: string, persistedBarcode: string | null): Promise<string | null> {
   const supplied = typeof persistedBarcode === "string" ? persistedBarcode.trim() : "";
   if (supplied) return supplied;
-  try { const variants = await fetchCJProductVariants(supplierProductId, { countryCode: "JP" }); const found = variants.find((item) => item.vid === supplierVariantId); const barcode = typeof found?.barcode === "string" ? found.barcode.trim() : ""; if (barcode) return barcode; } catch (error) { console.warn("[cj-identity-reverify] variant barcode lookup failed", { supplierProductId, supplierVariantId, error: error instanceof Error ? error.message : String(error) }); }
-  try { const variant = await fetchCJVariantByVid(supplierVariantId); const barcode = typeof variant?.barcode === "string" ? variant.barcode.trim() : ""; return barcode || null; } catch (error) { console.warn("[cj-identity-reverify] queryByVid barcode lookup failed", { supplierProductId, supplierVariantId, error: error instanceof Error ? error.message : String(error) }); return null; }
+  try { const variants = await fetchCJProductVariants(supplierProductId, { countryCode: "JP" }); const found = variants.find((item) => item.vid === supplierVariantId); const barcode = typeof found?.barcode === "string" ? found.barcode.trim() : ""; if (barcode) return barcode; } catch (error) { if (isCJQuotaCircuitBlockingError(error)) throw error; console.warn("[cj-identity-reverify] variant barcode lookup failed", { supplierProductId, supplierVariantId, error: error instanceof Error ? error.message : String(error) }); }
+  try { const variant = await fetchCJVariantByVid(supplierVariantId); const barcode = typeof variant?.barcode === "string" ? variant.barcode.trim() : ""; return barcode || null; } catch (error) { if (isCJQuotaCircuitBlockingError(error)) throw error; console.warn("[cj-identity-reverify] queryByVid barcode lookup failed", { supplierProductId, supplierVariantId, error: error instanceof Error ? error.message : String(error) }); return null; }
 }
 export async function reverifyCjSupplyIdentities(options: { limit?: number; deadlineAt?: number } = {}): Promise<CjIdentityReverifyResult> {
   const db = createSupabaseAdminClient();
+  const { data: quotaRuns, error: quotaReadError } = await db
+    .from("cron_runs")
+    .select("metadata")
+    .eq("job_name", QUOTA_CIRCUIT_JOB)
+    .order("started_at", { ascending: false })
+    .limit(1);
+  if (quotaReadError) throw new Error(`CJ quota circuit read failed: ${quotaReadError.message}`);
+  const blockedUntilValue = record(quotaRuns?.[0]?.metadata).blockedUntil;
+  const blockedUntil = typeof blockedUntilValue === "string" ? blockedUntilValue : null;
+  if (blockedUntil && Date.parse(blockedUntil) > Date.now()) {
+    const progress = await readCjIdentityProgressCounts(db);
+    return {
+      checked: 0,
+      promoted: 0,
+      supplierVerified: 0,
+      noUniqueBarcodeMatch: 0,
+      missingEconomics: 0,
+      errors: [{ supplierListingId: "system", error: "CJ_API_QUOTA_EXHAUSTED_COOLDOWN" }],
+      promotedListings: [],
+      nextCursor: null,
+      quotaBlockedUntil: blockedUntil,
+      progress: { before: progress, after: progress },
+    };
+  }
   const limit = Math.max(1, Math.min(options.limit ?? DEFAULT_LIMIT, MAX_LIMIT));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
   const candidateFilter = db.from("supplier_listings").select("id", { count: "exact", head: true }).eq("supplier", "cj").in("verification_status", ["unverified", "retryable", "verified"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_variant_id", "is", null);
@@ -122,7 +149,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const remaining = Math.max(0, limit - selectedWomens.length);
   const selectedOther = remaining > 0 ? otherRows.slice(0, Math.min(remaining, otherRows.length)) : [];
   const selectedRows = [...selectedWomens, ...selectedOther];
-  const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, errors: [], promotedListings: [], nextCursor: scanCursor, progress: { before: beforeCounts, after: beforeCounts } };
+  const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, errors: [], promotedListings: [], nextCursor: scanCursor, quotaBlockedUntil: null, progress: { before: beforeCounts, after: beforeCounts } };
   const processRow = async (row: NonNullable<typeof rows>[number]) => {
     const supplierListingId = String(row.id);
     try {
@@ -153,6 +180,12 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       }
       return identity ? { kind: "promoted" as const, supplierListingId, bestsellerId: identity.bestsellerId, method: identity.method } : { kind: "supplier_verified" as const, supplierListingId };
     } catch (rowError) {
+      if (isCJQuotaExhaustedError(rowError)) {
+        return { kind: "quota_exhausted" as const, supplierListingId, error: rowError instanceof Error ? rowError.message : "CJ API quota exhausted" };
+      }
+      if (isCJQuotaCircuitBlockingError(rowError)) {
+        return { kind: "circuit_blocked" as const, supplierListingId, error: rowError instanceof Error ? rowError.message : "CJ quota circuit state unavailable" };
+      }
       const { data: latest } = await db.from("supplier_listings").select("metadata").eq("id", supplierListingId).maybeSingle();
       const latestMetadata = record(latest?.metadata);
       const checkedAt = new Date();
@@ -160,7 +193,48 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       return { kind: "error" as const, supplierListingId, error: rowError instanceof Error ? rowError.message : String(rowError) };
     }
   };
-  for (let offset = 0; offset < selectedRows.length; offset += CONCURRENCY) { if (Date.now() >= deadlineAt) break; const batch = selectedRows.slice(offset, offset + CONCURRENCY); const results = await Promise.all(batch.map(processRow)); for (const item of results) { result.checked += 1; if (item.kind === "promoted") { result.promoted += 1; result.promotedListings.push({ supplierListingId: item.supplierListingId, bestsellerId: item.bestsellerId, method: item.method }); } else if (item.kind === "supplier_verified") { result.supplierVerified += 1; } else if (item.kind === "no_match") result.noUniqueBarcodeMatch += 1; else if (item.kind === "missing_economics") result.missingEconomics += 1; else result.errors.push({ supplierListingId: item.supplierListingId, error: item.error }); } }
+  let quotaExhausted = false;
+  let circuitBlocked = false;
+  for (let offset = 0; offset < selectedRows.length; offset += CONCURRENCY) {
+    if (Date.now() >= deadlineAt) break;
+    const batch = selectedRows.slice(offset, offset + CONCURRENCY);
+    const results = await Promise.all(batch.map(processRow));
+    for (const item of results) {
+      result.checked += 1;
+      if (item.kind === "promoted") {
+        result.promoted += 1;
+        result.promotedListings.push({ supplierListingId: item.supplierListingId, bestsellerId: item.bestsellerId, method: item.method });
+      } else if (item.kind === "supplier_verified") {
+        result.supplierVerified += 1;
+      } else if (item.kind === "no_match") {
+        result.noUniqueBarcodeMatch += 1;
+      } else if (item.kind === "missing_economics") {
+        result.missingEconomics += 1;
+      } else if (item.kind === "quota_exhausted") {
+        quotaExhausted = true;
+        result.quotaBlockedUntil = getCJQuotaCooldownUntil();
+        result.errors.push({ supplierListingId: item.supplierListingId, error: "CJ_API_QUOTA_EXHAUSTED" });
+        const now = new Date().toISOString();
+        const { error: circuitWriteError } = await db.from("cron_runs").insert({
+          job_name: QUOTA_CIRCUIT_JOB,
+          status: "succeeded",
+          started_at: now,
+          finished_at: now,
+          processed: 0,
+          failed: 1,
+          metadata: { blockedUntil: result.quotaBlockedUntil, reason: "provider_points_remaining_zero", source: "cj-identity-reverify" },
+        });
+        if (circuitWriteError) throw new Error("CJ quota circuit persistence failed: " + circuitWriteError.message);
+      } else if (item.kind === "circuit_blocked") {
+        circuitBlocked = true;
+        result.errors.push({ supplierListingId: item.supplierListingId, error: "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN" });
+      } else {
+        result.errors.push({ supplierListingId: item.supplierListingId, error: item.error });
+      }
+    }
+    if (quotaExhausted || circuitBlocked) break;
+  }
+  if (quotaExhausted || circuitBlocked) result.nextCursor = priorCursor;
   result.progress.after = await readCjIdentityProgressCounts(db);
   const now = new Date().toISOString();
   const { error: runInsertError } = await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: "bounded_cursor_scan_womens_priority", candidateCount: total, womensCandidates: womensRows.length, womensSelected: selectedWomens.length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, progress: result.progress, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });

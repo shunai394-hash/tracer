@@ -32,16 +32,17 @@ export async function GET(request: Request) {
       noUniqueBarcodeMatch: result.noUniqueBarcodeMatch,
       missingEconomics: result.missingEconomics,
       errors: result.errors.length,
+      quotaBlockedUntil: result.quotaBlockedUntil,
       progress: result.progress,
     });
 
     return NextResponse.json({
-      ok: result.errors.length === 0,
+      ok: result.errors.length === 0 && result.quotaBlockedUntil === null,
       phase: "cj_identity_reverify",
       elapsedMs: Date.now() - startedAt,
       ...result,
       next: "sales_test_publication",
-    }, { status: result.errors.length === 0 ? 200 : 207 });
+    }, { status: result.errors.length === 0 && result.quotaBlockedUntil === null ? 200 : 207 });
   } catch (error) {
     return NextResponse.json({
       ok: false,
