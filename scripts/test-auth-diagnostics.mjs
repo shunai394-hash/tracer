@@ -7,7 +7,7 @@ const workflow = await readFile(new URL("../.github/workflows/tracer-shopify-aut
 
 assert.match(base, /requireAutomationAuth/);
 assert.match(base, /TRACER BASE AUTH PROBE/);
-assert.match(base, /message\.match\(\/HTTP\[_ \]\(\\\\d\{3\}\)\//);
+assert.ok(base.includes("message.match(/HTTP[_ ](\\d{3})/)"), "HTTP status parsing must use a digit capture group");
 assert.match(base, /error: stage/);
 assert.doesNotMatch(base, /error:\s*error instanceof Error\s*\?\s*error\.message/);
 assert.doesNotMatch(base, /unique_key/);
