@@ -203,7 +203,7 @@ export function evaluateOrderExecution(evidence: OrderExecutionEvidence): OrderE
   if (evidence.paymentStatus !== "paid") blockers.push("payment_not_confirmed");
   const paymentMethod = clean(evidence.paymentMethod).toLowerCase();
   if (!paymentMethod) blockers.push("payment_method_unknown");
-  if (paymentMethod === "cod" || paymentMethod === "cash_on_delivery") {
+  if (["cod", "cash_on_delivery", "cash on delivery", "代引き", "代金引換"].includes(paymentMethod)) {
     blockers.push("cash_on_delivery_not_confirmed");
   }
   if (evidence.cancellationOrRefundPending) blockers.push("order_cancellation_or_refund_pending");
