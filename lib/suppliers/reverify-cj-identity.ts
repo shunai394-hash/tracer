@@ -10,7 +10,10 @@ const CURSOR_JOB = "cj-identity-reverify-cursor";
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 const MAX_CANDIDATE_SCAN = 500;
-const CONCURRENCY = 5;
+// CJ enforces a strict 1-request/second API quota; parallel variant lookups
+// trigger HTTP 429s and consume the bounded patrol deadline. Process one listing
+// at a time so retries/cursor progress remain deterministic.
+const CONCURRENCY = 1;
 const NO_MATCH_RETRY_MS = CJ_IDENTITY_RETRY_DELAYS_MS.noUniqueMatch;
 const MISSING_DATA_RETRY_MS = CJ_IDENTITY_RETRY_DELAYS_MS.missingEvidence;
 const ERROR_RETRY_MS = CJ_IDENTITY_RETRY_DELAYS_MS.processingError;
