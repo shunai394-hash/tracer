@@ -26,8 +26,6 @@ jobs:
       - run: npm run test:tracer-core
       - name: Test order gate profit invariants
         run: npm run test:order-gate
-      - name: Test order gate profit invariants
-        run: npm run test:order-gate
       - name: Test dropship order safety invariants
         run: npm run test:dropship-order-gate
       - name: Test autonomous order run-claim safety
