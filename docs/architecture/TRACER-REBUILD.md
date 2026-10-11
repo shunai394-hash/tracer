@@ -29,7 +29,7 @@ This branch is an isolated refactor foundation. It does not change the productio
 
 - [x] Create isolated branch and initial architecture notes.
 - [x] Add pure identity, publication-gate, and order-idempotency contracts with no I/O.
-- [ ] Inspect all cron routes and map each route to read-only / DB-write / external-write / purchase side effects.
+- [x] Inspect all scheduled cron routes and map each route to read-only / DB-write / external-write / purchase side effects.
 - [x] Confirm the actual TRACER Supabase project through read-only production schema inspection; preserve the existing tables and identifiers.
 - [x] Add tests for duplicate identities, missing variant IDs, unknown inventory/cost, non-positive margin, duplicate orders, ambiguous attempts, unpaid/COD orders, unknown/insufficient inventory, kill switch and invalid quantity.
 - [ ] Add read-only Shopify and BASE probes that report HTTP status, provider identity, scopes/permissions, and sanitized error stage only.
