@@ -244,6 +244,106 @@ export async function listBaseOrders(options?: {
   return data.orders ?? [];
 }
 
+export type BaseReadOnlyProbeResult = {
+  orders: { apiStatus: 200; countReturned: number; dispatchStatuses: string[] };
+  items: {
+    apiStatus: number | null;
+    countReturned: number;
+    visibleCount: number;
+    hiddenCount: number;
+    unknownVisibilityCount: number;
+    pages: number;
+    complete: boolean;
+    errorStage: string | null;
+  };
+};
+
+/**
+ * Read-only BASE inventory probe. Uses one refreshed access token for all pages
+ * and returns counts only; no item IDs, titles, or customer data leave this helper.
+ */
+export async function probeBaseReadOnly(options?: {
+  itemPageLimit?: number;
+  itemMaxPages?: number;
+}): Promise<BaseReadOnlyProbeResult> {
+  const token = await getBaseAccessToken();
+  const requestJson = async (path: string, stage: string): Promise<Record<string, unknown>> => {
+    const response = await fetch(`${BASE_API_URL}${path}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
+    });
+    const text = await response.text();
+    let payload: Record<string, unknown> | null = null;
+    try { payload = JSON.parse(text) as Record<string, unknown>; } catch { payload = null; }
+    if (!response.ok) {
+      throw new Error(`${stage}:HTTP_${response.status}:${safeBaseError(payload)}`);
+    }
+    if (!payload) throw new Error(`${stage}:RESPONSE_INVALID`);
+    return payload;
+  };
+
+  const orderPayload = await requestJson("/orders?limit=1&offset=0", "BASE_ORDERS_PROBE_FAILED");
+  if (!Array.isArray(orderPayload.orders)) throw new Error("BASE_ORDERS_PROBE_RESPONSE_INVALID");
+  const orderRows = orderPayload.orders as BaseOrderSummary[];
+  const result: BaseReadOnlyProbeResult = {
+    orders: {
+      apiStatus: 200,
+      countReturned: orderRows.length,
+      dispatchStatuses: [...new Set(orderRows.map((order) => String(order.dispatch_status ?? "unknown")))].sort(),
+    },
+    items: {
+      apiStatus: null,
+      countReturned: 0,
+      visibleCount: 0,
+      hiddenCount: 0,
+      unknownVisibilityCount: 0,
+      pages: 0,
+      complete: false,
+      errorStage: null,
+    },
+  };
+
+  const pageLimit = Math.min(100, Math.max(1, Math.floor(options?.itemPageLimit ?? 100)));
+  const maxPages = Math.min(10, Math.max(1, Math.floor(options?.itemMaxPages ?? 10)));
+  let offset = 0;
+  for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+    try {
+      const payload = await requestJson(
+        `/items?limit=${pageLimit}&offset=${offset}`,
+        "BASE_ITEMS_PROBE_FAILED",
+      );
+      if (!Array.isArray(payload.items)) throw new Error("BASE_ITEMS_PROBE_RESPONSE_INVALID");
+      const rows = payload.items as Array<{ visible?: boolean | number | string }>;
+      result.items.apiStatus = 200;
+      result.items.pages += 1;
+      result.items.countReturned += rows.length;
+      for (const item of rows) {
+        if (item.visible === true || item.visible === 1 || item.visible === "1") {
+          result.items.visibleCount += 1;
+        } else if (item.visible === false || item.visible === 0 || item.visible === "0") {
+          result.items.hiddenCount += 1;
+        } else {
+          result.items.unknownVisibilityCount += 1;
+        }
+      }
+      if (rows.length < pageLimit) {
+        result.items.complete = true;
+        break;
+      }
+      offset += rows.length;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "BASE_ITEMS_PROBE_FAILED";
+      result.items.apiStatus = Number(message.match(/HTTP_(\d{3})/)?.[1] ?? 0) || null;
+      result.items.errorStage = message.split(":")[0].slice(0, 100);
+      break;
+    }
+  }
+
+  return result;
+}
+
 export async function getBaseOrderDetail(uniqueKey: string): Promise<BaseOrderDetail> {
   const token = await getBaseAccessToken();
   const response = await fetch(
