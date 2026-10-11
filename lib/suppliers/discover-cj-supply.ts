@@ -22,6 +22,21 @@ function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
   return Math.ceil(withMargin / 100) * 100;
 }
 
+function priorityWomenSupplyCategory(title: unknown, metadata: unknown): number {
+  const record = metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? metadata as Record<string, unknown>
+    : {};
+  const searchable = [
+    typeof title === "string" ? title : "",
+    typeof record.query === "string" ? record.query : "",
+    typeof record.category === "string" ? record.category : "",
+  ].join(" ").toLowerCase();
+  if (/handbag|crossbody bag|shoulder bag|tote bag|mini bag|women'?s bag|womens bag|ladies bag/.test(searchable)) return 0;
+  if (/makeup|cosmetic|skincare|skin care|gua sha|face roller|beauty tool|nail lamp|facial brush/.test(searchable)) return 1;
+  if (/hair clip|claw clip|hairpin|hair accessory|hair accessories|heatless curl/.test(searchable)) return 2;
+  return 99;
+}
+
 // Commercial priority: women's bags first, then practical beauty tools,
  // then hair accessories. Specific intent queries beat broad category searches.
 const CATALOG_QUERIES = [
@@ -223,7 +238,7 @@ export async function discoverAndCreateCjSupply(
   // verified variants are valid publication candidates and are live rechecked.
   const { data: seededRows, error: seededError } = await db
     .from("supplier_listings")
-    .select("id,product_id,title,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,next_verification_at,verification_attempts")
+    .select("id,product_id,title,metadata,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,next_verification_at,verification_attempts")
     .eq("supplier", "cj")
     .not("supplier_product_id", "is", null)
     .not("supplier_variant_id", "is", null)
@@ -235,12 +250,18 @@ export async function discoverAndCreateCjSupply(
   if (seededError) throw new Error(`supply-first candidate query failed: ${seededError.message}`);
 
   const seenSeedKeys = new Set<string>();
-  const seeded = (seededRows ?? []).filter((row) => {
-    const key = `${String(row.supplier_product_id)}:${String(row.supplier_variant_id)}`;
-    if (existingVariants.has(key) || seenSeedKeys.has(key)) return false;
-    seenSeedKeys.add(key);
-    return true;
-  });
+  const seeded = (seededRows ?? [])
+    .filter((row) => {
+      const key = `${String(row.supplier_product_id)}:${String(row.supplier_variant_id)}`;
+      if (existingVariants.has(key) || seenSeedKeys.has(key)) return false;
+      seenSeedKeys.add(key);
+      return priorityWomenSupplyCategory(row.title, row.metadata) < 99;
+    })
+    .sort((a, b) =>
+      priorityWomenSupplyCategory(a.title, a.metadata) - priorityWomenSupplyCategory(b.title, b.metadata) ||
+      String(a.next_verification_at ?? "").localeCompare(String(b.next_verification_at ?? "")) ||
+      Number(b.inventory ?? 0) - Number(a.inventory ?? 0),
+    );
 
   const deadlineAt = options?.deadlineAt ?? Number.POSITIVE_INFINITY;
   let deadlineReached = false;
