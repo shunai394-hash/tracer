@@ -1,4 +1,5 @@
 import "server-only";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type BaseItemInput = {
   title: string;
@@ -45,41 +46,155 @@ export function isBaseConfigured() {
   return baseOAuthConfigReady();
 }
 
-async function getBaseAccessToken(): Promise<string> {
+type BaseOAuthTokenState = {
+  refresh_token: string;
+  access_token: string | null;
+  access_token_expires_at: string | null;
+  refresh_lease_until: string | null;
+};
+
+let cachedBaseAccessToken: { value: string; expiresAt: number } | null = null;
+let baseRefreshInFlight: Promise<string> | null = null;
+
+function isUsableAccessToken(state: BaseOAuthTokenState | null): state is BaseOAuthTokenState & { access_token: string; access_token_expires_at: string } {
+  return Boolean(
+    state?.access_token &&
+    state.access_token_expires_at &&
+    Date.parse(state.access_token_expires_at) > Date.now() + 60_000,
+  );
+}
+
+async function readBaseTokenState(admin: ReturnType<typeof createSupabaseAdminClient>): Promise<BaseOAuthTokenState | null> {
+  const { data, error } = await admin.rpc("get_channel_oauth_token_state", { p_provider: "base" });
+  if (error) throw new Error("BASE_OAUTH_TOKEN_STORE_READ_FAILED");
+  const row = Array.isArray(data) ? data[0] : null;
+  return row && typeof row === "object" ? row as BaseOAuthTokenState : null;
+}
+
+async function refreshBaseAccessToken(): Promise<string> {
   if (!baseOAuthConfigReady()) {
     throw new Error("BASE_OAUTH_CONFIG_INCOMPLETE: configure BASE_CLIENT_ID, BASE_CLIENT_SECRET, BASE_REFRESH_TOKEN, and BASE_REDIRECT_URI");
   }
 
-  const body = new URLSearchParams({
-    grant_type: "refresh_token",
-    client_id: BASE_CLIENT_ID,
-    client_secret: BASE_CLIENT_SECRET,
-    refresh_token: BASE_REFRESH_TOKEN,
-    redirect_uri: BASE_REDIRECT_URI,
+  const admin = createSupabaseAdminClient();
+  const { error: seedError } = await admin.rpc("seed_channel_oauth_refresh_token", {
+    p_provider: "base",
+    p_refresh_token: BASE_REFRESH_TOKEN,
   });
+  if (seedError) throw new Error("BASE_OAUTH_TOKEN_STORE_NOT_READY");
 
-  const response = await fetch(`${BASE_API_URL}/oauth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-    body,
-    cache: "no-store",
-    signal: AbortSignal.timeout(20_000),
+  const existing = await readBaseTokenState(admin);
+  if (isUsableAccessToken(existing)) {
+    cachedBaseAccessToken = { value: existing.access_token, expiresAt: Date.parse(existing.access_token_expires_at) };
+    return existing.access_token;
+  }
+
+  const { data: claimed, error: claimError } = await admin.rpc("claim_channel_oauth_refresh", {
+    p_provider: "base",
+    p_lease_seconds: 30,
   });
-  const text = await response.text();
-  let payload: Record<string, unknown> | null = null;
+  if (claimError) throw new Error("BASE_OAUTH_REFRESH_LOCK_FAILED");
+
+  if (claimed !== true) {
+    // Another serverless instance owns the refresh lease. Wait for its stored
+    // access token rather than spending the same rotating refresh token twice.
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const state = await readBaseTokenState(admin);
+      if (isUsableAccessToken(state)) {
+        cachedBaseAccessToken = { value: state.access_token, expiresAt: Date.parse(state.access_token_expires_at) };
+        return state.access_token;
+      }
+    }
+    throw new Error("BASE_OAUTH_REFRESH_LOCK_TIMEOUT");
+  }
+
   try {
-    payload = JSON.parse(text) as Record<string, unknown>;
-  } catch {
-    payload = null;
+    const state = await readBaseTokenState(admin);
+    const refreshToken = state?.refresh_token?.trim() || BASE_REFRESH_TOKEN;
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: BASE_CLIENT_ID,
+      client_secret: BASE_CLIENT_SECRET,
+      refresh_token: refreshToken,
+      redirect_uri: BASE_REDIRECT_URI,
+    });
+
+    const response = await fetch(`${BASE_API_URL}/oauth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body,
+      cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
+    });
+    const text = await response.text();
+    let payload: Record<string, unknown> | null = null;
+    try { payload = JSON.parse(text) as Record<string, unknown>; } catch { payload = null; }
+    if (!response.ok) {
+      throw new Error(`BASE_OAUTH_REFRESH_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
+    }
+
+    const accessToken = payload?.access_token;
+    if (typeof accessToken !== "string" || !accessToken.trim()) {
+      throw new Error("BASE_OAUTH_REFRESH_FAILED:ACCESS_TOKEN_MISSING");
+    }
+    const nextRefreshToken = typeof payload?.refresh_token === "string" && payload.refresh_token.trim()
+      ? payload.refresh_token.trim()
+      : refreshToken;
+    const expiresIn = Number(payload?.expires_in ?? 3600);
+    if (!Number.isFinite(expiresIn) || expiresIn <= 0) {
+      throw new Error("BASE_OAUTH_REFRESH_FAILED:INVALID_EXPIRY");
+    }
+    const expiresAt = new Date(Date.now() + Math.max(60, expiresIn - 60) * 1000).toISOString();
+    const { error: storeError } = await admin.rpc("store_channel_oauth_tokens", {
+      p_provider: "base",
+      p_refresh_token: nextRefreshToken,
+      p_access_token: accessToken.trim(),
+      p_access_token_expires_at: expiresAt,
+    });
+    if (storeError) {
+      // Do not use a token response if its potentially rotated refresh token
+      // cannot be persisted; a future cold start could otherwise lose access.
+      throw new Error("BASE_OAUTH_TOKEN_STORE_WRITE_FAILED");
+    }
+
+    cachedBaseAccessToken = { value: accessToken.trim(), expiresAt: Date.parse(expiresAt) };
+    return accessToken.trim();
+  } catch (error) {
+    await admin.rpc("release_channel_oauth_refresh", { p_provider: "base" }).catch(() => undefined);
+    throw error;
   }
-  if (!response.ok) {
-    throw new Error(`BASE_OAUTH_REFRESH_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
+}
+
+async function getBaseAccessToken(): Promise<string> {
+  if (cachedBaseAccessToken && cachedBaseAccessToken.expiresAt > Date.now() + 60_000) {
+    return cachedBaseAccessToken.value;
   }
-  const accessToken = payload?.access_token;
-  if (typeof accessToken !== "string" || !accessToken.trim()) {
-    throw new Error("BASE_OAUTH_REFRESH_FAILED:ACCESS_TOKEN_MISSING");
+  if (!baseRefreshInFlight) {
+    baseRefreshInFlight = refreshBaseAccessToken().finally(() => { baseRefreshInFlight = null; });
   }
-  return accessToken.trim();
+  return baseRefreshInFlight;
+}
+
+async function invalidateBaseAccessToken(): Promise<void> {
+  cachedBaseAccessToken = null;
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin.rpc("clear_channel_oauth_access_token", { p_provider: "base" });
+  if (error) throw new Error("BASE_OAUTH_ACCESS_TOKEN_INVALIDATION_FAILED");
+}
+
+async function authorizedBaseFetch(url: string, init: RequestInit): Promise<Response> {
+  const send = async (token: string) => {
+    const headers = new Headers(init.headers);
+    headers.set("Authorization", `Bearer ${token}`);
+    return fetch(url, { ...init, headers, cache: "no-store" });
+  };
+  let response = await send(await getBaseAccessToken());
+  if (response.status !== 401) return response;
+
+  await invalidateBaseAccessToken();
+  response = await send(await getBaseAccessToken());
+  return response;
 }
 
 async function requestBase(
