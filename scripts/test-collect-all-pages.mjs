@@ -14,8 +14,7 @@ assert.deepEqual(offsets, [
   { from: 0, size: 1000 },
   { from: 1000, size: 1000 },
   { from: 2000, size: 1000 },
-  { from: 3000, size: 1000 },
-], "pagination must continue through the final partial page");
+], "pagination must stop after the final partial page without an unnecessary extra read");
 
 const failure = await collectAllPages(async (from, size) => {
   if (from === 1000) return { data: null, error: { message: "simulated page failure" } };
