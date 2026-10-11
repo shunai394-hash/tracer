@@ -8,7 +8,7 @@ import {
   type CJProductVariant,
 } from "@/lib/sources/cj/variant-select";
 import { firstCJImageUrl, parseCJStockData } from "@/lib/sources/cj/parse";
-import { getCJQuotaCooldownUntil, isCJQuotaExhausted } from "@/lib/sources/cj/rate-limit-policy";
+import { getCJQuotaCooldownUntil, getCJSharedLimiterFailureCode, isCJQuotaExhausted } from "@/lib/sources/cj/rate-limit-policy";
 
 export { selectUnambiguousVariant, verifyVariantSelectionInvariants };
 export type { CJProductVariant };
@@ -73,7 +73,7 @@ async function persistCJQuotaCircuit(reason: string): Promise<string> {
       failed: 1,
       metadata: { blockedUntil, reason, source: "cj-client" },
     });
-    if (error) throw new CJRequestError("CJ quota circuit persistence failed; refusing further external requests", "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN");
+    if (error) throw new CJRequestError("CJ quota circuit persistence failed; refusing further external requests", getCJSharedLimiterFailureCode());
   } catch (error) {
     if (error instanceof CJRequestError) throw error;
     throw new CJRequestError("CJ quota circuit persistence failed; refusing further external requests", "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN");
@@ -199,7 +199,7 @@ export async function waitForCJRateLimit(): Promise<void> {
     // rather than risking another provider-wide throttle/quota lockout.
     throw new CJRequestError(
       "CJ shared QPS limiter unavailable; refusing external request",
-      "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN",
+      getCJSharedLimiterFailureCode(),
     );
   } catch (error) {
     if (
