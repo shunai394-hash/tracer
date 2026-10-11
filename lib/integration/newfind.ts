@@ -10,14 +10,14 @@ function buildUrl(base: string): string {
   return `${trimmed}/api/integrations/tracer`;
 }
 
-// Public origin of the TRACER storefront. Prefer explicit configuration, then
-// Vercel's production URL. The final fallback is the canonical TRACER Vercel
-// production alias; this prevents a missing deployment-only env from silently
-// starving an otherwise gate-passed NEWFIND delivery.
+// Public origin of the TRACER storefront. Require explicit configuration or
+// Vercel's production URL; guessing a host can send discovery links to a dead
+// alias or a deployment protected by SSO.
 function tracerSiteOrigin(): string | null {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
-  const configured = explicit || (vercel ? `https://${vercel.replace(/^https?:\/\//, "")}` : "https://tracer-pied-alpha.vercel.app");
+  const configured = explicit || (vercel ? `https://${vercel.replace(/^https?:\/\//, "")}` : null);
+  if (!configured) return null;
   try {
     const parsed = new URL(configured);
     if (parsed.protocol !== "https:") return null;
@@ -39,7 +39,13 @@ async function resolveLiveTracerUrl(slug: string | null): Promise<string | null>
       redirect: "follow",
       signal: AbortSignal.timeout(10_000),
     });
-    return response.ok ? url : null;
+    const expectedUrl = new URL(url);
+    const finalUrl = new URL(response.url);
+    // Following redirects is useful for normal routing, but an SSO/login redirect
+    // must never be mistaken for a live product page.
+    return response.ok && finalUrl.origin === origin && finalUrl.pathname === expectedUrl.pathname
+      ? url
+      : null;
   } catch {
     return null;
   }
@@ -212,10 +218,11 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     brand = typeof bestseller?.brand === "string" ? bestseller.brand : null;
   }
 
-  const tracerUrl = await resolveLiveTracerUrl(typeof listing.slug === "string" ? listing.slug : null);
+  const publicOrigin = tracerSiteOrigin();
+  const tracerUrl = publicOrigin ? await resolveLiveTracerUrl(typeof listing.slug === "string" ? listing.slug : null) : null;
   const productUrl = tracerUrl;
   if (!productUrl) {
-    const reason = "tracer_sales_url_not_live";
+    const reason = publicOrigin ? "tracer_sales_url_not_live" : "tracer_public_origin_not_configured";
     await supabase.from("newfind_promotion_deliveries").update({ status: "failed", last_error: reason, last_attempt_at: new Date().toISOString(), lease_until: null, updated_at: new Date().toISOString() }).eq("listing_id", listingId).eq("status", "sending").eq("event_id", sendEventId);
     return { configured: true, sent: false, eventId: sendEventId, status: null, ackStatus: null, detail: reason };
   }
