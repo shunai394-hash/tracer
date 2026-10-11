@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
 import { probeBaseReadOnly, isBaseConfigured } from "@/lib/channels/base";
 
 export const runtime = "nodejs";
 
-/** Read-only OAuth/API probe. Never returns item IDs, order IDs, customer data, or credentials. */
+/** Read-only probe. Never returns item IDs, order IDs, customer data, or credentials. */
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
@@ -21,8 +23,86 @@ export async function GET(request: Request) {
     }
 
     const probe = await probeBaseReadOnly({ itemPageLimit: 100, itemMaxPages: 10 });
+    const mappingAudit = {
+      ok: false,
+      visibleItemsMatchedToDatabase: 0,
+      visibleItemsLinked: 0,
+      visibleItemsUnlinked: 0,
+      visibleItemsWithoutDbMapping: 0,
+      visibleItemsWithAmbiguousDbMapping: 0,
+      itemIdMissingCount: probe.items.entries.filter((entry) => !entry.itemId).length,
+      errorStage: null as string | null,
+    };
+
+    if (probe.items.apiStatus !== 200 || !probe.items.complete) {
+      mappingAudit.errorStage = probe.items.apiStatus !== 200
+        ? "base_items_read_failed"
+        : "base_items_scan_incomplete";
+    } else {
+      const visibleEntries = probe.items.entries.filter((entry) => entry.visible === true && entry.itemId);
+      const externalIds = [...new Set(visibleEntries.map((entry) => String(entry.itemId)))];
+      if (externalIds.length === 0 && probe.items.visibleCount > 0) {
+        mappingAudit.errorStage = "base_visible_item_ids_missing";
+      } else if (externalIds.length > 0) {
+        try {
+          const db = createSupabaseAdminClient();
+          const { data: listingRows, error: listingError } = await db
+            .from("shop_listings")
+            .select("id,base_item_id,supplier_listing_id")
+            .in("base_item_id", externalIds);
+          if (listingError) throw new Error("base_listing_mapping_db_read_failed");
+
+          const rowsByBaseId = new Map<string, Array<{ id: string; base_item_id: string | number | null; supplier_listing_id: string | null }>>();
+          for (const row of listingRows ?? []) {
+            const key = String(row.base_item_id ?? "");
+            const existing = rowsByBaseId.get(key) ?? [];
+            existing.push({
+              id: String(row.id),
+              base_item_id: row.base_item_id,
+              supplier_listing_id: row.supplier_listing_id == null ? null : String(row.supplier_listing_id),
+            });
+            rowsByBaseId.set(key, existing);
+          }
+          const linkedSupplierIds = await getLinkedSupplierListingIds(
+            (listingRows ?? []).map((row) => row.supplier_listing_id),
+          );
+
+          for (const entry of visibleEntries) {
+            const matches = rowsByBaseId.get(String(entry.itemId)) ?? [];
+            if (matches.length === 0) {
+              mappingAudit.visibleItemsWithoutDbMapping += 1;
+              continue;
+            }
+            mappingAudit.visibleItemsMatchedToDatabase += 1;
+            if (matches.length > 1) {
+              mappingAudit.visibleItemsWithAmbiguousDbMapping += 1;
+              continue;
+            }
+            const supplierId = matches[0].supplier_listing_id;
+            if (!supplierId || !linkedSupplierIds.has(supplierId)) {
+              mappingAudit.visibleItemsUnlinked += 1;
+            } else {
+              mappingAudit.visibleItemsLinked += 1;
+            }
+          }
+          mappingAudit.ok = mappingAudit.itemIdMissingCount === 0
+            && mappingAudit.visibleItemsWithoutDbMapping === 0
+            && mappingAudit.visibleItemsWithAmbiguousDbMapping === 0
+            && mappingAudit.visibleItemsUnlinked === 0;
+        } catch {
+          mappingAudit.errorStage = "base_listing_mapping_audit_failed";
+        }
+      } else {
+        mappingAudit.ok = mappingAudit.itemIdMissingCount === 0;
+      }
+    }
+
     const result = {
-      ok: probe.orders.apiStatus === 200 && probe.items.apiStatus === 200 && probe.items.errorStage === null,
+      ok: probe.orders.apiStatus === 200
+        && probe.items.apiStatus === 200
+        && probe.items.errorStage === null
+        && probe.items.complete
+        && mappingAudit.ok,
       configured: true,
       baseApi: probe.orders.apiStatus === 200,
       ordersApiStatus: probe.orders.apiStatus,
@@ -37,10 +117,16 @@ export async function GET(request: Request) {
       itemPages: probe.items.pages,
       itemAuditComplete: probe.items.complete,
       itemErrorStage: probe.items.errorStage,
+      mappingAuditOk: mappingAudit.ok,
+      visibleItemsMatchedToDatabase: mappingAudit.visibleItemsMatchedToDatabase,
+      visibleItemsLinked: mappingAudit.visibleItemsLinked,
+      visibleItemsUnlinked: mappingAudit.visibleItemsUnlinked,
+      visibleItemsWithoutDbMapping: mappingAudit.visibleItemsWithoutDbMapping,
+      visibleItemsWithAmbiguousDbMapping: mappingAudit.visibleItemsWithAmbiguousDbMapping,
+      itemIdMissingCount: mappingAudit.itemIdMissingCount,
+      mappingAuditErrorStage: mappingAudit.errorStage,
     };
     console.info("[TRACER BASE AUTH PROBE]", result);
-    // HTTP 200 means the diagnostic ran. ok:false records a failed items-read capability
-    // without masking a successful orders probe.
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "BASE_DIAGNOSTIC_FAILED";
