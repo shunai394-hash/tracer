@@ -24,4 +24,4 @@ assert.match(store, /const liveStock = await getLiveShopifyStock/, "order creati
 assert.match(store, /shopify_live_stock_unverified/, "order creation must reject unverified stock");
 assert.match(store, /requested quantity exceeds verified live inventory/, "quantity checks must use live-verified stock");
 
-console.log("Shopify live-stock fail-closed checks: 19 passed (8 behavior cases + 11 source guards)");
+console.log("Shopify live-stock fail-closed checks: 18 passed (8 behavior cases + 10 source guards)");
