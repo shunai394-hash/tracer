@@ -16,6 +16,7 @@ export type OrderGateInput = {
   shippable: boolean | null;
   complianceRisk: boolean | null;
   profitCalculable: boolean;
+  forecastProfit30d: number | null;
   forecastUnits30d: number | null;
   onHand: number | null;
   recommendedQty: number | null;
@@ -57,6 +58,8 @@ export function evaluateOrderGates(
   if (input.complianceRisk === null) missing.push("compliance_unknown");
   if (input.complianceRisk === true) blocked.push("compliance_risk");
   if (!input.profitCalculable) missing.push("profit_unknown");
+  if (input.forecastProfit30d === null) missing.push("profit_amount_unknown");
+  else if (!Number.isFinite(input.forecastProfit30d) || input.forecastProfit30d <= 0) blocked.push("non_positive_profit");
   if (input.forecastUnits30d === null) missing.push("forecast_unknown");
   if (input.onHand === null) missing.push("own_inventory_unknown");
   if (input.recommendedQty === null) missing.push("order_qty_unknown");
@@ -169,6 +172,7 @@ export function verifyOrderGateInvariants(): {
       shippable: true,
       complianceRisk: false,
       profitCalculable: false,
+      forecastProfit30d: null,
       forecastUnits30d: 20,
       onHand: 5,
       recommendedQty: 25,
@@ -195,6 +199,7 @@ export function verifyOrderGateInvariants(): {
       shippable: true,
       complianceRisk: false,
       profitCalculable: true,
+      forecastProfit30d: 80,
       forecastUnits30d: 20,
       onHand: 5,
       recommendedQty: 25,
