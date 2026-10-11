@@ -14,6 +14,7 @@ import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { getObservedFxRate } from "@/lib/intelligence/fx";
 import {
   evaluateDropshipOrderGate,
+  isCjSupplierName,
   type DropshipOrderGateResult,
 } from "@/lib/ordering/dropship-gate";
 
@@ -110,6 +111,40 @@ export async function executeSupplierPurchaseOrder(
       reason: `purchase_order_status_${po.status}`,
       gate: null,
     };
+  }
+
+  // CJ supply discovery is not enough to authorize a customer-order purchase.
+  // Require one exact supplier product+variant row, linked to this canonical product.
+  // Lookup failures and duplicate rows fail closed before any supplier API call.
+  if (isCjSupplierName(supplierName)) {
+    const canonicalProductId = asString(po.product_id);
+    const externalProductId = asString(po.supplier_product_id);
+    const externalVariantId = asString(po.supplier_variant_id);
+    if (!canonicalProductId || !externalProductId || !externalVariantId) {
+      return {
+        purchaseOrderId, supplierName, attempted: false, succeeded: false,
+        supplierOrderId: null, reason: "supplier_identity_missing", gate: null,
+      };
+    }
+    const { data: identityRows, error: identityError } = await supabase
+      .from("supplier_listings")
+      .select("product_id,identity_status")
+      .eq("supplier", "cj")
+      .eq("supplier_product_id", externalProductId)
+      .eq("supplier_variant_id", externalVariantId)
+      .limit(2);
+    if (identityError) {
+      return {
+        purchaseOrderId, supplierName, attempted: false, succeeded: false,
+        supplierOrderId: null, reason: "supplier_identity_lookup_failed", gate: null,
+      };
+    }
+    if (identityRows?.length !== 1 || identityRows?.[0]?.identity_status !== "linked" || String(identityRows?.[0]?.product_id ?? "") !== canonicalProductId) {
+      return {
+        purchaseOrderId, supplierName, attempted: false, succeeded: false,
+        supplierOrderId: null, reason: "supplier_identity_unlinked_or_ambiguous", gate: null,
+      };
+    }
   }
 
   const adapter = getSupplierAdapter(supplierName);
