@@ -55,12 +55,8 @@ export async function runAutonomousOrderControl(runKey: string): Promise<RunResu
   initializeProcurement();
   const supabase = createSupabaseAdminClient();
 
-  // The automation audit tables are operational telemetry, not a prerequisite
-  // for creating or executing a supplier order. A stale/missing Supabase grant
-  // must not turn a paid customer order into a silently unprocessed order.
-  let auditPersistence = true;
-  let existingRun: { data: { id?: string; status?: string; processed_count?: number; succeeded_count?: number; failed_count?: number } | null; error?: { code?: string; message?: string } | null };
-
+  // The run row is an execution claim, not optional telemetry. If the claim
+  // cannot be persisted, fail closed before reading orders or calling suppliers.
   const existingRunQuery = await supabase
     .from("order_automation_runs")
     .select("id,status,processed_count,succeeded_count,failed_count")
@@ -68,56 +64,58 @@ export async function runAutonomousOrderControl(runKey: string): Promise<RunResu
     .maybeSingle();
 
   if (existingRunQuery.error) {
-    if (existingRunQuery.error.code === "42501" || existingRunQuery.error.code === "42P01") {
-      auditPersistence = false;
-      existingRun = { data: null, error: existingRunQuery.error };
-      console.warn("[TRACER AUTOMATION AUDIT DEGRADED]", existingRunQuery.error.message);
-    } else {
-      throw new Error(existingRunQuery.error.message);
+    throw new Error(`automation_run_claim_lookup_failed:${existingRunQuery.error.message}`);
+  }
+
+  if (existingRunQuery.data) {
+    if (existingRunQuery.data.status === "completed") {
+      return {
+        runId: String(existingRunQuery.data.id),
+        processed: Number(existingRunQuery.data.processed_count ?? 0),
+        succeeded: Number(existingRunQuery.data.succeeded_count ?? 0),
+        failed: Number(existingRunQuery.data.failed_count ?? 0),
+        purchaseOrderIds: [],
+      };
     }
-  } else {
-    existingRun = existingRunQuery;
+    // Do not resume a running/failed row under the same key: the previous
+    // worker may still be alive or its supplier-side outcome may be ambiguous.
+    // A deliberate retry must use a new run key after reconciliation.
+    throw new Error(`automation_run_already_claimed:${String(existingRunQuery.data.status ?? "unknown")}`);
   }
 
-  if (auditPersistence && existingRun.data?.status === "completed") {
-    return {
-      runId: String(existingRun.data.id),
-      processed: Number(existingRun.data.processed_count ?? 0),
-      succeeded: Number(existingRun.data.succeeded_count ?? 0),
-      failed: Number(existingRun.data.failed_count ?? 0),
-      purchaseOrderIds: [],
-    };
-  }
+  const insertedRun = await supabase
+    .from("order_automation_runs")
+    .insert({ run_key: runKey, mode: "scheduled", status: "running" })
+    .select("id")
+    .single();
 
-  const run = auditPersistence
-    ? existingRun.data?.id
-      ? { id: String(existingRun.data.id) }
-      : await (async () => {
-          const inserted = await supabase
-            .from("order_automation_runs")
-            .insert({ run_key: runKey, mode: "scheduled", status: "running" })
-            .select("id")
-            .single();
-          if (inserted.error) {
-            if (inserted.error.code === "23505") {
-              const retry = await supabase
-                .from("order_automation_runs")
-                .select("id")
-                .eq("run_key", runKey)
-                .single();
-              if (!retry.data) throw new Error(retry.error?.message ?? "automation run claim failed");
-              return { id: String(retry.data.id) };
-            }
-            if (inserted.error.code === "42501" || inserted.error.code === "42P01") {
-              auditPersistence = false;
-              console.warn("[TRACER AUTOMATION AUDIT DEGRADED]", inserted.error.message);
-              return { id: `degraded:${runKey}` };
-            }
-            throw new Error(inserted.error.message);
-          }
-          return { id: String(inserted.data.id) };
-        })()
-    : { id: `degraded:${runKey}` };
+  if (insertedRun.error) {
+    if (insertedRun.error.code === "23505") {
+      // Another worker won the unique run_key insert after our initial lookup.
+      // Re-read its state, return only if it completed, otherwise stop before
+      // entering the order loop. Never reuse another worker's running claim.
+      const racedRun = await supabase
+        .from("order_automation_runs")
+        .select("id,status,processed_count,succeeded_count,failed_count")
+        .eq("run_key", runKey)
+        .maybeSingle();
+      if (racedRun.error) {
+        throw new Error(`automation_run_claim_race_lookup_failed:${racedRun.error.message}`);
+      }
+      if (racedRun.data?.status === "completed") {
+        return {
+          runId: String(racedRun.data.id),
+          processed: Number(racedRun.data.processed_count ?? 0),
+          succeeded: Number(racedRun.data.succeeded_count ?? 0),
+          failed: Number(racedRun.data.failed_count ?? 0),
+          purchaseOrderIds: [],
+        };
+      }
+      throw new Error(`automation_run_claim_lost:${String(racedRun.data?.status ?? "unknown")}`);
+    }
+    throw new Error(`automation_run_claim_insert_failed:${insertedRun.error.message}`);
+  }
+  const runId = String(insertedRun.data.id);
 
   const { data: orders, error } = await supabase
     .from("shop_orders")
@@ -204,25 +202,22 @@ export async function runAutonomousOrderControl(runKey: string): Promise<RunResu
     }
   }
 
-  if (auditPersistence) {
-    const { error: runUpdateError } = await supabase
-      .from("order_automation_runs")
-      .update({
-        status: failed > 0 && succeeded === 0 ? "failed" : "completed",
-        finished_at: new Date().toISOString(),
-        processed_count: processed,
-        succeeded_count: succeeded,
-        failed_count: failed,
-      })
-      .eq("id", run.id);
+  const { error: runUpdateError } = await supabase
+    .from("order_automation_runs")
+    .update({
+      status: failed > 0 && succeeded === 0 ? "failed" : "completed",
+      finished_at: new Date().toISOString(),
+      processed_count: processed,
+      succeeded_count: succeeded,
+      failed_count: failed,
+    })
+    .eq("id", runId);
 
-    if (runUpdateError && runUpdateError.code !== "42501" && runUpdateError.code !== "42P01") {
-      throw new Error(runUpdateError.message);
-    }
-    if (runUpdateError) {
-      console.warn("[TRACER AUTOMATION AUDIT UPDATE SKIPPED]", runUpdateError.message);
-    }
+  if (runUpdateError) {
+    // A lost final status update leaves the claim ambiguous. Throw so the
+    // caller cannot report a successful run whose durable state is unknown.
+    throw new Error(`automation_run_finalization_failed:${runUpdateError.message}`);
   }
 
-  return { runId: run.id, processed, succeeded, failed, purchaseOrderIds };
+  return { runId, processed, succeeded, failed, purchaseOrderIds };
 }
