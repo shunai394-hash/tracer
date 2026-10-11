@@ -42,7 +42,7 @@ const PRODUCT_CATEGORY_KEYWORDS: Record<string, string[]> = {
   // TRACER's primary merchandising strategy: women's bags first, then beauty
   // tools and hair accessories. Japanese demand queries must be recognized
   // without treating the query itself as product identity.
-  women's_bags: [
+  "women's_bags": [
     "handbag", "handbags", "crossbody bag", "shoulder bag", "tote bag", "mini bag",
     "women's bag", "womens bag", "レディースバッグ", "ショルダーバッグ",
     "トートバッグ", "ハンドバッグ", "斜めがけバッグ", "ミニバッグ", "バッグ",
