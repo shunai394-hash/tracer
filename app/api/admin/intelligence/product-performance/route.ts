@@ -79,20 +79,33 @@ export async function GET(request: Request) {
       if (["checkout_started", "begin_checkout"].includes(type)) value.checkoutStarted += qty;
     }
 
-    for (const item of itemsResult.data ?? []) {
-      const order = paidOrders.get(String(item.order_id ?? ""));
+    const paidItems = (itemsResult.data ?? []).flatMap((item) => {
+      const orderId = String(item.order_id ?? "");
+      const order = paidOrders.get(orderId);
       const listingId = String(item.listing_id ?? "");
-      if (!order || !listingId) continue;
-      const value = get(listingId);
-      value.paidOrders.add(String(item.order_id));
+      if (!order || !listingId) return [];
       const qty = Math.max(0, amount(item.qty));
-      value.units += qty;
-      value.grossRevenue += qty * amount(item.unit_price);
-      const refund = amount(order.refund_amount);
-      if (refund > 0 && !value.paidOrders.has("refund-counted:" + String(item.order_id))) {
-        value.refunds += refund;
-        value.refundedOrders += 1;
-        value.paidOrders.add("refund-counted:" + String(item.order_id));
+      return [{ item, orderId, order, listingId, qty, lineRevenue: qty * amount(item.unit_price) }];
+    });
+    const orderRevenue = new Map<string, number>();
+    for (const line of paidItems) orderRevenue.set(line.orderId, (orderRevenue.get(line.orderId) ?? 0) + line.lineRevenue);
+    const refundedOrderListings = new Set<string>();
+    for (const line of paidItems) {
+      const value = get(line.listingId);
+      value.paidOrders.add(line.orderId);
+      value.units += line.qty;
+      value.grossRevenue += line.lineRevenue;
+      // Allocate order-level refunds proportionally to each listing's share of
+      // paid line revenue so multi-item orders are never counted more than once.
+      const refund = amount(line.order.refund_amount);
+      const totalOrderRevenue = orderRevenue.get(line.orderId) ?? 0;
+      if (refund > 0 && totalOrderRevenue > 0) {
+        value.refunds += refund * line.lineRevenue / totalOrderRevenue;
+        const refundKey = line.listingId + ":" + line.orderId;
+        if (!refundedOrderListings.has(refundKey)) {
+          value.refundedOrders += 1;
+          refundedOrderListings.add(refundKey);
+        }
       }
     }
 
