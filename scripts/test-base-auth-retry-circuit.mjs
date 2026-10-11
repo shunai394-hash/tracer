@@ -10,6 +10,8 @@ assert.equal(BASE_AUTH_REAUTH_REQUIRED, "base_auth_invalid_reauthorization_requi
 
 const route = readFileSync("app/api/cron/unpublish-unlinked/route.ts", "utf8");
 assert.ok(route.includes("base_last_error.neq.base_auth_invalid_reauthorization_required"), "query must exclude unresolved BASE token rejection");
-assert.ok(route.includes(".in(\"id\", basePending.map((row) => String(row.id)))"), "token rejection circuit must mark the affected bounded batch");
+assert.ok(route.includes("const authBlockedIds = unlinked"), "token rejection circuit must cover all discovered BASE listings, not just the first batch");
+assert.ok(route.includes(".in(\"id\", authBlockedIds)"), "token rejection circuit must persist the account-wide pause marker");
+assert.ok(route.includes("row.base_last_error !== \"tracer_unpublished_hidden\""), "circuit must preserve existing intentionally-hidden listings");
 assert.ok(route.includes("baseAuthReauthorizationRequired"), "report must surface the authentication circuit state");
 console.log("BASE invalid-token retry circuit verified");
