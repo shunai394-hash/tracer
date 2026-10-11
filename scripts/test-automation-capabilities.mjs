@@ -80,6 +80,8 @@ for (const workflowPath of [
   ".github/workflows/tracer-expand-1000.yml",
   ".github/workflows/tracer-publish-cj-now.yml",
   ".github/workflows/tracer-run-sales-test-now.yml",
+  ".github/workflows/tracer-live-shopify-sync.yml",
+  ".github/workflows/tracer-one-shot-supply-recovery.yml",
 ]) {
   const workflow = readFileSync(workflowPath, "utf8");
   assert.ok(!/^  push:/m.test(workflow), `production write workflow must not run automatically on push: ${workflowPath}`);
