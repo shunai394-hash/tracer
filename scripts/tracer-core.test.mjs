@@ -176,3 +176,22 @@ test("adapter ports define boundaries without implementing network or database a
   assert.equal(portsSource.includes("createSupabaseAdminClient"), false);
   assert.equal(portsSource.includes("process.env"), false);
 });
+
+test("shadow comparison never promotes a publication decision when legacy and core gates disagree", () => {
+  const base = {
+    salesTestPassed: true, japaneseTitleValid: true, descriptionValid: true,
+    imageVerified: true, supplierIdentityVerified: true, supplierVariantVerified: true,
+    inventoryKnown: true, inventoryAvailable: 4, orderable: true, trackingAvailable: true,
+    sellingPrice: 1000, landedCost: 500, channelFees: 100, shippingCost: 100,
+  };
+  const eligible = core.evaluatePublication(base);
+  const blocked = core.evaluatePublication({ ...base, landedCost: null });
+  assert.deepEqual(core.comparePublicationEligibility(true, eligible), {
+    matches: true, classification: "both_eligible", safeToPromote: true,
+  });
+  assert.deepEqual(core.comparePublicationEligibility(false, blocked), {
+    matches: true, classification: "both_blocked", safeToPromote: false,
+  });
+  assert.equal(core.comparePublicationEligibility(true, blocked).safeToPromote, false);
+  assert.equal(core.comparePublicationEligibility(false, eligible).safeToPromote, false);
+});
