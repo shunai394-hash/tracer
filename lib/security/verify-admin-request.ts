@@ -21,7 +21,7 @@ export async function verifyAdminRequest(
   request: Request,
   dependencies: VerifyAdminDependencies,
 ): Promise<VerifyAdminResult> {
-  const token = request.headers.get("authorization")?.match(/^Bearer\\s+(\\S+)$/i)?.[1];
+  const token = request.headers.get("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
   if (!token) return { ok: false, status: 401, error: "authentication_required" };
 
   const { url, anonKey } = dependencies.getPublicConfig();
