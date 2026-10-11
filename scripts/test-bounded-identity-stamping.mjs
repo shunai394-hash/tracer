@@ -13,13 +13,20 @@ assert.match(source, /candidateIds\.length > 0/);
 assert.match(source, /if \(!candidate \|\| !title\)/);
 assert.match(source, /missingDemandCandidate: !candidate/);
 assert.match(source, /identity_status: "identity_unconfirmed"/);
+
 const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
-assert.doesNotMatch(pipeline, /reverifyCjSupplyIdentities\(/);
+assert.match(
+  pipeline,
+  /runStep\("identity_reverify", \(\) =>\s*reverifyCjSupplyIdentities\(\{\s*limit: 5,/,
+);
+
 const identityRoute = await readFile(new URL("../app/api/cron/cj-identity-reverify/route.ts", import.meta.url), "utf8");
 assert.match(identityRoute, /reverifyCjSupplyIdentities\(\{[\s\S]*?limit: 100,[\s\S]*?startedAt \+ 240_000/);
+
 const reverify = await readFile(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
 assert.match(reverify, /const MAX_CANDIDATE_SCAN = 500/);
 assert.match(reverify, /\.limit\(MAX_CANDIDATE_SCAN\)/);
 assert.match(reverify, /buildCandidateQuery\(\)\.gt\("id", priorCursor\)/);
 assert.match(reverify, /nextCursor: scanCursor/);
+
 console.log("Bounded demand identity stamping and CJ reverify: 15 assertions passed");
