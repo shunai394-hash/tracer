@@ -308,10 +308,12 @@ export async function createPurchaseOrderFromRecommendation(args: {
           ? metadata.supplier_api_available
           : null,
       settings,
-      spentToday: 0,
-      spentMonth: 0,
-      spentProduct: 0,
-      spentCategory: 0,
+      // Spend totals are not yet loaded from persisted purchase orders. Unknown must fail closed
+      // whenever a budget is configured; never treat unknown spend as zero.
+      spentToday: null,
+      spentMonth: null,
+      spentProduct: null,
+      spentCategory: null,
       category: typeof metadata.category === "string" ? metadata.category : null,
     },
     asNumber(rec.confidence),
