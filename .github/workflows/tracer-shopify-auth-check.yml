@@ -13,6 +13,8 @@ on:
     paths:
       - ".github/workflows/tracer-shopify-auth-check.yml"
       - "app/api/admin/shopify/identity-audit/route.ts"
+      - "app/api/admin/shopify/auth-check/route.ts"
+      - "app/api/channels/base/diagnostics/route.ts"
   workflow_dispatch:
     inputs:
       sync_batch:
