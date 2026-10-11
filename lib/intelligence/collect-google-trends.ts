@@ -6,6 +6,29 @@ const GOOGLE_TRENDS_RSS =
   "https://trends.google.com/trending/rss?geo=JP";
 
 const SOURCE_NAME = "Google Trends";
+
+// The JP trending feed is a general-news feed, not a shopping keyword feed.
+// Only retain clearly product-related queries for product-demand matching;
+// names, sports, news, events and generic years must not pollute the matcher.
+const PRODUCT_DEMAND_TERMS = [
+  "レディースバッグ", "ショルダーバッグ", "トートバッグ", "ハンドバッグ",
+  "斜めがけバッグ", "ミニバッグ", "バッグ",
+  "美顔器", "美容家電", "美容ツール", "メイクブラシ", "ビューラー",
+  "フェイスローラー", "かっさ", "ヘアアクセ", "ヘアクリップ",
+  "バンスクリップ", "シュシュ", "ヘアピン", "ヘアバンド",
+  "ジュエリー", "ピアス", "イヤリング", "ネックレス", "ブレスレット",
+  "スキンケア", "美容液", "化粧水", "乳液", "日焼け止め", "コスメ",
+  "handbag", "crossbody bag", "shoulder bag", "tote bag", "beauty tool",
+  "facial device", "makeup brush", "hair clip", "claw clip", "jewelry",
+  "skincare", "serum", "moisturizer", "sunscreen",
+];
+
+function isProductDemandTrend(title: string): boolean {
+  const normalized = title.normalize("NFKC").toLowerCase();
+  return PRODUCT_DEMAND_TERMS.some((term) =>
+    normalized.includes(term.normalize("NFKC").toLowerCase()),
+  );
+}
 const SOURCE_TYPE = "search";
 const PROVIDER = "manual";
 const FETCH_TIMEOUT_MS = 5_000;
@@ -87,6 +110,16 @@ export async function collectGoogleTrendsDemand() {
   if (trends.length === 0) {
     return { sourceId: null, fetched: 0, inserted: 0, skipped: true, reason: "google_trends_empty" };
   }
+  const productTrends = trends.filter((trend) => isProductDemandTrend(trend.title));
+  if (productTrends.length === 0) {
+    return {
+      sourceId: null,
+      fetched: trends.length,
+      inserted: 0,
+      skipped: true,
+      reason: "no_product_relevant_trends",
+    };
+  }
 
   const supabase = createSupabaseAdminClient();
   const sourceResult = await supabase
@@ -127,7 +160,7 @@ export async function collectGoogleTrendsDemand() {
   // one network/database request per trend item and could consume the patrol
   // budget when Supabase was under load.
   const observedAt = new Date().toISOString();
-  const rows = trends.map((trend) => ({
+  const rows = productTrends.map((trend) => ({
     product_id: null,
     source_id: sourceId,
     signal_type: "search_volume",
@@ -149,13 +182,14 @@ export async function collectGoogleTrendsDemand() {
     throw new Error(`Failed to insert Google Trends observations: ${error.message}`);
   }
 
-  for (const trend of trends) {
+  for (const trend of productTrends) {
     console.log("[google-trends-title]", JSON.stringify(trend.title));
   }
 
   return {
     sourceId,
     fetched: trends.length,
+    productRelevant: productTrends.length,
     inserted: rows.length,
   };
 }
