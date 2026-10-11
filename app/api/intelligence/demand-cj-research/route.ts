@@ -1,11 +1,11 @@
-import { requireCronAuth } from "@/lib/security/cron-auth";
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
 ﻿import { NextResponse } from "next/server";
 import { researchDemandCandidateWithCJ } from "@/lib/intelligence/research-demand-cj";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const authError = requireCronAuth(request);
+  const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   try {
     const body = (await request.json()) as {
