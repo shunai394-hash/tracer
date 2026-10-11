@@ -8,6 +8,7 @@ import {
   type CJProductVariant,
 } from "@/lib/sources/cj/variant-select";
 import { firstCJImageUrl, parseCJStockData } from "@/lib/sources/cj/parse";
+import { isCJQuotaExhausted } from "@/lib/sources/cj/rate-limit-policy";
 
 export { selectUnambiguousVariant, verifyVariantSelectionInvariants };
 export type { CJProductVariant };
@@ -22,12 +23,22 @@ export class CJConfigError extends Error {
 }
 
 export class CJRequestError extends Error {
-  readonly code = "CJ_REQUEST_FAILED" as const;
+  readonly code: string;
 
-  constructor(message = "CJdropshipping request failed") {
+  constructor(message = "CJdropshipping request failed", code = "CJ_REQUEST_FAILED") {
     super(message);
+    this.code = code;
     this.name = "CJRequestError";
   }
+}
+
+export function isCJQuotaExhaustedError(error: unknown): boolean {
+  return Boolean(
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "CJ_QUOTA_EXHAUSTED",
+  );
 }
 
 type CJAuthResponse = {
@@ -184,9 +195,10 @@ export async function fetchCJWithRateLimit(
       pointsInfo: diagnostic.pointsInfo,
     });
 
-    if (diagnostic.code === 16900500 || /insufficient api points/i.test(diagnostic.message ?? "")) {
+    if (isCJQuotaExhausted(diagnostic)) {
       throw new CJRequestError(
-        diagnostic.message || "CJ API points exhausted",
+        diagnostic.message || "CJ API quota exhausted; retry after cooldown",
+        "CJ_QUOTA_EXHAUSTED",
       );
     }
 
