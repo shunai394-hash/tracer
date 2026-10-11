@@ -227,7 +227,8 @@ export async function discoverAndCreateCjSupply(
     .not("supplier_product_id", "is", null)
     .not("supplier_variant_id", "is", null)
     .in("verification_status", ["verified", "unverified", "retryable"])
-    .order("verification_status", { ascending: true })
+    .or(`next_verification_at.is.null,next_verification_at.lte.${new Date().toISOString()}`)
+    .order("next_verification_at", { ascending: true, nullsFirst: true })
     .order("inventory", { ascending: false, nullsFirst: false })
     .limit(500);
   if (seededError) throw new Error(`supply-first candidate query failed: ${seededError.message}`);
