@@ -216,7 +216,13 @@ export async function waitForCJRateLimit(): Promise<void> {
       }
       return;
     }
-    console.warn("[cj] shared QPS limiter unavailable; using local fallback", error.message);
+    // CJ enforces a provider-wide 1 QPS limit, but a process-local
+    // fallback cannot coordinate concurrent Vercel instances. Fail closed
+    // rather than risking another provider-wide throttle/quota lockout.
+    throw new CJRequestError(
+      "CJ shared QPS limiter unavailable; refusing external request",
+      "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN",
+    );
   } catch (error) {
     if (
       error instanceof CJRequestError &&
@@ -227,13 +233,11 @@ export async function waitForCJRateLimit(): Promise<void> {
     if (!circuitChecked) {
       throw new CJRequestError("CJ quota circuit state unavailable; refusing external request", "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN");
     }
-    console.warn(
-      "[cj] shared QPS limiter unavailable; using local fallback",
-      error instanceof Error ? error.message : String(error),
+    throw new CJRequestError(
+      "CJ shared QPS limiter unavailable; refusing external request",
+      "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN",
     );
   }
-
-  await waitForLocalCJRateLimit();
 }
 
 export async function fetchCJWithRateLimit(
