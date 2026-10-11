@@ -140,7 +140,7 @@ async function getShopifyAccessTokenCandidates(): Promise<string[]> {
     return [token];
   }
   const token = config.adminAccessToken.trim();
-  if (!token || /\\s/.test(token) || /^[\"']|[\"']$/.test(token)) {
+  if (!token || /\s/.test(token) || /^[\"']|[\"']$/.test(token)) {
     throw new Error("SHOPIFY_ADMIN_ACCESS_TOKEN is missing or malformed");
   }
   return [token];
