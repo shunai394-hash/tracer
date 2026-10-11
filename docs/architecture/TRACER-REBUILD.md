@@ -6,14 +6,23 @@ This branch is an isolated refactor foundation. It does not change the productio
 
 ## Audit snapshot (2026-10-11)
 
-- Production deployment reported READY at commit `8a02ac33e5482b2e8b7d5f495f635b58e4292bb1`; this confirms deployment status, not external API authentication.
-- Shopify auth recovery on HTTP 401 was merged, but a successful authenticated read-only Admin API response and the expected shop identity have not yet been verified.
-- BASE code supports OAuth refresh-token exchange and checks four required environment variables. A configured flag is not proof that the refresh token is valid; perform a read-only API call to prove it.
+- Production deployment is READY at commit `c16d9162d547bb8bf034b1e134c3ea174a5cca7b` (2026-10-11); deployment status is separate from provider readiness.
+- The protected production read-only Shopify probe at `2026-10-11T05:08:44Z` returned HTTP 200, the expected shop `ieufrg-tb.myshopify.com` / shop ID `gid://shopify/Shop/74624434220`, no GraphQL errors, and a successful client-credentials exchange. Two required fulfillment scopes remain missing: `read_merchant_managed_fulfillment_orders` and `write_merchant_managed_fulfillment_orders`.
+- The protected production BASE probe returned HTTP 200 for the read-only order-list request and zero orders. This proves the current token can read the list endpoint; it does not prove order ingestion or purchasing works end to end.
+- The read-only identity audit scanned 767 listings: 669 have a supplier-listing FK and matching external product/variant IDs on the same internal product, but all 669 referenced supplier rows remain `identity_status=supply_discovered` (534 `verified`, 135 `retryable`). There are 98 listings missing external product/variant identity, 451 referenced supplier rows with verification errors, and zero linked/repairable canonical identity matches. No rows were modified.
 - `vercel.json` contains scheduled routes for discovery, supplier investigation, variant repair, sales-test publication, Shopify publication, inventory refresh, BASE orders, dropship execution, Shopify orders, supplier reconciliation, fulfillment, supplier orders, and `patrol-ai`. This means production writes may be triggered by scheduled routes independently of a manual diagnostic.
 - `app/api/cron/dropship-execution/route.ts` combines BASE order sync and autonomous supplier-order control in one route. Separate these responsibilities behind explicit stages and durable idempotency.
 - `lib/channels/base-publisher.ts` combines catalog copy validation, identity checks, database state changes, BASE visibility changes, and remote item creation/editing. Split policy evaluation from the external adapter and persistence/reconciliation.
 - `app/api/cron/shopify-publish/route.ts` invokes synchronization directly after its automation auth/config checks. A future write executor must additionally require a recorded passing preflight and explicit mode.
 - Confirmed TRACER Supabase project: `lysavahpadzrhpounjgi` (Tokyo). Read-only schema/data audit observed products=1,525; supplier_listings=57,063; shop_listings=767; shop_orders=0; purchase_orders=0; internal_supply_products/variants=60/60; internal_supply_links=0; marketplace_bestseller_variants=0. All 767 listings were blocked/unpublished at audit time. These counts are a dated snapshot, not a live guarantee.
+
+## Latest implementation verification (2026-10-11)
+
+- Shopify order ingestion now pages through the paid-order connection newest-first until it finds enough not-yet-imported orders. This prevents a first page of already-imported old orders from starving later orders.
+- Each candidate order’s nested line items are fully paginated before variant mapping or order writes. Missing/stalled cursors and duplicate line-item IDs fail closed.
+- Autonomous procurement now requires a durable unique `order_automation_runs` claim before loading orders. Existing `running`/`failed` claims, claim persistence errors, and finalization errors stop execution instead of replaying supplier orders blindly.
+- Regression checks run before the production build: provider diagnostic contracts (8 assertions), Shopify order pagination/idempotency (15 assertions), autonomous run-claim safety (11 assertions), and dropship order gate invariants (20 cases). The latest preview builds for these changes reached READY; production deploy is also READY at the commit above.
+- These checks prove code/build invariants, not a successful live purchase. No production order or purchase order was created by these changes.
 
 ## Target boundaries
 
@@ -32,7 +41,7 @@ This branch is an isolated refactor foundation. It does not change the productio
 - [x] Inspect all scheduled cron routes and map each route to read-only / DB-write / external-write / purchase side effects.
 - [x] Confirm the actual TRACER Supabase project through read-only production schema inspection; preserve the existing tables and identifiers.
 - [x] Add tests for duplicate identities, missing variant IDs, unknown inventory/cost, non-positive margin, duplicate orders, ambiguous attempts, unpaid/COD orders, unknown/insufficient inventory, kill switch and invalid quantity.
-- [ ] Add read-only Shopify and BASE probes that report HTTP status, provider identity, scopes/permissions, and sanitized error stage only.
+- [x] Add read-only Shopify and BASE probes that report HTTP status, provider identity, scopes/permissions, and sanitized error stage only.
 - [ ] Run a dry-run reconciliation against a snapshot and compare proposed actions with existing IDs.
 - [ ] Introduce a kill switch / write-mode gate and explicit per-provider write enablement.
 - [ ] Only after proof and review, migrate one operation at a time; preserve existing IDs and record rollback steps.
@@ -58,7 +67,7 @@ No production data deletion, bulk unpublish, bulk republish, live order placemen
 - Listing evidence counts: 669 have supplier product/variant IDs and identity method, 654 have positive inventory, only 8 have orderable=true, 669 have tracking=true, 767 have positive selling price, and 691 have an HTTP(S) image URL. The main remaining bottlenecks are canonical identity and actual orderability, not listing count.
 - The 57,063 supplier candidates are not 57,063 sellable products. A CJ group included 551 rows with verification_status=verified but identity_status=supply_discovered; supplier verification does not prove marketplace identity. internal_supply_links and marketplace_bestseller_variants both had zero rows.
 - Production runtime logs contained 14 BASE order API HTTP 400 invalid-access-token errors through 2026-10-10T19:24:38Z, before the required BASE OAuth environment entries were created/updated on 2026-10-11. A fresh read-only BASE list call is needed; historical errors do not prove the new config still fails.
-- A branch-only Shopify auth probe returned outer HTTP 401 because lib/security/cron-auth.ts intentionally only accepts GitHub OIDC tokens from refs/heads/main. That result is an authorization rejection before the Shopify probe, not a Shopify API 401. Keep the production allowlist unchanged; use the existing main-only auth-check workflow with sync_batch=0.
+- The protected `main`-only diagnostic workflow is now wired to rerun when either provider diagnostic implementation changes. Its push-triggered run uses `sync_batch=0`, waits for production to reach the triggering commit, and does not perform product/order writes.
 
 ## Scheduled-route side-effect inventory
 
