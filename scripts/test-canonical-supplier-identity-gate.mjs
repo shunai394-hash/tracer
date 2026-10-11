@@ -13,6 +13,9 @@ const [helper, shopify, base, store, route, vercel, persist] = await Promise.all
 assert.match(helper, /identity_status === "linked"/);
 assert.match(persist, /verification_status: "verified", verification_error: null, last_verified_at: now/, "successful CJ verification must clear stale errors and refresh its timestamp");
 assert.match(persist, /\.\.\.\(marketplaceIdentity \? \{ bestseller_id:/, "CJ discovery alone must not promote supplier identity to linked");
+assert.match(persist, /if \(!marketplaceIdentity\) return \{ offerId: null, intelligenceId: null, identity: null \}/, "unmatched or ambiguous CJ identity must not create product-linked offer/intelligence rows");
+assert.ok(persist.indexOf("if (!marketplaceIdentity)") < persist.indexOf("const offerPayload = {"), "no-match exit must happen before any product_offers write");
+assert.match(persist, /offerId: string \| null; intelligenceId: string \| null/, "supply-only discovery must explicitly return absent canonical record IDs");
 assert.match(helper, /offset \+= 100/, "identity lookups must batch large supplier ID sets");
 assert.match(shopify, /supplier_identity_unlinked/);
 assert.match(shopify, /identity_status !== "linked"/);
