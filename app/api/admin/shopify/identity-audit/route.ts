@@ -94,7 +94,11 @@ export async function GET(request: Request) {
     lastVerifiedAtPresent: 0,
     verificationErrorPresent: 0,
   };
-  const supplierById = new Map(supplierRows.map((supplier) => [supplier.id, supplier] as const));
+  // The generated Supabase schema types lag these audit-only evidence columns.
+  // Keep the read-only aggregate probe typed as unknown-valued records; each field is narrowed below.
+  const supplierById = new Map<string, Record<string, unknown>>(
+    supplierRows.map((supplier) => [supplier.id, supplier as unknown as Record<string, unknown>] as const),
+  );
 
   for (const row of rows) {
     const fk = String(row.supplier_listing_id ?? "").trim();
