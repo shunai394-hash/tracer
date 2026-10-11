@@ -58,7 +58,10 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
   // The collector may skip empty/challenge pages and succeed on a later source.
   // Persist that effective index so the next cursor resumes where real items were found.
   const sourceIndex = collected.sourceIndex;
-  const startIndex = Math.max(0, options.startIndex ?? 0);
+  const requestedStartIndex = Math.max(0, options.startIndex ?? 0);
+  // A fallback to another source must start at that source's first item, not
+  // reuse an offset from the empty source that was originally requested.
+  const startIndex = sourceIndex === requestedSourceIndex ? requestedStartIndex : 0;
   const batchSize = Math.max(1, options.batchSize ?? 50);
   const endIndex = startIndex + batchSize;
   let collectionIndex = 0;
