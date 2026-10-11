@@ -130,6 +130,19 @@ export async function GET(request: Request) {
     .order("shopify_synced_at", { ascending: false, nullsFirst: false })
     .limit(3);
 
+  console.info("[TRACER SHOPIFY AUTH PROBE]", {
+    shopifyHttpStatus: shopifyProbe.shopifyHttpStatus,
+    shopId: shopifyProbe.shopId,
+    graphqlErrorCount: shopifyProbe.graphqlErrors.length,
+    tokenExchangeHttpStatus: tokenExchange.httpStatus ?? null,
+    tokenExchangeOk: tokenExchange.ok === true,
+    adminApiOk: adminApi.ok === true,
+    adminApiHttpStatus: adminApi.ok === true ? 200 : adminApi.httpStatus ?? null,
+    missingScopes: Array.isArray(adminApi.missingScopes) ? adminApi.missingScopes : [],
+    shopifyLinkedRows: linked,
+    shopifyHttp401Rows: http401,
+  });
+
   return NextResponse.json({
     ok: shopifyProbe.ok,
     shopifyHttpStatus: shopifyProbe.shopifyHttpStatus,
