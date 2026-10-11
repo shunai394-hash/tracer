@@ -7,6 +7,6 @@ const failures = result.cases.filter((item) => item.actual !== item.expected);
 assert.equal(result.ok, true, `Dropship order gate invariant failures: ${JSON.stringify(failures)}`);
 
 const orderControl = await readFile(new URL("../lib/ordering/autonomous-control.ts", import.meta.url), "utf8");
-assert.match(orderControl, /\.in\("order_status", \["placed", "processing"\]\)/);
+assert.match(orderControl, /\.in\("order_status", \["placed", "processing", "fulfillment_pending"\]\)/);
 assert.doesNotMatch(orderControl, /\.in\("order_status", \["placed", "processing", "fulfilled"\]\)/);
 console.log(`Dropship order gate: ${result.cases.length} invariant cases passed; fulfilled orders excluded`);
