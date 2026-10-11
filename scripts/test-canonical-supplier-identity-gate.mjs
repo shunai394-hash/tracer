@@ -19,6 +19,8 @@ assert.match(helper, /identity_status === "linked"/);
 assert.match(persist, /verification_error: marketplaceIdentity \? null : "no_unique_canonical_child_variant_match"/, "unmatched CJ identity must persist an explicit reason rather than retaining stale verification state");
 assert.match(persist, /schema_org_product_is_variant_of/, "CJ canonical identity resolution must accept isVariantOf evidence");
 assert.match(persist, /last_verified_at: now/, "CJ verification must refresh its timestamp");
+assert.match(persist, /\.select\("id"\)\.maybeSingle\(\)/, "supplier evidence update must confirm that a listing row was actually updated");
+assert.match(persist, /if \(!evidenceRow\?\.id\) throw new Error\("CJ supplier evidence persistence failed: supplier listing row was not updated"\)/, "a missing supplier listing must fail instead of silently reporting persistence success");
 assert.match(persist, /bestseller_id: marketplaceIdentity\?\.bestsellerId \?\? null/, "unmatched or ambiguous CJ identity must clear any stale canonical parent link");
 assert.match(persist, /identity_status: marketplaceIdentity \? "linked" : "supply_discovered"/, "CJ discovery alone must not promote supplier identity to linked");
 assert.match(persist, /orderable: false, tracking_available: false, api_available: false/, "identity recheck must not enable purchasing or claim order-path verification");
