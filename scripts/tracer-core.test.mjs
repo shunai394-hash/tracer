@@ -57,3 +57,61 @@ test("order retries do not resubmit ambiguous, submitted, or confirmed attempts"
     action: "block", reason: "missing_external_order_identity",
   });
 });
+
+test("order execution requires paid non-COD order, exact supplier identity, stock, address, positive profit and safe attempt state", () => {
+  const base = {
+    channel: "shopify",
+    externalOrderId: "order-42",
+    attemptState: "none",
+    paymentStatus: "paid",
+    paymentMethod: "card",
+    cancellationOrRefundPending: false,
+    supplierIdentityVerified: true,
+    supplierProductId: "supplier-product-1",
+    supplierVariantId: "supplier-variant-1",
+    quantity: 2,
+    inventoryKnown: true,
+    inventoryAvailable: 5,
+    sourceCost: 300,
+    shippingCost: 100,
+    sellingPrice: 1000,
+    sourceFxRateToSelling: 1,
+    addressComplete: true,
+    supplierConfigured: true,
+    liveOrderingEnabled: true,
+    killSwitchActive: false,
+  };
+  assert.equal(core.evaluateOrderExecution(base).eligible, true);
+  assert.equal(core.evaluateOrderExecution(base).estimatedUnitProfit, 600);
+
+  const cod = core.evaluateOrderExecution({ ...base, paymentMethod: "cod" });
+  assert.equal(cod.eligible, false);
+  assert.equal(cod.blockers.includes("cash_on_delivery_not_confirmed"), true);
+
+  const unpaid = core.evaluateOrderExecution({ ...base, paymentStatus: "pending" });
+  assert.equal(unpaid.blockers.includes("payment_not_confirmed"), true);
+
+  const missingVariant = core.evaluateOrderExecution({ ...base, supplierVariantId: null });
+  assert.equal(missingVariant.blockers.includes("supplier_variant_id_missing"), true);
+
+  const unknownStock = core.evaluateOrderExecution({ ...base, inventoryKnown: false, inventoryAvailable: null });
+  assert.equal(unknownStock.blockers.includes("inventory_unknown"), true);
+
+  const insufficientStock = core.evaluateOrderExecution({ ...base, inventoryAvailable: 1 });
+  assert.equal(insufficientStock.blockers.includes("insufficient_inventory"), true);
+
+  const negativeProfit = core.evaluateOrderExecution({ ...base, sellingPrice: 400 });
+  assert.equal(negativeProfit.blockers.includes("non_positive_unit_profit"), true);
+
+  const invalidNumber = core.evaluateOrderExecution({ ...base, quantity: Number.NaN });
+  assert.equal(invalidNumber.blockers.includes("quantity_invalid"), true);
+
+  const killSwitch = core.evaluateOrderExecution({ ...base, killSwitchActive: true });
+  assert.equal(killSwitch.blockers.includes("kill_switch_active"), true);
+
+  const duplicate = core.evaluateOrderExecution({ ...base, attemptState: "confirmed" });
+  assert.equal(duplicate.blockers.includes("attempt_already_submitted_or_confirmed"), true);
+
+  const ambiguous = core.evaluateOrderExecution({ ...base, attemptState: "unknown" });
+  assert.equal(ambiguous.blockers.includes("attempt_ambiguous_or_in_progress_attempt"), true);
+});
