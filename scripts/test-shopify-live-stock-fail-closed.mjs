@@ -13,6 +13,11 @@ assert.equal(hasVerifiedPositiveShopifyStock(null, 3), false, "missing variant I
 assert.equal(hasVerifiedPositiveShopifyStock("SKU-123", 3), false, "non-Shopify variant ID is blocked");
 
 const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
+const sync = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
+const blockReasons = sync.match(/function blockReasons\\(row: Listing\\): string\\[\\] \\{([\\s\\S]*?)\\n\\}/)?.[1];
+assert.ok(blockReasons, "Shopify sync must expose its canonical block-reason gate");
+assert.match(blockReasons, /supplier_product_missing/, "Shopify sync must block listings without the supplier product identity");
+assert.match(blockReasons, /supplier_variant_missing/, "Shopify sync must block listings without the exact supplier variant identity");
 assert.match(store, /shopify_live_stock_unconfigured/, "missing Shopify credentials must fail closed");
 assert.match(store, /shopify_live_stock_variant_ids_empty/, "empty live-stock request must not use cached stock");
 assert.match(store, /shopify_live_stock_response_incomplete/, "partial Shopify responses must be rejected");
