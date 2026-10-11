@@ -226,7 +226,9 @@ async function researchLimitedSupply(): Promise<unknown> {
       return {
         skipped: true,
         retryable: classified.retryable,
-        reason: "gemini_failed",
+        reason: classified.category === "supplier_quota"
+          ? "supplier_quota_cooldown"
+          : "gemini_failed",
         candidateId: candidate.id,
         error: classified.message,
       };
@@ -616,7 +618,8 @@ export async function runIntelligencePipeline(options: {
       reason === "step_time_budget_exceeded_deferred" ||
       reason === "previous_step_timeout_stops_pipeline" ||
       reason === "gemini_not_configured_candidate_resolution_blocked" ||
-      reason === "gemini_failed";
+      reason === "gemini_failed" ||
+      reason === "supplier_quota_cooldown";
   });
   const incomplete = pipelineTimedOut || Boolean(deferredStep);
   return {
