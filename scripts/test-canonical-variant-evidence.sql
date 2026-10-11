@@ -10,6 +10,7 @@ create table if not exists public.marketplace_bestsellers (
 \i supabase/migrations/20261010170000_marketplace_bestseller_variants.sql
 \i supabase/migrations/20261010170000_marketplace_bestseller_variants.sql
 \i supabase/migrations/20261011110000_allow_amazon_child_asin_evidence.sql
+\i supabase/migrations/20261011160000_allow_schema_org_isvariantof_evidence.sql
 
 insert into public.marketplace_bestsellers(id, marketplace, title, source)
 values ('30000000-0000-4000-8000-000000000001', 'amazon.co.jp', 'Variant fixture parent', 'ci_fixture')
@@ -42,6 +43,21 @@ on conflict (bestseller_id, source_variant_id) do update
 set jan = excluded.jan, evidence_source = excluded.evidence_source,
     raw_evidence = excluded.raw_evidence, updated_at = now();
 
+-- Persist and read back the new Schema.org child -> ProductGroup evidence type.
+insert into public.marketplace_bestseller_variants(
+  bestseller_id, marketplace, source, source_variant_id, sku, jan,
+  evidence_source, raw_evidence, fetched_at
+)
+values (
+  '30000000-0000-4000-8000-000000000001', 'amazon.co.jp', 'ci_fixture',
+  'B0CHILD002', 'SKU-CHILD-2', '4901234567894',
+  'schema_org_product_is_variant_of',
+  '{"relationship":"child_isVariantOf_product_group","child_identifier":"B0CHILD002"}'::jsonb, now()
+)
+on conflict (bestseller_id, source_variant_id) do update
+set sku = excluded.sku, jan = excluded.jan, evidence_source = excluded.evidence_source,
+    raw_evidence = excluded.raw_evidence, updated_at = now();
+
 do $$
 declare
   v_count integer;
@@ -64,6 +80,18 @@ begin
      and jan = '4006381333931';
   if v_count <> 1 then
     raise exception 'explicit Amazon child-ASIN evidence with its own barcode was not accepted';
+  end if;
+
+  select count(*) into v_count
+    from public.marketplace_bestseller_variants
+   where bestseller_id = '30000000-0000-4000-8000-000000000001'
+     and source_variant_id = 'B0CHILD002'
+     and evidence_source = 'schema_org_product_is_variant_of'
+     and sku = 'SKU-CHILD-2'
+     and jan = '4901234567894'
+     and raw_evidence ->> 'relationship' = 'child_isVariantOf_product_group';
+  if v_count <> 1 then
+    raise exception 'new Schema.org isVariantOf evidence failed persisted DB round-trip';
   end if;
 
   begin
@@ -94,4 +122,4 @@ begin
   end if;
 end $$;
 
-select 'PASS: canonical marketplace variant evidence migration, idempotency, source check, and grants' as result;
+select 'PASS: canonical marketplace variant evidence migration, DB round-trip, idempotency, source check, and grants' as result;
