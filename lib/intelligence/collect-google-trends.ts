@@ -12,12 +12,15 @@ const SOURCE_NAME = "Google Trends";
 // names, sports, news, events and generic years must not pollute the matcher.
 const PRODUCT_DEMAND_TERMS = [
   "レディースバッグ", "ショルダーバッグ", "トートバッグ", "ハンドバッグ",
-  "斜めがけバッグ", "ミニバッグ", "バッグ",
+  "斜めがけバッグ", "ミニバッグ", "通勤バッグ", "旅行バッグ", "軽量バッグ",
+  "財布", "ポーチ", "バッグ",
   "美顔器", "美容家電", "美容ツール", "メイクブラシ", "ビューラー",
-  "フェイスローラー", "かっさ", "ヘアアクセ", "ヘアクリップ",
+  "フェイスローラー", "かっさ", "メイク", "アイメイク", "ネイル", "まつ毛",
+  "ヘアアレンジ", "髪質改善", "ヘアケア", "ヘアアクセ", "ヘアクリップ",
   "バンスクリップ", "シュシュ", "ヘアピン", "ヘアバンド",
   "ジュエリー", "ピアス", "イヤリング", "ネックレス", "ブレスレット",
-  "スキンケア", "美容液", "化粧水", "乳液", "日焼け止め", "コスメ",
+  "スキンケア", "美容液", "化粧水", "乳液", "日焼け止め", "日傘",
+  "毛穴", "乾燥肌", "敏感肌", "シミ対策", "たるみ", "小顔", "コスメ",
   "handbag", "crossbody bag", "shoulder bag", "tote bag", "beauty tool",
   "facial device", "makeup brush", "hair clip", "claw clip", "jewelry",
   "skincare", "serum", "moisturizer", "sunscreen",
