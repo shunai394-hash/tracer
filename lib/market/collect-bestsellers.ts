@@ -14,7 +14,7 @@ import {
   type ParsedBestseller,
 } from "@/lib/market/parse-rankings";
 import { extractAsinFromUrl, normalizeIdentifier } from "@/lib/market/identifiers";
-import { parseCanonicalMarketplaceVariantEvidence } from "@/lib/market/canonical-variant-evidence";
+import { inspectCanonicalMarketplaceVariantMarkup, parseCanonicalMarketplaceVariantEvidence } from "@/lib/market/canonical-variant-evidence";
 import { decodeHtmlBytes } from "@/lib/market/charset";
 
 export const MARKETPLACE_SOURCES = [
@@ -57,6 +57,11 @@ export type CollectedMarketplace = {
     identifierFound: number;
     /** Explicit ProductGroup.hasVariant child rows extracted from fetched detail HTML. */
     canonicalVariantCount: number;
+    jsonLdNodeCount: number;
+    productGroupCount: number;
+    groupsWithVariantCount: number;
+    variantProductNodeCount: number;
+    absoluteTypeIriCount: number;
   };
 };
 
@@ -214,6 +219,11 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
   let htmlFetched = 0;
   let identifierFound = 0;
   let canonicalVariantCount = 0;
+  let jsonLdNodeCount = 0;
+  let productGroupCount = 0;
+  let groupsWithVariantCount = 0;
+  let variantProductNodeCount = 0;
+  let absoluteTypeIriCount = 0;
 
   await Promise.all(details.map(async (item) => {
     if (!item.productUrl) return;
@@ -224,6 +234,12 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
 
       if (marketplace.marketplace === "amazon.co.jp") {
         const detail = parseAmazonProductDetail(detailHtml);
+        const markup = inspectCanonicalMarketplaceVariantMarkup(detailHtml);
+        jsonLdNodeCount += markup.jsonLdNodeCount;
+        productGroupCount += markup.productGroupCount;
+        groupsWithVariantCount += markup.groupsWithVariantCount;
+        variantProductNodeCount += markup.variantProductNodeCount;
+        absoluteTypeIriCount += markup.absoluteTypeIriCount;
         item.canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl);
         canonicalVariantCount += item.canonicalVariants.length;
         item.brand = detail.brand;
@@ -254,7 +270,17 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
 
   return {
     ...marketplace,
-    enrichment: { attempted: details.length, htmlFetched, identifierFound, canonicalVariantCount },
+    enrichment: {
+      attempted: details.length,
+      htmlFetched,
+      identifierFound,
+      canonicalVariantCount,
+      jsonLdNodeCount,
+      productGroupCount,
+      groupsWithVariantCount,
+      variantProductNodeCount,
+      absoluteTypeIriCount,
+    },
   };
 }
 
