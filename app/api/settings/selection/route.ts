@@ -1,4 +1,3 @@
-import { requireCronAuth } from "@/lib/security/cron-auth";
 import { NextResponse } from "next/server";
 import {
   getSelectionSettings,
@@ -8,9 +7,7 @@ import { parseSelectionSettings } from "@/lib/intelligence/selection-config";
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
-  const authError = requireCronAuth(request);
-  if (authError) return authError;
+export async function GET() {
   try {
     const settings = await getSelectionSettings();
     return NextResponse.json({ ok: true, settings });
@@ -23,8 +20,6 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const authError = requireCronAuth(request);
-  if (authError) return authError;
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const settings = await saveSelectionSettings(parseSelectionSettings(body));
