@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [helper, shopify, base, store, route, vercel] = await Promise.all([
+const [helper, shopify, base, store, route, vercel, persist] = await Promise.all([
   readFile(new URL("../lib/catalog/canonical-supplier-identity.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/cron/unpublish-unlinked/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../vercel.json", import.meta.url), "utf8"),
+  readFile(new URL("../lib/intelligence/persist-cj-supply-intelligence.ts", import.meta.url), "utf8"),
 ]);
 assert.match(helper, /identity_status === "linked"/);
+assert.match(persist, /verification_status: "verified", verification_error: null, last_verified_at: now/, "successful CJ verification must clear stale errors and refresh its timestamp");
+assert.match(persist, /\.\.\.\(marketplaceIdentity \? \{ bestseller_id:/, "CJ discovery alone must not promote supplier identity to linked");
 assert.match(helper, /offset \+= 100/, "identity lookups must batch large supplier ID sets");
 assert.match(shopify, /supplier_identity_unlinked/);
 assert.match(shopify, /identity_status !== "linked"/);
