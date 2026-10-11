@@ -59,3 +59,37 @@ No production data deletion, bulk unpublish, bulk republish, live order placemen
 - The 57,063 supplier candidates are not 57,063 sellable products. A CJ group included 551 rows with verification_status=verified but identity_status=supply_discovered; supplier verification does not prove marketplace identity. internal_supply_links and marketplace_bestseller_variants both had zero rows.
 - Production runtime logs contained 14 BASE order API HTTP 400 invalid-access-token errors through 2026-10-10T19:24:38Z, before the required BASE OAuth environment entries were created/updated on 2026-10-11. A fresh read-only BASE list call is needed; historical errors do not prove the new config still fails.
 - A branch-only Shopify auth probe returned outer HTTP 401 because lib/security/cron-auth.ts intentionally only accepts GitHub OIDC tokens from refs/heads/main. That result is an authorization rejection before the Shopify probe, not a Shopify API 401. Keep the production allowlist unchanged; use the existing main-only auth-check workflow with sync_batch=0.
+
+## Scheduled-route side-effect inventory
+
+This inventory was checked against the route source on main. It identifies entry points only; it does not assert that an external API call currently succeeds.
+
+| Scheduled route | Main responsibility | Side effects / coupling |
+|---|---|---|
+| market-sourcing | marketplace observation ingestion | external sourcing + database writes |
+| supplier-investigation | supplier candidate investigation and internal-catalog linking | supplier reads + database writes |
+| cj-variant-repair | recover supplier variants | supplier reads + database writes |
+| cj-identity-reverify | re-check canonical identity evidence | supplier reads + identity/database writes |
+| orosy-bulk-import | discover/import Orosy products | supplier reads + database writes + Shopify sync |
+| sales-test-publication | opportunity selection and publication | database writes + Shopify sync + BASE publication + NEWFIND delivery |
+| shopify-publish | channel listing synchronization | Shopify product/variant/inventory/publication writes |
+| inventory-refresh | refresh supplier inventory and storefront state | supplier reads + database writes + BASE item edits |
+| demand-match | demand-to-product matching | database writes |
+| intelligence | intelligence pipeline and supply selection | database writes + Shopify sync |
+| base-orders | BASE order ingestion | BASE reads + order/PO-intent database writes |
+| dropship-execution | BASE ingestion then autonomous procurement | BASE reads + database writes + supplier order creation; BASE import failure aborts the later stage |
+| shopify-orders | paid Shopify order ingestion | Shopify reads + database writes + autonomous procurement when orders import |
+| supplier-reconciliation | reconcile supplier purchase-order state | supplier reads + purchase-order database updates |
+| shopify-fulfillment | fulfill/sync Shopify orders | Shopify fulfillment writes + database updates |
+| supplier-orders | supplier order status/tracking sync | supplier reads + purchase-order database updates |
+| newfind-retry | retry/rescue/withdraw promotion delivery | NEWFIND external writes + database updates |
+| supply-first | supplier supply discovery and opportunity intelligence | supplier reads + database writes |
+| patrol-ai | patrol/intelligence recovery and delivery rescue | database writes + BASE publication + NEWFIND reconciliation |
+
+## Consequence: channel writes have multiple owners
+
+Shopify synchronization is invoked by the dedicated shopify-publish route and also from sales-test-publication, orosy-bulk-import and intelligence. BASE publication/edit operations are reachable from sales-test-publication, patrol-ai and inventory-refresh. Order ingestion/procurement is reachable from both dropship-execution and shopify-orders, with dropship-execution also re-importing BASE orders that have their own scheduled route.
+
+Do not remove schedules or alter production behavior based on this inventory alone. The refactor should introduce a single channel-neutral eligibility decision and one idempotent delivery owner per channel operation, then convert callers to enqueue/reconcile intents instead of performing direct external writes. Keep current production schedules and external IDs unchanged until shadow comparison and rollback checks pass.
+
+The initial pure contracts in lib/tracer-core/contracts.ts and lib/tracer-core/auth-contracts.ts are only the first isolated layer; existing routes do not call them yet. Integration must be a separate, tested step.
