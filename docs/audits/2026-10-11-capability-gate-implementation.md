@@ -9,8 +9,8 @@ Draft PR: https://github.com/shunai394-hash/tracer/pull/234
 - `lib/security/cron-auth.ts` adds `requireAutomationCapability`, which authenticates the caller and then applies the explicit capability decision. Authenticated callers no longer automatically gain permission to write.
 - All 19 unique routes referenced by `vercel.json` now declare a capability gate. The same guard is also applied to eight additional write endpoints: BASE publication, core-engine, demand, unpublish-unlinked, Super Delivery sales route, ai-patrol delegation, Shopify admin sync (after its dry-run branch), and intelligence demand-match.
 - `scripts/direct-900-gate.ts` checks the capability policy before creating the admin client or starting its production data/publish loop.
-- `tracer-direct-900.yml` and `tracer-production-smoke.yml` no longer start on every matching push. Both require a manual `allow_production_writes=true` input before their job can run.
-- CI includes `scripts/test-automation-capabilities.mjs`, which checks the policy and that scheduled/additional protected routes are covered, and checks the two direct-production workflows retain explicit approval guards.
+- `tracer-direct-900.yml`, `tracer-production-smoke.yml`, `tracer-build-1000.yml`, `tracer-expand-1000.yml`, `tracer-publish-cj-now.yml`, `tracer-run-sales-test-now.yml`, `tracer-live-shopify-sync.yml`, and `tracer-one-shot-supply-recovery.yml` no longer start on every matching push. All eight require a manual `allow_production_writes=true` input before their jobs can run.
+- CI includes `scripts/test-automation-capabilities.mjs`, which checks the policy and that scheduled/additional protected routes are covered, and checks the eight push-triggered production-write workflows retain explicit approval guards.
 
 ## Behavior / deployment warning
 
