@@ -382,6 +382,28 @@ export async function runIntelligencePipeline(options: {
       batchSize: 10,
     });
     const next = await writeMarketCursor(db, observation, "patrol-ai");
+    // A non-empty ranking batch is not enough to unblock canonical identity.
+    // If no child-variant evidence was parsed (or all parsed evidence writes failed),
+    // defer the pipeline so publication/procurement never treats source coverage as identity proof.
+    const emptyCollection = observation.itemCount === 0;
+    const emptyVariantEvidence = observation.canonicalVariantEvidenceParsed === 0;
+    const evidencePersistenceFailed = observation.canonicalVariantEvidenceParsed > 0
+      && observation.canonicalVariantEvidenceWritten === 0
+      && observation.canonicalVariantEvidenceWriteFailures > 0;
+    if (emptyCollection || emptyVariantEvidence || evidencePersistenceFailed) {
+      return {
+        ...observation,
+        cursor,
+        nextCursor: next,
+        skipped: true,
+        retryable: true,
+        reason: emptyCollection
+          ? "marketplace_collection_empty"
+          : emptyVariantEvidence
+            ? "canonical_variant_evidence_empty"
+            : "canonical_variant_evidence_write_failed",
+      };
+    }
     return { ...observation, cursor, nextCursor: next };
   }, { budgetMs: 25_000 });
   steps.push(bestsellerStep);
