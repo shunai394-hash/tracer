@@ -90,4 +90,12 @@ const unknownCostWithCategoryBudget = evaluateOrderGates({
 }, 0.82);
 assert.equal(unknownCostWithCategoryBudget.canPropose, false, "unknown cost must block configured category budgets");
 assert.equal(unknownCostWithCategoryBudget.missing.includes("budget_check_cost_unknown"), true);
+
+const unknownCategoryWithBudget = evaluateOrderGates({
+  ...base,
+  settings: { ...base.settings, categoryBudgets: { auto: 500 } },
+  category: null,
+}, 0.82);
+assert.equal(unknownCategoryWithBudget.canPropose, false, "unknown category must not bypass configured category budgets");
+assert.equal(unknownCategoryWithBudget.missing.includes("category_unknown_for_budget"), true);
 console.log(`Order gate: ${invariantResult.cases.length} existing invariants + 6 forecast-profit checks passed`);
