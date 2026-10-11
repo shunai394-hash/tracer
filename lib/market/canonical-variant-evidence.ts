@@ -92,7 +92,13 @@ export function inspectCanonicalMarketplaceVariantMarkup(html: string): Canonica
       return Boolean(record && isType(record, "Product"));
     }).length;
   }
-  const absoluteTypeIriCount = nodes.reduce((count, node) => {
+  const typedRecords = [
+    ...nodes,
+    ...groups.flatMap((group) => nodeList(group.hasVariant).map(asRecord).filter(
+      (record): record is Record<string, unknown> => record !== null,
+    )),
+  ];
+  const absoluteTypeIriCount = typedRecords.reduce((count, node) => {
     const types = nodeList(node["@type"]);
     return count + types.filter((value) => typeof value === "string" && /^https?:\/\/schema\.org\//i.test(value.trim())).length;
   }, 0);
