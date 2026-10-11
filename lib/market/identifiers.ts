@@ -115,6 +115,18 @@ export function pickIdentifierQuery(ids: ProductIdentifiers): string | null {
   return ids.jan ?? ids.gtin ?? ids.ean ?? ids.upc ?? ids.asin ?? ids.mpn ?? null;
 }
 
+/** Query candidates in deterministic order; ASIN is lookup-only and never sufficient for sales identity. */
+export function identifierQueryEntries(ids: ProductIdentifiers): Array<[IdentifierScheme, string]> {
+  return ([
+    ["asin", ids.asin],
+    ["jan", ids.jan],
+    ["gtin", ids.gtin],
+    ["ean", ids.ean],
+    ["upc", ids.upc],
+    ["mpn", ids.mpn],
+  ] as Array<[IdentifierScheme, string | null]>).filter((entry): entry is [IdentifierScheme, string] => Boolean(entry[1]));
+}
+
 export type IdentityMatchMethod =
   | "asin" | "jan" | "gtin" | "ean" | "upc" | "mpn"
   | "brand_mpn" | "specs" | "image_url" | "title" | "none";
@@ -147,10 +159,6 @@ export function matchProductIdentity(args: {
 }): IdentityMatchResult {
   const market = args.market;
   const supply = args.supply;
-
-  if (eq(market.asin, supply.asin)) {
-    return { linked: true, salesEligible: true, method: "asin", confidence: 0.99, rationale: "ASIN matches" };
-  }
 
   for (const scheme of ["jan", "gtin", "ean", "upc"] as const) {
     if (eq(market[scheme], supply[scheme])) {
@@ -187,6 +195,19 @@ export function matchProductIdentity(args: {
     };
   }
 
+  // ASIN is a marketplace candidate lookup key, not independent proof that
+  // a supplier offer is the same sellable product/variant. Require a barcode
+  // family match or same-brand MPN before the Sales Test Gate can consider it.
+  if (eq(market.asin, supply.asin)) {
+    return {
+      linked: true,
+      salesEligible: false,
+      method: "asin",
+      confidence: 0.7,
+      rationale: "ASIN matches; candidate only until independent supplier identity evidence confirms the item",
+    };
+  }
+
   if (market.imageUrl && supply.imageUrl && market.imageUrl === supply.imageUrl) {
     return { linked: false, salesEligible: false, method: "image_url", confidence: 0.4, rationale: "image URL matches but identity is not confirmed by identifier" };
   }
@@ -206,8 +227,8 @@ export function verifyIdentifierMatchInvariants(): {
 } {
   const cases = [
     {
-      name: "asin_match_is_sales_eligible",
-      expected: true,
+      name: "asin_only_match_is_not_sales_eligible",
+      expected: false,
       actual: matchProductIdentity({ market: { ...EMPTY_IDENTIFIERS, asin: "B0TESTASIN" }, supply: { ...EMPTY_IDENTIFIERS, asin: "B0TESTASIN" } }).salesEligible,
     },
     {

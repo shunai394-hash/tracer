@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   identifiersFromRecord,
+  identifierQueryEntries,
   matchProductIdentity,
 } from "@/lib/market/identifiers";
 
@@ -12,13 +13,7 @@ export async function linkInternalSupplyForBestseller(args: {
 }): Promise<{ matched: boolean; supplierListingId: string | null; supplyVariantId: string | null }> {
   const supabase = createSupabaseAdminClient();
   const marketIds = identifiersFromRecord(args.bestseller);
-  const queries = [
-    ["jan", marketIds.jan],
-    ["gtin", marketIds.gtin],
-    ["ean", marketIds.ean],
-    ["upc", marketIds.upc],
-    ["mpn", marketIds.mpn],
-  ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
+  const queries = identifierQueryEntries(marketIds);
 
   if (queries.length === 0) return { matched: false, supplierListingId: null, supplyVariantId: null };
 

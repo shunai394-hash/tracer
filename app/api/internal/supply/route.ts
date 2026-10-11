@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireCronAuth } from "@/lib/security/cron-auth";
 import { syncTracerCatalogFromInternalSupply } from "@/lib/suppliers/sync-tracer-catalog";
 import { shouldSyncInternalSupplyCatalog } from "@/lib/suppliers/cj-identity-reverify-policy";
+import { normalizeIdentifier } from "@/lib/market/identifiers";
 
 export const runtime = "nodejs";
 
@@ -116,6 +117,7 @@ export async function POST(request: Request) {
       sku: typeof x.sku === "string" ? x.sku : null,
       title: String(x.title),
       brand: x.brand ?? null,
+      asin: normalizeIdentifier("asin", typeof x.asin === "string" ? x.asin : null),
       jan: x.jan ?? null,
       gtin: x.gtin ?? null,
       ean: x.ean ?? null,
@@ -188,6 +190,7 @@ export async function POST(request: Request) {
         variant_sku: variantSku,
         variant_id: variantId,
         title: v.title ?? null,
+        asin: normalizeIdentifier("asin", typeof v.asin === "string" ? v.asin : null),
         jan: v.jan ?? null,
         gtin: v.gtin ?? null,
         ean: v.ean ?? null,

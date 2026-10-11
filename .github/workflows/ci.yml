@@ -47,10 +47,12 @@ jobs:
           sudo -u postgres createdb tracer_test
           sudo -u postgres createdb tracer_ingestion_test
           sudo -u postgres createdb tracer_variant_link_test
+          sudo -u postgres createdb tracer_asin_test
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-publishable-title.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-cj-query-fallback.mjs
+      - run: node --experimental-strip-types --no-warnings scripts/test-asin-candidate-only.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-canonical-supplier-identity-gate.mjs
       - run: node scripts/verify-cj-internal-supply-wiring.mjs
       - name: Run atomic catalog sync PostgreSQL integration tests (disposable CI database only)
@@ -85,5 +87,13 @@ jobs:
           PGPASSWORD: ci-postgres-password
           PGDATABASE: tracer_variant_link_test
         run: psql -v ON_ERROR_STOP=1 -f scripts/test-canonical-supplier-variant-links.sql
+      - name: Run ASIN candidate lookup migration tests (disposable CI database only)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: ci-postgres-password
+          PGDATABASE: tracer_asin_test
+        run: psql -v ON_ERROR_STOP=1 -f scripts/test-internal-supply-asin-candidate.sql
       - run: npm run lint
       - run: npm run build
