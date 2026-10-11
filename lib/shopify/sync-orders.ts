@@ -124,7 +124,7 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
     }
 
     hasNextOrdersPage = data.orders.pageInfo.hasNextPage;
-    const nextCursor = data.orders.pageInfo.endCursor;
+    const nextCursor: string | null = data.orders.pageInfo.endCursor;
     if (hasNextOrdersPage && (!nextCursor || nextCursor === after)) {
       throw new Error("shopify_orders_cursor_not_advancing");
     }
