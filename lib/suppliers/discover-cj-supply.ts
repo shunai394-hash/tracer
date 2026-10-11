@@ -13,6 +13,7 @@ import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/c
 import { persistCjSupplyIntelligence } from "@/lib/intelligence/persist-cj-supply-intelligence";
 import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
 import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { normalizeIdentifier } from "@/lib/market/identifiers";
 import { persistCjInternalSupplyCandidate } from "@/lib/suppliers/persist-cj-internal-supply";
 
 function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
@@ -403,7 +404,7 @@ export async function discoverAndCreateCjSupply(
         order_method: "cj_api", api_available: true, verification_status: "verified", shipping_status: "verified", identity_method: "supply_discovered",
         identity_status: "supply_discovered", identity_confidence: 1, configured: true,
         supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
-        gtin: variantBarcode,
+        gtin: normalizeIdentifier("gtin", variantBarcode),
         orderable: true, price_confirmed: true, inventory_confirmed: true, tracking_available: cjTrackingAvailable,
         fetched_at: new Date().toISOString(), metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate }
       }, seededCandidate.supplierListingId);
@@ -645,7 +646,7 @@ export async function discoverAndCreateCjSupply(
               supplier_product_id: candidate.id,
               supplier_variant_id: variant.vid,
               cj_variant_id: variant.vid,
-              gtin: variantBarcode,
+              gtin: normalizeIdentifier("gtin", variantBarcode),
               orderable: true,
               price_confirmed: true,
               inventory_confirmed: true,
