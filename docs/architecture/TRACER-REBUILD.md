@@ -92,6 +92,9 @@ Shopify synchronization is invoked by the dedicated shopify-publish route and al
 
 Do not remove schedules or alter production behavior based on this inventory alone. The refactor should introduce a single channel-neutral eligibility decision and one idempotent delivery owner per channel operation, then convert callers to enqueue/reconcile intents instead of performing direct external writes. Keep current production schedules and external IDs unchanged until shadow comparison and rollback checks pass.
 
+
+Shadow comparison is a parity signal only. It is not permission to publish: the provider auth preflight, positive-margin eligibility gate, explicit write mode and idempotency/reconciliation checks remain separate mandatory controls.
+
 The isolated core now consists of lib/tracer-core/contracts.ts (exact identity, publication/order gates and ambiguous-write retry classification), lib/tracer-core/auth-contracts.ts (provider auth preflight), and lib/tracer-core/ports.ts (typed channel/order/supplier/repository boundaries plus approval guards for write commands). Regression tests cover these contracts. Existing production routes do not call the new ports yet; wiring must be a separate, tested shadow-comparison step.
 
 ### Scheduled overlap (UTC)
