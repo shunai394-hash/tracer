@@ -112,4 +112,3 @@ jobs:
           gh issue create \
             --title "[TRACER auth diagnostic] Run $GITHUB_RUN_ID" \
             --body-file auth-report.md \
-            --label "diagnostic"
