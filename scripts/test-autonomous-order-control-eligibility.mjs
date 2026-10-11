@@ -9,6 +9,20 @@ assert.ok(paidOrderQuery, "autonomous control must explicitly filter paid orders
 assert.match(paidOrderQuery[1], /"placed"/);
 assert.match(paidOrderQuery[1], /"processing"/);
 assert.match(paidOrderQuery[1], /"fulfillment_pending"/);
+
+// Run claims must fail closed before the paid-order loop when another worker
+// owns the run key or the claim cannot be durably persisted.
+assert.match(source, /automation_run_claim_lookup_failed/);
+assert.match(source, /automation_run_already_claimed/);
+assert.match(source, /automation_run_claim_lost/);
+assert.match(source, /automation_run_claim_insert_failed/);
+assert.match(source, /automation_run_finalization_failed/);
+assert.doesNotMatch(source, /auditPersistence/);
+assert.ok(
+  source.indexOf('from("order_automation_runs")') < source.indexOf('from("shop_orders")'),
+  "durable run claim must be acquired before loading orders",
+);
+
 assert.doesNotMatch(paidOrderQuery[1], /"cancelled"|"refunded"|"refund_pending"|"cancellation_requested"/);
 
 const dropship = await readFile("lib/ordering/dropship.ts", "utf8");
