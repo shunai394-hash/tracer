@@ -2,10 +2,7 @@ name: TRACER Autonomous Patrol AI
 
 on:
   workflow_dispatch:
-  # Keep the production patrol alive without relying on manual dispatch.
-  # A 15-minute cadence leaves room for the bounded 270s pipeline and avoids overlap.
-  schedule:
-    - cron: "*/15 * * * *"
+  # The scheduled cadence is owned by tracer-patrol.yml to avoid duplicate production calls.
 
 permissions:
   id-token: write
