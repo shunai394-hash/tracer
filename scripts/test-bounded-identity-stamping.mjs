@@ -10,4 +10,6 @@ assert.match(source, /const IDENTITY_UPDATE_CONCURRENCY = 10/);
 assert.match(source, /Promise\.all\(batch\.map\(\(item\) =>[\s\S]*?\.update\(item\.payload\)\.eq\("id", item\.id\)/);
 assert.match(source, /payload\.product_id = null/);
 assert.match(source, /candidateIds\.length > 0/);
-console.log("Bounded demand identity stamping: 7 assertions passed");
+const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
+assert.match(pipeline, /reverifyCjSupplyIdentities\(\{[\s\S]*?limit: 5,[\s\S]*?Date\.now\(\) \+ 25_000[\s\S]*?budgetMs: 25_000, stopPipelineOnTimeout: false/);
+console.log("Bounded demand identity stamping and CJ reverify: 8 assertions passed");
