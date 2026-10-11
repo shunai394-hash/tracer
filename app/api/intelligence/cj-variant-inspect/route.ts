@@ -1,3 +1,4 @@
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
 ﻿import { NextResponse } from "next/server";
 import {
   CJConfigError,
@@ -8,6 +9,8 @@ import {
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
+  const authError = await requireAutomationAuth(request);
+  if (authError) return authError;
   const { searchParams } = new URL(request.url);
   const pid = searchParams.get("pid")?.trim();
 

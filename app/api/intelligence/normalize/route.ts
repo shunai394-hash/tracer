@@ -1,9 +1,12 @@
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { NextResponse } from "next/server";
 import { normalizeProductIntelligence } from "@/lib/intelligence/normalize-products";
 
 export const runtime = "nodejs";
 
-export async function POST() {
+export async function POST(request: Request) {
+  const authError = await requireAutomationAuth(request);
+  if (authError) return authError;
   try {
     const result = await normalizeProductIntelligence();
 
