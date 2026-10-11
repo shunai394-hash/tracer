@@ -10,10 +10,9 @@ function buildUrl(base: string): string {
   return `${trimmed}/api/integrations/tracer`;
 }
 
-// Public origin of the TRACER storefront. Prefer explicit configuration, then
-// Vercel's production URL. The final fallback is the canonical TRACER Vercel
-// production alias; this prevents a missing deployment-only env from silently
-// starving an otherwise gate-passed NEWFIND delivery.
+// Public origin of the TRACER storefront. Require explicit configuration or
+// Vercel's production URL; guessing a host can send discovery links to a dead
+// alias or a deployment protected by SSO.
 function tracerSiteOrigin(): string | null {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
@@ -40,7 +39,13 @@ async function resolveLiveTracerUrl(slug: string | null): Promise<string | null>
       redirect: "follow",
       signal: AbortSignal.timeout(10_000),
     });
-    return response.ok ? url : null;
+    const expectedUrl = new URL(url);
+    const finalUrl = new URL(response.url);
+    // Following redirects is useful for normal routing, but an SSO/login redirect
+    // must never be mistaken for a live product page.
+    return response.ok && finalUrl.origin === origin && finalUrl.pathname === expectedUrl.pathname
+      ? url
+      : null;
   } catch {
     return null;
   }
