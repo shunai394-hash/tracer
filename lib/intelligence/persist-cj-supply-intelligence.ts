@@ -61,7 +61,7 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
     if (error) throw new Error(`CJ canonical child-variant identity lookup failed: ${error.message}`);
     if ((data?.length ?? 0) > 50) return null;
     for (const row of data ?? []) {
-      if (row.evidence_source !== "schema_org_product_group_has_variant") continue;
+      if (!["schema_org_product_group_has_variant", "amazon_variation_asin_map"].includes(String(row.evidence_source))) continue;
       if (typeof row.source_variant_id !== "string" || !row.source_variant_id.trim()) continue;
       const rowIds = identifiersFromRecord(row as Record<string, unknown>);
       const identity = matchProductIdentity({
