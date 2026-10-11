@@ -8,7 +8,7 @@ const migration = await readFile(
 );
 
 assert.match(source, /shopify_line_item_id:\s*item\.id/);
-assert.match(source, /shopify_order_id,\s*order\.id/);
+assert.match(source, /shopify_order_id:\\s*order\\.id/);
 assert.match(source, /inserted\.error\?\.code === "23505"/);
 assert.match(source, /shop_order_items_insert_failed/);
 assert.match(migration, /create unique index if not exists shop_order_items_shopify_order_line_uidx/i);
