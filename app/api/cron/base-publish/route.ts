@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { isBaseConfigured } from "@/lib/channels/base";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireAutomationCapability(request, "channel_write");
   if (authError) return authError;
 
   const headers = { "Cache-Control": "no-store" };
