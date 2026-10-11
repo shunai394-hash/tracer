@@ -154,28 +154,6 @@ let cachedToken: {
   expiresAt: number;
 } | null = null;
 
-let lastCJRequestAt = 0;
-let cjRequestChain: Promise<void> = Promise.resolve();
-
-async function waitForLocalCJRateLimit(): Promise<void> {
-  let release!: () => void;
-  const previous = cjRequestChain;
-  cjRequestChain = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-
-  await previous;
-
-  const minIntervalMs = 1_100;
-  const waitMs = Math.max(0, minIntervalMs - (Date.now() - lastCJRequestAt));
-  if (waitMs > 0) {
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
-  }
-
-  lastCJRequestAt = Date.now();
-  release();
-}
-
 export async function waitForCJRateLimit(): Promise<void> {
   // Vercel can run multiple serverless instances concurrently. The old
   // in-memory limiter serialized requests only inside one instance, so two
