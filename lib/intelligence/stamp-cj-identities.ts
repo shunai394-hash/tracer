@@ -9,7 +9,7 @@ type PendingIdentityUpdate = {
   status: IdentityStatus;
 };
 
-const IDENTITY_BATCH_SIZE = 50;
+const IDENTITY_BATCH_SIZE = 100;
 const IDENTITY_UPDATE_CONCURRENCY = 10;
 
 export async function stampDemandCJIdentities(limit = IDENTITY_BATCH_SIZE): Promise<{
