@@ -35,6 +35,7 @@ jobs:
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/test-automation-capabilities.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-shopify-order-line-idempotency.mjs
+      - run: node --experimental-strip-types --no-warnings scripts/test-autonomous-order-control-eligibility.mjs
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-publishable-title.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-cj-query-fallback.mjs
