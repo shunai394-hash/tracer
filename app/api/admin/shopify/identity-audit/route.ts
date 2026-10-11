@@ -1,0 +1,119 @@
+import { NextResponse } from "next/server";
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 30;
+
+/**
+ * Read-only audit of supplier foreign-key links used by publication gates.
+ * A row is repairable only when supplier product + variant IDs match exactly
+ * one supplier listing that is already identity_status="linked".
+ */
+export async function GET(request: Request) {
+  const authError = await requireAutomationAuth(request);
+  if (authError) return authError;
+
+  const db = createSupabaseAdminClient();
+  const { data: shopRows, error: shopError } = await db
+    .from("shop_listings")
+    .select("id,product_id,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id")
+    .order("pipeline_updated_at", { ascending: false })
+    .limit(1000);
+  if (shopError) {
+    return NextResponse.json({ ok: false, error: "shop_listings_read_failed" }, { status: 500 });
+  }
+
+  const rows = shopRows ?? [];
+  const productIds = [...new Set(rows
+    .map((row) => String(row.supplier_product_id ?? "").trim())
+    .filter(Boolean))];
+  const supplierRows: Array<{
+    id: string;
+    product_id: string | null;
+    supplier: string;
+    supplier_product_id: string | null;
+    supplier_variant_id: string | null;
+    identity_status: string | null;
+  }> = [];
+
+  for (let offset = 0; offset < productIds.length; offset += 100) {
+    const batch = productIds.slice(offset, offset + 100);
+    const { data, error } = await db
+      .from("supplier_listings")
+      .select("id,product_id,supplier,supplier_product_id,supplier_variant_id,identity_status")
+      .eq("supplier", "cj")
+      .in("supplier_product_id", batch);
+    if (error) {
+      return NextResponse.json({ ok: false, error: "supplier_identity_read_failed" }, { status: 500 });
+    }
+    supplierRows.push(...(data ?? []));
+  }
+
+  const byExactPair = new Map<string, typeof supplierRows>();
+  for (const supplier of supplierRows) {
+    const product = String(supplier.supplier_product_id ?? "").trim();
+    const variant = String(supplier.supplier_variant_id ?? "").trim();
+    if (!product || !variant) continue;
+    const key = JSON.stringify([product, variant]);
+    const list = byExactPair.get(key) ?? [];
+    list.push(supplier);
+    byExactPair.set(key, list);
+  }
+
+  const counts = {
+    scanned: rows.length,
+    supplierListingIdPresent: 0,
+    linkedForeignKeyExact: 0,
+    foreignKeyNotLinked: 0,
+    foreignKeyMismatch: 0,
+    missingExternalIdentity: 0,
+    repairableExactUnique: 0,
+    exactMatchUnlinked: 0,
+    ambiguousExactMatch: 0,
+    noExactMatch: 0,
+  };
+
+  for (const row of rows) {
+    const fk = String(row.supplier_listing_id ?? "").trim();
+    const product = String(row.supplier_product_id ?? "").trim();
+    const variant = String(row.supplier_variant_id ?? "").trim();
+    if (fk) counts.supplierListingIdPresent += 1;
+    if (!product || !variant) {
+      counts.missingExternalIdentity += 1;
+      continue;
+    }
+    const matches = byExactPair.get(JSON.stringify([product, variant])) ?? [];
+    const linkedMatches = matches.filter((item) => item.identity_status === "linked");
+    if (fk) {
+      const referenced = supplierRows.find((item) => item.id === fk);
+      if (!referenced) {
+        counts.foreignKeyMismatch += 1;
+      } else if (
+        String(referenced.supplier_product_id ?? "").trim() === product &&
+        String(referenced.supplier_variant_id ?? "").trim() === variant &&
+        referenced.identity_status === "linked"
+      ) {
+        counts.linkedForeignKeyExact += 1;
+      } else if (referenced.identity_status !== "linked") {
+        counts.foreignKeyNotLinked += 1;
+      } else {
+        counts.foreignKeyMismatch += 1;
+      }
+      continue;
+    }
+    if (linkedMatches.length === 1) counts.repairableExactUnique += 1;
+    else if (linkedMatches.length > 1) counts.ambiguousExactMatch += 1;
+    else if (matches.length > 0) counts.exactMatchUnlinked += 1;
+    else counts.noExactMatch += 1;
+  }
+
+  return NextResponse.json({
+    ok: true,
+    readOnly: true,
+    matchingRule: "exact supplier_product_id + supplier_variant_id + supplier=cj + identity_status=linked",
+    counts,
+    repairPolicy: "No rows were changed. Only repairableExactUnique rows may be considered for a separately audited, idempotent link repair.",
+  }, { headers: { "Cache-Control": "no-store" } });
+}
