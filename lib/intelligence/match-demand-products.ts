@@ -164,7 +164,19 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   if (bestsellerResult.error) throw new Error(bestsellerResult.error.message);
   if (identifierResult.error) throw new Error(identifierResult.error.message);
 
-  const demandRows = demandResult.data ?? [];
+  // Process a bounded page of observations that have not yet entered the
+  // candidate-resolution queue. The previous all-history loop compared every
+  // demand row against every product title and issued candidate lookups
+  // serially; with ~1.9k demand rows this exceeded the 25s patrol budget and
+  // prevented every downstream stage from running.
+  const candidateObservationIds = new Set(
+    (candidateResult.data ?? [])
+      .map((row) => String(row.demand_observation_id))
+      .filter(Boolean),
+  );
+  const demandRows = (demandResult.data ?? [])
+    .filter((row) => !candidateObservationIds.has(String(row.id)))
+    .slice(0, 100);
   const productRows = productResult.data ?? [];
   const allProductNames = productRows.map((product) => product.normalized_title);
   const productTitleById = new Map(productRows.map((product) => [String(product.product_id), product.normalized_title]));
@@ -229,8 +241,6 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   let candidatesCreated = 0, candidatesExisting = 0, skippedInvalid = 0;
   let exactMatches = 0, ambiguousIdentifier = 0, variantRejected = 0, brandRejected = 0;
   let geminiCalls = 0, intentDeferred = 0;
-  const candidateObservationIds = new Set((candidateResult.data ?? []).map((row) => String(row.demand_observation_id)));
-
   for (const demand of demandRows) {
     processed += 1;
     const metadata = demand.metadata && typeof demand.metadata === "object" && !Array.isArray(demand.metadata)
