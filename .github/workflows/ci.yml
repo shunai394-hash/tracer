@@ -26,6 +26,8 @@ jobs:
       - run: npm run test:tracer-core
       - name: Test dropship order safety invariants
         run: npm run test:dropship-order-gate
+      - name: Test autonomous order run-claim safety
+        run: npm run test:autonomous-order-claim
       - name: Test Shopify order line-item pagination safety
         run: npm run test:shopify-line-item-pagination
       - name: Test sanitized provider diagnostics
