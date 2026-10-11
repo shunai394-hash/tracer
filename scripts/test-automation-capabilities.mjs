@@ -21,21 +21,9 @@ const capabilities = [
 ] as const;
 
 for (const capability of capabilities) {
-  assert.equal(
-    canPerformAutomationCapability({ mode: null, capability }),
-    false,
-    `missing mode must deny ${capability}`,
-  );
-  assert.equal(
-    canPerformAutomationCapability({ mode: "disabled", capability }),
-    false,
-    `disabled mode must deny ${capability}`,
-  );
-  assert.equal(
-    canPerformAutomationCapability({ mode: "writes_enabled", capability, globalStop: true }),
-    false,
-    `global stop must deny ${capability}`,
-  );
+  assert.equal(canPerformAutomationCapability({ mode: null, capability }), false);
+  assert.equal(canPerformAutomationCapability({ mode: "disabled", capability }), false);
+  assert.equal(canPerformAutomationCapability({ mode: "writes_enabled", capability, globalStop: true }), false);
 }
 
 assert.equal(canPerformAutomationCapability({ mode: "diagnostic", capability: "read" }), true);
@@ -45,11 +33,7 @@ assert.equal(canPerformAutomationCapability({ mode: "diagnostic", capability: "s
 assert.equal(canPerformAutomationCapability({ mode: "diagnostic", capability: "internal_fulfillment" }), false);
 
 for (const capability of capabilities) {
-  assert.equal(
-    canPerformAutomationCapability({ mode: "writes_enabled", capability }),
-    true,
-    `explicit writes_enabled mode should allow ${capability} absent global stop`,
-  );
+  assert.equal(canPerformAutomationCapability({ mode: "writes_enabled", capability }), true);
 }
 
 assert.deepEqual(
@@ -57,4 +41,4 @@ assert.deepEqual(
   { allowed: false, reason: "diagnostic_read_only" },
 );
 
-console.log("automation-capabilities: PASS (34 assertions)");
+console.log("automation-capabilities: PASS (31 assertions)");
