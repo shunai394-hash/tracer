@@ -14,7 +14,7 @@ assert.ok(route.includes("const baseRowsToPause = unlinked"), "token rejection c
 assert.ok(route.includes("updateInChunks(baseRowsToPause"), "token rejection circuit must persist markers for every affected BASE row using bounded update chunks");
 assert.ok(route.includes("collectAllPages"), "candidate scan must use the shared complete-pagination helper");
 const pagination = readFileSync("lib/db/collect-all-pages.ts", "utf8");
-assert.ok(route.includes(".range(from, from + pageSize - 1)"), "candidate scan must fetch bounded pages beyond the first 1,000 rows");
+assert.ok(route.includes(".range(from, from + size - 1)"), "candidate scan must fetch bounded pages beyond the first 1,000 rows");
 assert.ok(route.includes(".order(\"id\", { ascending: true })"), "pagination must use a deterministic tie-breaker");
 assert.ok(pagination.includes("if (rows.length < pageSize) return { data, error: null, offset: null };"), "pagination must stop only after the final partial page");
 assert.ok(route.includes("ids.slice(offset, offset + 500)"), "bulk updates must be chunked to bounded ID lists");
