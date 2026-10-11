@@ -22,7 +22,7 @@ export type SalesTestGateInput = {
   requireRank?: boolean;
 };
 
-import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+import { isJapaneseProductTitle } from "../intelligence/japanese-product.ts";
 
 const NON_PHYSICAL_TITLE_PATTERNS = [
   /商品券/i,
