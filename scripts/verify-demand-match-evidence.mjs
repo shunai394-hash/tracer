@@ -102,6 +102,21 @@ test("canonical marketplace variant evidence", "does not use the parent ASIN as 
 });
 
 
+test("canonical marketplace variant evidence", "resolves ProductGroup hasVariant @id references within the same JSON-LD graph", () => {
+  const html = '<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":["https://schema.org/ProductGroup"],"@id":"https://www.amazon.co.jp/group/PARENT01","hasVariant":[{"@id":"https://www.amazon.co.jp/dp/B0VARIANT3"}]},{"@type":"https://schema.org/Product","@id":"https://www.amazon.co.jp/dp/B0VARIANT3","name":"Bottle 250 ml","sku":"BOTTLE-250","gtin13":"4006381333931"}]}</script>';
+  const variants = parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01");
+  assert.equal(variants.length, 1);
+  assert.equal(variants[0].sourceVariantId, "B0VARIANT3");
+  assert.equal(variants[0].gtin, "4006381333931");
+  assert.equal(variants[0].asin, "B0VARIANT3");
+});
+
+test("canonical marketplace variant evidence", "does not infer identity from an unresolved hasVariant @id", () => {
+  const html = '<script type="application/ld+json">{"@context":"https://schema.org","@type":"ProductGroup","hasVariant":[{"@id":"https://www.amazon.co.jp/dp/B0MISSING01"}]}</script>';
+  assert.deepEqual(parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01"), []);
+});
+
+
 
 function test(group, name, fn) {
   const record = (ok, error) => results.push({ group, name, ok, error });
