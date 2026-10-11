@@ -11,7 +11,7 @@ export type CanonicalMarketplaceVariantEvidence = {
   upc: string | null;
   mpn: string | null;
   productUrl: string | null;
-  evidenceSource: "schema_org_product_group_has_variant";
+  evidenceSource: "schema_org_product_group_has_variant" | "schema_org_product_is_variant_of";
   rawEvidence: Record<string, unknown>;
 };
 
@@ -212,6 +212,75 @@ export function parseCanonicalMarketplaceVariantEvidence(
         },
       });
     }
+  }
+
+
+  // Schema.org also permits each concrete Product to be declared separately
+  // and linked back with Product.isVariantOf -> ProductGroup.@id. This is an
+  // official variant representation, not a title/parent-identifier guess.
+  const productGroupsById = new Set(
+    nodes.filter((node) => isType(node, "ProductGroup"))
+      .map((group) => asString(group["@id"]))
+      .filter((id): id is string => Boolean(id)),
+  );
+  for (const variant of nodes) {
+    if (!isType(variant, "Product")) continue;
+    const relation = asRecord(variant.isVariantOf);
+    const parentId = relation ? asString(relation["@id"]) : null;
+    if (!parentId || !productGroupsById.has(parentId)) continue;
+
+    const url = variantUrl(variant, parentProductUrl);
+    const asin = extractAsinFromUrl(url);
+    const parentAsin = extractAsinFromUrl(parentProductUrl);
+    const sku = asString(variant.sku);
+    const productId = asString(variant.productID);
+    const urlAsinIsVariantSpecific = Boolean(asin && asin !== parentAsin);
+    const sourceVariantId = (urlAsinIsVariantSpecific ? asin : null) ?? productId ?? sku;
+    if (!sourceVariantId || seen.has(sourceVariantId)) continue;
+
+    const gtinRaw =
+      asString(variant.gtin14) ??
+      asString(variant.gtin13) ??
+      asString(variant.gtin12) ??
+      asString(variant.gtin8) ??
+      asString(variant.gtin);
+    const janRaw = asString(variant.jan);
+    const eanRaw = asString(variant.ean);
+    const upcRaw = asString(variant.upc);
+    const gtin = normalizeIdentifier("gtin", gtinRaw);
+    const jan = normalizeIdentifier("jan", janRaw);
+    const ean = normalizeIdentifier("ean", eanRaw);
+    const upc = normalizeIdentifier("upc", upcRaw);
+
+    seen.add(sourceVariantId);
+    output.push({
+      sourceVariantId,
+      sku,
+      title: asString(variant.name),
+      asin: urlAsinIsVariantSpecific ? asin : null,
+      jan,
+      gtin,
+      ean,
+      upc,
+      mpn: normalizeIdentifier("mpn", asString(variant.mpn)),
+      productUrl: url,
+      evidenceSource: "schema_org_product_is_variant_of",
+      rawEvidence: {
+        relationship: "Product.isVariantOf",
+        parent_product_group_id: parentId,
+        source_variant_id: sourceVariantId,
+        url,
+        sku,
+        name: asString(variant.name),
+        productID: productId,
+        gtinRaw,
+        janRaw,
+        eanRaw,
+        upcRaw,
+        mpn: asString(variant.mpn),
+        parent_product_url: parentProductUrl,
+      },
+    });
   }
 
   return output;
