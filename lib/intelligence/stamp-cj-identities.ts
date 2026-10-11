@@ -1,9 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { assessDemandRelevance } from "@/lib/intelligence/identity-confidence";
-
-type IdentityStatus = "rejected_noise" | "identity_unconfirmed" | "eligible";
+import { assessDemandRelevance, type IdentityStatus } from "@/lib/intelligence/identity-confidence";
 
 type PendingIdentityUpdate = {
   id: string;
@@ -115,6 +113,6 @@ export async function stampDemandCJIdentities(limit = IDENTITY_BATCH_SIZE): Prom
     processed: pending.length,
     rejectedNoise: pending.filter((item) => item.status === "rejected_noise").length,
     unconfirmed: pending.filter((item) => item.status === "identity_unconfirmed").length,
-    eligible: pending.filter((item) => item.status === "eligible").length,
+    eligible: pending.filter((item) => item.status !== "rejected_noise" && item.status !== "identity_unconfirmed").length,
   };
 }
