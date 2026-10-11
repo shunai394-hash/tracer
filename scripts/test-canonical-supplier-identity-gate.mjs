@@ -24,6 +24,9 @@ assert.ok(reverify.indexOf("if (!canonicalProductId)") < reverify.indexOf('.from
 assert.match(persist, /verification_error: marketplaceIdentity \? null : "no_unique_canonical_child_variant_match"/, "unmatched CJ identity must persist an explicit reason rather than retaining stale verification state");
 assert.match(persist, /schema_org_product_is_variant_of/, "CJ canonical identity resolution must accept isVariantOf evidence");
 assert.match(persist, /last_verified_at: now/, "CJ verification must refresh its timestamp");
+assert.match(persist, /supplierBarcode: barcode/, "resolved canonical identity must carry the exact fresh supplier-variant barcode used for matching");
+assert.match(persist, /const verifiedVariantBarcode = marketplaceIdentity\?\.supplierBarcode \?\? await readSupplierBarcode/, "persistence must reuse the exact barcode that proved identity instead of performing a second live read");
+assert.match(persist, /variant_barcode: verifiedVariantBarcode/, "stored supplier evidence must retain the same barcode used for canonical matching");
 assert.match(persist, /\.select\("id"\)\.maybeSingle\(\)/, "supplier evidence update must confirm that a listing row was actually updated");
 assert.match(persist, /if \(!evidenceRow\?\.id\) throw new Error\("CJ supplier evidence persistence failed: supplier listing row was not updated"\)/, "a missing supplier listing must fail instead of silently reporting persistence success");
 assert.match(persist, /bestseller_id: marketplaceIdentity\?\.bestsellerId \?\? null/, "unmatched or ambiguous CJ identity must clear any stale canonical parent link");
