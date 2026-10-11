@@ -31,8 +31,8 @@ assert.match(discovery, /seededChecked >= seededVerificationLimit/,
   "seeded verification must have a hard per-run attempt budget");
 assert.match(marketCollector, /retryBrightDataWhenCanonicalVariantsMissing/,
   "Amazon detail fetches must retry Bright Data when direct HTML lacks JSON-LD");
-assert.match(marketCollector, /hasCanonicalVariants\(directHtml\)/,
-  "a non-empty page without child-variant evidence must not suppress the canonical evidence fallback");
+assert.match(marketCollector, /(?:hasCanonicalVariants|hasAmazonVariantEvidence)\(directHtml\)/,
+  "direct HTML must be checked for canonical child-variant evidence (including the Amazon child-ASIN map) before skipping fallback");
 assert.match(ingest, /sourceRef = `cj:\$\{args\.supplierProductId\}:\$\{args\.supplierVariantId\}`/,
   "source reference must be deterministic for the concrete supplier product+variant");
 assert.match(ingest, /onConflict: "source_name,source_ref"/,

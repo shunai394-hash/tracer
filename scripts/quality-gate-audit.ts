@@ -17,6 +17,8 @@ const checks = [
   ["BASE catalog validation fail-closed hide", "lib/channels/base-publisher.ts", "base_hide_failed_after_catalog_validation"],
   ["Shopify legacy sync", "lib/shopify/sync.ts", "hasPassedSalesTestGate"],
   ["Shopify canonical sync", "lib/shopify/sync-published-listings.ts", "hasPassedSalesTestGate"],
+  ["Shopify canonical supplier product identity", "lib/shopify/sync-published-listings.ts", "supplier_product_missing"],
+  ["Shopify canonical supplier variant identity", "lib/shopify/sync-published-listings.ts", "supplier_variant_missing"],
   ["Shopify sync live-stock guard", "lib/shopify/sync-published-listings.ts", "Number(row.inventory) > 0"],
   ["Shopify final CJ supplier safety boundary", "lib/shopify/sync-published-listings.ts", '!/^(cj|cjdropshipping)$/i.test(String(row.supplier_name ?? "").trim())'],
   ["Shopify Japanese title boundary", "lib/shopify/sync-published-listings.ts", "isJapaneseProductTitle(row.title)"],
