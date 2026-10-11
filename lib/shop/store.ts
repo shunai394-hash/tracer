@@ -107,8 +107,9 @@ async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, nu
   for (const node of data.nodes ?? []) {
     if (!node?.id || !ids.includes(node.id)) continue;
     const quantity = asNumber(node.inventoryQuantity);
-    if (quantity === null || quantity < 0) throw new Error("shopify_live_stock_quantity_unknown");
-    liveStock.set(node.id, Math.floor(quantity));
+    if (quantity === null) throw new Error("shopify_live_stock_quantity_unknown");
+    // A negative quantity is sold out for this variant, not a failure for all listings.
+    liveStock.set(node.id, Math.max(0, Math.floor(quantity)));
   }
   if (ids.some((id) => !liveStock.has(id))) throw new Error("shopify_live_stock_incomplete_response");
   return liveStock;
