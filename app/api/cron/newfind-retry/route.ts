@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { retryPendingNewfindPromotions } from "@/lib/integration/newfind";
 import { rescueUndeliveredGatePassedListings, withdrawUnpublishedNewfindPromotions } from "@/lib/integration/newfind-reconcile";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
   try {
-    const authError = await requireAutomationAuth(request);
+    const authError = await requireAutomationCapability(request, "channel_write");
     if (authError) return authError;
 
     // Each delivery can perform multiple external requests and liveness checks.
