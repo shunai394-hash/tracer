@@ -83,11 +83,11 @@ type ShopifyVariantStock = {
 };
 
 async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, number>> {
-  const liveStock = new Map<string, number>();
-  if (!isShopifyConfigured() || variantIds.length === 0) return liveStock;
-
-  const ids = [...new Set(variantIds)].filter((id) => /^gid:\/\/shopify\/ProductVariant\//.test(id));
-  if (ids.length === 0) return liveStock;
+  if (!isShopifyConfigured()) throw new Error("shopify_live_stock_not_configured");
+  const requestedIds = [...new Set(variantIds)];
+  if (requestedIds.length === 0) throw new Error("shopify_live_stock_no_variant_ids");
+  const ids = requestedIds.filter((id) => /^gid:\/\/shopify\/ProductVariant\//.test(id));
+  if (ids.length !== requestedIds.length) throw new Error("shopify_live_stock_invalid_variant_id");
 
   const data = await shopifyGraphQL<{
     nodes: Array<ShopifyVariantStock | null>;
@@ -103,11 +103,14 @@ async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, nu
     { ids },
   );
 
+  const liveStock = new Map<string, number>();
   for (const node of data.nodes ?? []) {
-    if (!node?.id) continue;
+    if (!node?.id || !ids.includes(node.id)) continue;
     const quantity = asNumber(node.inventoryQuantity);
-    liveStock.set(node.id, Math.max(0, Math.floor(quantity ?? 0)));
+    if (quantity === null || quantity < 0) throw new Error("shopify_live_stock_quantity_unknown");
+    liveStock.set(node.id, Math.floor(quantity));
   }
+  if (ids.some((id) => !liveStock.has(id))) throw new Error("shopify_live_stock_incomplete_response");
   return liveStock;
 }
 
@@ -131,6 +134,8 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
     );
   } catch (error) {
     console.error("[shopify-live-stock-unavailable]", error instanceof Error ? error.message.slice(0, 300) : String(error));
+    // A stale database quantity is not proof of current Shopify availability.
+    return [];
   }
 
   const staleSoldOut = listings.filter((listing) => {
@@ -157,11 +162,11 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
   return listings
     .filter((listing) => {
       const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : undefined;
-      return live === undefined || live > 0;
+      return live !== undefined && live > 0;
     })
     .map((listing) => {
-      const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : undefined;
-      return live === undefined ? listing : { ...listing, inventory: live };
+      const live = liveStock.get(listing.shopifyVariantId!);
+      return { ...listing, inventory: live! };
     });
 }
 
