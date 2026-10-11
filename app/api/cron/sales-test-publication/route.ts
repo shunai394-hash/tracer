@@ -3,7 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
@@ -65,7 +65,7 @@ async function promoteGatePassedListings(selectedListingIds: string[]) {
 }
 
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireAutomationCapability(request, "channel_write");
   if (authError) return authError;
   const supabase = createSupabaseAdminClient();
   let cronRunId: string | null = null;
