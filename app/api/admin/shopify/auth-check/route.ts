@@ -3,6 +3,7 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getShopifyConfig } from "@/lib/config/env";
 import { probeShopifyAuth, shopifyGraphQL } from "@/lib/shopify/admin";
+import { evaluateShopifyAdminReadiness } from "@/lib/shopify/auth-readiness";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -84,24 +85,35 @@ export async function GET(request: Request) {
   // not the outer diagnostic endpoint status. No raw response body or credentials are returned.
   const shopifyProbe = await probeShopifyAuth();
 
-  // 3) Read-only Admin API call for app identity and granted scopes.
+  // 3) Read-only Admin API call for shop identity. The previous query also
+  // requested currentAppInstallation; that query returned HTTP 401 in
+  // production even though the simple shop probe and token exchange returned
+  // HTTP 200. Use the OAuth token-exchange scope list instead of letting that
+  // optional app-installation field masquerade as a general Admin API failure.
+  const tokenGrantedScopes = Array.isArray(tokenExchange?.grantedScopeHandles)
+    ? tokenExchange.grantedScopeHandles.filter((scope): scope is string => typeof scope === "string")
+    : [];
+  const scopesVerified = tokenExchange?.ok === true && tokenGrantedScopes.length > 0;
   let adminApi: Record<string, unknown>;
   try {
     const data = await shopifyGraphQL<{
       shop: { name: string; myshopifyDomain: string; plan: { displayName: string | null } | null };
-      currentAppInstallation: { app: { title: string; handle: string | null } | null; accessScopes: Array<{ handle: string }> } | null;
     }>(`query TracerShopifyAuthCheck {
       shop { name myshopifyDomain plan { displayName } }
-      currentAppInstallation { app { title handle } accessScopes { handle } }
     }`);
-    const granted = new Set((data.currentAppInstallation?.accessScopes ?? []).map((s) => s.handle));
+    const granted = new Set(tokenGrantedScopes);
+    const missingScopes = scopesVerified
+      ? REQUIRED_SCOPES.filter((r) => !r.satisfiedBy.some((s) => granted.has(s))).map((r) => r.scope)
+      : REQUIRED_SCOPES.map((r) => r.scope);
     adminApi = {
       ok: true,
       shop: data.shop,
-      app: data.currentAppInstallation?.app ?? null,
-      grantedScopes: [...granted].sort(),
-      requiredScopes: REQUIRED_SCOPES.map((r) => ({ ...r, granted: r.satisfiedBy.some((s) => granted.has(s)) })),
-      missingScopes: REQUIRED_SCOPES.filter((r) => !r.satisfiedBy.some((s) => granted.has(s))).map((r) => r.scope),
+      app: null,
+      grantedScopes: scopesVerified ? [...granted].sort() : [],
+      requiredScopes: REQUIRED_SCOPES.map((r) => ({ ...r, granted: scopesVerified && r.satisfiedBy.some((s) => granted.has(s)) })),
+      missingScopes,
+      scopesVerified,
+      scopeSource: scopesVerified ? "oauth_token_exchange" : "unavailable",
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -130,8 +142,24 @@ export async function GET(request: Request) {
     .order("shopify_synced_at", { ascending: false, nullsFirst: false })
     .limit(3);
 
+  const adminApiOk = adminApi.ok === true;
+  const adminApiMissingScopes = Array.isArray(adminApi.missingScopes)
+    ? adminApi.missingScopes.filter((scope): scope is string => typeof scope === "string")
+    : adminApiOk
+      ? []
+      : REQUIRED_SCOPES.map((scope) => scope.scope);
+  const readiness = evaluateShopifyAdminReadiness({
+    probeOk: shopifyProbe.ok,
+    adminApiOk,
+    missingScopes: adminApiMissingScopes,
+  });
+
   return NextResponse.json({
-    ok: shopifyProbe.ok,
+    // Never report readiness solely because query { shop { id } } worked.
+    // The actual Admin API scope query and all required scopes must pass too.
+    ok: readiness.ready,
+    authenticated: readiness.authenticated,
+    missingScopes: readiness.missingScopes,
     shopifyHttpStatus: shopifyProbe.shopifyHttpStatus,
     shopifyRequestId: shopifyProbe.shopifyRequestId,
     graphqlErrors: shopifyProbe.graphqlErrors,
