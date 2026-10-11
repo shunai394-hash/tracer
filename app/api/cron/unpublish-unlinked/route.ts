@@ -60,16 +60,11 @@ export async function GET(request: Request) {
       if ((result.attempted ?? 0) === 0 && (result.results?.length ?? 0) === 0) errors.push("base_unpublish_not_attempted:credentials_not_configured_or_no_result");
       if ((result.failed ?? 0) > 0) errors.push(`base_unpublish_failed:${JSON.stringify(result.results?.filter((item) => !item.ok).slice(0, 5) ?? [])}`);
 
-      // Invalid credentials are account-wide. Pause retries for this batch until the token is repaired.
+      // Invalid credentials are account-wide. Pause all currently-unlinked BASE listings,
+      // not just this 50-item batch, so each cron run does not advance to another failing batch.
       const authRejected = (result.results ?? []).some((item) => !item.ok && isBaseAuthenticationFailure(item.error));
       if (authRejected) {
         baseAuthReauthorizationRequired = true;
-        const { error: markerError } = await db.from("shop_listings").update({
-          base_last_error: BASE_AUTH_REAUTH_REQUIRED,
-          base_publication_status: "failed",
-          updated_at: new Date().toISOString(),
-        // Pause every currently-unlinked BASE listing, not just the first request batch.
-        // Otherwise each cron run advances to the next batch and hammers BASE with the same invalid token.
         const baseRowsToPause = unlinked
           .filter((row) => row.base_item_id)
           .map((row) => String(row.id));
@@ -81,8 +76,8 @@ export async function GET(request: Request) {
           }).in("id", baseRowsToPause);
           if (markerError) errors.push(`base_auth_circuit_marker_failed:${markerError.message}`);
         }
-        if (markerError) errors.push(`base_auth_circuit_marker_failed:${markerError.message}`);
-        errors.push("base_auth_invalid_reauthorization_required: scheduled BASE retries paused for this batch; repair credentials and clear the marker before retrying");
+        errors.push("base_auth_invalid_reauthorization_required: scheduled BASE retries paused for all currently-unlinked listings; repair credentials and clear the marker before retrying");
+      }
       }
     } catch (cause) { errors.push(`base:${cause instanceof Error ? cause.message : String(cause)}`); }
   }
