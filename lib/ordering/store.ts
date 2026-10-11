@@ -343,25 +343,31 @@ export async function createPurchaseOrderFromRecommendation(args: {
     );
   }
 
+  // One recommendation can create at most one procurement record. This is a
+  // durable idempotency key; supplier execution is a separate, not-yet-connected step.
+  const idempotencyKey = `reorder-recommendation:${String(rec.id)}`;
+  const { data: existingOrder, error: existingOrderError } = await supabase
+    .from("purchase_orders")
+    .select("*")
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle();
+
+  if (existingOrderError) throw new Error(existingOrderError.message);
+  if (existingOrder) return mapOrder(existingOrder as Record<string, unknown>);
+
   const status = args.approved
     ? settings.mode === "AUTO" && !gates.canAuto
       ? "auto_blocked"
-      : "placed"
+      : "approved_pending_supplier"
     : settings.mode === "APPROVAL"
       ? "pending_approval"
       : "draft";
 
-  const placed =
-    args.approved &&
-    unitCost !== null &&
-    currency !== null &&
-    modeAllowsExecution(settings.mode, true, gates.canAuto) &&
-    gates.orderState !== "ORDER_FORBIDDEN" &&
-    gates.orderState !== "UNKNOWN_BLOCKED";
-
   const { data, error } = await supabase
     .from("purchase_orders")
     .insert({
+      idempotency_key: idempotencyKey,
+      live_order: false,
       product_id: rec.product_id,
       opportunity_id: rec.opportunity_id,
       recommendation_id: rec.id,
@@ -378,13 +384,14 @@ export async function createPurchaseOrderFromRecommendation(args: {
       forecast_profit: asNumber(rec.estimated_profit),
       forecast_confidence: asNumber(rec.confidence),
       rationale: rec.rationale,
-      status: placed ? "placed" : status,
+      status,
       mode: settings.mode,
       approved_by: args.approved ? (args.approvedBy ?? "user") : null,
-      placed_at: placed ? new Date().toISOString() : null,
+      placed_at: null,
       metadata: {
         gates,
-        note: "supplier_api_not_connected_execution_stays_recorded_only",
+        note: "supplier_api_not_connected_no_external_order_placed",
+        supplierExecution: "not_connected",
       },
     })
     .select("*")
