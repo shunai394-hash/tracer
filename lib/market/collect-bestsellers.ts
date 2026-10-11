@@ -70,7 +70,7 @@ export type CollectedMarketplace = {
   };
 };
 
-async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVariantsMissing?: boolean } = {}): Promise<string | null> {
+async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVariantsMissing?: boolean; retryBrightDataWhenAmazonIdentifierMissing?: boolean } = {}): Promise<string | null> {
   const directFetch = async (): Promise<string | null> => {
     try {
       const response = await fetch(url, {
@@ -105,31 +105,40 @@ async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVar
   // successful. For Amazon child-variant extraction, retry through Bright Data
   // when the direct response has no JSON-LD Product/ProductGroup markup.
   const directHtml = await directFetch();
-  // Amazon can expose its child variants either as Schema.org ProductGroup
-  // nodes or as an explicit dimensionValuesDisplayData child-ASIN map. Treat
-  // both as usable variant evidence when deciding whether Bright Data improved
-  // a direct response; otherwise a useful child-ASIN map gets discarded.
+  // Amazon variation maps can contain child ASINs even when JSON-LD has no
+  // ProductGroup. For child detail pages, retry via Bright Data when the
+  // child's own page lacks a concrete barcode; never copy the parent's ID.
   const hasAmazonVariantEvidence = (html: string | null): boolean =>
-    Boolean(
-      html &&
-      (
-        parseCanonicalMarketplaceVariantEvidence(html, url).length > 0 ||
-        parseAmazonVariationAsinMap(html, url).length > 0
-      )
-    );
-  if (directHtml && (!options.retryBrightDataWhenCanonicalVariantsMissing || hasAmazonVariantEvidence(directHtml))) {
+    Boolean(html && (
+      parseCanonicalMarketplaceVariantEvidence(html, url).length > 0 ||
+      parseAmazonVariationAsinMap(html, url).length > 0
+    ));
+  const hasAmazonBarcodeEvidence = (html: string | null): boolean => {
+    if (!html) return false;
+    const detail = parseAmazonProductDetail(html);
+    return Boolean(detail.jan || detail.gtin || detail.ean || detail.upc);
+  };
+  const needsAmazonEvidence = Boolean(
+    options.retryBrightDataWhenCanonicalVariantsMissing ||
+    options.retryBrightDataWhenAmazonIdentifierMissing
+  );
+  const hasRequiredAmazonEvidence = (html: string | null): boolean =>
+    options.retryBrightDataWhenAmazonIdentifierMissing
+      ? hasAmazonBarcodeEvidence(html)
+      : hasAmazonVariantEvidence(html);
+
+  if (directHtml && (!needsAmazonEvidence || hasRequiredAmazonEvidence(directHtml))) {
     return directHtml;
   }
 
   if (isBrightDataConfigured()) {
     try {
       const page = await fetchBrightDataPage(url);
-      if (page.html && (!options.retryBrightDataWhenCanonicalVariantsMissing || hasAmazonVariantEvidence(page.html))) {
+      if (page.html && (!needsAmazonEvidence || hasRequiredAmazonEvidence(page.html))) {
         return page.html;
       }
-      // If Bright Data did not improve the response, retain a usable direct
-      // response for ordinary parsing/diagnostics. It still cannot create
-      // canonical evidence unless the strict JSON-LD parser finds child nodes.
+      // A fallback page is not accepted as barcode evidence unless the child
+      // page itself contains a concrete identifier.
       if (directHtml) return directHtml;
       if (page.html) return page.html;
     } catch {
