@@ -204,6 +204,8 @@ function blockReasons(row: Listing): string[] {
   if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
   if (!isPublishableCatalogDescription(row.description)) reasons.push("catalog_description_not_publishable");
   if (row.identity_status !== "linked") reasons.push("supplier_identity_unlinked");
+  if (!row.supplier_product_id) reasons.push("supplier_product_missing");
+  if (!row.supplier_variant_id) reasons.push("supplier_variant_missing");
   if (row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") reasons.push("pipeline_blocked");
   if (!hasGateProvenance(row)) reasons.push("sales_test_gate_not_passed");
   if (row.orderable !== true) reasons.push("not_orderable");
@@ -258,7 +260,6 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
     const reasons = blockReasons(row);
     if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) reasons.push("image_url_invalid");
     if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");
-    if (!row.supplier_variant_id) reasons.push("supplier_variant_missing");
     for (const reason of reasons) reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1;
     return {
       listingId: row.id,
