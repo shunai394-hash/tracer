@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test:tracer-core": "node --test scripts/tracer-core.test.mjs scripts/tracer-auth-contract.test.mjs",
     "mobile:bootstrap": "node scripts/bootstrap-mobile.mjs",
-    "prebuild": "npm run test:sales-test-gate-invariants && node scripts/test-auth-diagnostics.mjs && npm run test:shopify-line-item-pagination && npm run test:autonomous-order-claim && npm run test:dropship-order-gate && npm run test:bounded-product-scoring && npm run test:bounded-reorder-recommendations && npm run test:bounded-identity-stamping",
+    "prebuild": "node --experimental-strip-types --no-warnings scripts/test-order-gate.mjs && npm run test:sales-test-gate-invariants && node scripts/test-auth-diagnostics.mjs && npm run test:shopify-line-item-pagination && npm run test:autonomous-order-claim && npm run test:dropship-order-gate && npm run test:bounded-product-scoring && npm run test:bounded-reorder-recommendations && npm run test:bounded-identity-stamping",
     "test:auth-diagnostics": "node scripts/test-auth-diagnostics.mjs",
     "test:bounded-product-scoring": "node scripts/test-bounded-product-scoring.mjs",
     "test:bounded-reorder-recommendations": "node scripts/test-bounded-reorder-recommendations.mjs",
@@ -17,7 +17,8 @@
     "test:dropship-order-gate": "node --experimental-strip-types --no-warnings scripts/test-dropship-order-gate.mjs",
     "test:shopify-line-item-pagination": "node scripts/test-shopify-line-item-pagination.mjs",
     "test:autonomous-order-claim": "node scripts/test-autonomous-order-run-claim.mjs",
-    "test:sales-test-gate-invariants": "node --experimental-strip-types --no-warnings scripts/test-sales-test-gate-invariants.mjs"
+    "test:sales-test-gate-invariants": "node --experimental-strip-types --no-warnings scripts/test-sales-test-gate-invariants.mjs",
+    "test:order-gate": "node --experimental-strip-types --no-warnings scripts/test-order-gate.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
