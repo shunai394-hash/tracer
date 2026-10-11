@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:tracer-core
+      - name: Test dropship order safety invariants
+        run: npm run test:dropship-order-gate
       - name: Set up disposable local PostgreSQL for integration tests
         run: |
           sudo apt-get update
