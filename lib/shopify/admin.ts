@@ -110,9 +110,10 @@ function resolveShopifyAuthMode(config: ReturnType<typeof getShopifyConfig>): "c
     return requested;
   }
   if (requested) throw new Error("SHOPIFY_AUTH_MODE must be client_credentials or static_admin_token");
-  if (hasClientCredentials && hasStaticToken) {
-    throw new Error("SHOPIFY_AUTH_MODE is required when both Shopify credential types are configured; fallback between credentials is disabled");
-  }
+  // Dev Dashboard credentials use Shopify client-credentials grant. When both
+  // modern app credentials and a legacy static token exist, select the app flow
+  // deterministically; never fall back to the static token if the exchange fails.
+  if (hasClientCredentials && hasStaticToken) return "client_credentials";
   if (hasClientCredentials) return "client_credentials";
   if (hasStaticToken) return "static_admin_token";
   throw new Error("Shopify credentials are not configured");
