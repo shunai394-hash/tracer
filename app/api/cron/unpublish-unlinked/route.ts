@@ -70,13 +70,24 @@ export async function GET(request: Request) {
     });
   }
 
-  return NextResponse.json({
+  const shopifyResult = shopify as { hidden?: number; failed?: number };
+  const baseResult = base as { hidden?: number; failed?: number };
+  const report = {
     ok: errors.length === 0,
     candidatesChecked: (data ?? []).length,
     unlinkedFound: unlinked.length,
     databaseBlocked: needsBlock.length,
     shopifyAttempted: shopifyPending.length,
     baseAttempted: basePending.length,
+    shopifyHidden: shopifyResult.hidden ?? null,
+    shopifyFailed: shopifyResult.failed ?? null,
+    baseHidden: baseResult.hidden ?? null,
+    baseFailed: baseResult.failed ?? null,
+    errorCount: errors.length,
+  };
+  console.info("[TRACER UNLINKED RECONCILIATION]", report);
+  return NextResponse.json({
+    ...report,
     shopify,
     base,
     errors,
