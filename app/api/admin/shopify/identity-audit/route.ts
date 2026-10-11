@@ -66,7 +66,8 @@ export async function GET(request: Request) {
     scanned: rows.length,
     supplierListingIdPresent: 0,
     linkedForeignKeyExact: 0,
-    foreignKeyNotLinked: 0,
+    foreignKeyStatusNotLinked: 0,
+    foreignKeyExactUnlinked: 0,
     foreignKeyMismatch: 0,
     missingExternalIdentity: 0,
     repairableExactUnique: 0,
@@ -74,6 +75,9 @@ export async function GET(request: Request) {
     ambiguousExactMatch: 0,
     noExactMatch: 0,
   };
+
+  const identityStatusCounts: Record<string, number> = {};
+  const supplierById = new Map(supplierRows.map((supplier) => [supplier.id, supplier]));
 
   for (const row of rows) {
     const fk = String(row.supplier_listing_id ?? "").trim();
@@ -87,19 +91,23 @@ export async function GET(request: Request) {
     const matches = byExactPair.get(JSON.stringify([product, variant])) ?? [];
     const linkedMatches = matches.filter((item) => item.identity_status === "linked");
     if (fk) {
-      const referenced = supplierRows.find((item) => item.id === fk);
+      const referenced = supplierById.get(fk);
       if (!referenced) {
         counts.foreignKeyMismatch += 1;
-      } else if (
-        String(referenced.supplier_product_id ?? "").trim() === product &&
-        String(referenced.supplier_variant_id ?? "").trim() === variant &&
-        referenced.identity_status === "linked"
-      ) {
-        counts.linkedForeignKeyExact += 1;
-      } else if (referenced.identity_status !== "linked") {
-        counts.foreignKeyNotLinked += 1;
       } else {
-        counts.foreignKeyMismatch += 1;
+        const status = String(referenced.identity_status ?? "null");
+        identityStatusCounts[status] = (identityStatusCounts[status] ?? 0) + 1;
+        const exactPair =
+          String(referenced.supplier_product_id ?? "").trim() === product &&
+          String(referenced.supplier_variant_id ?? "").trim() === variant;
+        if (!exactPair) {
+          counts.foreignKeyMismatch += 1;
+        } else if (status === "linked") {
+          counts.linkedForeignKeyExact += 1;
+        } else {
+          counts.foreignKeyStatusNotLinked += 1;
+          counts.foreignKeyExactUnlinked += 1;
+        }
       }
       continue;
     }
@@ -114,6 +122,7 @@ export async function GET(request: Request) {
     readOnly: true,
     matchingRule: "exact supplier_product_id + supplier_variant_id + supplier=cj + identity_status=linked",
     counts,
+    referencedSupplierIdentityStatusCounts: identityStatusCounts,
     repairPolicy: "No rows were changed. Only repairableExactUnique rows may be considered for a separately audited, idempotent link repair.",
   }, { headers: { "Cache-Control": "no-store" } });
 }
