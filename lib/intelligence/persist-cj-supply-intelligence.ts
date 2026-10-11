@@ -66,7 +66,7 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
       const rowIds = identifiersFromRecord(row as Record<string, unknown>);
       const identity = matchProductIdentity({
         market: rowIds,
-        supply: { gtin: validBarcode, jan: validBarcode, ean: validBarcode, upc: validBarcode },
+        supply: { asin: null, mpn: null, gtin: validBarcode, jan: validBarcode, ean: validBarcode, upc: validBarcode },
       });
       if (!identity.salesEligible || !["gtin", "jan", "ean", "upc"].includes(identity.method)) continue;
       evidenceById.set(String(row.id), { ...row, method: identity.method, confidence: identity.confidence, rationale: identity.rationale });
