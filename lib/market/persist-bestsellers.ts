@@ -71,7 +71,7 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
   const seenMarketplaceIdentityKeys = new Map<string, Set<string>>();
   const skippedMarketplaces = collected.marketplaces
     .filter((item) => item.skipped)
-    .map((item) => item.marketplace);
+    .map((item) => `${item.source}:${item.reason ?? "skipped"}`);
 
   for (const marketplace of collected.marketplaces) {
     for (const item of marketplace.items) {
