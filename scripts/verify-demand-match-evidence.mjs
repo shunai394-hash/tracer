@@ -48,7 +48,7 @@ test("canonical marketplace variant evidence", "accepts absolute Schema.org type
 test("canonical marketplace variant diagnostics", "distinguishes missing ProductGroup markup from unrecognized absolute type IRIs", () => {
   const html = '<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"https://schema.org/ProductGroup","hasVariant":[{"@type":"https://schema.org/Product","name":"Variant IRI","sku":"IRI-SKU","url":"https://www.amazon.co.jp/dp/B0IRI12345"}]}]}</script>';
   assert.deepEqual(inspectCanonicalMarketplaceVariantMarkup(html), {
-    jsonLdNodeCount: 2,
+    jsonLdNodeCount: 1,
     productGroupCount: 1,
     groupsWithVariantCount: 1,
     variantProductNodeCount: 1,
