@@ -5,6 +5,10 @@ import { localizeProductDescription, localizeProductTitle } from "../lib/intelli
 
 const cases = [
   ["ordinary Japanese product title", "折りたたみ収納ボックス", true],
+  ["generic category-only bathroom title", "バスルームマット", false],
+  ["generic category-only kitchen title", "キッチン用品", false],
+  ["descriptive bathroom mat title", "吸盤付き ノンスリップ バスマット", true],
+  ["descriptive kitchen product title", "キッチン用品 収納ラック", true],
   ["identity failure suffix", "暮らしの便利アイテム 商品アイデンティティが未確定のため、選定対象外", false],
   ["sales gate failure suffix", "ペット用品 必須ゲートを満たしていないため、テスト優先度は低い", false],
   ["truncated evidence suffix", "スマホケース は観測された需要と供給データに基", false],
