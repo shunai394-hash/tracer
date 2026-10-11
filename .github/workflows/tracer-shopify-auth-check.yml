@@ -14,6 +14,8 @@ on:
       - ".github/workflows/tracer-shopify-auth-check.yml"
   issues:
     types: [opened]
+  schedule:
+    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       sync_batch:
@@ -32,7 +34,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Prevent repeat probe after a report exists
+        id: one_time
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            count="$(gh issue list --state all --search '"[TRACER auth diagnostic]" in:title' --json number --jq 'length')"
+            if [ "$count" -gt 0 ]; then
+              echo "run_probe=false" >> "$GITHUB_OUTPUT"
+              echo "A prior auth diagnostic report exists; skipping repeated probe."
+              exit 0
+            fi
+          fi
+          echo "run_probe=true" >> "$GITHUB_OUTPUT"
       - name: Auth check, readiness and catalog (read-only)
+        if: steps.one_time.outputs.run_probe == 'true'
         shell: bash
         run: |
           set -uo pipefail
@@ -95,7 +114,7 @@ jobs:
           fi
 
       - name: Publish sanitized read-only auth result for review
-        if: github.event_name == 'push' || (github.event_name == 'issues' && github.event.issue.title == '[TRACER RUN READONLY AUTH CHECK]')
+        if: steps.one_time.outputs.run_probe == 'true' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'issues' && github.event.issue.title == '[TRACER RUN READONLY AUTH CHECK]'))
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
