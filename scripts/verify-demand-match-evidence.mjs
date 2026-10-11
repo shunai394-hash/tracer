@@ -36,6 +36,17 @@ test("demand match bounds", "rotates a bounded observation page and scopes large
   assert.doesNotMatch(source, /readAll\(\(from, to\) => supabase\.from\("demand_product_candidates"/);
 });
 
+test("identity and demand sync budgets", "rotates identity stamping and batches database writes within patrol budgets", async () => {
+  const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
+  const identity = await readFile(new URL("../lib/intelligence/stamp-cj-identities.ts", import.meta.url), "utf8");
+  assert.match(pipeline, /runStep\("identity"[\s\S]*?budgetMs: 25_000/);
+  assert.match(pipeline, /runStep\("shopping_demand_sync"[\s\S]*?budgetMs: 10_000/);
+  assert.match(pipeline, /runStep\("score"[\s\S]*?budgetMs: 20_000/);
+  assert.match(pipeline, /\.from\("demand_observations"\)[\s\S]*?\.insert\(batch\)/, "demand sync must batch inserts instead of serializing one request per query");
+  assert.match(identity, /\.range\(offset, offset \+ safeLimit - 1\)/, "identity stamping must rotate through the backlog");
+  assert.match(identity, /Promise\.all\([\s\S]*?batch\.map/, "identity stamping updates must use bounded concurrent batches");
+});
+
 test("canonical marketplace variant evidence", "captures only explicit ProductGroup child variants and never copies parent barcodes", () => {
   const html = '<script type="application/ld+json">{"@context":"https://schema.org","@type":"ProductGroup","productGroupID":"PARENT-MODEL","gtin13":"4006381333931","hasVariant":[{"@type":"Product","name":"Bottle 500 ml","sku":"BOTTLE-500","url":"https://www.amazon.co.jp/dp/B0VARIANT1","gtin13":"4006381333931"},{"@type":"Product","name":"Bottle 1 L","sku":"BOTTLE-1000","url":"https://www.amazon.co.jp/dp/B0VARIANT2","gtin13":"4006381333932"}]}</script>';
   const variants = parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01");
