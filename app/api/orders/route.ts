@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getSupabasePublicConfig } from "@/lib/config/env";
 import { createPurchaseOrderFromRecommendation, listPurchaseOrders, listReorderRecommendations } from "@/lib/ordering/store";
+import { verifyAdminRequest } from "@/lib/security/verify-admin-request";
 
 export const runtime = "nodejs";
 type VerifiedAdmin = { email: string };
@@ -10,28 +11,18 @@ async function requireVerifiedAdmin(request: Request): Promise<
   | { ok: true; admin: VerifiedAdmin }
   | { ok: false; response: ReturnType<typeof NextResponse.json> }
 > {
-  const token = request.headers.get("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
-  if (!token) return { ok: false, response: NextResponse.json({ ok: false, error: "authentication_required" }, { status: 401 }) };
-
-  const { url, anonKey } = getSupabasePublicConfig();
-  if (!url || !anonKey) return { ok: false, response: NextResponse.json({ ok: false, error: "authentication_unavailable" }, { status: 503 }) };
-
-  try {
-    const authClient = createClient(url, anonKey, {
+  const result = await verifyAdminRequest(request, {
+    getPublicConfig: getSupabasePublicConfig,
+    allowedEmails: process.env.TRACER_ADMIN_EMAILS,
+    createAuthClient: (url, anonKey, token) => createClient(url, anonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
       global: { headers: { Authorization: `Bearer ${token}` } },
-    });
-    const { data: { user }, error } = await authClient.auth.getUser(token);
-    if (error || !user?.email) return { ok: false, response: NextResponse.json({ ok: false, error: "invalid_authentication" }, { status: 401 }) };
-
-    const allowedEmails = (process.env.TRACER_ADMIN_EMAILS ?? "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean);
-    if (allowedEmails.length === 0 || !allowedEmails.includes(user.email.toLowerCase())) {
-      return { ok: false, response: NextResponse.json({ ok: false, error: "admin_access_required" }, { status: 403 }) };
-    }
-    return { ok: true, admin: { email: user.email } };
-  } catch {
-    return { ok: false, response: NextResponse.json({ ok: false, error: "authentication_unavailable" }, { status: 503 }) };
+    }),
+  });
+  if (!result.ok) {
+    return { ok: false, response: NextResponse.json({ ok: false, error: result.error }, { status: result.status }) };
   }
+  return { ok: true, admin: result.admin };
 }
 
 export async function GET(request: Request) {
