@@ -16,7 +16,7 @@ assert.match(source, /identity_status: "identity_unconfirmed"/);
 const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
 assert.doesNotMatch(pipeline, /reverifyCjSupplyIdentities\(/);
 const identityRoute = await readFile(new URL("../app/api/cron/cj-identity-reverify/route.ts", import.meta.url), "utf8");
-assert.match(identityRoute, /reverifyCjSupplyIdentities\(\{[\s\S]*?limit: 100,[\s\S]*?startedAt \+ 240_000/);
+assert.match(identityRoute, /reverifyCjSupplyIdentities\(\{[\s\S]*?limit: 50,[\s\S]*?startedAt \+ 180_000/);
 const discovery = await readFile(new URL("../lib/suppliers/discover-cj-supply.ts", import.meta.url), "utf8");
 assert.equal((discovery.match(/gtin: normalizeIdentifier\("gtin", variantBarcode\)/g) ?? []).length, 2);
 assert.match(discovery, /function priorityWomenSupplyCategory/);
