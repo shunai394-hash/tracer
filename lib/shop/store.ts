@@ -270,6 +270,14 @@ export async function placeShopOrder(args: {
     throw new Error("supplier_identity_unlinked");
   }
 
+  // Revalidate live channel stock at order time. If live stock is unavailable,
+  // incomplete, or sold out, reject before inserting an order.
+  const verifiedListings = await loadLiveListings(listings as Record<string, unknown>[]);
+  const verifiedListingsById = new Map(verifiedListings.map((listing) => [listing.id, listing]));
+  if (verifiedListingsById.size !== new Set(listingIds).size) {
+    throw new Error("listing inventory could not be verified against current channel state");
+  }
+
   let subtotal = 0;
   let currency: string | null = null;
   const lines: Array<{ listing: Record<string, unknown>; qty: number; unitPrice: number | null }> = [];
@@ -280,7 +288,9 @@ export async function placeShopOrder(args: {
     if (!isPublishableCatalogTitle(listing.title)) throw new Error("listing title failed catalog quality gate");
     if (!isPublishableCatalogDescription(listing.description)) throw new Error("listing description failed catalog quality gate");
     if (listing.orderable !== true) throw new Error("listing is not currently orderable");
-    const inventory = asNumber(listing.inventory) ?? 0;
+    const verifiedListing = verifiedListingsById.get(item.listingId);
+    if (!verifiedListing) throw new Error("listing inventory could not be verified against current channel state");
+    const inventory = verifiedListing.inventory;
     if (inventory < item.qty) throw new Error("requested quantity exceeds current inventory");
     if (!Number.isFinite(item.qty) || item.qty <= 0) throw new Error("quantity must be greater than zero");
     const unitPrice = asNumber(listing.selling_price);
