@@ -12,5 +12,5 @@ assert.match(base, /error: stage/);
 assert.doesNotMatch(base, /error:\s*error instanceof Error\s*\?\s*error\.message/);
 assert.doesNotMatch(base, /unique_key/);
 assert.match(shopify, /TRACER SHOPIFY AUTH PROBE/);
-assert.match(workflow, /api\\/channels\\/base\\/diagnostics/);
+assert.ok(workflow.includes("api/channels/base/diagnostics"), "read-only auth workflow must include BASE diagnostics");
 console.log("Read-only channel auth diagnostics: 8 assertions passed");
