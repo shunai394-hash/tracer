@@ -202,6 +202,10 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
         sourceUrl: source.url,
         fetchedAt,
         items,
+        // A successful HTTP response that parses into zero ranking items is
+        // not a successful observation; expose likely challenge/layout drift.
+        skipped: items.length === 0,
+        reason: items.length === 0 ? "ranking_html_returned_zero_items" : undefined,
       });
     } catch (error) {
       if (error instanceof BrightDataConfigError) {
