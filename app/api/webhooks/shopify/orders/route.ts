@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     if (existing.data) return NextResponse.json({ ok: true, duplicate: true, orderId: String(existing.data.id) });
 
     const items = Array.isArray(order.line_items) ? order.line_items as Array<Record<string, unknown>> : [];
-    const skus = items.map((item) => String(item.sku ?? "").trim().trim());
+    const skus = items.map((item) => String(item.sku ?? "").trim());
     if (!items.length || skus.some((sku) => !sku)) {
       return NextResponse.json({ ok: true, blocked: true, reason: "listing_sku_missing" });
     }
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
     if (inserted.error) throw new Error(inserted.error.message);
 
     for (const item of items) {
-      const listing = byId.get(String(item.sku ?? ""));
+      const listing = byId.get(String(item.sku ?? "").trim());
       if (!listing) throw new Error("listing mapping missing during item insert");
       const row = await db.from("shop_order_items").insert({
         order_id: inserted.data.id,
