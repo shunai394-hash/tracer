@@ -134,11 +134,25 @@ export function parseCanonicalMarketplaceVariantEvidence(
 ): CanonicalMarketplaceVariantEvidence[] {
   const output: CanonicalMarketplaceVariantEvidence[] = [];
   const seen = new Set<string>();
+  const nodes = jsonLdNodes(html);
+  const nodesById = new Map<string, Record<string, unknown>>();
+  for (const node of nodes) {
+    const id = asString(node["@id"]);
+    if (id) nodesById.set(id, node);
+  }
 
-  for (const group of jsonLdNodes(html)) {
+  for (const group of nodes) {
     if (!isType(group, "ProductGroup")) continue;
     for (const rawVariant of nodeList(group.hasVariant)) {
-      const variant = asRecord(rawVariant);
+      const reference = asRecord(rawVariant);
+      // JSON-LD often stores hasVariant as an @id reference while the full
+      // Product node appears elsewhere in the same @graph. Resolve only local
+      // references; an unresolved @id must never be used as identity evidence.
+      const variant = reference && isType(reference, "Product")
+        ? reference
+        : reference && asString(reference["@id"])
+          ? nodesById.get(asString(reference["@id"]) as string) ?? null
+          : null;
       if (!variant || !isType(variant, "Product")) continue;
 
       const url = variantUrl(variant, parentProductUrl);
