@@ -27,6 +27,8 @@ assert.ok(guarded.includes('"canonical_variant_evidence_write_failed"'), "persis
 assert.ok(collector.includes("fetchHtml(childUrl, { retryBrightDataWhenCanonicalVariantsMissing: true })"), "child detail pages must retry through configured Bright Data when direct fetch lacks evidence");
 for (const key of ["variationAsinsFound", "childDetailAttempted", "childDetailFetched", "childBarcodeFound"]) {
   assert.ok(persistence.includes(`${key}: number`), `persistence contract must expose ${key}`);
-  assert.ok(persistence.includes(`child${key[0].toUpperCase()}${key.slice(1)}:`), `aggregate telemetry must expose child-page counter ${key}`);
+}
+for (const key of ["childVariationAsinsFound", "childDetailAttempted", "childDetailFetched", "childBarcodeFound"]) {
+  assert.ok(persistence.includes(`${key}:`), `aggregate telemetry must expose ${key}`);
 }
 console.log("PASS: cursor rotation, child-page fallback, and aggregate evidence telemetry are wired");
