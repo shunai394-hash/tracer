@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync, existsSync } from "node:fs";
 import {
   canPerformAutomationCapability,
+  CRON_CAPABILITIES,
   evaluateAutomationCapability,
   parseAutomationMode,
 } from "../lib/ops/automation-capabilities.ts";
@@ -41,4 +43,21 @@ assert.deepEqual(
   { allowed: false, reason: "diagnostic_read_only" },
 );
 
-console.log("automation-capabilities: PASS (31 assertions)");
+
+const vercelConfig = JSON.parse(readFileSync("vercel.json", "utf8"));
+const scheduledPaths = [...new Set((vercelConfig.crons ?? []).map((entry) => entry.path))];
+for (const routePath of scheduledPaths) {
+  assert.ok(CRON_CAPABILITIES[routePath], `missing capability mapping for scheduled route ${routePath}`);
+  const routeFile = `app${routePath}/route.ts`;
+  assert.ok(existsSync(routeFile), `missing route source ${routeFile}`);
+  const source = readFileSync(routeFile, "utf8");
+  assert.ok(
+    source.includes(`requireAutomationCapability(request, "${CRON_CAPABILITIES[routePath]}")`),
+    `scheduled route ${routePath} does not enforce its declared capability`,
+  );
+}
+for (const mappedPath of Object.keys(CRON_CAPABILITIES)) {
+  assert.ok(scheduledPaths.includes(mappedPath), `stale capability mapping not scheduled in vercel.json: ${mappedPath}`);
+}
+
+console.log(`automation-capabilities: PASS (${31 + scheduledPaths.length * 3 + Object.keys(CRON_CAPABILITIES).length} assertions; ${scheduledPaths.length} unique Vercel Cron routes covered)`);
