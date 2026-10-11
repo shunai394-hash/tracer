@@ -26,6 +26,8 @@ jobs:
       - run: npm run test:tracer-core
       - name: Test dropship order safety invariants
         run: npm run test:dropship-order-gate
+      - name: Test Shopify order line-item pagination safety
+        run: npm run test:shopify-line-item-pagination
       - name: Test sanitized provider diagnostics
         run: npm run test:auth-diagnostics
       - name: Set up disposable local PostgreSQL for integration tests
