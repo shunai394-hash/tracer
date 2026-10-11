@@ -9,6 +9,7 @@ import {
 } from "@/lib/sources/cj/variant-select";
 import { firstCJImageUrl, parseCJStockData } from "@/lib/sources/cj/parse";
 import { isCJQuotaExhausted } from "@/lib/sources/cj/rate-limit-policy";
+import { getCJQuotaCooldownUntil } from "@/lib/sources/cj/rate-limit-policy";
 
 export { selectUnambiguousVariant, verifyVariantSelectionInvariants };
 export type { CJProductVariant };
@@ -39,6 +40,34 @@ export function isCJQuotaExhaustedError(error: unknown): boolean {
     "code" in error &&
     (error as { code?: unknown }).code === "CJ_QUOTA_EXHAUSTED",
   );
+}
+
+let localCJQuotaBlockedUntil: string | null = null;
+
+function quotaCircuitIsOpen(blockedUntil: unknown): blockedUntil is string {
+  return typeof blockedUntil === "string" && Date.parse(blockedUntil) > Date.now();
+}
+
+async function persistCJQuotaCircuit(reason: string): Promise<string> {
+  const blockedUntil = getCJQuotaCooldownUntil();
+  localCJQuotaBlockedUntil = blockedUntil;
+  try {
+    const db = createSupabaseAdminClient();
+    const now = new Date().toISOString();
+    const { error } = await db.from("cron_runs").insert({
+      job_name: "cj-api-quota-circuit",
+      status: "succeeded",
+      started_at: now,
+      finished_at: now,
+      processed: 0,
+      failed: 1,
+      metadata: { blockedUntil, reason, source: "cj-client" },
+    });
+    if (error) console.error("[cj] quota circuit persistence failed", error.message);
+  } catch (error) {
+    console.error("[cj] quota circuit persistence failed", error instanceof Error ? error.message : String(error));
+  }
+  return blockedUntil;
 }
 
 type CJAuthResponse = {
@@ -143,7 +172,27 @@ export async function waitForCJRateLimit(): Promise<void> {
   // Claim the next slot in Supabase first; fall back to the old local
   // limiter only if the shared limiter is temporarily unavailable.
   try {
+    if (quotaCircuitIsOpen(localCJQuotaBlockedUntil)) {
+      throw new CJRequestError(`CJ API quota cooldown active until ${localCJQuotaBlockedUntil}`, "CJ_QUOTA_EXHAUSTED");
+    }
     const db = createSupabaseAdminClient();
+    const { data: circuitRows, error: circuitError } = await db
+      .from("cron_runs")
+      .select("metadata")
+      .eq("job_name", "cj-api-quota-circuit")
+      .order("started_at", { ascending: false })
+      .limit(1);
+    if (circuitError) {
+      throw new CJRequestError("CJ quota circuit state unavailable; refusing external request", "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN");
+    }
+    const circuitMetadata = circuitRows?.[0]?.metadata;
+    const blockedUntil = circuitMetadata && typeof circuitMetadata === "object" && !Array.isArray(circuitMetadata)
+      ? (circuitMetadata as Record<string, unknown>).blockedUntil
+      : null;
+    if (quotaCircuitIsOpen(blockedUntil)) {
+      localCJQuotaBlockedUntil = blockedUntil;
+      throw new CJRequestError(`CJ API quota cooldown active until ${blockedUntil}`, "CJ_QUOTA_EXHAUSTED");
+    }
     const { data, error } = await db.rpc("claim_cj_api_slot", {
       p_min_interval_ms: 1_100,
     });
@@ -156,6 +205,12 @@ export async function waitForCJRateLimit(): Promise<void> {
     }
     console.warn("[cj] shared QPS limiter unavailable; using local fallback", error.message);
   } catch (error) {
+    if (
+      error instanceof CJRequestError &&
+      (error.code === "CJ_QUOTA_EXHAUSTED" || error.code === "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN")
+    ) {
+      throw error;
+    }
     console.warn(
       "[cj] shared QPS limiter unavailable; using local fallback",
       error instanceof Error ? error.message : String(error),
@@ -196,8 +251,9 @@ export async function fetchCJWithRateLimit(
     });
 
     if (isCJQuotaExhausted(diagnostic)) {
+      const blockedUntil = await persistCJQuotaCircuit("provider_points_remaining_zero");
       throw new CJRequestError(
-        diagnostic.message || "CJ API quota exhausted; retry after cooldown",
+        `${diagnostic.message || "CJ API quota exhausted"}; cooldown until ${blockedUntil}`,
         "CJ_QUOTA_EXHAUSTED",
       );
     }
