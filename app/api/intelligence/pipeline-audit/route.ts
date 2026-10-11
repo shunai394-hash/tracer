@@ -127,8 +127,29 @@ export async function GET(request: Request) {
     blocked[reason] = (blocked[reason] ?? 0) + 1;
   }
 
+  const providerReadiness = {
+    brightdata: {
+      configured: Boolean(process.env.BRIGHTDATA_API_TOKEN),
+      capability: "marketplace research and external product evidence",
+    },
+    gemini: {
+      configured: Boolean(process.env.GEMINI_API_KEY),
+      capability: "AI-assisted Japanese catalog copy where required",
+    },
+  };
+  const missingProviderKeys = [
+    ...(!providerReadiness.brightdata.configured ? ["BRIGHTDATA_API_TOKEN"] : []),
+    ...(!providerReadiness.gemini.configured ? ["GEMINI_API_KEY"] : []),
+  ];
+
   return NextResponse.json({
     ok: true,
+    readiness: {
+      status: missingProviderKeys.length ? "blocked" : "provider_keys_configured",
+      missingProviderKeys,
+      note: "This indicates provider configuration only; it does not assert that collection, matching, publication, or ordering succeeded.",
+    },
+    providers: providerReadiness,
     generatedAt: nowIso,
     // Which commit production is actually serving (set by Vercel at build).
     deployment: {
