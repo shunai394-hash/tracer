@@ -11,7 +11,7 @@ assert.equal(BASE_AUTH_REAUTH_REQUIRED, "base_auth_invalid_reauthorization_requi
 const route = readFileSync("app/api/cron/unpublish-unlinked/route.ts", "utf8");
 assert.ok(route.includes("base_last_error.neq.base_auth_invalid_reauthorization_required"), "query must exclude unresolved BASE token rejection");
 assert.ok(route.includes("const baseRowsToPause = unlinked"), "token rejection circuit must pause all currently-unlinked BASE rows, not just the current batch");
-assert.ok(route.includes(".in(\"id\", baseRowsToPause)"), "token rejection circuit must persist markers for every affected BASE row");
+assert.ok(route.includes("updateInChunks(baseRowsToPause"), "token rejection circuit must persist markers for every affected BASE row using bounded update chunks");
 assert.ok(route.includes(".range(from, from + pageSize - 1)"), "candidate scan must paginate beyond the first 1,000 rows");
 assert.ok(route.includes(".order(\"id\", { ascending: true })"), "pagination must use a deterministic tie-breaker");
 assert.ok(route.includes("if (rows.length < pageSize) break;"), "pagination must stop only after the final partial page");
