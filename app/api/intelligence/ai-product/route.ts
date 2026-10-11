@@ -1,9 +1,12 @@
+import { requireCronAuth } from "@/lib/security/cron-auth";
 import { NextResponse } from "next/server";
 import { analyzeProductWithAi } from "@/lib/ai/product-intelligence";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const authError = requireCronAuth(request);
+  if (authError) return authError;
   try {
     const body = (await request.json()) as {
       title?: string;
