@@ -16,7 +16,7 @@
     },
     {
       "path": "/api/cron/cj-identity-reverify",
-      "schedule": "9 12 * * *"
+      "schedule": "3,18,33,48 * * * *"
     },
     {
       "path": "/api/cron/orosy-bulk-import",
@@ -88,7 +88,7 @@
     },
     {
       "path": "/api/cron/cj-identity-reverify",
-      "schedule": "9 18 * * *"
+      "schedule": "3,18,33,48 * * * *"
     },
     {
       "path": "/api/cron/sales-test-publication",
