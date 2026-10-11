@@ -11,4 +11,9 @@ assert.ok(gate.includes("stage.ok && stage.skipped !== true && stage.retryable !
 assert.ok(pipeline.includes("const bestsellerCanFeedSalesGate = canFeedSalesGate(bestsellerStep)"), "downstream sales matching must use the strict gate helper");
 assert.ok(pipeline.includes("retryable: bestsellerStep.retryable === true"), "dropship must inherit the source stage retryability instead of always deferring");
 assert.ok(pipeline.includes('"bestseller_source_has_no_canonical_child_variant_contract"'), "dropship must distinguish observation-only sources from retryable Amazon evidence");
-console.log("Marketplace canonical evidence policy: 7 assertions passed");
+
+const cjIdentity = await readFile(new URL("../lib/intelligence/persist-cj-supply-intelligence.ts", import.meta.url), "utf8");
+assert.ok(cjIdentity.includes('["schema_org_product_group_has_variant", "amazon_variation_asin_map"]'), "accept explicit Amazon child-ASIN evidence only after that child page supplied its own barcode");
+assert.ok(cjIdentity.includes("row.evidence_source"), "supplier identity must remain tied to explicit marketplace variant evidence");
+
+console.log("Marketplace canonical evidence policy: 9 assertions passed");
