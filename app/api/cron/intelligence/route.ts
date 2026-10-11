@@ -3,7 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { runIntelligencePipeline } from "@/lib/intelligence/run-intelligence-pipeline";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync";
 
 export const runtime = "nodejs";
@@ -49,7 +49,7 @@ async function canonicalSupplyRecovery() {
 
 export async function GET(request: Request) {
   try {
-    const authError = await requireAutomationAuth(request);
+    const authError = await requireAutomationCapability(request, "channel_write");
     if (authError) return authError;
 
     const recovery = await canonicalSupplyRecovery();
