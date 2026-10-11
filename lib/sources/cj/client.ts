@@ -154,6 +154,29 @@ export async function waitForCJRateLimit(): Promise<void> {
   await waitForLocalCJRateLimit();
 }
 
+function hasExhaustedCJApiPoints(diagnostic: {
+  code?: number;
+  message?: string;
+  pointsInfo?: unknown;
+}): boolean {
+  const info = diagnostic.pointsInfo;
+  if (info && typeof info === "object" && !Array.isArray(info)) {
+    const points = info as Record<string, unknown>;
+    const total = Number(points.total);
+    const usedToday = Number(points.usedToday);
+    const remaining = Number(points.remaining);
+    // A zero/zero quota means this credential currently has no usable points.
+    // Do not spend four extra calls retrying a daily quota/plan exhaustion.
+    if (Number.isFinite(remaining) && remaining <= 0 &&
+        Number.isFinite(total) && Number.isFinite(usedToday) &&
+        (total <= 0 || usedToday >= total)) {
+      return true;
+    }
+  }
+  return diagnostic.code === 16900500 ||
+    /insufficient api points|api points exhausted|quota exhausted/i.test(diagnostic.message ?? "");
+}
+
 export async function fetchCJWithRateLimit(
   input: RequestInfo | URL,
   init?: RequestInit,
@@ -184,7 +207,7 @@ export async function fetchCJWithRateLimit(
       pointsInfo: diagnostic.pointsInfo,
     });
 
-    if (diagnostic.code === 16900500 || /insufficient api points/i.test(diagnostic.message ?? "")) {
+    if (hasExhaustedCJApiPoints(diagnostic)) {
       throw new CJRequestError(
         diagnostic.message || "CJ API points exhausted",
       );
