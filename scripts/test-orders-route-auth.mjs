@@ -32,7 +32,7 @@ assert.match(store, /live_order:\s*false/, "internal record must not claim a liv
 assert.match(store, /placed_at:\s*null/, "supplier-unconnected records must not have a placed timestamp");
 assert.match(store, /supplier_api_not_connected_no_external_order_placed/, "unconnected supplier status must be explicit");
 assert.doesNotMatch(store, /status:\s*placed\s*\?\s*"placed"/, "database-only records must never be marked placed");
-assert.match(store, /if \(args\.approved && !args\.approvedBy\?\.trim\(\)\)/, "approved writes require a verified approver identity");
+assert.match(store, /if \(args\.approved\)\s*\{\s*throw new Error\("human_admin_approval_not_supported"\)/, "service must reject approval until admin identity is verified");
 assert.match(store, /error\.code === "23505" && \/idempotency_key\/i\.test\(error\.message\)/, "concurrent retries must resolve through the unique idempotency key");
 assert.match(store, /\.eq\("idempotency_key", idempotencyKey\)\s*\.maybeSingle\(\)/, "unique-key conflict must return the already-created order");
 
