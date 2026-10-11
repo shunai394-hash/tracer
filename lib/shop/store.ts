@@ -5,6 +5,7 @@ import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { hasVerifiedPositiveShopifyStock } from "@/lib/shop/live-stock-policy";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -83,11 +84,15 @@ type ShopifyVariantStock = {
 };
 
 async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, number>> {
-  const liveStock = new Map<string, number>();
-  if (!isShopifyConfigured() || variantIds.length === 0) return liveStock;
+  if (!isShopifyConfigured()) throw new Error("shopify_live_stock_unconfigured");
+  if (variantIds.length === 0) throw new Error("shopify_live_stock_variant_ids_empty");
 
-  const ids = [...new Set(variantIds)].filter((id) => /^gid:\/\/shopify\/ProductVariant\//.test(id));
-  if (ids.length === 0) return liveStock;
+  const requestedIds = [...new Set(variantIds)];
+  const ids = requestedIds.filter((id) => /^gid:\/\/shopify\/ProductVariant\/\d+$/.test(id));
+  if (ids.length !== requestedIds.length || ids.length === 0) {
+    throw new Error("shopify_live_stock_variant_ids_invalid");
+  }
+  const liveStock = new Map<string, number>();
 
   const data = await shopifyGraphQL<{
     nodes: Array<ShopifyVariantStock | null>;
@@ -103,10 +108,15 @@ async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, nu
     { ids },
   );
 
-  for (const node of data.nodes ?? []) {
-    if (!node?.id) continue;
+  const nodes = data.nodes ?? [];
+  for (const node of nodes) {
+    if (!node?.id || !ids.includes(node.id)) continue;
     const quantity = asNumber(node.inventoryQuantity);
-    liveStock.set(node.id, Math.max(0, Math.floor(quantity ?? 0)));
+    if (quantity === null) throw new Error("shopify_live_stock_quantity_unknown");
+    liveStock.set(node.id, Math.max(0, Math.floor(quantity)));
+  }
+  if (ids.some((id) => !liveStock.has(id))) {
+    throw new Error("shopify_live_stock_response_incomplete");
   }
   return liveStock;
 }
@@ -131,6 +141,7 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
     );
   } catch (error) {
     console.error("[shopify-live-stock-unavailable]", error instanceof Error ? error.message.slice(0, 300) : String(error));
+    return [];
   }
 
   const staleSoldOut = listings.filter((listing) => {
@@ -157,7 +168,7 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
   return listings
     .filter((listing) => {
       const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : undefined;
-      return live === undefined || live > 0;
+      return hasVerifiedPositiveShopifyStock(listing.shopifyVariantId, live);
     })
     .map((listing) => {
       const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : undefined;
@@ -264,6 +275,10 @@ export async function placeShopOrder(args: {
     throw new Error("supplier_identity_unlinked");
   }
 
+  const liveStock = await getLiveShopifyStock(
+    listings.map((listing) => listing.shopify_variant_id).filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
+
   let subtotal = 0;
   let currency: string | null = null;
   const lines: Array<{ listing: Record<string, unknown>; qty: number; unitPrice: number | null }> = [];
@@ -274,8 +289,14 @@ export async function placeShopOrder(args: {
     if (!isPublishableCatalogTitle(listing.title)) throw new Error("listing title failed catalog quality gate");
     if (!isPublishableCatalogDescription(listing.description)) throw new Error("listing description failed catalog quality gate");
     if (listing.orderable !== true) throw new Error("listing is not currently orderable");
-    const inventory = asNumber(listing.inventory) ?? 0;
-    if (inventory < item.qty) throw new Error("requested quantity exceeds current inventory");
+    const liveQuantity = typeof listing.shopify_variant_id === "string"
+      ? liveStock.get(listing.shopify_variant_id)
+      : undefined;
+    if (!hasVerifiedPositiveShopifyStock(listing.shopify_variant_id, liveQuantity)) {
+      throw new Error("shopify_live_stock_unverified");
+    }
+    const inventory = Math.min(asNumber(listing.inventory) ?? 0, liveQuantity as number);
+    if (inventory < item.qty) throw new Error("requested quantity exceeds verified live inventory");
     if (!Number.isFinite(item.qty) || item.qty <= 0) throw new Error("quantity must be greater than zero");
     const unitPrice = asNumber(listing.selling_price);
     if (unitPrice === null || unitPrice <= 0) throw new Error("selling price unknown");
