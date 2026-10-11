@@ -39,10 +39,34 @@ type DemandProductMatchResult = {
 type ProductIntent = { isProduct: boolean; category: string | null; reason: string };
 
 const PRODUCT_CATEGORY_KEYWORDS: Record<string, string[]> = {
+  // Women-focused Japanese demand discovery. Category intent is research
+  // evidence only; it never establishes product identity or publishability.
+  "women's_bags": [
+    "handbag", "handbags", "crossbody bag", "shoulder bag", "tote bag", "mini bag",
+    "women's bag", "womens bag", "レディースバッグ", "ショルダーバッグ",
+    "トートバッグ", "ハンドバッグ", "斜めがけバッグ", "ミニバッグ", "バッグ",
+  ],
+  beauty_tools: [
+    "beauty tool", "beauty tools", "facial device", "face massager", "gua sha",
+    "makeup brush", "eyelash curler", "美顔器", "美容家電", "美容ツール",
+    "メイクブラシ", "ビューラー", "フェイスローラー", "かっさ",
+  ],
+  hair_accessories: [
+    "hair clip", "claw clip", "hair claw", "hair accessory", "hair accessories",
+    "heatless curls", "ヘアアクセ", "ヘアクリップ", "バンスクリップ",
+    "シュシュ", "ヘアピン", "ヘアバンド",
+  ],
+  jewelry: [
+    "jewelry", "earrings", "necklace", "bracelet", "ジュエリー", "ピアス",
+    "イヤリング", "ネックレス", "ブレスレット", "アクセサリー",
+  ],
+  skincare: [
+    "serum", "moisturizer", "face cream", "skincare", "skin care", "sunscreen",
+    "スキンケア", "美容液", "化粧水", "乳液", "日焼け止め", "コスメ",
+  ],
   "wireless earbuds": ["airpods", "air pods", "earbuds", "wireless earbuds", "true wireless", "bluetooth earbuds"],
   headphones: ["headphones", "wireless headphones", "noise cancelling", "noise-canceling"],
   smartphone: ["iphone", "ipad", "galaxy", "pixel", "android phone", "smartphone", "mobile phone"],
-  skincare: ["serum", "moisturizer", "face cream", "skincare", "skin care", "sunscreen"],
   sneakers: ["sneakers", "running shoes", "trainers", "shoes"],
   automobile: ["car", "automobile", "vehicle", "toyota", "prius", "honda", "nissan", "mazda"],
 };
