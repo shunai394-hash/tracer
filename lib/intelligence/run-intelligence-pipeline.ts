@@ -409,12 +409,12 @@ export async function runIntelligencePipeline(options: {
   steps.push(bestsellerStep);
 
   const bestsellerIds =
-    bestsellerStep.ok && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { bestsellerIds?: unknown }).bestsellerIds)
+    bestsellerStep.ok && !bestsellerStep.skipped && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { bestsellerIds?: unknown }).bestsellerIds)
       ? ((bestsellerStep.result as { bestsellerIds: string[] }).bestsellerIds)
       : [];
 
   const supplierCandidateIds =
-    bestsellerStep.ok && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { supplierCandidateIds?: unknown }).supplierCandidateIds)
+    bestsellerStep.ok && !bestsellerStep.skipped && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { supplierCandidateIds?: unknown }).supplierCandidateIds)
       ? (bestsellerStep.result as { supplierCandidateIds: string[] }).supplierCandidateIds
       : [];
 
