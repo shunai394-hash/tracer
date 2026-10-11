@@ -31,7 +31,7 @@ assert.match(dropship, /cancellation_requested.*refund_pending.*cancelled.*refun
 assert.match(dropship, /idempotencyKey = `dropship:\$\{row\.id\}`/);
 
 const shopifyOrdersRoute = await readFile("app/api/cron/shopify-orders/route.ts", "utf8");
-assert.match(shopifyOrdersRoute, /runAutonomousOrderControl\(\`shopify-orders:\$\{new Date\(\)\.toISOString\(\)\.slice\(0, 16\)\}\`\)/);
+assert.ok(shopifyOrdersRoute.includes('runAutonomousOrderControl(`shopify-orders:${new Date().toISOString().slice(0, 16)}`'));
 assert.doesNotMatch(shopifyOrdersRoute, /slice\(0, 13\)/, "hour-scoped claims delay newly imported orders until the next hour");
 
 console.log("Autonomous order eligibility checks passed: paid statuses included; unpaid/cancelled orders remain blocked; PO idempotency key is stable.");
