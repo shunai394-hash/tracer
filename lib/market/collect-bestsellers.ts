@@ -135,30 +135,41 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
   fetchedAt: string;
   marketplaces: CollectedMarketplace[];
   itemCount: number;
+  sourceIndex: number;
 }> {
   const fetchedAt = new Date().toISOString();
   const marketplaces: CollectedMarketplace[] = [];
-  const sourceIndex = Math.max(0, options.sourceIndex ?? 0);
-  const selectedSource = MARKETPLACE_SOURCES[sourceIndex];
-  if (!selectedSource) {
-    return { fetchedAt, marketplaces: [], itemCount: 0 };
+  const requestedSourceIndex = Math.max(0, options.sourceIndex ?? 0);
+  const hasExplicitSourceIndex = options.sourceIndex !== undefined;
+  const sourceEntries = hasExplicitSourceIndex
+    ? Array.from({ length: Math.min(3, MARKETPLACE_SOURCES.length) }, (_, offset) => {
+        const index = (requestedSourceIndex + offset) % MARKETPLACE_SOURCES.length;
+        return { sourceIndex: index, source: MARKETPLACE_SOURCES[index] };
+      })
+    : MARKETPLACE_SOURCES.map((source, sourceIndex) => ({ sourceIndex, source }));
+  if (sourceEntries.length === 0) {
+    return { fetchedAt, marketplaces: [], itemCount: 0, sourceIndex: requestedSourceIndex };
   }
 
-  // Fetch independent marketplace ranking pages concurrently. The previous
-  // sequential fan-out made the eight sources share one 60-second serverless
-  // budget and allowed one slow marketplace to starve the whole observation run.
+  // Probe up to three sources per patrol in priority order. A blocked or
+  // layout-drifted ranking page must not burn an entire 15-minute cycle while
+  // a later source (e.g. Rakuten) may still return usable products. Fetch the
+  // bounded probe set concurrently, then select the first source with parsed
+  // items so the persisted cursor resumes at the source that actually worked.
   const collectedSources = await Promise.all(
-    [selectedSource].map(async (source) => {
+    sourceEntries.map(async ({ source, sourceIndex }) => {
       try {
         const html = await fetchHtml(source.url);
-        return { source, html, error: null as unknown };
+        return { source, sourceIndex, html, error: null as unknown };
       } catch (error) {
-        return { source, html: null, error };
+        return { source, sourceIndex, html: null, error };
       }
     }),
   );
 
-  for (const { source, html, error: sourceError } of collectedSources) {
+  let effectiveSourceIndex = requestedSourceIndex;
+  for (const { source, sourceIndex: currentSourceIndex, html, error: sourceError } of collectedSources) {
+    effectiveSourceIndex = currentSourceIndex;
     try {
       if (sourceError) throw sourceError;
       if (!html) {
@@ -207,6 +218,7 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
         skipped: items.length === 0,
         reason: items.length === 0 ? "ranking_html_returned_zero_items" : undefined,
       });
+      if (items.length > 0 && hasExplicitSourceIndex) break;
     } catch (error) {
       if (error instanceof BrightDataConfigError) {
         marketplaces.push({
@@ -359,6 +371,7 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
     fetchedAt,
     marketplaces: enrichedMarketplaces,
     itemCount: enrichedMarketplaces.reduce((sum, item) => sum + item.items.length, 0),
+    sourceIndex: effectiveSourceIndex,
   };
 }
 
