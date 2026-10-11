@@ -91,6 +91,9 @@ test("order execution requires paid non-COD order, exact supplier identity, stoc
   const unpaid = core.evaluateOrderExecution({ ...base, paymentStatus: "pending" });
   assert.equal(unpaid.blockers.includes("payment_not_confirmed"), true);
 
+  const unknownPaymentMethod = core.evaluateOrderExecution({ ...base, paymentMethod: null });
+  assert.equal(unknownPaymentMethod.blockers.includes("payment_method_unknown"), true);
+
   const missingVariant = core.evaluateOrderExecution({ ...base, supplierVariantId: null });
   assert.equal(missingVariant.blockers.includes("supplier_variant_id_missing"), true);
 
