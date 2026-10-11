@@ -156,6 +156,31 @@ export function classifyOrderAttempt(
   return { action: "process", reason: "new_order" };
 }
 
+export type ExternalWriteOutcome =
+  | { kind: "acknowledged"; externalId: string | null; providerRequestId?: string | null }
+  | { kind: "rejected"; httpStatus: number; providerRequestId?: string | null }
+  | { kind: "timeout" | "unknown"; providerRequestId?: string | null };
+
+export type ExternalWriteDisposition =
+  | "complete"
+  | "reconcile_first"
+  | "retry_after_backoff"
+  | "do_not_retry";
+
+/**
+ * Classifies uncertain external side effects. A timeout or 5xx is not proof
+ * that the provider did not create the resource, so reconcile before retrying.
+ */
+export function classifyExternalWriteOutcome(outcome: ExternalWriteOutcome): ExternalWriteDisposition {
+  if (outcome.kind === "acknowledged") {
+    return clean(outcome.externalId) ? "complete" : "reconcile_first";
+  }
+  if (outcome.kind === "timeout" || outcome.kind === "unknown") return "reconcile_first";
+  if (outcome.httpStatus === 429) return "retry_after_backoff";
+  if (outcome.httpStatus >= 500) return "reconcile_first";
+  return "do_not_retry";
+}
+
 export type OrderExecutionEvidence = {
   channel: string | null;
   externalOrderId: string | null;
