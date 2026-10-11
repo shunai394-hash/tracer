@@ -1,11 +1,11 @@
 const WOMEN_FOCUSED_PATTERNS = [
-  { pattern: /beauty|skincare|skin care|serum|moisturizer|sunscreen|cosmetic|makeup|lipstick|lip gloss|blush|mascara|eyelash|eyeliner|nail art/i, tier: "core" as const },
-  { pattern: /hair care|haircare|hair brush|scalp massager|hair oil|heatless curls|hair dryer|hair curler|curling iron|hair straightener|hair clip|hair claw|hair removal/i, tier: "core" as const },
-  { pattern: /women'?s|womens|ladies|female|sports bra|bralette|shapewear|dress|skirt|blouse|leggings|activewear|handbag|crossbody|tote bag/i, tier: "core" as const },
-  { pattern: /jewelry|earrings?|necklace|bracelet|hair accessory|anklet|ring jewelry/i, tier: "core" as const },
-  { pattern: /period|menstrual|menstrual cup|period underwear|ovulation|pregnancy test|pelvic floor|intimate care/i, tier: "core" as const },
-  { pattern: /makeup organizer|cosmetic bag|jewelry organizer|closet organizer|shoe organizer|garment steamer|bathroom organization/i, tier: "adjacent" as const },
-  { pattern: /wellness|self care|self-care|massage|sleep|posture|aromatherapy|beauty device/i, tier: "adjacent" as const },
+  { pattern: /beauty|skincare|skin care|serum|moisturizer|sunscreen|cosmetic|makeup|lipstick|lip gloss|blush|mascara|eyelash|eyeliner|nail art|美容|美顔器|美顔|化粧水|美容液|乳液|日焼け止め|コスメ|メイク|リップ|マスカラ|アイライナー|ネイル/i, tier: "core" as const },
+  { pattern: /hair care|haircare|hair brush|scalp massager|hair oil|heatless curls|hair dryer|hair curler|curling iron|hair straightener|hair clip|hair claw|hair removal|ヘアケア|ヘアブラシ|頭皮|ヘアオイル|ヘアドライヤー|ヘアアイロン|ヘアクリップ|バンスクリップ|ヘアアクセ|脱毛/i, tier: "core" as const },
+  { pattern: /women'?s|womens|ladies|female|sports bra|bralette|shapewear|dress|skirt|blouse|leggings|activewear|handbag|crossbody|tote bag|レディース|婦人|女性用|女性向け|バッグ|ハンドバッグ|ショルダーバッグ|トートバッグ|斜めがけ|ワンピース|スカート|ブラウス|レギンス|スポーツブラ/i, tier: "core" as const },
+  { pattern: /jewelry|earrings?|necklace|bracelet|hair accessory|anklet|ring jewelry|ジュエリー|アクセサリー|ピアス|イヤリング|ネックレス|ブレスレット|アンクレット|指輪/i, tier: "core" as const },
+  { pattern: /period|menstrual|menstrual cup|period underwear|ovulation|pregnancy test|pelvic floor|intimate care|生理|月経|妊活|妊娠検査|デリケートゾーン/i, tier: "core" as const },
+  { pattern: /makeup organizer|cosmetic bag|jewelry organizer|closet organizer|shoe organizer|garment steamer|bathroom organization|コスメポーチ|化粧ポーチ|アクセサリー収納|衣類スチーマー/i, tier: "adjacent" as const },
+  { pattern: /wellness|self care|self-care|massage|sleep|posture|aromatherapy|beauty device|ウェルネス|セルフケア|マッサージ|睡眠|姿勢|アロマ|美容機器/i, tier: "adjacent" as const },
 ];
 
 export function womenProductPriority(args: {
@@ -47,11 +47,15 @@ export function verifyWomenPriorityInvariants(): {
     category: "hair accessories",
     query: "toyota prius",
   });
+  const japaneseBag = womenProductPriority({ title: "レディース ショルダーバッグ", category: "バッグ" });
+  const japaneseBeauty = womenProductPriority({ title: "美顔器・美容機器", category: "美容" });
 
   const cases = [
     { name: "beauty_is_prioritized", actual: beauty.isWomenFocused && beauty.bonus === 12 && beauty.tier === "core" },
     { name: "automotive_is_not_prioritized", actual: !car.isWomenFocused && car.bonus === 0 },
     { name: "women_signal_survives_query_noise", actual: hair.isWomenFocused && hair.bonus === 12 && hair.tier === "core" },
+    { name: "japanese_womens_bag_is_prioritized", actual: japaneseBag.isWomenFocused && japaneseBag.tier === "core" },
+    { name: "japanese_beauty_tool_is_prioritized", actual: japaneseBeauty.isWomenFocused },
   ];
 
   return { ok: cases.every((item) => item.actual), cases };
