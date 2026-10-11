@@ -72,3 +72,11 @@ jobs:
             echo "Reconciliation did not fully succeed; the next scheduled run will retry remaining work."
             exit 1
           fi
+          python3 - <<'PY'
+          import json,sys
+          with open("result.json", encoding="utf-8") as f:
+              result=json.load(f)
+          if result.get("ok") is not True:
+              print("Reconciliation returned a partial/incomplete result; the next scheduled run will retry remaining work.")
+              sys.exit(1)
+          PY
