@@ -21,6 +21,19 @@ type GitHubJwk = {
   use?: string;
 };
 
+// Only these reviewed main-branch workflows may use GitHub OIDC for automation APIs.
+// New workflows must be explicitly reviewed and added here; a repo-wide prefix is not sufficient.
+const ALLOWED_GITHUB_OIDC_WORKFLOW_REFS = new Set([
+  "shunai394-hash/tracer/.github/workflows/tracer-production-patrol-15m.yml@refs/heads/main",
+  "shunai394-hash/tracer/.github/workflows/tracer-supply-first.yml@refs/heads/main",
+  "shunai394-hash/tracer/.github/workflows/tracer-production-smoke.yml@refs/heads/main",
+  "shunai394-hash/tracer/.github/workflows/tracer-publish-cj-now.yml@refs/heads/main",
+  "shunai394-hash/tracer/.github/workflows/tracer-product-trace.yml@refs/heads/main",
+  "shunai394-hash/tracer/.github/workflows/tracer-unpublish-unlinked.yml@refs/heads/main",
+  "shunai394-hash/tracer/.github/workflows/tracer-shopify-auth-check.yml@refs/heads/main",
+  "shunai394-hash/tracer/.github/workflows/tracer-reach-500-now.yml@refs/heads/main",
+]);
+
 let jwksCache: { expiresAt: number; keys: GitHubJwk[] } | null = null;
 
 function base64UrlDecode(value: string): Uint8Array {
@@ -76,10 +89,8 @@ async function verifyGitHubOidcToken(token: string): Promise<boolean> {
     if (claims.repository !== "shunai394-hash/tracer") return false;
     if (claims.ref !== "refs/heads/main") return false;
     if (
-      claims.workflow_ref &&
-      !claims.workflow_ref.startsWith(
-        "shunai394-hash/tracer/.github/workflows/",
-      )
+      typeof claims.workflow_ref !== "string" ||
+      !ALLOWED_GITHUB_OIDC_WORKFLOW_REFS.has(claims.workflow_ref)
     ) return false;
 
     const jwk = await getGitHubSigningKey(header.kid);
