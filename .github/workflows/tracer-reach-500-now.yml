@@ -77,18 +77,36 @@ jobs:
               counts = body.get("counts", {})
               for key in ("shop_listings", "shop_listings_published", "shop_listings_published_orderable", "shop_listings_on_base_published"):
                   print(f"  {key}={counts.get(key, 'not_returned')}")
+          if label == "supply":
+              supply = body.get("supplyFirst", {})
+              opportunity = body.get("opportunityIntelligence", {})
+              if isinstance(supply, dict) and (supply.get("ok") is False or supply.get("error")):
+                  print("::error::Supply discovery reported a nested failure")
+                  raise SystemExit(1)
+              if isinstance(opportunity, dict) and opportunity.get("error"):
+                  print("::error::Opportunity intelligence reported a nested failure")
+                  raise SystemExit(1)
           if label == "sales":
               selected = body.get("supplySelected", body.get("decision", {}))
               if isinstance(selected, dict):
                   print(f"  published={selected.get('published', 'not_returned')}")
               downstream = body.get("downstream", {})
-              shopify = downstream.get("shopify", {}) if isinstance(downstream, dict) else {}
-              if isinstance(shopify, dict) and shopify.get("configured") is False:
-                  print("::error::Shopify sync is not configured for this publication run")
+              if not isinstance(downstream, dict):
+                  downstream = {}
+              shopify = downstream.get("shopify", {})
+              if isinstance(shopify, dict) and (shopify.get("error") or shopify.get("configured") is False or shopify.get("failed", 0)):
+                  print("::error::Shopify sync reported a failure or is not configured")
                   raise SystemExit(1)
-              if isinstance(shopify, dict) and shopify.get("failed", 0):
-                  print(f"::error::Shopify reported {shopify.get('failed')} failed sync(s)")
+              base = downstream.get("base", {})
+              if isinstance(base, dict) and base.get("error"):
+                  print("::error::BASE publication reported a failure")
                   raise SystemExit(1)
+              if isinstance(base, dict):
+                  results = base.get("results", [])
+                  failed = [row for row in results if not row.get("ok") or not row.get("baseItemId")]
+                  if failed:
+                      print(f"::error::BASE reported {len(failed)} failed/unlinked publication result(s)")
+                      raise SystemExit(1)
           PY
             then
               FAILED=1
@@ -103,12 +121,37 @@ jobs:
 
           echo "===== FINAL SUMMARY ====="
           echo "cycles=10"
+          if ! python3 <<'PY'
+          import json
+          def counts(cycle):
+              with open(f"cycle-{cycle}-audit.json", encoding="utf-8") as f:
+                  return json.load(f).get("counts", {})
+          try:
+              before, after = counts(1), counts(10)
+          except Exception as exc:
+              print(f"::error::Cannot compare first/last audit counts: {exc}")
+              raise SystemExit(1)
+          keys = ("shop_listings_published", "shop_listings_published_orderable", "shop_listings_on_base_published")
+          progressed = False
+          for key in keys:
+              a, b = before.get(key), after.get(key)
+              print(f"{key}: before={a} after={b}")
+              if isinstance(a, (int, float)) and isinstance(b, (int, float)) and b > a:
+                  progressed = True
+          if not progressed:
+              print("::error::Ten cycles ran but no publication/orderability count increased; inspect blockers in the saved audit evidence.")
+              raise SystemExit(1)
+          print("Verified progress: at least one publication/orderability count increased.")
+          PY
+          then
+            FAILED=1
+          fi
           echo "failed_endpoint_or_publication_checks=${FAILED}"
           if [ "$FAILED" -ne 0 ]; then
-            echo "::error::At least one cycle had a failed endpoint or publication check; inspect the saved cycle JSON artifacts."
+            echo "::error::At least one cycle failed or the ten-cycle run made no measurable publication progress; inspect saved cycle JSON artifacts."
             exit 1
           fi
-          echo "All ten cycles completed with successful endpoint-level checks."
+          echo "All ten cycles completed with successful checks and measurable progress."
       - name: Preserve per-cycle evidence
         if: always()
         uses: actions/upload-artifact@v4
