@@ -406,7 +406,12 @@ export async function runIntelligencePipeline(options: {
       startIndex: cursor.startIndex,
       batchSize: 10,
     });
-    const next = await writeMarketCursor(db, observation, "patrol-ai");
+    // Yahoo/Rakuten are observation-only for this exact-variant gate.
+    // Advance after one bounded batch so they cannot starve Amazon child evidence.
+    const next = await writeMarketCursor(db, {
+      ...observation,
+      hasMore: observation.hasMore && observation.sourceIndex >= 2,
+    }, "patrol-ai");
     // A non-empty ranking batch is not enough to unblock canonical identity.
     // If no child-variant evidence was parsed (or all parsed evidence writes failed),
     // defer the pipeline so publication/procurement never treats source coverage as identity proof.
