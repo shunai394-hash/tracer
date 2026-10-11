@@ -78,7 +78,12 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
   // Otherwise repeated cron runs can get stuck on the same already-imported
   // first page and never reach older paid orders.
   while (hasNextOrdersPage && orders.length < maxNewOrders) {
-    const data = await shopifyGraphQL<{
+    const data: {
+      orders: {
+        nodes: ShopifyOrder[];
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      };
+    } = await shopifyGraphQL<{
       orders: {
         nodes: ShopifyOrder[];
         pageInfo: { hasNextPage: boolean; endCursor: string | null };
