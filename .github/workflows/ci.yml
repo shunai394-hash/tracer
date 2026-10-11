@@ -32,6 +32,8 @@ jobs:
         run: npm run test:shopify-line-item-pagination
       - name: Test sanitized provider diagnostics
         run: npm run test:auth-diagnostics
+      - name: Test bounded product-intelligence scoring
+        run: npm run test:bounded-product-scoring
       - name: Set up disposable local PostgreSQL for integration tests
         run: |
           sudo apt-get update

@@ -476,7 +476,7 @@ export async function runIntelligencePipeline(options: {
     { downstream: true, budgetMs: 75_000 },
   );
   steps.push(intelligence);
-  steps.push(await runStep("score", () => scoreProductIntelligence(), { downstream: true, budgetMs: 6_000 }));
+  steps.push(await runStep("score", () => scoreProductIntelligence(), { downstream: true, budgetMs: 20_000 }));
 
   // Reconsider supply verified by earlier patrols too, so a deferred or
   // timed-out patrol does not strand verified supply before the gate.
