@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
@@ -75,17 +76,35 @@ export async function GET(request: Request) {
     return html("<h1>BASEトークン取得エラー</h1><p>BASEからJSON形式の応答が返りませんでした。生の応答は表示していません。</p>", 502);
   }
 
-  if (!tokenResponse.ok || !tokenData.refresh_token) {
+  if (!tokenResponse.ok || !tokenData.refresh_token || !tokenData.access_token) {
     return html("<h1>BASEトークン取得エラー</h1><p>トークン交換に失敗しました。BASEアプリ設定とリダイレクトURIを確認してください。</p>", 502);
   }
 
-  const response = html(
-    `<h1>BASE連携に成功しました</h1>
-<p>次の <strong>Refresh Token</strong> をVercelのProduction Environment Variableに登録してください。</p>
+  let persisted = false;
+  try {
+    const admin = createSupabaseAdminClient();
+    const expiresIn = Number(tokenData.expires_in ?? 3600);
+    const expiresAt = new Date(Date.now() + Math.max(60, expiresIn - 60) * 1000).toISOString();
+    const { error } = await admin.rpc("store_channel_oauth_tokens", {
+      p_provider: "base",
+      p_refresh_token: tokenData.refresh_token,
+      p_access_token: tokenData.access_token,
+      p_access_token_expires_at: expiresAt,
+    });
+    persisted = !error;
+  } catch {
+    persisted = false;
+  }
+
+  const response = persisted
+    ? html("<h1>BASE連携に成功しました</h1><p>OAuthトークンをサーバー側の非公開ストアに保存しました。トークン値は画面に表示していません。</p>")
+    : html(
+        `<h1>BASE連携に成功しました（手動登録が必要です）</h1>
+<p>非公開トークンストアがまだ利用できないため、Refresh TokenをVercelのProduction Environment Variableに登録してください。</p>
 <p>Key: <code>BASE_REFRESH_TOKEN</code></p>
 <pre>${escapeHtml(tokenData.refresh_token)}</pre>
-<p>登録後、この画面を閉じて構いません。Refresh Tokenはこの画面以外に保存していません。</p>`,
-  );
+<p>トークンストアのマイグレーション適用後は自動保存されます。</p>`,
+      );
 
   response.cookies.delete("tracer_base_oauth_state");
   return response;
