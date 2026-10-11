@@ -1,11 +1,13 @@
 name: TRACER Live Shopify Sync
 
 on:
-  # Manual runs remain available. A guarded commit marker can trigger a one-off
-  # authenticated sync after a credential repair; ordinary pushes never write.
   workflow_dispatch:
-  push:
-    branches: [main]
+    inputs:
+      allow_production_writes:
+        description: "Explicitly authorize the live Shopify sync"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -17,7 +19,7 @@ concurrency:
 
 jobs:
   sync:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[shopify-sync-now]')
+    if: ${{ inputs.allow_production_writes == true }}
     runs-on: ubuntu-latest
     steps:
       - name: Wait for production deployment

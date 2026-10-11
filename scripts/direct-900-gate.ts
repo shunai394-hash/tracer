@@ -5,6 +5,18 @@ import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
+import { evaluateAutomationCapability, parseAutomationMode } from "@/lib/ops/automation-capabilities";
+
+const mode = parseAutomationMode(process.env.TRACER_AUTOMATION_MODE);
+const globalStop = ["1", "true", "yes", "on"].includes(
+  (process.env.TRACER_GLOBAL_STOP ?? "").trim().toLowerCase(),
+);
+for (const capability of ["database_write", "channel_write"] as const) {
+  const decision = evaluateAutomationCapability({ mode, capability, globalStop });
+  if (!decision.allowed) {
+    throw new Error(`automation_capability_blocked:${capability}:${decision.reason}`);
+  }
+}
 
 const db = createSupabaseAdminClient();
 const deadlineAt = Date.now() + 25 * 60_000;

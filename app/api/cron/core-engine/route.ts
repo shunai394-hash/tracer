@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -30,7 +30,7 @@ function score(row: Record<string, unknown>) {
 }
 
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireAutomationCapability(request, "database_write");
   if (authError) return authError;
 
   const supabase = createSupabaseAdminClient();

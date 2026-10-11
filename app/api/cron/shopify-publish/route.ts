@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationCapability } from "@/lib/security/cron-auth";
 import { isShopifyConfigured } from "@/lib/shopify/admin";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-listings";
 
@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireAutomationCapability(request, "channel_write");
   if (authError) return authError;
 
   const headers = { "Cache-Control": "no-store" };

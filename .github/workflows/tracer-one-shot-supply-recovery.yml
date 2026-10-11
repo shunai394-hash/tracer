@@ -1,8 +1,13 @@
 name: TRACER One-shot supply-to-channel recovery
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      allow_production_writes:
+        description: "Explicitly authorize the live Shopify sync or supply-to-channel recovery"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   id-token: write
@@ -10,7 +15,7 @@ permissions:
 
 jobs:
   recover:
-    if: contains(github.event.head_commit.message, 'TRACER_ONE_SHOT_SUPPLY_RECOVERY')
+    if: ${{ inputs.allow_production_writes == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
