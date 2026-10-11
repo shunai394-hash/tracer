@@ -1,0 +1,74 @@
+name: TRACER Unlinked Listing Reconciliation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/tracer-unpublish-unlinked.yml"
+      - "app/api/cron/unpublish-unlinked/route.ts"
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-unpublish-unlinked
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Wait for the production deployment of this commit
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          for i in $(seq 1 20); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            sleep 15
+          done
+          echo "Production did not reach $GITHUB_SHA; refusing to reconcile against a stale deployment."
+          exit 1
+
+      - name: Reconcile listings without verified supplier identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl -sS -o result.json -w "%{http_code}" --max-time 310 -H "Authorization: Bearer $token" "$BASE/api/cron/unpublish-unlinked" || true)"
+          echo "=== /api/cron/unpublish-unlinked HTTP $code ==="
+          python3 - <<'PY'
+          import json
+          try:
+              d=json.load(open("result.json",encoding="utf-8"))
+          except Exception:
+              print("response was not JSON; body omitted")
+              raise SystemExit(1)
+          result={k:d.get(k) for k in (
+              "ok","candidatesChecked","unlinkedFound","databaseBlocked",
+              "shopifyAttempted","baseAttempted"
+          )}
+          result["errorCount"]=len(d.get("errors") or [])
+          for channel in ("shopify","base"):
+              value=d.get(channel)
+              if isinstance(value,dict):
+                  result[channel]={k:value.get(k) for k in (
+                      "attempted","synced","failed","hidden","unpublishFailed"
+                  ) if k in value}
+          print(json.dumps(result,ensure_ascii=False))
+          PY
+          if [[ ! "$code" =~ ^2[0-9][0-9]$ ]]; then
+            echo "Reconciliation did not fully succeed; the next scheduled run will retry remaining work."
+            exit 1
+          fi
