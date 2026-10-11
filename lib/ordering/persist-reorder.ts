@@ -173,10 +173,12 @@ export async function persistReorderRecommendations(): Promise<{
         safetyStock: settings.defaultSafetyStock,
         minimumOrderQty: null,
         settings,
-        spentToday: 0,
-        spentMonth: 0,
-        spentProduct: 0,
-        spentCategory: 0,
+        // Spend aggregates are not implemented yet. Never report unknown spend as zero:
+        // configured budget gates must fail closed until a real ledger-backed total exists.
+        spentToday: null,
+        spentMonth: null,
+        spentProduct: null,
+        spentCategory: null,
         supplierRiskNote: riskByProduct.get(productId) ?? null,
       });
 
