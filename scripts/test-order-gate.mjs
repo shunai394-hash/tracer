@@ -64,4 +64,21 @@ for (const forecastProfit30d of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
 const unknown = evaluateOrderGates({ ...base, forecastProfit30d: null }, 0.82);
 assert.equal(unknown.canAuto, false);
 assert.equal(unknown.missing.includes("profit_amount_unknown"), true);
+
+const unknownDailySpend = evaluateOrderGates({
+  ...base,
+  settings: { ...base.settings, dailyOrderLimit: 100 },
+  spentToday: null,
+}, 0.82);
+assert.equal(unknownDailySpend.canAuto, false, "unknown existing spend must never pass a configured budget");
+assert.equal(unknownDailySpend.canPropose, false);
+assert.equal(unknownDailySpend.missing.includes("daily_spend_unknown"), true);
+
+const invalidMonthlySpend = evaluateOrderGates({
+  ...base,
+  settings: { ...base.settings, monthlyOrderBudget: 1000 },
+  spentMonth: Number.NaN,
+}, 0.82);
+assert.equal(invalidMonthlySpend.canAuto, false, "invalid monthly spend must fail closed");
+assert.equal(invalidMonthlySpend.missing.includes("monthly_spend_unknown"), true);
 console.log(`Order gate: ${invariantResult.cases.length} existing invariants + 6 forecast-profit checks passed`);
