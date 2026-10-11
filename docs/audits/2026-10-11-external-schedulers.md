@@ -47,3 +47,14 @@ Both runs did perform writes before failing:
 - Both patrol reports show `publishedListings=0`, `basePublished=0`, and `orders=0` before and after. No listing publication or order creation was reported by those two runs.
 
 This is direct evidence that a workflow called “Production Smoke” was not read-only. It was triggered by `push` to `main` and executed live demand-match and AI-patrol paths before failing. The branch now removes automatic push triggers and adds explicit `allow_production_writes=true` approval guards to `tracer-production-smoke.yml`, `tracer-direct-900.yml`, `tracer-build-1000.yml`, `tracer-expand-1000.yml`, `tracer-publish-cj-now.yml`, and `tracer-run-sales-test-now.yml`. These edits are only on the draft branch; they have not changed main or production.
+
+
+## Historical scheduled workflow evidence (read-only run-log inspection)
+
+- [TRACER Autonomous Commerce Cycle run 37865473140](https://github.com/shunai394-hash/tracer/actions/runs/37865473140), 2026-10-09 00:34:31 UTC, was a successful **workflow run**, not a successful sales/publication outcome. It called the live sales-test, Shopify publish and dropship endpoints. Sales-test reported `candidateCount=0` and `published=0`; the Shopify sync attempted 150 listings and reported `Shopify Admin API HTTP 401` for them; dropship execution reported `attempted=0`, `succeeded=0`, and no purchase-order IDs. BASE order sync was not configured. This confirms the run reached write-capable paths, but these result fields show no successful listing publication or supplier order in the returned summary.
+- [TRACER Production Patrol run 38029045230](https://github.com/shunai394-hash/tracer/actions/runs/38029045230), 2026-10-10 05:53:36 UTC, obtained a production OIDC token and called `/api/cron/patrol-ai`, but the client timed out after 55 seconds with zero response bytes. The actual server-side outcome is **unknown**; do not interpret the client timeout as proof that the function did not write.
+- The scheduled Commerce Cycle and NEWFIND Retry runs visible on Oct 9 are historical. Their presence in run history does not establish that those workflows are still scheduled by the current YAML. Current-source trigger review is separate from historical execution evidence.
+
+## Current protection changes on the draft branch
+
+The current main branch's `tracer-patrol.yml` schedule is still present; this branch does not disable it. The `patrol-ai` endpoint is guarded by the capability mode on the branch, so after a future merge/deployment it will be blocked when the mode is missing/invalid or the global stop is active. The other listed push-triggered production-write workflows have been changed to manual-only with a required `allow_production_writes=true` job condition on this branch. CI tests check that those six workflows have no push trigger and retain the approval gate.
