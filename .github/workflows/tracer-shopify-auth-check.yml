@@ -7,6 +7,11 @@ name: TRACER Shopify Auth Check
 # unpublished), by explicit listing id, never a blind bulk sync. Never prints
 # credential values.
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/tracer-shopify-auth-check.yml"
   workflow_dispatch:
     inputs:
       sync_batch:
@@ -33,7 +38,7 @@ jobs:
               "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
-          SYNC_BATCH="${{ inputs.sync_batch }}"
+          SYNC_BATCH="${{ inputs.sync_batch || 0 }}"
           for path in api/admin/shopify/auth-check api/admin/shopify/readiness api/admin/shopify/catalog api/admin/shopify/reconcile; do
             code=$(curl -sS -o out.json -w "%{http_code}" --max-time 60 -H "Authorization: Bearer $(token)" "$BASE/$path" || echo 000)
             echo "=== $path HTTP $code ==="
