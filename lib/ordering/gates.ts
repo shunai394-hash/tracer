@@ -71,48 +71,51 @@ export function evaluateOrderGates(
 
   const cost = input.estimatedCost;
   let budgetExceeded = false;
-  if (cost !== null && Number.isFinite(cost) && cost > 0) {
+  if (cost === null) {
     if (
-      input.settings.dailyOrderLimit !== null &&
-      input.spentToday !== null &&
-      input.spentToday + cost > input.settings.dailyOrderLimit
+      input.settings.dailyOrderLimit !== null ||
+      input.settings.monthlyOrderBudget !== null ||
+      input.settings.perProductOrderLimit !== null ||
+      (input.category !== null && input.settings.categoryBudgets[input.category] !== undefined)
     ) {
-      blocked.push("daily_budget_exceeded");
-      budgetExceeded = true;
+      missing.push("budget_check_cost_unknown");
     }
-    if (
-      input.settings.monthlyOrderBudget !== null &&
-      input.spentMonth !== null &&
-      input.spentMonth + cost > input.settings.monthlyOrderBudget
-    ) {
-      blocked.push("monthly_budget_exceeded");
-      budgetExceeded = true;
+  } else if (Number.isFinite(cost) && cost > 0) {
+    if (input.settings.dailyOrderLimit !== null) {
+      if (input.spentToday === null || !Number.isFinite(input.spentToday) || input.spentToday < 0) {
+        missing.push("daily_spend_unknown");
+      } else if (input.spentToday + cost > input.settings.dailyOrderLimit) {
+        blocked.push("daily_budget_exceeded");
+        budgetExceeded = true;
+      }
     }
-    if (
-      input.settings.perProductOrderLimit !== null &&
-      input.spentProduct !== null &&
-      input.spentProduct + cost > input.settings.perProductOrderLimit
-    ) {
-      blocked.push("product_budget_exceeded");
-      budgetExceeded = true;
+    if (input.settings.monthlyOrderBudget !== null) {
+      if (input.spentMonth === null || !Number.isFinite(input.spentMonth) || input.spentMonth < 0) {
+        missing.push("monthly_spend_unknown");
+      } else if (input.spentMonth + cost > input.settings.monthlyOrderBudget) {
+        blocked.push("monthly_budget_exceeded");
+        budgetExceeded = true;
+      }
     }
-    if (
-      input.category &&
-      input.settings.categoryBudgets[input.category] !== undefined &&
-      input.spentCategory !== null &&
-      input.spentCategory + cost > input.settings.categoryBudgets[input.category]
-    ) {
-      blocked.push("category_budget_exceeded");
-      budgetExceeded = true;
+    if (input.settings.perProductOrderLimit !== null) {
+      if (input.spentProduct === null || !Number.isFinite(input.spentProduct) || input.spentProduct < 0) {
+        missing.push("product_spend_unknown");
+      } else if (input.spentProduct + cost > input.settings.perProductOrderLimit) {
+        blocked.push("product_budget_exceeded");
+        budgetExceeded = true;
+      }
     }
-  } else if (cost === null && (
-    input.settings.dailyOrderLimit !== null ||
-    input.settings.monthlyOrderBudget !== null ||
-    input.settings.perProductOrderLimit !== null
-  )) {
-    missing.push("budget_check_cost_unknown");
+    const categoryBudget =
+      input.category === null ? undefined : input.settings.categoryBudgets[input.category];
+    if (categoryBudget !== undefined) {
+      if (input.spentCategory === null || !Number.isFinite(input.spentCategory) || input.spentCategory < 0) {
+        missing.push("category_spend_unknown");
+      } else if (input.spentCategory + cost > categoryBudget) {
+        blocked.push("category_budget_exceeded");
+        budgetExceeded = true;
+      }
+    }
   }
-
   const band = confidenceBand(confidence);
   const hardBlock = blocked.length > 0;
   const unknownBlock = missing.length > 0;
