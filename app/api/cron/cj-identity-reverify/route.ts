@@ -7,8 +7,9 @@ export const maxDuration = 300;
 
 /**
  * Identity re-verification is deliberately isolated from the full intelligence
- * pipeline. A slow marketplace/demand stage must never consume the budget that
- * turns an already orderable CJ variant into identifier-grade canonical supply.
+ * pipeline. CJ enforces a strict 1-request/second quota, and a single listing
+ * can require more than one supplier API call. Keep this request comfortably
+ * below the GitHub patrol's curl timeout so the next stage never overlaps it.
  */
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -17,10 +18,10 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
   try {
     const result = await reverifyCjSupplyIdentities({
-      limit: 50,
-      // Keep a hard safety margin, but do not inherit a caller's earlier
-      // pipeline deadline. This job owns the full function budget.
-      deadlineAt: startedAt + 180_000,
+      // Production telemetry showed 40 checks consuming ~182s and hitting a
+      // CJ QPS 429. A 25-row cap leaves room for retries under the 150s budget.
+      limit: 25,
+      deadlineAt: startedAt + 150_000,
     });
 
     console.info("[cj-identity-reverify] completed", {
