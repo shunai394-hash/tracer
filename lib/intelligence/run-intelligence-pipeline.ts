@@ -402,11 +402,13 @@ export async function runIntelligencePipeline(options: {
   // Identity linking is a publication-critical path. Run it before the
   // rotating normalization/intelligence work so a slow normalization batch
   // cannot starve exact supplier->marketplace barcode verification.
+  // Keep slow supplier verification from starving independent intelligence work.
+  // Sales-test gates still block any listing without verified identity/economics/stock.
   steps.push(await runStep("identity_reverify", () =>
     reverifyCjSupplyIdentities({
-      limit: 25,
-      deadlineAt: Math.min(pipelineDeadlineAt - 1_000, Date.now() + 20_000),
-    }), { budgetMs: 20_000 }));
+      limit: 5,
+      deadlineAt: Math.min(pipelineDeadlineAt - 1_000, Date.now() + 12_000),
+    }), { budgetMs: 12_000, stopPipelineOnTimeout: false }));
 
   const normalizeWindowSize = 200;
   const normalizeProductCount = await db
