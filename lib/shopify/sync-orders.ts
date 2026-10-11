@@ -67,30 +67,64 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
     return { configured: false, fetched: 0, imported: 0, skipped: 0, failed: 0, orderIds: [], errors: [] };
   }
 
-  const data = await shopifyGraphQL<{
-    orders: { nodes: ShopifyOrder[] };
-  }>(
-    `query PaidOrders($first: Int!) {
-      orders(first: $first, query: "financial_status:paid", sortKey: CREATED_AT) {
-        nodes {
-          id name email phone displayFinancialStatus displayFulfillmentStatus createdAt
-          totalPriceSet { shopMoney { amount currencyCode } }
-          shippingAddress { name address1 address2 city province zip country countryCodeV2 phone }
-          lineItems(first: 100) {
-            nodes {
-              id title quantity
-              originalUnitPriceSet { shopMoney { amount currencyCode } }
-              variant { id sku }
-            }
-            pageInfo { hasNextPage endCursor }
-          }
-        }
-      }
-    }`,
-    { first: Math.min(Math.max(limit, 1), 100) },
-  );
+  const supabase = createSupabaseAdminClient();
+  const maxNewOrders = Math.min(Math.max(limit, 1), 100);
+  const orders: ShopifyOrder[] = [];
+  let scannedOrders = 0;
+  let after: string | null = null;
+  let hasNextOrdersPage = true;
 
-  const orders = data.orders.nodes ?? [];
+  // Search newest paid orders first and skip orders already imported. Without
+  // this outer pagination, the same first page can starve all later orders.
+  while (hasNextOrdersPage && orders.length < maxNewOrders) {
+    const data = await shopifyGraphQL<{
+      orders: {
+        nodes: ShopifyOrder[];
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      };
+    }>(
+      `query PaidOrders($first: Int!, $after: String) {
+        orders(first: $first, after: $after, query: "financial_status:paid", sortKey: CREATED_AT, reverse: true) {
+          nodes {
+            id name email phone displayFinancialStatus displayFulfillmentStatus createdAt
+            totalPriceSet { shopMoney { amount currencyCode } }
+            shippingAddress { name address1 address2 city province zip country countryCodeV2 phone }
+            lineItems(first: 100) {
+              nodes {
+                id title quantity
+                originalUnitPriceSet { shopMoney { amount currencyCode } }
+                variant { id sku }
+              }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+          pageInfo { hasNextPage endCursor }
+        }
+      }`,
+      { first: 100, after },
+    );
+
+    const pageOrders = data.orders.nodes ?? [];
+    scannedOrders += pageOrders.length;
+    if (pageOrders.length > 0) {
+      const { data: existingRows, error: existingRowsError } = await supabase
+        .from("shop_orders")
+        .select("shopify_order_id")
+        .in("shopify_order_id", pageOrders.map((order) => order.id));
+      if (existingRowsError) throw new Error(existingRowsError.message);
+      const existingIds = new Set((existingRows ?? []).map((row) => String(row.shopify_order_id)));
+      for (const order of pageOrders) {
+        if (!existingIds.has(order.id) && orders.length < maxNewOrders) orders.push(order);
+      }
+    }
+
+    hasNextOrdersPage = data.orders.pageInfo.hasNextPage;
+    const nextCursor = data.orders.pageInfo.endCursor;
+    if (hasNextOrdersPage && (!nextCursor || nextCursor === after)) {
+      throw new Error("shopify_orders_cursor_not_advancing");
+    }
+    after = nextCursor;
+  }
 
   // Shopify paginates nested lineItems independently from the orders connection.
   // Resolve every page before any local DB read/write so a cursor failure cannot
@@ -142,15 +176,13 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
 
   const result: ShopifyOrderSyncResult = {
     configured: true,
-    fetched: orders.length,
+    fetched: scannedOrders,
     imported: 0,
     skipped: 0,
     failed: 0,
     orderIds: [],
     errors: [],
   };
-  const supabase = createSupabaseAdminClient();
-
   const variantIds = Array.from(new Set(
     orders.flatMap((order) => order.lineItems.nodes.map((item) => item.variant?.id).filter(Boolean)),
   ));
@@ -248,6 +280,21 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         })
         .select("id")
         .single();
+      if (inserted.error?.code === "23505") {
+        // Another sync worker may have inserted the same external order after
+        // our earlier lookup. Reconcile the winner instead of retrying blindly.
+        const { data: racedOrder, error: racedOrderError } = await supabase
+          .from("shop_orders")
+          .select("id")
+          .eq("shopify_order_id", order.id)
+          .maybeSingle();
+        if (racedOrderError) throw new Error(racedOrderError.message);
+        if (racedOrder?.id) {
+          result.skipped += 1;
+          result.orderIds.push(String(racedOrder.id));
+          continue;
+        }
+      }
       if (inserted.error || !inserted.data) throw new Error(inserted.error?.message ?? "shop_order_insert_failed");
       insertedOrderId = String(inserted.data.id);
 
