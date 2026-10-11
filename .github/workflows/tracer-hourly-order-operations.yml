@@ -66,6 +66,11 @@ jobs:
           if path.endswith("dropship-execution"):
               result.update({k:d.get(k) for k in ("enabled","attempted","succeeded","failed")})
               result["baseSync"]=scalars(d.get("baseSync"))
+              result["supplierReadiness"]=scalars(d.get("supplierReadiness"))
+              result["supplierCapabilities"]=[
+                  {k:row.get(k) for k in ("name","orderPreflight","orderCreation","payment","liveOrdering")}
+                  for row in (d.get("supplierCapabilities") or []) if isinstance(row,dict)
+              ]
           else:
               result["imported"]=scalars(d.get("imported"))
               result["automation"]=scalars(d.get("automation"))
