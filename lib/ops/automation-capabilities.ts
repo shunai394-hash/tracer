@@ -83,3 +83,16 @@ export const CRON_CAPABILITIES = {
   "/api/cron/supply-first": "database_write",
   "/api/cron/patrol-ai": "channel_write",
 } as const satisfies Record<string, AutomationCapability>;
+
+
+/** Additional live-write endpoints invoked outside vercel.json's Cron list. */
+export const PROTECTED_AUTOMATION_ENDPOINTS = {
+  "/api/cron/base-publish": "channel_write",
+  "/api/cron/core-engine": "database_write",
+  "/api/cron/demand": "database_write",
+  "/api/cron/unpublish-unlinked": "channel_write",
+  "/api/cron/superdelivery-sales-route": "channel_write",
+  "/api/cron/ai-patrol": "channel_write",
+  "/api/admin/shopify/sync": "channel_write",
+  "/api/intelligence/demand-match": "database_write",
+} as const satisfies Record<string, AutomationCapability>;
