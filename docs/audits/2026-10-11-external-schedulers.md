@@ -58,3 +58,8 @@ This is direct evidence that a workflow called “Production Smoke” was not re
 ## Current protection changes on the draft branch
 
 The current main branch's `tracer-patrol.yml` schedule is still present; this branch does not disable it. The `patrol-ai` endpoint is guarded by the capability mode on the branch, so after a future merge/deployment it will be blocked when the mode is missing/invalid or the global stop is active. The other listed push-triggered production-write workflows have been changed to manual-only with a required `allow_production_writes=true` job condition on this branch. CI tests check that those eight workflows have no push trigger and retain the approval gate.
+
+
+Additional historical scheduled runs:
+- `TRACER Supply First Patrol` run [37873013091](https://github.com/shunai394-hash/tracer/actions/runs/37873013091) failed on 2026-10-09 around 02:06 UTC. The workflow requested OIDC tokens with audience `https://tracer-self.vercel.app`, while the route auth code requires `https://tracer-pied-alpha.vercel.app`; the called endpoints returned 401 Unauthorized. The inspected log shows no successful stage.
+- `TRACER NEWFIND Retry` run [37863390933](https://github.com/shunai394-hash/tracer/actions/runs/37863390933) failed around 00:10 UTC with HTTP 401 Unauthorized using the same `tracer-self.vercel.app` audience. The returned evidence shows the request was rejected before the route ran.
