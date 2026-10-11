@@ -18,9 +18,9 @@ export default async function ShopPage() {
         <div className="tracer-editorial-index"><span>01</span><span>SHOPIFY / STORE</span><span>{String(listings.length).padStart(2, "0")} LIVE</span></div>
         <div className="tracer-editorial-hero-grid">
           <div><p className="tracer-kicker">TRACER × Shopify</p><h1>「気になる」を、<br /><em>買える</em>まで。</h1><p className="tracer-lede">Sales Test Gateを通過し、Shopifyへ同期され、在庫・配送・注文可能性まで確認できる商品だけを並べます。</p></div>
-          <aside className="tracer-editorial-note"><span>CHANNEL CONTRACT</span><strong>GATE → SHOPIFY →<br />STORE。</strong><p>TRACERだけの下書きは表示しません。</p><Link href="/bestsellers">選定の背景を見る ↗</Link></aside>
+          <aside className="tracer-editorial-note"><span>販売条件</span><strong>審査 → Shopify同期 →<br />公開。</strong><p>TRACERだけの下書きは表示しません。</p><Link href="/bestsellers">選定の背景を見る ↗</Link></aside>
         </div>
-        <div className="tracer-editorial-scan"><span>GATE PASSED</span><span>SHOPIFY SYNCED</span><span>IN STOCK</span><span>ORDERABLE</span><span>TRACKABLE</span></div>
+        <div className="tracer-editorial-scan"><span>販売条件確認済み</span><span>Shopify同期済み</span><span>在庫あり</span><span>発注可能</span><span>追跡対応</span></div>
       </header>
 
       {error ? <p role="alert" className="tracer-alert">{error}</p> : listings.length === 0 ? (
@@ -41,7 +41,7 @@ export default async function ShopPage() {
               </div>
               <div className="flex flex-1 flex-col p-5"><h3 className="line-clamp-2 text-base font-medium leading-6 text-zinc-100 group-hover:text-white">{listing.title}</h3>
                 {listing.description ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-zinc-500">{listing.description}</p> : null}
-                <div className="mt-5 flex flex-wrap gap-2"><span className="border border-white/10 px-2 py-1 text-[7px] font-mono tracking-[.14em] text-zinc-500">GATE PASSED</span><span className="border border-white/10 px-2 py-1 text-[7px] font-mono tracking-[.14em] text-zinc-500">{listing.inventory} IN STOCK</span><span className="border border-white/10 px-2 py-1 text-[7px] font-mono tracking-[.14em] text-zinc-500">TRACKABLE</span></div>
+                <div className="mt-5 flex flex-wrap gap-2"><span className="border border-white/10 px-2 py-1 text-[7px] font-mono tracking-[.14em] text-zinc-500">販売条件確認済み</span><span className="border border-white/10 px-2 py-1 text-[7px] font-mono tracking-[.14em] text-zinc-500">{listing.inventory} 在庫あり</span><span className="border border-white/10 px-2 py-1 text-[7px] font-mono tracking-[.14em] text-zinc-500">追跡対応</span></div>
                 <div className="mt-auto flex items-end justify-between gap-3 border-t border-white/8 pt-5 mt-6"><div><span className="block font-mono text-[7px] tracking-[.16em] text-zinc-600">PRICE</span><span className="mt-1 block text-lg text-zinc-100">{formatMoney(listing.sellingPrice, listing.currency)}</span></div><span className="text-[9px] font-mono tracking-[.12em] text-zinc-500 group-hover:text-cyan-200">DETAIL ↗</span></div>
               </div>
             </Link>)}
