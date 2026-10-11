@@ -5,10 +5,6 @@ const routes = [
   "../app/api/intelligence/brightdata-ingest/route.ts",
   "../app/api/intelligence/normalize/route.ts",
   "../app/api/intelligence/opportunities/route.ts",
-  "../app/api/intelligence/tests/route.ts",
-  "../app/api/orders/route.ts",
-  "../app/api/settings/ordering/route.ts",
-  "../app/api/settings/selection/route.ts",
 ];
 for (const path of routes) {
   const source = await readFile(new URL(path, import.meta.url), "utf8");
