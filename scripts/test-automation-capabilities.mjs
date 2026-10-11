@@ -21,7 +21,7 @@ const capabilities = [
   "channel_write",
   "supplier_order",
   "internal_fulfillment",
-] as const;
+];
 
 for (const capability of capabilities) {
   assert.equal(canPerformAutomationCapability({ mode: null, capability }), false);
@@ -72,4 +72,4 @@ for (const [routePath, capability] of Object.entries(PROTECTED_AUTOMATION_ENDPOI
   );
 }
 
-console.log(`automation-capabilities: PASS (${31 + scheduledPaths.length * 3 + Object.keys(CRON_CAPABILITIES).length + Object.keys(PROTECTED_AUTOMATION_ENDPOINTS).length * 2} assertions; ${scheduledPaths.length} scheduled routes and ${Object.keys(PROTECTED_AUTOMATION_ENDPOINTS).length} additional write endpoints covered)`);
+console.log(`automation-capabilities: PASS; ${scheduledPaths.length} scheduled routes and ${Object.keys(PROTECTED_AUTOMATION_ENDPOINTS).length} additional write endpoints covered`);
