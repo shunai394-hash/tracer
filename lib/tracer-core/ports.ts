@@ -10,8 +10,8 @@ import type {
   OrderDisposition,
   PublicationDecision,
   PublicationEvidence,
-  ProviderProbe,
 } from "./contracts";
+import type { ProviderProbe } from "./auth-contracts";
 
 export type ApprovedPublicationDecision = {
   eligible: true;
