@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSupplier, unpublishWorkflow, patrolWorkflow, patrolRoute, reverify] = await Promise.all([
+const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSupplier, unpublishWorkflow, patrolWorkflow, patrolRoute, reverify, orderStore] = await Promise.all([
   readFile(new URL("../lib/catalog/canonical-supplier-identity.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8"),
@@ -15,6 +15,7 @@ const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSup
   readFile(new URL("../.github/workflows/tracer-production-patrol-15m.yml", import.meta.url), "utf8"),
   readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8"),
+  readFile(new URL("../lib/ordering/store.ts", import.meta.url), "utf8"),
 ]);
 assert.match(helper, /identity_status === "linked"/);
 assert.match(reverify, /typeof row\.product_id === "string" && row\.product_id\.trim\(\) \? row\.product_id : ""/, "null or blank legacy product IDs must not become truthy fallback IDs");
@@ -27,6 +28,9 @@ assert.match(persist, /last_verified_at: now/, "CJ verification must refresh its
 assert.match(persist, /supplierBarcode: barcode/, "resolved canonical identity must carry the exact fresh supplier-variant barcode used for matching");
 assert.match(persist, /const verifiedVariantBarcode = marketplaceIdentity\?\.supplierBarcode \?\? await readSupplierBarcode/, "persistence must reuse the exact barcode that proved identity instead of performing a second live read");
 assert.match(persist, /variant_barcode: verifiedVariantBarcode/, "stored supplier evidence must retain the same barcode used for canonical matching");
+assert.match(orderStore, /: "pending_supplier_execution"/, "approved order records must remain pending until an external supplier executor confirms placement");
+assert.match(orderStore, /placed_at: null/, "internal recommendation recording must not invent an external placement timestamp");
+assert.doesNotMatch(orderStore, /status: placed \? "placed"/, "approval and gates alone must not mark a supplier order as placed");
 assert.match(persist, /\.select\("id"\)\.maybeSingle\(\)/, "supplier evidence update must confirm that a listing row was actually updated");
 assert.match(persist, /if \(!evidenceRow\?\.id\) throw new Error\("CJ supplier evidence persistence failed: supplier listing row was not updated"\)/, "a missing supplier listing must fail instead of silently reporting persistence success");
 assert.match(persist, /bestseller_id: marketplaceIdentity\?\.bestsellerId \?\? null/, "unmatched or ambiguous CJ identity must clear any stale canonical parent link");
