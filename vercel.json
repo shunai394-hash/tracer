@@ -121,6 +121,6 @@
     {
       "path": "/api/cron/patrol-ai",
       "schedule": "59 18 * * *"
-    },
+    }
   ]
 }
