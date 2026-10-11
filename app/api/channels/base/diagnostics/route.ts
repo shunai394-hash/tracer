@@ -1,18 +1,12 @@
 import { NextResponse } from "next/server";
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { listBaseOrders, isBaseConfigured } from "@/lib/channels/base";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  const cronSecret = process.env.CRON_SECRET;
-  const authHeader = request.headers.get("authorization");
-
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json(
-      { ok: false, error: "Unauthorized" },
-      { status: 401 },
-    );
-  }
+  const authError = await requireAutomationAuth(request);
+  if (authError) return authError;
 
   try {
     if (!isBaseConfigured()) {
@@ -28,12 +22,8 @@ export async function GET(request: Request) {
       ok: true,
       configured: true,
       baseApi: true,
+      orderReadSucceeded: true,
       orderCountReturned: orders.length,
-      orders: orders.map((order) => ({
-        unique_key: order.unique_key,
-        dispatch_status: order.dispatch_status,
-        ordered: order.ordered,
-      })),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "BASE_DIAGNOSTIC_FAILED";
