@@ -554,6 +554,10 @@ export async function runIntelligencePipeline(options: {
   const blockingFailed = steps.some((step) => !step.ok && !step.skipped);
   const deferredStep = steps.find((step) => {
     if (!step.skipped) return false;
+    // Canonical identity re-verification is a bounded background enrichment step.
+    // If CJ is slow, its cursor resumes on a later patrol; unresolved identities
+    // remain blocked by the sales-test gate and must never be force-linked.
+    if (step.name === "identity_reverify") return false;
     if (step.retryable === true) return true;
     const reason =
       step.result &&
