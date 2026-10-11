@@ -51,6 +51,7 @@ export function evaluateOrderGates(
   if (!input.identityConfirmed) blocked.push("identity_not_confirmed");
   if (!input.supplierConfirmed) missing.push("supplier_unconfirmed");
   if (input.sourceCost === null) missing.push("source_cost_unknown");
+  else if (!Number.isFinite(input.sourceCost) || input.sourceCost <= 0) blocked.push("source_cost_invalid");
   if (!input.currency) missing.push("currency_unknown");
   if (!input.currencyReliable) blocked.push("currency_unreliable");
   if (input.shippable === null) missing.push("shippable_unknown");
@@ -242,6 +243,33 @@ export function verifyOrderGateInvariants(): {
     0.82,
   );
 
+  const zeroSourceCost = evaluateOrderGates(
+    {
+      identityConfirmed: true,
+      identityUnknown: false,
+      supplierConfirmed: true,
+      sourceCost: 0,
+      currency: "USD",
+      currencyReliable: true,
+      shippable: true,
+      complianceRisk: false,
+      profitCalculable: true,
+      forecastProfit30d: 10,
+      forecastUnits30d: 20,
+      onHand: 5,
+      recommendedQty: 25,
+      estimatedCost: 0,
+      supplierApiAvailable: true,
+      settings,
+      spentToday: 0,
+      spentMonth: 0,
+      spentProduct: 0,
+      spentCategory: 0,
+      category: "auto",
+    },
+    0.82,
+  );
+
   const cases = [
     {
       name: "unknown_profit_blocks_auto",
@@ -249,6 +277,11 @@ export function verifyOrderGateInvariants(): {
       actual:
         unknownProfit.canAuto === false &&
         unknownProfit.missing.includes("profit_unknown"),
+    },
+    {
+      name: "zero_source_cost_blocks_order",
+      expected: true,
+      actual: !zeroSourceCost.canPropose && zeroSourceCost.blocked.includes("source_cost_invalid"),
     },
     {
       name: "non_positive_profit_blocks_order",
