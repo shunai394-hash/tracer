@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "../lib/catalog/publishable-title.ts";
+import { localizeProductDescription, localizeProductTitle } from "../lib/intelligence/japanese-product.ts";
 
 const cases = [
   ["ordinary Japanese product title", "折りたたみ収納ボックス", true],
@@ -26,6 +27,11 @@ for (const [name, title, expected] of cases) {
   }
 }
 
+assert.equal(localizeProductTitle("Simple Oil Wax Leather Messenger Shoulder Bags Women's High Capacity Portable Tote Bag"), "レディース ショルダーバッグ");
+assert.equal(localizeProductTitle("Portable Cosmetic Bag Waterproof Divider Multi-grid Pockets Toiletry Bags Travel Storage Handbags Women Make Up Bag"), "仕切り付き コスメポーチ");
+assert.equal(localizeProductTitle("Bohemian Beach Vacation Flower Hair Clip For Women Fashion Girl Accessories Gift"), "フラワーモチーフ ヘアクリップ");
+assert.match(localizeProductDescription("Bohemian Beach Vacation Flower Hair Clip For Women"), /花モチーフのヘアクリップ/);
+ 
 const shopify = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
 const base = await readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8");
 const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
