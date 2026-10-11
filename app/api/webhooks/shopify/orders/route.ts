@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyShopifyWebhookHmac } from "@/lib/shopify/admin";
-import { resolveShopifySkuListings } from "@/lib/shopify/listing-sku";
+import { resolveShopifyLineItemListings } from "@/lib/shopify/listing-sku";
 
 export const runtime = "nodejs";
 
@@ -16,6 +16,7 @@ type ListingRow = {
   supplier_name: string | null;
   supplier_product_id: string | null;
   supplier_variant_id: string | null;
+  shopify_variant_id: string | null;
 };
 
 function n(value: unknown): number | null {
@@ -24,6 +25,10 @@ function n(value: unknown): number | null {
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function normalizedId(value: unknown): string {
+  return String(value ?? "").trim().split("/").filter(Boolean).at(-1) ?? "";
+}
 
 export async function POST(request: Request) {
   const raw = await request.text();
@@ -41,50 +46,73 @@ export async function POST(request: Request) {
     if (existing.data) return NextResponse.json({ ok: true, duplicate: true, orderId: String(existing.data.id) });
 
     const items = Array.isArray(order.line_items) ? order.line_items as Array<Record<string, unknown>> : [];
-    const skus = items.map((item) => String(item.sku ?? "")).filter(Boolean);
-    if (!items.length || !skus.length) return NextResponse.json({ ok: true, blocked: true, reason: "listing_sku_missing" });
+    const skus = items.map((item) => String(item.sku ?? "").trim());
+    if (!items.length || skus.some((sku) => !sku)) {
+      return NextResponse.json({ ok: true, blocked: true, reason: "listing_sku_missing" });
+    }
 
-    // Published Shopify SKUs are generated as TRC-{supplier_variant_id || supplier_product_id || listing.id}.
-    // Resolve those external SKUs back to internal listings before creating any order rows.
-    const supplierIds = [...new Set(skus
-      .map((sku) => sku.startsWith("TRC-") ? sku.slice(4) : "")
+    // Prefer Shopify's immutable variant ID. SKU matching is a compatibility fallback for legacy rows.
+    const supplierIds = [...new Set(skus.flatMap((sku) => {
+      if (sku.startsWith("TRC-")) return [sku.slice(4), sku];
+      if (sku.startsWith("TR-")) return [sku.slice(3), sku];
+      return [sku];
+    }).filter(Boolean))];
+    const variantIds = [...new Set(items
+      .map((item) => normalizedId(item.variant_id))
       .filter(Boolean))];
+    const variantLookupValues = [...new Set(variantIds.flatMap((id) => [id, `gid://shopify/ProductVariant/${id}`]))];
     const listingIds = [...new Set(skus.flatMap((sku) => {
-      const value = sku.startsWith("TRC-") ? sku.slice(4) : sku;
+      const value = sku.startsWith("TRC-") ? sku.slice(4) : sku.startsWith("TR-") ? sku.slice(3) : sku;
       return UUID_PATTERN.test(value) ? [value] : [];
     }))];
 
-    const selectColumns = "id,product_id,title,published,orderable,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id";
-    const queryByVariant = supplierIds.length
+    const selectColumns = "id,product_id,title,published,orderable,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id,shopify_variant_id";
+    const queryByVariant = variantLookupValues.length
+      ? db.from("shop_listings").select(selectColumns).in("shopify_variant_id", variantLookupValues)
+      : Promise.resolve({ data: [], error: null });
+    const queryBySupplierVariant = supplierIds.length
       ? db.from("shop_listings").select(selectColumns).in("supplier_variant_id", supplierIds)
       : Promise.resolve({ data: [], error: null });
-    const queryByProduct = supplierIds.length
+    const queryBySupplierProduct = supplierIds.length
       ? db.from("shop_listings").select(selectColumns).in("supplier_product_id", supplierIds)
       : Promise.resolve({ data: [], error: null });
     const queryById = listingIds.length
       ? db.from("shop_listings").select(selectColumns).in("id", listingIds)
       : Promise.resolve({ data: [], error: null });
-    const [variantResult, productResult, idResult] = await Promise.all([queryByVariant, queryByProduct, queryById]);
-    const queryError = variantResult.error ?? productResult.error ?? idResult.error;
+    const [variantResult, supplierVariantResult, supplierProductResult, idResult] = await Promise.all([
+      queryByVariant,
+      queryBySupplierVariant,
+      queryBySupplierProduct,
+      queryById,
+    ]);
+    const queryError = variantResult.error ?? supplierVariantResult.error ?? supplierProductResult.error ?? idResult.error;
     if (queryError) throw new Error(queryError.message);
 
     const candidateRows = new Map<string, ListingRow>();
     for (const row of [
       ...(variantResult.data ?? []),
-      ...(productResult.data ?? []),
+      ...(supplierVariantResult.data ?? []),
+      ...(supplierProductResult.data ?? []),
       ...(idResult.data ?? []),
     ] as ListingRow[]) {
       candidateRows.set(String(row.id), row);
     }
-    const { bySku, ambiguous } = resolveShopifySkuListings(skus, [...candidateRows.values()]);
-    if (ambiguous.length) {
+    const mapping = resolveShopifyLineItemListings(
+      items.map((item) => ({
+        id: item.id as string | number | null | undefined,
+        sku: String(item.sku ?? "").trim(),
+        variant_id: item.variant_id as string | number | null | undefined,
+      })),
+      [...candidateRows.values()],
+    );
+    if (mapping.ambiguousIndices.length) {
       return NextResponse.json({ ok: true, blocked: true, reason: "listing_mapping_ambiguous" });
     }
-    if (skus.some((sku) => !bySku.has(sku))) {
+    if (mapping.missingIndices.length || mapping.resolved.some((row) => !row)) {
       return NextResponse.json({ ok: true, blocked: true, reason: "listing_mapping_missing" });
     }
-    const listings = [...new Map([...bySku.values()].map((row) => [row.id, row])).values()];
-    if (listings.some((row) => row.published !== true || row.orderable !== true)) {
+    const resolvedListings = mapping.resolved as ListingRow[];
+    if (resolvedListings.some((row) => row.published !== true || row.orderable !== true)) {
       return NextResponse.json({ ok: true, blocked: true, reason: "listing_not_orderable" });
     }
 
@@ -95,7 +123,7 @@ export async function POST(request: Request) {
     const billing = (order.billing_address ?? {}) as Record<string, unknown>;
     const currency = String(order.currency ?? order.presentment_currency ?? "JPY");
     const inserted = await db.from("shop_orders").insert({
-      listing_id: bySku.get(skus[0])?.id ?? null,
+      listing_id: resolvedListings[0]?.id ?? null,
       status: "placed",
       payment_method: "shopify",
       payment_status: paid ? "paid" : "pending",
@@ -122,8 +150,8 @@ export async function POST(request: Request) {
     }).select("id").single();
     if (inserted.error) throw new Error(inserted.error.message);
 
-    for (const item of items) {
-      const listing = bySku.get(String(item.sku ?? ""));
+    for (const [index, item] of items.entries()) {
+      const listing = resolvedListings[index];
       if (!listing) throw new Error("listing mapping missing during item insert");
       const row = await db.from("shop_order_items").insert({
         order_id: inserted.data.id,
