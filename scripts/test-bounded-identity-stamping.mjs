@@ -19,6 +19,8 @@ const identityRoute = await readFile(new URL("../app/api/cron/cj-identity-reveri
 assert.match(identityRoute, /reverifyCjSupplyIdentities\(\{[\s\S]*?limit: 100,[\s\S]*?startedAt \+ 240_000/);
 const discovery = await readFile(new URL("../lib/suppliers/discover-cj-supply.ts", import.meta.url), "utf8");
 assert.equal((discovery.match(/gtin: normalizeIdentifier\("gtin", variantBarcode\)/g) ?? []).length, 2);
+assert.match(discovery, /function priorityWomenSupplyCategory/);
+assert.match(discovery, /priorityWomenSupplyCategory\(row\.title, row\.metadata\) < 99/);
 const reverify = await readFile(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
 assert.match(reverify, /const MAX_CANDIDATE_SCAN = 500/);
 assert.match(reverify, /\.limit\(MAX_CANDIDATE_SCAN\)/);
