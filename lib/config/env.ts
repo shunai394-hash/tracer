@@ -227,6 +227,7 @@ export function getShopifyConfig() {
     adminAccessToken: readEnv("SHOPIFY_ADMIN_ACCESS_TOKEN"),
     clientId: readEnv("SHOPIFY_CLIENT_ID"),
     clientSecret: readEnv("SHOPIFY_CLIENT_SECRET"),
+    authMode: readEnv("SHOPIFY_AUTH_MODE"),
     apiVersion: readEnv("SHOPIFY_API_VERSION") || "2026-07",
   };
 }
