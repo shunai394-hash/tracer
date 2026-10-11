@@ -25,6 +25,10 @@ assert.match(discovery, /next_verification_at\.is\.null,next_verification_at\.lt
   "supplier verification queue must select only rows whose next verification is due");
 assert.match(discovery, /order\("next_verification_at", \{ ascending: true, nullsFirst: true \}\)/,
   "due supplier rows must advance through the queue instead of being starved by inventory sorting");
+assert.match(discovery, /let seededChecked = 0/,
+  "failed seeded refreshes must count as attempts and not starve fresh catalog discovery");
+assert.match(discovery, /seededChecked >= seededVerificationLimit/,
+  "seeded verification must have a hard per-run attempt budget");
 assert.match(marketCollector, /retryBrightDataWhenJsonLdMissing/,
   "Amazon detail fetches must retry Bright Data when direct HTML lacks JSON-LD");
 assert.match(marketCollector, /hasJsonLd\(directHtml\)/,
