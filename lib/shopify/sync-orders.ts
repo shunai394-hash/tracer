@@ -218,6 +218,9 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
 
       const itemRows = mappedItems.map(({ item, listing }) => ({
         order_id: inserted.data.id,
+        // Persist Shopify's stable line-item GID so retries and reconciliation
+        // can identify a line independently of its local database row.
+        shopify_line_item_id: item.id,
         listing_id: listing?.id ?? null,
         product_id: listing?.product_id ?? null,
         title: item.title,
