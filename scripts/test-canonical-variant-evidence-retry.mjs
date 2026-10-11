@@ -2,13 +2,15 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
-const cursorWrite = source.indexOf('const next = await writeMarketCursor(db, observation, "patrol-ai")');
+const cursorWrite = source.indexOf("const next = await writeMarketCursor(db, {");
 const guard = source.indexOf("const emptyCollection = observation.itemCount === 0", cursorWrite);
 const finalReturn = source.indexOf("return { ...observation, cursor, nextCursor: next };", guard);
 
 assert.ok(cursorWrite >= 0, "market cursor must be persisted before collection/evidence retry decisions");
 assert.ok(guard > cursorWrite, "empty-evidence guard must run after cursor advancement");
 assert.ok(finalReturn > guard, "normal success return must follow the retry guard");
+const cursorBlock = source.slice(cursorWrite, guard);
+assert.ok(cursorBlock.includes("hasMore: observation.hasMore && observation.sourceIndex >= 2"), "Yahoo/Rakuten must advance after one bounded batch while Amazon sources may continue paging");
 const guarded = source.slice(guard, finalReturn);
 assert.ok(guarded.includes("observation.canonicalVariantEvidenceParsed === 0"), "zero canonical variant evidence must defer the stage");
 assert.ok(guarded.includes("observation.canonicalVariantEvidenceWriteFailures > 0"), "evidence write failures must be detectable");
