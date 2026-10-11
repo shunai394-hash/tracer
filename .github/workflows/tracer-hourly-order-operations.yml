@@ -1,0 +1,84 @@
+name: TRACER Hourly Order Operations
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *" # hourly, UTC
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tracer-hourly-order-operations
+  cancel-in-progress: false
+
+jobs:
+  order-operations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Import paid orders and execute only gate-approved supplier orders
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE="https://tracer-pied-alpha.vercel.app"
+          failures=0
+
+          token() {
+            curl --fail-with-body --silent --show-error --max-time 20 \
+              -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+
+          call() {
+            local path="$1"
+            local max_time="$2"
+            local output="$3"
+            local auth_token
+            if ! auth_token="$(token)"; then
+              echo "OIDC token acquisition failed for $path"
+              failures=1
+              return
+            fi
+
+            local code
+            code="$(curl --silent --show-error -o "$output" -w "%{http_code}" \
+              --max-time "$max_time" \
+              -H "Authorization: Bearer $auth_token" \
+              "$BASE$path" || true)"
+            echo "=== $path HTTP $code ==="
+            python3 - "$path" "$output" <<'PY'
+          import json,sys
+          path,filename=sys.argv[1],sys.argv[2]
+          try:
+              d=json.load(open(filename,encoding="utf-8"))
+          except Exception:
+              print("response was not JSON; response body omitted")
+              raise SystemExit(0)
+          def scalars(value):
+              if not isinstance(value,dict): return {}
+              return {k:v for k,v in value.items()
+                      if isinstance(v,(str,int,float,bool)) and k.lower() not in
+                      {"id","order_id","orderid","customer","email","address","purchaseorderids"}}
+          result={"ok":d.get("ok"),"phase":d.get("phase")}
+          if path.endswith("dropship-execution"):
+              result.update({k:d.get(k) for k in ("enabled","attempted","succeeded","failed")})
+              result["baseSync"]=scalars(d.get("baseSync"))
+          else:
+              result["imported"]=scalars(d.get("imported"))
+              result["automation"]=scalars(d.get("automation"))
+          print(json.dumps(result,ensure_ascii=False))
+          PY
+            if [[ ! "$code" =~ ^2[0-9][0-9]$ ]]; then
+              failures=1
+            fi
+          }
+
+          # Run the canonical BASE ingestion/execution stage first. Shopify
+          # ingestion runs second; if it imports a new paid order, its own
+          # idempotent order-control pass can pick it up in this same hour.
+          call "/api/cron/dropship-execution" 70 "dropship-execution.json"
+          call "/api/cron/shopify-orders" 130 "shopify-orders.json"
+          exit "$failures"
