@@ -552,8 +552,13 @@ export async function runIntelligencePipeline(options: {
   }, { budgetMs: 30_000 }));
 
   const blockingFailed = steps.some((step) => !step.ok && !step.skipped);
+  // These stages have an explicit stopPipelineOnTimeout:false policy:
+  // they may defer and retry on the next patrol while independent stages
+  // continue. Their own downstream gates remain fail-closed, so a deferred
+  // identity scan cannot make an unlinked product publishable.
+  const nonBlockingDeferredSteps = new Set(["identity_reverify", "identity"]);
   const deferredStep = steps.find((step) => {
-    if (!step.skipped) return false;
+    if (!step.skipped || nonBlockingDeferredSteps.has(step.name)) return false;
     if (step.retryable === true) return true;
     const reason =
       step.result &&
