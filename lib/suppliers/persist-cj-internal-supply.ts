@@ -270,7 +270,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       }).filter((item) =>
         item.barcodeMethod
         && item.identity.salesEligible
-        && item.row.evidence_source === "schema_org_product_group_has_variant"
+        && ["schema_org_product_group_has_variant", "schema_org_product_is_variant_of"].includes(String(item.row.evidence_source))
         && typeof item.row.id === "string"
         && typeof item.row.bestseller_id === "string"
         && typeof item.row.source_variant_id === "string",
