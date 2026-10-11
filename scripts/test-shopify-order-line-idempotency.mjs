@@ -6,6 +6,7 @@ const migration = await readFile(
   "supabase/migrations/20261011110000_shopify_order_line_idempotency.sql",
   "utf8",
 );
+const cronRoute = await readFile("app/api/cron/shopify-orders/route.ts", "utf8");
 
 assert.match(source, /orders\(first: \$first, after: \$after,[\s\S]*?reverse: true/);
 assert.match(source, /while \(hasNextOrdersPage && orders\.length < maxNewOrders\)/);
@@ -31,4 +32,10 @@ assert.match(migration, /create unique index if not exists shop_order_items_shop
 assert.match(migration, /on public\.shop_order_items\(shopify_line_item_id\)/i);
 assert.match(migration, /where shopify_line_item_id is not null/i);
 
-console.log("Shopify order-line idempotency static checks passed.");
+// Retry the idempotent control plane even when this poll imports no new orders;
+// otherwise an earlier post-ingestion failure can strand an existing paid order.
+assert.match(cronRoute, /const automation = await runAutonomousOrderControl\(/);
+assert.doesNotMatch(cronRoute, /imported\.imported\s*>\s*0\s*\?/);
+assert.match(cronRoute, /toISOString\(\)\.slice\(0, 16\)/);
+
+console.log("Shopify order-line idempotency and retry-trigger static checks passed.");
