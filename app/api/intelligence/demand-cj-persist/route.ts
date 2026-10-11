@@ -1,9 +1,12 @@
+import { requireCronAuth } from "@/lib/security/cron-auth";
 ﻿import { NextResponse } from "next/server";
 import { persistDemandCJProducts } from "@/lib/intelligence/persist-demand-cj-products";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const authError = requireCronAuth(request);
+  if (authError) return authError;
   try {
     const body = (await request.json()) as {
       candidateId?: string;
