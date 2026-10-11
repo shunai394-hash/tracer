@@ -62,7 +62,12 @@ function jsonLdNodes(html: string): Record<string, unknown>[] {
 
 function isType(record: Record<string, unknown>, expected: string): boolean {
   const type = record["@type"];
-  return type === expected || (Array.isArray(type) && type.includes(expected));
+  const matches = (value: unknown): boolean => {
+    if (typeof value !== "string") return false;
+    const normalized = value.trim().replace(/[\\/#]$/, "").split(/[\\/#]/).pop();
+    return normalized?.toLowerCase() === expected.toLowerCase();
+  };
+  return Array.isArray(type) ? type.some(matches) : matches(type);
 }
 
 function variantUrl(record: Record<string, unknown>, fallbackUrl: string | null): string | null {
