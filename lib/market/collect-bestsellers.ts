@@ -70,7 +70,7 @@ export type CollectedMarketplace = {
   };
 };
 
-async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVariantsMissing?: boolean } = {}): Promise<string | null> {
+async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVariantsMissing?: boolean; retryBrightDataWhenAmazonIdentifierMissing?: boolean } = {}): Promise<string | null> {
   const directFetch = async (): Promise<string | null> => {
     try {
       const response = await fetch(url, {
@@ -292,7 +292,7 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
           childDetailAttempted += childAsins.length;
           const recovered = await Promise.all(childAsins.map(async (child) => {
             const childUrl = `https://www.amazon.co.jp/dp/${child.asin}`;
-            const childHtml = await fetchHtml(childUrl);
+            const childHtml = await fetchHtml(childUrl, { retryBrightDataWhenAmazonIdentifierMissing: true });
             if (!childHtml) return null;
             childDetailFetched += 1;
             const childDetail = parseAmazonProductDetail(childHtml);
