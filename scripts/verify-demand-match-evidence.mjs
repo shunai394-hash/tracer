@@ -19,7 +19,7 @@ import {
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { matchProductIdentity, normalizeIdentifier, pickSupplierBarcodeIdentifier, EMPTY_IDENTIFIERS } from "../lib/market/identifiers.ts";
-import { inspectCanonicalMarketplaceVariantMarkup, parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
+import { inspectCanonicalMarketplaceVariantMarkup, parseAmazonVariationAsinMap, parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
@@ -106,6 +106,16 @@ test("canonical marketplace variant evidence", "does not infer identity from an 
 });
 
 
+
+test("Amazon child variation map", "extracts only explicit child ASINs and excludes the parent ASIN", () => {
+  const html = '<script>var dimensionValuesDisplayData = {"B0CHILD001":["Blue","Small"],"B0CHILD002":["Red","Large"],"B0PARENT01":["Parent"]};</script>';
+  const variants = parseAmazonVariationAsinMap(html, "https://www.amazon.co.jp/dp/B0PARENT01");
+  assert.deepEqual(variants, [
+    { asin: "B0CHILD001", variationValues: ["Blue", "Small"] },
+    { asin: "B0CHILD002", variationValues: ["Red", "Large"] },
+  ]);
+  assert.deepEqual(parseAmazonVariationAsinMap("<html></html>", "https://www.amazon.co.jp/dp/B0PARENT01"), []);
+});
 
 function test(group, name, fn) {
   const record = (ok, error) => results.push({ group, name, ok, error });
