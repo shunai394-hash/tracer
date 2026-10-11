@@ -21,16 +21,24 @@ function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
   return Math.ceil(withMargin / 100) * 100;
 }
 
+// Commercial priority: women's bags first, then practical beauty tools,
+ // then hair accessories. Specific intent queries beat broad category searches.
 const CATALOG_QUERIES = [
-  "skincare", "beauty", "makeup", "hair care", "hair tools", "women fashion",
-  "women shoes", "women accessories", "jewelry", "handbag", "period care",
-  "wellness", "self care", "beauty organizer", "cosmetic organizer",
-  "jewelry organizer", "closet organizer", "garment steamer", "bathroom organization",
-  "home organization", "kitchen", "pet", "phone accessories", "fitness",
-  "lighting", "garden", "office", "outdoor", "car accessories",
+  "women handbag", "women crossbody bag", "women shoulder bag", "women tote bag",
+  "women mini bag", "women work bag", "women cosmetic bag", "travel makeup bag",
+  "beauty tools", "facial cleansing brush", "makeup brush cleaner", "makeup organizer",
+  "hair styling tools", "hair clip women", "claw clip women", "flower hair clip",
+  "hair accessories women", "heatless curling rod", "skincare tools", "beauty",
+  "makeup", "hair care", "hair tools", "women fashion", "women accessories",
+  "jewelry", "period care", "wellness", "self care", "beauty organizer",
+  "cosmetic organizer", "jewelry organizer", "closet organizer", "garment steamer",
+  "bathroom organization", "home organization", "kitchen", "pet", "phone accessories",
+  "fitness", "lighting", "garden", "office", "outdoor", "car accessories",
 ];
 const MAX_CATALOG_PAGES = 50;
-const CATALOG_CURSOR_JOB = "supply-first-catalog-cursor";
+// Version the cursor because query order changed; don't reinterpret an old
+// index as a different category and silently skip the highest-priority searches.
+const CATALOG_CURSOR_JOB = "supply-first-catalog-cursor-v2";
 
 type CatalogCursor = { queryIndex: number; page: number };
 
@@ -219,7 +227,8 @@ export async function discoverAndCreateCjSupply(
     .not("supplier_product_id", "is", null)
     .not("supplier_variant_id", "is", null)
     .in("verification_status", ["verified", "unverified", "retryable"])
-    .order("verification_status", { ascending: true })
+    .or(`next_verification_at.is.null,next_verification_at.lte.${new Date().toISOString()}`)
+    .order("next_verification_at", { ascending: true, nullsFirst: true })
     .order("inventory", { ascending: false, nullsFirst: false })
     .limit(500);
   if (seededError) throw new Error(`supply-first candidate query failed: ${seededError.message}`);
@@ -249,13 +258,19 @@ export async function discoverAndCreateCjSupply(
     attempts: Number(row.verification_attempts ?? 0),
   }));
 
-  const seededVerificationLimit = Math.min(10, limit);
+  // Reserve most of the invocation budget for NEW catalog discovery. A
+  // failed seeded refresh previously did not increment `verified`, so the
+  // loop could spend the entire deadline on repeated failures and never reach
+  // the priority query cursor. Count attempts separately from successes.
+  const seededVerificationLimit = Math.min(1, Math.max(0, limit));
+  let seededChecked = 0;
   for (const seededCandidate of candidateInputs) {
-    if (verified >= seededVerificationLimit) break;
+    if (seededChecked >= seededVerificationLimit) break;
     if (Date.now() >= deadlineAt) {
       deadlineReached = true;
       break;
     }
+    seededChecked += 1;
     const candidate = {
       id: seededCandidate.id,
       variantId: seededCandidate.variantId,
