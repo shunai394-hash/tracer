@@ -96,34 +96,55 @@ export function toShopifyGid(kind: "Product" | "ProductVariant", id: string | nu
   return /^\d+$/.test(value) ? `gid://shopify/${kind}/${value}` : value;
 }
 
+function resolveShopifyAuthMode(config: ReturnType<typeof getShopifyConfig>): "client_credentials" | "static_admin_token" {
+  const requested = config.authMode;
+  const hasClientCredentials = Boolean(config.clientId && config.clientSecret);
+  const hasStaticToken = Boolean(config.adminAccessToken);
+
+  if (requested === "client_credentials") {
+    if (!hasClientCredentials) throw new Error("SHOPIFY_AUTH_MODE=client_credentials requires SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET");
+    return requested;
+  }
+  if (requested === "static_admin_token") {
+    if (!hasStaticToken) throw new Error("SHOPIFY_AUTH_MODE=static_admin_token requires SHOPIFY_ADMIN_ACCESS_TOKEN");
+    return requested;
+  }
+  if (requested) throw new Error("SHOPIFY_AUTH_MODE must be client_credentials or static_admin_token");
+  // Dev Dashboard credentials use Shopify client-credentials grant. When both
+  // modern app credentials and a legacy static token exist, select the app flow
+  // deterministically; never fall back to the static token if the exchange fails.
+  if (hasClientCredentials && hasStaticToken) return "client_credentials";
+  if (hasClientCredentials) return "client_credentials";
+  if (hasStaticToken) return "static_admin_token";
+  throw new Error("Shopify credentials are not configured");
+}
+
 export function isShopifyConfigured(): boolean {
-  const { storeDomain, adminAccessToken, clientId, clientSecret } = getShopifyConfig();
-  return Boolean(storeDomain && (adminAccessToken || (clientId && clientSecret)));
+  const config = getShopifyConfig();
+  if (!config.storeDomain) return false;
+  try {
+    resolveShopifyAuthMode(config);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function getShopifyAccessTokenCandidates(): Promise<string[]> {
-  const { adminAccessToken, clientId, clientSecret } = getShopifyConfig();
-  const candidates: string[] = [];
-
-  // Prefer the current client-credentials flow, but retain the configured
-  // static Admin token as a fallback. A rejected OAuth token must not permanently
-  // block a valid static token during credential rotation.
-  if (clientId && clientSecret) {
-    try {
-      const token = (await getShopifyAccessToken()).trim();
-      if (token) candidates.push(token);
-    } catch (error) {
-      if (!adminAccessToken) throw error;
-    }
-  }
-
-  const staticToken = adminAccessToken.trim();
-  if (staticToken && !candidates.includes(staticToken)) candidates.push(staticToken);
-  if (candidates.length === 0) {
+  const config = getShopifyConfig();
+  const mode = resolveShopifyAuthMode(config);
+  // One explicitly selected credential path per request. Never silently switch
+  // to a different credential after an exchange or Admin API failure.
+  if (mode === "client_credentials") {
     const token = (await getShopifyAccessToken()).trim();
-    if (token) candidates.push(token);
+    if (!token) throw new Error("Shopify client-credentials exchange returned an empty token");
+    return [token];
   }
-  return candidates;
+  const token = config.adminAccessToken.trim();
+  if (!token || /\s/.test(token) || /^[\"']|[\"']$/.test(token)) {
+    throw new Error("SHOPIFY_ADMIN_ACCESS_TOKEN is missing or malformed");
+  }
+  return [token];
 }
 
 async function shopifyAdminRequest(body: { query: string; variables?: Record<string, unknown> }): Promise<{ response: Response; token: string }> {
@@ -216,8 +237,7 @@ export async function shopifyGraphQL<T>(
   query: string,
   variables: Record<string, unknown> = {},
 ): Promise<T> {
-  // Prefer client credentials, but retry with the static Admin token if Shopify
-  // rejects the exchanged token with 401/403. Other failures are not retried.
+  // The configured auth mode is deterministic; auth failures never switch credentials.
   const { response, token } = await shopifyAdminRequest({ query, variables });
 
   const requestId = response.headers.get("x-request-id");
