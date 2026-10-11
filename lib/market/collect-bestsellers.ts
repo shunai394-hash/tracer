@@ -107,19 +107,32 @@ async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVar
   const directHtml = await directFetch();
   const hasCanonicalVariants = (html: string | null): boolean =>
     Boolean(html && parseCanonicalMarketplaceVariantEvidence(html, url).length > 0);
-  if (directHtml && (!options.retryBrightDataWhenCanonicalVariantsMissing || hasCanonicalVariants(directHtml))) {
+  const hasAmazonBarcodeEvidence = (html: string | null): boolean => {
+    if (!html) return false;
+    const detail = parseAmazonProductDetail(html);
+    return Boolean(detail.jan || detail.gtin || detail.ean || detail.upc);
+  };
+  const needsAmazonEvidence = Boolean(
+    options.retryBrightDataWhenCanonicalVariantsMissing ||
+    options.retryBrightDataWhenAmazonIdentifierMissing
+  );
+  const hasRequiredAmazonEvidence = (html: string | null): boolean =>
+    options.retryBrightDataWhenAmazonIdentifierMissing
+      ? hasAmazonBarcodeEvidence(html)
+      : hasCanonicalVariants(html);
+
+  if (directHtml && (!needsAmazonEvidence || hasRequiredAmazonEvidence(directHtml))) {
     return directHtml;
   }
 
   if (isBrightDataConfigured()) {
     try {
       const page = await fetchBrightDataPage(url);
-      if (page.html && (!options.retryBrightDataWhenCanonicalVariantsMissing || hasCanonicalVariants(page.html))) {
+      if (page.html && (!needsAmazonEvidence || hasRequiredAmazonEvidence(page.html))) {
         return page.html;
       }
-      // If Bright Data did not improve the response, retain a usable direct
-      // response for ordinary parsing/diagnostics. It still cannot create
-      // canonical evidence unless the strict JSON-LD parser finds child nodes.
+      // If Bright Data did not improve the response, retain the direct page for
+      // diagnostics. Missing child barcode evidence remains fail-closed.
       if (directHtml) return directHtml;
       if (page.html) return page.html;
     } catch {
