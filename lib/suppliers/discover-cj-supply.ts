@@ -88,14 +88,17 @@ async function writeCatalogCursor(
   const now = new Date().toISOString();
   const { error } = await db.from("cron_runs").insert({
     job_name: CATALOG_CURSOR_JOB,
-    status: "succeeded",
+    // A run that made no verified progress and rejected candidates must not
+    // be reported as succeeded. Keep partial-success semantics when at least
+    // one candidate was verified, and fail closed if cursor persistence fails.
+    status: cursor.verified === 0 && cursor.rejected > 0 ? "failed" : "succeeded",
     started_at: now,
     finished_at: now,
     processed: cursor.verified,
     failed: cursor.rejected,
     metadata: { queryIndex: cursor.queryIndex, page: cursor.page },
   });
-  if (error) console.error("[supply-first] catalog cursor write failed", error.message);
+  if (error) throw new Error(`supply-first catalog cursor write failed: ${error.message}`);
 }
 
 function selectSupplyFirstVariant(variants: CJProductVariant[]): CJProductVariant | null {
@@ -546,6 +549,7 @@ export async function discoverAndCreateCjSupply(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       cjQuotaBlocked = isCJQuotaCircuitBlockingError(error);
+      rejected++;
       items.push({
         rejectedStage: cjQuotaBlocked ? "supplier_quota_cooldown" : "catalog_search_failed",
         query,

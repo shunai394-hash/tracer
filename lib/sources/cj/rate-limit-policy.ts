@@ -25,6 +25,11 @@ export function isCJQuotaExhausted(diagnostic: CJRateLimitDiagnostic): boolean {
   return messageIsThrottle && Number.isFinite(remaining) && remaining <= 0;
 }
 
+/** Shared coordination failures are unsafe: never permit a process-local fallback. */
+export function getCJSharedLimiterFailureCode(): "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN" {
+  return "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN";
+}
+
 /** Use a conservative cooldown because CJ's quota reset timezone is not guaranteed. */
 export function getCJQuotaCooldownUntil(nowMs = Date.now()): string {
   return new Date(nowMs + 24 * 60 * 60 * 1000).toISOString();

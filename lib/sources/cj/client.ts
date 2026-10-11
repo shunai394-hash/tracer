@@ -8,7 +8,7 @@ import {
   type CJProductVariant,
 } from "@/lib/sources/cj/variant-select";
 import { firstCJImageUrl, parseCJStockData } from "@/lib/sources/cj/parse";
-import { getCJQuotaCooldownUntil, isCJQuotaExhausted } from "@/lib/sources/cj/rate-limit-policy";
+import { getCJQuotaCooldownUntil, getCJSharedLimiterFailureCode, isCJQuotaExhausted } from "@/lib/sources/cj/rate-limit-policy";
 
 export { selectUnambiguousVariant, verifyVariantSelectionInvariants };
 export type { CJProductVariant };
@@ -73,7 +73,7 @@ async function persistCJQuotaCircuit(reason: string): Promise<string> {
       failed: 1,
       metadata: { blockedUntil, reason, source: "cj-client" },
     });
-    if (error) throw new CJRequestError("CJ quota circuit persistence failed; refusing further external requests", "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN");
+    if (error) throw new CJRequestError("CJ quota circuit persistence failed; refusing further external requests", getCJSharedLimiterFailureCode());
   } catch (error) {
     if (error instanceof CJRequestError) throw error;
     throw new CJRequestError("CJ quota circuit persistence failed; refusing further external requests", "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN");
@@ -154,34 +154,12 @@ let cachedToken: {
   expiresAt: number;
 } | null = null;
 
-let lastCJRequestAt = 0;
-let cjRequestChain: Promise<void> = Promise.resolve();
-
-async function waitForLocalCJRateLimit(): Promise<void> {
-  let release!: () => void;
-  const previous = cjRequestChain;
-  cjRequestChain = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-
-  await previous;
-
-  const minIntervalMs = 1_100;
-  const waitMs = Math.max(0, minIntervalMs - (Date.now() - lastCJRequestAt));
-  if (waitMs > 0) {
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
-  }
-
-  lastCJRequestAt = Date.now();
-  release();
-}
-
 export async function waitForCJRateLimit(): Promise<void> {
   // Vercel can run multiple serverless instances concurrently. The old
   // in-memory limiter serialized requests only inside one instance, so two
   // concurrent instances could still violate CJ's global 1 QPS limit.
-  // Claim the next slot in Supabase first; fall back to the old local
-  // limiter only if the shared limiter is temporarily unavailable.
+  // Claim the next slot in Supabase first. If the shared limiter is unavailable,
+  // fail closed: a local fallback cannot coordinate concurrent Vercel instances.
   let circuitChecked = false;
   try {
     if (quotaCircuitIsOpen(localCJQuotaBlockedUntil)) {
@@ -216,7 +194,13 @@ export async function waitForCJRateLimit(): Promise<void> {
       }
       return;
     }
-    console.warn("[cj] shared QPS limiter unavailable; using local fallback", error.message);
+    // CJ enforces a provider-wide 1 QPS limit, but a process-local
+    // fallback cannot coordinate concurrent Vercel instances. Fail closed
+    // rather than risking another provider-wide throttle/quota lockout.
+    throw new CJRequestError(
+      "CJ shared QPS limiter unavailable; refusing external request",
+      getCJSharedLimiterFailureCode(),
+    );
   } catch (error) {
     if (
       error instanceof CJRequestError &&
@@ -227,13 +211,11 @@ export async function waitForCJRateLimit(): Promise<void> {
     if (!circuitChecked) {
       throw new CJRequestError("CJ quota circuit state unavailable; refusing external request", "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN");
     }
-    console.warn(
-      "[cj] shared QPS limiter unavailable; using local fallback",
-      error instanceof Error ? error.message : String(error),
+    throw new CJRequestError(
+      "CJ shared QPS limiter unavailable; refusing external request",
+      "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN",
     );
   }
-
-  await waitForLocalCJRateLimit();
 }
 
 export async function fetchCJWithRateLimit(
