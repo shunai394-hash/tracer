@@ -2,8 +2,7 @@ name: TRACER Production Patrol
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/15 * * * *" # continuous patrol every 15 minutes; times are UTC
+  # Scheduled runs are owned by tracer-production-patrol-15m.yml to re-register cadence.
 
 permissions:
   id-token: write
