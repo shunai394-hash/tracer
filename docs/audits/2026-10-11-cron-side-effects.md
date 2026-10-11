@@ -26,8 +26,8 @@
 | `/api/cron/dropship-execution` | 12:30 | BASE read + DB write + supplier purchase write | Imports BASE orders and invokes autonomous order control. **Potential supplier order placement.** |
 | `/api/cron/shopify-orders` | 12:33 | Shopify read + DB write + potential supplier purchase write | Imports paid Shopify orders and may invoke autonomous order control. |
 | `/api/cron/supplier-reconciliation` | 12:35 | Supplier API read + DB write (verify helpers) | Reconciles supplier orders and persists results; verify whether any helper can mutate supplier orders. |
-| `/api/cron/shopify-fulfillment` | 12:38 | Shopify read + DB write (verify helpers) | Imports fulfillment/tracking status; inspect helper for any external writes before final classification. |
-| `/api/cron/supplier-orders` | 12:40 | Supplier API access + DB write; direction requires helper audit | Calls supplier order synchronization; do not classify as read-only until `lib/procurement/sync-orders.ts` is inspected. |
+| `/api/cron/shopify-fulfillment` | 12:38 | Shopify read + Shopify external write + DB write | Helper contains a `FulfillmentCreate` GraphQL mutation as well as a query. **Potential fulfillment/tracking write**, not read-only. Verify its gates and eligibility before allowing automation. |
+| `/api/cron/supplier-orders` | 12:40 | Supplier API read + DB write (confirmed from helper) | `lib/procurement/sync-orders.ts` queries supplier status/tracking and updates `purchase_orders` metadata/status. No create-order call was seen in this helper, but adapter transitive behavior still needs confirmation. |
 | `/api/cron/newfind-retry` | 12:45 | DB write + NEWFIND external writes | Retries/promotes and may withdraw NEWFIND promotions. External state changes possible. |
 | `/api/cron/supply-first` | 12:50 | Supplier discovery + DB write; downstream pipeline | Discovers CJ supply, persists verified candidates, then can build intelligence. Inspect indirect publication path. |
 | `/api/cron/patrol-ai` | 12:55, 18:59 | DB write + BASE/NEWFIND external writes; downstream pipeline | Runs full intelligence pipeline, publishes to BASE, and attempts NEWFIND recovery. **Not a passive monitoring-only patrol.** |
@@ -35,6 +35,16 @@
 ## Additional route names found, not present in the current `vercel.json` Cron list
 
 The source tree also contains `/api/cron/ai-patrol`, `base-publish`, `core-engine`, `demand`, `superdelivery-sales-route`, and `unpublish-unlinked`. Their existence alone does not establish they are scheduled; inspect Vercel deployment configuration and any external schedulers before concluding they are inactive.
+
+## Transitive helper checks (first pass)
+
+- `lib/ordering/autonomous-control.ts` creates dropship purchase orders for eligible shop orders and calls `executeVerifiedSupplierPurchaseOrder`. This is a real supplier-order execution path, not merely a recommendation pipeline.
+- `lib/channels/base-orders.ts` imports BASE order details and writes internal order state; it also calls `createDropshipPurchaseOrdersForShopOrder`, so the BASE order import itself can create internal purchase-order records even before the separately scheduled dropship executor runs.
+- `lib/shopify/sync-orders.ts` queries paid Shopify orders and inserts `shop_orders` / `shop_order_items`, with cleanup deletes on partial insert failure. This is a DB write path and must be idempotent under retries.
+- `lib/shopify/sync-fulfillments.ts` contains a `FulfillmentCreate` mutation. The route can write to Shopify, so it must not be treated as read-only fulfillment polling.
+- `lib/shopify/sync-published-listings.ts` calls product create/update, publish, inventory and unpublish helpers and may update `shop_listings` copy/sync fields. It is an external write path in both directions (publish and unpublish).
+- `lib/channels/base-publisher.ts` can call BASE product publication/update APIs and updates local listing state; it also has a path that marks listings blocked when supplier identity is unlinked. Confirm the full external hide/unpublish branch separately.
+- `lib/procurement/sync-orders.ts` fetches supplier order status/tracking and updates purchase-order records. No supplier order creation was visible in that helper itself, but registered adapters should be inspected to confirm their status methods are read-only.
 
 ## Initial findings
 
@@ -47,7 +57,7 @@ The source tree also contains `/api/cron/ai-patrol`, `base-publish`, `core-engin
 
 ## Required next steps (no production changes yet)
 
-1. Read the complete transitive call graph for all 19 scheduled handlers, focusing on `lib/ordering/autonomous-control.ts`, `lib/ordering/supplier-execution.ts`, `lib/procurement/sync-orders.ts`, `lib/shopify/sync*.ts`, `lib/channels/base-publisher.ts`, and supplier-specific order helpers.
+1. Continue the transitive call graph through registered supplier adapters, `executeVerifiedSupplierPurchaseOrder`, `lib/ordering/dropship.ts`, `lib/shopify/admin.ts`, and the BASE hide/unpublish branch. The first pass has already confirmed Shopify fulfillment mutation and autonomous supplier order execution.
 2. Read-only inspect deployment Cron configuration and recent logs; do not infer runtime status from `vercel.json` alone.
 3. Define one global fail-closed automation mode with explicit capabilities (read-only diagnostics, DB writes, channel publication, supplier purchase). Implement only in a separate branch and test that disabled capabilities block all indirect call paths.
 4. Add idempotency tests across BASE and Shopify order ingestion and supplier execution, plus integration tests for publication gates.
