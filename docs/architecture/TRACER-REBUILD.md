@@ -2,7 +2,7 @@
 
 ## Safety boundary
 
-This branch is an isolated refactor foundation. It does not change the production cron schedule, existing tables, deployed routes, or channel write behavior. Do not merge or enable write paths until the acceptance checks below pass.
+This branch is an isolated refactor foundation. It does not change the production cron schedule, database schema, deployed route definitions, or external IDs. One intentional fail-closed policy change is included: the existing sales-test gate now rejects an unknown contribution profit. That can only remove eligibility, not make a blocked listing eligible. No production data writes or external channel calls were made during this work. Do not merge or enable new write paths until the acceptance checks below pass.
 
 ## Audit snapshot (2026-10-11)
 
