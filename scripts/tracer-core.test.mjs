@@ -125,3 +125,13 @@ test("commerce core contracts remain pure and have no network or database depend
   assert.doesNotMatch(source, /createSupabaseAdminClient|\.from\s*\(/);
   assert.doesNotMatch(source, /process\.env/);
 });
+
+test("ambiguous provider writes reconcile before retry to avoid duplicate products or orders", () => {
+  assert.equal(core.classifyExternalWriteOutcome({ kind: "acknowledged", externalId: "provider-1" }), "complete");
+  assert.equal(core.classifyExternalWriteOutcome({ kind: "acknowledged", externalId: null }), "reconcile_first");
+  assert.equal(core.classifyExternalWriteOutcome({ kind: "timeout" }), "reconcile_first");
+  assert.equal(core.classifyExternalWriteOutcome({ kind: "unknown" }), "reconcile_first");
+  assert.equal(core.classifyExternalWriteOutcome({ kind: "rejected", httpStatus: 503 }), "reconcile_first");
+  assert.equal(core.classifyExternalWriteOutcome({ kind: "rejected", httpStatus: 429 }), "retry_after_backoff");
+  assert.equal(core.classifyExternalWriteOutcome({ kind: "rejected", httpStatus: 400 }), "do_not_retry");
+});
