@@ -26,4 +26,9 @@ assert.match(reverify, /const MAX_CANDIDATE_SCAN = 500/);
 assert.match(reverify, /\.limit\(MAX_CANDIDATE_SCAN\)/);
 assert.match(reverify, /buildCandidateQuery\(\)\.gt\("id", priorCursor\)/);
 assert.match(reverify, /nextCursor: scanCursor/);
-console.log("Bounded demand identity stamping and CJ reverify: 15 assertions passed");
+const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
+const beautySourceIndex = collector.indexOf('source: "amazon_bestsellers_beauty"');
+const genericAmazonSourceIndex = collector.indexOf('source: "amazon_bestsellers" },');
+assert.ok(beautySourceIndex >= 0 && genericAmazonSourceIndex >= 0 && beautySourceIndex < genericAmazonSourceIndex,
+  "Amazon beauty ranking must be collected before the generic Amazon bestseller page");
+console.log("Bounded demand identity stamping and CJ reverify: 16 assertions passed");
