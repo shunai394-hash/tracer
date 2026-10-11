@@ -66,10 +66,31 @@ export async function stampDemandCJIdentities(limit = IDENTITY_BATCH_SIZE): Prom
       ? row.demand_product_candidate_id
       : "";
     const candidate = candidateById.get(candidateId);
-    if (!candidate) continue;
-
     const title = String(row.title ?? "").replace(/\s+/g, " ").trim();
-    if (!title) continue;
+
+    // Fail closed when the demand candidate or source title is missing. In
+    // particular, do not leave a stale canonical product link on an unverified row.
+    if (!candidate || !title) {
+      const reason = !candidate
+        ? "Demand candidate missing; identity cannot be verified"
+        : "Source title missing; identity cannot be verified";
+      pending.push({
+        id: String(row.id),
+        status: "identity_unconfirmed",
+        payload: {
+          identity_confidence: 0,
+          identity_status: "identity_unconfirmed",
+          identity_rationale: reason,
+          identity_metadata: {
+            missingDemandCandidate: !candidate,
+            missingSourceTitle: !title,
+          },
+          product_id: null,
+          updated_at: new Date().toISOString(),
+        },
+      });
+      continue;
+    }
 
     const relevance = assessDemandRelevance({
       demandQuery: candidate.query,
