@@ -37,6 +37,8 @@ jobs:
       - run: node --experimental-strip-types --no-warnings scripts/test-publishable-title.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-cj-query-fallback.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-canonical-supplier-identity-gate.mjs
+      - name: Test isolated commerce identity, publication and order contracts
+        run: npm run test:tracer-core
       - run: node scripts/verify-cj-internal-supply-wiring.mjs
       - name: Run atomic catalog sync PostgreSQL integration tests (disposable CI database only)
         env:
