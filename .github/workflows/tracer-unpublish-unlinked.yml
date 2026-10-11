@@ -22,7 +22,7 @@ concurrency:
 jobs:
   reconcile:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 13
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,16 +34,16 @@ jobs:
         run: |
           set -euo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
-          for i in $(seq 1 20); do
-            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
-            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          for i in $(seq 1 10); do
+            sha="$(curl -sS --max-time 10 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
             echo "attempt $i: production commit=$sha expected=$GITHUB_SHA"
             if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
             if git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
               echo "Production is on descendant commit $sha; the requested reconciliation code is included."
               exit 0
             fi
-            sleep 15
+            sleep 10
           done
           echo "Production did not reach $GITHUB_SHA; refusing to reconcile against a stale deployment."
           exit 1
