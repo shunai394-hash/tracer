@@ -48,6 +48,6 @@ assert.match(base, /identityUnlinkedIds\.has\(listingId\).*base_last_error.*list
 assert.match(store, /isPublishableCatalogTitle\(listing\.title\)/, "storefront must filter invalid titles");
 assert.match(store, /isPublishableCatalogDescription\(listing\.description\)/, "storefront must filter generic descriptions");
 assert.match(store, /listing title failed catalog quality gate/, "order placement must revalidate title quality");
-assert.match(japaneseProduct, /replace\\(\\/\\\\s\\+\\/g, " ")/, "Japanese title validation must collapse real whitespace");
-assert.doesNotMatch(japaneseProduct, /replace\\(\\/\\\\\\\\s\\+\\/g/, "literal backslash-s must not be used as a whitespace matcher");
+assert.ok(japaneseProduct.includes('trim().replace(/\\s+/g, " ");'), "Japanese title validation must collapse real whitespace");
+assert.ok(!japaneseProduct.includes('trim().replace(/\\\\s+/g, " ");'), "literal backslash-s must not be used as a whitespace matcher");
 console.log(`Catalog title/description quality tests: ${cases.length} cases + 15 channel wiring checks passed.`);
