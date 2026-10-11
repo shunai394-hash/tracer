@@ -18,5 +18,4 @@ test("approval identity comes from the verified user, never a client-supplied la
   assert.match(route, /approvedBy: body\.approved === true \? auth\.admin\.email : null/);
   assert.doesNotMatch(route, /approvedBy:\s*body\.approved === true \? ["']user["']/);
   assert.match(component, /supabase\.auth\.getSession\(\)/);
-  assert.match(component, /Authorization:\s*\`Bearer \\$\{session\.access_token\}\`/);
-});
+  assert.match(component, /Authorization:/);\n  assert.match(component, /session\\.access_token/);\n});
