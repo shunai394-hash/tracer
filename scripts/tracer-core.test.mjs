@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import ts from "typescript";
 
 const source = await readFile(new URL("../lib/tracer-core/contracts.ts", import.meta.url), "utf8");
+const portsSource = await readFile(new URL("../lib/tracer-core/ports.ts", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, {
   compilerOptions: {
     target: ts.ScriptTarget.ES2022,
@@ -11,6 +12,10 @@ const compiled = ts.transpileModule(source, {
   },
 }).outputText;
 const core = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
+const compiledPorts = ts.transpileModule(portsSource, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+}).outputText;
+const ports = await import(`data:text/javascript;base64,${Buffer.from(compiledPorts).toString("base64")}`);
 
 test("exact supplier variant identity matches; SKU is not a fallback", () => {
   const records = [{ internalProductId: "p1", supplierProductId: "s1", supplierVariantId: "v1", sku: "SKU-1" }];
@@ -134,4 +139,34 @@ test("ambiguous provider writes reconcile before retry to avoid duplicate produc
   assert.equal(core.classifyExternalWriteOutcome({ kind: "rejected", httpStatus: 503 }), "reconcile_first");
   assert.equal(core.classifyExternalWriteOutcome({ kind: "rejected", httpStatus: 429 }), "retry_after_backoff");
   assert.equal(core.classifyExternalWriteOutcome({ kind: "rejected", httpStatus: 400 }), "do_not_retry");
+});
+
+test("write ports require an approved positive-margin publication decision", () => {
+  const base = {
+    salesTestPassed: true, japaneseTitleValid: true, descriptionValid: true,
+    imageVerified: true, supplierIdentityVerified: true, supplierVariantVerified: true,
+    inventoryKnown: true, inventoryAvailable: 4, orderable: true, trackingAvailable: true,
+    sellingPrice: 1000, landedCost: 500, channelFees: 100, shippingCost: 100,
+  };
+  const approved = ports.approvePublicationDecision(core.evaluatePublication(base));
+  assert.equal(approved?.eligible, true);
+  assert.equal(ports.approvePublicationDecision(core.evaluatePublication({ ...base, sellingPrice: 700 })), null);
+  assert.equal(ports.approvePublicationDecision(core.evaluatePublication({ ...base, landedCost: null })), null);
+});
+
+test("supplier write port rejects unpaid, COD, ambiguous and unprofitable order decisions", () => {
+  const base = {
+    channel: "shopify", externalOrderId: "order-42", attemptState: "none",
+    paymentStatus: "paid", paymentMethod: "card", cancellationOrRefundPending: false,
+    supplierIdentityVerified: true, supplierProductId: "supplier-product-1",
+    supplierVariantId: "supplier-variant-1", quantity: 2, inventoryKnown: true,
+    inventoryAvailable: 5, sourceCost: 300, shippingCost: 100, sellingPrice: 1000,
+    sourceFxRateToSelling: 1, addressComplete: true, supplierConfigured: true,
+    liveOrderingEnabled: true, killSwitchActive: false,
+  };
+  assert.equal(ports.approveOrderExecutionDecision(core.evaluateOrderExecution(base))?.eligible, true);
+  assert.equal(ports.approveOrderExecutionDecision(core.evaluateOrderExecution({ ...base, paymentStatus: "pending" })), null);
+  assert.equal(ports.approveOrderExecutionDecision(core.evaluateOrderExecution({ ...base, paymentMethod: "cod" })), null);
+  assert.equal(ports.approveOrderExecutionDecision(core.evaluateOrderExecution({ ...base, attemptState: "unknown" })), null);
+  assert.equal(ports.approveOrderExecutionDecision(core.evaluateOrderExecution({ ...base, sellingPrice: 400 })), null);
 });
