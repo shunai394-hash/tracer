@@ -9,6 +9,12 @@ assert.match(source, /while \(hasNextOrdersPage && orders\.length < maxNewOrders
 assert.match(source, /shopify_orders_cursor_not_advancing/);
 assert.match(source, /fetched: scannedOrders/);
 assert.ok(source.includes("if (!existingIds.has(order.id)"), "already-imported orders must be skipped while paging");
+assert.match(source, /financial_status:paid status:open fulfillment_status:unfulfilled/);
+assert.match(source, /cancelledAt: string \\| null/);
+assert.match(source, /if \\(order\\.cancelledAt\\)/);
+assert.match(source, /order\\.displayFulfillmentStatus !== "UNFULFILLED"/);
+assert.ok(source.indexOf('order.displayFulfillmentStatus !== "UNFULFILLED"') < source.indexOf("const inserted = await supabase"),
+  "fulfilled or partially fulfilled orders must be excluded before insertion");
 
 // Nested line-item pagination: resolve all pages and reject bad cursors or duplicates.
 assert.match(source, /pageInfo\s*\{\s*hasNextPage\s+endCursor\s*\}/);
@@ -31,4 +37,4 @@ assert.ok(source.includes('.eq("shopify_order_id", order.id)'));
 assert.match(source, /shopify_variant_mapping_ambiguous/);
 assert.ok(source.indexOf("shopify_variant_mapping_ambiguous") < source.indexOf("let insertedOrderId"),
   "ambiguous variant mappings must fail before order insertion");
-console.log("Shopify order pagination and idempotency: 17 assertions passed");
+console.log("Shopify order pagination and idempotency: 22 assertions passed");
