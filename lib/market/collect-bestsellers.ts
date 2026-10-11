@@ -65,7 +65,7 @@ export type CollectedMarketplace = {
   };
 };
 
-async function fetchHtml(url: string): Promise<string | null> {
+async function fetchHtml(url: string, options: { retryBrightDataWhenJsonLdMissing?: boolean } = {}): Promise<string | null> {
   const directFetch = async (): Promise<string | null> => {
     try {
       const response = await fetch(url, {
@@ -93,20 +93,36 @@ async function fetchHtml(url: string): Promise<string | null> {
     }
   };
 
-  // Product detail pages: direct first, Bright Data fallback.
+  // Product detail pages: direct first, Bright Data fallback. A non-empty HTML
+  // response is not sufficient evidence that a page was actually delivered:
+  // marketplace anti-bot/challenge pages are also HTML and used to suppress the
+  // fallback, leaving canonical-variant parsing at zero while the fetch looked
+  // successful. For Amazon child-variant extraction, retry through Bright Data
+  // when the direct response has no JSON-LD Product/ProductGroup markup.
   const directHtml = await directFetch();
-  if (directHtml) return directHtml;
+  const hasJsonLd = (html: string | null): boolean =>
+    Boolean(html && /<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["'][^>]*>/i.test(html));
+  if (directHtml && (!options.retryBrightDataWhenJsonLdMissing || hasJsonLd(directHtml))) {
+    return directHtml;
+  }
 
   if (isBrightDataConfigured()) {
     try {
       const page = await fetchBrightDataPage(url);
+      if (page.html && (!options.retryBrightDataWhenJsonLdMissing || hasJsonLd(page.html))) {
+        return page.html;
+      }
+      // If Bright Data did not improve the response, retain a usable direct
+      // response for ordinary parsing/diagnostics. It still cannot create
+      // canonical evidence unless the strict JSON-LD parser finds child nodes.
+      if (directHtml) return directHtml;
       if (page.html) return page.html;
     } catch {
-      // Fall through.
+      // Fall through to the direct response if one exists.
     }
   }
 
-  return null;
+  return directHtml;
 }
 function enrichAmazon(item: ParsedBestseller): ParsedBestseller {
   return {
@@ -228,7 +244,7 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
   await Promise.all(details.map(async (item) => {
     if (!item.productUrl) return;
     try {
-      const detailHtml = await fetchHtml(item.productUrl);
+      const detailHtml = await fetchHtml(item.productUrl, { retryBrightDataWhenJsonLdMissing: marketplace.marketplace === "amazon.co.jp" });
       if (!detailHtml) return;
       htmlFetched += 1;
 
