@@ -35,6 +35,7 @@ assert.match(base, /base_last_error: isIdentityUnlinked \? "supplier_identity_un
 assert.match(store, /supplierListingId && linkedSupplierIds\.has/);
 assert.match(store, /supplier_identity_unlinked/);
 assert.match(route, /requireAutomationAuth/);
+assert.match(route, /TRACER UNLINKED RECONCILIATION/, "production cleanup progress must be observable with count-only telemetry");
 assert.match(route, /published: false/);
 assert.match(route, /base_unpublish_failed/);
 assert.match(route, /shopify_unpublish_failed/);
