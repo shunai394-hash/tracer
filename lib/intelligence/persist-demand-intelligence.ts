@@ -2,6 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { analyzeDemandSeries } from "@/lib/intelligence/analyze-demand";
+import { isStrongDemandMatch } from "@/lib/intelligence/demand-match-evidence";
 
 type ObservationRow = {
   id: string;
@@ -83,7 +84,7 @@ export async function persistDemandIntelligence(): Promise<{
       .select("id, product_id, value, unit, signal_type, observed_at, metadata")
       .gte("observed_at", since)
       .order("observed_at", { ascending: true }),
-    supabase.from("demand_product_matches").select("demand_observation_id, product_id"),
+    supabase.from("demand_product_matches").select("demand_observation_id, product_id, match_method, rationale"),
     supabase
       .from("demand_product_candidates")
       .select("id, query, demand_observation_id"),
@@ -94,12 +95,16 @@ export async function persistDemandIntelligence(): Promise<{
   if (candidatesResult.error) throw new Error(candidatesResult.error.message);
 
   const observations = (observationsResult.data ?? []) as ObservationRow[];
-  const productByObservation = new Map(
-    (matchesResult.data ?? []).map((row) => [
-      row.demand_observation_id as string,
-      row.product_id as string,
-    ]),
-  );
+  // A topical/text match is useful for investigation, but it is not proof
+  // that observed demand belongs to this exact product. Only identifier-grade
+  // evidence may attach product-level demand; weak rows remain traceability
+  // and must not make unrelated news/trends look commercially validated.
+  const productByObservation = new Map<string, string>();
+  for (const row of matchesResult.data ?? []) {
+    if (!isStrongDemandMatch({ match_method: row.match_method, rationale: row.rationale })) continue;
+    if (typeof row.demand_observation_id !== "string" || typeof row.product_id !== "string") continue;
+    productByObservation.set(row.demand_observation_id, row.product_id);
+  }
   const candidateByQuery = new Map(
     (candidatesResult.data ?? []).map((row) => [
       normalizeQuery(String(row.query ?? "")),
