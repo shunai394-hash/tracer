@@ -180,8 +180,8 @@ export async function waitForCJRateLimit(): Promise<void> {
   // Vercel can run multiple serverless instances concurrently. The old
   // in-memory limiter serialized requests only inside one instance, so two
   // concurrent instances could still violate CJ's global 1 QPS limit.
-  // Claim the next slot in Supabase first; fall back to the old local
-  // limiter only if the shared limiter is temporarily unavailable.
+  // Claim the next slot in Supabase first. If the shared limiter is unavailable,
+  // fail closed: a local fallback cannot coordinate concurrent Vercel instances.
   let circuitChecked = false;
   try {
     if (quotaCircuitIsOpen(localCJQuotaBlockedUntil)) {
