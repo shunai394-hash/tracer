@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSupplier, unpublishWorkflow, patrolWorkflow, patrolRoute] = await Promise.all([
+const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSupplier, unpublishWorkflow, patrolWorkflow, patrolRoute, reverify] = await Promise.all([
   readFile(new URL("../lib/catalog/canonical-supplier-identity.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8"),
@@ -14,8 +14,12 @@ const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSup
   readFile(new URL("../.github/workflows/tracer-unpublish-unlinked.yml", import.meta.url), "utf8"),
   readFile(new URL("../.github/workflows/tracer-production-patrol-15m.yml", import.meta.url), "utf8"),
   readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8"),
 ]);
 assert.match(helper, /identity_status === "linked"/);
+assert.match(reverify, /typeof row\.product_id === "string" && row\.product_id\.trim\(\) \? row\.product_id : ""/, "null or blank legacy product IDs must not become truthy fallback IDs");
+assert.match(reverify, /productId: identity\?\.productId \?\? fallbackProductId/, "identity persistence must use the validated fallback product ID");
+assert.doesNotMatch(reverify, /String\(row\.product_id\)/, "reverification must not coerce a null product ID to the string null");
 assert.match(persist, /verification_error: marketplaceIdentity \? null : "no_unique_canonical_child_variant_match"/, "unmatched CJ identity must persist an explicit reason rather than retaining stale verification state");
 assert.match(persist, /schema_org_product_is_variant_of/, "CJ canonical identity resolution must accept isVariantOf evidence");
 assert.match(persist, /last_verified_at: now/, "CJ verification must refresh its timestamp");
