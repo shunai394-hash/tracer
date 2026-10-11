@@ -14,7 +14,14 @@ function escapeHtml(value: unknown): string {
 function html(message: string, status = 200) {
   return new NextResponse(
     `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TRACER × BASE</title><style>body{font-family:system-ui,sans-serif;max-width:760px;margin:48px auto;padding:0 20px;line-height:1.7}code,pre{background:#f4f4f5;border-radius:8px;padding:12px;display:block;overflow:auto;white-space:pre-wrap;word-break:break-all}</style></head><body>${message}</body></html>`,
-    { status, headers: { "Content-Type": "text/html; charset=utf-8" } },
+    { status, headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store, max-age=0",
+      "Pragma": "no-cache",
+      "Referrer-Policy": "no-referrer",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+    } },
   );
 }
 
