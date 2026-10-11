@@ -201,16 +201,10 @@ async function requestBase(
   path: string,
   body: URLSearchParams,
 ): Promise<BaseItemResponse> {
-  const token = await getBaseAccessToken();
-  const response = await fetch(`${BASE_API_URL}${path}`, {
+  const response = await authorizedBaseFetch(`${BASE_API_URL}${path}`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-    },
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
     body,
-    cache: "no-store",
   });
 
   const text = await response.text();
@@ -337,17 +331,15 @@ export async function listBaseOrders(options?: {
   limit?: number;
   offset?: number;
 }): Promise<BaseOrderSummary[]> {
-  const token = await getBaseAccessToken();
   const params = new URLSearchParams();
   if (options?.startOrdered) params.set("start_ordered", options.startOrdered);
   if (options?.endOrdered) params.set("end_ordered", options.endOrdered);
   params.set("limit", String(Math.min(100, Math.max(1, options?.limit ?? 100))));
   params.set("offset", String(Math.max(0, options?.offset ?? 0)));
 
-  const response = await fetch(`${BASE_API_URL}/orders?${params.toString()}`, {
+  const response = await authorizedBaseFetch(`${BASE_API_URL}/orders?${params.toString()}`, {
     method: "GET",
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-    cache: "no-store",
+    headers: { Accept: "application/json" },
   });
   const text = await response.text();
   if (!response.ok) {
@@ -360,14 +352,9 @@ export async function listBaseOrders(options?: {
 }
 
 export async function getBaseOrderDetail(uniqueKey: string): Promise<BaseOrderDetail> {
-  const token = await getBaseAccessToken();
-  const response = await fetch(
+  const response = await authorizedBaseFetch(
     `${BASE_API_URL}/orders/detail/${encodeURIComponent(uniqueKey)}`,
-    {
-      method: "GET",
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-      cache: "no-store",
-    },
+    { method: "GET", headers: { Accept: "application/json" } },
   );
   const text = await response.text();
   if (!response.ok) {
