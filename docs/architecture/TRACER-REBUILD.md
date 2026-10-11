@@ -112,3 +112,16 @@ The isolated core now consists of lib/tracer-core/contracts.ts (exact identity, 
 | patrol-ai | 12:55, 18:59 | Also reaches BASE publication |
 
 The schedules above are read from vercel.json on main. They have intentionally not been changed. The close sequence around 12:10–12:33 UTC means several publication/order paths execute in one window; any consolidation must first prove idempotency and preserve each channel's external IDs.
+
+
+## Production sales-gate blocker audit (read-only, 2026-10-11)
+
+Direct aggregate queries against the confirmed production Supabase project found:
+
+- `shop_listings`: 661 blocked by `supplier_identity_unlinked`, 98 by `supply_gate_missing`, 5 by `japanese_title_required`, and 3 by `japanese_catalog_copy_invalid` (767 total).
+- Of the 661 identity-blocked rows, the linked `supplier_listings` are CJ records with identity state `supply_discovered`: 482 have `verification_status=verified`, and 179 are `retryable`. All 661 have supplier product+variant IDs; all 482 verified rows have confirmed supplier price/inventory and `supplier_listings.orderable=true`. However, the corresponding `shop_listings.orderable` is false for all 661.
+- The supplier's `verified` status confirms supplier-side facts; it does not establish exact identity to the marketplace's canonical variant. Do not change `supply_discovered` to `linked` or publish these records merely because supplier IDs, stock, and cost exist.
+- `internal_supply_products`: 60/60 active; `internal_supply_variants`: 60 rows but 0 orderable; `internal_supply_links`: 0 rows. `tracer_supply_catalog`: 14 rows, 0 ready/orderable with a sale price and source costs; `tracer_supply_variants`: 0 rows.
+- Therefore the principal unblock is not a missing count or a UI issue: canonical marketplace-child-variant evidence is missing for supplier candidates, and the internal catalog has not produced any orderable canonical variant. The safe next step is to inspect the canonical-variant ingestion/identity-evidence path and its runtime audit, not loosen the sales gate.
+
+These are point-in-time, read-only aggregate results. No rows were modified by the audit.
