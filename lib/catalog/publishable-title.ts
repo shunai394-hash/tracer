@@ -29,6 +29,19 @@ export function isPublishableCatalogTitle(value: unknown): boolean {
 }
 
 const NON_PRODUCT_DESCRIPTION_MARKERS = [
+  // A valid-looking product title must not make workflow or failed-gate
+  // explanations acceptable as buyer-facing product descriptions.
+  "商品アイデンティティが未確定",
+  "選定対象外",
+  "必須ゲートを満たしていない",
+  "テスト優先度は低い",
+  "販売停止中の商品",
+  "観測された需要と供給データに基",
+  "販売テスト候補になる",
+  "seeded_dueアイテム",
+  "sales_test_gate_not_passed",
+  "identity_pending",
+  "supplier_variant_identity_missing",
   "商品の仕様・サイズ・素材・使用方法は、販売元の掲載情報をご確認ください",
   "商品の仕様・サイズ・素材・使用方法は販売元の掲載情報をご確認ください",
   "tracer selected product",
