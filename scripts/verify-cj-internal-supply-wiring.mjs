@@ -66,7 +66,7 @@ assert.match(ingest, /from\("marketplace_bestseller_variants"\)/,
   "supplier identity must be compared against independently stored marketplace child variants");
 assert.match(ingest, /marketplace_variant_evidence_id: String\(row\.id\)/,
   "verified links must persist the exact canonical child-variant evidence ID");
-assert.match(ingest, /item\.row\.evidence_source === "schema_org_product_group_has_variant"/,
+assert.match(ingest, /schema_org_product_is_variant_of/,
   "only explicit canonical child-variant evidence is eligible");
 assert.match(ingest, /const barcodeMethod = \["jan", "gtin", "ean", "upc"\]\.includes\(identity\.method\)/,
   "only exact barcode-family proof may establish supplier-to-child-variant identity");
