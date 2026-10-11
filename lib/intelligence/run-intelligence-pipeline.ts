@@ -407,8 +407,8 @@ export async function runIntelligencePipeline(options: {
   steps.push(await runStep("identity_reverify", () =>
     reverifyCjSupplyIdentities({
       limit: 5,
-      deadlineAt: Math.min(pipelineDeadlineAt - 1_000, Date.now() + 12_000),
-    }), { budgetMs: 12_000, stopPipelineOnTimeout: false }));
+      deadlineAt: Math.min(pipelineDeadlineAt - 1_000, Date.now() + 25_000),
+    }), { budgetMs: 25_000, stopPipelineOnTimeout: false }));
 
   const normalizeWindowSize = 200;
   const normalizeProductCount = await db
