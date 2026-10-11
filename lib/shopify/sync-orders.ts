@@ -11,6 +11,7 @@ type ShopifyOrder = {
   displayFinancialStatus: string | null;
   displayFulfillmentStatus: string | null;
   createdAt: string;
+  cancelledAt: string | null;
   totalPriceSet: { shopMoney: { amount: string; currencyCode: string } };
   shippingAddress: {
     name: string | null;
@@ -89,9 +90,9 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
       };
     }>(
       `query PaidOrders($first: Int!, $after: String) {
-        orders(first: $first, after: $after, query: "financial_status:paid", sortKey: CREATED_AT, reverse: true) {
+        orders(first: $first, after: $after, query: "financial_status:paid status:open fulfillment_status:unfulfilled", sortKey: CREATED_AT, reverse: true) {
           nodes {
-            id name email phone displayFinancialStatus displayFulfillmentStatus createdAt
+            id name email phone displayFinancialStatus displayFulfillmentStatus createdAt cancelledAt
             totalPriceSet { shopMoney { amount currencyCode } }
             shippingAddress { name address1 address2 city province zip country countryCodeV2 phone }
             lineItems(first: 100) {
@@ -215,7 +216,18 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
   for (const order of orders) {
     let insertedOrderId: string | null = null;
     try {
+      // Do not turn a cancelled, partially fulfilled, or already fulfilled
+      // Shopify order into a new procurement job. Query filters are backed by
+      // explicit response checks because supplier execution is irreversible.
+      if (order.cancelledAt) {
+        result.skipped += 1;
+        continue;
+      }
       if (order.displayFinancialStatus !== "PAID") {
+        result.skipped += 1;
+        continue;
+      }
+      if (order.displayFulfillmentStatus !== "UNFULFILLED") {
         result.skipped += 1;
         continue;
       }
