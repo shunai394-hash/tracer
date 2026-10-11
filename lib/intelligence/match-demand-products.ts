@@ -185,6 +185,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     demandBatchPage * demandBatchSize,
     (demandBatchPage + 1) * demandBatchSize,
   );
+  const demandBatchIds = new Set(demandRows.map((row) => String(row.id)));
   const productRows = productResult.data ?? [];
   const allProductNames = productRows.map((product) => product.normalized_title);
   const productTitleById = new Map(productRows.map((product) => [String(product.product_id), product.normalized_title]));
@@ -209,7 +210,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
       ? (offer.metadata as Record<string, unknown>)
       : {};
     const observationId = typeof metadata.demand_observation_id === "string" ? metadata.demand_observation_id : null;
-    if (!observationId || !offer.product_id) continue;
+    if (!observationId || !demandBatchIds.has(observationId) || !offer.product_id) continue;
     keep({
       demandObservationId: observationId,
       productId: offer.product_id,
@@ -229,7 +230,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   for (const cj of cjProductResult.data ?? []) {
     if (!cj.product_id || cj.identity_status !== "linked") continue;
     const observationId = observationByCandidate.get(cj.demand_product_candidate_id);
-    if (!observationId) continue;
+    if (!observationId || !demandBatchIds.has(String(observationId))) continue;
     const confidence = Number(cj.identity_confidence ?? 0);
     if (!Number.isFinite(confidence) || confidence < 0.88) continue;
     keep({
@@ -294,12 +295,6 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     if (candidateObservationIds.has(String(demand.id))) continue;
 
     let intent = detectProductIntent(query);
-    // Observations that already produced a candidate were classified before;
-    // do not pay for another Gemini call on every run.
-    if (!intent.isProduct && intent.reason === "no_product_signal" && candidateObservationIds.has(demand.id)) {
-      intentNonProduct += 1;
-      continue;
-    }
     if (!intent.isProduct && intent.reason === "no_product_signal" && isGeminiConfigured()) {
       if (geminiCalls >= MAX_GEMINI_CLASSIFICATIONS_PER_RUN) { intentDeferred += 1; continue; }
       geminiCalls += 1;
