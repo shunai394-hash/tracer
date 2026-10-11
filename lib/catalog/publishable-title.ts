@@ -27,7 +27,7 @@ const GENERIC_CATALOG_TITLES = new Set([
  */
 export function isPublishableCatalogTitle(value: unknown): boolean {
   if (typeof value !== "string") return false;
-  const title = value.normalize("NFKC").replace(/\\s+/g, " ").trim();
+  const title = value.normalize("NFKC").replace(/\s+/g, " ").trim();
   if (!title || title.length > 180) return false;
   if (GENERIC_CATALOG_TITLES.has(title)) return false;
   const normalized = title.toLocaleLowerCase("ja-JP");
@@ -47,7 +47,7 @@ const NON_PRODUCT_DESCRIPTION_MARKERS = [
 /** Reject generic fallbacks/status copy that gives buyers no product-specific information. */
 export function isPublishableCatalogDescription(value: unknown): boolean {
   if (typeof value !== "string") return false;
-  const description = value.normalize("NFKC").replace(/\\s+/g, " ").trim();
+  const description = value.normalize("NFKC").replace(/\s+/g, " ").trim();
   if (!description) return false;
   const normalized = description.toLocaleLowerCase("ja-JP");
   return !NON_PRODUCT_DESCRIPTION_MARKERS.some((marker) =>
