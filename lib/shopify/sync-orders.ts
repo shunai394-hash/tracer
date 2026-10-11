@@ -197,6 +197,22 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         })
         .select("id")
         .single();
+      if (inserted.error?.code === "23505") {
+        // Concurrent Shopify order sync workers can both observe no existing
+        // order before one wins the unique shopify_order_id insert. Recover the
+        // winner instead of reporting a false failure or attempting a second import.
+        const { data: racedOrder, error: racedOrderError } = await supabase
+          .from("shop_orders")
+          .select("id")
+          .eq("shopify_order_id", order.id)
+          .maybeSingle();
+        if (racedOrderError) throw new Error(racedOrderError.message);
+        if (racedOrder?.id) {
+          result.skipped += 1;
+          result.orderIds.push(String(racedOrder.id));
+          continue;
+        }
+      }
       if (inserted.error || !inserted.data) throw new Error(inserted.error?.message ?? "shop_order_insert_failed");
       insertedOrderId = String(inserted.data.id);
 
