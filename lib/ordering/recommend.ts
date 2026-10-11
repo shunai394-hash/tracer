@@ -148,6 +148,7 @@ export function recommendReorder(input: ReorderInput): ReorderRecommendation {
       shippable: input.shippable,
       complianceRisk: input.complianceRisk,
       profitCalculable: input.profitCalculable,
+      forecastProfit30d: input.forecastProfit30d,
       forecastUnits30d: input.forecastUnits30d,
       onHand: input.onHand,
       recommendedQty: qtyForGates,
