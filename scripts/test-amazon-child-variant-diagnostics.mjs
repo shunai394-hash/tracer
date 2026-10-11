@@ -8,7 +8,7 @@ assert.ok(source.indexOf("if (!jan && !gtin && !ean && !upc) return null;") < so
 assert.ok(source.includes("childDetailAttempted += childAsins.length;"), "count child attempts before fetch");
 assert.ok(source.includes("childDetailFetched += 1;"), "count successful detail fetches");
 assert.ok(source.includes("parseAmazonVariationAsinMap(html, url).length > 0"), "Bright Data HTML with an explicit child-ASIN map must count as variant evidence");
-assert.ok(source.includes("hasAmazonVariantEvidence(page.html)"), "retain Bright Data page when it improves child-variant evidence");
+assert.ok(source.includes("hasRequiredEvidence(page.html)"), "retain Bright Data page when it improves the required evidence");
 assert.ok(source.includes("fetchHtml(childUrl, { retryBrightDataWhenAmazonIdentifierMissing: true })"), "child detail pages must retry through Bright Data when direct HTML has no barcode");
 assert.ok(source.includes("hasAmazonBarcodeEvidence"), "Bright Data child detail pages must be checked for their own barcode");
 assert.ok(source.includes("detail.jan || detail.gtin || detail.ean || detail.upc"), "child retry must require a concrete barcode on that child page");
