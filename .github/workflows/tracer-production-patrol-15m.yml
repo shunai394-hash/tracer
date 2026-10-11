@@ -1,6 +1,14 @@
 name: TRACER Production Patrol (15m)
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/tracer-production-patrol-15m.yml"
+      - "app/api/cron/patrol-ai/route.ts"
+      - "lib/intelligence/run-intelligence-pipeline.ts"
+      - "lib/intelligence/match-demand-products.ts"
   workflow_dispatch:
   schedule:
     - cron: "*/15 * * * *" # continuous patrol every 15 minutes; times are UTC
@@ -16,8 +24,32 @@ concurrency:
 jobs:
   patrol:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 9
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait for production to include this commit
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          for i in $(seq 1 10); do
+            sha="$(curl -sS --max-time 10 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              echo "Production is on descendant commit $sha; the patrol code is included."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Production does not include this commit; refusing to patrol a stale deployment."
+          exit 1
+
       - name: Measure, repair, and report
         shell: bash
         run: |
@@ -28,21 +60,41 @@ jobs:
             "$OIDC_URL" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           test -n "$OIDC_TOKEN"
 
-          curl --fail-with-body --silent --show-error --max-time 310 \
+          code="$(curl -sS -o patrol-report.json -w "%{http_code}" --max-time 310 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
-            "https://tracer-pied-alpha.vercel.app/api/cron/patrol-ai" | tee patrol-report.json
+            "https://tracer-pied-alpha.vercel.app/api/cron/patrol-ai" || true)"
+          echo "=== TRACER AI PATROL HTTP $code ==="
 
           python3 - <<'PY'
-          import json
+          import json,sys
           with open("patrol-report.json", encoding="utf-8") as f:
               r=json.load(f)
+          actions=r.get("actions") or []
+          pipeline=next((a.get("result") for a in actions if a.get("action")=="run_full_intelligence_pipeline"),{})
+          steps=pipeline.get("steps") or []
+          def step_summary(s):
+              result=s.get("result") if isinstance(s.get("result"),dict) else {}
+              return {k:s.get(k) for k in ("name","ok","skipped","retryable")} | {
+                  "reason":result.get("reason"),
+                  "elapsedMs":result.get("elapsedMs"),
+              }
           print("=== TRACER AI PATROL REPORT ===")
           print("status:", r.get("status"))
+          print("ok:", r.get("ok"))
           print("decision:", r.get("decision"))
-          print("errors:", r.get("errors", []))
+          print("errorCount:", len(r.get("errors") or []))
+          print("errorCategories:", sorted({str(e).split(":",1)[0] for e in (r.get("errors") or [])}))
           print("published before:", r.get("before",{}).get("publishedListings"))
           print("published after:", r.get("after",{}).get("publishedListings"))
           print("BASE published before:", r.get("before",{}).get("basePublished"))
           print("BASE published after:", r.get("after",{}).get("basePublished"))
           print("progress:", r.get("progress", {}))
+          print("pipelineComplete:", pipeline.get("complete"))
+          print("steps:", json.dumps([step_summary(s) for s in steps],ensure_ascii=False))
+          if r.get("ok") is not True or r.get("status") != "succeeded" or pipeline.get("complete") is not True:
+              sys.exit(1)
           PY
+          if [ "$code" != "200" ]; then
+            echo "Patrol returned HTTP $code; the next scheduled run will retry."
+            exit 1
+          fi
