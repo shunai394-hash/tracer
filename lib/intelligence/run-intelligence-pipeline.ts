@@ -382,6 +382,19 @@ export async function runIntelligencePipeline(options: {
       batchSize: 10,
     });
     const next = await writeMarketCursor(db, observation, "patrol-ai");
+    // A successful HTTP response with zero parsed products is not a successful
+    // market collection. Keep the cursor advanced, but mark this stage retryable
+    // so the patrol cannot report a fully complete cycle with no market evidence.
+    if (observation.itemCount === 0) {
+      return {
+        ...observation,
+        cursor,
+        nextCursor: next,
+        skipped: true,
+        retryable: true,
+        reason: "marketplace_collection_empty",
+      };
+    }
     return { ...observation, cursor, nextCursor: next };
   }, { budgetMs: 25_000 });
   steps.push(bestsellerStep);
