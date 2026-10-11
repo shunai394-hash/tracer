@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireAutomationAuth, requireAutomationCapability } from "@/lib/security/cron-auth";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync";
 import { previewShopifySync } from "@/lib/shopify/sync-published-listings";
 
@@ -18,6 +18,9 @@ export async function POST(request: Request) {
       const preview = await previewShopifySync(Number.isFinite(limit) && limit > 0 ? Math.min(150, Math.floor(limit)) : 150);
       return NextResponse.json({ ok: true, dryRun: true, ...preview });
     }
+
+    const capabilityError = await requireAutomationCapability(request, "channel_write");
+    if (capabilityError) return capabilityError;
     const listingIds = Array.isArray(body.listingIds)
       ? body.listingIds.map(String).filter(Boolean).slice(0, 100)
       : undefined;
