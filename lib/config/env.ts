@@ -98,8 +98,10 @@ export function getFoundationStatus(): FoundationStatus {
     printful: present(readEnv("PRINTFUL_ACCESS_TOKEN")),
     ecPulse: present(readEnv("EC_PULSE_API_KEY")),
     extension: present(readEnv("TRACER_EXTENSION_API_KEY")),
-    base: present(readEnv("BASE_ACCESS_TOKEN")) ||
-      present(readEnv("BASE_REFRESH_TOKEN")),
+    base: present(readEnv("BASE_CLIENT_ID")) &&
+      present(readEnv("BASE_CLIENT_SECRET")) &&
+      present(readEnv("BASE_REFRESH_TOKEN")) &&
+      present(readEnv("BASE_REDIRECT_URI")),
   };
 }
 

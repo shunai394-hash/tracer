@@ -36,14 +36,18 @@ export async function GET(request: Request) {
       })),
     });
   } catch (error) {
-    console.error("[TRACER BASE DIAGNOSTIC ERROR]", error);
+    const message = error instanceof Error ? error.message : "BASE_DIAGNOSTIC_FAILED";
+    console.error("[TRACER BASE DIAGNOSTIC ERROR]", {
+      stage: message.split(":")[0],
+      status: message.match(/HTTP_(\\d{3})/)?.[1] ?? null,
+    });
 
     return NextResponse.json(
       {
         ok: false,
         configured: true,
         baseApi: false,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: error instanceof Error ? error.message.slice(0, 240) : "BASE_DIAGNOSTIC_FAILED",
       },
       { status: 500 },
     );
