@@ -175,10 +175,12 @@ export function classifyExternalWriteOutcome(outcome: ExternalWriteOutcome): Ext
   if (outcome.kind === "acknowledged") {
     return clean(outcome.externalId) ? "complete" : "reconcile_first";
   }
-  if (outcome.kind === "timeout" || outcome.kind === "unknown") return "reconcile_first";
-  if (outcome.httpStatus === 429) return "retry_after_backoff";
-  if (outcome.httpStatus >= 500) return "reconcile_first";
-  return "do_not_retry";
+  if (outcome.kind === "rejected") {
+    if (outcome.httpStatus === 429) return "retry_after_backoff";
+    if (outcome.httpStatus >= 500) return "reconcile_first";
+    return "do_not_retry";
+  }
+  return "reconcile_first";
 }
 
 export type OrderExecutionEvidence = {
