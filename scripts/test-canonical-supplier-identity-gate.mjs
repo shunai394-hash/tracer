@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSupplier, unpublishWorkflow, patrolWorkflow] = await Promise.all([
+const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSupplier, unpublishWorkflow, patrolWorkflow, patrolRoute] = await Promise.all([
   readFile(new URL("../lib/catalog/canonical-supplier-identity.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8"),
@@ -13,6 +13,7 @@ const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSup
   readFile(new URL("../lib/intelligence/persist-demand-supplier-products.ts", import.meta.url), "utf8"),
   readFile(new URL("../.github/workflows/tracer-unpublish-unlinked.yml", import.meta.url), "utf8"),
   readFile(new URL("../.github/workflows/tracer-production-patrol-15m.yml", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8"),
 ]);
 assert.match(helper, /identity_status === "linked"/);
 assert.match(persist, /verification_status: "verified", verification_error: null, last_verified_at: now/, "successful CJ verification must clear stale errors and refresh its timestamp");
@@ -56,6 +57,10 @@ assert.match(patrolWorkflow, /git merge-base --is-ancestor/);
 assert.match(patrolWorkflow, /pipelineComplete:/);
 assert.match(patrolWorkflow, /r.get\("ok"\) is not True/);
 assert.match(patrolWorkflow, /timeout-minutes: 9/);
+assert.match(patrolRoute, /const safeSteps = pipeline\.steps\.map/);
+assert.match(patrolRoute, /errorCategories: Array\.from\(new Set\(errors\.map/);
+assert.match(patrolRoute, /JSON\.stringify\(safeReport\)/);
+assert.doesNotMatch(patrolRoute, /console\.log\("\[TRACER PATROL AI REPORT\]", JSON\.stringify\(report\)\)/, "raw full patrol reports must not be emitted to runtime logs");
 assert.match(unpublishWorkflow, /fetch-depth: 0/);
 assert.match(unpublishWorkflow, /git merge-base --is-ancestor/, "initial reconciliation must accept a newer deployed descendant");
 assert.match(unpublishWorkflow, /result\.get\("ok"\) is not True/, "HTTP 207 partial reconciliation results must fail the scheduled job");
