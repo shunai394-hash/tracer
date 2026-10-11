@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from "node:fs";
 import {
   canPerformAutomationCapability,
   CRON_CAPABILITIES,
+  PROTECTED_AUTOMATION_ENDPOINTS,
   evaluateAutomationCapability,
   parseAutomationMode,
 } from "../lib/ops/automation-capabilities.ts";
@@ -60,4 +61,15 @@ for (const mappedPath of Object.keys(CRON_CAPABILITIES)) {
   assert.ok(scheduledPaths.includes(mappedPath), `stale capability mapping not scheduled in vercel.json: ${mappedPath}`);
 }
 
-console.log(`automation-capabilities: PASS (${31 + scheduledPaths.length * 3 + Object.keys(CRON_CAPABILITIES).length} assertions; ${scheduledPaths.length} unique Vercel Cron routes covered)`);
+
+for (const [routePath, capability] of Object.entries(PROTECTED_AUTOMATION_ENDPOINTS)) {
+  const routeFile = `app${routePath}/route.ts`;
+  assert.ok(existsSync(routeFile), `missing protected endpoint source ${routeFile}`);
+  const source = readFileSync(routeFile, "utf8");
+  assert.ok(
+    source.includes(`requireAutomationCapability(request, "${capability}")`),
+    `protected write endpoint ${routePath} does not enforce ${capability}`,
+  );
+}
+
+console.log(`automation-capabilities: PASS (${31 + scheduledPaths.length * 3 + Object.keys(CRON_CAPABILITIES).length + Object.keys(PROTECTED_AUTOMATION_ENDPOINTS).length * 2} assertions; ${scheduledPaths.length} scheduled routes and ${Object.keys(PROTECTED_AUTOMATION_ENDPOINTS).length} additional write endpoints covered)`);
