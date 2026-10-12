@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { getOrosyProductDetail, searchOrosyProducts } from "@/lib/sources/orosy";
-import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-listings";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -198,12 +197,15 @@ export async function GET(request: Request) {
     accepted.push(String(listingResult.data.id));
   }
 
-  let shopify = null;
-  try {
-    shopify = await syncPublishedListingsToShopify(Math.min(200, accepted.length || 200));
-  } catch (error) {
-    shopify = { failed: accepted.length, error: error instanceof Error ? error.message : String(error) };
-  }
+  // Imported rows are deliberately unpublished until the independent sales-test
+  // publication gate records approval. Calling the published-listing sync here
+  // cannot publish these rows and, when accepted is empty, previously triggered
+  // an unrelated 200-row sync. Keep ingestion and channel publication separate.
+  const shopify = {
+    skipped: true,
+    reason: "awaiting_sales_test_publication_gate",
+    accepted: accepted.length,
+  };
 
   return NextResponse.json({
     ok: true,
