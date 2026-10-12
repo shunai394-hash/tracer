@@ -313,17 +313,21 @@ async function syncListingRows(
 
   for (const row of blocked) {
     if (!row.shopify_product_id) {
-      await supabase.from("shop_listings").update({
+      const { error: localBlockError } = await supabase.from("shop_listings").update({
         published: false,
         pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
-        pipeline_reason: "sales_test_gate_not_passed",
+        pipeline_reason: blockReasons(row).join(",") || "sales_test_gate_not_passed",
         pipeline_updated_at: new Date().toISOString(),
         published_at: null,
         shopify_sync_status: "blocked",
         shopify_sync_error: "sales_test_or_supply_or_japanese_gate_not_passed",
         shopify_synced_at: new Date().toISOString(),
       }).eq("id", row.id);
+      if (localBlockError) {
+        results.failed += 1;
+        results.errors.push({ listingId: row.id, error: `internal_block_state_write_failed:${localBlockError.message}` });
+      }
       continue;
     }
     try {
@@ -342,6 +346,8 @@ async function syncListingRows(
       if (blockWriteError || !blockedRow) {
         throw new Error(`shopify_unpublished_but_internal_state_write_failed:${blockWriteError?.message ?? "listing_missing"}`);
       }
+      results.synced += 1;
+      results.listingIds.push(row.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message === "shopify_product_not_found_for_unpublication_check") {
@@ -360,6 +366,9 @@ async function syncListingRows(
         if (missingWriteError || !missingRow) {
           results.failed += 1;
           results.errors.push({ listingId: row.id, error: `shopify_missing_product_state_write_failed:${missingWriteError?.message ?? "listing_missing"}` });
+        } else {
+          results.synced += 1;
+          results.listingIds.push(row.id);
         }
         continue;
       }
