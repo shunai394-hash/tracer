@@ -425,10 +425,13 @@ async function syncListingRows(
 
       const variant = product.variants?.nodes?.[0];
       if (!variant?.id) throw new Error("shopify_variant_missing_for_inventory_sync");
+      // Supplier stock is evidence for order-time validation, not Shopify saleable stock.
+      // Until an independent, verified saleable-stock allocation exists, force this
+      // variant to zero so a stale supplier snapshot can never create overselling.
       await setShopifyVariantInventory({
         variantId: variant.id,
-        quantity: Number(row.inventory),
-        reference: `tracer://shop-listing/${row.id}`,
+        quantity: 0,
+        reference: `tracer://shop-listing/${row.id}:saleable-stock-unverified`,
       });
 
       const publication = await ensureShopifyProductPublished(product.id);
