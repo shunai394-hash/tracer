@@ -291,6 +291,10 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   let candidatesCreated = 0, candidatesExisting = 0, skippedInvalid = 0;
   let exactMatches = 0, ambiguousIdentifier = 0, variantRejected = 0, brandRejected = 0;
   let geminiCalls = 0, intentDeferred = 0;
+  // A provider quota/outage response should open a run-local circuit breaker.
+  // Otherwise this loop keeps spending calls on the same failing provider for
+  // every remaining query in the batch, amplifying 429/503 storms.
+  let geminiDisabledForRun = false;
   for (const demand of demandRows) {
     processed += 1;
     const metadata = demand.metadata && typeof demand.metadata === "object" && !Array.isArray(demand.metadata)
@@ -337,13 +341,23 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
 
     let intent = detectProductIntent(query);
     if (!intent.isProduct && intent.reason === "no_product_signal" && isGeminiConfigured()) {
-      if (geminiCalls >= MAX_GEMINI_CLASSIFICATIONS_PER_RUN) { intentDeferred += 1; continue; }
+      if (geminiDisabledForRun || geminiCalls >= MAX_GEMINI_CLASSIFICATIONS_PER_RUN) { intentDeferred += 1; continue; }
       geminiCalls += 1;
       try {
         const aiIntent = await classifyDemandIntent(query);
         if (aiIntent.is_product_demand) intent = { isProduct: true, category: aiIntent.category ?? null, reason: `gemini:${aiIntent.reason}` };
       } catch (error) {
-        console.error("[demand-gemini-classify]", { query, error });
+        const detail = error instanceof Error ? error.message : String(error);
+        const status = error && typeof error === "object" && "status" in error
+          ? Number((error as { status?: unknown }).status)
+          : Number.NaN;
+        // Quota exhaustion and transient provider outages are not query-specific.
+        // Stop making further Gemini calls for this patrol; deterministic keyword
+        // classification and the next scheduled run can still proceed.
+        if (status === 429 || status === 503 || /RESOURCE_EXHAUSTED|UNAVAILABLE|quota exceeded|high demand/i.test(detail)) {
+          geminiDisabledForRun = true;
+        }
+        console.error("[demand-gemini-classify]", { query, error, geminiDisabledForRun });
       }
     }
     if (!intent.isProduct) { intentNonProduct += 1; continue; }
