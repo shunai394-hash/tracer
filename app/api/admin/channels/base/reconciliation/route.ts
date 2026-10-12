@@ -36,7 +36,7 @@ function normalizedImage(value: unknown): string {
     const url = new URL(String(value ?? ""));
     url.hash = "";
     url.search = "";
-    return url.toString().replace(/\\/$/, "").toLowerCase();
+    return url.toString().replace(/\/$/, "").toLowerCase();
   } catch {
     return "";
   }
@@ -46,7 +46,7 @@ function textTokens(value: unknown): string[] {
   const normalized = normalizedTitle(value);
   if (!normalized) return [];
   const tokens = String(value ?? "").normalize("NFKC").toLocaleLowerCase("ja-JP")
-    .match(/[\\p{L}\\p{N}]{2,}/gu) ?? [];
+    .match(/[\p{L}\p{N}]{2,}/gu) ?? [];
   return [...new Set(tokens)];
 }
 
