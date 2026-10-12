@@ -1,0 +1,82 @@
+name: BASE product backup
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/base-product-backup.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  export:
+    name: Export and validate BASE product snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Request a short-lived GitHub OIDC token for Vercel
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { writeFile } from "node:fs/promises";
+
+          const audience = "https://tracer-pied-alpha.vercel.app";
+          const tokenUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          tokenUrl.searchParams.set("audience", audience);
+          const tokenResponse = await fetch(tokenUrl, {
+            headers: { Authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
+          });
+          if (!tokenResponse.ok) throw new Error(`OIDC_TOKEN_REQUEST_FAILED:${tokenResponse.status}`);
+          const tokenBody = await tokenResponse.json();
+          if (typeof tokenBody.value !== "string" || !tokenBody.value) {
+            throw new Error("OIDC_TOKEN_MISSING");
+          }
+
+          const response = await fetch(`${audience}/api/admin/channels/base/snapshot`, {
+            headers: {
+              Authorization: `Bearer ${tokenBody.value}`,
+              Accept: "application/json",
+            },
+            signal: AbortSignal.timeout(110_000),
+          });
+          if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(`BASE_SNAPSHOT_HTTP_${response.status}:${String(body.error ?? "request_failed").slice(0, 100)}`);
+          }
+
+          const snapshot = await response.json();
+          if (snapshot.complete !== true || !Array.isArray(snapshot.items)) {
+            throw new Error("BASE_SNAPSHOT_INCOMPLETE");
+          }
+          if (!Number.isInteger(snapshot.itemCount) || snapshot.itemCount !== snapshot.items.length || snapshot.itemCount < 1) {
+            throw new Error("BASE_SNAPSHOT_COUNT_MISMATCH_OR_EMPTY");
+          }
+          const ids = snapshot.items.map((item) => String(item?.item_id ?? ""));
+          if (ids.some((id) => !id) || new Set(ids).size !== ids.length) {
+            throw new Error("BASE_SNAPSHOT_ITEM_ID_MISSING_OR_DUPLICATE");
+          }
+          const file = `tracer-base-products-${new Date().toISOString().slice(0, 10)}-${process.env.GITHUB_RUN_ID}.json`;
+          await writeFile(file, JSON.stringify(snapshot, null, 2), { mode: 0o600 });
+          console.log(JSON.stringify({
+            backupFile: file,
+            complete: snapshot.complete,
+            pages: snapshot.pages,
+            itemCount: snapshot.itemCount,
+            visibleCount: snapshot.visibleCount,
+            hiddenCount: snapshot.hiddenCount,
+            unknownVisibilityCount: snapshot.unknownVisibilityCount,
+            uniqueItemIds: new Set(ids).size,
+            generatedAt: snapshot.generatedAt,
+          }));
+          NODE
+      - name: Store verified snapshot as a private repository workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tracer-base-products-${{ github.run_id }}
+          path: tracer-base-products-*.json
+          if-no-files-found: error
+          retention-days: 90
