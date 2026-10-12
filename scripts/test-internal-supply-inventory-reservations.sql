@@ -183,7 +183,7 @@ begin
   begin
     perform public.release_internal_supply_reservation(
       '30000000-0000-4000-8000-000000000001',
-      'injected_projection_failure'
+      'inventory_projection_failed'
     );
   exception when others then
     if sqlerrm = 'injected_catalog_projection_failure' then
@@ -204,7 +204,17 @@ end $$;
 drop trigger injected_catalog_projection_failure on public.tracer_supply_catalog;
 drop function public.inject_catalog_projection_failure();
 
-do $$
+-- The failed-order return is valid only after the internal order is terminal.
+insert into public.internal_fulfillment_orders(
+  purchase_order_id, supply_product_id, supply_variant_id, quantity, status, order_number
+) values (
+  '30000000-0000-4000-8000-000000000001',
+  '10000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000001',
+  3, 'failed', 'dropship:30000000-0000-4000-8000-000000000001'
+);
+
+do $
 declare
   v_inventory integer;
   v_status text;
@@ -258,6 +268,15 @@ begin
     );
   if v_inventory <> 9 then raise exception 'cancelled-order reservation incorrect'; end if;
 
+  insert into public.internal_fulfillment_orders(
+    purchase_order_id, supply_product_id, supply_variant_id, quantity, status, order_number
+  ) values (
+    '30000000-0000-4000-8000-000000000006',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    1, 'cancelled', 'dropship:30000000-0000-4000-8000-000000000006'
+  );
+
   select restored_inventory, reservation_status into v_inventory, v_status
     from public.release_internal_supply_reservation(
       '30000000-0000-4000-8000-000000000006',
@@ -271,7 +290,49 @@ begin
   if v_reason <> 'supplier_status_cancelled' then
     raise exception 'cancelled-order release reason was not recorded: %', v_reason;
   end if;
-end $$;
+end $;
+
+-- A live internal order must not release stock, even if a caller supplies a
+-- terminal-looking reason. Once it actually becomes failed, stock returns once.
+do $
+declare
+  v_inventory integer;
+  v_status text;
+begin
+  select remaining_inventory into v_inventory
+    from public.reserve_internal_supply_for_order(
+      '30000000-0000-4000-8000-000000000004',
+      '20000000-0000-4000-8000-000000000001', 2
+    );
+  if v_inventory <> 8 then raise exception 'active-order reservation incorrect'; end if;
+
+  insert into public.internal_fulfillment_orders(
+    purchase_order_id, supply_product_id, supply_variant_id, quantity, status, order_number
+  ) values (
+    '30000000-0000-4000-8000-000000000004',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    2, 'reserved', 'dropship:30000000-0000-4000-8000-000000000004'
+  );
+
+  select restored_inventory, reservation_status into v_inventory, v_status
+    from public.release_internal_supply_reservation(
+      '30000000-0000-4000-8000-000000000004', 'supplier_status_failed'
+    );
+  if v_inventory <> 8 or v_status <> 'active_order' then
+    raise exception 'active order released stock: inventory %, status %', v_inventory, v_status;
+  end if;
+
+  update public.internal_fulfillment_orders set status='failed'
+   where purchase_order_id='30000000-0000-4000-8000-000000000004';
+  select restored_inventory, reservation_status into v_inventory, v_status
+    from public.release_internal_supply_reservation(
+      '30000000-0000-4000-8000-000000000004', 'supplier_status_failed'
+    );
+  if v_inventory <> 10 or v_status <> 'released_now' then
+    raise exception 'failed active order did not release stock once: inventory %, status %', v_inventory, v_status;
+  end if;
+end $;
 
 -- Inject order-row creation failure after reservation, then compensate once.
 create function public.inject_internal_order_insert_failure()
