@@ -1,8 +1,20 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { hasVerifiedPositiveShopifyStock } from "../lib/shop/live-stock-policy.ts";
+import { timestampIsFresh } from "../lib/shopify/supplier-evidence-freshness.ts";
 
 const validVariant = "gid://shopify/ProductVariant/123";
+const now = Date.parse("2026-10-12T00:00:00.000Z");
+const thirtyMinutes = 30 * 60 * 1000;
+assert.equal(timestampIsFresh(new Date(now - thirtyMinutes).toISOString(), thirtyMinutes, now), true, "timestamp exactly at freshness boundary is accepted");
+assert.equal(timestampIsFresh(new Date(now - thirtyMinutes - 1).toISOString(), thirtyMinutes, now), false, "timestamp one millisecond past boundary is stale");
+assert.equal(timestampIsFresh(new Date(now + 1).toISOString(), thirtyMinutes, now), false, "future timestamp is rejected");
+assert.equal(timestampIsFresh("not-a-timestamp", thirtyMinutes, now), false, "malformed timestamp is rejected");
+assert.equal(timestampIsFresh(null, thirtyMinutes, now), false, "null timestamp is rejected");
+assert.equal(timestampIsFresh(undefined, thirtyMinutes, now), false, "missing timestamp is rejected");
+assert.equal(timestampIsFresh("", thirtyMinutes, now), false, "empty timestamp is rejected");
+assert.equal(timestampIsFresh(new Date(now).toISOString(), -1, now), false, "negative freshness window is rejected");
+
 assert.equal(hasVerifiedPositiveShopifyStock(validVariant, 2), true, "positive verified live quantity is saleable");
 assert.equal(hasVerifiedPositiveShopifyStock(validVariant, 0), false, "sold-out variant is blocked");
 assert.equal(hasVerifiedPositiveShopifyStock(validVariant, -1), false, "negative quantity is blocked");
@@ -37,7 +49,7 @@ assert.match(store, /const liveStock = await getLiveShopifyStock/, "order creati
 assert.match(store, /shopify_live_stock_unverified/, "order creation must reject unverified stock");
 assert.match(store, /requested quantity exceeds verified live inventory/, "quantity checks must use live-verified stock");
 
-console.log("Shopify live-stock fail-closed checks: 26 passed (8 behavior cases + 18 source guards)");
+console.log("Shopify live-stock fail-closed checks: 34 passed (16 behavior cases + 18 source guards)");
 
 const refresh = await readFile(new URL("../app/api/cron/inventory-refresh/route.ts", import.meta.url), "utf8");
 assert.match(refresh, /priceResult\.currency\?\.trim\(\)\.toUpperCase\(\) === "JPY"/, "supplier price must be JPY before it is stored in JPY fields");
