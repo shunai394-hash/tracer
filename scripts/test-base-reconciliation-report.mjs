@@ -22,6 +22,11 @@ assert.match(route, /partialTitleScore/);
 assert.match(route, /Script=Han.*Script=Hiragana.*Script=Katakana/); // Japanese unspaced titles use CJK bigrams
 assert.match(route, /scoredCandidates/);
 assert.match(route, /MULTIPLE_TOP_CANDIDATES_REVIEW_REQUIRED/);
+assert.match(route, /baseSupplierVariantId && baseSupplierVariantId !== rowVariantId/); // matching product alone cannot override a variant mismatch
+assert.match(route, /baseSupplierProductId && rowProductId && baseSupplierProductId !== rowProductId/);
+assert.match(route, /score === topScore && topCandidates.length === 1/); // only a unique top-ranked candidate can be high-confidence
+assert.match(route, /candidateIdentityCounts\.get\(identityKey\) === 1/); // duplicate supplier product+variant identities require review
+
 assert.match(route, /REVIEW_REQUIRED/);
 assert.match(route, /evidence\.some\(\(entry\) => entry === "supplier_product_id_exact" \|\| entry === "supplier_variant_id_exact"\)/);
 assert.doesNotMatch(route, /score >= 100 \? "HIGH_CONFIDENCE_CANDIDATE_NOT_AUTO_MAPPED"/);
