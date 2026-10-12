@@ -26,6 +26,7 @@ assert.match(reverify, /const MAX_CANDIDATE_SCAN = 500/);
 assert.match(reverify, /\.limit\(MAX_CANDIDATE_SCAN\)/);
 assert.match(reverify, /buildCandidateQuery\(\)\.gt\("id", priorCursor\)/);
 assert.match(reverify, /nextCursor: scanCursor/);
+assert.match(reverify, /identity\\?\\.productId \\?\\? \\(typeof row\\.product_id === "string" \\? row\\.product_id\\.trim\\(\\) : ""\\)/, "null product IDs must not become the truthy string \\"null\\"");
 const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
 const beautySourceIndex = collector.indexOf('source: "amazon_bestsellers_beauty"');
 const genericAmazonSourceIndex = collector.indexOf('source: "amazon_bestsellers" },');
