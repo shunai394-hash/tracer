@@ -151,8 +151,8 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
           );
           if (releaseError) throw new Error(releaseError.message);
           const release = releaseResult?.[0] as { reservation_status?: string | null } | undefined;
-          if (!release || release.reservation_status === "missing") {
-            throw new Error("internal_supply_reservation_not_found_for_terminal_order");
+          if (!release || !["released_now", "released"].includes(String(release.reservation_status))) {
+            throw new Error(`internal_supply_reservation_release_not_confirmed_for_terminal_order:${release?.reservation_status ?? "missing"}`);
           }
         }
       }
