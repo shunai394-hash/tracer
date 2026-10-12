@@ -1,7 +1,6 @@
 import "server-only";
 
 import type { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { nextMarketCursor } from "./market-cursor-policy.mjs";
 export { nextMarketCursor } from "./market-cursor-policy.mjs";
 
 type Db = ReturnType<typeof createSupabaseAdminClient>;
