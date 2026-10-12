@@ -235,6 +235,14 @@ export async function GET(request: Request) {
             .update({
               published: false,
               orderable: false,
+              contribution_profit: null,
+              contribution_margin: null,
+              selection_reasons: Array.isArray(listing.selection_reasons)
+                ? listing.selection_reasons.map((item: unknown) => String(item)).filter((item: string) => item !== SALES_TEST_GATE_PASSED)
+                : [],
+              pipeline_stage: "BLOCKED",
+              pipeline_status: "blocked",
+              pipeline_reason: reason,
               pipeline_error: reason,
               pipeline_updated_at: now,
               updated_at: now,
