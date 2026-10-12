@@ -3,6 +3,8 @@ name: TRACER Ten-Cycle Supply, Publication & Audit
 # that pass the existing Sales Test Gate; it does not place supplier purchase orders.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 permissions:
   id-token: write
@@ -14,6 +16,7 @@ concurrency:
 
 jobs:
   ten-cycle:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[TRACER_REACH_500_NOW]')
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
