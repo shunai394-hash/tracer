@@ -81,7 +81,8 @@ const run = (dependencies) => recoverSupplierPaymentState({
   const { deps, calls } = makeDeps({ lookupOrderStatus: async () => ({ status: "unknown", paymentConfirmed: null }) });
   const result = await run(deps);
   assert.equal(result.status, "supplier_payment_pending");
-  assert.equal(calls.some((c) => String(c[0]).includes("create") || String(c[0]).includes("purchase")), true);
+  assert.equal(calls.filter((c) => c[0] === "lookup").length, 1);
+  assert.equal(calls.some((c) => String(c[0]).toLowerCase().includes("create")), false);
   assert.equal(calls.filter((c) => c[0] === "attempt").length, 0);
 }
 console.log("Supplier payment recovery injected-failure tests: 9 scenarios passed");
