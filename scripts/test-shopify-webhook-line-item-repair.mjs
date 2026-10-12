@@ -16,7 +16,7 @@ assert.match(source, /shopify_missing_line_item_invalid_manual_reconciliation_re
 assert.match(source, /shopify_line_item_id: String\(item\.id\)/);
 assert.match(source, /row\.error\.code === "23505"/);
 assert.match(source, /repairedLineItems/);
-assert.match(source, /repairedLineItems \\+= 1/);
+assert.match(source, /repairedLineItems \+= 1/);
 
 // The repair path must resolve and validate SKU mappings before writing any missing detail.
 assert.ok(source.indexOf("const resolution = resolveShopifyOrderSkus") < source.indexOf("if (existingOrderId)"),
