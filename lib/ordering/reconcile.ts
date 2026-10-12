@@ -80,6 +80,9 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
       // create or resend a supplier order.
       let stage = "supplier_payment_status_lookup";
       try {
+        if (!adapter.capabilities.orderStatus) {
+          throw new Error("supplier_payment_status_lookup_unsupported_manual_reconciliation_required");
+        }
         const paymentResult = await adapter.getOrderStatus(supplierOrderId);
         const paymentConfirmed = paymentResult?.paymentConfirmed === true;
         const observedAt = new Date().toISOString();
