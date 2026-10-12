@@ -207,6 +207,11 @@ export async function GET(request: Request) {
           shippingResult !== null &&
           inventoryResult.supplierProductId === String(listing.supplier_product_id ?? "") &&
           inventoryResult.supplierVariantId === variantId &&
+          Number.isInteger(inventoryResult.quantity) &&
+          inventoryResult.quantity !== null &&
+          inventoryResult.quantity > 0 &&
+          inventoryResult.available === true &&
+          inventory === inventoryResult.quantity &&
           priceResult.supplierProductId === String(listing.supplier_product_id ?? "") &&
           priceResult.supplierVariantId === variantId &&
           shippingResult.supplierProductId === String(listing.supplier_product_id ?? "") &&
@@ -265,6 +270,7 @@ export async function GET(request: Request) {
         const { error: supplierEvidenceError } = await supabase
           .from("supplier_listings")
           .update({
+            inventory,
             inventory_checked_at: now,
             inventory_confirmed: true,
             cost: priceResult.amount,
