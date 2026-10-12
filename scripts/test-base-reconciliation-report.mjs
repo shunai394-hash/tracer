@@ -3,8 +3,13 @@ import { readFile } from "node:fs/promises";
 
 const route = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
 const workflow = await readFile(new URL("../.github/workflows/base-product-backup.yml", import.meta.url), "utf8");
+const auth = await readFile(new URL("../lib/security/cron-auth.ts", import.meta.url), "utf8");
 
-assert.match(route, /requireAutomationAuth/);
+assert.match(route, /requireBaseAuditAuth/);
+assert.match(auth, /export async function requireBaseAuditAuth/);
+assert.match(auth, /shunai394-hash\\/tracer\\/.github\\/workflows\\/base-product-backup\\.yml@refs\\/heads\\/main/);
+assert.match(auth, /claims\\.workflow_ref !== expectedWorkflowRef/);
+assert.match(auth, /verifyGitHubOidcToken\\([\\s\\S]*expectedWorkflowRef/);
 assert.match(route, /createSupabaseAdminClient/);
 assert.match(route, /export async function POST/);
 assert.match(route, /BASE_SNAPSHOT_INPUT_INCOMPLETE_OR_INVALID/);
@@ -22,4 +27,4 @@ assert.doesNotMatch(workflow, /actions\/upload-artifact@/);
 assert.doesNotMatch(workflow, /writeFile\(|tracer-base-\*\.json/);
 assert.match(workflow, /rawArtifactStored: false/);
 assert.match(workflow, /BASE_RECONCILIATION_INCOMPLETE_OR_COUNT_MISMATCH/);
-console.log("BASE/TRACER reconciliation report contract: 16 assertions passed");
+console.log("BASE/TRACER reconciliation report and exact OIDC workflow contract: assertions passed");
