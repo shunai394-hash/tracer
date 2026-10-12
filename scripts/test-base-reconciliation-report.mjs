@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { isHighConfidenceReconciliationCandidate } from "../lib/channels/base-reconciliation-confidence.ts";
 
 const route = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
+const policy = await readFile(new URL("../lib/channels/base-reconciliation-confidence.ts", import.meta.url), "utf8");
 const workflow = await readFile(new URL("../.github/workflows/base-product-backup.yml", import.meta.url), "utf8");
 const candidate = {
   score: 100, topScore: 100, topCandidateCount: 1,
