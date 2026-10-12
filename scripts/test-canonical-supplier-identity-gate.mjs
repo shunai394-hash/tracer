@@ -28,7 +28,11 @@ assert.match(discoverCJ, /api_available: false, verification_status: "unverified
 assert.match(discoverCJ, /orderable: false, price_confirmed: true, inventory_confirmed: true, tracking_available: false/, "unresolved CJ supply must remain blocked from ordering even when price and stock observations exist");
 assert.doesNotMatch(discoverCJ, /markVerification\(db, String\(supplierInsert\.data\.id\), \{ status: "verified"/, "discovery must not overwrite the unresolved identity gate with a verified status");
 
-const supplierUpserts = [...discoverCJ.matchAll(/const supplierInsert = await upsertSupplierListing[\\s\\S]*?\\n\\s*\\},\\s*(?:seededCandidate\\.supplierListingId)?\\);/g)].map((match) => match[0]);
+const supplierUpserts = [...discoverCJ.matchAll(/const supplierInsert = await upsertSupplierListing/g)].map((match) => {
+  const end = discoverCJ.indexOf("if (supplierInsert.error)", match.index);
+  assert.notEqual(end, -1, "each CJ supplier upsert must check persistence errors");
+  return discoverCJ.slice(match.index, end);
+});
 assert.equal(supplierUpserts.length, 2, "both seeded and fresh CJ discovery paths must be guarded");
 for (const upsert of supplierUpserts) {
   assert.match(upsert, /product_id: null/, "unresolved CJ supply must not attach a provisional canonical product");
