@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyShopifyWebhookHmac } from "@/lib/shopify/admin";
 import { getOrderSkuLookup, resolveShopifyOrderSkus } from "@/lib/shopify/order-sku-mapping";
+import { validateShopifyWebhookOrder } from "@/lib/shopify/webhook-order-validation";
 
 export const runtime = "nodejs";
 
@@ -22,6 +23,14 @@ export async function POST(request: Request) {
     const order = JSON.parse(raw) as Record<string, unknown>;
     const externalId = String(order.id ?? "");
     if (!externalId) return NextResponse.json({ ok: false, error: "shopify_order_id_missing" }, { status: 400 });
+
+    // Reject malformed fulfillment data before any database writes. In
+    // particular, Number(null) === 0 must not turn missing money fields into
+    // apparently valid zero values.
+    const payloadValidation = validateShopifyWebhookOrder(order);
+    if (!payloadValidation.ok) {
+      return NextResponse.json({ ok: true, blocked: true, reason: payloadValidation.reason });
+    }
 
     const db = createSupabaseAdminClient();
     cleanupDb = db;
@@ -89,7 +98,7 @@ export async function POST(request: Request) {
     const shipping = (order.shipping_address ?? {}) as Record<string, unknown>;
     const customer = (order.customer ?? {}) as Record<string, unknown>;
     const billing = (order.billing_address ?? {}) as Record<string, unknown>;
-    const currency = String(order.currency ?? order.presentment_currency ?? "JPY");
+    const currency = payloadValidation.currency;
     const inserted = await db.from("shop_orders").insert({
       listing_id: bySku.get(skus[0])?.id ?? null,
       status: "placed",
@@ -106,9 +115,9 @@ export async function POST(request: Request) {
       shipping_city: shipping.city ? String(shipping.city) : null,
       shipping_zip: shipping.zip ? String(shipping.zip) : null,
       shipping_line1: shipping.address1 ? String(shipping.address1) : null,
-      subtotal: n(order.subtotal_price),
+      subtotal: payloadValidation.subtotal,
       shipping_cost: null,
-      total: n(order.total_price),
+      total: payloadValidation.total,
       currency,
       metadata: { source: "shopify_webhook", shopify_order_id: externalId },
       shopify_order_id: externalId,
