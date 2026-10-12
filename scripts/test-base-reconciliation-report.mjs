@@ -1,8 +1,24 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { isHighConfidenceReconciliationCandidate } from "../lib/channels/base-reconciliation-confidence.ts";
 
 const route = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
 const workflow = await readFile(new URL("../.github/workflows/base-product-backup.yml", import.meta.url), "utf8");
+const candidate = {
+  score: 100, topScore: 100, topCandidateCount: 1,
+  evidence: ["supplier_product_id_exact"],
+  baseSupplierProductId: "P-1", baseSupplierVariantId: "V-RED",
+  rowSupplierProductId: "P-1", rowSupplierVariantId: "V-RED",
+  duplicateIdentityCount: 1,
+};
+assert.equal(isHighConfidenceReconciliationCandidate(candidate), true, "exact unique product+variant evidence may be high-confidence");
+assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, baseSupplierVariantId: "V-BLUE", rowSupplierVariantId: "V-RED" }), false, "variant mismatch must require review");
+assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, baseSupplierProductId: "P-2", rowSupplierProductId: "P-1" }), false, "contradictory product identity must require review");
+assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, duplicateIdentityCount: 2 }), false, "duplicate supplier identity must require review");
+assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, topCandidateCount: 2 }), false, "tied top candidates must require review");
+assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, score: 30, topScore: 30, evidence: ["image_url_exact"] }), false, "image-only evidence must not be high-confidence");
+assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, score: 70, topScore: 100 }), false, "non-top candidates must require review");
+
 
 assert.match(route, /requireAutomationAuth/);
 assert.match(route, /createSupabaseAdminClient/);
