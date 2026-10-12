@@ -73,6 +73,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       "and(published.eq.false,base_item_id.not.is.null,base_publication_status.is.null)",
       "and(published.eq.false,base_item_id.not.is.null,base_publication_status.neq.published)",
       "and(pipeline_status.eq.selected,base_item_id.is.null)",
+      "and(base_item_id.is.null,base_last_error.like.base_create_id_persist_failed:*)",
     ].join(","));
   }
   const safeLimit = Math.min(15, Math.max(1, Math.floor(Number.isFinite(limit) ? limit : 10)));
@@ -369,7 +370,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       results.push({ listingId, ok: true, baseItemId });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const createIdPersistFailure = message.match(/^base_create_id_persist_failed:([^:]+):([\\s\\S]*)$/);
+      const createIdPersistFailure = message.match(/^base_create_id_persist_failed:([^:]+):([\s\S]*)$/);
       const recoveryStillNeeded = !listing.base_item_id && recoveryMarker?.[1] && message.startsWith("base_create_id_recovery_failed:");
       const safeErrorMarker = createIdPersistFailure
         ? `base_create_id_persist_failed:${createIdPersistFailure[1]}:${createIdPersistFailure[2]}`.slice(0, 2000)
