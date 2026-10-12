@@ -66,6 +66,7 @@ export async function repairCjMissingWomenVariants(options: { limit?: number } =
       if (shippingCost === null || !Number.isFinite(shippingCost) || shippingCost < 0) continue;
       const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {};
       const nextMetadata = { ...metadata, variant_recovery: "cj_live_variant_recovery", variant_barcode: variant.barcode ?? metadata.variant_barcode ?? null, variant_sku: variant.sku ?? metadata.variant_sku ?? null, variant_name: variant.nameEn ?? metadata.variant_name ?? null };
+      const checkedAt = new Date().toISOString();
       const { error: updateError } = await db.from("supplier_listings").update({
         supplier_variant_id: variant.vid,
         cost,
@@ -79,7 +80,8 @@ export async function repairCjMissingWomenVariants(options: { limit?: number } =
         verification_status: "retryable",
         verification_error: null,
         metadata: nextMetadata,
-        inventory_checked_at: new Date().toISOString(),
+        inventory_checked_at: checkedAt,
+        price_checked_at: checkedAt,
       }).eq("id", supplierListingId);
       if (updateError) throw new Error(updateError.message);
       result.repaired += 1;
