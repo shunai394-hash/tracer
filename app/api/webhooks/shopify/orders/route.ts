@@ -84,7 +84,10 @@ export async function POST(request: Request) {
     const shipping = (order.shipping_address ?? {}) as Record<string, unknown>;
     const customer = (order.customer ?? {}) as Record<string, unknown>;
     const billing = (order.billing_address ?? {}) as Record<string, unknown>;
-    const currency = String(order.currency ?? order.presentment_currency ?? "JPY");
+    const currency = String(order.currency ?? order.presentment_currency ?? "").trim().toUpperCase();
+    if (currency !== "JPY") {
+      return NextResponse.json({ ok: true, blocked: true, reason: "currency_not_jpy" });
+    }
     const inserted = await db.from("shop_orders").insert({
       listing_id: bySku.get(skus[0])?.id ?? null,
       status: "placed",
