@@ -36,8 +36,6 @@ export async function POST(request: Request) {
     .from("shop_listings")
     .select("id,product_id,supplier_listing_id,supplier_product_id,supplier_variant_id")
     .is("supplier_listing_id", null)
-    .not("supplier_product_id", "is", null)
-    .not("supplier_variant_id", "is", null)
     .order("pipeline_updated_at", { ascending: false })
     .limit(limit);
 
@@ -89,11 +87,21 @@ export async function POST(request: Request) {
   let ambiguous = 0;
   let noMatch = 0;
   let internalProductMismatch = 0;
+  let missingProductId = 0;
+  let missingVariantId = 0;
+  let bothIdsPresent = 0;
 
   for (const row of rows) {
     const shopListingId = String(row.id);
     const externalProduct = String(row.supplier_product_id ?? "").trim();
     const externalVariant = String(row.supplier_variant_id ?? "").trim();
+    if (!externalProduct || !externalVariant) {
+      if (!externalProduct) missingProductId += 1;
+      if (!externalVariant) missingVariantId += 1;
+      results.push({ shopListingId, outcome: !externalProduct && !externalVariant ? "missing_both_supplier_ids" : !externalProduct ? "missing_supplier_product_id" : "missing_supplier_variant_id" });
+      continue;
+    }
+    bothIdsPresent += 1;
     const matches = byExactPair.get(JSON.stringify([externalProduct, externalVariant])) ?? [];
 
     if (matches.length === 0) {
@@ -155,6 +163,9 @@ export async function POST(request: Request) {
     ambiguous,
     noMatch,
     internalProductMismatch,
+    missingProductId,
+    missingVariantId,
+    bothIdsPresent,
   });
 
   return NextResponse.json({
@@ -168,6 +179,9 @@ export async function POST(request: Request) {
     ambiguous,
     noMatch,
     internalProductMismatch,
+    missingProductId,
+    missingVariantId,
+    bothIdsPresent,
     results,
     publicationChanged: false,
   }, { headers: { "Cache-Control": "no-store" } });
