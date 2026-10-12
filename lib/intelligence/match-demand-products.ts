@@ -354,7 +354,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
         // Quota exhaustion and transient provider outages are not query-specific.
         // Stop making further Gemini calls for this patrol; deterministic keyword
         // classification and the next scheduled run can still proceed.
-        if (status === 429 || status === 503 || /RESOURCE_EXHAUSTED|UNAVAILABLE|quota exceeded|high demand/i.test(detail)) {
+        if (status === 429 || status === 503 || /RESOURCE_EXHAUSTED|UNAVAILABLE|quota exceeded|high demand|GEMINI_TIMEOUT|Gemini request timed out/i.test(detail)) {
           geminiDisabledForRun = true;
         }
         console.error("[demand-gemini-classify]", { query, error, geminiDisabledForRun });
