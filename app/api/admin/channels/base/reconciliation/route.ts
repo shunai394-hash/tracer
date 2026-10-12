@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireBaseAuditAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,7 +37,7 @@ function visibility(value: unknown): boolean | null {
 
 /** Read-only reconciliation report. Candidates are evidence only and never auto-mapped. */
 export async function POST(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireBaseAuditAuth(request);
   if (authError) return authError;
 
   try {
