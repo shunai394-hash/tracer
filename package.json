@@ -29,7 +29,8 @@
     "test:orosy-search-auth": "node scripts/test-orosy-search-auth.mjs",
     "test:product-performance-report": "node scripts/test-product-performance-report.mjs",
     "test:base-snapshot-export": "node scripts/test-base-snapshot-export.mjs",
-    "test:base-reconciliation-report": "node scripts/test-base-reconciliation-report.mjs"
+    "test:base-reconciliation-report": "node scripts/test-base-reconciliation-report.mjs",
+    "test:supplier-candidate-filter": "node --experimental-strip-types --no-warnings scripts/test-supplier-candidate-filter.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
