@@ -142,11 +142,46 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
             updated_at: new Date().toISOString(),
           })
           .eq("purchase_order_id", purchaseOrderId)
-          .select("id")
+          .select("id,order_number,supply_variant_id,quantity")
           .maybeSingle();
 
         if (internalUpdateError) throw new Error(internalUpdateError.message);
         if (!internalOrder) throw new Error("internal_fulfillment_order_not_found");
+
+        if (internalStatus === "failed" || internalStatus === "cancelled") {
+          stage = "internal_inventory_release";
+          const reservationKey = String(internalOrder.order_number ?? "");
+          const variantId = String(internalOrder.supply_variant_id ?? "");
+          const quantity = Number(internalOrder.quantity);
+          const { data: reservation, error: reservationError } = await supabase
+            .from("internal_supply_inventory_reservations")
+            .select("state")
+            .eq("reservation_key", reservationKey)
+            .maybeSingle();
+          if (reservationError) throw new Error(reservationError.message);
+          if (!reservation) throw new Error("internal_inventory_reservation_missing_manual_reconciliation_required");
+
+          if (reservation.state !== "released") {
+            const { data: released, error: releaseError } = await supabase.rpc("release_internal_supply_variant", {
+              p_reservation_key: reservationKey,
+              p_variant_id: variantId,
+              p_quantity: quantity,
+              p_reason: `supplier_order_${internalStatus}`,
+            });
+            if (releaseError) throw new Error(releaseError.message);
+            if (!released?.length) {
+              const { data: reservationAfter, error: reservationAfterError } = await supabase
+                .from("internal_supply_inventory_reservations")
+                .select("state")
+                .eq("reservation_key", reservationKey)
+                .maybeSingle();
+              if (reservationAfterError) throw new Error(reservationAfterError.message);
+              if (reservationAfter?.state !== "released") {
+                throw new Error("internal_inventory_release_not_confirmed_manual_reconciliation_required");
+              }
+            }
+          }
+        }
       }
 
       stage = "complete";
@@ -162,6 +197,73 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
         stage,
         reason,
       });
+    }
+  }
+
+  // Retry terminal internal-order inventory returns that failed in a prior
+  // reconciliation pass. Only terminal orders are eligible; active reservations
+  // are never released just because an order row is temporarily unavailable.
+  const { data: pendingReservations, error: pendingReservationError } = await supabase
+    .from("internal_supply_inventory_reservations")
+    .select("reservation_key,variant_id,quantity,state")
+    .in("state", ["reserved", "committed"])
+    .limit(100);
+
+  if (pendingReservationError) {
+    failed += 1;
+    failureDetails.push({
+      purchaseOrderId: "internal-inventory-return-scan",
+      stage: "inventory_return_scan",
+      reason: pendingReservationError.message,
+    });
+    console.error("[TRACER INTERNAL INVENTORY RETURN SCAN FAILED]", {
+      error: pendingReservationError.message,
+    });
+  } else {
+    for (const reservation of pendingReservations ?? []) {
+      const reservationKey = String(reservation.reservation_key ?? "");
+      const { data: internalOrder, error: internalOrderError } = await supabase
+        .from("internal_fulfillment_orders")
+        .select("purchase_order_id,status")
+        .eq("order_number", reservationKey)
+        .maybeSingle();
+      if (internalOrderError) {
+        failed += 1;
+        const purchaseOrderId = String(internalOrder?.purchase_order_id ?? reservationKey);
+        failedPurchaseOrderIds.push(purchaseOrderId);
+        failureDetails.push({ purchaseOrderId, stage: "inventory_return_order_lookup", reason: internalOrderError.message });
+        continue;
+      }
+      if (!internalOrder || !["failed", "cancelled"].includes(String(internalOrder.status))) continue;
+
+      const purchaseOrderId = String(internalOrder.purchase_order_id);
+      const { data: released, error: releaseError } = await supabase.rpc("release_internal_supply_variant", {
+        p_reservation_key: reservationKey,
+        p_variant_id: String(reservation.variant_id),
+        p_quantity: Number(reservation.quantity),
+        p_reason: `supplier_order_${String(internalOrder.status)}_retry`,
+      });
+      if (releaseError) {
+        failed += 1;
+        failedPurchaseOrderIds.push(purchaseOrderId);
+        failureDetails.push({ purchaseOrderId, stage: "inventory_return_retry", reason: releaseError.message });
+        console.error("[TRACER INTERNAL INVENTORY RETURN RETRY FAILED]", {
+          purchaseOrderId,
+          reservationKey,
+          variantId: reservation.variant_id,
+          error: releaseError.message,
+        });
+        continue;
+      }
+      if (released?.length) {
+        console.info("[TRACER INTERNAL INVENTORY RETURN RETRIED]", {
+          purchaseOrderId,
+          reservationKey,
+          variantId: reservation.variant_id,
+          quantity: reservation.quantity,
+          status: internalOrder.status,
+        });
+      }
     }
   }
 
