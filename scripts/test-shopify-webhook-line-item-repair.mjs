@@ -24,3 +24,4 @@ assert.ok(source.indexOf("const resolution = resolveShopifyOrderSkus") < source.
 assert.ok(source.indexOf("Number.isInteger(quantity)") < source.indexOf('shopify_line_item_id: String(item.id)'),
   "repair must reject invalid quantities before insertion");
 console.log("Shopify duplicate-webhook line-item repair contract: 13 assertions passed");
+await import("./test-shopify-line-item-db-idempotency.mjs");
