@@ -6,6 +6,27 @@ const report = JSON.parse(await readFile(inputPath, "utf8"));
 if (report.complete !== true || !Array.isArray(report.items) || report.baseItemCount !== report.items.length) {
   throw new Error("RECONCILIATION_REPORT_INCOMPLETE");
 }
+const aggregateCountFields = [
+  "baseItemCount",
+  "baseVisibleCount",
+  "baseHiddenCount",
+  "tracerListingCount",
+  "exactBaseIdMappedCount",
+  "baseItemsWithoutExactMappingCount",
+  "baseItemsWithAmbiguousExactMappingCount",
+  "tracerListingsWithoutBaseItemIdCount",
+  "duplicateBaseItemIdGroupsInTracer",
+];
+if (aggregateCountFields.some((field) => !Number.isSafeInteger(report[field]) || report[field] < 0)) {
+  throw new Error("RECONCILIATION_AGGREGATE_COUNTS_INVALID");
+}
+if (
+  report.baseVisibleCount + report.baseHiddenCount > report.baseItemCount ||
+  report.exactBaseIdMappedCount + report.baseItemsWithoutExactMappingCount +
+    report.baseItemsWithAmbiguousExactMappingCount !== report.baseItemCount
+) {
+  throw new Error("RECONCILIATION_AGGREGATE_COUNTS_INCONSISTENT");
+}
 for (const item of report.items) {
   if (!Number.isInteger(item.exactTitleCandidateCount) || item.exactTitleCandidateCount < 0 ||
       !Array.isArray(item.exactTitleCandidates) || item.exactTitleCandidateCount < item.exactTitleCandidates.length) {
