@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
-import { fetchBaseItemsSnapshot, isBaseConfigured } from "@/lib/channels/base";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,19 +36,34 @@ function visibility(value: unknown): boolean | null {
 }
 
 /** Read-only reconciliation report. Candidates are evidence only and never auto-mapped. */
-export async function GET(request: Request) {
+export async function POST(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
 
-  if (!isBaseConfigured()) {
-    return NextResponse.json(
-      { ok: false, error: "BASE_OAUTH_CONFIG_INCOMPLETE" },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
-    );
-  }
-
   try {
-    const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: 10 });
+    const body = await request.json().catch(() => null) as {
+      snapshot?: { complete?: unknown; items?: unknown };
+    } | null;
+    const snapshotItems = body?.snapshot?.items;
+    if (
+      body?.snapshot?.complete !== true ||
+      !Array.isArray(snapshotItems) ||
+      snapshotItems.length < 1 ||
+      snapshotItems.some((item) => !item || typeof item !== "object" || Array.isArray(item))
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "BASE_SNAPSHOT_INPUT_INCOMPLETE_OR_INVALID", complete: false },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    const typedSnapshotItems = snapshotItems as Record<string, unknown>[];
+    const ids = typedSnapshotItems.map((item) => String(item.item_id ?? ""));
+    if (ids.some((id) => !id) || new Set(ids).size !== ids.length) {
+      return NextResponse.json(
+        { ok: false, error: "BASE_SNAPSHOT_INPUT_ID_MISSING_OR_DUPLICATE", complete: false },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     const db = createSupabaseAdminClient();
     const listings: ListingRow[] = [];
     const pageSize = 1000;
@@ -90,7 +104,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const items = snapshot.items.map((item) => {
+    const items = typedSnapshotItems.map((item) => {
       const baseItemId = String(item.item_id ?? "");
       const title = String(item.title ?? item.name ?? "");
       const key = normalizedTitle(title);
@@ -146,10 +160,10 @@ export async function GET(request: Request) {
       schemaVersion: 1,
       generatedAt: new Date().toISOString(),
       source: "BASE /items + TRACER shop_listings read-only reconciliation",
-      complete: snapshot.complete && complete,
-      baseItemCount: snapshot.items.length,
-      baseVisibleCount: snapshot.items.filter((item) => visibility(item.visible) === true).length,
-      baseHiddenCount: snapshot.items.filter((item) => visibility(item.visible) === false).length,
+      complete: complete,
+      baseItemCount: typedSnapshotItems.length,
+      baseVisibleCount: typedSnapshotItems.filter((item) => visibility(item.visible) === true).length,
+      baseHiddenCount: typedSnapshotItems.filter((item) => visibility(item.visible) === false).length,
       tracerListingCount: listings.length,
       exactBaseIdMappedCount: exactMapped,
       baseItemsWithoutExactMappingCount: unmapped,
