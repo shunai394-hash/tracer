@@ -9,6 +9,8 @@ export const maxDuration = 120;
 type ListingRow = {
   id: string;
   title: string | null;
+  description: string | null;
+  image_url: string | null;
   product_id: string | null;
   published: boolean | null;
   base_item_id: string | number | null;
@@ -27,6 +29,39 @@ function normalizedTitle(value: unknown): string {
     .normalize("NFKC")
     .toLocaleLowerCase("ja-JP")
     .replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+function normalizedImage(value: unknown): string {
+  try {
+    const url = new URL(String(value ?? ""));
+    url.hash = "";
+    url.search = "";
+    return url.toString().replace(/\\/$/, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function textTokens(value: unknown): string[] {
+  const normalized = normalizedTitle(value);
+  if (!normalized) return [];
+  const tokens = String(value ?? "").normalize("NFKC").toLocaleLowerCase("ja-JP")
+    .match(/[\\p{L}\\p{N}]{2,}/gu) ?? [];
+  return [...new Set(tokens)];
+}
+
+function partialTitleScore(baseTitle: unknown, tracerTitle: unknown): number {
+  const a = new Set(textTokens(baseTitle));
+  const b = new Set(textTokens(tracerTitle));
+  if (!a.size || !b.size) return 0;
+  let shared = 0;
+  for (const token of a) if (b.has(token)) shared += 1;
+  const overlap = shared / Math.max(a.size, b.size);
+  const compactA = normalizedTitle(String(baseTitle ?? ""));
+  const compactB = normalizedTitle(String(tracerTitle ?? ""));
+  const containment = compactA.length >= 4 && compactB.length >= 4 &&
+    (compactA.includes(compactB) || compactB.includes(compactA));
+  return Math.min(55, Math.round(Math.max(overlap, containment ? 0.85 : 0) * 55));
 }
 
 function visibility(value: unknown): boolean | null {
@@ -73,7 +108,7 @@ export async function POST(request: Request) {
       const from = page * pageSize;
       const { data, error } = await db
         .from("shop_listings")
-        .select("id,title,product_id,published,base_item_id,selling_price,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,base_publication_status")
+        .select("id,title,description,image_url,product_id,published,base_item_id,selling_price,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,base_publication_status")
         .order("created_at", { ascending: true })
         .range(from, from + pageSize - 1);
       if (error) throw new Error("TRACER_LISTINGS_READ_FAILED");
@@ -110,6 +145,41 @@ export async function POST(request: Request) {
       const key = normalizedTitle(title);
       const exactIdListings = byBaseId.get(baseItemId) ?? [];
       const titleCandidates = key ? (byTitle.get(key) ?? []) : [];
+      const baseImage = normalizedImage(item.image_url ?? item.image ?? item.image_url_1);
+      const baseSupplierProductId = String(item.supplier_product_id ?? item.supplierProductId ?? "").trim();
+      const baseSupplierVariantId = String(item.supplier_variant_id ?? item.supplierVariantId ?? "").trim();
+      const baseSpecs = String(item.detail ?? item.description ?? item.specification ?? "");
+      const candidateScores = listings.map((row) => {
+        const evidence: string[] = [];
+        let score = 0;
+        if (baseSupplierProductId && baseSupplierProductId === String(row.supplier_product_id ?? "").trim()) {
+          score += 100; evidence.push("supplier_product_id_exact");
+        }
+        if (baseSupplierVariantId && baseSupplierVariantId === String(row.supplier_variant_id ?? "").trim()) {
+          score += 100; evidence.push("supplier_variant_id_exact");
+        }
+        const candidateImage = normalizedImage(row.image_url);
+        if (baseImage && candidateImage && baseImage === candidateImage) {
+          score += 30; evidence.push("image_url_exact");
+        }
+        const titleScore = partialTitleScore(title, row.title);
+        if (key && normalizedTitle(row.title) === key) {
+          score += 70; evidence.push("title_exact");
+        } else if (titleScore > 0) {
+          score += titleScore; evidence.push("title_partial");
+        }
+        const specTokens = new Set(textTokens(baseSpecs));
+        const listingTokens = new Set(textTokens(row.description));
+        let specShared = 0;
+        for (const token of specTokens) if (listingTokens.has(token)) specShared += 1;
+        const specScore = specTokens.size ? Math.round((specShared / Math.max(specTokens.size, listingTokens.size || 1)) * 20) : 0;
+        if (specScore > 0) { score += specScore; evidence.push("specification_overlap"); }
+        return { row, score, evidence };
+      }).filter((candidate) => candidate.score > 0)
+        .sort((a, b) => b.score - a.score || a.row.id.localeCompare(b.row.id));
+      const topScore = candidateScores[0]?.score ?? 0;
+      const topCandidates = candidateScores.filter((candidate) => candidate.score === topScore);
+      const reviewRequired = topCandidates.length > 1 || (topScore > 0 && topScore < 100);
       return {
         baseItemId,
         visible: visibility(item.visible),
@@ -149,6 +219,20 @@ export async function POST(request: Request) {
             ? Number(row.selling_price) - Number(item.price)
             : null,
         })),
+        scoredCandidates: candidateScores.slice(0, 20).map(({ row, score, evidence }) => ({
+          listingId: row.id,
+          title: row.title,
+          score,
+          evidence,
+          supplierName: row.supplier_name,
+          supplierListingId: row.supplier_listing_id,
+          supplierProductId: row.supplier_product_id,
+          supplierVariantId: row.supplier_variant_id,
+          imageUrlMatches: Boolean(baseImage && normalizedImage(row.image_url) === baseImage),
+          status: reviewRequired ? "REVIEW_REQUIRED" : score >= 100 ? "HIGH_CONFIDENCE_CANDIDATE_NOT_AUTO_MAPPED" : "REVIEW_REQUIRED",
+        })),
+        candidateDecision: topCandidates.length > 1 ? "MULTIPLE_TOP_CANDIDATES_REVIEW_REQUIRED"
+          : topScore > 0 ? "CANDIDATE_REVIEW_REQUIRED" : "NO_CANDIDATE",
       };
     });
 
@@ -157,7 +241,7 @@ export async function POST(request: Request) {
     const ambiguous = items.filter((item) => item.exactBaseIdMatchCount > 1).length;
     const titleCandidateCount = items.filter((item) => item.exactTitleCandidateCount > 0).length;
     const report = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       generatedAt: new Date().toISOString(),
       source: "BASE /items + TRACER shop_listings read-only reconciliation",
       complete: complete,
@@ -169,9 +253,11 @@ export async function POST(request: Request) {
       baseItemsWithoutExactMappingCount: unmapped,
       baseItemsWithAmbiguousExactMappingCount: ambiguous,
       baseItemsWithExactTitleCandidateCount: titleCandidateCount,
+      baseItemsWithScoredCandidateCount: items.filter((item) => item.scoredCandidates.length > 0).length,
+      baseItemsRequiringCandidateReviewCount: items.filter((item) => item.candidateDecision !== "NO_CANDIDATE").length,
       tracerListingsWithoutBaseItemIdCount: listings.filter((row) => !String(row.base_item_id ?? "").trim()).length,
       duplicateBaseItemIdGroupsInTracer: [...byBaseId.entries()].filter(([, rows]) => rows.length > 1).length,
-      note: "Exact-title candidates are unverified suggestions only. This report never writes mappings or changes BASE listings.",
+      note: "Scored candidates are unverified evidence only. Ambiguous or partial matches require manual review. This report never writes mappings or changes BASE listings.",
       items,
     };
     const date = report.generatedAt.slice(0, 10);
