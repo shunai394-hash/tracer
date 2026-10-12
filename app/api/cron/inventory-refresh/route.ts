@@ -6,6 +6,7 @@ import { initializeProcurement } from "@/lib/procurement/init";
 import { getSupplierAdapter } from "@/lib/procurement/registry";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { hasDurableSalesTestGate } from "@/lib/suppliers/inventory-refresh-gate";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
@@ -359,14 +360,10 @@ export async function GET(request: Request) {
           continue;
         }
 
-        const hasDurableSalesTestGate =
-          Array.isArray(listing.selection_reasons) &&
-          listing.selection_reasons.some((reason: unknown) => String(reason) === SALES_TEST_GATE_PASSED);
-
         // A refreshed stock count cannot restore saleability after a cost change
         // invalidated the profitability gate. Only the selection pipeline may
         // re-establish this durable marker after re-running the Sales Test Gate.
-        if (!hasDurableSalesTestGate) {
+        if (!hasDurableSalesTestGate(listing.selection_reasons)) {
           const reason = "sales_test_gate_not_passed";
           const { error: blockError } = await supabase
             .from("shop_listings")
