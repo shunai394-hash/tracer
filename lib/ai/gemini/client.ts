@@ -63,7 +63,6 @@ export async function generateStructuredJson<T>(
           : undefined,
         contents: [{ parts: [{ text: request.prompt }] }],
         generationConfig: {
-          temperature: 0.2,
           responseMimeType: "application/json",
         },
       }),
