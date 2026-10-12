@@ -55,13 +55,25 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
     const clauses = ["jan", "gtin", "ean", "upc"].map((column) => `${column}.eq.${value}`);
     const { data, error } = await args.db
       .from("marketplace_bestseller_variants")
-      .select("id,bestseller_id,source_variant_id,jan,gtin,ean,upc,evidence_source,title,product_url,sku")
+      .select("id,bestseller_id,source_variant_id,jan,gtin,ean,upc,evidence_source,raw_evidence,title,product_url,sku")
       .or(clauses.join(","))
       .limit(51);
     if (error) throw new Error(`CJ canonical child-variant identity lookup failed: ${error.message}`);
     if ((data?.length ?? 0) > 50) return null;
     for (const row of data ?? []) {
-      if (row.evidence_source !== "schema_org_product_group_has_variant") continue;
+      // Accept explicit Schema.org children or a child ASIN whose own detail
+      // page returned its own valid barcode. Never inherit the parent barcode.
+      const rawEvidence = row.raw_evidence && typeof row.raw_evidence === "object" && !Array.isArray(row.raw_evidence)
+        ? row.raw_evidence as Record<string, unknown>
+        : {};
+      const schemaChild = row.evidence_source === "schema_org_product_group_has_variant";
+      const verifiedAmazonChild = row.evidence_source === "amazon_variation_asin_map"
+        && rawEvidence.extraction === "child_detail_page"
+        && typeof rawEvidence.child_product_url === "string"
+        && rawEvidence.child_product_url.startsWith("https://www.amazon.co.jp/dp/")
+        && typeof row.source_variant_id === "string"
+        && /^[A-Z0-9]{10}$/i.test(row.source_variant_id);
+      if (!schemaChild && !verifiedAmazonChild) continue;
       if (typeof row.source_variant_id !== "string" || !row.source_variant_id.trim()) continue;
       const rowIds = identifiersFromRecord(row as Record<string, unknown>);
       const identity = matchProductIdentity({
