@@ -428,7 +428,7 @@ export async function discoverAndCreateCjSupply(
         supplier: "cj", external_id: candidate.variantId, sku: null, title: detail.title, product_id: productId,
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
         order_method: "cj_api", api_available: true, verification_status: "verified", shipping_status: "verified", identity_method: "supply_discovered",
-        identity_status: "supply_discovered", identity_confidence: 1, configured: true,
+        identity_status: "supply_discovered", identity_confidence: 0, configured: true,
         supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
         gtin: normalizeIdentifier("gtin", variantBarcode),
         orderable: true, price_confirmed: true, inventory_confirmed: true, tracking_available: cjTrackingAvailable,
