@@ -222,7 +222,17 @@ begin
      and r.variant_id = new.supply_variant_id
      and r.quantity = new.quantity
    for update;
-  if not found or v_state <> 'reserved' then
+  if not found then
+    raise exception 'internal_fulfillment_requires_active_inventory_reservation';
+  end if;
+  if v_state = 'committed' and exists (
+    select 1 from public.internal_fulfillment_orders o where o.order_number = new.order_number
+  ) then
+    -- Permit the duplicate insert to reach the unique constraint so the caller
+    -- can re-read the already-created order without releasing its reservation.
+    return new;
+  end if;
+  if v_state <> 'reserved' then
     raise exception 'internal_fulfillment_requires_active_inventory_reservation';
   end if;
   return new;
