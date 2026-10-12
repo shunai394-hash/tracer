@@ -1,13 +1,18 @@
+import { NextResponse } from "next/server";
 import {
   GeminiConfigError,
   GeminiRequestError,
   GeminiTimeoutError,
 } from "@/lib/ai/gemini";
 import { pingIntelligenceLayer } from "@/lib/intelligence";
+import { requireCronAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 
-export async function POST() {
+export async function POST(request: Request) {
+  const authError = requireCronAuth(request);
+  if (authError) return authError;
+
   try {
     const result = await pingIntelligenceLayer();
     return Response.json(result, { status: result.ok ? 200 : 503 });
