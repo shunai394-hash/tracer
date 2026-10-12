@@ -335,7 +335,7 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
   const reasonCounts: Record<string, number> = {};
   const evaluatedRows: ShopifySyncPreviewRow[] = rows.map((row) => {
     const reasons = blockReasons(row);
-    if (typeof row.image_url !== "string" || !/^https?:\\/\\//i.test(row.image_url)) reasons.push("image_url_invalid");
+    if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) reasons.push("image_url_invalid");
     if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");
     for (const reason of reasons) reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1;
     return {
@@ -347,7 +347,7 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
       supplier: row.supplier_name,
       supplierProductId: row.supplier_product_id,
       supplierVariantId: row.supplier_variant_id,
-      imageOk: typeof row.image_url === "string" && /^https?:\\/\\//i.test(row.image_url),
+      imageOk: typeof row.image_url === "string" && /^https?:\/\//i.test(row.image_url),
       sellingPrice: asNumber(row.selling_price),
       inventory: asNumber(row.inventory),
       shopifyProductId: row.shopify_product_id,
