@@ -15,7 +15,7 @@ const existingBaseOrder = base.slice(base.indexOf("if (existing?.id)"), base.ind
 assert.match(existingBaseOrder, /getBaseOrderDetail\(baseOrderKey\)/);
 assert.match(existingBaseOrder, /isBaseOrderPaid\(detail\)/);
 assert.match(existingBaseOrder, /if \(paid && !canceled\)/);
-assert.match(existingBaseOrder, /createDropshipPurchaseOrdersForShopOrder\(String\(existing\.id\)\)/);
+assert.match(existingBaseOrder, /createDropshipPurchaseOrdersForShopOrder\(String\(existing\.id\)\)/);\nassert.match(existingBaseOrder, /else if \(existing\.payment_status === "paid"\)[\\s\\S]*?must not[\\s\\S]*?downgrade/);
 
 // Unpaid cash-on-delivery / post-pay orders must never open procurement.
 assert.match(base, /case "cod":[\s\S]*?return false;/);
@@ -41,4 +41,4 @@ assert.match(execution, /deduped_existing_attempt/);
 assert.match(execution, /supplier_order_created_db_sync_failed/);
 assert.match(execution, /supplier_attempt_record_update_failed_manual_reconciliation_required/);
 
-console.log("Paid-order recovery contract: 17 assertions passed");
+console.log("Paid-order recovery contract: 18 assertions passed");
