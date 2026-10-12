@@ -50,7 +50,7 @@ async function getGitHubSigningKey(kid: string): Promise<GitHubJwk | null> {
   return jwksCache.keys.find((key) => key.kid === kid) ?? null;
 }
 
-async function verifyGitHubOidcToken(
+export async function verifyGitHubOidcToken(
   token: string,
   expectedWorkflowRef?: string,
 ): Promise<boolean> {
@@ -74,8 +74,8 @@ async function verifyGitHubOidcToken(
           claims.aud.includes("https://tracer-pied-alpha.vercel.app"))
       )
     ) return false;
-    if (!claims.exp || claims.exp <= now) return false;
-    if (claims.nbf && claims.nbf > now + 30) return false;
+    if (typeof claims.exp !== "number" || !Number.isFinite(claims.exp) || claims.exp <= now) return false;
+    if (claims.nbf !== undefined && (typeof claims.nbf !== "number" || !Number.isFinite(claims.nbf) || claims.nbf > now + 30)) return false;
     if (claims.repository !== "shunai394-hash/tracer") return false;
     if (claims.ref !== "refs/heads/main") return false;
     if (expectedWorkflowRef && claims.workflow_ref !== expectedWorkflowRef) {
