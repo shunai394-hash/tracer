@@ -48,7 +48,7 @@ async function markProcessed(
   shopOrderId: string | null,
   error?: string,
 ): Promise<void> {
-  await supabase
+  const { data, error: updateError } = await supabase
     .from("stripe_webhook_events")
     .update({
       processed: !error,
@@ -56,7 +56,11 @@ async function markProcessed(
       shop_order_id: shopOrderId,
       processed_at: new Date().toISOString(),
     })
-    .eq("stripe_event_id", eventId);
+    .eq("stripe_event_id", eventId)
+    .select("stripe_event_id")
+    .maybeSingle();
+  if (updateError) throw new Error("stripe_event_ledger_update_failed:" + updateError.message);
+  if (!data) throw new Error("stripe_event_ledger_row_missing:" + eventId);
 }
 
 async function handleCheckoutCompleted(
@@ -198,7 +202,7 @@ async function handleChargeRefunded(
   const refundAmount = zeroDecimal.has(currency) ? refundedMinorUnits : refundedMinorUnits / 100;
   const fullyRefunded = order?.total !== null && order?.total !== undefined && refundAmount >= Number(order.total);
 
-  await supabase
+  const { error: refundUpdateError } = await supabase
     .from("shop_orders")
     .update({
       payment_status: fullyRefunded ? "refunded" : "partially_refunded",
@@ -207,6 +211,7 @@ async function handleChargeRefunded(
       refund_amount: refundAmount,
     })
     .eq("id", shopOrderId);
+  if (refundUpdateError) throw new Error("stripe_refund_persistence_failed:" + refundUpdateError.message);
 
   return shopOrderId;
 }
