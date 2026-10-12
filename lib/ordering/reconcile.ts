@@ -25,10 +25,11 @@ function normalizeStatus(value: string | null | undefined): string | null {
 }
 
 /**
- * Read-only reconciliation pass.
+ * Supplier reconciliation pass.
  *
- * It never creates supplier orders and never fabricates shipment state.
- * Supplier adapters remain the source of truth for supplier status/tracking.
+ * Existing supplier orders are looked up only; this function never creates or
+ * resends supplier orders. Payment-recovery rows require explicit payment
+ * evidence before their local state is promoted.
  */
 export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResult> {
   initializeProcurement();
