@@ -16,7 +16,7 @@ assert.match(route, /exactTitleCandidateCount/);
 assert.match(route, /supplier_product_id_exact/);
 assert.match(route, /supplier_variant_id_exact/);
 assert.match(route, /image_url_exact/);
-assert.doesNotMatch(route, /url\\.search\\s*=\\s*["\']["\']/); // image URL query parameters must not be discarded
+assert.doesNotMatch(route, /url\.search\s*=\s*["']["']/); // image URL query parameters must not be discarded
 assert.match(route, /specification_overlap/);
 assert.match(route, /partialTitleScore/);
 assert.match(route, /scoredCandidates/);
