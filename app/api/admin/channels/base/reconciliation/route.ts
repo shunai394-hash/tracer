@@ -35,7 +35,7 @@ function normalizedImage(value: unknown): string {
   try {
     const url = new URL(String(value ?? ""));
     url.hash = "";
-    url.search = "";
+    // Keep query parameters: some supplier/CDN URLs use them to identify distinct image assets.
     return url.toString().replace(/\/$/, "").toLowerCase();
   } catch {
     return "";
