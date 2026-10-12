@@ -110,27 +110,6 @@ export async function linkInternalSupplyForBestseller(args: {
       .limit(1)
       .maybeSingle();
 
-    const productMetadata = product.metadata && typeof product.metadata === "object"
-      ? product.metadata as Record<string, unknown>
-      : {};
-    const variantMetadata = variant.metadata && typeof variant.metadata === "object"
-      ? variant.metadata as Record<string, unknown>
-      : {};
-    const sourceName = String(product.source_name ?? "");
-    const externalProductId = typeof productMetadata.supplier_product_id === "string"
-      ? productMetadata.supplier_product_id.trim()
-      : "";
-    const externalVariantId = typeof variantMetadata.supplier_variant_id === "string"
-      ? variantMetadata.supplier_variant_id.trim()
-      : typeof variant.variant_id === "string"
-        ? variant.variant_id.trim()
-        : "";
-    // Internal database UUIDs are not supplier identifiers. For CJ, both
-    // external IDs must be present before we create a supplier listing.
-    if (sourceName.toLowerCase() === "cj" && (!externalProductId || !externalVariantId)) {
-      continue;
-    }
-
     const listingPayload = {
         supplier: "tracer_internal",
         external_id: String(product.source_ref ?? product.id),
