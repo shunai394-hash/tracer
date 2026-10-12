@@ -1,0 +1,54 @@
+name: One-time cleanup of BASE snapshot artifacts
+
+on:
+  push:
+    branches:
+      - cleanup/base-backup-artifacts-20261012
+    paths:
+      - .github/workflows/purge-base-backup-artifacts.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  purge-exact-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the two identified snapshot artifacts and verify absence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="shunai394-hash/tracer"
+          artifacts=("11723115402" "11721914683")
+
+          for id in "${artifacts[@]}"; do
+            status="$(curl -sS -o /tmp/artifact-delete-response.json -w '%{http_code}' \
+              -X DELETE \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${repo}/actions/artifacts/${id}")"
+            if [[ "${status}" != "204" && "${status}" != "404" ]]; then
+              echo "DELETE failed for artifact ${id}: HTTP ${status}"
+              cat /tmp/artifact-delete-response.json
+              exit 1
+            fi
+            echo "DELETE artifact ${id}: HTTP ${status}"
+          done
+
+          for id in "${artifacts[@]}"; do
+            status="$(curl -sS -o /tmp/artifact-verify-response.json -w '%{http_code}' \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${repo}/actions/artifacts/${id}")"
+            if [[ "${status}" != "404" ]]; then
+              echo "Artifact ${id} still exists or cannot be verified: HTTP ${status}"
+              cat /tmp/artifact-verify-response.json
+              exit 1
+            fi
+            echo "VERIFIED artifact ${id} absent: HTTP 404"
+          done
+
+          echo "PASS: both targeted artifacts are absent; this workflow does not upload artifacts."
