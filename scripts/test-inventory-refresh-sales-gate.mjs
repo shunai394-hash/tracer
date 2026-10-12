@@ -25,8 +25,8 @@ assert.match(refreshRoute, /visible:\s*false/, "BASE sync failures must attempt 
 assert.match(refreshRoute, /hide retry failed:/, "failed BASE hide attempts must be recorded");
 assert.match(refreshRoute, /from\("supplier_listings"\)[\s\S]{0,180}update\(\{ orderable: false, fetched_at: now \}\)/, "BASE sync failures must also block supplier-side eligibility");
 assert.match(refreshRoute, /orderable:\s*orderable\s*&&\s*!deferBaseEligibility/, "BASE-backed listings must remain locally non-orderable while BASE sync is pending");
-assert.match(refreshRoute, /restoreListingError[\s\S]{0,220}update\(\{ orderable: true, base_last_error: null \}\)/, "listing eligibility may be restored only after BASE sync succeeds");
-assert.match(refreshRoute, /restoreSupplierError[\s\S]{0,220}update\(\{ orderable: true, fetched_at: now \}\)/, "supplier eligibility may be restored only after BASE sync succeeds");
+assert.match(refreshRoute, /restoreListingError[\s\S]{0,220}update\(\{ orderable, base_last_error: null \}\)/, "listing eligibility may be restored only after BASE sync succeeds and zero stock remains blocked");
+assert.match(refreshRoute, /restoreSupplierError[\s\S]{0,220}update\(\{ orderable, fetched_at: now \}\)/, "supplier eligibility may be restored only after BASE sync succeeds and zero stock remains blocked");
 
 
 const orosyImport = readFileSync(new URL("../app/api/cron/orosy-bulk-import/route.ts", import.meta.url), "utf8");
@@ -47,4 +47,4 @@ assert.doesNotMatch(orosyImport, /selection_reasons:\s*\[[^\]]*"ORDERABLE"/, "ca
 assert.doesNotMatch(orosyImport, /syncPublishedListingsToShopify/, "staging import must not trigger unrelated Shopify production sync");
 assert.match(orosyImport, /staging_only_no_shopify_sync/, "import endpoint must explicitly report staging-only behavior");
 
-console.log(`Inventory refresh sales-gate invariant: ${cases.length} cases passed; supplier price freshness: 2 assertions; BASE fail-closed: 8 assertions; Orosy import safety: 10 assertions`);
+console.log(`Inventory refresh sales-gate invariant: ${cases.length} cases passed; supplier price freshness: 2 assertions; BASE fail-closed: 10 assertions; Orosy import safety: 10 assertions`);
