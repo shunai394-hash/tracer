@@ -38,3 +38,11 @@ assert.match(store, /shopify_live_stock_unverified/, "order creation must reject
 assert.match(store, /requested quantity exceeds verified live inventory/, "quantity checks must use live-verified stock");
 
 console.log("Shopify live-stock fail-closed checks: 26 passed (8 behavior cases + 18 source guards)");
+
+const refresh = await readFile(new URL("../app/api/cron/inventory-refresh/route.ts", import.meta.url), "utf8");
+assert.match(refresh, /priceResult\.currency\?\.trim\(\)\.toUpperCase\(\) === "JPY"/, "supplier price must be JPY before it is stored in JPY fields");
+assert.match(refresh, /shippingResult\.currency\?\.trim\(\)\.toUpperCase\(\) === "JPY"/, "Japan shipping amount must be JPY before it is stored in JPY fields");
+assert.match(refresh, /fresh_supplier_variant_price_or_japan_shipping_unverified/, "non-JPY or unverified supplier evidence must fail closed");
+
+console.log("Supplier price/shipping currency guards: 3 passed");
+
