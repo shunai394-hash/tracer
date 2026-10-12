@@ -8,7 +8,7 @@ assert.match(source, /Recovery for an existing supplier order is lookup-only/);
 assert.match(source, /if \(!adapter\.capabilities\.orderStatus\)/);
 assert.match(source, /supplier_payment_status_lookup_unsupported_manual_reconciliation_required/);
 assert.match(source, /adapter\.getOrderStatus\(supplierOrderId\)/);
-assert.doesNotMatch(source, /executeSupplierPurchaseOrder\\s*\\(/,
+assert.doesNotMatch(source, /executeSupplierPurchaseOrder\s*\(/,
   "payment recovery must not invoke the supplier order creation path");
 assert.match(source, /paymentResult\?\.paymentConfirmed === true/);
 assert.match(source, /supplier_order_attempt_ledger_missing_manual_reconciliation_required/);
