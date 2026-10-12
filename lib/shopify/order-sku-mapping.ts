@@ -42,11 +42,11 @@ export type OrderSkuResolution =
   | { ok: false; reason: "listing_mapping_missing" | "listing_mapping_ambiguous"; sku: string };
 
 /** Resolve only exact generated SKU identities; never guess by title or partial match. */
-export function resolveShopifyOrderSkus(
+export function resolveShopifyOrderSkus<T extends OrderSkuListing>(
   skus: string[],
-  listings: OrderSkuListing[],
-): OrderSkuResolution {
-  const bySku = new Map<string, OrderSkuListing>();
+  listings: T[],
+): { ok: true; bySku: Map<string, T> } | { ok: false; reason: "listing_mapping_missing" | "listing_mapping_ambiguous"; sku: string } {
+  const bySku = new Map<string, T>();
   for (const sku of skus) {
     const exact = listings.filter((listing) =>
       tracerSkuForListing(listing) === sku || listing.id === sku,
