@@ -12,4 +12,7 @@ assert.ok(source.includes("hasRequiredEvidence(page.html)"), "retain Bright Data
 assert.ok(source.includes("fetchHtml(childUrl, { retryBrightDataWhenAmazonIdentifierMissing: true })"), "child detail pages must retry through Bright Data when direct HTML has no barcode");
 assert.ok(source.includes("hasAmazonBarcodeEvidence"), "Bright Data child detail pages must be checked for their own barcode");
 assert.ok(source.includes("detail.jan || detail.gtin || detail.ean || detail.upc"), "child retry must require a concrete barcode on that child page");
-console.log("Amazon child variant diagnostics: 9 assertions passed");
+assert.ok(source.includes("childAsinsNeedingBarcode"), "retry child ASINs even when Schema.org produced partial variants");
+assert.ok(source.includes("!existing || !(existing.jan || existing.gtin || existing.ean || existing.upc)"), "avoid retrying child variants that already have a concrete barcode");
+assert.ok(source.includes("findIndex((existing) => existing.asin === variant.asin)"), "merge recovered child evidence by ASIN instead of duplicating variants");
+console.log("Amazon child variant diagnostics: 12 assertions passed");
