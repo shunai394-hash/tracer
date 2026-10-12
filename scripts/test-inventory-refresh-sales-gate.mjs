@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { hasDurableSalesTestGate } from "../lib/suppliers/inventory-refresh-gate.ts";
 
 const marker = "sales_test_gate_passed";
@@ -13,4 +14,8 @@ const cases = [
 for (const item of cases) {
   assert.equal(hasDurableSalesTestGate(item.input), item.expected, item.name);
 }
-console.log(`Inventory refresh sales-gate invariant: ${cases.length} cases passed`);
+const persistence = readFileSync(new URL("../lib/intelligence/persist-cj-supply-intelligence.ts", import.meta.url), "utf8");
+assert.match(persistence, /price_checked_at:\s*null/, "cached or caller-provided CJ cost must not be stamped as a fresh price observation");
+assert.doesNotMatch(persistence, /price_checked_at:\s*Number\.isFinite\(args\.cost\)/, "price freshness must not be inferred from cost validity alone");
+
+console.log(`Inventory refresh sales-gate invariant: ${cases.length} cases passed; supplier price freshness fail-closed: 2 assertions passed`);
