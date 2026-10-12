@@ -201,12 +201,16 @@ export async function GET(request: Request) {
           }),
         ]);
         const evidenceMatches =
+          Boolean(listing.supplier_listing_id) &&
+          inventoryResult !== null &&
+          priceResult !== null &&
+          shippingResult !== null &&
           inventoryResult.supplierProductId === String(listing.supplier_product_id ?? "") &&
           inventoryResult.supplierVariantId === variantId &&
-          priceResult?.supplierProductId === String(listing.supplier_product_id ?? "") &&
-          priceResult?.supplierVariantId === variantId &&
-          shippingResult?.supplierProductId === String(listing.supplier_product_id ?? "") &&
-          shippingResult?.supplierVariantId === variantId &&
+          priceResult.supplierProductId === String(listing.supplier_product_id ?? "") &&
+          priceResult.supplierVariantId === variantId &&
+          shippingResult.supplierProductId === String(listing.supplier_product_id ?? "") &&
+          shippingResult.supplierVariantId === variantId &&
           typeof priceResult.amount === "number" &&
           Number.isFinite(priceResult.amount) &&
           priceResult.amount >= 0 &&
