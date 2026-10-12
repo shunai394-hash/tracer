@@ -28,6 +28,20 @@ function paymentMethod(payment: string | undefined): "cash_on_delivery" | "bank_
   return "card";
 }
 
+function assertUniqueBaseItemMappings<T extends { base_item_id: string | number | null }>(
+  listings: T[] | null,
+): void {
+  const counts = new Map<string, number>();
+  for (const listing of listings ?? []) {
+    const key = String(listing.base_item_id);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const ambiguous = [...counts.entries()].filter(([, count]) => count > 1).map(([key]) => key);
+  if (ambiguous.length > 0) {
+    throw new Error(`base_item_mapping_ambiguous:${ambiguous.join(",")}`);
+  }
+}
+
 function isBaseOrderPaid(order: Awaited<ReturnType<typeof getBaseOrderDetail>>): boolean {
   if (order.dispatch_status === "unpaid") return false;
   if (order.dispatch_status === "cancelled" || order.dispatch_status === "unshippable") return false;
@@ -81,6 +95,7 @@ async function repairBaseOrderItems(
     .select("id,product_id,title,selling_price,currency,base_item_id,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id")
     .in("base_item_id", itemIds);
   if (listingError) throw new Error(listingError.message);
+  assertUniqueBaseItemMappings(listings);
 
   const listingByBaseItem = new Map(
     (listings ?? []).map((listing) => [String(listing.base_item_id), listing]),
@@ -223,6 +238,7 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
         .in("base_item_id", itemIds);
 
       if (listingError) throw new Error(listingError.message);
+      assertUniqueBaseItemMappings(listings);
 
       const listingByBaseItem = new Map(
         (listings ?? []).map((listing) => [String(listing.base_item_id), listing]),
