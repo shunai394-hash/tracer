@@ -218,7 +218,6 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
   }
 
   for (const order of orders) {
-    let insertedOrderId: string | null = null;
     try {
       // Do not turn a cancelled, partially fulfilled, or already fulfilled
       // Shopify order into a new procurement job. Query filters are backed by
@@ -327,7 +326,6 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         } else {
           if (inserted.error || !inserted.data) throw new Error(inserted.error?.message ?? "shop_order_insert_failed");
           targetOrderId = String(inserted.data.id);
-          insertedOrderId = targetOrderId;
         }
       }
 
@@ -403,9 +401,9 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
       else result.imported += 1;
       result.orderIds.push(targetOrderId);
     } catch (error) {
-      if (insertedOrderId) {
-        await supabase.from("shop_orders").delete().eq("id", insertedOrderId).eq("shopify_order_id", order.id);
-      }
+      // Keep the parent and any successfully persisted line items. A later
+      // replay can reconcile missing IDs; deleting here would hide failures
+      // and the previous cleanup path ignored delete errors.
       result.failed += 1;
       result.errors.push({
         shopifyOrderId: order.id,
