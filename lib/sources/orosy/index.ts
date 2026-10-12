@@ -131,6 +131,7 @@ export type OrosyShippingQuote = {
 
 export async function searchOrosyProducts(
   query: string,
+  options: { page?: number; perPage?: number } = {},
 ): Promise<OrosyProduct[]> {
   const q = query.trim();
 
@@ -144,8 +145,8 @@ export async function searchOrosyProducts(
     min_stock: "1",
     preorder: "exclude",
     dest: "JP",
-    page: "1",
-    per_page: "100",
+    page: String(Math.max(1, Math.floor(options.page ?? 1))),
+    per_page: String(Math.min(100, Math.max(1, Math.floor(options.perPage ?? 100)))),
   });
 
   const response = await orosyRequest<OrosyProductSearchResponse>(
