@@ -7,12 +7,14 @@ const policy = await readFile(new URL("../lib/channels/base-reconciliation-confi
 const workflow = await readFile(new URL("../.github/workflows/base-product-backup.yml", import.meta.url), "utf8");
 const candidate = {
   score: 100, topScore: 100, topCandidateCount: 1,
-  evidence: ["supplier_product_id_exact"],
+  evidence: ["supplier_product_id_exact", "supplier_variant_id_exact"],
   baseSupplierProductId: "P-1", baseSupplierVariantId: "V-RED",
   rowSupplierProductId: "P-1", rowSupplierVariantId: "V-RED",
   duplicateIdentityCount: 1,
 };
 assert.equal(isHighConfidenceReconciliationCandidate(candidate), true, "exact unique product+variant evidence may be high-confidence");
+assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, evidence: ["supplier_product_id_exact"] }), false, "product ID alone must not establish a variant-level match");
+assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, baseSupplierVariantId: "", rowSupplierVariantId: "" }), false, "missing variant IDs must require review");
 assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, baseSupplierVariantId: "V-BLUE", rowSupplierVariantId: "V-RED" }), false, "variant mismatch must require review");
 assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, baseSupplierVariantId: "", rowSupplierVariantId: "V-RED" }), false, "a variant present only on the candidate side must require review");
 assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, baseSupplierVariantId: "V-RED", rowSupplierVariantId: "" }), false, "a variant present only on the BASE side must require review");
