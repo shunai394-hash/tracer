@@ -81,7 +81,14 @@ export async function POST(request: Request) {
       if (itemsError) throw new Error(itemsError.message);
       if (!orderItems || orderItems.length === 0) throw new Error("order has no items to charge");
 
-      const currency = String(orderItems[0].currency ?? "USD");
+      const currencies = new Set(orderItems.map((item) => String(item.currency ?? "").trim().toUpperCase()));
+      if (currencies.size !== 1 || !currencies.has("JPY")) {
+        throw new Error("shop_order_currency_invalid");
+      }
+      if (orderItems.some((item) => !Number.isSafeInteger(Number(item.qty)) || Number(item.qty) <= 0 || !Number.isFinite(Number(item.unit_price)) || Number(item.unit_price) <= 0)) {
+        throw new Error("shop_order_line_item_invalid");
+      }
+      const currency = "JPY";
       const session = await createCheckoutSession({
         shopOrderId: order.orderId,
         customerEmail: required.email!,
