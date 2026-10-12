@@ -22,7 +22,7 @@ assert.ok(finalReturn > guard, "normal success return must follow the retry guar
 const cursorPolicy = await readFile(new URL("../lib/market/market-cursor-policy.mjs", import.meta.url), "utf8");
 assert.ok(cursorPolicy.includes("observation.hasMore"), "cursor transition must distinguish same-source pagination from source rotation");
 assert.ok(cursorPolicy.includes("observation.nextIndex"), "cursor transition must resume at the next page offset");
-assert.ok(cursorPolicy.includes("(Math.max(0, observation.sourceIndex) + 1) % SOURCE_COUNT"), "completed source must advance exactly once");
+assert.ok(cursorPolicy.includes("(sourceIndex + 1) % SOURCE_COUNT"), "completed source must advance exactly once");
 const guarded = pipeline.slice(guard, finalReturn);
 assert.ok(guarded.includes("observation.canonicalVariantEvidenceParsed === 0"), "zero canonical variant evidence must defer the stage");
 assert.ok(guarded.includes("observation.canonicalVariantEvidenceWriteFailures > 0"), "evidence write failures must be detectable");
