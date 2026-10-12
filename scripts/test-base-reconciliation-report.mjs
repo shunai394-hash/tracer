@@ -32,27 +32,26 @@ assert.match(route, /exactTitleCandidateCount/);
 assert.match(route, /supplier_product_id_exact/);
 assert.match(route, /supplier_variant_id_exact/);
 assert.match(route, /image_url_exact/);
-assert.doesNotMatch(route, /url\\.search\\s*=\\s*["'][“”"'][“”"']/); // image URL query parameters must not be discarded
+assert.doesNotMatch(route, /url\.search\s*=\s*""/); // image URL query parameters must not be discarded
 assert.match(route, /specification_overlap/);
 assert.match(route, /partialTitleScore/);
 assert.match(route, /Script=Han.*Script=Hiragana.*Script=Katakana/); // Japanese unspaced titles use CJK bigrams
 assert.match(route, /scoredCandidates/);
 assert.match(route, /MULTIPLE_TOP_CANDIDATES_REVIEW_REQUIRED/);
-assert.match(policy, /baseVariant && baseVariant !== rowVariant/); // matching product alone cannot override a variant mismatch
+assert.match(policy, /baseVariant && baseVariant !== rowVariant/); // variant mismatch requires review
 assert.match(policy, /baseProduct && rowProduct && baseProduct !== rowProduct/);
-assert.match(policy, /input\\.score !== input\\.topScore \\|\\| input\\.topCandidateCount !== 1/); // unique top-ranked candidate only
-assert.match(route, /candidateIdentityCounts\\.get\\(identityKey\\) \\?\\? 0/);
-assert.match(policy, /input\\.duplicateIdentityCount > 1/);
-
+assert.match(policy, /input\.score !== input\.topScore \|\| input\.topCandidateCount !== 1/);
+assert.match(route, /candidateIdentityCounts\.get\(identityKey\) \?\? 0/);
+assert.match(policy, /input\.duplicateIdentityCount > 1/);
+assert.match(policy, /input\.evidence\.some\(\(entry\) => entry === "supplier_product_id_exact" \|\| entry === "supplier_variant_id_exact"\)/);
 assert.match(route, /REVIEW_REQUIRED/);
-assert.match(policy, /input\\.evidence\\.some\\(\\(entry\\) => entry === "supplier_product_id_exact" \\|\\| entry === "supplier_variant_id_exact"\\)/);
-assert.doesNotMatch(route, /score >= 100 \\? "HIGH_CONFIDENCE_CANDIDATE_NOT_AUTO_MAPPED"/);
+assert.doesNotMatch(route, /score >= 100 \? "HIGH_CONFIDENCE_CANDIDATE_NOT_AUTO_MAPPED"/);
 assert.match(route, /baseItemsWithScoredCandidateCount/);
 assert.match(route, /never auto-mapped/);
 assert.match(route, /Cache-Control.*no-store, private/);
-assert.doesNotMatch(route, /\\.update\\(|\\.insert\\(|\\.upsert\\(|createBaseItem\\(|editBaseItem\\(/);
-assert.match(workflow, /api\\/admin\\/channels\\/base\\/reconciliation/);
-assert.match(workflow, /body: JSON\\.stringify\\(\\{ snapshot \\}\\)/);
-assert.match(workflow, /tracer-base-\\*\\.json/);
+assert.doesNotMatch(route, /\.update\(|\.insert\(|\.upsert\(|createBaseItem\(|editBaseItem\(/);
+assert.match(workflow, /api\/admin\/channels\/base\/reconciliation/);
+assert.match(workflow, /body: JSON\.stringify\(\{ snapshot \}\)/);
+assert.match(workflow, /tracer-base-\*\.json/);
 assert.match(workflow, /BASE_RECONCILIATION_INCOMPLETE_OR_COUNT_MISMATCH/);
 console.log("BASE/TRACER reconciliation report contract: scored candidate safeguards asserted");
