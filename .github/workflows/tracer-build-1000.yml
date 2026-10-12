@@ -3,6 +3,7 @@ name: TRACER Build 1000 Supply
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   id-token: write
