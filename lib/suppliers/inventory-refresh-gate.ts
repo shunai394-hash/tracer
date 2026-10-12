@@ -1,4 +1,4 @@
-import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { SALES_TEST_GATE_PASSED } from "../market/sales-test-gate.ts";
 
 /** Inventory refresh may restore availability only while the durable sales-test marker remains. */
 export function hasDurableSalesTestGate(selectionReasons: unknown): boolean {
