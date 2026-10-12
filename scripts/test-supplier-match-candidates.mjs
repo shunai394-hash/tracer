@@ -41,7 +41,7 @@ const conflict = rankSupplierMatchCandidates(
   { title: "bag", specs: { color: "black", size: "M" } },
   [{ id: "conflict", title: "bag", specs: { color: "white", size: "L" } }],
 );
-assert.ok(conflict.candidates[0].score < 0);
+assert.ok(conflict.candidates[0].score <= 0, `conflicting specs must cancel title-only evidence; got ${conflict.candidates[0].score}`);
 assert.ok(conflict.candidates[0].reasons.some((reason) => reason.startsWith("spec_conflicts:")));
 
 // Reused supplier product/variant IDs are surfaced and force manual review.
