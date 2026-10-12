@@ -15,7 +15,8 @@ const existingBaseOrder = base.slice(base.indexOf("if (existing?.id)"), base.ind
 assert.match(existingBaseOrder, /getBaseOrderDetail\(baseOrderKey\)/);
 assert.match(existingBaseOrder, /isBaseOrderPaid\(detail\)/);
 assert.match(existingBaseOrder, /if \(paid && !canceled\)/);
-assert.match(existingBaseOrder, /createDropshipPurchaseOrdersForShopOrder\(String\(existing\.id\)\)/);\nassert.match(existingBaseOrder, /else if \(existing\.payment_status === "paid"\)[\\s\\S]*?must not[\\s\\S]*?downgrade/);
+assert.match(existingBaseOrder, /createDropshipPurchaseOrdersForShopOrder\(String\(existing\.id\)\)/);
+assert.match(existingBaseOrder, /else if \(existing\.payment_status === "paid"\)[\\s\\S]*?must not[\\s\\S]*?downgrade/);
 
 // Unpaid cash-on-delivery / post-pay orders must never open procurement.
 assert.match(base, /case "cod":[\s\S]*?return false;/);
