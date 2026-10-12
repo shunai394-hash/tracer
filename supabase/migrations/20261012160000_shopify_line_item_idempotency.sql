@@ -16,5 +16,4 @@ end
 $$;
 
 create unique index if not exists shop_order_items_order_shopify_line_unique_idx
-  on public.shop_order_items(order_id, shopify_line_item_id)
-  where shopify_line_item_id is not null;
+  on public.shop_order_items(order_id, shopify_line_item_id);
