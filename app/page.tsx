@@ -3,6 +3,7 @@ import { CapabilityMap } from "@/components/capability-map";
 import { ConnectionPanel } from "@/components/connection-panel";
 import { QualityLoopPanel } from "@/components/quality-loop-panel";
 import { getFoundationStatus } from "@/lib/config/env";
+import { listPublishedShopListings } from "@/lib/shop/store";
 
 const routes = [
   { href: "/shop", number: "01", label: "SELECT", title: "試せる商品", copy: "確認が終わったものだけ。", arrow: "↗" },
@@ -18,8 +19,15 @@ const evidence = [
   ["04", "LEARN", "次へ返せるか", "結果を選定へ戻す"],
 ] as const;
 
-export default function HomePage() {
+export default async function HomePage() {
   const status = getFoundationStatus();
+  let listings: Awaited<ReturnType<typeof listPublishedShopListings>> = [];
+  let catalogError = false;
+  try {
+    listings = await listPublishedShopListings();
+  } catch {
+    catalogError = true;
+  }
 
   return (
     <main className="flex-1 overflow-hidden bg-[#05070a]">
@@ -148,6 +156,47 @@ export default function HomePage() {
             </div>
           </div>
           <div className="hidden border-l border-white/5 lg:block" />
+        </div>
+      </section>
+
+      <section className="border-b border-white/8 bg-[#080b0e]" aria-labelledby="live-catalog-heading">
+        <div className="mx-auto max-w-[1440px] px-6 py-14 sm:px-10 lg:px-14 lg:py-20">
+          <div className="flex flex-col gap-5 border-b border-white/10 pb-6 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="font-mono text-[9px] tracking-[0.3em] text-cyan-300/70">LIVE CATALOG / VERIFIED</p>
+              <h2 id="live-catalog-heading" className="mt-3 text-3xl tracking-[-0.045em] text-zinc-100 sm:text-4xl">いま、買える商品。</h2>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-500">日本語の商品情報、仕入先との照合、販売価格、在庫、発注条件を通過した商品のみ表示します。</p>
+            </div>
+            <Link href="/shop" className="inline-flex min-h-11 items-center justify-center border border-cyan-300/30 px-5 text-xs text-cyan-100 transition hover:border-cyan-200/70 hover:bg-cyan-300/[0.06]">商品一覧を見る ↗</Link>
+          </div>
+          {catalogError ? (
+            <p role="status" className="mt-7 border border-amber-300/20 bg-amber-300/[0.04] p-5 text-sm text-amber-100">商品データを確認できません。現在の販売可能数は表示していません。</p>
+          ) : listings.length === 0 ? (
+            <div className="mt-7 grid gap-5 border border-white/10 p-6 sm:grid-cols-[1fr_auto] sm:items-center sm:p-8">
+              <div>
+                <p className="font-mono text-[9px] tracking-[0.2em] text-amber-200/70">0 VERIFIED ITEMS</p>
+                <h3 className="mt-3 text-xl text-zinc-100">現在、販売条件を確認できた商品はありません。</h3>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">商品数を見せかけで埋めず、在庫・商品照合・利益・発注条件が確認できるまで販売候補にしません。</p>
+              </div>
+              <Link href="/bestsellers" className="inline-flex min-h-11 items-center justify-center border border-white/15 px-5 text-xs text-zinc-200 transition hover:border-cyan-300/40 hover:text-cyan-100">市場データを確認 ↗</Link>
+            </div>
+          ) : (
+            <div className="mt-7 grid gap-px border border-white/8 bg-white/8 sm:grid-cols-2 lg:grid-cols-3">
+              {listings.slice(0, 3).map((listing) => (
+                <Link key={listing.id} href={`/shop/${listing.slug}`} className="group bg-[#05070a] transition hover:bg-[#0b1014] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-inset">
+                  {listing.imageUrl ? <img src={listing.imageUrl} alt={listing.title} loading="lazy" decoding="async" className="aspect-[4/3] w-full bg-zinc-900 object-cover transition duration-500 group-hover:scale-[1.015]" /> : <div className="flex aspect-[4/3] items-center justify-center bg-zinc-900 text-xs text-zinc-600">画像未確認</div>}
+                  <div className="p-5">
+                    <p className="font-mono text-[8px] tracking-[0.18em] text-cyan-300/65">販売条件確認済み</p>
+                    <h3 className="mt-3 line-clamp-2 min-h-12 text-sm leading-6 text-zinc-100">{listing.title}</h3>
+                    <div className="mt-4 flex items-end justify-between gap-3 border-t border-white/8 pt-4">
+                      <strong className="text-lg font-medium tabular-nums text-zinc-50">{new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 0 }).format(listing.sellingPrice ?? 0)}</strong>
+                      <span className="text-[10px] text-zinc-500">在庫 {listing.inventory} 点 ↗</span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
