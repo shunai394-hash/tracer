@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { getOrosyProductDetail, getOrosyShippingQuote, searchOrosyProducts } from "@/lib/sources/orosy";
-import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-listings";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -220,12 +219,9 @@ export async function GET(request: Request) {
     accepted.push(String(listingResult.data.id));
   }
 
-  let shopify = null;
-  try {
-    shopify = await syncPublishedListingsToShopify(Math.min(200, accepted.length || 200));
-  } catch (error) {
-    shopify = { failed: accepted.length, error: error instanceof Error ? error.message : String(error) };
-  }
+  // This endpoint only stages blocked candidates. Publishing/syncing existing listings
+  // here would create unrelated production writes from an import job.
+  const shopify = { skipped: true, reason: "staging_only_no_shopify_sync" };
 
   return NextResponse.json({
     ok: true,
