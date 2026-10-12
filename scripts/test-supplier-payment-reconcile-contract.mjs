@@ -5,6 +5,8 @@ const source = await readFile(new URL("../lib/ordering/reconcile.ts", import.met
 assert.match(source, /"supplier_payment_pending", "supplier_payment_verification_failed"/);
 assert.match(source, /currentStatus === "supplier_payment_pending" \|\| currentStatus === "supplier_payment_verification_failed"/);
 assert.match(source, /Recovery for an existing supplier order is lookup-only/);
+assert.match(source, /if \(!adapter\.capabilities\.orderStatus\)/);
+assert.match(source, /supplier_payment_status_lookup_unsupported_manual_reconciliation_required/);
 assert.match(source, /adapter\.getOrderStatus\(supplierOrderId\)/);
 assert.ok(!source.includes("executeSupplierPurchaseOrder"),
   "payment recovery must not invoke the supplier order creation path");
