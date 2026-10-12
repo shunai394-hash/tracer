@@ -1,0 +1,47 @@
+name: One-time Gemini ping preview auth verification
+
+on:
+  push:
+    branches:
+      - test/gemini-ping-preview-auth-20261012
+    paths:
+      - .github/workflows/verify-gemini-ping-preview-auth.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify-preview-auth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Verify unauthenticated POST returns 401
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://tracer-git-fix-protect-gemini-p-97760d-shunai394-9704s-projects.vercel.app/api/intelligence/ping"
+          code="$(curl --silent --show-error --output /tmp/gemini-ping-unauth.json --write-out '%{http_code}' --max-time 20 -X POST -H 'Content-Type: application/json' --data '{}' "$url")"
+          echo "Unauthenticated POST status: HTTP $code"
+          if [[ "$code" != "401" ]]; then
+            echo "Expected HTTP 401 from the auth guard; got HTTP $code"
+            exit 1
+          fi
+      - name: Verify bearer authentication reaches the protected handler
+        shell: bash
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CRON_SECRET:-}" ]]; then
+            echo "CRON_SECRET GitHub Actions secret is unavailable; authenticated test cannot run."
+            exit 2
+          fi
+          url="https://tracer-git-fix-protect-gemini-p-97760d-shunai394-9704s-projects.vercel.app/api/intelligence/ping"
+          code="$(curl --silent --show-error --output /tmp/gemini-ping-auth.json --write-out '%{http_code}' --max-time 25 -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer ${CRON_SECRET}" --data '{}' "$url")"
+          echo "Authenticated POST status: HTTP $code"
+          case "$code" in
+            200) echo "PASS: auth accepted and Gemini ping succeeded." ;;
+            503) echo "PASS: auth accepted; protected handler ran but Gemini/provider check returned 503." ;;
+            401) echo "FAIL: preview rejected the configured bearer secret."; exit 1 ;;
+            *) echo "FAIL: unexpected HTTP status from protected handler."; exit 1 ;;
+          esac
