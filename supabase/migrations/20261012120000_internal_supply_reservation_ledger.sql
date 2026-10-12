@@ -142,7 +142,7 @@ begin
     return;
   end if;
 
-  if not v_order_exists and v_compensation_reason not in (
+  if not v_order_exists and coalesce(v_compensation_reason, '') not in (
     'reservation_projection_invalid',
     'inventory_projection_failed',
     'internal_fulfillment_order_insert_failed'
