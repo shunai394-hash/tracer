@@ -1,4 +1,4 @@
-import { womenProductPriority } from "@/lib/intelligence/womens-priority";
+import { womenProductPriority } from "./womens-priority.ts";
 
 const NON_PHYSICAL_PRODUCT_PATTERNS = [
   /商品券/i,
