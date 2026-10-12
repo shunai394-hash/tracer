@@ -71,7 +71,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       "and(published.eq.true,base_publication_status.is.null)",
       "and(published.eq.true,base_publication_status.neq.published)",
       "and(published.eq.false,base_item_id.not.is.null,base_publication_status.is.null)",
-      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.neq.published)",
+      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.eq.failed)",
       "and(pipeline_status.eq.selected,base_item_id.is.null)",
       "and(base_item_id.is.null,base_last_error.like.base_create_id_persist_failed:*)",
     ].join(","));
@@ -111,8 +111,24 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked)) continue;
     if (listing.published !== true && ["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
     if (listing.selling_price === null) {
+      const message = "base_hide_price_unknown";
+      const { error: stateError } = await supabase.from("shop_listings").update({
+        base_publication_status: "failed",
+        base_publication_lease_until: null,
+        base_last_error: message,
+        pipeline_stage: "BASE_RECONCILIATION",
+        pipeline_status: "failed",
+        pipeline_reason: message,
+        pipeline_error: message,
+        pipeline_updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", String(listing.id));
       unpublishFailed += 1;
-      results.push({ listingId: String(listing.id), ok: false, skipped: true, error: "base_hide_price_unknown" });
+      results.push({
+        listingId: String(listing.id),
+        ok: false,
+        error: stateError ? `${message};state_persist_failed:${stateError.message}` : message,
+      });
       continue;
     }
     try {
@@ -128,7 +144,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         published: false,
         orderable: false,
         published_at: null,
-        base_publication_status: "failed",
+        base_publication_status: "hidden",
         base_publication_lease_until: null,
         base_last_error: isIdentityUnlinked ? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden",
         pipeline_stage: "BLOCKED",
