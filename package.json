@@ -19,6 +19,7 @@
     "test:shopify-line-item-pagination": "node scripts/test-shopify-line-item-pagination.mjs",
     "test:shopify-order-sku-mapping": "node --experimental-strip-types --no-warnings scripts/test-shopify-order-sku-mapping.mjs",
     "test:shopify-webhook-idempotency": "node --test scripts/test-shopify-webhook-idempotency.mjs",
+    "test:verified-supplier-payment-state-writes": "node --test scripts/test-verified-supplier-payment-state-writes.mjs",
     "test:autonomous-order-claim": "node scripts/test-autonomous-order-run-claim.mjs",
     "test:sales-test-gate-invariants": "node --experimental-strip-types --no-warnings scripts/test-sales-test-gate-invariants.mjs",
     "test:order-gate": "node --experimental-strip-types --no-warnings scripts/test-order-gate.mjs",
