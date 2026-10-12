@@ -19,6 +19,7 @@ assert.match(route, /image_url_exact/);
 assert.doesNotMatch(route, /url\.search\s*=\s*["']["']/); // image URL query parameters must not be discarded
 assert.match(route, /specification_overlap/);
 assert.match(route, /partialTitleScore/);
+assert.match(route, /Script=Han.*Script=Hiragana.*Script=Katakana/); // Japanese unspaced titles use CJK bigrams
 assert.match(route, /scoredCandidates/);
 assert.match(route, /MULTIPLE_TOP_CANDIDATES_REVIEW_REQUIRED/);
 assert.match(route, /REVIEW_REQUIRED/);
