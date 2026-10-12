@@ -19,8 +19,9 @@ export function isHighConfidenceReconciliationCandidate(input: ReconciliationCon
   const rowProduct = input.rowSupplierProductId.trim();
   const rowVariant = input.rowSupplierVariantId.trim();
 
-  // Product identity alone is insufficient when BASE specifies a variant.
-  if (baseProduct && rowProduct && baseProduct === rowProduct && baseVariant && baseVariant !== rowVariant) return false;
+  // A product-level ID cannot establish a variant mapping when either side
+  // carries variant identity; both variant IDs must be present and identical.
+  if ((baseVariant || rowVariant) && (!baseVariant || !rowVariant || baseVariant !== rowVariant)) return false;
   // Contradictory non-empty supplier identifiers cannot support a high-confidence label.
   if (baseProduct && rowProduct && baseProduct !== rowProduct) return false;
   if (baseVariant && rowVariant && baseVariant !== rowVariant) return false;
