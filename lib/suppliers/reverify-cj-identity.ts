@@ -96,7 +96,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   }
   const limit = Math.max(1, Math.min(options.limit ?? DEFAULT_LIMIT, MAX_LIMIT));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
-  const candidateFilter = db.from("supplier_listings").select("id", { count: "exact", head: true }).eq("supplier", "cj").in("verification_status", ["unverified", "retryable", "verified"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_variant_id", "is", null);
+  const candidateFilter = db.from("supplier_listings").select("id", { count: "exact", head: true }).eq("supplier", "cj").in("verification_status", ["unverified", "retryable", "verified"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_product_id", "is", null).not("supplier_variant_id", "is", null);
   const { count: candidateCount, error: countError } = await candidateFilter;
   if (countError) throw new Error(`identity reverify candidate count failed: ${countError.message}`);
   const total = candidateCount ?? 0;
@@ -119,6 +119,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
     .eq("supplier", "cj")
     .in("verification_status", ["unverified", "retryable", "verified"])
     .in("identity_method", ["supply_discovered", "none"])
+    .not("supplier_product_id", "is", null)
     .not("supplier_variant_id", "is", null)
     .order("id", { ascending: true })
     .limit(MAX_CANDIDATE_SCAN);
@@ -153,10 +154,17 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const processRow = async (row: NonNullable<typeof rows>[number]) => {
     const supplierListingId = String(row.id);
     try {
+      const supplierProductId = typeof row.supplier_product_id === "string" ? row.supplier_product_id.trim() : "";
+      const supplierVariantId = typeof row.supplier_variant_id === "string" ? row.supplier_variant_id.trim() : "";
+      if (!supplierProductId || !supplierVariantId) {
+        const { error: holdError } = await db.from("supplier_listings").update({ verification_status: "retryable", verification_error: "missing_supplier_product_or_variant_id", metadata: { ...record(row.metadata), identity_hold_reason: "missing_supplier_product_or_variant_id", last_identity_reverify_at: new Date().toISOString() } }).eq("id", supplierListingId);
+        if (holdError) throw new Error("missing supplier ID hold persistence failed: " + holdError.message);
+        return { kind: "no_match" as const, supplierListingId };
+      }
       const listingMetadata = record(row.metadata);
       const persistedBarcode = typeof listingMetadata.variant_barcode === "string" ? listingMetadata.variant_barcode.trim() : null;
-      const variantBarcode = await readPersistableBarcode(String(row.supplier_product_id), String(row.supplier_variant_id), persistedBarcode);
-      const identity = await resolveMarketplaceIdentity({ db, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } });
+      const variantBarcode = await readPersistableBarcode(supplierProductId, supplierVariantId, persistedBarcode);
+      const identity = await resolveMarketplaceIdentity({ db, supplierProductId, supplierVariantId, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } });
       const canonicalProductId = identity?.productId ?? (typeof row.product_id === "string" ? row.product_id.trim() : "");
       if (!canonicalProductId) { await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), last_identity_reverify_at: new Date().toISOString() } }).eq("id", supplierListingId); return { kind: "no_match" as const, supplierListingId }; }
       const { data: intelligence } = await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle();
@@ -171,7 +179,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const listingImage = [listingMetadata.image_url, listingMetadata.product_image, listingMetadata.productImage, listingMetadata.image].find((value) => typeof value === "string" && /^https?:\/\//i.test(value.trim()));
       const imageUrl = typeof intelligence?.image_url === "string" && /^https?:\/\//i.test(intelligence.image_url.trim()) ? intelligence.image_url.trim() : typeof listingImage === "string" ? listingImage.trim() : "";
       if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) { const checkedAt = new Date(); await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode, variant_barcode_raw: variantBarcode } : {}), ...supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null), last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + MISSING_DATA_RETRY_MS).toISOString(), identity_hold_reason: "missing_economics_or_image" } }).eq("id", supplierListingId); return { kind: "missing_economics" as const, supplierListingId }; }
-      await persistCjSupplyIntelligence({ productId: identity?.productId ?? (typeof row.product_id === "string" ? row.product_id.trim() : ""), title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
+      await persistCjSupplyIntelligence({ productId: identity?.productId ?? (typeof row.product_id === "string" ? row.product_id.trim() : ""), title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId, supplierVariantId, inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
       if (!identity) {
         const { data: latest } = await db.from("supplier_listings").select("metadata").eq("id", supplierListingId).maybeSingle();
         const latestMetadata = record(latest?.metadata);
