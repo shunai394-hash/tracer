@@ -15,12 +15,17 @@ export async function POST(request: Request) {
   if (!verifyShopifyWebhookHmac(raw, request.headers.get("x-shopify-hmac-sha256"))) {
     return NextResponse.json({ ok: false, error: "invalid_webhook_signature" }, { status: 401 });
   }
+  let cleanupDb: ReturnType<typeof createSupabaseAdminClient> | null = null;
+  let cleanupOrderId: string | null = null;
+  let cleanupExternalId: string | null = null;
   try {
     const order = JSON.parse(raw) as Record<string, unknown>;
     const externalId = String(order.id ?? "");
     if (!externalId) return NextResponse.json({ ok: false, error: "shopify_order_id_missing" }, { status: 400 });
 
     const db = createSupabaseAdminClient();
+    cleanupDb = db;
+    cleanupExternalId = externalId;
     const existing = await db.from("shop_orders").select("id").eq("shopify_order_id", externalId).maybeSingle();
     if (existing.error) throw new Error(existing.error.message);
     if (existing.data) return NextResponse.json({ ok: true, duplicate: true, orderId: String(existing.data.id) });
@@ -112,7 +117,11 @@ export async function POST(request: Request) {
       shopify_fulfillment_status: order.fulfillment_status ? String(order.fulfillment_status) : null,
     }).select("id").single();
     if (inserted.error) throw new Error(inserted.error.message);
+    cleanupOrderId = String(inserted.data.id);
 
+    // Insert each order item only after mapping has been validated. If any
+    // insert fails, the catch block removes all children and the parent so a
+    // Shopify retry cannot be mistaken for a fully imported duplicate.
     for (const [index, item] of items.entries()) {
       // Use the same normalized SKU used during resolution; Shopify payloads may
       // contain surrounding whitespace even though lookup keys are trimmed.
@@ -137,6 +146,20 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, orderId: String(inserted.data.id), paid });
   } catch (error) {
+    if (cleanupDb && cleanupOrderId && cleanupExternalId) {
+      const childCleanup = await cleanupDb.from("shop_order_items").delete().eq("order_id", cleanupOrderId);
+      const parentCleanup = await cleanupDb.from("shop_orders").delete()
+        .eq("id", cleanupOrderId)
+        .eq("shopify_order_id", cleanupExternalId);
+      if (childCleanup.error || parentCleanup.error) {
+        console.error("[TRACER SHOPIFY ORDER WEBHOOK ROLLBACK ERROR]", {
+          orderId: cleanupOrderId,
+          shopifyOrderId: cleanupExternalId,
+          childCleanupFailed: Boolean(childCleanup.error),
+          parentCleanupFailed: Boolean(parentCleanup.error),
+        });
+      }
+    }
     console.error("[TRACER SHOPIFY ORDER WEBHOOK ERROR]", error);
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
