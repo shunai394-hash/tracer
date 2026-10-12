@@ -2,6 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getStripeClient } from "@/lib/payments/stripe/client";
+import { assessSupplierExecutionRisk, isCancellationTerminalStatus } from "@/lib/shop/cancellation-policy";
 
 const BLOCKED_STATUSES = new Set([
   "refund_pending",
@@ -33,7 +34,7 @@ export async function requestShopOrderCancellation(args: {
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!order) throw new Error("注文が見つかりません。");
-  if (BLOCKED_STATUSES.has(String(order.order_status))) {
+  if (BLOCKED_STATUSES.has(String(order.order_status)) || isCancellationTerminalStatus(String(order.order_status))) {
     return {
       orderId: args.orderId,
       status: String(order.order_status),
@@ -68,16 +69,20 @@ export async function requestShopOrderCancellation(args: {
     : { data: [], error: null };
   if (attemptsError) throw new Error(attemptsError.message);
 
-  const supplierOrderPlaced = Boolean(
-    (purchaseOrders ?? []).some((po) => po.supplier_order_id) ||
-    (attempts ?? []).some((attempt) => attempt.supplier_order_id),
-  );
   // An in-flight/unknown supplier attempt can still create an external order
   // after this request starts. Do not issue an automatic customer refund while
   // that side effect is unresolved.
-  const supplierExecutionUncertain = Boolean(
-    (attempts ?? []).some((attempt) => ["in_progress", "unknown"].includes(String(attempt.state))) ||
-    (purchaseOrders ?? []).some((po) => ["supplier_payment_pending", "supplier_payment_verification_failed"].includes(String(po.status))),
+  const { supplierOrderPlaced, supplierExecutionUncertain } = assessSupplierExecutionRisk(
+    (purchaseOrders ?? []).map((po) => ({
+      id: String(po.id),
+      supplier_order_id: po.supplier_order_id ? String(po.supplier_order_id) : null,
+      status: String(po.status ?? ""),
+    })),
+    (attempts ?? []).map((attempt) => ({
+      purchase_order_id: String(attempt.purchase_order_id),
+      supplier_order_id: attempt.supplier_order_id ? String(attempt.supplier_order_id) : null,
+      state: String(attempt.state ?? ""),
+    })),
   );
 
   const now = new Date().toISOString();
