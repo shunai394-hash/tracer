@@ -56,10 +56,10 @@ assert.deepEqual(
 );
 // The database claim is the concurrency boundary: a unique partial index permits
 // one running row per job; the losing request returns 409 before reading cursor state.
-const claim = marketRoute.indexOf('job_name: "market-sourcing",');
-const duplicateGuard = marketRoute.indexOf('cron_already_running');
-const cursorRead = marketRoute.indexOf("readMarketCursor(supabase)");
-assert.ok(claim >= 0 && duplicateGuard > claim && cursorRead > duplicateGuard, "concurrent loser must exit before cursor read or advancement");
+const concurrentClaim = marketRoute.indexOf('job_name: "market-sourcing",');
+const concurrentDuplicateGuard = marketRoute.indexOf('cron_already_running');
+const concurrentCursorRead = marketRoute.indexOf("readMarketCursor(supabase)");
+assert.ok(concurrentClaim >= 0 && concurrentDuplicateGuard > concurrentClaim && concurrentCursorRead > concurrentDuplicateGuard, "concurrent loser must exit before cursor read or advancement");
 assert.ok(cronLockMigration.includes("where status = 'running'"), "concurrency guard must be a partial unique index on active runs");
 assert.ok(!pipeline.includes('.from("cron_runs").insert'), "patrol pipeline must not insert competing cursor checkpoints");
 console.log("PASS: concurrent cursor ownership, mid-page resume, source rotation, child-page fallback, and evidence telemetry");
