@@ -19,6 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Checkout repository for sanitized report generator
+        uses: actions/checkout@v4
+
       - name: Request a short-lived GitHub OIDC token for Vercel
         shell: bash
         run: |
