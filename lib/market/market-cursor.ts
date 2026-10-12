@@ -19,6 +19,16 @@ function cursorJob(actor: string): string {
   return job;
 }
 
+function parseCursor(metadataValue: unknown): MarketCursor {
+  const metadata = (metadataValue ?? {}) as Record<string, unknown>;
+  const sourceIndex = Number(metadata.sourceIndex);
+  const nextIndex = Number(metadata.nextIndex);
+  return {
+    sourceIndex: Number.isInteger(sourceIndex) && sourceIndex >= 0 ? sourceIndex % SOURCE_COUNT : 0,
+    startIndex: Number.isInteger(nextIndex) && nextIndex >= 0 ? nextIndex : 0,
+  };
+}
+
 export type MarketCursor = { sourceIndex: number; startIndex: number };
 
 export async function readMarketCursor(db: Db, actor: string): Promise<MarketCursor> {
@@ -32,13 +42,30 @@ export async function readMarketCursor(db: Db, actor: string): Promise<MarketCur
     .limit(1)
     .maybeSingle();
   if (error) throw new Error(`market cursor read failed: ${error.message}`);
-  const metadata = (data?.metadata ?? {}) as Record<string, unknown>;
-  const sourceIndex = Number(metadata.sourceIndex);
-  const nextIndex = Number(metadata.nextIndex);
-  return {
-    sourceIndex: Number.isInteger(sourceIndex) && sourceIndex >= 0 ? sourceIndex % SOURCE_COUNT : 0,
-    startIndex: Number.isInteger(nextIndex) && nextIndex >= 0 ? nextIndex : 0,
-  };
+  if (data) return parseCursor(data.metadata);
+
+  // One-time compatibility fallback: before cursor isolation, patrol-ai wrote
+  // its progress into market-sourcing. Reuse only rows explicitly marked as
+  // actor=patrol-ai; never borrow the independent market-sourcing cron cursor.
+  if (actor === "patrol-ai") {
+    const { data: legacy, error: legacyError } = await db
+      .from("cron_runs")
+      .select("metadata")
+      .eq("job_name", "market-sourcing")
+      .eq("status", "succeeded")
+      .order("started_at", { ascending: false })
+      .limit(20);
+    if (legacyError) throw new Error(`legacy market cursor read failed: ${legacyError.message}`);
+    const legacyPatrolCursor = (legacy ?? []).find((row) => {
+      const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+        ? row.metadata as Record<string, unknown>
+        : {};
+      return metadata.actor === "patrol-ai";
+    });
+    if (legacyPatrolCursor) return parseCursor(legacyPatrolCursor.metadata);
+  }
+
+  return { sourceIndex: 0, startIndex: 0 };
 }
 
 /** Persist the position after an observation in this actor's own cursor namespace. */
