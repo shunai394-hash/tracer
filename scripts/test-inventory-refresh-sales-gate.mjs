@@ -50,7 +50,7 @@ assert.match(orosyImport, /shipping_checked_at:\s*null/, "variant-level shipping
 assert.match(orosyImport, /orderable:\s*false/, "Orosy import must not claim autonomous ordering while order creation/payment are unsupported");
 const orosyAdapter = readFileSync(new URL("../lib/procurement/orosy-adapter.ts", import.meta.url), "utf8");
 assert.match(orosyAdapter, /amount:\s*null,[\s\S]{0,100}currency:\s*null,[\s\S]{0,100}available:\s*null/, "indicative Orosy shipping must not be treated as confirmed landed cost");
-assert.doesNotMatch(orosyAdapter, /currency:\s*(?:variation\.currency|detail\.currency|product\.currency)\s*\?\?\s*"JPY"/, "missing supplier currency must not be inferred as JPY");
+assert.doesNotMatch(orosyAdapter, /currency:\s*[^,\n]*\?\?[^,\n]*"JPY"/, "missing supplier currency must not be inferred as JPY, including chained fallbacks");
 assert.match(orosyImport, /tracking_available:\s*null/, "tracking must not be claimed without order lifecycle evidence");
 assert.match(orosyImport, /contribution_profit:\s*null[\s\S]*contribution_margin:\s*null/, "profitability must remain unset until landed cost and Sales Test Gate are established");
 assert.doesNotMatch(orosyImport, /selection_reasons:\s*\[[^\]]*"ORDERABLE"/, "candidate import must not stamp the orderable marker");
