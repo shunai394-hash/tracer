@@ -78,6 +78,8 @@ export function verifySalesTestGateInvariants(): { ok: boolean; cases: Array<{ n
   const giftCard = evaluateSalesTestGate({ ...supplyReadyInput(), title: "Amazon Gift Card", requireRank: false });
   const unknownProfit = evaluateSalesTestGate({ ...supplyReadyInput(), contributionProfit: null, requireRank: false });
   const japaneseVoucher = evaluateSalesTestGate({ ...supplyReadyInput(), title: "ヤフーショッピング商品券", requireRank: false });
+  const validPublishedRow = hasPassedSalesTestGate({ published: true, pipeline_status: "published", pipeline_stage: "PUBLISHED", pipeline_reason: SALES_TEST_GATE_PASSED, selection_reasons: [SALES_TEST_GATE_PASSED], title: "バスマット" });
+  const publishedVoucherRow = hasPassedSalesTestGate({ published: true, pipeline_status: "published", pipeline_stage: "PUBLISHED", pipeline_reason: SALES_TEST_GATE_PASSED, selection_reasons: [SALES_TEST_GATE_PASSED], title: "ヤフーショッピング商品券" });
   const cases = [
     { name: "complete_observed_product_is_eligible", expected: true, actual: ready.eligible },
     { name: "english_title_is_not_eligible", expected: true, actual: englishTitle.eligible === false && englishTitle.reasons.includes("japanese_title_required") },
@@ -87,6 +89,8 @@ export function verifySalesTestGateInvariants(): { ok: boolean; cases: Array<{ n
     { name: "negative_economics_are_blocked", expected: true, actual: invalidEconomics.eligible === false && invalidEconomics.reasons.includes("source_cost_invalid") && invalidEconomics.reasons.includes("shipping_invalid") },
     { name: "gift_card_is_blocked", expected: true, actual: giftCard.eligible === false && giftCard.reasons.includes("non_physical_product") },
     { name: "japanese_voucher_is_blocked", expected: true, actual: japaneseVoucher.eligible === false && japaneseVoucher.reasons.includes("non_physical_product") },
+    { name: "canonical_published_gate_marker_is_accepted", expected: true, actual: validPublishedRow },
+    { name: "published_voucher_is_rejected", expected: true, actual: publishedVoucherRow === false },
     { name: "unknown_contribution_profit_is_blocked", expected: true, actual: unknownProfit.eligible === false && unknownProfit.reasons.includes("profit_not_positive") },
   ];
   return { ok: cases.every((item) => item.actual === item.expected), cases };
