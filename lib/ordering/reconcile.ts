@@ -114,14 +114,6 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
         update.shipped_at = trackingResult.shippedAt;
       }
 
-      stage = "purchase_order_status_update";
-      const { error: updateError } = await supabase
-        .from("purchase_orders")
-        .update(update)
-        .eq("id", purchaseOrderId);
-
-      if (updateError) throw new Error(updateError.message);
-
       if (supplierName.toLowerCase() === "tracer_internal") {
         stage = "internal_fulfillment_status_update";
         const internalStatus =
@@ -147,7 +139,34 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
 
         if (internalUpdateError) throw new Error(internalUpdateError.message);
         if (!internalOrder) throw new Error("internal_fulfillment_order_not_found");
+
+        if (nextStatus === "failed" || nextStatus === "cancelled") {
+          stage = "internal_inventory_release";
+          const { data: releaseResult, error: releaseError } = await supabase.rpc(
+            "release_internal_supply_reservation",
+            {
+              p_purchase_order_id: purchaseOrderId,
+              p_reason: `supplier_status_${nextStatus}`,
+            },
+          );
+          if (releaseError) throw new Error(releaseError.message);
+          const release = releaseResult?.[0] as { reservation_status?: string | null } | undefined;
+          if (!release || !["released_now", "released"].includes(String(release.reservation_status))) {
+            throw new Error(`internal_supply_reservation_release_not_confirmed_for_terminal_order:${release?.reservation_status ?? "missing"}`);
+          }
+        }
       }
+
+      // Update the PO only after the internal status and any terminal stock
+      // release succeeded. If this write fails, the next run safely retries;
+      // the reservation ledger prevents a second inventory return.
+      stage = "purchase_order_status_update";
+      const { error: updateError } = await supabase
+        .from("purchase_orders")
+        .update(update)
+        .eq("id", purchaseOrderId);
+
+      if (updateError) throw new Error(updateError.message);
 
       stage = "complete";
       updated += 1;
