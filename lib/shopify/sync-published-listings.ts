@@ -5,7 +5,7 @@ import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigure
 import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
-import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { getFreshSupplierEvidence } from "@/lib/catalog/fresh-supplier-evidence";
 
 type Listing = {
   id: string;
@@ -168,11 +168,16 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  const linkedSupplierIds = await getLinkedSupplierListingIds((data ?? []).map((row) => row.supplier_listing_id));
-  const rows = ((data ?? []) as Listing[]).map((row) => ({
-    ...row,
-    identity_status: row.supplier_listing_id && linkedSupplierIds.has(row.supplier_listing_id) ? "linked" : null,
-  }));
+  const supplierEvidence = await getFreshSupplierEvidence(((data ?? []) as Listing[]).map((row) => ({
+    listingId: String(row.id),
+    supplierListingId: row.supplier_listing_id,
+    supplierProductId: row.supplier_product_id,
+    supplierVariantId: row.supplier_variant_id,
+  })));
+  const rows = ((data ?? []) as Listing[]).map((row) => {
+    const evidence = supplierEvidence.get(String(row.id));
+    return { ...row, identity_status: evidence ? "linked" : null, inventory: evidence?.inventory ?? null };
+  });
   const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 15);
   const actionable = listingIds?.length
     ? rows.slice(0, safeLimit)
@@ -251,10 +256,16 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
     .order("pipeline_updated_at", { ascending: false })
     .limit(Math.min(Math.max(limit, 1), 1000));
   if (error) throw new Error(error.message);
-  const linkedSupplierIds = await getLinkedSupplierListingIds((data ?? []).map((row) => row.supplier_listing_id));
+  const supplierEvidence = await getFreshSupplierEvidence(((data ?? []) as Listing[]).map((row) => ({
+    listingId: String(row.id),
+    supplierListingId: row.supplier_listing_id,
+    supplierProductId: row.supplier_product_id,
+    supplierVariantId: row.supplier_variant_id,
+  })));
   const reasonCounts: Record<string, number> = {};
   const rows = ((data ?? []) as Array<Listing & { shopify_sync_error?: string | null }>).map((rawRow) => {
-    const row = { ...rawRow, identity_status: rawRow.supplier_listing_id && linkedSupplierIds.has(rawRow.supplier_listing_id) ? "linked" : null };
+    const evidence = supplierEvidence.get(String(rawRow.id));
+    const row = { ...rawRow, identity_status: evidence ? "linked" : null, inventory: evidence?.inventory ?? null };
     const reasons = blockReasons(row);
     if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) reasons.push("image_url_invalid");
     if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");
