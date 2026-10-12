@@ -6,7 +6,7 @@ assert.deepEqual(deterministicCJProductQueries("  H-shaped travel neck pillow  "
 assert.deepEqual(deterministicCJProductQueries("   "), []);
 assert.deepEqual(deterministicCJProductQueries("Toyota Prius car seat cover"), ["Toyota Prius car seat cover"]);
 const source = await readFile(new URL("../lib/intelligence/generate-cj-product-queries.ts", import.meta.url), "utf8");
-assert.match(source, /if\s*\(!isGeminiConfigured\(\)\)\s*return deterministicCJProductQueries\(demandQuery\)/);
+assert.match(source, /if\s*\(!isGeminiConfigured\(\)\)\s*return deterministicCJProductQueries\(demandQuery\)/);\nassert.match(source, /catch\s*\(error\)/);\nassert.match(source, /Gemini unavailable; using exact-query fallback/);\nassert.match(source, /return deterministicCJProductQueries\(demandQuery\);/);
 const pipelineSource = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
 assert.match(pipelineSource, /\.in\("status",\s*\["new",\s*"researching"\]\)/);
 console.log("CJ query fallback tests: 5 assertions passed");
