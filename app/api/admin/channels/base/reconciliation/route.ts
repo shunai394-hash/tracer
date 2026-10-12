@@ -189,10 +189,12 @@ export async function POST(request: Request) {
       const topScore = candidateScores[0]?.score ?? 0;
       const topCandidates = candidateScores.filter((candidate) => candidate.score === topScore);
       const reviewRequired = topCandidates.length > 1 || (topScore > 0 && topScore < 100);
+      // Count identity collisions across the full TRACER listing set, not just
+      // scored candidates; a duplicate row may have no title/image overlap at all.
       const candidateIdentityCounts = new Map<string, number>();
-      for (const candidate of candidateScores) {
-        const productId = String(candidate.row.supplier_product_id ?? "").trim();
-        const variantId = String(candidate.row.supplier_variant_id ?? "").trim();
+      for (const row of listings) {
+        const productId = String(row.supplier_product_id ?? "").trim();
+        const variantId = String(row.supplier_variant_id ?? "").trim();
         if (!productId || !variantId) continue;
         const identityKey = JSON.stringify([productId, variantId]);
         candidateIdentityCounts.set(identityKey, (candidateIdentityCounts.get(identityKey) ?? 0) + 1);
