@@ -76,7 +76,7 @@ export async function executeVerifiedSupplierPurchaseOrder(
     paymentConfirmed = supplierOrder?.paymentConfirmed === true;
     supplierStatus = supplierOrder?.status ?? null;
   } catch (error) {
-    await supabase
+    const { error: verificationFailurePersistError } = await supabase
       .from("purchase_orders")
       .update({
         status: "supplier_payment_verification_failed",
@@ -97,12 +97,14 @@ export async function executeVerifiedSupplierPurchaseOrder(
     return {
       ...result,
       succeeded: false,
-      reason: "supplier_payment_verification_failed_manual_reconciliation_required",
+      reason: verificationFailurePersistError
+        ? "supplier_payment_verification_failed_and_state_persist_failed_manual_reconciliation_required"
+        : "supplier_payment_verification_failed_manual_reconciliation_required",
     };
   }
 
   if (!paymentConfirmed) {
-    await supabase
+    const { error: pendingPersistError } = await supabase
       .from("purchase_orders")
       .update({
         supplier_order_id: result.supplierOrderId,
@@ -122,7 +124,15 @@ export async function executeVerifiedSupplierPurchaseOrder(
       })
       .eq("id", purchaseOrderId);
 
-    await supabase
+    if (pendingPersistError) {
+      return {
+        ...result,
+        succeeded: false,
+        reason: "supplier_payment_pending_state_persist_failed_manual_reconciliation_required",
+      };
+    }
+
+    const { error: pendingAttemptPersistError } = await supabase
       .from("supplier_order_attempts")
       .update({
         succeeded: false,
@@ -132,6 +142,14 @@ export async function executeVerifiedSupplierPurchaseOrder(
       })
       .eq("purchase_order_id", purchaseOrderId)
       .eq("supplier_order_id", result.supplierOrderId);
+
+    if (pendingAttemptPersistError) {
+      return {
+        ...result,
+        succeeded: false,
+        reason: "supplier_payment_pending_attempt_persist_failed_manual_reconciliation_required",
+      };
+    }
 
     return {
       ...result,
@@ -168,7 +186,7 @@ export async function executeVerifiedSupplierPurchaseOrder(
     };
   }
 
-  await supabase
+  const { error: paidAttemptPersistError } = await supabase
     .from("supplier_order_attempts")
     .update({
       succeeded: true,
@@ -178,6 +196,14 @@ export async function executeVerifiedSupplierPurchaseOrder(
     })
     .eq("purchase_order_id", purchaseOrderId)
     .eq("supplier_order_id", result.supplierOrderId);
+
+  if (paidAttemptPersistError) {
+    return {
+      ...result,
+      succeeded: false,
+      reason: "supplier_payment_confirmed_but_attempt_persist_failed_manual_reconciliation_required",
+    };
+  }
 
   return {
     ...result,
