@@ -472,13 +472,13 @@ export async function GET(request: Request) {
             // BASE is now confirmed in sync; only now restore local eligibility.
             const { error: restoreListingError } = await supabase
               .from("shop_listings")
-              .update({ orderable: true, base_last_error: null })
+              .update({ orderable, base_last_error: null })
               .eq("id", listingId);
             if (restoreListingError) throw new Error(restoreListingError.message);
             if (listing.supplier_listing_id) {
               const { error: restoreSupplierError } = await supabase
                 .from("supplier_listings")
-                .update({ orderable: true, fetched_at: now })
+                .update({ orderable, fetched_at: now })
                 .eq("id", String(listing.supplier_listing_id));
               if (restoreSupplierError) throw new Error(restoreSupplierError.message);
             }
