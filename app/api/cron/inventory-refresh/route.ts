@@ -275,6 +275,7 @@ export async function GET(request: Request) {
             inventory_confirmed: true,
             cost: priceResult.amount,
             price_confirmed: true,
+            price_checked_at: now,
             shipping_cost: shippingResult.amount,
             shipping_checked_at: now,
             fetched_at: now,
