@@ -11,5 +11,8 @@ assert.match(cursor, /function cursorJob\(actor: string\)/, "cursor namespace is
 assert.match(pipeline, /readMarketCursor\(db,\s*"patrol-ai"\)/, "patrol-ai reads its own cursor");
 assert.match(pipeline, /writeMarketCursor\(db, observation, "patrol-ai"\)/, "patrol-ai writes its own cursor");
 assert.match(sourcing, /job_name:\s*"market-sourcing"/, "scheduled market sourcing retains its existing cursor source");
+assert.match(cursor, /metadata\.actor === "patrol-ai"/, "legacy cursor fallback is restricted to rows written by patrol-ai");
+assert.match(cursor, /if \(actor === "patrol-ai"\)/, "only patrol-ai can consult legacy shared-cursor history");
+assert.match(cursor, /return \{ sourceIndex: 0, startIndex: 0 \}/, "cursor defaults to zero only when no dedicated or legacy patrol cursor exists");
 assert.doesNotMatch(cursor, /const JOB = "market-sourcing"/, "cursor reads must not hardcode one shared job");
-console.log("PASS: patrol-ai and market-sourcing cursors are isolated");
+console.log("PASS: patrol-ai and market-sourcing cursors are isolated and legacy patrol progress is preserved");
