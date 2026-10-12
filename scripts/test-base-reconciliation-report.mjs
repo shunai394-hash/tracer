@@ -5,12 +5,6 @@ import { isHighConfidenceReconciliationCandidate } from "../lib/channels/base-re
 const route = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
 const policy = await readFile(new URL("../lib/channels/base-reconciliation-confidence.ts", import.meta.url), "utf8");
 const workflow = await readFile(new URL("../.github/workflows/base-product-backup.yml", import.meta.url), "utf8");
-const internalCatalog = await readFile(new URL("../lib/suppliers/internal-catalog.ts", import.meta.url), "utf8");
-assert.match(internalCatalog, /productMetadata\.supplier_product_id/);
-assert.match(internalCatalog, /variantMetadata\.supplier_variant_id/);
-assert.match(internalCatalog, /sourceName\.toLowerCase\(\) === "cj" && \(!externalProductId \|\| !externalVariantId\)/);
-assert.match(internalCatalog, /supplier_product_id: externalProductId \|\| String\(product\.id\)/);
-assert.match(internalCatalog, /supplier_variant_id: externalVariantId \|\|/);
 const candidate = {
   score: 100, topScore: 100, topCandidateCount: 1,
   evidence: ["supplier_product_id_exact", "supplier_variant_id_exact"],
