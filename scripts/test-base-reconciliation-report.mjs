@@ -23,6 +23,8 @@ assert.match(route, /Script=Han.*Script=Hiragana.*Script=Katakana/); // Japanese
 assert.match(route, /scoredCandidates/);
 assert.match(route, /MULTIPLE_TOP_CANDIDATES_REVIEW_REQUIRED/);
 assert.match(route, /REVIEW_REQUIRED/);
+assert.match(route, /evidence\.some\(\(entry\) => entry === "supplier_product_id_exact" \|\| entry === "supplier_variant_id_exact"\)/);
+assert.doesNotMatch(route, /score >= 100 \? "HIGH_CONFIDENCE_CANDIDATE_NOT_AUTO_MAPPED"/);
 assert.match(route, /baseItemsWithScoredCandidateCount/);
 assert.match(route, /never auto-mapped/);
 assert.match(route, /Cache-Control.*no-store, private/);
