@@ -269,14 +269,14 @@ export function parseAmazonVariationAsinMap(
   const output: AmazonVariationAsinEvidence[] = [];
   const seen = new Set<string>();
   const patterns = [
-    /(?:var|let|const)\\s+dimensionValuesDisplayData\\s*=/gi,
-    /dimensionValuesDisplayData\\s*:/gi,
+    /(?:var|let|const)\s+dimensionValuesDisplayData\s*=/gi,
+    /dimensionValuesDisplayData\s*:/gi,
   ];
   for (const pattern of patterns) {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(html))) {
       let start = pattern.lastIndex;
-      while (start < html.length && /\\s/.test(html[start])) start += 1;
+      while (start < html.length && /\s/.test(html[start])) start += 1;
       const extracted = extractBalancedJsonObject(html, start);
       if (!extracted) continue;
       pattern.lastIndex = extracted.end;
