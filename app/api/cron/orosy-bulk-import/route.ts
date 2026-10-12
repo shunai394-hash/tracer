@@ -127,6 +127,7 @@ export async function GET(request: Request) {
       configured: true,
       orderable: true,
       price_confirmed: true,
+      price_checked_at: now,
       inventory_confirmed: true,
       verification_status: "verified",
       shipping_status: "verified",
