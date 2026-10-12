@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { advanceMarketCursor } from "@/lib/market/market-cursor-policy";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -94,10 +95,9 @@ export async function GET(request: Request) {
       batchSize: MARKET_SOURCING_BATCH_SIZE,
     });
 
-    const nextSourceIndex = observation.hasMore
-      ? observation.sourceIndex
-      : (observation.sourceIndex + 1) % 8;
-    const nextStartIndex = observation.hasMore ? observation.nextIndex : 0;
+    const nextCursor = advanceMarketCursor(observation);
+    const nextSourceIndex = nextCursor.sourceIndex;
+    const nextStartIndex = nextCursor.startIndex;
 
     const metadata = {
       phase: "market_observation",
