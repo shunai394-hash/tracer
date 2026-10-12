@@ -41,7 +41,7 @@ assert.match(route, /MULTIPLE_TOP_CANDIDATES_REVIEW_REQUIRED/);
 assert.match(policy, /baseVariant && baseVariant !== rowVariant/); // variant mismatch requires review
 assert.match(policy, /baseProduct && rowProduct && baseProduct !== rowProduct/);
 assert.match(policy, /input\.score !== input\.topScore \|\| input\.topCandidateCount !== 1/);
-assert.match(route, /candidateIdentityCounts\.get\(identityKey\) \?\? 0/);
+assert.match(route, /duplicateIdentityCount:/);
 assert.match(policy, /input\.duplicateIdentityCount > 1/);
 assert.match(policy, /input\.evidence\.some\(\(entry\) => entry === "supplier_product_id_exact" \|\| entry === "supplier_variant_id_exact"\)/);
 assert.match(route, /REVIEW_REQUIRED/);
