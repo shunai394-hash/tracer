@@ -72,12 +72,14 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
   const maxNewOrders = Math.min(Math.max(limit, 1), 100);
   const orders: ShopifyOrder[] = [];
   let scannedOrders = 0;
+  let selectedNewOrders = 0;
   let after: string | null = null;
   let hasNextOrdersPage = true;
 
-  // Search newest paid orders first and skip orders already imported. Without
-  // this outer pagination, the same first page can starve all later orders.
-  while (hasNextOrdersPage && orders.length < maxNewOrders) {
+  // Search newest paid orders first. Include existing parents for line-item
+  // reconciliation, while the cap applies only to genuinely new parent orders.
+  // The scan is bounded to avoid unbounded webhook work if old rows dominate.
+  while (hasNextOrdersPage && selectedNewOrders < maxNewOrders && scannedOrders < 500) {
     const data: {
       orders: {
         nodes: ShopifyOrder[];
@@ -120,7 +122,9 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
       if (existingRowsError) throw new Error(existingRowsError.message);
       const existingIds = new Set((existingRows ?? []).map((row) => String(row.shopify_order_id)));
       for (const order of pageOrders) {
-        if (!existingIds.has(order.id) && orders.length < maxNewOrders) orders.push(order);
+        if (orders.length >= 500) break;
+        orders.push(order);
+        if (!existingIds.has(order.id)) selectedNewOrders += 1;
       }
     }
 
