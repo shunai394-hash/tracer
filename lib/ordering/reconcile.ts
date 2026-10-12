@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { initializeProcurement } from "@/lib/procurement/init";
 import { getSupplierAdapter } from "@/lib/procurement/registry";
+import { recoverSupplierPaymentState } from "@/lib/ordering/supplier-payment-recovery";
 
 type ReconcileResult = {
   processed: number;
@@ -25,10 +26,11 @@ function normalizeStatus(value: string | null | undefined): string | null {
 }
 
 /**
- * Read-only reconciliation pass.
+ * Supplier reconciliation pass.
  *
- * It never creates supplier orders and never fabricates shipment state.
- * Supplier adapters remain the source of truth for supplier status/tracking.
+ * Existing supplier orders are looked up only; this function never creates or
+ * resends supplier orders. Payment-recovery rows require explicit payment
+ * evidence before their local state is promoted.
  */
 export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResult> {
   initializeProcurement();
@@ -38,7 +40,7 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
     .from("purchase_orders")
     .select("id,supplier_name,supplier_order_id,status,fulfillment_kind,metadata")
     .not("supplier_order_id", "is", null)
-    .in("status", ["placed", "processing", "shipped", "delivered"])
+    .in("status", ["placed", "processing", "shipped", "delivered", "supplier_payment_pending", "supplier_payment_verification_failed"])
     .order("updated_at", { ascending: true })
     .limit(Math.max(1, Math.min(limit, 100)));
 
@@ -69,6 +71,45 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
         stage: "supplier_adapter_lookup",
         reason: "supplier_adapter_unavailable",
       });
+      continue;
+    }
+
+    const currentStatus = String(po.status ?? "");
+    if (currentStatus === "supplier_payment_pending" || currentStatus === "supplier_payment_verification_failed") {
+      let stage = "supplier_payment_status_lookup";
+      try {
+        await recoverSupplierPaymentState({
+          purchaseOrderId,
+          supplierOrderId,
+          currentMetadata: (po.metadata as Record<string, unknown> | null) ?? null,
+          dependencies: {
+            orderStatusSupported: Boolean(adapter.capabilities.orderStatus),
+            lookupOrderStatus: (id) => adapter.getOrderStatus(id),
+            setStage: (value) => { stage = value; },
+            updateAttempt: async (orderId, supplierId) => {
+              const { data, error: attemptError } = await supabase.from("supplier_order_attempts")
+                .update({ succeeded: true, response_code: "SUPPLIER_PAYMENT_CONFIRMED",
+                  response_message: "Supplier payment confirmed by read-only reconciliation", state: "completed" })
+                .eq("purchase_order_id", orderId).eq("supplier_order_id", supplierId)
+                .select("id").maybeSingle();
+              return { data: data ? { id: String(data.id) } : null, error: attemptError };
+            },
+            updatePurchaseOrder: async (orderId, allowedStatuses, patch) => {
+              const { data, error: updateError } = await supabase.from("purchase_orders")
+                .update(patch).eq("id", orderId).in("status", allowedStatuses).select("id").maybeSingle();
+              return { data: data ? { id: String(data.id) } : null, error: updateError };
+            },
+          },
+        });
+        updated += 1;
+        purchaseOrderIds.push(purchaseOrderId);
+      } catch (error) {
+        failed += 1;
+        failedPurchaseOrderIds.push(purchaseOrderId);
+        const reason = error instanceof Error ? error.message : String(error);
+        failureDetails.push({ purchaseOrderId, stage, reason });
+        console.error("[TRACER SUPPLIER PAYMENT RECOVERY]", { purchaseOrderId, stage, reason });
+      }
       continue;
     }
 

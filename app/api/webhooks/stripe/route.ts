@@ -48,7 +48,7 @@ async function markProcessed(
   shopOrderId: string | null,
   error?: string,
 ): Promise<void> {
-  await supabase
+  const { data, error: updateError } = await supabase
     .from("stripe_webhook_events")
     .update({
       processed: !error,
@@ -56,7 +56,16 @@ async function markProcessed(
       shop_order_id: shopOrderId,
       processed_at: new Date().toISOString(),
     })
-    .eq("stripe_event_id", eventId);
+    .eq("stripe_event_id", eventId)
+    .select("stripe_event_id")
+    .maybeSingle();
+
+  if (updateError) {
+    throw new Error(`Failed to persist Stripe webhook processing state: ${updateError.message}`);
+  }
+  if (!data) {
+    throw new Error(`Stripe webhook event ledger row not found for event ${eventId}`);
+  }
 }
 
 async function handleCheckoutCompleted(

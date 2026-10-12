@@ -10,7 +10,7 @@ const orderControl = await readFile(new URL("../lib/ordering/autonomous-control.
 const dropship = await readFile(new URL("../lib/ordering/dropship.ts", import.meta.url), "utf8");
 const supplierExecution = await readFile(new URL("../lib/ordering/supplier-execution.ts", import.meta.url), "utf8");
 const executionRoute = await readFile(new URL("../app/api/cron/dropship-execution/route.ts", import.meta.url), "utf8");
-assert.match(orderControl, /\.in\("order_status", \["placed", "processing", "fulfillment_pending"\]\)/);
+assert.match(orderControl, /\.in\("order_status", \["paid", "placed", "processing", "fulfillment_pending"\]\)/, "paid orders must remain eligible for idempotent fulfillment recovery after a pre-transition failure");
 assert.doesNotMatch(orderControl, /\.in\("order_status", \[[^\]]*fulfilled/);
 assert.match(dropship, /supplierIdentityStatus: typeof listingRow\.identity_status === "string" \? listingRow\.identity_status : null/, "PO intent must pass the actual supplier identity state into the gate");
 assert.match(supplierExecution, /if \(isCjSupplierName\(supplierName\)\)/, "live CJ execution must re-check canonical identity");

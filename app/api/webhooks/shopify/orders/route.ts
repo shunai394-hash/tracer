@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     const db = createSupabaseAdminClient();
     const existing = await db.from("shop_orders").select("id").eq("shopify_order_id", externalId).maybeSingle();
     if (existing.error) throw new Error(existing.error.message);
-    if (existing.data) return NextResponse.json({ ok: true, duplicate: true, orderId: String(existing.data.id) });
+    const existingOrderId = existing.data ? String(existing.data.id) : null;
 
     const items = Array.isArray(order.line_items) ? order.line_items as Array<Record<string, unknown>> : [];
     const skus = items.map((item) => String(item.sku ?? "").trim());
@@ -77,6 +77,57 @@ export async function POST(request: Request) {
       return !listing || listing.published !== true || listing.orderable !== true;
     })) {
       return NextResponse.json({ ok: true, blocked: true, reason: "listing_not_orderable" });
+    }
+
+    // A duplicate webhook must repair missing line rows instead of returning
+    // early. The external line-item ID is the idempotency key for each detail.
+    if (existingOrderId) {
+      const { data: existingItems, error: existingItemsError } = await db
+        .from("shop_order_items")
+        .select("shopify_line_item_id")
+        .eq("order_id", existingOrderId);
+      if (existingItemsError) throw new Error(existingItemsError.message);
+      if ((existingItems ?? []).some((row) => !row.shopify_line_item_id)) {
+        return NextResponse.json({ ok: false, error: "existing_line_items_missing_external_ids_manual_reconciliation_required", orderId: existingOrderId }, { status: 409 });
+      }
+      const existingLineIds = new Set((existingItems ?? []).map((row) => String(row.shopify_line_item_id)));
+      const missingItems = items.filter((item) => {
+        if (item.id == null || !String(item.id).trim()) return false;
+        return !existingLineIds.has(String(item.id));
+      });
+      if (items.some((item) => item.id == null || !String(item.id).trim())) {
+        return NextResponse.json({ ok: false, error: "shopify_line_item_id_missing_manual_reconciliation_required", orderId: existingOrderId }, { status: 409 });
+      }
+      let repairedLineItems = 0;
+      for (const item of missingItems) {
+        const sku = String(item.sku ?? "").trim();
+        const listing = bySku.get(sku);
+        const quantity = n(item.quantity);
+        const unitPrice = n(item.price);
+        if (!listing || quantity === null || !Number.isInteger(quantity) || quantity <= 0 || unitPrice === null || unitPrice < 0) {
+          return NextResponse.json({ ok: false, error: "shopify_missing_line_item_invalid_manual_reconciliation_required", orderId: existingOrderId, lineItemId: String(item.id) }, { status: 409 });
+        }
+        const row = await db.from("shop_order_items").insert({
+          order_id: existingOrderId,
+          listing_id: listing.id,
+          product_id: listing.product_id,
+          supplier_listing_id: listing.supplier_listing_id ?? null,
+          supplier_name: listing.supplier_name ?? null,
+          supplier_product_id: listing.supplier_product_id ?? null,
+          supplier_variant_id: listing.supplier_variant_id ?? null,
+          title: String(item.title ?? listing.title),
+          qty: quantity,
+          unit_price: unitPrice,
+          currency: String(order.currency ?? order.presentment_currency ?? "JPY"),
+          shopify_line_item_id: String(item.id),
+        });
+        if (row.error) {
+          if (row.error.code === "23505") continue;
+          throw new Error(row.error.message);
+        }
+        repairedLineItems += 1;
+      }
+      return NextResponse.json({ ok: true, duplicate: true, repairedLineItems, orderId: existingOrderId });
     }
 
     const financial = String(order.financial_status ?? "pending");
