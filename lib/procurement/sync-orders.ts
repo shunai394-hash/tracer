@@ -96,11 +96,21 @@ export async function syncSupplierOrders(): Promise<SupplierOrderSyncResult> {
       if (updateError) throw new Error(updateError.message);
 
       if (purchaseOrder.shop_order_id) {
-        const { data: currentShopOrder } = await supabase
+        const { data: currentShopOrder, error: shopOrderLookupError } = await supabase
           .from("shop_orders")
           .select("order_status")
           .eq("id", purchaseOrder.shop_order_id)
           .maybeSingle();
+
+        // A failed or empty lookup is not evidence that the customer order is
+        // active. Fail closed: never write customer fulfillment/tracking state
+        // unless its authoritative row was successfully read.
+        if (shopOrderLookupError) {
+          throw new Error(`shop_order_status_lookup_failed:${shopOrderLookupError.message}`);
+        }
+        if (!currentShopOrder) {
+          throw new Error("shop_order_status_lookup_missing_order");
+        }
 
         // Customer cancellation/refund state is authoritative. Supplier
         // tracking must never resurrect a cancelled/refund-pending order.
@@ -109,7 +119,7 @@ export async function syncSupplierOrders(): Promise<SupplierOrderSyncResult> {
           "refund_pending",
           "refunded",
           "cancelled",
-        ].includes(String(currentShopOrder?.order_status));
+        ].includes(String(currentShopOrder.order_status));
 
         const shopUpdate: Record<string, unknown> = {};
         if (!customerTerminalState && tracking?.trackingNumber) {
