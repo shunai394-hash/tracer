@@ -113,8 +113,10 @@ export async function POST(request: Request) {
     }).select("id").single();
     if (inserted.error) throw new Error(inserted.error.message);
 
-    for (const item of items) {
-      const listing = bySku.get(String(item.sku ?? ""));
+    for (const [index, item] of items.entries()) {
+      // Use the same normalized SKU used during resolution; Shopify payloads may
+      // contain surrounding whitespace even though lookup keys are trimmed.
+      const listing = bySku.get(skus[index]);
       if (!listing) throw new Error("listing mapping missing during item insert");
       const row = await db.from("shop_order_items").insert({
         order_id: inserted.data.id,
