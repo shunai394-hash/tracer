@@ -175,12 +175,22 @@ export async function requestShopOrderCancellation(args: {
       : null;
 
   if (!paymentIntentId) {
+    const { data: heldOrder, error: holdError } = await supabase
+      .from("shop_orders")
+      .update({ order_status: "refund_pending" })
+      .eq("id", args.orderId)
+      .eq("order_status", "cancellation_requested")
+      .select("id")
+      .maybeSingle();
+    if (holdError) throw new Error(holdError.message);
     return {
       orderId: args.orderId,
-      status: "refund_pending",
+      status: heldOrder ? "refund_pending" : "manual_review",
       refundRequested: false,
       supplierOrderPlaced: false,
-      reason: "payment_intent_missing_manual_refund_required",
+      reason: heldOrder
+        ? "payment_intent_missing_manual_refund_required"
+        : "order_status_changed_manual_reconciliation_required",
     };
   }
 
@@ -195,7 +205,7 @@ export async function requestShopOrderCancellation(args: {
     },
   );
 
-  const { error: refundPersistError } = await supabase
+  const { data: refundStateSaved, error: refundPersistError } = await supabase
     .from("shop_orders")
     .update({
       order_status: "refund_pending",
@@ -203,14 +213,16 @@ export async function requestShopOrderCancellation(args: {
       refund_requested_at: now,
     })
     .eq("id", args.orderId)
-    .eq("order_status", "cancellation_requested");
+    .eq("order_status", "cancellation_requested")
+    .select("id")
+    .maybeSingle();
 
   return {
     orderId: args.orderId,
-    status: "refund_pending",
+    status: refundStateSaved ? "refund_pending" : "manual_review",
     refundRequested: true,
     supplierOrderPlaced: false,
-    reason: refundPersistError
+    reason: refundPersistError || !refundStateSaved
       ? "refund_created_but_order_state_persist_failed_manual_reconciliation_required"
       : null,
   };
