@@ -6,6 +6,7 @@ import { getOrderSkuLookup, resolveShopifyOrderSkus } from "@/lib/shopify/order-
 export const runtime = "nodejs";
 
 function n(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
   const x = Number(value);
   return Number.isFinite(x) ? x : null;
 }
