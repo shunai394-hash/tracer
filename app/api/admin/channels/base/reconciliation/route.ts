@@ -237,7 +237,9 @@ export async function POST(request: Request) {
           supplierProductId: row.supplier_product_id,
           supplierVariantId: row.supplier_variant_id,
           imageUrlMatches: Boolean(baseImage && normalizedImage(row.image_url) === baseImage),
-          status: reviewRequired ? "REVIEW_REQUIRED" : score >= 100 ? "HIGH_CONFIDENCE_CANDIDATE_NOT_AUTO_MAPPED" : "REVIEW_REQUIRED",
+          status: !reviewRequired && evidence.some((entry) => entry === "supplier_product_id_exact" || entry === "supplier_variant_id_exact")
+            ? "HIGH_CONFIDENCE_CANDIDATE_NOT_AUTO_MAPPED"
+            : "REVIEW_REQUIRED",
         })),
         candidateDecision: topCandidates.length > 1 ? "MULTIPLE_TOP_CANDIDATES_REVIEW_REQUIRED"
           : topScore > 0 ? "CANDIDATE_REVIEW_REQUIRED" : "NO_CANDIDATE",
