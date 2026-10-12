@@ -1,0 +1,182 @@
+import { NextResponse } from "next/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { fetchBaseItemsSnapshot, isBaseConfigured } from "@/lib/channels/base";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 120;
+
+type ListingRow = {
+  id: string;
+  title: string | null;
+  product_id: string | null;
+  published: boolean | null;
+  base_item_id: string | number | null;
+  selling_price: number | string | null;
+  supplier_name: string | null;
+  supplier_listing_id: string | null;
+  supplier_product_id: string | null;
+  supplier_variant_id: string | null;
+  inventory: number | null;
+  orderable: boolean | null;
+  base_publication_status: string | null;
+};
+
+function normalizedTitle(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .toLocaleLowerCase("ja-JP")
+    .replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+function visibility(value: unknown): boolean | null {
+  if (value === true || value === 1 || value === "1") return true;
+  if (value === false || value === 0 || value === "0") return false;
+  return null;
+}
+
+/** Read-only reconciliation report. Candidates are evidence only and never auto-mapped. */
+export async function GET(request: Request) {
+  const authError = await requireAutomationAuth(request);
+  if (authError) return authError;
+
+  if (!isBaseConfigured()) {
+    return NextResponse.json(
+      { ok: false, error: "BASE_OAUTH_CONFIG_INCOMPLETE" },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
+  try {
+    const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: 10 });
+    const db = createSupabaseAdminClient();
+    const listings: ListingRow[] = [];
+    const pageSize = 1000;
+    let complete = false;
+
+    for (let page = 0; page < 10; page += 1) {
+      const from = page * pageSize;
+      const { data, error } = await db
+        .from("shop_listings")
+        .select("id,title,product_id,published,base_item_id,selling_price,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,base_publication_status")
+        .order("created_at", { ascending: true })
+        .range(from, from + pageSize - 1);
+      if (error) throw new Error("TRACER_LISTINGS_READ_FAILED");
+      const rows = (data ?? []) as ListingRow[];
+      listings.push(...rows);
+      if (rows.length < pageSize) {
+        complete = true;
+        break;
+      }
+    }
+
+    if (!complete) throw new Error("TRACER_LISTINGS_SCAN_INCOMPLETE");
+
+    const byBaseId = new Map<string, ListingRow[]>();
+    const byTitle = new Map<string, ListingRow[]>();
+    for (const listing of listings) {
+      const baseId = String(listing.base_item_id ?? "").trim();
+      if (baseId) {
+        const group = byBaseId.get(baseId) ?? [];
+        group.push(listing);
+        byBaseId.set(baseId, group);
+      }
+      const title = normalizedTitle(listing.title);
+      if (title) {
+        const group = byTitle.get(title) ?? [];
+        group.push(listing);
+        byTitle.set(title, group);
+      }
+    }
+
+    const items = snapshot.items.map((item) => {
+      const baseItemId = String(item.item_id ?? "");
+      const title = String(item.title ?? item.name ?? "");
+      const key = normalizedTitle(title);
+      const exactIdListings = byBaseId.get(baseItemId) ?? [];
+      const titleCandidates = key ? (byTitle.get(key) ?? []) : [];
+      return {
+        baseItemId,
+        visible: visibility(item.visible),
+        title,
+        price: item.price ?? null,
+        stock: item.stock ?? null,
+        exactBaseIdMatchCount: exactIdListings.length,
+        exactBaseIdMatches: exactIdListings.map((row) => ({
+          listingId: row.id,
+          title: row.title,
+          published: row.published,
+          supplierName: row.supplier_name,
+          supplierListingId: row.supplier_listing_id,
+          supplierProductId: row.supplier_product_id,
+          supplierVariantId: row.supplier_variant_id,
+          inventory: row.inventory,
+          orderable: row.orderable,
+          sellingPrice: row.selling_price,
+          basePublicationStatus: row.base_publication_status,
+        })),
+        exactTitleCandidateCount: titleCandidates.length,
+        exactTitleCandidates: titleCandidates.slice(0, 20).map((row) => ({
+          listingId: row.id,
+          title: row.title,
+          productId: row.product_id,
+          published: row.published,
+          existingBaseItemId: row.base_item_id,
+          supplierName: row.supplier_name,
+          supplierListingId: row.supplier_listing_id,
+          supplierProductId: row.supplier_product_id,
+          supplierVariantId: row.supplier_variant_id,
+          inventory: row.inventory,
+          orderable: row.orderable,
+          sellingPrice: row.selling_price,
+          basePublicationStatus: row.base_publication_status,
+          priceDifference: Number.isFinite(Number(item.price)) && Number.isFinite(Number(row.selling_price))
+            ? Number(row.selling_price) - Number(item.price)
+            : null,
+        })),
+      };
+    });
+
+    const exactMapped = items.filter((item) => item.exactBaseIdMatchCount === 1).length;
+    const unmapped = items.filter((item) => item.exactBaseIdMatchCount === 0).length;
+    const ambiguous = items.filter((item) => item.exactBaseIdMatchCount > 1).length;
+    const titleCandidateCount = items.filter((item) => item.exactTitleCandidateCount > 0).length;
+    const report = {
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      source: "BASE /items + TRACER shop_listings read-only reconciliation",
+      complete: snapshot.complete && complete,
+      baseItemCount: snapshot.items.length,
+      baseVisibleCount: snapshot.items.filter((item) => visibility(item.visible) === true).length,
+      baseHiddenCount: snapshot.items.filter((item) => visibility(item.visible) === false).length,
+      tracerListingCount: listings.length,
+      exactBaseIdMappedCount: exactMapped,
+      baseItemsWithoutExactMappingCount: unmapped,
+      baseItemsWithAmbiguousExactMappingCount: ambiguous,
+      baseItemsWithExactTitleCandidateCount: titleCandidateCount,
+      tracerListingsWithoutBaseItemIdCount: listings.filter((row) => !String(row.base_item_id ?? "").trim()).length,
+      duplicateBaseItemIdGroupsInTracer: [...byBaseId.entries()].filter(([, rows]) => rows.length > 1).length,
+      note: "Exact-title candidates are unverified suggestions only. This report never writes mappings or changes BASE listings.",
+      items,
+    };
+    const date = report.generatedAt.slice(0, 10);
+    return new Response(JSON.stringify(report, null, 2), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Content-Disposition": "attachment; filename=\"tracer-base-reconciliation-" + date + ".json\"",
+        "Cache-Control": "no-store, private",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "BASE_RECONCILIATION_FAILED";
+    const stage = message.split(":")[0].slice(0, 100);
+    console.error("[TRACER BASE RECONCILIATION FAILED]", { stage });
+    return NextResponse.json(
+      { ok: false, error: stage, complete: false },
+      { status: 502, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+}
