@@ -86,6 +86,46 @@ insert into public.shop_listings(id, supplier_name, supplier_variant_id, invento
  ('60000000-0000-4000-8000-000000000001', 'TRACER_INTERNAL', '20000000-0000-4000-8000-000000000001', 10, true),
  ('60000000-0000-4000-8000-000000000002', 'TRACER_INTERNAL', '20000000-0000-4000-8000-000000000002', 10, true);
 
+-- Inject allocation failure. The variant update and ledger insert must both
+-- roll back; the same PO remains available for the later concurrency test.
+create function public.inject_inventory_allocation_failure()
+returns trigger language plpgsql as $
+begin
+  raise exception 'injected_inventory_allocation_failure';
+end $;
+create trigger injected_inventory_allocation_failure
+before update on public.internal_supply_variants
+for each row execute function public.inject_inventory_allocation_failure();
+
+do $
+declare
+  v_failed boolean := false;
+  v_inventory integer;
+begin
+  begin
+    perform public.reserve_internal_supply_for_order(
+      '30000000-0000-4000-8000-000000000003',
+      '20000000-0000-4000-8000-000000000002', 4
+    );
+  exception when others then
+    if sqlerrm = 'injected_inventory_allocation_failure' then
+      v_failed := true;
+    else
+      raise;
+    end if;
+  end;
+
+  if not v_failed then raise exception 'injected inventory allocation failure did not fire'; end if;
+  select inventory into v_inventory from public.internal_supply_variants where id='20000000-0000-4000-8000-000000000002';
+  if v_inventory <> 10 then raise exception 'failed allocation changed inventory'; end if;
+  if exists(select 1 from public.internal_supply_inventory_reservations where purchase_order_id='30000000-0000-4000-8000-000000000003') then
+    raise exception 'failed allocation left a reservation ledger row';
+  end if;
+end $;
+
+drop trigger injected_inventory_allocation_failure on public.internal_supply_variants;
+drop function public.inject_inventory_allocation_failure();
+
 -- Reserve once; repeated calls for the same PO must not decrement again.
 do $$
 declare
