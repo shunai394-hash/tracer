@@ -154,7 +154,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
   let query = supabase
     .from("shop_listings")
     .select(baseSelect)
-    .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
+    .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null),shopify_product_id.not.is.null")
     .order("pipeline_updated_at", { ascending: true });
 
   if (listingIds?.length) {
@@ -179,17 +179,28 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
     : rows.filter((row) => {
         const status = String(row.shopify_sync_status ?? "");
         if (status === "syncing") return false;
-        if (row.identity_status !== "linked") return Boolean(row.shopify_product_id) && status !== "blocked";
+
+        const internallyBlocked =
+          row.published === false &&
+          row.pipeline_stage === "BLOCKED" &&
+          row.pipeline_status === "blocked";
+        const reasons = blockReasons(row);
+        if (reasons.length > 0) {
+          // Re-verify every Shopify-linked blocked row: internal "blocked" alone
+          // cannot prove the external publication was removed successfully.
+          if (row.shopify_product_id) return true;
+          return !internallyBlocked;
+        }
+
         if (row.published === true && row.pipeline_stage === "PUBLISHED" && row.pipeline_status === "published") {
           return status !== "synced";
         }
         if (row.published === false && row.pipeline_stage === "SELECTED" && row.pipeline_status === "selected") {
           return status !== "synced";
         }
-        if (row.published === false && row.pipeline_stage === "BLOCKED" && row.shopify_product_id) {
-          return status !== "blocked";
-        }
-        return false;
+        // Eligible rows with drifted internal state must also be reconciled,
+        // rather than disappearing from the normal scan.
+        return Boolean(row.shopify_product_id) || status !== "synced";
       }).slice(0, safeLimit);
 
   return syncListingRows(actionable, supabase);
@@ -245,7 +256,7 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
   const { data, error } = await supabase
     .from("shop_listings")
     .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_error")
-    .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
+    .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null),shopify_product_id.not.is.null")
     .or("shopify_sync_status.is.null,shopify_sync_status.neq.syncing")
     .order("shopify_product_id", { ascending: true, nullsFirst: true })
     .order("pipeline_updated_at", { ascending: false })
@@ -302,50 +313,78 @@ async function syncListingRows(
 
   for (const row of blocked) {
     if (!row.shopify_product_id) {
-      await supabase.from("shop_listings").update({
+      const { error: localBlockError } = await supabase.from("shop_listings").update({
         published: false,
         pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
-        pipeline_reason: "sales_test_gate_not_passed",
+        pipeline_reason: blockReasons(row).join(",") || "sales_test_gate_not_passed",
         pipeline_updated_at: new Date().toISOString(),
         published_at: null,
         shopify_sync_status: "blocked",
         shopify_sync_error: "sales_test_or_supply_or_japanese_gate_not_passed",
         shopify_synced_at: new Date().toISOString(),
       }).eq("id", row.id);
+      if (localBlockError) {
+        results.failed += 1;
+        results.errors.push({ listingId: row.id, error: `internal_block_state_write_failed:${localBlockError.message}` });
+      }
       continue;
     }
     try {
       await unpublishShopifyProduct(String(row.shopify_product_id));
-      await supabase.from("shop_listings").update({
+      const { data: blockedRow, error: blockWriteError } = await supabase.from("shop_listings").update({
+        published: false,
+        pipeline_stage: "BLOCKED",
+        pipeline_status: "blocked",
+        pipeline_reason: blockReasons(row).join(",") || "sales_test_or_supply_gate_not_passed",
+        pipeline_updated_at: new Date().toISOString(),
+        published_at: null,
         shopify_sync_status: "blocked",
         shopify_sync_error: "sales_test_or_supply_gate_not_passed",
         shopify_synced_at: new Date().toISOString(),
-      }).eq("id", row.id);
+      }).eq("id", row.id).select("id").maybeSingle();
+      if (blockWriteError || !blockedRow) {
+        throw new Error(`shopify_unpublished_but_internal_state_write_failed:${blockWriteError?.message ?? "listing_missing"}`);
+      }
+      results.synced += 1;
+      results.listingIds.push(row.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message === "shopify_product_not_found_for_unpublication_check") {
         // Nothing left on Shopify to sell; the listing simply stays blocked.
-        await supabase.from("shop_listings").update({
+        const { data: missingRow, error: missingWriteError } = await supabase.from("shop_listings").update({
+          published: false,
+          pipeline_stage: "BLOCKED",
+          pipeline_status: "blocked",
+          pipeline_reason: blockReasons(row).join(",") || "shopify_product_missing",
+          pipeline_updated_at: new Date().toISOString(),
+          published_at: null,
           shopify_sync_status: "blocked",
           shopify_sync_error: "shopify_product_missing",
           shopify_synced_at: new Date().toISOString(),
-        }).eq("id", row.id);
+        }).eq("id", row.id).select("id").maybeSingle();
+        if (missingWriteError || !missingRow) {
+          results.failed += 1;
+          results.errors.push({ listingId: row.id, error: `shopify_missing_product_state_write_failed:${missingWriteError?.message ?? "listing_missing"}` });
+        } else {
+          results.synced += 1;
+          results.listingIds.push(row.id);
+        }
         continue;
       }
       results.failed += 1;
       results.errors.push({ listingId: row.id, error: `unpublish_failed:${message}` });
-      await supabase.from("shop_listings").update({
-        published: false,
-        pipeline_stage: "BLOCKED",
-        pipeline_status: "blocked",
-        pipeline_reason: "sales_test_gate_unpublish_failed",
-        pipeline_updated_at: new Date().toISOString(),
-        published_at: null,
+      // Shopify is still potentially published when the external call fails.
+      // Preserve publication fields so the next audit can detect and retry drift;
+      // never represent an unverified external unpublish as internally complete.
+      const { error: failureWriteError } = await supabase.from("shop_listings").update({
         shopify_sync_status: "failed",
         shopify_sync_error: `unpublish_failed:${message}`.slice(0, 2000),
         shopify_synced_at: new Date().toISOString(),
       }).eq("id", row.id);
+      if (failureWriteError) {
+        results.errors.push({ listingId: row.id, error: `unpublish_failure_state_write_failed:${failureWriteError.message}` });
+      }
     }
   }
 
