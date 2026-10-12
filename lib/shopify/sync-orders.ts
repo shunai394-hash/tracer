@@ -238,12 +238,10 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         .eq("shopify_order_id", order.id)
         .maybeSingle();
       if (existingError) throw new Error(existingError.message);
-      if (existing) {
-        result.skipped += 1;
-        result.orderIds.push(String(existing.id));
-        continue;
-      }
 
+      // Existing parents are not automatically considered complete. Reconcile
+      // line items by Shopify's immutable line-item ID so a prior partial insert
+      // can be repaired without creating a second parent order.
       const address = fullAddress(order.shippingAddress);
       const customerName = order.shippingAddress?.name || order.email || "Shopify customer";
       const customerEmail = order.email || "shopify-order@invalid.local";
@@ -275,73 +273,131 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
       }
 
       const primaryListing = mappedItems[0]?.listing;
-      const inserted = await supabase
-        .from("shop_orders")
-        .insert({
-          listing_id: primaryListing?.id ?? null,
-          status: "placed",
-          payment_method: "shopify",
-          payment_status: "paid",
-          order_status: "fulfillment_pending",
-          customer_name: customerName,
-          customer_email: customerEmail,
-          customer_phone: phone,
-          shipping_address: address,
-          subtotal: total,
-          shipping_cost: 0,
-          total,
-          currency: order.totalPriceSet.shopMoney.currencyCode,
-          notes: `Shopify ${order.name}`,
-          shopify_order_id: order.id,
-          shopify_order_name: order.name,
-          shopify_fulfillment_status: order.displayFulfillmentStatus,
-          shopify_financial_status: order.displayFinancialStatus,
-          shopify_synced_at: new Date().toISOString(),
-          paid_at: new Date().toISOString(),
-          metadata: {
-            source: "shopify",
-            created_at: order.createdAt,
-            country_code: order.shippingAddress?.countryCodeV2,
-          },
-        })
-        .select("id")
-        .single();
-      if (inserted.error?.code === "23505") {
-        // Another sync worker may have inserted the same external order after
-        // our earlier lookup. Reconcile the winner instead of retrying blindly.
-        const { data: racedOrder, error: racedOrderError } = await supabase
+      let targetOrderId: string;
+      if (existing?.id) {
+        targetOrderId = String(existing.id);
+      } else {
+        const inserted = await supabase
           .from("shop_orders")
+          .insert({
+            listing_id: primaryListing?.id ?? null,
+            status: "placed",
+            payment_method: "shopify",
+            payment_status: "paid",
+            order_status: "fulfillment_pending",
+            customer_name: customerName,
+            customer_email: customerEmail,
+            customer_phone: phone,
+            shipping_address: address,
+            subtotal: total,
+            shipping_cost: 0,
+            total,
+            currency: order.totalPriceSet.shopMoney.currencyCode,
+            notes: `Shopify ${order.name}`,
+            shopify_order_id: order.id,
+            shopify_order_name: order.name,
+            shopify_fulfillment_status: order.displayFulfillmentStatus,
+            shopify_financial_status: order.displayFinancialStatus,
+            shopify_synced_at: new Date().toISOString(),
+            paid_at: new Date().toISOString(),
+            metadata: {
+              source: "shopify",
+              created_at: order.createdAt,
+              country_code: order.shippingAddress?.countryCodeV2,
+            },
+          })
           .select("id")
-          .eq("shopify_order_id", order.id)
-          .maybeSingle();
-        if (racedOrderError) throw new Error(racedOrderError.message);
-        if (racedOrder?.id) {
-          result.skipped += 1;
-          result.orderIds.push(String(racedOrder.id));
-          continue;
+          .single();
+        if (inserted.error?.code === "23505") {
+          // Another worker may have inserted the parent. Read it and reconcile
+          // its lines below instead of acknowledging a potentially partial row.
+          const { data: racedOrder, error: racedOrderError } = await supabase
+            .from("shop_orders")
+            .select("id")
+            .eq("shopify_order_id", order.id)
+            .maybeSingle();
+          if (racedOrderError || !racedOrder?.id) {
+            throw new Error(racedOrderError?.message ?? "shopify_order_conflict_unresolved");
+          }
+          targetOrderId = String(racedOrder.id);
+        } else {
+          if (inserted.error || !inserted.data) throw new Error(inserted.error?.message ?? "shop_order_insert_failed");
+          targetOrderId = String(inserted.data.id);
+          insertedOrderId = targetOrderId;
         }
       }
-      if (inserted.error || !inserted.data) throw new Error(inserted.error?.message ?? "shop_order_insert_failed");
-      insertedOrderId = String(inserted.data.id);
 
-      const itemRows = mappedItems.map(({ item, listing }) => ({
-        order_id: inserted.data.id,
-        listing_id: listing?.id ?? null,
-        product_id: listing?.product_id ?? null,
-        title: item.title,
-        qty: item.quantity,
-        unit_price: Number(item.originalUnitPriceSet.shopMoney.amount),
-        currency: item.originalUnitPriceSet.shopMoney.currencyCode,
-      }));
-      const itemInsert = await supabase.from("shop_order_items").insert(itemRows);
-      if (itemInsert.error) {
-        await supabase.from("shop_orders").delete().eq("id", inserted.data.id).eq("shopify_order_id", order.id);
-        insertedOrderId = null;
-        throw new Error(`shop_order_items_insert_failed:${itemInsert.error.message}`);
+      const { data: priorLines, error: priorLinesError } = await supabase
+        .from("shop_order_items")
+        .select("shopify_line_item_id, listing_id, qty, unit_price")
+        .eq("order_id", targetOrderId);
+      if (priorLinesError) throw new Error(priorLinesError.message);
+      const priorById = new Map<string, Record<string, unknown>>();
+      for (const line of priorLines ?? []) {
+        const lineId = line.shopify_line_item_id == null ? "" : String(line.shopify_line_item_id);
+        if (!lineId) {
+          // Legacy rows without Shopify IDs cannot be safely associated by
+          // title/SKU alone. Fail closed rather than create duplicate purchases.
+          throw new Error(`shopify_existing_line_missing_external_id:${targetOrderId}`);
+        }
+        if (priorById.has(lineId)) throw new Error(`shopify_existing_line_duplicate_external_id:${lineId}`);
+        priorById.set(lineId, line as Record<string, unknown>);
       }
 
-      result.imported += 1;
-      result.orderIds.push(inserted.data.id);
+      const missingRows: Array<Record<string, unknown>> = [];
+      for (const { item, listing } of mappedItems) {
+        const lineId = item.id;
+        const qty = item.quantity;
+        const unitPrice = Number(item.originalUnitPriceSet.shopMoney.amount);
+        const prior = priorById.get(lineId);
+        if (prior) {
+          if (String(prior.listing_id) !== String(listing?.id) ||
+              Number(prior.qty) !== qty ||
+              Number(prior.unit_price) !== unitPrice) {
+            throw new Error(`shopify_existing_line_replay_conflict:${lineId}`);
+          }
+          continue;
+        }
+        missingRows.push({
+          order_id: targetOrderId,
+          shopify_line_item_id: lineId,
+          listing_id: listing?.id ?? null,
+          product_id: listing?.product_id ?? null,
+          title: item.title,
+          qty,
+          unit_price: unitPrice,
+          currency: item.originalUnitPriceSet.shopMoney.currencyCode,
+        });
+      }
+
+      if (missingRows.length) {
+        const itemInsert = await supabase
+          .from("shop_order_items")
+          .upsert(missingRows, { onConflict: "order_id,shopify_line_item_id", ignoreDuplicates: true });
+        if (itemInsert.error) throw new Error(`shop_order_items_reconcile_failed:${itemInsert.error.message}`);
+
+        // Verify every expected external line ID after a concurrent insert race.
+        const { data: confirmedLines, error: confirmedError } = await supabase
+          .from("shop_order_items")
+          .select("shopify_line_item_id, listing_id, qty, unit_price")
+          .eq("order_id", targetOrderId)
+          .in("shopify_line_item_id", missingRows.map((row) => String(row.shopify_line_item_id)));
+        if (confirmedError) throw new Error(confirmedError.message);
+        const confirmedById = new Map((confirmedLines ?? []).map((line) => [String(line.shopify_line_item_id), line]));
+        for (const expected of missingRows) {
+          const confirmed = confirmedById.get(String(expected.shopify_line_item_id));
+          if (!confirmed ||
+              String(confirmed.listing_id) !== String(expected.listing_id) ||
+              Number(confirmed.qty) !== Number(expected.qty) ||
+              Number(confirmed.unit_price) !== Number(expected.unit_price)) {
+            throw new Error(`shopify_line_item_reconcile_conflict:${String(expected.shopify_line_item_id)}`);
+          }
+        }
+      }
+
+      if (existing?.id) result.skipped += 1;
+      else result.imported += 1;
+      result.orderIds.push(targetOrderId);
     } catch (error) {
       if (insertedOrderId) {
         await supabase.from("shop_orders").delete().eq("id", insertedOrderId).eq("shopify_order_id", order.id);
