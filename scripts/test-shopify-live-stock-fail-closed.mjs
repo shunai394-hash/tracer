@@ -32,6 +32,8 @@ assert.match(sync, /supplier_price_checked_at, SUPPLIER_PRICE_MAX_AGE_MS/, "stal
 assert.match(sync, /SUPPLIER_SHIPPING_MAX_AGE_MS = 24 \* 60 \* 60 \* 1000/, "supplier shipping evidence must expire after 24 hours");
 assert.match(sync, /row\.supplier_verified_variant_id !== row\.supplier_variant_id/, "supplier variant identity must match exactly");
 assert.match(sync, /supplier_cost_unconfirmed_stale_or_mismatch/, "unconfirmed or mismatched supplier cost must block sync");
+assert.match(sync, /select\("id,supplier_variant_id,cost,currency,shipping_cost/, "supplier evidence currency must be loaded with the observed cost");
+assert.match(sync, /String\(row\.supplier_currency \?\? ""\)\.trim\(\)\.toUpperCase\(\) !== "JPY"/, "non-JPY supplier costs must block Shopify sync even when numeric amounts happen to match");
 assert.match(sync, /supplier_shipping_unconfirmed_or_mismatch/, "unconfirmed or mismatched shipping must block sync");
 assert.match(sync, /quantity: getShopifySellableInventory\(row\)/, "Shopify stock must use conservative sellable quantity, not full supplier stock");
 assert.match(sync, /SHOPIFY_SELLABLE_STOCK_CAP = 3/, "Shopify sellable stock must have a low cap");
