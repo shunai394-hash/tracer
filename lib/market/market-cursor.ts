@@ -1,6 +1,8 @@
 import "server-only";
 
 import type { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { nextMarketCursor } from "./market-cursor-policy.mjs";
+export { nextMarketCursor } from "./market-cursor-policy.mjs";
 
 type Db = ReturnType<typeof createSupabaseAdminClient>;
 
@@ -31,19 +33,3 @@ export async function readMarketCursor(db: Db): Promise<MarketCursor> {
 }
 
 
-/** Pure cursor transition: only the market-sourcing cron is allowed to persist it. */
-export function nextMarketCursor(observation: {
-  sourceIndex: number;
-  nextIndex: number;
-  hasMore: boolean;
-}): MarketCursor {
-  return observation.hasMore
-    ? {
-        sourceIndex: Math.max(0, observation.sourceIndex) % SOURCE_COUNT,
-        startIndex: Math.max(0, observation.nextIndex),
-      }
-    : {
-        sourceIndex: (Math.max(0, observation.sourceIndex) + 1) % SOURCE_COUNT,
-        startIndex: 0,
-      };
-}
