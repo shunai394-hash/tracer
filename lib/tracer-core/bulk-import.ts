@@ -45,7 +45,6 @@ export function planBulkCatalogImport(
 
   const duplicateProductIds = [...productCounts].filter(([, count]) => count > 1).map(([id]) => id).sort();
   const duplicateSupplierVariants = [...variantCounts].filter(([, count]) => count > 1).map(([key]) => key).sort();
-  const seenProducts = new Set<string>();
   const eligibleProductIds: string[] = [];
   const rejected: BulkCatalogPlan["rejected"] = [];
 
@@ -57,9 +56,6 @@ export function planBulkCatalogImport(
       rejected.push({ productId: "", blockers: ["internal_product_id_missing"] });
       continue;
     }
-    if (seenProducts.has(productId)) continue;
-    seenProducts.add(productId);
-
     const blockers: string[] = [];
     if ((productCounts.get(productId) ?? 0) > 1) blockers.push("duplicate_internal_product_id");
     if (!supplierProductId || !supplierVariantId) blockers.push("supplier_product_or_variant_id_missing");
