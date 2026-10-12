@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ConnectionPanel } from "@/components/connection-panel";
 import { getFoundationStatus } from "@/lib/config/env";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { formatMoney } from "@/lib/intelligence/format-display";
 
 const workspaces = [
   {
@@ -44,8 +46,28 @@ const releaseGates = [
   ["04", "チャネル反映", "BASE／Shopifyの実掲載結果を照合"],
 ] as const;
 
-export default function HomePage() {
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
   const status = getFoundationStatus();
+  let products: Array<Record<string, unknown>> = [];
+  let catalogMessage = "";
+  try {
+    const supabase = createSupabaseAdminClient();
+    const result = await supabase
+      .from("marketplace_bestsellers")
+      .select("id, marketplace, rank, title, brand, price, currency, image_url, product_url, asin, jan, fetched_at")
+      .order("fetched_at", { ascending: false })
+      .limit(100);
+    if (result.error) throw new Error(result.error.message);
+    const rows = (result.data ?? []) as Array<Record<string, unknown>>;
+    const priority = /バッグ|ポーチ|ショルダー|トート|ヘアアクセ|ヘアクリップ|ヘアピン|美顔|美容|メイク|コスメ|カールアイロン|ヘアブラシ|アクセサリー|ネイル/i;
+    const focused = rows.filter((row) => priority.test(String(row.title ?? "")));
+    products = (focused.length ? focused : rows).slice(0, 12);
+    if (!focused.length) catalogMessage = "女性向けカテゴリの一致候補が十分でないため、最新の市場観測を表示しています。";
+  } catch {
+    catalogMessage = "商品候補を読み込めません。接続設定とデータ取得を確認してください。";
+  }
 
   return (
     <main className="min-h-full flex-1 bg-[#f5f6f4] text-[#171916]">
@@ -92,6 +114,52 @@ export default function HomePage() {
             </div>
           </div>
         </div>
+      </section>
+
+      <section className="mx-auto max-w-[1440px] px-5 py-10 sm:px-8 sm:py-12 lg:px-12" aria-labelledby="product-observations">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-[11px] font-semibold tracking-[0.16em] text-[#638069]">LIVE MARKET OBSERVATIONS</p>
+            <h2 id="product-observations" className="mt-2 text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">商品候補を、ここに表示する。</h2>
+            <p className="mt-2 text-sm leading-6 text-[#747a70]">市場から取得した実データです。ここに表示されることは、仕入れ可能・販売中であることを意味しません。</p>
+          </div>
+          <Link href="/bestsellers" className="inline-flex min-h-10 items-center text-sm font-semibold text-[#31543a] hover:underline">市場データをすべて見る →</Link>
+        </div>
+        {catalogMessage ? <p className="mt-4 rounded-md border border-[#e1e5de] bg-white px-4 py-3 text-sm text-[#6c7269]">{catalogMessage}</p> : null}
+        {products.length === 0 ? (
+          <div className="mt-6 rounded-lg border border-[#dfe3dc] bg-white p-8">
+            <h3 className="font-semibold">商品候補を取得できませんでした</h3>
+            <p className="mt-2 text-sm leading-6 text-[#747a70]">候補がない状態を商品カードでごまかしません。市場データの接続と取得履歴を確認してください。</p>
+          </div>
+        ) : (
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {products.map((product, index) => {
+              const title = String(product.title ?? "商品名未取得");
+              const imageUrl = typeof product.image_url === "string" ? product.image_url : null;
+              const sourceUrl = typeof product.product_url === "string" && /^https?:\/\//i.test(product.product_url) ? product.product_url.replace(/&amp;/g, "&") : null;
+              const marketplace = String(product.marketplace ?? "market");
+              const price = typeof product.price === "number" ? product.price : typeof product.price === "string" && product.price.trim() ? Number(product.price) : null;
+              const currency = typeof product.currency === "string" ? product.currency : "JPY";
+              return (
+                <article key={String(product.id)} className="overflow-hidden rounded-lg border border-[#dfe3dc] bg-white transition hover:border-[#b7c5b7] hover:shadow-[0_10px_28px_rgba(25,42,28,0.06)]">
+                  <div className="relative aspect-[4/3] overflow-hidden bg-[#eef0eb]">
+                    {imageUrl ? <img src={imageUrl} alt={title} loading={index < 4 ? "eager" : "lazy"} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-xs text-[#81867d]">画像未取得</div>}
+                    <span className="absolute left-3 top-3 rounded bg-white/95 px-2 py-1 text-[10px] font-semibold text-[#405a43]">{marketplace.toUpperCase()} / 市場観測</span>
+                  </div>
+                  <div className="p-4">
+                    <h3 className="line-clamp-2 min-h-12 text-sm font-semibold leading-6">{title}</h3>
+                    <div className="mt-3 flex items-end justify-between gap-3 border-t border-[#edf0ea] pt-3">
+                      <div><p className="text-[10px] text-[#81867d]">観測価格</p><p className="mt-1 text-base font-semibold">{price !== null && Number.isFinite(price) ? formatMoney(price, currency) : "未取得"}</p></div>
+                      <span className="text-[10px] text-[#81867d]">{product.asin ? "ASIN確認候補" : product.jan ? "JAN確認候補" : "識別子未確認"}</span>
+                    </div>
+                    <p className="mt-3 rounded bg-[#f4f6f2] px-2.5 py-2 text-[11px] leading-5 text-[#6c7269]">仕入れ・在庫・送料・販売可否は未確定</p>
+                    {sourceUrl ? <a href={sourceUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-xs font-semibold text-[#31543a] hover:underline">元の商品ページを確認 ↗</a> : <span className="mt-3 inline-flex text-xs text-[#81867d]">参照URL未取得</span>}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section className="mx-auto max-w-[1440px] px-5 py-10 sm:px-8 sm:py-12 lg:px-12">
