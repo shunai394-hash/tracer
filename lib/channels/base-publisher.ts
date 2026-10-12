@@ -351,7 +351,8 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         if (persistIdError) throw new Error(persistIdError.message);
       }
       if (listing.image_url) await addBaseItemImage({ itemId: baseItemId, imageNo: 1, imageUrl: listing.image_url });
-      await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_published_at: new Date().toISOString(), base_publication_status: "published", base_publication_lease_until: null, base_last_error: null, pipeline_stage: "BASE_PUBLISHED", pipeline_status: "published", pipeline_reason: "sales_test_gate_passed", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
+      const { error: finalizeError } = await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_published_at: new Date().toISOString(), base_publication_status: "published", base_publication_lease_until: null, base_last_error: null, pipeline_stage: "BASE_PUBLISHED", pipeline_status: "published", pipeline_reason: "sales_test_gate_passed", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
+      if (finalizeError) throw new Error(`base_publication_finalize_failed: ${finalizeError.message}`);
       results.push({ listingId, ok: true, baseItemId });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
