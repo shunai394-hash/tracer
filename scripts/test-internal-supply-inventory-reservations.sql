@@ -89,7 +89,7 @@ insert into public.shop_listings(id, supplier_name, supplier_variant_id, invento
 
 -- Database-level guard: an internal fulfillment order cannot be inserted
 -- unless its purchase order has an active matching inventory reservation.
-do $
+do $$
 declare
   v_failed boolean := false;
 begin
@@ -107,7 +107,7 @@ begin
     if not v_failed then raise; end if;
   end;
   if not v_failed then raise exception 'unreserved internal fulfillment order was accepted'; end if;
-end $;
+end $$;
 
 -- Inject allocation failure. The variant update and ledger insert must both
 -- roll back; the same PO remains available for the later concurrency test.
@@ -236,7 +236,7 @@ insert into public.internal_fulfillment_orders(
   3, 'failed', 'dropship:30000000-0000-4000-8000-000000000001'
 );
 
-do $
+do $$
 declare
   v_inventory integer;
   v_status text;
@@ -312,11 +312,11 @@ begin
   if v_reason <> 'supplier_status_cancelled' then
     raise exception 'cancelled-order release reason was not recorded: %', v_reason;
   end if;
-end $;
+end $$;
 
 -- A live internal order must not release stock, even if a caller supplies a
 -- terminal-looking reason. Once it actually becomes failed, stock returns once.
-do $
+do $$
 declare
   v_inventory integer;
   v_status text;
@@ -354,7 +354,7 @@ begin
   if v_inventory <> 10 or v_status <> 'released_now' then
     raise exception 'failed active order did not release stock once: inventory %, status %', v_inventory, v_status;
   end if;
-end $;
+end $$;
 
 -- Inject order-row creation failure after reservation, then compensate once.
 create function public.inject_internal_order_insert_failure()
