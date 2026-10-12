@@ -14,6 +14,8 @@ const candidate = {
 };
 assert.equal(isHighConfidenceReconciliationCandidate(candidate), true, "exact unique product+variant evidence may be high-confidence");
 assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, baseSupplierVariantId: "V-BLUE", rowSupplierVariantId: "V-RED" }), false, "variant mismatch must require review");
+assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, baseSupplierVariantId: "", rowSupplierVariantId: "V-RED" }), false, "a variant present only on the candidate side must require review");
+assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, baseSupplierVariantId: "V-RED", rowSupplierVariantId: "" }), false, "a variant present only on the BASE side must require review");
 assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, baseSupplierProductId: "P-2", rowSupplierProductId: "P-1" }), false, "contradictory product identity must require review");
 assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, duplicateIdentityCount: 2 }), false, "duplicate supplier identity must require review");
 assert.equal(isHighConfidenceReconciliationCandidate({ ...candidate, topCandidateCount: 2 }), false, "tied top candidates must require review");
