@@ -87,3 +87,4 @@ const run = (dependencies) => recoverSupplierPaymentState({
   assert.equal(calls.filter((c) => c[0] === "attempt").length, 0);
 }
 console.log("Supplier payment recovery injected-failure tests: 9 scenarios passed");
+await import("./test-shop-order-cancellation-race.mjs");
