@@ -69,7 +69,7 @@ assert.match(helper, /offset \+= 100/, "identity lookups must batch large suppli
 assert.match(shopify, /supplier_identity_unlinked/);
 assert.match(shopify, /identity_status !== "linked"/);
 assert.match(base, /identityUnlinkedIds/);
-assert.match(base, /base_last_error: isIdentityUnlinked \? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden"/);
+assert.match(base, /base_last_error: isIdentityUnlinked \? "supplier_inventory_evidence_invalid_hidden" : "tracer_unpublished_hidden"/, "BASE must hide listings when current supplier inventory evidence is missing or stale");
 assert.match(store, /supplierListingId && linkedSupplierIds\.has/);
 assert.match(store, /supplier_identity_unlinked/);
 assert.match(route, /requireAutomationAuth/);
