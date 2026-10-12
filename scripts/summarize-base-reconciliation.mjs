@@ -6,11 +6,17 @@ const report = JSON.parse(await readFile(inputPath, "utf8"));
 if (report.complete !== true || !Array.isArray(report.items) || report.baseItemCount !== report.items.length) {
   throw new Error("RECONCILIATION_REPORT_INCOMPLETE");
 }
+for (const item of report.items) {
+  if (!Number.isInteger(item.exactTitleCandidateCount) || item.exactTitleCandidateCount < 0 ||
+      !Array.isArray(item.exactTitleCandidates) || item.exactTitleCandidateCount < item.exactTitleCandidates.length) {
+    throw new Error("RECONCILIATION_CANDIDATE_COUNTS_INVALID");
+  }
+}
 
 const items = report.items;
 const count = (predicate) => items.filter(predicate).length;
-const candidateCount = (item) => Number.isInteger(item.exactTitleCandidateCount) ? item.exactTitleCandidateCount : 0;
-const candidates = (item) => Array.isArray(item.exactTitleCandidates) ? item.exactTitleCandidates : [];
+const candidateCount = (item) => item.exactTitleCandidateCount;
+const candidates = (item) => item.exactTitleCandidates;
 const hasMissingSupplierIdentity = (row) =>
   !String(row.supplierListingId ?? "").trim() ||
   !String(row.supplierProductId ?? "").trim() ||
