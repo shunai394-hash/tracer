@@ -458,7 +458,7 @@ async function syncListingRows(
           variants: product.variants?.nodes ?? [],
           targetSku: productInput.sku,
         });
-        if (createdMatch.ok) variant = createdMatch.variant;
+        if (createdMatch.ok) variant = product.variants?.nodes?.find((item) => item.id === createdMatch.variant.id) ?? null;
       }
       if (!variant?.id) throw new Error(`shopify_variant_sku_match_failed_after_update:supplierVariantId=${row.supplier_variant_id ?? "none"}:shopifyVariantId=${selectedShopifyVariantId ?? "none"}`);
       if (!selectedShopifyVariantId) {
