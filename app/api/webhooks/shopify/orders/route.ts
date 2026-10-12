@@ -87,7 +87,10 @@ export async function POST(request: Request) {
         .select("shopify_line_item_id")
         .eq("order_id", existingOrderId);
       if (existingItemsError) throw new Error(existingItemsError.message);
-      const existingLineIds = new Set((existingItems ?? []).map((row) => String(row.shopify_line_item_id ?? "")).filter(Boolean));
+      if ((existingItems ?? []).some((row) => !row.shopify_line_item_id)) {
+        return NextResponse.json({ ok: false, error: "existing_line_items_missing_external_ids_manual_reconciliation_required", orderId: existingOrderId }, { status: 409 });
+      }
+      const existingLineIds = new Set((existingItems ?? []).map((row) => String(row.shopify_line_item_id)));
       const missingItems = items.filter((item) => {
         if (item.id == null || !String(item.id).trim()) return false;
         return !existingLineIds.has(String(item.id));
@@ -95,6 +98,7 @@ export async function POST(request: Request) {
       if (items.some((item) => item.id == null || !String(item.id).trim())) {
         return NextResponse.json({ ok: false, error: "shopify_line_item_id_missing_manual_reconciliation_required", orderId: existingOrderId }, { status: 409 });
       }
+      let repairedLineItems = 0;
       for (const item of missingItems) {
         const sku = String(item.sku ?? "").trim();
         const listing = bySku.get(sku);
@@ -121,8 +125,9 @@ export async function POST(request: Request) {
           if (row.error.code === "23505") continue;
           throw new Error(row.error.message);
         }
+        repairedLineItems += 1;
       }
-      return NextResponse.json({ ok: true, duplicate: true, repairedLineItems: missingItems.length, orderId: existingOrderId });
+      return NextResponse.json({ ok: true, duplicate: true, repairedLineItems, orderId: existingOrderId });
     }
 
     const financial = String(order.financial_status ?? "pending");
