@@ -6,6 +6,7 @@ import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapanes
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { resolveShopifyVariantBySku } from "@/lib/shopify/variant-match";
 
 type Listing = {
   id: string;
@@ -45,7 +46,7 @@ type ShopifyProductNode = {
   status: string | null;
   vendor: string | null;
   tags: string[];
-  variants: { nodes: Array<{ id: string; sku: string | null; price: string | null }> };
+  variants: { nodes: Array<{ id: string; sku: string | null; price: string | null }>; pageInfo?: { hasNextPage: boolean; endCursor?: string | null } };
   media?: { nodes: Array<{ mediaContentType: string; preview?: { image?: { url: string } | null } | null }> };
 };
 
@@ -116,14 +117,14 @@ async function supabaseForCopyUpdate(listingId: string, title: string, descripti
 
 async function findByHandle(handle: string): Promise<ShopifyProductNode | null> {
   const data = await shopifyGraphQL<{ products: { nodes: ShopifyProductNode[] } }>(
-    `query ProductByHandle($query: String!) { products(first: 5, query: $query) { nodes { id handle status vendor tags variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType preview { image { url } } } } } } }`,
+    `query ProductByHandle($query: String!) { products(first: 5, query: $query) { nodes { id handle status vendor tags variants(first: 250) { nodes { id sku price } pageInfo { hasNextPage endCursor } } media(first: 10) { nodes { mediaContentType preview { image { url } } } } } } }`,
     { query: `handle:${handle}` },
   );
   // The search is fuzzy; only an exact handle match is the same product.
   return data.products.nodes.find((node) => node.handle === handle) ?? null;
 }
 
-export type ShopifySyncResult = { configured: boolean; considered: number; synced: number; failed: number; listingIds: string[]; errors: Array<{ listingId: string; error: string }> };
+export type ShopifySyncResult = { configured: boolean; considered: number; synced: number; failed: number; listingIds: string[]; errors: Array<{ listingId: string; error: string }>; variantAudits?: Array<{ listingId: string; supplierVariantId: string | null; shopifyVariantId: string | null; outcome: string }> };
 
 /** Shopify is downstream-only: canonical Sales Test Gate plus live fulfillment evidence are mandatory. */
 export async function syncPublishedListingsToShopify(limit = 10, listingIds?: string[]): Promise<ShopifySyncResult> {
@@ -410,6 +411,32 @@ async function syncListingRows(
         }
       }
 
+      let selectedShopifyVariantId: string | null = null;
+      const variantAudits = results.variantAudits ?? (results.variantAudits = []);
+      if (existing) {
+        const match = resolveShopifyVariantBySku({
+          variants: existing.variants.nodes,
+          targetSku: productInput.sku,
+          hasNextPage: existing.variants.pageInfo?.hasNextPage,
+        });
+        if (!match.ok) {
+          variantAudits.push({
+            listingId: row.id,
+            supplierVariantId: row.supplier_variant_id,
+            shopifyVariantId: null,
+            outcome: match.reason,
+          });
+          throw new Error(`shopify_variant_sku_match_${match.reason}:supplierVariantId=${row.supplier_variant_id ?? "none"}:shopifyVariantId=none`);
+        }
+        selectedShopifyVariantId = match.variant.id;
+        variantAudits.push({
+          listingId: row.id,
+          supplierVariantId: row.supplier_variant_id,
+          shopifyVariantId: selectedShopifyVariantId,
+          outcome: match.reason,
+        });
+      }
+
       const product = existing
         ? await updateShopifyProduct({
             productId: existing.id,
@@ -417,14 +444,31 @@ async function syncListingRows(
             descriptionHtml: productInput.descriptionHtml,
             handle: productInput.handle,
             price: productInput.price,
-            variantId: existing.variants.nodes[0]?.id || null,
+            variantId: selectedShopifyVariantId,
             sku: productInput.sku,
             imageUrl: existing.media?.nodes?.length ? null : row.image_url,
           })
         : await createShopifyProduct({ ...productInput, imageUrl: row.image_url });
 
-      const variant = product.variants?.nodes?.[0];
-      if (!variant?.id) throw new Error("shopify_variant_missing_for_inventory_sync");
+      let variant = selectedShopifyVariantId
+        ? product.variants?.nodes?.find((item) => item.id === selectedShopifyVariantId) ?? null
+        : null;
+      if (!selectedShopifyVariantId) {
+        const createdMatch = resolveShopifyVariantBySku({
+          variants: product.variants?.nodes ?? [],
+          targetSku: productInput.sku,
+        });
+        if (createdMatch.ok) variant = createdMatch.variant;
+      }
+      if (!variant?.id) throw new Error(`shopify_variant_sku_match_failed_after_update:supplierVariantId=${row.supplier_variant_id ?? "none"}:shopifyVariantId=${selectedShopifyVariantId ?? "none"}`);
+      if (!selectedShopifyVariantId) {
+        variantAudits.push({
+          listingId: row.id,
+          supplierVariantId: row.supplier_variant_id,
+          shopifyVariantId: variant.id,
+          outcome: "unique_sku_match_created",
+        });
+      }
       await setShopifyVariantInventory({
         variantId: variant.id,
         quantity: Number(row.inventory),
