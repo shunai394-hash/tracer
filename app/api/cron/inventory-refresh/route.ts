@@ -471,6 +471,23 @@ export async function GET(request: Request) {
           } catch (error) {
             baseSyncError = error instanceof Error ? error.message : String(error);
             baseErrors++;
+            // Try to hide the remote BASE item before persisting the local block.
+            // This keeps the fail-safe attempt alive even if the database write fails.
+            try {
+              await editBaseItem({
+                itemId: String(listing.base_item_id),
+                title: String(listing.title ?? ""),
+                detail: String(listing.description ?? listing.title ?? ""),
+                price: Number(listing.selling_price),
+                stock: 0,
+                visible: false,
+              });
+              baseUpdated++;
+            } catch (hideError) {
+              const hideMessage = hideError instanceof Error ? hideError.message : String(hideError);
+              baseSyncError = `${baseSyncError}; hide retry failed: ${hideMessage}`;
+            }
+
             // Fail closed locally: a failed BASE sync must not leave this listing
             // marked as orderable/published while the remote state is uncertain.
             const { error: blockListingError } = await supabase
@@ -488,27 +505,6 @@ export async function GET(request: Request) {
               })
               .eq("id", listingId);
             if (blockListingError) throw new Error(blockListingError.message);
-
-            // Make one best-effort attempt to hide the remote BASE item as well.
-            try {
-              await editBaseItem({
-                itemId: String(listing.base_item_id),
-                title: String(listing.title ?? ""),
-                detail: String(listing.description ?? listing.title ?? ""),
-                price: Number(listing.selling_price),
-                stock: 0,
-                visible: false,
-              });
-              baseUpdated++;
-            } catch (hideError) {
-              const hideMessage = hideError instanceof Error ? hideError.message : String(hideError);
-              baseSyncError = `${baseSyncError}; hide retry failed: ${hideMessage}`;
-              const { error: recordHideError } = await supabase
-                .from("shop_listings")
-                .update({ base_last_error: baseSyncError, updated_at: now })
-                .eq("id", listingId);
-              if (recordHideError) throw new Error(recordHideError.message);
-            }
           }
         }
 
