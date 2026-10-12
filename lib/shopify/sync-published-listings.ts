@@ -6,6 +6,7 @@ import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapanes
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { timestampIsFresh } from "@/lib/shopify/supplier-evidence-freshness";
 
 type Listing = {
   id: string;
@@ -64,12 +65,6 @@ const SUPPLIER_PRICE_MAX_AGE_MS = 30 * 60 * 1000;
 const SUPPLIER_SHIPPING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const SHOPIFY_STOCK_SAFETY_BUFFER = 2;
 const SHOPIFY_SELLABLE_STOCK_CAP = 3;
-
-function timestampIsFresh(value: string | null | undefined, maxAgeMs: number, now = Date.now()): boolean {
-  if (!value) return false;
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) && timestamp <= now && now - timestamp <= maxAgeMs;
-}
 
 async function attachSupplierEvidence(rows: Listing[], supabase: ReturnType<typeof createSupabaseAdminClient>): Promise<Listing[]> {
   const ids = [...new Set(rows.map((row) => row.supplier_listing_id).filter((id): id is string => Boolean(id)))];
