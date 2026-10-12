@@ -33,5 +33,10 @@ assert.ok(!recordEvent.includes("AUDIT SKIPPED"));
 
 assert.ok(attemptsMigration.includes("idempotency_key text not null unique"));
 assert.ok(attemptsMigration.includes("purchase_order_id uuid not null references public.purchase_orders(id) on delete cascade"));
+const recoveredPlaced = verified.slice(verified.indexOf('if (status === "placed" && recordedPayment?.confirmed === true)'), verified.indexOf("const adapter = getSupplierAdapter"));
+assert.ok(recoveredPlaced.includes("error: repairedAttemptError"));
+assert.ok(recoveredPlaced.includes("if (repairedAttemptError)"));
+assert.ok(recoveredPlaced.includes("manual_reconciliation_required"));
+
 assert.ok(verified.includes("manual_reconciliation_required"));
-console.log("Supplier payment persistence / audit fail-closed contracts: 15 assertions passed");
+console.log("Supplier payment persistence / audit fail-closed contracts: 18 assertions passed");
