@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const route = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
+const snapshotRoute = await readFile(new URL("../app/api/admin/channels/base/snapshot/route.ts", import.meta.url), "utf8");
 const workflow = await readFile(new URL("../.github/workflows/base-product-backup.yml", import.meta.url), "utf8");
 const auth = await readFile(new URL("../lib/security/cron-auth.ts", import.meta.url), "utf8");
 
 assert.match(route, /requireBaseAuditAuth/);
+assert.match(snapshotRoute, /requireBaseAuditAuth/);
 assert.match(auth, /export async function requireBaseAuditAuth/);
 assert.ok(auth.includes('"shunai394-hash/tracer/.github/workflows/base-product-backup.yml@refs/heads/main"'));
 assert.ok(auth.includes("claims.workflow_ref !== expectedWorkflowRef"));
