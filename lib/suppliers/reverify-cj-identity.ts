@@ -140,17 +140,15 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const scanCursor = rows.length > 0 ? String(rows[rows.length - 1].id) : priorCursor;
   const nowMs = Date.now();
   const allRows = rows.filter((row) => isCjIdentityReverifyCandidate({ verificationStatus: row.verification_status, identityMethod: row.identity_method, supplierVariantId: row.supplier_variant_id }) && isCjIdentityReverifyDue(row.metadata, nowMs));
-  const womensRows = allRows.filter((row) => isWomensProductTitle(row.title, row.metadata));
-  const otherRows = allRows.filter((row) => !isWomensProductTitle(row.title, row.metadata));
-  const priority = (row: typeof allRows[number]) => row.verification_status === "unverified" ? 0 : 1;
-  womensRows.sort((a, b) => priority(a) - priority(b) || String(a.id).localeCompare(String(b.id)));
-  otherRows.sort((a, b) => priority(a) - priority(b) || String(a.id).localeCompare(String(b.id)));
+  // Preserve cursor correctness: rows are already ordered by ID. Reordering women-first
+  // here can jump the cursor past eligible rows that were not processed in this run.
+  // Process the first due rows in scan order; the next run resumes immediately after them.
   const beforeCounts = await readCjIdentityProgressCounts(db);
-  const selectedWomens = womensRows.slice(0, Math.min(limit, womensRows.length));
-  const remaining = Math.max(0, limit - selectedWomens.length);
-  const selectedOther = remaining > 0 ? otherRows.slice(0, Math.min(remaining, otherRows.length)) : [];
-  const selectedRows = [...selectedWomens, ...selectedOther];
-  const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, errors: [], promotedListings: [], nextCursor: scanCursor, quotaBlockedUntil: null, progress: { before: beforeCounts, after: beforeCounts } };
+  const selectedRows = allRows.slice(0, limit);
+  const nextCursor = selectedRows.length >= limit
+    ? String(selectedRows[selectedRows.length - 1].id)
+    : scanCursor;
+  const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, errors: [], promotedListings: [], nextCursor, quotaBlockedUntil: null, progress: { before: beforeCounts, after: beforeCounts } };
   const processRow = async (row: NonNullable<typeof rows>[number]) => {
     const supplierListingId = String(row.id);
     try {
