@@ -130,10 +130,9 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
 
   if (listings.length === 0) return [];
 
-  // A Shopify Admin API failure (e.g. HTTP 401 after a credential change)
-  // must not blank the whole storefront: fall back to the DB inventory that
-  // inventory-refresh keeps current, exactly as when Shopify is not
-  // configured, and log it so the failure is visible in monitoring.
+  // Live Shopify stock is a hard sales gate. If the Admin API is missing,
+  // unauthorized, or returns incomplete data, hide these listings rather than
+  // trusting a potentially stale database inventory snapshot.
   let liveStock = new Map<string, number>();
   try {
     liveStock = await getLiveShopifyStock(
