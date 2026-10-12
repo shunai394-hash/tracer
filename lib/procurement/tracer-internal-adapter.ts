@@ -107,6 +107,9 @@ async function releaseInternalReservation(
   if (!result || result.reservation_status === "missing") {
     throw new Error("internal_inventory_reservation_missing");
   }
+  if (result.reservation_status === "active_order" || result.reservation_status === "compensation_not_allowed") {
+    throw new Error(`internal_inventory_release_not_permitted:${result.reservation_status}`);
+  }
   return result;
 }
 
