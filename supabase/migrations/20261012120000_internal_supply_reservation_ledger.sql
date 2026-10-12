@@ -99,6 +99,9 @@ as $$
 declare
   v_reservation record;
   v_restored integer;
+  v_order_status text;
+  v_order_exists boolean := false;
+  v_compensation_reason text := nullif(trim(coalesce(p_reason, '')), '');
 begin
   if p_purchase_order_id is null then
     raise exception 'reservation_identity_required';
@@ -122,6 +125,32 @@ begin
       from public.internal_supply_variants v
      where v.id = v_reservation.variant_id;
     return query select v_reservation.variant_id, v_restored, 'released'::text;
+    return;
+  end if;
+
+  select o.status into v_order_status
+    from public.internal_fulfillment_orders o
+   where o.purchase_order_id = p_purchase_order_id
+   for update;
+  v_order_exists := found;
+
+  if v_order_exists and v_order_status not in ('failed', 'cancelled') then
+    select v.inventory into v_restored
+      from public.internal_supply_variants v
+     where v.id = v_reservation.variant_id;
+    return query select v_reservation.variant_id, v_restored, 'active_order'::text;
+    return;
+  end if;
+
+  if not v_order_exists and v_compensation_reason not in (
+    'reservation_projection_invalid',
+    'inventory_projection_failed',
+    'internal_fulfillment_order_insert_failed'
+  ) then
+    select v.inventory into v_restored
+      from public.internal_supply_variants v
+     where v.id = v_reservation.variant_id;
+    return query select v_reservation.variant_id, v_restored, 'compensation_not_allowed'::text;
     return;
   end if;
 
