@@ -86,6 +86,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     .map((listing) => String(listing.id)));
   const results: BasePublicationResult["results"] = [];
   let unpublishFailed = 0;
+  let baseAuthBlocked = false;
 
   // Mark unlinked catalog rows blocked before any downstream publication work.
   if (identityUnlinkedIds.size > 0) {
@@ -123,7 +124,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         stock: 0,
         visible: false,
       });
-      await supabase.from("shop_listings").update({
+      const { error: hideStateError } = await supabase.from("shop_listings").update({
         published: false,
         orderable: false,
         published_at: null,
@@ -133,17 +134,48 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
         pipeline_reason: isIdentityUnlinked ? "supplier_identity_unlinked" : "tracer_unpublished",
+        pipeline_error: null,
         pipeline_updated_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", String(listing.id));
+      if (hideStateError) throw new Error(`base_hide_state_persist_failed:${hideStateError.message}`);
       results.push({ listingId: String(listing.id), ok: true, baseItemId: String(listing.base_item_id), hidden: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      results.push({ listingId: String(listing.id), ok: false, error: message });
-      // A rejected/expired BASE token will fail every item in this batch; stop
-      // immediately to avoid hammering the API while credentials are repaired.
-      if (/アクセストークンが無効|invalid_request|BASE OAuth refresh HTTP 4\d\d/i.test(message)) break;
+      const isAuthFailure = /BASE_OAUTH_REFRESH_FAILED|BASE_API_REQUEST_FAILED:HTTP_(401|403)|アクセストークンが無効|invalid_request/i.test(message);
+      const { error: failureStateError } = await supabase.from("shop_listings").update({
+        base_publication_status: "failed",
+        base_publication_lease_until: null,
+        base_last_error: `base_hide_failed:${message}`.slice(0, 2000),
+        pipeline_stage: "BASE_RECONCILIATION",
+        pipeline_status: "failed",
+        pipeline_reason: isAuthFailure ? "base_auth_recovery_required" : "base_hide_failed",
+        pipeline_error: message.slice(0, 2000),
+        pipeline_updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", String(listing.id));
+      baseAuthBlocked ||= isAuthFailure;
+      unpublishFailed += 1;
+      results.push({
+        listingId: String(listing.id),
+        ok: false,
+        error: failureStateError ? `base_hide_failed_state_persist_failed:${failureStateError.message}` : message,
+      });
+      // A token/authorization failure is batch-wide. Do not continue into the
+      // publication path after stopping the hide loop.
+      if (isAuthFailure) break;
     }
+  }
+
+  if (baseAuthBlocked) {
+    return {
+      attempted: results.length,
+      published: 0,
+      hidden: results.filter((item) => item.ok && item.hidden).length,
+      skipped: 0,
+      failed: results.filter((item) => !item.ok).length,
+      results,
+    };
   }
 
   const activeListings = (listings ?? []).filter((listing) => !identityUnlinkedIds.has(String(listing.id)) && !["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? "")) && (!listing.base_item_id || listing.published === true));
