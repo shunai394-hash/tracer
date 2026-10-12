@@ -73,6 +73,7 @@ jobs:
               "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
+          # Keep push-triggered diagnostics strictly read-only; only a reviewed manual dispatch may opt into a positive batch.
           SYNC_BATCH="${{ inputs.sync_batch || 0 }}"
           for path in api/admin/shopify/auth-check api/admin/shopify/readiness api/admin/shopify/catalog api/admin/shopify/reconcile api/admin/shopify/identity-audit api/channels/base/diagnostics; do
             code=$(curl -sS -o out.json -w "%{http_code}" --max-time 60 -H "Authorization: Bearer $(token)" "$BASE/$path" || echo 000)
