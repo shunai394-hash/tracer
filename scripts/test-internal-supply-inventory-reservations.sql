@@ -74,9 +74,10 @@ insert into public.purchase_orders(id) values
  ('30000000-0000-4000-8000-000000000001'),
  ('30000000-0000-4000-8000-000000000002'),
  ('30000000-0000-4000-8000-000000000003'),
- ('30000000-0000-4000-8000-000000000004'),
+ ('30000000-0000-4000-8000-000000000007'),
  ('30000000-0000-4000-8000-000000000005'),
- ('30000000-0000-4000-8000-000000000006');
+ ('30000000-0000-4000-8000-000000000006'),
+ ('30000000-0000-4000-8000-000000000007');
 insert into public.tracer_supply_catalog(id, status, inventory, orderable) values
  ('40000000-0000-4000-8000-000000000001', 'ready', 10, true),
  ('40000000-0000-4000-8000-000000000002', 'ready', 10, true);
@@ -323,7 +324,7 @@ declare
 begin
   select remaining_inventory into v_inventory
     from public.reserve_internal_supply_for_order(
-      '30000000-0000-4000-8000-000000000004',
+      '30000000-0000-4000-8000-000000000007',
       '20000000-0000-4000-8000-000000000001', 2
     );
   if v_inventory <> 8 then raise exception 'active-order reservation incorrect'; end if;
@@ -331,25 +332,25 @@ begin
   insert into public.internal_fulfillment_orders(
     purchase_order_id, supply_product_id, supply_variant_id, quantity, status, order_number
   ) values (
-    '30000000-0000-4000-8000-000000000004',
+    '30000000-0000-4000-8000-000000000007',
     '10000000-0000-4000-8000-000000000001',
     '20000000-0000-4000-8000-000000000001',
-    2, 'reserved', 'dropship:30000000-0000-4000-8000-000000000004'
+    2, 'reserved', 'dropship:30000000-0000-4000-8000-000000000007'
   );
 
   select restored_inventory, reservation_status into v_inventory, v_status
     from public.release_internal_supply_reservation(
-      '30000000-0000-4000-8000-000000000004', 'supplier_status_failed'
+      '30000000-0000-4000-8000-000000000007', 'supplier_status_failed'
     );
   if v_inventory <> 8 or v_status <> 'active_order' then
     raise exception 'active order released stock: inventory %, status %', v_inventory, v_status;
   end if;
 
   update public.internal_fulfillment_orders set status='failed'
-   where purchase_order_id='30000000-0000-4000-8000-000000000004';
+   where purchase_order_id='30000000-0000-4000-8000-000000000007';
   select restored_inventory, reservation_status into v_inventory, v_status
     from public.release_internal_supply_reservation(
-      '30000000-0000-4000-8000-000000000004', 'supplier_status_failed'
+      '30000000-0000-4000-8000-000000000007', 'supplier_status_failed'
     );
   if v_inventory <> 10 or v_status <> 'released_now' then
     raise exception 'failed active order did not release stock once: inventory %, status %', v_inventory, v_status;
