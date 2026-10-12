@@ -171,6 +171,11 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
           ) {
             update.order_status = "fulfillment_pending";
           }
+        } else if (existing.payment_status === "paid") {
+          // Payment state is monotonic unless an explicit cancellation/refund
+          // is confirmed. A stale or incomplete channel snapshot must not
+          // silently downgrade a previously confirmed paid order.
+          // Keep the local state unchanged and let reconciliation investigate.
         } else {
           update.payment_status = "pending";
           update.order_status = "pending_payment";
