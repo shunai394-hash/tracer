@@ -5,6 +5,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createDropshipPurchaseOrdersForShopOrder } from "@/lib/ordering/dropship";
 import { executeVerifiedSupplierPurchaseOrder } from "@/lib/ordering/verified-supplier-execution";
 import { recordShopFunnelEvent } from "@/lib/shop/store";
+import { isStripePaymentConfirmed } from "@/lib/payments/stripe/payment-confirmation-policy";
 
 export const runtime = "nodejs";
 
@@ -66,7 +67,7 @@ async function handleCheckoutCompleted(
   const shopOrderId = session.metadata?.shop_order_id ?? session.client_reference_id ?? null;
   if (!shopOrderId) return null;
 
-  if (session.payment_status !== "paid") {
+  if (!isStripePaymentConfirmed(session.payment_status)) {
     // Checkout completed but the payment itself did not succeed (e.g. async
     // payment method still pending) — do not treat this as confirmed.
     return shopOrderId;
