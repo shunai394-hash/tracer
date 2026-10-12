@@ -77,4 +77,4 @@ const dropship = readFileSync(new URL("../lib/ordering/dropship.ts", import.meta
 assert.match(dropship, /if \(String\(order\.payment_status\) !== "paid"\)[\s\S]{0,220}shop_order_payment_not_confirmed/, "supplier PO creation must reject orders whose payment is not confirmed");
 assert.match(dropship, /idempotency_key: idempotencyKey/, "supplier PO creation must use a per-line idempotency key");
 
-console.log(`Inventory refresh sales-gate invariant: ${cases.length} cases passed; supplier price freshness: 2 assertions; BASE fail-closed: 10 assertions; Orosy import safety: 10 assertions`);
+console.log(`Inventory refresh sales-gate invariant: ${cases.length} cases passed; supplier price freshness: 2 assertions; BASE fail-closed: 8 assertions; Orosy import safety: 10 assertions`);
