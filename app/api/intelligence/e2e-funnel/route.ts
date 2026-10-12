@@ -54,7 +54,7 @@ export async function GET(request: Request) {
     count(db, "marketplace_bestsellers"),
     count(db, "marketplace_bestsellers", (q) => q.or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null")),
     count(db, "marketplace_bestsellers", (q) => q.eq("pipeline_status", "pending").or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null")),
-    count(db, "supplier_listings", (q) => q.eq("supplier", "cj").eq("verification_status", "verified").eq("orderable", true)),
+    count(db, "supplier_listings", (q) => q.eq("supplier", "cj").eq("identity_status", "linked").eq("verification_status", "verified").eq("orderable", true)),
     count(db, "supplier_listings", (q) => q.eq("supplier", "cj").eq("identity_status", "linked").in("identity_method", IDENTIFIER_GRADE)),
     count(db, "supplier_listings", (q) => q.eq("supplier", "cj").eq("identity_method", "supply_discovered")),
     count(db, "opportunity_intelligence", (q) => q.in("sellability_state", ["TEST_READY", "SELLABLE"])),
