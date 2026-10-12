@@ -16,6 +16,7 @@
     "test:bounded-identity-stamping": "node scripts/test-bounded-identity-stamping.mjs",
     "test:dropship-order-gate": "node --experimental-strip-types --no-warnings scripts/test-dropship-order-gate.mjs",
     "test:shopify-line-item-pagination": "node scripts/test-shopify-line-item-pagination.mjs",
+    "test:shopify-order-sku-mapping": "node --experimental-strip-types --no-warnings scripts/test-shopify-order-sku-mapping.mjs",
     "test:autonomous-order-claim": "node scripts/test-autonomous-order-run-claim.mjs",
     "test:sales-test-gate-invariants": "node --experimental-strip-types --no-warnings scripts/test-sales-test-gate-invariants.mjs",
     "test:order-gate": "node --experimental-strip-types --no-warnings scripts/test-order-gate.mjs",

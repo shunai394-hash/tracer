@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:tracer-core
+      - name: Test Shopify order SKU mapping
+        run: npm run test:shopify-order-sku-mapping
       - name: Test order gate profit invariants
         run: npm run test:order-gate
       - name: Test CJ quota exhaustion policy
