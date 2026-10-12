@@ -64,7 +64,8 @@ test("every occurrence of a duplicated product ID or supplier variant is blocked
   assert.deepEqual(result.duplicateProductIds, ["p1"]);
   assert.deepEqual(result.duplicateSupplierVariants, ["s3::v3"]);
   assert.equal(result.counts.eligible, 0);
-  assert.ok(result.rejected.some((row) => row.productId === "p1" && row.blockers.includes("duplicate_internal_product_id")));
+  assert.equal(result.rejected.length, 4);
+  assert.ok(result.rejected.filter((row) => row.productId === "p1" && row.blockers.includes("duplicate_internal_product_id")).length === 2);
   assert.ok(result.rejected.some((row) => row.productId === "p2" && row.blockers.includes("duplicate_supplier_variant")));
   assert.ok(result.rejected.some((row) => row.productId === "p3" && row.blockers.includes("duplicate_supplier_variant")));
 });
