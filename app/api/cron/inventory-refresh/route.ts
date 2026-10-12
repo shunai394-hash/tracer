@@ -505,6 +505,16 @@ export async function GET(request: Request) {
               })
               .eq("id", listingId);
             if (blockListingError) throw new Error(blockListingError.message);
+
+            // Keep the supplier-side eligibility record consistent with the
+            // listing-level fail-closed state when BASE inventory sync fails.
+            if (listing.supplier_listing_id) {
+              const { error: blockSupplierError } = await supabase
+                .from("supplier_listings")
+                .update({ orderable: false, fetched_at: now })
+                .eq("id", String(listing.supplier_listing_id));
+              if (blockSupplierError) throw new Error(blockSupplierError.message);
+            }
           }
         }
 
