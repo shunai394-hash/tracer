@@ -11,6 +11,12 @@ test("Gemini quota and outage errors open the run-local circuit breaker", () => 
 });
 
 test("Gemini request timeouts also open the circuit breaker", () => {
+  assert.match(source, /errorCode === "GEMINI_TIMEOUT"/);
   assert.match(source, /GEMINI_TIMEOUT\|Gemini request timed out/);
   assert.match(source, /if \(geminiDisabledForRun \|\| geminiCalls >= MAX_GEMINI_CLASSIFICATIONS_PER_RUN\)/);
+});
+
+test("Gemini provider failure is deferred, not counted as non-product", () => {
+  assert.match(source, /A provider failure is not evidence that this query is non-product/);
+  assert.match(source, /intentDeferred \+= 1;\s*continue;/);
 });
