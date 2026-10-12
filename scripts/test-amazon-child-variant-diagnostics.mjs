@@ -5,7 +5,7 @@ const source = await readFile(new URL("../lib/market/collect-bestsellers.ts", im
 const requiredSignals = ["variationAsinsFound","childDetailAttempted","childDetailFetched","childBarcodeFound"];
 for (const signal of requiredSignals) assert.ok(source.includes(signal), `missing diagnostic signal: ${signal}`);
 assert.ok(source.indexOf("if (!jan && !gtin && !ean && !upc) return null;") < source.indexOf("childBarcodeFound += 1;"), "barcode count must follow concrete barcode validation");
-assert.ok(source.includes("childDetailAttempted += childAsins.length;"), "count child attempts before fetch");
+assert.ok(source.includes("childDetailAttempted += childAsinsNeedingBarcode.length;"), "count only child ASIN retries that lack barcode evidence");
 assert.ok(source.includes("childDetailFetched += 1;"), "count successful detail fetches");
 assert.ok(source.includes("parseAmazonVariationAsinMap(html, url).length > 0"), "Bright Data HTML with an explicit child-ASIN map must count as variant evidence");
 assert.ok(source.includes("hasRequiredEvidence(page.html)"), "retain Bright Data page when it improves the required evidence");
