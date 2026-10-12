@@ -6,7 +6,7 @@ import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sal
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
-import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { getFreshSupplierEvidence } from "@/lib/catalog/fresh-supplier-evidence";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -79,9 +79,14 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   const { data: listings, error } = await query.order("created_at", { ascending: true }).limit(safeLimit);
   if (error) throw new Error(error.message);
 
-  const linkedSupplierIds = await getLinkedSupplierListingIds((listings ?? []).map((listing) => listing.supplier_listing_id));
+  const supplierEvidence = await getFreshSupplierEvidence((listings ?? []).map((listing) => ({
+    listingId: String(listing.id),
+    supplierListingId: listing.supplier_listing_id ? String(listing.supplier_listing_id) : null,
+    supplierProductId: listing.supplier_product_id ? String(listing.supplier_product_id) : null,
+    supplierVariantId: listing.supplier_variant_id ? String(listing.supplier_variant_id) : null,
+  })));
   const identityUnlinkedIds = new Set((listings ?? [])
-    .filter((listing) => !listing.supplier_listing_id || !linkedSupplierIds.has(String(listing.supplier_listing_id)))
+    .filter((listing) => !supplierEvidence.has(String(listing.id)))
     .map((listing) => String(listing.id)));
   const results: BasePublicationResult["results"] = [];
   let unpublishFailed = 0;
@@ -95,7 +100,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       published_at: null,
       pipeline_stage: "BLOCKED",
       pipeline_status: "blocked",
-      pipeline_reason: "supplier_identity_unlinked",
+      pipeline_reason: "supplier_inventory_evidence_invalid",
       pipeline_updated_at: now,
       updated_at: now,
     }).in("id", [...identityUnlinkedIds]);
@@ -107,7 +112,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   for (const listing of listings ?? []) {
     const isIdentityUnlinked = identityUnlinkedIds.has(String(listing.id));
     if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked)) continue;
-    if (listing.published !== true && ["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
+    if (listing.published !== true && ["supplier_inventory_evidence_invalid_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
     if (listing.selling_price === null) {
       unpublishFailed += 1;
       results.push({ listingId: String(listing.id), ok: false, skipped: true, error: "base_hide_price_unknown" });
@@ -128,10 +133,10 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         published_at: null,
         base_publication_status: "failed",
         base_publication_lease_until: null,
-        base_last_error: isIdentityUnlinked ? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden",
+        base_last_error: isIdentityUnlinked ? "supplier_inventory_evidence_invalid_hidden" : "tracer_unpublished_hidden",
         pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
-        pipeline_reason: isIdentityUnlinked ? "supplier_identity_unlinked" : "tracer_unpublished",
+        pipeline_reason: isIdentityUnlinked ? "supplier_inventory_evidence_invalid" : "tracer_unpublished",
         pipeline_updated_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", String(listing.id));
@@ -145,7 +150,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
   }
 
-  const activeListings = (listings ?? []).filter((listing) => !identityUnlinkedIds.has(String(listing.id)) && !["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? "")) && (!listing.base_item_id || listing.published === true));
+  const activeListings = (listings ?? []).filter((listing) => !identityUnlinkedIds.has(String(listing.id)) && !["supplier_inventory_evidence_invalid_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? "")) && (!listing.base_item_id || listing.published === true));
   // Generate Japanese copy concurrently only for listings that can remain visible.
   // spend the full serverless timeout waiting on Gemini one listing at a time.
   const copyResults = await Promise.all(activeListings.map(async (listing) => {
@@ -170,7 +175,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const listingId = String(listing.id);
     // Already-hidden BASE items were reconciled above; do not process them a
     // second time as missing-copy failures or overwrite their reconciliation reason.
-    if (identityUnlinkedIds.has(listingId) || ["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? "")) || (listing.base_item_id && listing.published !== true)) continue;
+    if (identityUnlinkedIds.has(listingId) || ["supplier_inventory_evidence_invalid_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? "")) || (listing.base_item_id && listing.published !== true)) continue;
     const copyResult = copyByListingId.get(listingId);
     if (!copyResult?.copy) {
       const message = copyResult?.error ?? "japanese_catalog_copy_required";
@@ -296,7 +301,8 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       results.push({ listingId, ok: false, skipped: true, error: shippingCost === null ? "shipping_unknown" : "shipping_invalid" }); continue;
     }
 
-    const availableInventory = typeof listing.inventory === "number" ? Math.floor(listing.inventory) : typeof listing.inventory === "string" && listing.inventory.trim() !== "" ? Math.floor(Number(listing.inventory)) : null;
+    const currentSupplierEvidence = supplierEvidence.get(listingId);
+    const availableInventory = currentSupplierEvidence ? currentSupplierEvidence.inventory : null;
     if (availableInventory === null || !Number.isFinite(availableInventory) || availableInventory <= 0 || listing.orderable !== true) {
       if (listing.base_item_id) {
         try { await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price, stock: 0, visible: false }); }
