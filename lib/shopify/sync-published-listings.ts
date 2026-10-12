@@ -43,6 +43,7 @@ type Listing = {
   supplier_cost?: number | string | null;
   supplier_shipping_cost?: number | string | null;
   supplier_inventory_checked_at?: string | null;
+  supplier_price_checked_at?: string | null;
   supplier_shipping_checked_at?: string | null;
   supplier_inventory_confirmed?: boolean | null;
   supplier_price_confirmed?: boolean | null;
@@ -59,6 +60,7 @@ type ShopifyProductNode = {
 };
 
 const SUPPLIER_INVENTORY_MAX_AGE_MS = 30 * 60 * 1000;
+const SUPPLIER_PRICE_MAX_AGE_MS = 30 * 60 * 1000;
 const SUPPLIER_SHIPPING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const SHOPIFY_STOCK_SAFETY_BUFFER = 2;
 const SHOPIFY_SELLABLE_STOCK_CAP = 3;
@@ -74,7 +76,7 @@ async function attachSupplierEvidence(rows: Listing[], supabase: ReturnType<type
   if (ids.length === 0) return rows;
   const { data, error } = await supabase
     .from("supplier_listings")
-    .select("id,supplier_variant_id,cost,shipping_cost,inventory,inventory_checked_at,shipping_checked_at,inventory_confirmed,price_confirmed")
+    .select("id,supplier_variant_id,cost,shipping_cost,inventory,inventory_checked_at,price_checked_at,shipping_checked_at,inventory_confirmed,price_confirmed")
     .in("id", ids);
   if (error) throw new Error(`shopify_supplier_evidence_lookup_failed:${error.message}`);
   const byId = new Map((data ?? []).map((item) => [String(item.id), item]));
@@ -87,6 +89,7 @@ async function attachSupplierEvidence(rows: Listing[], supabase: ReturnType<type
       supplier_cost: evidence?.cost ?? null,
       supplier_shipping_cost: evidence?.shipping_cost ?? null,
       supplier_inventory_checked_at: evidence?.inventory_checked_at ?? null,
+      supplier_price_checked_at: evidence?.price_checked_at ?? null,
       supplier_shipping_checked_at: evidence?.shipping_checked_at ?? null,
       supplier_inventory_confirmed: evidence?.inventory_confirmed ?? false,
       supplier_price_confirmed: evidence?.price_confirmed ?? false,
@@ -102,9 +105,10 @@ function supplierEvidenceReasons(row: Listing): string[] {
   if (row.supplier_inventory_confirmed !== true || !timestampIsFresh(row.supplier_inventory_checked_at, SUPPLIER_INVENTORY_MAX_AGE_MS)) {
     reasons.push("supplier_inventory_not_freshly_confirmed");
   }
-  if (row.supplier_price_confirmed !== true || asNumber(row.supplier_cost) === null
+  if (row.supplier_price_confirmed !== true || !timestampIsFresh(row.supplier_price_checked_at, SUPPLIER_PRICE_MAX_AGE_MS)
+      || asNumber(row.supplier_cost) === null
       || asNumber(row.source_cost) === null || Math.abs(Number(row.supplier_cost) - Number(row.source_cost)) >= 0.01) {
-    reasons.push("supplier_cost_unconfirmed_or_mismatch");
+    reasons.push("supplier_cost_unconfirmed_stale_or_mismatch");
   }
   if (!timestampIsFresh(row.supplier_shipping_checked_at, SUPPLIER_SHIPPING_MAX_AGE_MS)
       || asNumber(row.supplier_shipping_cost) === null || asNumber(row.shipping_cost) === null
