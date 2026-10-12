@@ -2,9 +2,16 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const route = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
+const snapshotRoute = await readFile(new URL("../app/api/admin/channels/base/snapshot/route.ts", import.meta.url), "utf8");
 const workflow = await readFile(new URL("../.github/workflows/base-product-backup.yml", import.meta.url), "utf8");
+const auth = await readFile(new URL("../lib/security/cron-auth.ts", import.meta.url), "utf8");
 
-assert.match(route, /requireAutomationAuth/);
+assert.match(route, /requireBaseAuditAuth/);
+assert.match(snapshotRoute, /requireBaseAuditAuth/);
+assert.match(auth, /export async function requireBaseAuditAuth/);
+assert.ok(auth.includes('"shunai394-hash/tracer/.github/workflows/base-product-backup.yml@refs/heads/main"'));
+assert.ok(auth.includes("claims.workflow_ref !== expectedWorkflowRef"));
+assert.ok(auth.includes("expectedWorkflowRef,\n    ))"));
 assert.match(route, /createSupabaseAdminClient/);
 assert.match(route, /export async function POST/);
 assert.match(route, /BASE_SNAPSHOT_INPUT_INCOMPLETE_OR_INVALID/);
@@ -18,6 +25,8 @@ assert.match(route, /Cache-Control.*no-store, private/);
 assert.doesNotMatch(route, /\.update\(|\.insert\(|\.upsert\(|createBaseItem\(|editBaseItem\(/);
 assert.match(workflow, /api\/admin\/channels\/base\/reconciliation/);
 assert.match(workflow, /body: JSON\.stringify\(\{ snapshot \}\)/);
-assert.match(workflow, /tracer-base-\*\.json/);
+assert.doesNotMatch(workflow, /actions\/upload-artifact@/);
+assert.doesNotMatch(workflow, /writeFile\(|tracer-base-\*\.json/);
+assert.match(workflow, /rawArtifactStored: false/);
 assert.match(workflow, /BASE_RECONCILIATION_INCOMPLETE_OR_COUNT_MISMATCH/);
-console.log("BASE/TRACER reconciliation report contract: 16 assertions passed");
+console.log("BASE/TRACER reconciliation report and exact OIDC workflow contract: assertions passed");

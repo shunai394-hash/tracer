@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 const route = await readFile(new URL("../app/api/admin/channels/base/snapshot/route.ts", import.meta.url), "utf8");
 const client = await readFile(new URL("../lib/channels/base.ts", import.meta.url), "utf8");
 
-assert.match(route, /requireAutomationAuth/);
+assert.match(route, /requireBaseAuditAuth/);
 assert.match(route, /fetchBaseItemsSnapshot/);
 assert.match(route, /Content-Disposition/);
 assert.match(route, /Cache-Control.*no-store/);
