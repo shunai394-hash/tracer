@@ -95,7 +95,7 @@ export async function GET(request: Request) {
     if (!detail) continue;
     if (Date.now() - started > 240_000 || accepted.length >= 200) break;
     const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId);
-    if (!variation || variation.buyerPrice === null || variation.stockQty === null) continue;
+    if (!variation || variation.buyerPrice === null || variation.stockQty === null || variation.currency?.trim().toUpperCase() !== "JPY") continue;
 
     const productId = await upsertProduct(supabase, detail);
     if (!productId) continue;
@@ -131,7 +131,7 @@ export async function GET(request: Request) {
       jan: variation.jan,
       mpn: detail.productNumber,
       cost: variation.buyerPrice,
-      currency: variation.currency ?? "JPY",
+      currency: variation.currency,
       inventory: variation.stockQty,
       ship_to: "JP",
       tracking_available: null,
