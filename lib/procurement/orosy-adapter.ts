@@ -2,7 +2,6 @@ import "server-only";
 
 import {
   getOrosyProductDetail,
-  getOrosyShippingQuote,
   orosyRequest,
   searchOrosyProducts,
   type OrosyProductDetail,
@@ -39,17 +38,14 @@ type OrosyOrderResponse = {
   }>;
 };
 
-function productFromDetail(
-  detail: OrosyProductDetail,
-  shippingCost: number | null,
-): SupplierProduct {
+function productFromDetail(detail: OrosyProductDetail): SupplierProduct {
   return {
     supplierProductId: detail.id,
     supplierName: SUPPLIER_NAME,
     title: detail.title,
-    currency: detail.currency ?? "JPY",
+    currency: detail.currency,
     unitCost: detail.price,
-    shippingCost,
+    shippingCost: null,
     available: detail.inventory === null ? null : detail.inventory > 0,
     orderable: detail.orderable,
     trackingAvailable: null,
@@ -76,7 +72,7 @@ function variantFrom(
     sku: null,
     title: variation.variantLabel,
     price: variation.buyerPrice,
-    currency: variation.currency ?? detail.currency ?? "JPY",
+    currency: variation.currency ?? detail.currency,
     inventory: variation.stockQty,
     orderable:
       variation.stockQty === null ? null : variation.stockQty > 0 && detail.orderable,
@@ -106,7 +102,7 @@ export const orosySupplierAdapter: TracerSupplierAdapter = {
       supplierProductId: product.id,
       supplierName: SUPPLIER_NAME,
       title: product.title,
-      currency: product.currency ?? "JPY",
+      currency: product.currency,
       unitCost: product.price,
       shippingCost: null,
       available: product.inventory === null ? null : product.inventory > 0,
@@ -118,8 +114,7 @@ export const orosySupplierAdapter: TracerSupplierAdapter = {
   async getProduct(supplierProductId: string): Promise<SupplierProduct | null> {
     const detail = await getOrosyProductDetail(supplierProductId);
     if (!detail) return null;
-    const shipping = await getOrosyShippingQuote(detail.id);
-    return productFromDetail(detail, shipping.amount);
+    return productFromDetail(detail);
   },
 
   async getVariant(
@@ -171,13 +166,14 @@ export const orosySupplierAdapter: TracerSupplierAdapter = {
     const detail = await getOrosyProductDetail(supplierProductId);
     const variation = detail ? variationFor(detail, supplierVariantId) : null;
     if (!detail || !variation) return null;
-    const quote = await getOrosyShippingQuote(detail.id);
+    // Orosy documents the cart-estimate shipping figure as indicative only;
+    // actual shipping is calculated later. Never promote it to landed cost.
     return {
       supplierProductId: detail.id,
       supplierVariantId: variation.variationId,
-      amount: quote.amount,
-      currency: quote.currency,
-      available: quote.unresolved ? null : quote.amount !== null,
+      amount: null,
+      currency: null,
+      available: null,
       observedAt: new Date().toISOString(),
     };
   },
