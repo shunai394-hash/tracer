@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
+import { nextMarketCursor, readMarketCursor } from "@/lib/market/market-cursor";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -56,32 +57,9 @@ export async function GET(request: Request) {
 
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
-    const { data: previousRun, error: previousRunError } = await supabase
-      .from("cron_runs")
-      .select("metadata")
-      .eq("job_name", "market-sourcing")
-      .eq("status", "succeeded")
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (previousRunError) throw new Error(previousRunError.message);
-
-    const previousMetadata = previousRun?.metadata;
-    const metadataObject =
-      previousMetadata && typeof previousMetadata === "object" && !Array.isArray(previousMetadata)
-        ? (previousMetadata as Record<string, unknown>)
-        : null;
-    const sourceIndex =
-      metadataObject && typeof metadataObject.sourceIndex === "number"
-        ? Math.max(0, Number(metadataObject.sourceIndex))
-        : 0;
-    const startIndex =
-      metadataObject &&
-      typeof metadataObject.sourceIndex === "number" &&
-      typeof metadataObject.nextIndex === "number"
-        ? Math.max(0, Number(metadataObject.nextIndex))
-        : 0;
+    const cursor = await readMarketCursor(supabase);
+    const sourceIndex = cursor.sourceIndex;
+    const startIndex = cursor.startIndex;
 
     // This cron is observation-only. Supplier investigation, sales-test
     // publication, NEWFIND promotion, and BASE publication each have their
@@ -94,10 +72,9 @@ export async function GET(request: Request) {
       batchSize: MARKET_SOURCING_BATCH_SIZE,
     });
 
-    const nextSourceIndex = observation.hasMore
-      ? observation.sourceIndex
-      : (observation.sourceIndex + 1) % 8;
-    const nextStartIndex = observation.hasMore ? observation.nextIndex : 0;
+    const nextCursor = nextMarketCursor(observation);
+    const nextSourceIndex = nextCursor.sourceIndex;
+    const nextStartIndex = nextCursor.startIndex;
 
     const metadata = {
       phase: "market_observation",
