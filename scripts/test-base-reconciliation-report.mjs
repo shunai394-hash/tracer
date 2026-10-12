@@ -20,4 +20,4 @@ assert.match(workflow, /api\/admin\/channels\/base\/reconciliation/);
 assert.match(workflow, /body: JSON\.stringify\(\{ snapshot \}\)/);
 assert.match(workflow, /tracer-base-\*\.json/);
 assert.match(workflow, /BASE_RECONCILIATION_INCOMPLETE_OR_COUNT_MISMATCH/);
-console.log("BASE/TRACER reconciliation report contract: 15 assertions passed");
+console.log("BASE/TRACER reconciliation report contract: 16 assertions passed");
