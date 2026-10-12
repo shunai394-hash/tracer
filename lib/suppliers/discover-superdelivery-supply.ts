@@ -137,6 +137,7 @@ export async function discoverSuperDeliverySupply(
           item.stock > 0 &&
           item.exhibitState === 2,
         price_confirmed: item.price !== null,
+        price_checked_at: item.price !== null ? now : null,
         inventory_confirmed: item.stock !== null,
         verification_status: "unverified",
         shipping_status: "unknown",

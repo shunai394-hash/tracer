@@ -33,10 +33,20 @@ type Listing = {
   shopify_variant_id: string | null;
   shopify_handle: string | null;
   shopify_sync_status: string | null;
+  shopify_sync_error?: string | null;
   shipping_cost?: number | string | null;
   source_cost?: number | string | null;
   contribution_profit?: number | string | null;
   contribution_margin?: number | string | null;
+  supplier_inventory?: number | null;
+  supplier_verified_variant_id?: string | null;
+  supplier_cost?: number | string | null;
+  supplier_shipping_cost?: number | string | null;
+  supplier_inventory_checked_at?: string | null;
+  supplier_price_checked_at?: string | null;
+  supplier_shipping_checked_at?: string | null;
+  supplier_inventory_confirmed?: boolean | null;
+  supplier_price_confirmed?: boolean | null;
 };
 
 type ShopifyProductNode = {
@@ -48,6 +58,75 @@ type ShopifyProductNode = {
   variants: { nodes: Array<{ id: string; sku: string | null; price: string | null }> };
   media?: { nodes: Array<{ mediaContentType: string; preview?: { image?: { url: string } | null } | null }> };
 };
+
+const SUPPLIER_INVENTORY_MAX_AGE_MS = 30 * 60 * 1000;
+const SUPPLIER_PRICE_MAX_AGE_MS = 30 * 60 * 1000;
+const SUPPLIER_SHIPPING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const SHOPIFY_STOCK_SAFETY_BUFFER = 2;
+const SHOPIFY_SELLABLE_STOCK_CAP = 3;
+
+function timestampIsFresh(value: string | null | undefined, maxAgeMs: number, now = Date.now()): boolean {
+  if (!value) return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && timestamp <= now && now - timestamp <= maxAgeMs;
+}
+
+async function attachSupplierEvidence(rows: Listing[], supabase: ReturnType<typeof createSupabaseAdminClient>): Promise<Listing[]> {
+  const ids = [...new Set(rows.map((row) => row.supplier_listing_id).filter((id): id is string => Boolean(id)))];
+  if (ids.length === 0) return rows;
+  const { data, error } = await supabase
+    .from("supplier_listings")
+    .select("id,supplier_variant_id,cost,shipping_cost,inventory,inventory_checked_at,price_checked_at,shipping_checked_at,inventory_confirmed,price_confirmed")
+    .in("id", ids);
+  if (error) throw new Error(`shopify_supplier_evidence_lookup_failed:${error.message}`);
+  const byId = new Map((data ?? []).map((item) => [String(item.id), item]));
+  return rows.map((row) => {
+    const evidence = row.supplier_listing_id ? byId.get(row.supplier_listing_id) : null;
+    return {
+      ...row,
+      supplier_inventory: evidence?.inventory ?? null,
+      supplier_verified_variant_id: evidence?.supplier_variant_id ?? null,
+      supplier_cost: evidence?.cost ?? null,
+      supplier_shipping_cost: evidence?.shipping_cost ?? null,
+      supplier_inventory_checked_at: evidence?.inventory_checked_at ?? null,
+      supplier_price_checked_at: evidence?.price_checked_at ?? null,
+      supplier_shipping_checked_at: evidence?.shipping_checked_at ?? null,
+      supplier_inventory_confirmed: evidence?.inventory_confirmed ?? false,
+      supplier_price_confirmed: evidence?.price_confirmed ?? false,
+    };
+  });
+}
+
+function supplierEvidenceReasons(row: Listing): string[] {
+  const reasons: string[] = [];
+  if (!row.supplier_listing_id) reasons.push("supplier_listing_missing");
+  if (!row.supplier_variant_id || !row.supplier_variant_id.trim()) reasons.push("supplier_variant_missing");
+  if (!row.supplier_verified_variant_id || row.supplier_verified_variant_id !== row.supplier_variant_id) reasons.push("supplier_variant_identity_mismatch");
+  if (row.supplier_inventory_confirmed !== true || !timestampIsFresh(row.supplier_inventory_checked_at, SUPPLIER_INVENTORY_MAX_AGE_MS)) {
+    reasons.push("supplier_inventory_not_freshly_confirmed");
+  }
+  if (row.supplier_price_confirmed !== true || !timestampIsFresh(row.supplier_price_checked_at, SUPPLIER_PRICE_MAX_AGE_MS)
+      || asNumber(row.supplier_cost) === null
+      || asNumber(row.source_cost) === null || Math.abs(Number(row.supplier_cost) - Number(row.source_cost)) >= 0.01) {
+    reasons.push("supplier_cost_unconfirmed_stale_or_mismatch");
+  }
+  if (!timestampIsFresh(row.supplier_shipping_checked_at, SUPPLIER_SHIPPING_MAX_AGE_MS)
+      || asNumber(row.supplier_shipping_cost) === null || asNumber(row.shipping_cost) === null
+      || Math.abs(Number(row.supplier_shipping_cost) - Number(row.shipping_cost)) >= 0.01) {
+    reasons.push("supplier_shipping_unconfirmed_or_mismatch");
+  }
+  if (asNumber(row.supplier_inventory) === null || Number(row.supplier_inventory) <= SHOPIFY_STOCK_SAFETY_BUFFER
+      || asNumber(row.inventory) === null || Number(row.inventory) !== Number(row.supplier_inventory)) {
+    reasons.push("supplier_inventory_missing_or_listing_stock_mismatch");
+  }
+  return reasons;
+}
+
+function getShopifySellableInventory(row: Listing): number {
+  const verifiedSupplierStock = Number(row.supplier_inventory);
+  if (!Number.isInteger(verifiedSupplierStock) || verifiedSupplierStock <= SHOPIFY_STOCK_SAFETY_BUFFER) return 0;
+  return Math.min(SHOPIFY_SELLABLE_STOCK_CAP, verifiedSupplierStock - SHOPIFY_STOCK_SAFETY_BUFFER);
+}
 
 function hasGateProvenance(row: Listing): boolean {
   return Array.isArray(row.selection_reasons)
@@ -169,10 +248,10 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   const linkedSupplierIds = await getLinkedSupplierListingIds((data ?? []).map((row) => row.supplier_listing_id));
-  const rows = ((data ?? []) as Listing[]).map((row) => ({
+  const rows = await attachSupplierEvidence(((data ?? []) as Listing[]).map((row) => ({
     ...row,
     identity_status: row.supplier_listing_id && linkedSupplierIds.has(row.supplier_listing_id) ? "linked" : null,
-  }));
+  })), supabase);
   const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 15);
   const actionable = listingIds?.length
     ? rows.slice(0, safeLimit)
@@ -204,6 +283,7 @@ function blockReasons(row: Listing): string[] {
   if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
   if (!isPublishableCatalogDescription(row.description)) reasons.push("catalog_description_not_publishable");
   if (row.identity_status !== "linked") reasons.push("supplier_identity_unlinked");
+  reasons.push(...supplierEvidenceReasons(row));
   if (row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") reasons.push("pipeline_blocked");
   if (!hasGateProvenance(row)) reasons.push("sales_test_gate_not_passed");
   if (row.orderable !== true) reasons.push("not_orderable");
@@ -244,7 +324,7 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("shop_listings")
-    .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_error")
+    .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_status,shopify_sync_error")
     .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
     .or("shopify_sync_status.is.null,shopify_sync_status.neq.syncing")
     .order("shopify_product_id", { ascending: true, nullsFirst: true })
@@ -252,13 +332,16 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
     .limit(Math.min(Math.max(limit, 1), 1000));
   if (error) throw new Error(error.message);
   const linkedSupplierIds = await getLinkedSupplierListingIds((data ?? []).map((row) => row.supplier_listing_id));
+  const rowsWithIdentity = ((data ?? []) as Array<Listing & { shopify_sync_error?: string | null }>).map((rawRow) => ({
+    ...rawRow,
+    identity_status: rawRow.supplier_listing_id && linkedSupplierIds.has(rawRow.supplier_listing_id) ? "linked" : null,
+  }));
+  const rows = await attachSupplierEvidence(rowsWithIdentity, supabase);
   const reasonCounts: Record<string, number> = {};
-  const rows = ((data ?? []) as Array<Listing & { shopify_sync_error?: string | null }>).map((rawRow) => {
-    const row = { ...rawRow, identity_status: rawRow.supplier_listing_id && linkedSupplierIds.has(rawRow.supplier_listing_id) ? "linked" : null };
+  const evaluatedRows: ShopifySyncPreviewRow[] = rows.map((row) => {
     const reasons = blockReasons(row);
     if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) reasons.push("image_url_invalid");
     if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");
-    if (!row.supplier_variant_id) reasons.push("supplier_variant_missing");
     for (const reason of reasons) reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1;
     return {
       listingId: row.id,
@@ -277,7 +360,7 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
       lastError: row.shopify_sync_error ? String(row.shopify_sync_error).slice(0, 120) : null,
     };
   });
-  return { considered: rows.length, eligible: rows.filter((row) => row.eligible).length, rows, reasonCounts };
+  return { considered: evaluatedRows.length, eligible: evaluatedRows.filter((row) => row.eligible).length, rows: evaluatedRows, reasonCounts };
 }
 
 async function syncListingRows(
@@ -427,7 +510,9 @@ async function syncListingRows(
       if (!variant?.id) throw new Error("shopify_variant_missing_for_inventory_sync");
       await setShopifyVariantInventory({
         variantId: variant.id,
-        quantity: Number(row.inventory),
+        // Shopify inventory is a conservative sellable allowance, not a mirror of supplier stock.
+        // Supplier stock is rechecked per order; retain a two-unit buffer and cap storefront stock.
+        quantity: getShopifySellableInventory(row),
         reference: `tracer://shop-listing/${row.id}`,
       });
 

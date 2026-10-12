@@ -191,11 +191,105 @@ export async function GET(request: Request) {
           continue;
         }
 
+        // A stock quantity alone is not enough to authorize a listing. Refresh
+        // price and Japan shipping from the same exact supplier variant.
+        const [priceResult, shippingResult] = await Promise.all([
+          adapter.getPrice(String(listing.supplier_product_id ?? ""), variantId),
+          adapter.getShipping(String(listing.supplier_product_id ?? ""), variantId, {
+            destinationCountryCode: "JP",
+            quantity: 1,
+          }),
+        ]);
+        const evidenceMatches =
+          Boolean(listing.supplier_listing_id) &&
+          inventoryResult !== null &&
+          priceResult !== null &&
+          shippingResult !== null &&
+          inventoryResult.supplierProductId === String(listing.supplier_product_id ?? "") &&
+          inventoryResult.supplierVariantId === variantId &&
+          Number.isInteger(inventoryResult.quantity) &&
+          inventoryResult.quantity !== null &&
+          inventoryResult.quantity > 0 &&
+          inventoryResult.available === true &&
+          inventory === inventoryResult.quantity &&
+          priceResult.supplierProductId === String(listing.supplier_product_id ?? "") &&
+          priceResult.supplierVariantId === variantId &&
+          shippingResult.supplierProductId === String(listing.supplier_product_id ?? "") &&
+          shippingResult.supplierVariantId === variantId &&
+          typeof priceResult.amount === "number" &&
+          Number.isFinite(priceResult.amount) &&
+          priceResult.amount >= 0 &&
+          typeof shippingResult.amount === "number" &&
+          Number.isFinite(shippingResult.amount) &&
+          shippingResult.amount >= 0 &&
+          Boolean(priceResult.currency) &&
+          priceResult.currency?.toUpperCase() === shippingResult.currency?.toUpperCase() &&
+          shippingResult.available === true;
+        if (!evidenceMatches) {
+          const reason = "fresh_supplier_variant_price_or_japan_shipping_unverified";
+          const { error: blockError } = await supabase
+            .from("shop_listings")
+            .update({
+              published: false,
+              orderable: false,
+              pipeline_error: reason,
+              pipeline_updated_at: now,
+              updated_at: now,
+            })
+            .eq("id", listingId);
+          if (blockError) throw new Error(blockError.message);
+          if (listing.supplier_listing_id) {
+            const { error: supplierError } = await supabase
+              .from("supplier_listings")
+              .update({ orderable: false, price_confirmed: false, inventory_confirmed: false, fetched_at: now })
+              .eq("id", String(listing.supplier_listing_id));
+            if (supplierError) throw new Error(supplierError.message);
+          }
+          let baseSyncError: string | null = null;
+          if (listing.base_item_id && listing.selling_price !== null && isBaseConfigured()) {
+            try {
+              await editBaseItem({
+                itemId: String(listing.base_item_id),
+                title: String(listing.title ?? ""),
+                detail: String(listing.description ?? listing.title ?? ""),
+                price: Number(listing.selling_price),
+                stock: 0,
+                visible: false,
+              });
+              baseUpdated++;
+            } catch (error) {
+              baseSyncError = error instanceof Error ? error.message : String(error);
+              baseErrors++;
+              await supabase.from("shop_listings").update({ base_last_error: baseSyncError }).eq("id", listingId);
+            }
+          }
+          results.push({ listingId, ok: false, blocked: true, reason, baseSyncError });
+          continue;
+        }
+
+        const { error: supplierEvidenceError } = await supabase
+          .from("supplier_listings")
+          .update({
+            inventory,
+            inventory_checked_at: now,
+            inventory_confirmed: true,
+            cost: priceResult.amount,
+            price_confirmed: true,
+            price_checked_at: now,
+            shipping_cost: shippingResult.amount,
+            shipping_checked_at: now,
+            fetched_at: now,
+          })
+          .eq("id", String(listing.supplier_listing_id ?? ""));
+        if (supplierEvidenceError) throw new Error(supplierEvidenceError.message);
+
         const orderable = inventory > 0;
         const { error: listingError } = await supabase
           .from("shop_listings")
           .update({
             inventory,
+            source_cost: priceResult.amount,
+            shipping_cost: shippingResult.amount,
             orderable,
             updated_at: now,
           })

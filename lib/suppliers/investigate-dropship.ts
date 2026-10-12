@@ -190,6 +190,7 @@ async function investigateOrosyFallback(args: {
             configured: true,
             orderable,
             price_confirmed: confirmed.variation.buyerPrice !== null,
+            price_checked_at: confirmed.variation.buyerPrice !== null ? fetchedAt : null,
             inventory_confirmed: inventory !== null,
             fetched_at: fetchedAt,
             metadata: {
