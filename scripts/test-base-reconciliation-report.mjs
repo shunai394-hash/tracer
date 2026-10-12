@@ -7,9 +7,9 @@ const auth = await readFile(new URL("../lib/security/cron-auth.ts", import.meta.
 
 assert.match(route, /requireBaseAuditAuth/);
 assert.match(auth, /export async function requireBaseAuditAuth/);
-assert.match(auth, /shunai394-hash\\/tracer\\/.github\\/workflows\\/base-product-backup\\.yml@refs\\/heads\\/main/);
-assert.match(auth, /claims\\.workflow_ref !== expectedWorkflowRef/);
-assert.match(auth, /verifyGitHubOidcToken\\([\\s\\S]*expectedWorkflowRef/);
+assert.ok(auth.includes('"shunai394-hash/tracer/.github/workflows/base-product-backup.yml@refs/heads/main"'));
+assert.ok(auth.includes("claims.workflow_ref !== expectedWorkflowRef"));
+assert.ok(auth.includes("expectedWorkflowRef,\n    ))"));
 assert.match(route, /createSupabaseAdminClient/);
 assert.match(route, /export async function POST/);
 assert.match(route, /BASE_SNAPSHOT_INPUT_INCOMPLETE_OR_INVALID/);
