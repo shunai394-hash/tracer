@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     // become orderable again. selection_reasons carries the durable marker.
     const { data: gatedListings, error: gatedError } = await supabase
       .from("shop_listings")
-      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, selection_reasons, pipeline_stage, pipeline_status, pipeline_reason")
+      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, source_cost, shipping_cost, contribution_profit, contribution_margin, selection_reasons, pipeline_stage, pipeline_status, pipeline_reason")
       .not("supplier_name", "is", null)
       .not("supplier_variant_id", "is", null)
       .eq("published", true)
@@ -298,15 +298,17 @@ export async function GET(request: Request) {
         // Fresh supplier costs invalidate prior profitability decisions when the
         // landed-cost inputs change. Do not silently reuse a previously passed
         // Sales Test Gate or re-enable the BASE item with stale margins.
+        const verifiedPrice = Number(priceResult.amount);
+        const verifiedShipping = Number(shippingResult.amount);
         const priorSourceCost = listing.source_cost === null || listing.source_cost === undefined ? null : Number(listing.source_cost);
         const priorShippingCost = listing.shipping_cost === null || listing.shipping_cost === undefined ? null : Number(listing.shipping_cost);
         const economicsChanged =
           priorSourceCost === null ||
           !Number.isFinite(priorSourceCost) ||
-          Math.abs(priorSourceCost - priceResult.amount) >= 0.01 ||
+          Math.abs(priorSourceCost - verifiedPrice) >= 0.01 ||
           priorShippingCost === null ||
           !Number.isFinite(priorShippingCost) ||
-          Math.abs(priorShippingCost - shippingResult.amount) >= 0.01;
+          Math.abs(priorShippingCost - verifiedShipping) >= 0.01;
 
         if (economicsChanged) {
           const previousReasons = Array.isArray(listing.selection_reasons)
