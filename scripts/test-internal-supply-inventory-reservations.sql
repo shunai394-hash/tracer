@@ -90,15 +90,15 @@ insert into public.shop_listings(id, supplier_name, supplier_variant_id, invento
 -- Inject allocation failure. The variant update and ledger insert must both
 -- roll back; the same PO remains available for the later concurrency test.
 create function public.inject_inventory_allocation_failure()
-returns trigger language plpgsql as $
+returns trigger language plpgsql as $$
 begin
   raise exception 'injected_inventory_allocation_failure';
-end $;
+end $$;
 create trigger injected_inventory_allocation_failure
 before update on public.internal_supply_variants
 for each row execute function public.inject_inventory_allocation_failure();
 
-do $
+do $$
 declare
   v_failed boolean := false;
   v_inventory integer;
@@ -122,7 +122,7 @@ begin
   if exists(select 1 from public.internal_supply_inventory_reservations where purchase_order_id='30000000-0000-4000-8000-000000000003') then
     raise exception 'failed allocation left a reservation ledger row';
   end if;
-end $;
+end $$;
 
 drop trigger injected_inventory_allocation_failure on public.internal_supply_variants;
 drop function public.inject_inventory_allocation_failure();
@@ -242,10 +242,10 @@ begin
   if v_status <> 'released' then raise exception 'released reservation was re-opened'; end if;
   select inventory into v_inventory from public.internal_supply_variants where id='20000000-0000-4000-8000-000000000001';
   if v_inventory <> 10 then raise exception 'retry after release consumed stock again'; end if;
-end $;
+end $$;
 
 -- A cancelled order returns its stock once and records a distinct reason.
-do $
+do $$
 declare
   v_inventory integer;
   v_status text;
@@ -271,7 +271,7 @@ begin
   if v_reason <> 'supplier_status_cancelled' then
     raise exception 'cancelled-order release reason was not recorded: %', v_reason;
   end if;
-end $;
+end $$;
 
 -- Inject order-row creation failure after reservation, then compensate once.
 create function public.inject_internal_order_insert_failure()
