@@ -70,7 +70,7 @@ export type CollectedMarketplace = {
   };
 };
 
-async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVariantsMissing?: boolean } = {}): Promise<string | null> {
+async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVariantsMissing?: boolean; retryBrightDataWhenAmazonIdentifierMissing?: boolean } = {}): Promise<string | null> {
   const directFetch = async (): Promise<string | null> => {
     try {
       const response = await fetch(url, {
@@ -105,31 +105,39 @@ async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVar
   // successful. For Amazon child-variant extraction, retry through Bright Data
   // when the direct response has no JSON-LD Product/ProductGroup markup.
   const directHtml = await directFetch();
-  // Amazon can expose its child variants either as Schema.org ProductGroup
-  // nodes or as an explicit dimensionValuesDisplayData child-ASIN map. Treat
-  // both as usable variant evidence when deciding whether Bright Data improved
-  // a direct response; otherwise a useful child-ASIN map gets discarded.
+  // Amazon can expose variants as Schema.org ProductGroup nodes or an explicit
+  // child-ASIN map. Child pages need their own concrete barcode evidence.
   const hasAmazonVariantEvidence = (html: string | null): boolean =>
-    Boolean(
-      html &&
-      (
-        parseCanonicalMarketplaceVariantEvidence(html, url).length > 0 ||
-        parseAmazonVariationAsinMap(html, url).length > 0
-      )
-    );
-  if (directHtml && (!options.retryBrightDataWhenCanonicalVariantsMissing || hasAmazonVariantEvidence(directHtml))) {
+    Boolean(html && (
+      parseCanonicalMarketplaceVariantEvidence(html, url).length > 0 ||
+      parseAmazonVariationAsinMap(html, url).length > 0
+    ));
+  const hasAmazonBarcodeEvidence = (html: string | null): boolean => {
+    if (!html) return false;
+    const detail = parseAmazonProductDetail(html);
+    return Boolean(detail.jan || detail.gtin || detail.ean || detail.upc);
+  };
+  const requiresEvidence = Boolean(
+    options.retryBrightDataWhenCanonicalVariantsMissing ||
+    options.retryBrightDataWhenAmazonIdentifierMissing
+  );
+  const hasRequiredEvidence = (html: string | null): boolean =>
+    options.retryBrightDataWhenAmazonIdentifierMissing
+      ? hasAmazonBarcodeEvidence(html)
+      : hasAmazonVariantEvidence(html);
+
+  if (directHtml && (!requiresEvidence || hasRequiredEvidence(directHtml))) {
     return directHtml;
   }
 
   if (isBrightDataConfigured()) {
     try {
       const page = await fetchBrightDataPage(url);
-      if (page.html && (!options.retryBrightDataWhenCanonicalVariantsMissing || hasAmazonVariantEvidence(page.html))) {
+      if (page.html && (!requiresEvidence || hasRequiredEvidence(page.html))) {
         return page.html;
       }
-      // If Bright Data did not improve the response, retain a usable direct
-      // response for ordinary parsing/diagnostics. It still cannot create
-      // canonical evidence unless the strict JSON-LD parser finds child nodes.
+      // Keep a direct page for diagnostics, but never accept a child barcode
+      // unless the parser extracts it from that child's own detail page.
       if (directHtml) return directHtml;
       if (page.html) return page.html;
     } catch {
@@ -291,18 +299,27 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
         groupsWithVariantCount += markup.groupsWithVariantCount;
         variantProductNodeCount += markup.variantProductNodeCount;
         absoluteTypeIriCount += markup.absoluteTypeIriCount;
-        item.canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl);
+        const canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl);
+        item.canonicalVariants = canonicalVariants;
         // Amazon pages often expose child ASINs in their explicit variation map
         // even when they omit Schema.org ProductGroup.hasVariant. Resolve those
         // ASINs against each child's own detail page; never inherit the parent's
         // JAN/GTIN, and persist only child pages with a valid concrete barcode.
-        if (item.canonicalVariants.length === 0) {
+        {
+          // Do not stop at a partial Schema.org variant list: some entries have
+          // only ASIN/option labels and no sellable identifier. Retry explicit
+          // child ASINs whose existing evidence lacks a concrete barcode, then
+          // merge recovered child-page evidence by ASIN without duplicating rows.
           const childAsins = parseAmazonVariationAsinMap(detailHtml, item.productUrl).slice(0, 6);
           variationAsinsFound += childAsins.length;
-          childDetailAttempted += childAsins.length;
-          const recovered = await Promise.all(childAsins.map(async (child) => {
+          const childAsinsNeedingBarcode = childAsins.filter((child) => {
+            const existing = canonicalVariants.find((variant) => variant.asin === child.asin);
+            return !existing || !(existing.jan || existing.gtin || existing.ean || existing.upc);
+          });
+          childDetailAttempted += childAsinsNeedingBarcode.length;
+          const recovered = await Promise.all(childAsinsNeedingBarcode.map(async (child) => {
             const childUrl = `https://www.amazon.co.jp/dp/${child.asin}`;
-            const childHtml = await fetchHtml(childUrl);
+            const childHtml = await fetchHtml(childUrl, { retryBrightDataWhenAmazonIdentifierMissing: true });
             if (!childHtml) return null;
             childDetailFetched += 1;
             const childDetail = parseAmazonProductDetail(childHtml);
@@ -337,9 +354,17 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
               },
             };
           }));
-          item.canonicalVariants.push(...recovered.filter((value): value is NonNullable<typeof value> => value !== null));
+          for (const variant of recovered) {
+            if (!variant) continue;
+            const existingIndex = canonicalVariants.findIndex((existing) => existing.asin === variant.asin);
+            if (existingIndex >= 0) {
+              canonicalVariants[existingIndex] = { ...canonicalVariants[existingIndex], ...variant };
+            } else {
+              canonicalVariants.push(variant);
+            }
+          }
         }
-        canonicalVariantCount += item.canonicalVariants.length;
+        canonicalVariantCount += canonicalVariants.length;
         item.brand = detail.brand;
         item.model = detail.model;
         item.jan = normalizeIdentifier("jan", detail.jan);
