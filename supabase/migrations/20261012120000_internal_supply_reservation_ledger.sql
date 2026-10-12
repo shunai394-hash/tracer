@@ -107,14 +107,6 @@ begin
     raise exception 'internal_fulfillment_requires_active_reservation';
   end if;
 
-  if v_reservation_status = 'committed' and exists (
-    select 1 from public.internal_fulfillment_orders o
-     where o.purchase_order_id = new.purchase_order_id
-  ) then
-    -- Let the unique constraint identify a concurrent duplicate of an existing order.
-    return new;
-  end if;
-
   if v_reservation_status <> 'reserved' then
     raise exception 'internal_fulfillment_requires_active_reservation';
   end if;
