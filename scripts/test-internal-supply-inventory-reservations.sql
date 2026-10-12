@@ -237,7 +237,18 @@ insert into public.internal_fulfillment_orders(
   3, 'failed', 'dropship:30000000-0000-4000-8000-000000000001'
 );
 
-do $$
+do $
+declare
+  v_status text;
+begin
+  select status into v_status from public.internal_supply_inventory_reservations
+   where purchase_order_id='30000000-0000-4000-8000-000000000001';
+  if v_status <> 'committed' then
+    raise exception 'successful internal order did not commit its reservation: %', v_status;
+  end if;
+end $;
+
+do $
 declare
   v_inventory integer;
   v_status text;
