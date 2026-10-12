@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createBaseItem, editBaseItem, addBaseItemImage, isBaseConfigured } from "@/lib/channels/base";
-import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { hasPassedSalesTestGate, isNonPhysicalProductTitle, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
@@ -22,6 +22,7 @@ type JapaneseCatalogCopy = { title: string; detail: string; };
 async function ensureJapaneseCatalogCopy(title: string, detail: string): Promise<JapaneseCatalogCopy> {
   const sourceTitle = String(title ?? "").trim();
   const sourceDetail = String(detail ?? "").trim();
+  if (isNonPhysicalProductTitle(sourceTitle)) throw new Error("BASE catalog title is a non-physical product");
   if (!isPublishableCatalogTitle(sourceTitle)) throw new Error("BASE catalog title contains workflow or disqualification text");
   if (!isPublishableCatalogDescription(sourceDetail)) throw new Error("BASE catalog description contains generic placeholder text");
   if (isJapaneseProductTitle(sourceTitle) && hasUsableJapaneseCopy(sourceDetail)) return { title: sourceTitle, detail: sourceDetail };
@@ -34,6 +35,7 @@ async function ensureJapaneseCatalogCopy(title: string, detail: string): Promise
   const translatedTitle = String(result?.title ?? "").trim();
   const translatedDetail = String(result?.detail ?? "").trim();
   if (!isJapaneseProductTitle(translatedTitle)) throw new Error("BASE japanese catalog copy returned a non-Japanese title");
+  if (isNonPhysicalProductTitle(translatedTitle)) throw new Error("BASE japanese catalog copy returned a non-physical product");
   if (!isPublishableCatalogTitle(translatedTitle)) throw new Error("BASE japanese catalog copy returned workflow or disqualification text");
   if (!isPublishableCatalogDescription(translatedDetail)) throw new Error("BASE japanese catalog copy returned generic placeholder text");
   if (!hasUsableJapaneseCopy(translatedDetail)) throw new Error("BASE japanese catalog copy returned an English-heavy description");

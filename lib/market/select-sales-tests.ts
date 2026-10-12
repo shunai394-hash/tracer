@@ -5,7 +5,7 @@ import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
-import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { isNonPhysicalProductTitle, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 
 function asNumber(value: unknown): number | null {
@@ -117,6 +117,7 @@ export async function selectAndPublishSalesTests(
     const reasons: string[] = [];
     const sourceTitle = String(bestseller.title ?? '').normalize('NFKC').trim();
     const womenPriority = womenProductPriority({ title: sourceTitle, category: String(bestseller.category ?? '') });
+    if (isNonPhysicalProductTitle(sourceTitle)) reasons.push("non_physical_product");
     if (!womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
     if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
     if (reasons.length > 0) {
@@ -394,7 +395,7 @@ export async function selectAndPublishSalesTests(
       missing: [],
       pipeline_stage: "PUBLISHED",
       pipeline_status: "published",
-      pipeline_reason: "sales_test_gate_passed_canonical_publish",
+      pipeline_reason: SALES_TEST_GATE_PASSED,
       pipeline_error: null,
       pipeline_updated_at: fetchedAt,
       published_at: fetchedAt,
@@ -417,7 +418,7 @@ export async function selectAndPublishSalesTests(
     }
     if (upsert.data?.id) { selectedListingIds.push(String(upsert.data.id)); publishedListingIds.push(String(upsert.data.id)); published += 1; }
 
-    await markPipeline(String(item.bestseller.id), "PUBLISHED", "published", "sales_test_gate_passed_canonical_publish");
+    await markPipeline(String(item.bestseller.id), "PUBLISHED", "published", SALES_TEST_GATE_PASSED);
 
     await writeEvidence({
       productId,
