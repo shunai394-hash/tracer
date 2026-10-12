@@ -137,7 +137,7 @@ export async function syncShopifyFulfillments(limit = 25): Promise<ShopifyFulfil
       }
       if (!fulfillment.fulfillmentCreate.fulfillment) throw new Error("shopify_fulfillment_missing");
 
-      await supabase
+      const persisted = await supabase
         .from("shop_orders")
         .update({
           order_status: "delivered" === order.order_status ? "delivered" : "shipping",
@@ -145,6 +145,11 @@ export async function syncShopifyFulfillments(limit = 25): Promise<ShopifyFulfil
           shopify_synced_at: new Date().toISOString(),
         })
         .eq("id", order.id);
+      if (persisted.error) {
+        // Shopify already accepted the fulfillment. Report local persistence failure
+        // explicitly so operators reconcile the order rather than trusting a false success.
+        throw new Error(`shopify_fulfillment_created_local_status_persist_failed:${persisted.error.code ?? "unknown"}`);
+      }
       result.synced += 1;
     } catch (error) {
       result.failed += 1;
