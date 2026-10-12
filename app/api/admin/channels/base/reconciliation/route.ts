@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { isHighConfidenceReconciliationCandidate } from "@/lib/channels/base-reconciliation-confidence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -188,18 +189,6 @@ export async function POST(request: Request) {
       const topScore = candidateScores[0]?.score ?? 0;
       const topCandidates = candidateScores.filter((candidate) => candidate.score === topScore);
       const reviewRequired = topCandidates.length > 1 || (topScore > 0 && topScore < 100);
-      const supplierIdentityConflict = (candidate: typeof candidateScores[number]) => {
-        const rowProductId = String(candidate.row.supplier_product_id ?? "").trim();
-        const rowVariantId = String(candidate.row.supplier_variant_id ?? "").trim();
-        // A matching product ID does not prove the requested variant. If BASE supplies
-        // a variant ID, an absent or different TRACER variant must stay review-only.
-        if (baseSupplierProductId && rowProductId && baseSupplierProductId === rowProductId &&
-            baseSupplierVariantId && baseSupplierVariantId !== rowVariantId) return true;
-        // Contradictory non-empty supplier identifiers are never positive match evidence.
-        if (baseSupplierProductId && rowProductId && baseSupplierProductId !== rowProductId) return true;
-        if (baseSupplierVariantId && rowVariantId && baseSupplierVariantId !== rowVariantId) return true;
-        return false;
-      };
       const candidateIdentityCounts = new Map<string, number>();
       for (const candidate of candidateScores) {
         const productId = String(candidate.row.supplier_product_id ?? "").trim();
@@ -257,17 +246,22 @@ export async function POST(request: Request) {
           supplierProductId: row.supplier_product_id,
           supplierVariantId: row.supplier_variant_id,
           imageUrlMatches: Boolean(baseImage && normalizedImage(row.image_url) === baseImage),
-          status: score === topScore && topCandidates.length === 1 &&
-            !supplierIdentityConflict({ row, score, evidence }) &&
-            (() => {
+          status: isHighConfidenceReconciliationCandidate({
+            score,
+            topScore,
+            topCandidateCount: topCandidates.length,
+            evidence,
+            baseSupplierProductId,
+            baseSupplierVariantId,
+            rowSupplierProductId: String(row.supplier_product_id ?? ""),
+            rowSupplierVariantId: String(row.supplier_variant_id ?? ""),
+            duplicateIdentityCount: (() => {
               const productId = String(row.supplier_product_id ?? "").trim();
               const variantId = String(row.supplier_variant_id ?? "").trim();
               const identityKey = productId && variantId ? JSON.stringify([productId, variantId]) : "";
-              return !identityKey || candidateIdentityCounts.get(identityKey) === 1;
-            })() &&
-            evidence.some((entry) => entry === "supplier_product_id_exact" || entry === "supplier_variant_id_exact")
-            ? "HIGH_CONFIDENCE_CANDIDATE_NOT_AUTO_MAPPED"
-            : "REVIEW_REQUIRED",
+              return identityKey ? candidateIdentityCounts.get(identityKey) ?? 0 : 0;
+            })(),
+          }) ? "HIGH_CONFIDENCE_CANDIDATE_NOT_AUTO_MAPPED" : "REVIEW_REQUIRED",
         })),
         candidateDecision: topCandidates.length > 1 ? "MULTIPLE_TOP_CANDIDATES_REVIEW_REQUIRED"
           : topScore > 0 ? "CANDIDATE_REVIEW_REQUIRED" : "NO_CANDIDATE",
