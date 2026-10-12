@@ -276,6 +276,22 @@ export async function GET(request: Request) {
       for (const [key, value] of Object.entries(raw)) {
         if (value === null || ["string", "number", "boolean"].includes(typeof value)) {
           resultSummary[key] = value;
+        } else if (key === "enrichment" && Array.isArray(value)) {
+          // Keep bounded, aggregate-only counters in the production patrol log.
+          // Never include product identifiers, child ASINs, raw HTML, or URLs.
+          resultSummary.enrichment = value.slice(0, 8).map((entry) => {
+            if (!entry || typeof entry !== "object" || Array.isArray(entry)) return {};
+            const item = entry as Record<string, unknown>;
+            const fields = [
+              "marketplace", "attempted", "htmlFetched", "identifierFound",
+              "canonicalVariantCount", "jsonLdNodeCount", "productGroupCount",
+              "groupsWithVariantCount", "variantProductNodeCount", "absoluteTypeIriCount",
+              "variationAsinsFound", "childDetailAttempted", "childDetailFetched", "childBarcodeFound",
+            ];
+            return Object.fromEntries(fields
+              .filter((field) => item[field] === null || ["string", "number", "boolean"].includes(typeof item[field]))
+              .map((field) => [field, item[field]]));
+          });
         } else if (Array.isArray(value)) {
           resultSummary[`${key}Count`] = value.length;
         } else if (typeof value === "object") {
