@@ -11,6 +11,7 @@ on:
 permissions:
   contents: read
   id-token: write
+  issues: write
 
 jobs:
   export:
@@ -112,3 +113,44 @@ jobs:
           path: tracer-base-*.json
           if-no-files-found: error
           retention-days: 90
+
+      - name: Publish sanitized BASE reconciliation summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > base-reconciliation-summary.md
+          import glob, json, os
+          files = glob.glob("tracer-base-reconciliation-*.json")
+          if len(files) != 1:
+              raise SystemExit("BASE_RECONCILIATION_REPORT_FILE_MISSING_OR_AMBIGUOUS")
+          d = json.load(open(files[0], encoding="utf-8"))
+          summary = {
+              "complete": d.get("complete"),
+              "baseItemCount": d.get("baseItemCount"),
+              "baseVisibleCount": d.get("baseVisibleCount"),
+              "baseHiddenCount": d.get("baseHiddenCount"),
+              "tracerListingCount": d.get("tracerListingCount"),
+              "exactBaseIdMappedCount": d.get("exactBaseIdMappedCount"),
+              "baseItemsWithoutExactMappingCount": d.get("baseItemsWithoutExactMappingCount"),
+              "baseItemsWithAmbiguousExactMappingCount": d.get("baseItemsWithAmbiguousExactMappingCount"),
+              "baseItemsWithExactTitleCandidateCount": d.get("baseItemsWithExactTitleCandidateCount"),
+              "tracerListingsWithoutBaseItemIdCount": d.get("tracerListingsWithoutBaseItemIdCount"),
+              "duplicateBaseItemIdGroupsInTracer": d.get("duplicateBaseItemIdGroupsInTracer"),
+              "generatedAt": d.get("generatedAt"),
+              "note": "Exact-title candidates are evidence only; no mappings or listings were changed."
+          }
+          print("# TRACER BASE mapping audit")
+          print()
+          print("Read-only reconciliation summary. No BASE listing, TRACER mapping, or order was modified.")
+          print()
+          print("```json")
+          print(json.dumps(summary, ensure_ascii=False, indent=2))
+          print("```")
+          PY
+          gh issue create \
+            --repo shunai394-hash/tracer \
+            --title "[TRACER BASE mapping audit] Run $GITHUB_RUN_ID" \
+            --body-file base-reconciliation-summary.md
+
