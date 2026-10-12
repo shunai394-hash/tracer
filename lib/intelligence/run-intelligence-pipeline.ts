@@ -400,7 +400,7 @@ export async function runIntelligencePipeline(options: {
   // Resume market discovery from the persisted cursor instead of re-reading
   // marketplace 0 / item 0 on every patrol, and advance it afterwards.
   const bestsellerStep = await runStep("bestsellers", async () => {
-    const cursor = await readMarketCursor(db);
+    const cursor = await readMarketCursor(db, "patrol-ai");
     const observation = await persistMarketplaceBestsellers({
       sourceIndex: cursor.sourceIndex,
       startIndex: cursor.startIndex,
