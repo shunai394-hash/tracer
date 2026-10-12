@@ -27,6 +27,23 @@ assert.match(discoverCJ, /title: detail\.title, product_id: null/, "CJ supply di
 assert.match(discoverCJ, /api_available: false, verification_status: "unverified"/, "unresolved CJ supply must not be marked verified or API-orderable before canonical identity is resolved");
 assert.match(discoverCJ, /orderable: false, price_confirmed: true, inventory_confirmed: true, tracking_available: false/, "unresolved CJ supply must remain blocked from ordering even when price and stock observations exist");
 assert.doesNotMatch(discoverCJ, /markVerification\(db, String\(supplierInsert\.data\.id\), \{ status: "verified"/, "discovery must not overwrite the unresolved identity gate with a verified status");
+
+const supplierUpserts = [...discoverCJ.matchAll(/const supplierInsert = await upsertSupplierListing/g)].map((match) => {
+  const end = discoverCJ.indexOf("if (supplierInsert.error)", match.index);
+  assert.notEqual(end, -1, "each CJ supplier upsert must check persistence errors");
+  return discoverCJ.slice(match.index, end);
+});
+assert.equal(supplierUpserts.length, 2, "both seeded and fresh CJ discovery paths must be guarded");
+for (const upsert of supplierUpserts) {
+  assert.match(upsert, /product_id: null/, "unresolved CJ supply must not attach a provisional canonical product");
+  assert.match(upsert, /identity_status: "supply_discovered"/);
+  assert.match(upsert, /identity_confidence: 0/, "unresolved CJ supply must have zero identity confidence");
+  assert.match(upsert, /api_available: false/);
+  assert.match(upsert, /orderable: false/);
+  assert.match(upsert, /tracking_available: false/);
+  assert.doesNotMatch(upsert, /identity_confidence: 1|api_available: true|orderable: true|tracking_available: cjTrackingAvailable/, "discovery must not claim identity or order-path verification");
+}
+
 assert.match(directGate, /\.eq\("identity_status", "linked"\)/, "direct sales-test gate must require canonical supplier identity");
 assert.doesNotMatch(directGate, /identity_status\.eq\.supply_discovered/, "supply discovery alone must never enter direct sales-test selection");
 assert.match(salesPublicationRoute, /\.eq\("identity_status", "linked"\)/, "sales-test publication prefilter must require linked supplier identity");
