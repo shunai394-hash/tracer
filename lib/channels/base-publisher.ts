@@ -67,6 +67,10 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     // Do not repeatedly select the same already-reconciled BASE items. That
     // starved never-published listings because existing base_item_id rows were
     // always ordered first and occupied every limited batch.
+    // If BASE may have created an item but returned no item_id, quarantine the
+    // listing from automatic retries. An operator can explicitly target it after
+    // reconciling BASE, but normal cron must not create a duplicate blindly.
+    query = query.not("base_last_error", "like", "base_create_response_missing_id%");
     query = query.or([
       "and(published.eq.true,base_publication_status.is.null)",
       "and(published.eq.true,base_publication_status.neq.published)",
@@ -370,20 +374,23 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       results.push({ listingId, ok: true, baseItemId });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const createIdPersistFailure = message.match(/^base_create_id_persist_failed:([^:]+):([\s\S]*)$/);
+      const createIdPersistFailure = message.match(/^base_create_id_persist_failed:([^:]+):([\\s\\S]*)$/);
+      const createResponseMissingId = message === "BASE create response missing item_id";
       const recoveryStillNeeded = !listing.base_item_id && recoveryMarker?.[1] && message.startsWith("base_create_id_recovery_failed:");
-      const safeErrorMarker = createIdPersistFailure
-        ? `base_create_id_persist_failed:${createIdPersistFailure[1]}:${createIdPersistFailure[2]}`.slice(0, 2000)
-        : recoveryStillNeeded
-          ? String(listing.base_last_error).slice(0, 2000)
-          : message.slice(0, 2000);
+      const safeErrorMarker = createResponseMissingId
+        ? "base_create_response_missing_id"
+        : createIdPersistFailure
+          ? `base_create_id_persist_failed:${createIdPersistFailure[1]}:${createIdPersistFailure[2]}`.slice(0, 2000)
+          : recoveryStillNeeded
+            ? String(listing.base_last_error).slice(0, 2000)
+            : message.slice(0, 2000);
       const { error: failureWriteError } = await supabase.from("shop_listings").update({
         base_last_error: safeErrorMarker,
         base_publication_status: "failed",
         base_publication_lease_until: null,
         pipeline_stage: "BASE_PUBLICATION",
         pipeline_status: "failed",
-        pipeline_reason: createIdPersistFailure || recoveryStillNeeded ? "base_create_id_recovery_required" : "base_publish_failed",
+        pipeline_reason: createResponseMissingId || createIdPersistFailure || recoveryStillNeeded ? "base_create_id_recovery_required" : "base_publish_failed",
         pipeline_error: message.slice(0, 2000),
         pipeline_updated_at: new Date().toISOString(),
       }).eq("id", listingId);
