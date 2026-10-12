@@ -189,9 +189,25 @@ export async function executeSupplierPurchaseOrder(
     };
   }
 
-  const { data: shopOrder } = po.shop_order_id
+  const { data: shopOrder, error: shopOrderLookupError } = po.shop_order_id
     ? await supabase.from("shop_orders").select("*").eq("id", po.shop_order_id).maybeSingle()
-    : { data: null };
+    : { data: null, error: null };
+  if (shopOrderLookupError || (po.shop_order_id && !shopOrder)) {
+    console.error("[TRACER CUSTOMER ORDER LOOKUP FAILED]", {
+      purchaseOrderId,
+      shopOrderId: po.shop_order_id,
+      error: shopOrderLookupError?.message ?? "referenced shop order not found",
+    });
+    return {
+      purchaseOrderId,
+      supplierName,
+      attempted: false,
+      succeeded: false,
+      supplierOrderId: null,
+      reason: "shop_order_lookup_failed_manual_reconciliation_required",
+      gate: null,
+    };
+  }
   if (shopOrder && ["cancellation_requested", "refund_pending", "cancelled", "refunded"].includes(String(shopOrder.order_status))) {
     return {
       purchaseOrderId,
