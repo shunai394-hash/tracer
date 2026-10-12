@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyShopifyWebhookHmac } from "@/lib/shopify/admin";
+import { getOrderSkuLookup, resolveShopifyOrderSkus } from "@/lib/shopify/order-sku-mapping";
 
 export const runtime = "nodejs";
 
@@ -28,13 +29,37 @@ export async function POST(request: Request) {
     const skus = items.map((item) => String(item.sku ?? "")).filter(Boolean);
     if (!items.length || !skus.length) return NextResponse.json({ ok: true, blocked: true, reason: "listing_sku_missing" });
 
-    const { data: listings, error: listingError } = await db.from("shop_listings")
-      .select("id,product_id,title,published,orderable,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id")
-      .in("id", skus);
-    if (listingError) throw new Error(listingError.message);
-    const byId = new Map((listings ?? []).map((row) => [String(row.id), row]));
-    if (skus.some((sku) => !byId.has(sku))) return NextResponse.json({ ok: true, blocked: true, reason: "listing_mapping_missing" });
-    if ((listings ?? []).some((row) => row.published !== true || row.orderable !== true)) {
+    // Shopify SKUs are generated as TRC-<supplier_variant_id>, falling back
+    // to supplier_product_id and finally listing.id. Do not treat the SKU itself
+    // as shop_listings.id: resolve its exact stable identity first.
+    const lookup = getOrderSkuLookup(skus);
+    const listingSelect = "id,product_id,title,published,orderable,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id";
+    const candidateRows: Array<Record<string, any>> = [];
+    if (lookup.supplierSources.length) {
+      const [byVariant, byProduct] = await Promise.all([
+        db.from("shop_listings").select(listingSelect).in("supplier_variant_id", lookup.supplierSources),
+        db.from("shop_listings").select(listingSelect).in("supplier_product_id", lookup.supplierSources),
+      ]);
+      if (byVariant.error) throw new Error(byVariant.error.message);
+      if (byProduct.error) throw new Error(byProduct.error.message);
+      candidateRows.push(...(byVariant.data ?? []), ...(byProduct.data ?? []));
+    }
+    if (lookup.legacyListingIds.length) {
+      const legacy = await db.from("shop_listings").select(listingSelect).in("id", lookup.legacyListingIds);
+      if (legacy.error) throw new Error(legacy.error.message);
+      candidateRows.push(...(legacy.data ?? []));
+    }
+    // Deduplicate rows returned by multiple identity queries.
+    const listings = [...new Map(candidateRows.map((row) => [String(row.id), row])).values()];
+    const resolution = resolveShopifyOrderSkus(skus, listings);
+    if (!resolution.ok) {
+      return NextResponse.json({ ok: true, blocked: true, reason: resolution.reason, sku: resolution.sku });
+    }
+    const bySku = resolution.bySku;
+    if (skus.some((sku) => {
+      const listing = bySku.get(sku);
+      return !listing || listing.published !== true || listing.orderable !== true;
+    })) {
       return NextResponse.json({ ok: true, blocked: true, reason: "listing_not_orderable" });
     }
 
@@ -45,7 +70,7 @@ export async function POST(request: Request) {
     const billing = (order.billing_address ?? {}) as Record<string, unknown>;
     const currency = String(order.currency ?? order.presentment_currency ?? "JPY");
     const inserted = await db.from("shop_orders").insert({
-      listing_id: byId.get(skus[0])?.id ?? null,
+      listing_id: bySku.get(skus[0])?.id ?? null,
       status: "placed",
       payment_method: "shopify",
       payment_status: paid ? "paid" : "pending",
@@ -73,7 +98,7 @@ export async function POST(request: Request) {
     if (inserted.error) throw new Error(inserted.error.message);
 
     for (const item of items) {
-      const listing = byId.get(String(item.sku ?? ""));
+      const listing = bySku.get(String(item.sku ?? ""));
       if (!listing) throw new Error("listing mapping missing during item insert");
       const row = await db.from("shop_order_items").insert({
         order_id: inserted.data.id,
