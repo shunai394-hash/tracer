@@ -26,7 +26,7 @@ function normalizedTitle(value: unknown): string {
   return String(value ?? "")
     .normalize("NFKC")
     .toLocaleLowerCase("ja-JP")
-    .replace(/[^\\p{L}\\p{N}]/gu, "");
+    .replace(/[^\p{L}\p{N}]/gu, "");
 }
 
 function titleTokens(value: unknown): Set<string> {
