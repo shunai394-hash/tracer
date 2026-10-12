@@ -78,10 +78,11 @@ const run = (dependencies) => recoverSupplierPaymentState({
 }
 // 9. Unknown payment never calls supplier-order creation (dependencies expose lookup only).
 {
-  const { deps, calls } = makeDeps({ lookupOrderStatus: async () => ({ status: "unknown", paymentConfirmed: null }) });
+  let lookups = 0;
+  const { deps, calls } = makeDeps({ lookupOrderStatus: async () => { lookups += 1; return { status: "unknown", paymentConfirmed: null }; } });
   const result = await run(deps);
   assert.equal(result.status, "supplier_payment_pending");
-  assert.equal(calls.filter((c) => c[0] === "lookup").length, 1);
+  assert.equal(lookups, 1);
   assert.equal(calls.some((c) => String(c[0]).toLowerCase().includes("create")), false);
   assert.equal(calls.filter((c) => c[0] === "attempt").length, 0);
 }
