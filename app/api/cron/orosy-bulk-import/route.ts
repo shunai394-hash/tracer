@@ -62,29 +62,38 @@ export async function GET(request: Request) {
 
   const supabase = createSupabaseAdminClient();
   const started = Date.now();
-  const target = 240;
+  const target = 1200;
   const candidates = new Map<string, Awaited<ReturnType<typeof getOrosyProductDetail>>>();
 
+  // Search multiple pages per category instead of repeatedly sampling only page 1.
+  // This increases discovery coverage; it does not mean 1,200 items are imported in
+  // one invocation (the write batch remains capped and the endpoint is time-bounded).
   for (const query of QUERIES) {
     if (Date.now() - started > 180_000 || candidates.size >= target) break;
-    try {
-      const results = await searchOrosyProducts(query);
-      for (const item of results) {
-        if (candidates.size >= target) break;
-        if (!japaneseTitle(item.title) || !item.orderable || !item.imageUrl || !item.imageUrl.startsWith("https://")) continue;
-        if (candidates.has(item.id)) continue;
-        try {
-          const detail = await getOrosyProductDetail(item.id);
-          if (!detail || !japaneseTitle(detail.title) || !detail.orderable || !detail.imageUrl || !detail.imageUrl.startsWith("https://")) continue;
-          const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId);
-          if (!variation) continue;
-          candidates.set(`${detail.id}:${variation.variationId}`, detail);
-        } catch {
-          // One bad product must not abort the batch.
+    for (let page = 1; page <= 12; page++) {
+      if (Date.now() - started > 180_000 || candidates.size >= target) break;
+      try {
+        const results = await searchOrosyProducts(query, { page, perPage: 100 });
+        if (results.length === 0) break;
+        for (const item of results) {
+          if (candidates.size >= target) break;
+          if (!japaneseTitle(item.title) || !item.orderable || !item.imageUrl || !item.imageUrl.startsWith("https://")) continue;
+          if ([...candidates.values()].some(existing => existing?.id === item.id)) continue;
+          try {
+            const detail = await getOrosyProductDetail(item.id);
+            if (!detail || !japaneseTitle(detail.title) || !detail.orderable || !detail.imageUrl || !detail.imageUrl.startsWith("https://")) continue;
+            const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId);
+            if (!variation) continue;
+            candidates.set(`${detail.id}:${variation.variationId}`, detail);
+          } catch {
+            // One bad product must not abort the batch.
+          }
         }
+        if (results.length < 100) break;
+      } catch {
+        // Continue with the next page/category.
+        break;
       }
-    } catch {
-      // Continue with the next category.
     }
   }
 
