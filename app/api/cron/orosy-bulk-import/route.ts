@@ -114,17 +114,14 @@ export async function GET(request: Request) {
     } catch {
       // Import as blocked evidence; a quote failure must not abort other products.
     }
-    const shippingVerified = Boolean(
-      shippingQuote &&
-      !shippingQuote.unresolved &&
-      typeof shippingQuote.amount === "number" &&
-      Number.isFinite(shippingQuote.amount) &&
-      shippingQuote.amount >= 0 &&
-      shippingQuote.currency?.trim().toUpperCase() === "JPY"
-    );
-    const shippingCost = shippingVerified ? shippingQuote!.amount : null;
-    const blockReason = shippingVerified
-      ? "orosy_auto_ordering_not_supported"
+    // The current quote endpoint is keyed by product ID, not the selected
+    // variation ID. A product-level quote is not sufficient evidence for this
+    // exact variant, so keep landed shipping cost unverified until the API
+    // contract can quote the selected variation explicitly.
+    const shippingVerified = false;
+    const shippingCost: number | null = null;
+    const blockReason = shippingQuote && !shippingQuote.unresolved
+      ? "orosy_variant_shipping_unverified"
       : "orosy_shipping_quote_unverified";
     const supplierPayload = {
       supplier: "orosy",
@@ -148,10 +145,10 @@ export async function GET(request: Request) {
       price_confirmed: true,
       price_checked_at: now,
       inventory_confirmed: true,
-      verification_status: shippingVerified ? "verified" : "retryable",
+      verification_status: "retryable",
       shipping_cost: shippingCost,
-      shipping_status: shippingVerified ? "verified" : "unknown",
-      shipping_checked_at: shippingVerified ? now : null,
+      shipping_status: "unknown",
+      shipping_checked_at: null,
       inventory_checked_at: now,
       last_verified_at: now,
       fetched_at: now,
