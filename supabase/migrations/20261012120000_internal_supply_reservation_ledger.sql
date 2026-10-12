@@ -4,7 +4,7 @@ create table if not exists public.internal_supply_inventory_reservations (
   purchase_order_id uuid primary key references public.purchase_orders(id) on delete restrict,
   variant_id uuid not null references public.internal_supply_variants(id) on delete restrict,
   quantity integer not null check (quantity > 0),
-  status text not null default 'reserved' check (status in ('reserved', 'released')),
+  status text not null default 'reserved' check (status in ('reserved', 'committed', 'released')),
   release_reason text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -55,6 +55,11 @@ begin
 
     if v_existing.status = 'released' then
       return query select p_variant_id, v_remaining, 'released'::text;
+      return;
+    end if;
+
+    if v_existing.status = 'committed' then
+      return query select p_variant_id, v_remaining, 'committed'::text;
       return;
     end if;
 
@@ -118,6 +123,13 @@ begin
   if v_reservation_status <> 'reserved' then
     raise exception 'internal_fulfillment_requires_active_reservation';
   end if;
+
+  -- Commit the reservation in the same transaction as the order insert. If
+  -- the insert fails, PostgreSQL rolls this state change back with it.
+  update public.internal_supply_inventory_reservations
+     set status = 'committed', updated_at = now()
+   where purchase_order_id = new.purchase_order_id
+     and status = 'reserved';
 
   return new;
 end;
