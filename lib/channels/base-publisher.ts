@@ -339,8 +339,21 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       }
     }
 
+    let baseItemId = listing.base_item_id ? String(listing.base_item_id) : null;
+    const recoveryMarker = String(listing.base_last_error ?? "").match(/^base_create_id_persist_failed:([^:]+)(?::|$)/);
+    if (!baseItemId && recoveryMarker?.[1]) baseItemId = recoveryMarker[1];
+
     try {
-      let baseItemId = listing.base_item_id ? String(listing.base_item_id) : null;
+      if (!listing.base_item_id && recoveryMarker?.[1] && baseItemId) {
+        // Recover the exact ID returned by BASE before any retry can create another item.
+        const { error: recoveryError } = await supabase.from("shop_listings").update({
+          base_item_id: baseItemId,
+          base_publication_status: "creating",
+          base_publication_lease_until: leaseUntil,
+          base_last_error: null,
+        }).eq("id", listingId);
+        if (recoveryError) throw new Error(`base_create_id_recovery_failed:${recoveryError.message}`);
+      }
       if (baseItemId) {
         await editBaseItem({ itemId: baseItemId, title: catalogCopy.title, detail: catalogCopy.detail, price, stock: availableInventory, visible: true });
       } else {
@@ -348,7 +361,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         baseItemId = String(created.item_id ?? created.item?.item_id ?? "");
         if (!baseItemId) throw new Error("BASE create response missing item_id");
         const { error: persistIdError } = await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_publication_status: "creating", base_publication_lease_until: leaseUntil }).eq("id", listingId);
-        if (persistIdError) throw new Error(persistIdError.message);
+        if (persistIdError) throw new Error(`base_create_id_persist_failed:${baseItemId}:${persistIdError.message}`);
       }
       if (listing.image_url) await addBaseItemImage({ itemId: baseItemId, imageNo: 1, imageUrl: listing.image_url });
       const { error: finalizeError } = await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_published_at: new Date().toISOString(), base_publication_status: "published", base_publication_lease_until: null, base_last_error: null, pipeline_stage: "BASE_PUBLISHED", pipeline_status: "published", pipeline_reason: "sales_test_gate_passed", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
@@ -356,8 +369,27 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       results.push({ listingId, ok: true, baseItemId });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await supabase.from("shop_listings").update({ base_last_error: message, pipeline_stage: "BASE_PUBLICATION", pipeline_status: "failed", pipeline_reason: "base_publish_failed", pipeline_error: message, pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
-      results.push({ listingId, ok: false, error: message });
+      const createIdPersistFailure = message.match(/^base_create_id_persist_failed:([^:]+):([\\s\\S]*)$/);
+      const recoveryStillNeeded = !listing.base_item_id && recoveryMarker?.[1] && message.startsWith("base_create_id_recovery_failed:");
+      const safeErrorMarker = createIdPersistFailure
+        ? `base_create_id_persist_failed:${createIdPersistFailure[1]}:${createIdPersistFailure[2]}`.slice(0, 2000)
+        : recoveryStillNeeded
+          ? String(listing.base_last_error).slice(0, 2000)
+          : message.slice(0, 2000);
+      const { error: failureWriteError } = await supabase.from("shop_listings").update({
+        base_last_error: safeErrorMarker,
+        base_publication_status: "failed",
+        base_publication_lease_until: null,
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "failed",
+        pipeline_reason: createIdPersistFailure || recoveryStillNeeded ? "base_create_id_recovery_required" : "base_publish_failed",
+        pipeline_error: message.slice(0, 2000),
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      const reportedError = failureWriteError
+        ? `${message};failure_marker_write_failed:${failureWriteError.message}`
+        : message;
+      results.push({ listingId, ok: false, error: reportedError });
     }
   }
   return {
