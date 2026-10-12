@@ -186,11 +186,9 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
           row.pipeline_status === "blocked";
         const reasons = blockReasons(row);
         if (reasons.length > 0) {
-          // Any Shopify-linked listing that fails a sale gate must be reconciled,
-          // even if its internal published/stage/status fields disagree.
-          if (row.shopify_product_id) {
-            return !(internallyBlocked && status === "blocked");
-          }
+          // Re-verify every Shopify-linked blocked row: internal "blocked" alone
+          // cannot prove the external publication was removed successfully.
+          if (row.shopify_product_id) return true;
           return !internallyBlocked;
         }
 
