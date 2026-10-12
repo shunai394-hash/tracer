@@ -46,7 +46,7 @@ function textTokens(value: unknown): string[] {
   const normalized = normalizedTitle(value);
   if (!normalized) return [];
   const text = String(value ?? "").normalize("NFKC").toLocaleLowerCase("ja-JP");
-  const tokens = text.match(/[\p{L}\p{N}]{2,}/gu) ?? [];
+  const tokens: string[] = [...(text.match(/[\p{L}\p{N}]{2,}/gu) ?? [])];
   // Japanese titles often contain no spaces. Add adjacent CJK bigrams so partial
   // overlaps remain measurable without treating a whole Japanese sentence as one token.
   const cjkRuns = text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+/gu) ?? [];
