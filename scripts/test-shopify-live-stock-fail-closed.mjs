@@ -14,6 +14,9 @@ assert.equal(hasVerifiedPositiveShopifyStock("SKU-123", 3), false, "non-Shopify 
 
 const sync = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
 assert.match(sync, /SUPPLIER_INVENTORY_MAX_AGE_MS = 30 \* 60 \* 1000/, "supplier inventory evidence must expire after 30 minutes");
+assert.match(sync, /SUPPLIER_PRICE_MAX_AGE_MS = 30 \* 60 \* 1000/, "supplier price evidence must expire after 30 minutes");
+assert.match(sync, /price_checked_at/, "supplier price observation timestamp must be loaded");
+assert.match(sync, /supplier_price_checked_at, SUPPLIER_PRICE_MAX_AGE_MS/, "stale or missing supplier price evidence must block sync");
 assert.match(sync, /SUPPLIER_SHIPPING_MAX_AGE_MS = 24 \* 60 \* 60 \* 1000/, "supplier shipping evidence must expire after 24 hours");
 assert.match(sync, /row\.supplier_verified_variant_id !== row\.supplier_variant_id/, "supplier variant identity must match exactly");
 assert.match(sync, /supplier_cost_unconfirmed_or_mismatch/, "unconfirmed or mismatched supplier cost must block sync");
