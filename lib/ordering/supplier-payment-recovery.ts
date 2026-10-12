@@ -18,6 +18,7 @@ export type SupplierPaymentRecoveryDependencies = {
   now?: () => string;
 };
 
+/** Existing supplier orders are looked up only; this recovery path never creates or resends supplier orders. */
 export async function recoverSupplierPaymentState(args: {
   purchaseOrderId: string;
   supplierOrderId: string;
