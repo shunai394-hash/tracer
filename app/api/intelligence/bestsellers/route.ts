@@ -17,9 +17,24 @@ export async function POST(request: Request) {
 
   try {
     const startedAt = Date.now();
+    const url = new URL(request.url);
+    const parseCursor = (key: string, fallback: number) => {
+      const raw = url.searchParams.get(key);
+      if (raw === null || raw.trim() === "") return fallback;
+      const value = Number(raw);
+      if (!Number.isSafeInteger(value) || value < 0) throw new Error(`invalid_${key}`);
+      return value;
+    };
+    // A bounded, resumable intake page. Run six 200-item pages to process a
+    // 1,200-item target without turning one serverless invocation into a
+    // single oversized request. Publication gates remain unchanged.
+    const startIndex = parseCursor("startIndex", 0);
+    const sourceIndex = parseCursor("sourceIndex", 0);
+    const requestedBatchSize = parseCursor("batchSize", BESTSELLER_CANDIDATE_BATCH_SIZE);
+    const batchSize = Math.min(BESTSELLER_CANDIDATE_BATCH_SIZE, Math.max(1, requestedBatchSize));
 
-    // 1. Persist demand candidates.
-    const bestsellers = await persistMarketplaceBestsellers();
+    // 1. Persist one bounded page of demand candidates.
+    const bestsellers = await persistMarketplaceBestsellers({ startIndex, batchSize, sourceIndex });
     const candidateIds = bestsellers.supplierCandidateIds
       .slice(0, BESTSELLER_CANDIDATE_BATCH_SIZE)
       .filter(Boolean);
@@ -52,6 +67,19 @@ export async function POST(request: Request) {
       ok: true,
       elapsedMs: Date.now() - startedAt,
       mode: "canonical_demand_opportunity_sales_test",
+      intake: {
+        requestedTarget: 1200,
+        pageSize: batchSize,
+        startIndex: bestsellers.startIndex,
+        sourceIndex: bestsellers.sourceIndex,
+        nextStartIndex: bestsellers.nextIndex,
+        nextSourceIndex: bestsellers.sourceIndex,
+        hasMore: bestsellers.hasMore,
+        suggestedNextUrl: bestsellers.hasMore
+          ? `/api/intelligence/bestsellers?startIndex=${bestsellers.nextIndex}&sourceIndex=${bestsellers.sourceIndex}&batchSize=${batchSize}`
+          : null,
+        note: "Intake persistence is separate from public sale; only listings that pass the existing sales and fulfillment gates can be published.",
+      },
       bestsellers,
       suppliers,
       opportunity,
