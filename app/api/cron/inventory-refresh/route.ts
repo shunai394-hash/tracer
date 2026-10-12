@@ -222,8 +222,11 @@ export async function GET(request: Request) {
           typeof shippingResult.amount === "number" &&
           Number.isFinite(shippingResult.amount) &&
           shippingResult.amount >= 0 &&
-          Boolean(priceResult.currency) &&
-          priceResult.currency?.toUpperCase() === shippingResult.currency?.toUpperCase() &&
+          // shop_listings selling/source/shipping costs are stored as JPY.
+          // Never persist a supplier-native USD/EUR amount into those JPY fields.
+          priceResult.currency?.trim().toUpperCase() === "JPY" &&
+          shippingResult.currency?.trim().toUpperCase() === "JPY" &&
+          priceResult.currency.trim().toUpperCase() === shippingResult.currency.trim().toUpperCase() &&
           shippingResult.available === true;
         if (!evidenceMatches) {
           const reason = "fresh_supplier_variant_price_or_japan_shipping_unverified";
