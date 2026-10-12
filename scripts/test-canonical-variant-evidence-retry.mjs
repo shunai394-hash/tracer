@@ -6,12 +6,15 @@ const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts",
 const persistence = await readFile(new URL("../lib/market/persist-bestsellers.ts", import.meta.url), "utf8");
 const cursorModule = await readFile(new URL("../lib/market/market-cursor.ts", import.meta.url), "utf8");
 const marketRoute = await readFile(new URL("../app/api/cron/market-sourcing/route.ts", import.meta.url), "utf8");
+const cronLockMigration = await readFile(new URL("../supabase/migrations/20260929131500_cron_run_singleton_lock.sql", import.meta.url), "utf8");
+const { nextMarketCursor } = await import("../lib/market/market-cursor-policy.mjs");
 
 const guard = pipeline.indexOf("const emptyCollection = observation.itemCount === 0");
 const finalReturn = pipeline.indexOf("return { ...observation, cursor, nextCursor: next };", guard);
 
 assert.ok(!pipeline.includes("writeMarketCursor"), "patrol-ai must not write the shared cursor");
-assert.ok(cursorModule.includes("export function nextMarketCursor"), "cursor transition must be centralized as a pure policy");
+assert.ok(cursorModule.includes("nextMarketCursor"), "cursor transition must be centralized as a pure policy");
+assert.ok(cronLockMigration.includes("cron_runs_one_running_job_uq"), "database unique index must enforce a single active market-sourcing worker");
 assert.ok(marketRoute.includes("nextMarketCursor(observation)"), "market-sourcing must own cursor advancement");
 const claim = marketRoute.indexOf('.insert({\n        job_name: "market-sourcing",\n        status: "running"');
 const duplicateGuard = marketRoute.indexOf('cron_already_running');
@@ -41,15 +44,29 @@ for (const key of ["variationAsinsFound", "childDetailAttempted", "childDetailFe
 for (const key of ["childVariationAsinsFound", "childDetailAttempted", "childDetailFetched", "childBarcodeFound"]) {
   assert.ok(persistence.includes(`${key}:`), `aggregate telemetry must expose ${key}`);
 }
-// Transition regression cases: mid-source resume, next-source rotation, and stable concurrent read ownership.
-const nextCursorSource = cursorModule.slice(cursorModule.indexOf("export function nextMarketCursor"));
-assert.match(nextCursorSource, /sourceIndex: Math\.max\(0, observation\.sourceIndex\) % SOURCE_COUNT/);
-assert.match(nextCursorSource, /startIndex: Math\.max\(0, observation\.nextIndex\)/);
-assert.match(nextCursorSource, /sourceIndex: \(Math\.max\(0, observation\.sourceIndex\) \+ 1\) % SOURCE_COUNT/);
-assert.match(nextCursorSource, /startIndex: 0/);
-// Simulate two overlapping patrol readers: neither is permitted to persist a checkpoint;
-// only the claimed market-sourcing worker can commit its computed next cursor.
-const patrolCursorWrites = (pipeline.match(/\.from\(["']cron_runs["']\)\.insert/g) ?? []).length;
+// Executable cursor-policy regressions: same-source page resume and next-source rotation.
+assert.deepEqual(
+  nextMarketCursor({ sourceIndex: 2, nextIndex: 30, hasMore: true }),
+  { sourceIndex: 2, startIndex: 30 },
+  "mid-source progress must resume at the persisted next page instead of restarting at zero",
+);
+assert.deepEqual(
+  nextMarketCursor({ sourceIndex: 2, nextIndex: 30, hasMore: false }),
+  { sourceIndex: 3, startIndex: 0 },
+  "an exhausted source must advance exactly once and reset its page offset",
+);
+assert.deepEqual(
+  nextMarketCursor({ sourceIndex: 7, nextIndex: 200, hasMore: false }),
+  { sourceIndex: 0, startIndex: 0 },
+  "source rotation must wrap safely at the final source",
+);
+// The database claim is the concurrency boundary: a unique partial index permits
+// one running row per job; the losing request returns 409 before reading cursor state.
+const claim = marketRoute.indexOf('.insert({\\n        job_name: "market-sourcing",\\n        status: "running"');
+const duplicateGuard = marketRoute.indexOf('cron_already_running');
+const cursorRead = marketRoute.indexOf("readMarketCursor(supabase)");
+assert.ok(claim >= 0 && duplicateGuard > claim && cursorRead > duplicateGuard, "concurrent loser must exit before cursor read or advancement");
+assert.ok(cronLockMigration.includes("where status = 'running'"), "concurrency guard must be a partial unique index on active runs");
+const patrolCursorWrites = (pipeline.match(/\\.from\\(["']cron_runs["']\\)\\.insert/g) ?? []).length;
 assert.equal(patrolCursorWrites, 0, "patrol pipeline must not insert competing cursor checkpoints");
-assert.ok(marketRoute.indexOf("readMarketCursor(supabase)") > marketRoute.indexOf("cron_already_running"), "losing concurrent worker must exit before it reads or advances the cursor");
-console.log("PASS: single cursor writer, concurrent-run guard, page resume, source rotation, child-page fallback, and evidence telemetry");
+console.log("PASS: concurrent cursor ownership, mid-page resume, source rotation, child-page fallback, and evidence telemetry");
