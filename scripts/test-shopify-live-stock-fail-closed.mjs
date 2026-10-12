@@ -65,3 +65,7 @@ assert.match(refresh, /selection_reasons: invalidatedReasons/, "changed supplier
 assert.match(refresh, /reason !== SALES_TEST_GATE_PASSED/, "changed supplier costs must remove the prior Sales Test Gate pass marker");
 assert.match(refresh, /pipeline_stage: "BLOCKED"/, "changed supplier economics must block the listing pending retest");
 assert.match(refresh, /visible: false/, "changed supplier economics must hide the linked BASE item");
+
+assert.match(refresh, /pipeline_reason: reason/, "unverified supplier evidence must set a blocking pipeline reason");
+assert.match(refresh, /contribution_profit: null/, "unverified supplier evidence must clear stale contribution profit");
+assert.match(refresh, /selection_reasons\.map\(\(item: unknown\) => String\(item\)\)\.filter\(\(item: string\) => item !== SALES_TEST_GATE_PASSED\)/, "unverified supplier evidence must revoke prior sales-test approval");
