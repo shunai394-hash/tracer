@@ -351,10 +351,12 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
         const status = error && typeof error === "object" && "status" in error
           ? Number((error as { status?: unknown }).status)
           : Number.NaN;
-        // Quota exhaustion and transient provider outages are not query-specific.
-        // Stop making further Gemini calls for this patrol; deterministic keyword
-        // classification and the next scheduled run can still proceed.
-        if (status === 429 || status === 503 || /RESOURCE_EXHAUSTED|UNAVAILABLE|quota exceeded|high demand|GEMINI_TIMEOUT|Gemini request timed out/i.test(detail)) {
+        const errorCode = error && typeof error === "object" && "code" in error
+          ? String((error as { code?: unknown }).code ?? "")
+          : "";
+        // Quota exhaustion, transient provider outages, and explicit timeout
+        // codes are not query-specific; stop further Gemini calls this patrol.
+        if (status === 429 || status === 503 || errorCode === "GEMINI_TIMEOUT" || /RESOURCE_EXHAUSTED|UNAVAILABLE|quota exceeded|high demand|GEMINI_TIMEOUT|Gemini request timed out/i.test(detail)) {
           geminiDisabledForRun = true;
         }
         console.error("[demand-gemini-classify]", { query, error, geminiDisabledForRun });
