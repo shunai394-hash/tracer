@@ -426,13 +426,19 @@ export async function GET(request: Request) {
         }
 
         const orderable = inventory > 0;
+        // Keep BASE-backed listings locally non-orderable until the remote
+        // inventory/visibility update succeeds. This closes the window where
+        // checkout could accept a listing before BASE synchronization is known.
+        const deferBaseEligibility = Boolean(
+          listing.base_item_id && listing.selling_price !== null && isBaseConfigured(),
+        );
         const { error: listingError } = await supabase
           .from("shop_listings")
           .update({
             inventory,
             source_cost: priceResult.amount,
             shipping_cost: shippingResult.amount,
-            orderable,
+            orderable: orderable && !deferBaseEligibility,
             updated_at: now,
           })
           .eq("id", listingId);
@@ -444,7 +450,7 @@ export async function GET(request: Request) {
             .update({
               inventory,
               inventory_confirmed: true,
-              orderable,
+              orderable: orderable && !deferBaseEligibility,
               fetched_at: now,
             })
             .eq("id", String(listing.supplier_listing_id));
@@ -463,11 +469,19 @@ export async function GET(request: Request) {
               visible: orderable,
             });
             baseUpdated++;
-            const { error: clearBaseError } = await supabase
+            // BASE is now confirmed in sync; only now restore local eligibility.
+            const { error: restoreListingError } = await supabase
               .from("shop_listings")
-              .update({ base_last_error: null })
+              .update({ orderable: true, base_last_error: null })
               .eq("id", listingId);
-            if (clearBaseError) throw new Error(clearBaseError.message);
+            if (restoreListingError) throw new Error(restoreListingError.message);
+            if (listing.supplier_listing_id) {
+              const { error: restoreSupplierError } = await supabase
+                .from("supplier_listings")
+                .update({ orderable: true, fetched_at: now })
+                .eq("id", String(listing.supplier_listing_id));
+              if (restoreSupplierError) throw new Error(restoreSupplierError.message);
+            }
           } catch (error) {
             baseSyncError = error instanceof Error ? error.message : String(error);
             baseErrors++;
