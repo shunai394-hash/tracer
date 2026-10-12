@@ -374,3 +374,59 @@ export async function getBaseOrderDetail(uniqueKey: string): Promise<BaseOrderDe
   if (!data.order) throw new Error("BASE order detail missing order");
   return data.order;
 }
+
+
+/**
+ * Fetches a complete, read-only product snapshot for an authenticated backup export.
+ * This intentionally excludes orders and customer data. Never log returned item payloads.
+ */
+export async function fetchBaseItemsSnapshot(options?: {
+  itemPageLimit?: number;
+  itemMaxPages?: number;
+}): Promise<{ items: Record<string, unknown>[]; pages: number; complete: boolean }> {
+  const token = await getBaseAccessToken();
+  const pageLimit = Math.min(100, Math.max(1, Math.floor(options?.itemPageLimit ?? 100)));
+  const maxPages = Math.min(10, Math.max(1, Math.floor(options?.itemMaxPages ?? 10)));
+  const items: Record<string, unknown>[] = [];
+  let pages = 0;
+  let offset = 0;
+  let complete = false;
+
+  for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+    const response = await fetch(`${BASE_API_URL}/items?limit=${pageLimit}&offset=${offset}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
+    });
+    const text = await response.text();
+    let payload: Record<string, unknown> | null = null;
+    try { payload = JSON.parse(text) as Record<string, unknown>; } catch { payload = null; }
+    if (!response.ok) {
+      throw new Error(`BASE_ITEMS_SNAPSHOT_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
+    }
+    if (!payload || !Array.isArray(payload.items)) {
+      throw new Error("BASE_ITEMS_SNAPSHOT_RESPONSE_INVALID");
+    }
+    const rows = payload.items.filter(
+      (item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item),
+    );
+    if (rows.length !== payload.items.length) {
+      throw new Error("BASE_ITEMS_SNAPSHOT_ROW_INVALID");
+    }
+    items.push(...rows);
+    pages += 1;
+    if (rows.length < pageLimit) {
+      complete = true;
+      break;
+    }
+    offset += rows.length;
+  }
+
+  if (!complete) throw new Error("BASE_ITEMS_SNAPSHOT_INCOMPLETE");
+  const ids = items.map((item) => String(item.item_id ?? "")).filter(Boolean);
+  if (ids.length !== items.length || new Set(ids).size !== ids.length) {
+    throw new Error("BASE_ITEMS_SNAPSHOT_ID_MISSING_OR_DUPLICATE");
+  }
+  return { items, pages, complete };
+}
