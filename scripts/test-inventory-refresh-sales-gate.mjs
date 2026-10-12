@@ -76,6 +76,8 @@ assert.match(stripeWebhook, /if \(paymentUpdateError\) \{\s*throw new Error\(pay
 assert.match(stripeWebhook, /createDropshipPurchaseOrdersForShopOrder\(shopOrderId\)/, "fulfillment creation must follow the confirmed payment path");
 assert.match(stripeWebhook, /stripe_event_id[\s\S]{0,260}processed: false/, "webhook events must be durably claimed before processing");
 assert.match(stripeWebhook, /processed: !error/, "failed webhook processing must remain retryable rather than marked processed");
+assert.match(stripeWebhook, /if \(updateError\) \{[\s\S]{0,180}stripe_webhook_event_status_update_failed/, "webhook must not return success if durable event-status persistence fails");
+assert.match(stripeWebhook, /if \(!data\?\.stripe_event_id\)[\s\S]{0,100}stripe_webhook_event_status_row_missing/, "webhook must verify that the claimed event row was actually updated");
 const dropship = readFileSync(new URL("../lib/ordering/dropship.ts", import.meta.url), "utf8");
 assert.match(dropship, /if \(String\(order\.payment_status\) !== "paid"\)[\s\S]{0,220}shop_order_payment_not_confirmed/, "supplier PO creation must reject orders whose payment is not confirmed");
 assert.match(dropship, /idempotency_key: idempotencyKey/, "supplier PO creation must use a per-line idempotency key");
