@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     const supabase = createSupabaseAdminClient();
     const { data: listings, error } = await supabase
       .from("shop_listings")
-      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason")
+      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, source_cost, shipping_cost, contribution_profit, contribution_margin, selection_reasons, pipeline_stage, pipeline_status, pipeline_reason")
       .not("supplier_name", "is", null)
       .not("supplier_variant_id", "is", null)
       .or("base_item_id.not.is.null,and(pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published,pipeline_reason.eq.sales_test_gate_passed)")
@@ -285,6 +285,71 @@ export async function GET(request: Request) {
           })
           .eq("id", String(listing.supplier_listing_id ?? ""));
         if (supplierEvidenceError) throw new Error(supplierEvidenceError.message);
+
+        // Fresh supplier costs invalidate prior profitability decisions when the
+        // landed-cost inputs change. Do not silently reuse a previously passed
+        // Sales Test Gate or re-enable the BASE item with stale margins.
+        const priorSourceCost = listing.source_cost === null || listing.source_cost === undefined ? null : Number(listing.source_cost);
+        const priorShippingCost = listing.shipping_cost === null || listing.shipping_cost === undefined ? null : Number(listing.shipping_cost);
+        const economicsChanged =
+          priorSourceCost === null ||
+          !Number.isFinite(priorSourceCost) ||
+          Math.abs(priorSourceCost - priceResult.amount) >= 0.01 ||
+          priorShippingCost === null ||
+          !Number.isFinite(priorShippingCost) ||
+          Math.abs(priorShippingCost - shippingResult.amount) >= 0.01;
+
+        if (economicsChanged) {
+          const previousReasons = Array.isArray(listing.selection_reasons)
+            ? listing.selection_reasons.map((reason: unknown) => String(reason))
+            : [];
+          const invalidatedReasons = previousReasons.filter((reason: string) => reason !== SALES_TEST_GATE_PASSED);
+          const reason = "supplier_cost_changed_profitability_retest_required";
+          const { error: invalidateError } = await supabase
+            .from("shop_listings")
+            .update({
+              source_cost: priceResult.amount,
+              shipping_cost: shippingResult.amount,
+              contribution_profit: null,
+              contribution_margin: null,
+              selection_reasons: invalidatedReasons,
+              published: false,
+              orderable: false,
+              pipeline_stage: "BLOCKED",
+              pipeline_status: "blocked",
+              pipeline_reason: reason,
+              pipeline_error: reason,
+              pipeline_updated_at: now,
+              updated_at: now,
+            })
+            .eq("id", listingId);
+          if (invalidateError) throw new Error(invalidateError.message);
+
+          let baseSyncError: string | null = null;
+          if (listing.base_item_id && listing.selling_price !== null && isBaseConfigured()) {
+            try {
+              await editBaseItem({
+                itemId: String(listing.base_item_id),
+                title: String(listing.title ?? ""),
+                detail: String(listing.description ?? listing.title ?? ""),
+                price: Number(listing.selling_price),
+                stock: 0,
+                visible: false,
+              });
+              baseUpdated++;
+            } catch (error) {
+              baseSyncError = error instanceof Error ? error.message : String(error);
+              baseErrors++;
+              const { error: baseErrorUpdate } = await supabase
+                .from("shop_listings")
+                .update({ base_last_error: baseSyncError })
+                .eq("id", listingId);
+              if (baseErrorUpdate) throw new Error(baseErrorUpdate.message);
+            }
+          }
+          results.push({ listingId, ok: false, blocked: true, reason, baseSyncError });
+          continue;
+        }
 
         const orderable = inventory > 0;
         const { error: listingError } = await supabase
