@@ -599,15 +599,29 @@ export async function executeSupplierPurchaseOrder(
       console.error("[TRACER ORDER CANCELLATION CHECK FAILED]", {
         purchaseOrderId,
         shopOrderId: po.shop_order_id,
+        supplierAttemptId: attemptId,
         error: latestShopOrderError.message,
       });
+      const checkFailureWrite = await persistOrderStateUpdate(
+        { table: "supplier_order_attempts", id: attemptId, purchaseOrderId, context: "cancellation_check_failed" },
+        () => supabase
+          .from("supplier_order_attempts")
+          .update({
+            state: "unknown",
+            response_code: "CANCELLATION_CHECK_FAILED",
+            response_message: latestShopOrderError.message,
+          })
+          .eq("id", attemptId),
+      );
       return {
         purchaseOrderId,
         supplierName,
         attempted: false,
         succeeded: false,
         supplierOrderId: null,
-        reason: "shop_order_cancellation_check_failed_manual_reconciliation_required",
+        reason: checkFailureWrite.ok
+          ? "shop_order_cancellation_check_failed_manual_reconciliation_required"
+          : "shop_order_cancellation_check_and_attempt_state_write_failed_manual_reconciliation_required",
         gate,
       };
     }
