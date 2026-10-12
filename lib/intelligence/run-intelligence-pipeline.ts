@@ -20,7 +20,7 @@ import {
 } from "@/lib/integration/newfind";
 import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { readMarketCursor, writeMarketCursor } from "@/lib/market/market-cursor";
+import { readMarketCursor } from "@/lib/market/market-cursor";
 import {
   GeminiConfigError,
   GeminiRequestError,
@@ -406,7 +406,10 @@ export async function runIntelligencePipeline(options: {
       startIndex: cursor.startIndex,
       batchSize: 10,
     });
-    const next = await writeMarketCursor(db, observation, "patrol-ai");
+    // Cursor writes belong exclusively to market-sourcing. patrol-ai may read
+    // the latest checkpoint but must never append a competing success record,
+    // which could overwrite a newer page/source checkpoint after a slow fetch.
+    const next = cursor;
     // A non-empty ranking batch is not enough to unblock canonical identity.
     // If no child-variant evidence was parsed (or all parsed evidence writes failed),
     // defer the pipeline so publication/procurement never treats source coverage as identity proof.

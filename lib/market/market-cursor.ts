@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { createSupabaseAdminClient } from "@/lib/supabase/admin";
+export { nextMarketCursor } from "./market-cursor-policy.mjs";
 
 type Db = ReturnType<typeof createSupabaseAdminClient>;
 
@@ -30,32 +31,4 @@ export async function readMarketCursor(db: Db): Promise<MarketCursor> {
   };
 }
 
-/** Persist the position after an observation so the next run resumes there. */
-export async function writeMarketCursor(
-  db: Db,
-  observation: { sourceIndex: number; nextIndex: number; hasMore: boolean; inserted: number; processedCount: number },
-  actor: string,
-): Promise<MarketCursor> {
-  const next: MarketCursor = observation.hasMore
-    ? { sourceIndex: observation.sourceIndex, startIndex: observation.nextIndex }
-    : { sourceIndex: (observation.sourceIndex + 1) % SOURCE_COUNT, startIndex: 0 };
-  const now = new Date().toISOString();
-  const { error } = await db.from("cron_runs").insert({
-    job_name: JOB,
-    status: "succeeded",
-    started_at: now,
-    finished_at: now,
-    processed: observation.inserted,
-    failed: 0,
-    metadata: {
-      phase: "market_observation",
-      actor,
-      sourceIndex: next.sourceIndex,
-      nextIndex: next.startIndex,
-      processedCount: observation.processedCount,
-      hasMore: observation.hasMore,
-    },
-  });
-  if (error) throw new Error(`market cursor write failed: ${error.message}`);
-  return next;
-}
+
