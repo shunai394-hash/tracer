@@ -36,6 +36,15 @@ test("demand match bounds", "rotates a bounded observation page and scopes large
   assert.doesNotMatch(source, /readAll\(\(from, to\) => supabase\.from\("demand_product_candidates"/);
 });
 
+test("Gemini demand classification failure", "provider failure is deferred instead of counted as a non-product result", async () => {
+  const source = await readFile(new URL("../lib/intelligence/match-demand-products.ts", import.meta.url), "utf8");
+  assert.match(source, /geminiCircuitBreaker\.recordFailure\(error\)/);
+  assert.match(source, /geminiCircuitBreaker\.canCall\(geminiCalls, MAX_GEMINI_CLASSIFICATIONS_PER_RUN\)/);
+  assert.match(source, /A provider failure is not evidence that this query is non-product/);
+  assert.match(source, /intentDeferred \+= 1;\s*continue;/);
+  assert.match(source, /intentDeferred \+= 1;\s*continue;/);
+});
+
 test("canonical marketplace variant evidence", "captures only explicit ProductGroup child variants and never copies parent barcodes", () => {
   const html = '<script type="application/ld+json">{"@context":"https://schema.org","@type":"ProductGroup","productGroupID":"PARENT-MODEL","gtin13":"4006381333931","hasVariant":[{"@type":"Product","name":"Bottle 500 ml","sku":"BOTTLE-500","url":"https://www.amazon.co.jp/dp/B0VARIANT1","gtin13":"4006381333931"},{"@type":"Product","name":"Bottle 1 L","sku":"BOTTLE-1000","url":"https://www.amazon.co.jp/dp/B0VARIANT2","gtin13":"4006381333932"}]}</script>';
   const variants = parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01");

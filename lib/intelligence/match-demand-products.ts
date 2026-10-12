@@ -1,6 +1,7 @@
 import "server-only";
 
 import { classifyDemandIntent } from "@/lib/intelligence/classify-demand-intent";
+import { createGeminiRunCircuitBreaker } from "@/lib/intelligence/gemini-circuit-breaker";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
@@ -294,7 +295,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   // A provider quota/outage response should open a run-local circuit breaker.
   // Otherwise this loop keeps spending calls on the same failing provider for
   // every remaining query in the batch, amplifying 429/503 storms.
-  let geminiDisabledForRun = false;
+  const geminiCircuitBreaker = createGeminiRunCircuitBreaker();
   for (const demand of demandRows) {
     processed += 1;
     const metadata = demand.metadata && typeof demand.metadata === "object" && !Array.isArray(demand.metadata)
@@ -341,23 +342,20 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
 
     let intent = detectProductIntent(query);
     if (!intent.isProduct && intent.reason === "no_product_signal" && isGeminiConfigured()) {
-      if (geminiDisabledForRun || geminiCalls >= MAX_GEMINI_CLASSIFICATIONS_PER_RUN) { intentDeferred += 1; continue; }
+      if (!geminiCircuitBreaker.canCall(geminiCalls, MAX_GEMINI_CLASSIFICATIONS_PER_RUN)) { intentDeferred += 1; continue; }
       geminiCalls += 1;
       try {
         const aiIntent = await classifyDemandIntent(query);
         if (aiIntent.is_product_demand) intent = { isProduct: true, category: aiIntent.category ?? null, reason: `gemini:${aiIntent.reason}` };
       } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        const status = error && typeof error === "object" && "status" in error
-          ? Number((error as { status?: unknown }).status)
-          : Number.NaN;
-        // Quota exhaustion and transient provider outages are not query-specific.
-        // Stop making further Gemini calls for this patrol; deterministic keyword
-        // classification and the next scheduled run can still proceed.
-        if (status === 429 || status === 503 || /RESOURCE_EXHAUSTED|UNAVAILABLE|quota exceeded|high demand|GEMINI_TIMEOUT|Gemini request timed out/i.test(detail)) {
-          geminiDisabledForRun = true;
-        }
-        console.error("[demand-gemini-classify]", { query, error, geminiDisabledForRun });
+        // Quota exhaustion, transient provider outages, and explicit timeout
+        // codes are not query-specific; stop further Gemini calls this patrol.
+        geminiCircuitBreaker.recordFailure(error);
+        console.error("[demand-gemini-classify]", { query, error, geminiDisabledForRun: geminiCircuitBreaker.isOpen() });
+        // A provider failure is not evidence that this query is non-product.
+        // Leave the observation unclassified for a later rotating patrol.
+        intentDeferred += 1;
+        continue;
       }
     }
     if (!intent.isProduct) { intentNonProduct += 1; continue; }
