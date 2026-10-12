@@ -34,7 +34,7 @@ export async function GET(request: Request) {
     // become orderable again. selection_reasons carries the durable marker.
     const { data: gatedListings, error: gatedError } = await supabase
       .from("shop_listings")
-      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason")
+      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, selection_reasons, pipeline_stage, pipeline_status, pipeline_reason")
       .not("supplier_name", "is", null)
       .not("supplier_variant_id", "is", null)
       .eq("published", true)
@@ -332,6 +332,58 @@ export async function GET(request: Request) {
             })
             .eq("id", listingId);
           if (invalidateError) throw new Error(invalidateError.message);
+
+          let baseSyncError: string | null = null;
+          if (listing.base_item_id && listing.selling_price !== null && isBaseConfigured()) {
+            try {
+              await editBaseItem({
+                itemId: String(listing.base_item_id),
+                title: String(listing.title ?? ""),
+                detail: String(listing.description ?? listing.title ?? ""),
+                price: Number(listing.selling_price),
+                stock: 0,
+                visible: false,
+              });
+              baseUpdated++;
+            } catch (error) {
+              baseSyncError = error instanceof Error ? error.message : String(error);
+              baseErrors++;
+              const { error: baseErrorUpdate } = await supabase
+                .from("shop_listings")
+                .update({ base_last_error: baseSyncError })
+                .eq("id", listingId);
+              if (baseErrorUpdate) throw new Error(baseErrorUpdate.message);
+            }
+          }
+          results.push({ listingId, ok: false, blocked: true, reason, baseSyncError });
+          continue;
+        }
+
+        const hasDurableSalesTestGate =
+          Array.isArray(listing.selection_reasons) &&
+          listing.selection_reasons.some((reason: unknown) => String(reason) === SALES_TEST_GATE_PASSED);
+
+        // A refreshed stock count cannot restore saleability after a cost change
+        // invalidated the profitability gate. Only the selection pipeline may
+        // re-establish this durable marker after re-running the Sales Test Gate.
+        if (!hasDurableSalesTestGate) {
+          const reason = "sales_test_gate_not_passed";
+          const { error: blockError } = await supabase
+            .from("shop_listings")
+            .update({
+              published: false,
+              orderable: false,
+              contribution_profit: null,
+              contribution_margin: null,
+              pipeline_stage: "BLOCKED",
+              pipeline_status: "blocked",
+              pipeline_reason: reason,
+              pipeline_error: reason,
+              pipeline_updated_at: now,
+              updated_at: now,
+            })
+            .eq("id", listingId);
+          if (blockError) throw new Error(blockError.message);
 
           let baseSyncError: string | null = null;
           if (listing.base_item_id && listing.selling_price !== null && isBaseConfigured()) {
