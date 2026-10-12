@@ -1,7 +1,13 @@
+-- The paid-order sync and orders webhook reconcile individual Shopify lines
+-- by Shopify's immutable line-item ID. Add the nullable column without rewriting
+-- legacy rows; legacy rows without IDs are handled fail-closed by reconciliation.
+alter table public.shop_order_items
+  add column if not exists shopify_line_item_id text;
+
 -- Enforce idempotency for Shopify line items during concurrent webhook delivery.
 -- Preflight duplicate rows before creating the unique index. If legacy duplicates
 -- exist, fail the migration with an actionable error rather than deleting data.
-do $$
+do $
 begin
   if exists (
     select 1
