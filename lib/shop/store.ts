@@ -266,10 +266,13 @@ export async function placeShopOrder(args: {
     .eq("orderable", true)
     .gt("inventory", 0)
     .eq("tracking_available", true)
-    .gt("selling_price", 0);
+    .gt("selling_price", 0)
+    .eq("currency", "JPY");
 
   if (error) throw new Error(error.message);
   if (!listings || listings.length !== new Set(listingIds).size) throw new Error("published Shopify listing not found");
+  if (listings.some((listing) => listing.currency !== "JPY")) throw new Error("shop_order_currency_must_be_jpy");
+
   const linkedSupplierIds = await getLinkedSupplierListingIds(listings.map((listing) => listing.supplier_listing_id));
   if (listings.some((listing) => !listing.supplier_listing_id || !linkedSupplierIds.has(String(listing.supplier_listing_id)))) {
     throw new Error("supplier_identity_unlinked");
