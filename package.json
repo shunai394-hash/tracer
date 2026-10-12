@@ -27,7 +27,7 @@
     "test:marketplace-canonical-evidence-policy": "node scripts/test-marketplace-canonical-evidence-policy.mjs",
     "test:orosy-search-auth": "node scripts/test-orosy-search-auth.mjs",
     "test:product-performance-report": "node scripts/test-product-performance-report.mjs",
-    "test:gemini-model-default": "node --experimental-strip-types --no-warnings scripts/test-gemini-model-default.mjs"
+    "test:gemini-model-default": "node --conditions=react-server --experimental-strip-types --no-warnings scripts/test-gemini-model-default.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
