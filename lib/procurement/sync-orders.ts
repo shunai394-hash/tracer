@@ -59,6 +59,17 @@ export async function syncSupplierOrders(): Promise<SupplierOrderSyncResult> {
       const tracking = await adapter.getTracking(supplierOrderId);
       const now = new Date().toISOString();
       const supplierStatus = String(status?.status ?? "").trim().toUpperCase();
+      let currentShopOrder: { order_status?: string | null } | null = null;
+      if (purchaseOrder.shop_order_id) {
+        const { data, error: shopOrderLookupError } = await supabase
+          .from("shop_orders")
+          .select("order_status")
+          .eq("id", purchaseOrder.shop_order_id)
+          .maybeSingle();
+        if (shopOrderLookupError) throw new Error(`customer_order_state_lookup_failed: ${shopOrderLookupError.message}`);
+        if (!data) throw new Error("customer_order_state_lookup_failed: referenced shop order not found");
+        currentShopOrder = data;
+      }
       const update: Record<string, unknown> = {
         supplier_status: status?.status ?? null,
         supplier_synced_at: now,
@@ -96,19 +107,14 @@ export async function syncSupplierOrders(): Promise<SupplierOrderSyncResult> {
       if (updateError) throw new Error(updateError.message);
 
       if (purchaseOrder.shop_order_id) {
-        const { data: currentShopOrder } = await supabase
-          .from("shop_orders")
-          .select("order_status")
-          .eq("id", purchaseOrder.shop_order_id)
-          .maybeSingle();
-
-        // Customer cancellation/refund state is authoritative. Supplier
+        // Customer cancellation/refund/delivery state is authoritative. Supplier
         // tracking must never resurrect a cancelled/refund-pending order.
         const customerTerminalState = [
           "cancellation_requested",
           "refund_pending",
           "refunded",
           "cancelled",
+          "delivered",
         ].includes(String(currentShopOrder?.order_status));
 
         const shopUpdate: Record<string, unknown> = {};
