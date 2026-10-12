@@ -70,7 +70,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     // If BASE may have created an item but returned no item_id, quarantine the
     // listing from automatic retries. An operator can explicitly target it after
     // reconciling BASE, but normal cron must not create a duplicate blindly.
-    query = query.not("base_last_error", "like", "base_create_response_missing_id%");
+    query = query.or("base_last_error.is.null,base_last_error.not.like.base_create_response_missing_id%");
     query = query.or([
       "and(published.eq.true,base_publication_status.is.null)",
       "and(published.eq.true,base_publication_status.neq.published)",
