@@ -89,6 +89,13 @@ jobs:
             baseItemsWithoutExactMappingCount: report.baseItemsWithoutExactMappingCount,
             baseItemsWithAmbiguousExactMappingCount: report.baseItemsWithAmbiguousExactMappingCount,
             baseItemsWithExactTitleCandidateCount: report.baseItemsWithExactTitleCandidateCount,
+            baseItemsWithScoredCandidateCount: report.baseItemsWithScoredCandidateCount,
+            baseItemsRequiringCandidateReviewCount: report.baseItemsRequiringCandidateReviewCount,
+            candidateDecisionCounts: {
+              multipleTopCandidatesReviewRequired: report.items.filter((item) => item.candidateDecision === "MULTIPLE_TOP_CANDIDATES_REVIEW_REQUIRED").length,
+              candidateReviewRequired: report.items.filter((item) => item.candidateDecision === "CANDIDATE_REVIEW_REQUIRED").length,
+              noCandidate: report.items.filter((item) => item.candidateDecision === "NO_CANDIDATE").length,
+            },
             tracerListingsWithoutBaseItemIdCount: report.tracerListingsWithoutBaseItemIdCount,
             duplicateBaseItemIdGroupsInTracer: report.duplicateBaseItemIdGroupsInTracer,
           }));
