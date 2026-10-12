@@ -157,7 +157,8 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const persistedBarcode = typeof listingMetadata.variant_barcode === "string" ? listingMetadata.variant_barcode.trim() : null;
       const variantBarcode = await readPersistableBarcode(String(row.supplier_product_id), String(row.supplier_variant_id), persistedBarcode);
       const identity = await resolveMarketplaceIdentity({ db, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } });
-      const canonicalProductId = identity?.productId ?? String(row.product_id);
+      const fallbackProductId = typeof row.product_id === "string" && row.product_id.trim() ? row.product_id : null;
+      const canonicalProductId = identity?.productId ?? fallbackProductId;
       if (!canonicalProductId) { await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), last_identity_reverify_at: new Date().toISOString() } }).eq("id", supplierListingId); return { kind: "no_match" as const, supplierListingId }; }
       const { data: intelligence } = await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle();
       const metadata = record(intelligence?.metadata);
