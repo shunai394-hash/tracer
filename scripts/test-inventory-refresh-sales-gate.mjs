@@ -23,5 +23,6 @@ assert.match(refreshRoute, /pipeline_reason:\s*"base_inventory_sync_failed"/, "B
 assert.match(refreshRoute, /published:\s*false,\s*orderable:\s*false/, "BASE sync failures must fail closed locally");
 assert.match(refreshRoute, /visible:\s*false/, "BASE sync failures must attempt to hide the remote listing");
 assert.match(refreshRoute, /hide retry failed:/, "failed BASE hide attempts must be recorded");
+assert.match(refreshRoute, /from\("supplier_listings"\)[\s\S]{0,180}update\(\{ orderable: false, fetched_at: now \}\)/, "BASE sync failures must also block supplier-side eligibility");
 
 console.log(`Inventory refresh sales-gate invariant: ${cases.length} cases passed; supplier price freshness: 2 assertions; BASE fail-closed: 4 assertions passed`);
