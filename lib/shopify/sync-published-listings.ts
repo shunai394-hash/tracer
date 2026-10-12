@@ -350,6 +350,7 @@ async function syncListingRows(
   }
 
   for (const row of candidates) {
+    let publishedProductId: string | null = null;
     const claim = await supabase
       .from("shop_listings")
       .update({ shopify_sync_status: "syncing", shopify_sync_error: null })
@@ -432,6 +433,7 @@ async function syncListingRows(
       });
 
       const publication = await ensureShopifyProductPublished(product.id);
+      if (publication.published === true) publishedProductId = product.id;
       const { error: updateError } = await supabase.from("shop_listings").update({
         shopify_product_id: product.id,
         shopify_variant_id: variant?.id ?? null,
@@ -454,6 +456,42 @@ async function syncListingRows(
       results.listingIds.push(row.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      // Shopify may already be public when the local DB write fails. Compensate
+      // by unpublishing remotely and persist an explicit blocked/failed state.
+      if (publishedProductId) {
+        let unpublishError: string | null = null;
+        try {
+          await unpublishShopifyProduct(publishedProductId);
+        } catch (compensationError) {
+          unpublishError = compensationError instanceof Error ? compensationError.message : String(compensationError);
+        }
+        const stateError = unpublishError
+          ? `publish_rollback_failed:${unpublishError}; original_error:${message}`
+          : `publication_rolled_back_after_database_failure:${message}`;
+        const { error: rollbackStateError } = await supabase.from("shop_listings").update({
+          published: false,
+          pipeline_stage: "BLOCKED",
+          pipeline_status: "blocked",
+          pipeline_reason: "shopify_publication_database_commit_failed",
+          pipeline_updated_at: new Date().toISOString(),
+          published_at: null,
+          shopify_sync_status: unpublishError ? "failed" : "blocked",
+          shopify_sync_error: stateError.slice(0, 2000),
+          shopify_synced_at: new Date().toISOString(),
+        }).eq("id", row.id);
+        if (rollbackStateError) {
+          console.error("[TRACER SHOPIFY PUBLICATION ROLLBACK STATE WRITE FAILED]", {
+            listingId: row.id,
+            productId: publishedProductId,
+            originalError: message,
+            unpublishError,
+            stateWriteError: rollbackStateError.message,
+          });
+        }
+        results.failed += 1;
+        results.errors.push({ listingId: row.id, error: stateError });
+        continue;
+      }
       if (message === "japanese_catalog_title_localization_failed" || message === "japanese_catalog_copy_invalid") {
         if (row.shopify_product_id) await unpublishShopifyProduct(String(row.shopify_product_id));
         await supabase.from("shop_listings").update({
