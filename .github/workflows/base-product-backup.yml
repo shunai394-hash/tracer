@@ -1,4 +1,5 @@
 name: BASE product backup
+# Read-only BASE snapshot and exact-ID reconciliation refresh after the latest production audit.
 
 on:
   workflow_dispatch:
