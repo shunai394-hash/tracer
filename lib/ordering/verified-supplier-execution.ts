@@ -52,11 +52,31 @@ export async function executeVerifiedSupplierPurchaseOrder(
   if (status === "failed" || status === "cancelled") {
     return { ...result, succeeded: false, reason: `purchase_order_${status}` };
   }
-  if (
-    POST_PAYMENT_STATUSES.has(status) ||
-    (status === "placed" && recordedPayment?.confirmed === true)
-  ) {
+  if (POST_PAYMENT_STATUSES.has(status)) {
     return { ...result, succeeded: true, reason: result.reason ?? "supplier_payment_already_confirmed" };
+  }
+  if (status === "placed" && recordedPayment?.confirmed === true) {
+    // Repair the attempt ledger if the purchase-order update succeeded but
+    // the previous attempt-row update failed. Never call this a clean success
+    // while the durable attempt record still disagrees.
+    const { error: repairedAttemptError } = await supabase
+      .from("supplier_order_attempts")
+      .update({
+        succeeded: true,
+        response_code: "SUPPLIER_PAYMENT_CONFIRMED",
+        response_message: "Supplier payment confirmation recovered from purchase-order metadata",
+        state: "completed",
+      })
+      .eq("purchase_order_id", purchaseOrderId)
+      .eq("supplier_order_id", result.supplierOrderId);
+    if (repairedAttemptError) {
+      return {
+        ...result,
+        succeeded: false,
+        reason: "supplier_payment_confirmed_attempt_repair_failed_manual_reconciliation_required",
+      };
+    }
+    return { ...result, succeeded: true, reason: "supplier_payment_already_confirmed" };
   }
 
   const adapter = getSupplierAdapter(result.supplierName);
