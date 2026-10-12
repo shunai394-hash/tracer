@@ -38,6 +38,7 @@ type Listing = {
   contribution_profit?: number | string | null;
   contribution_margin?: number | string | null;
   supplier_inventory?: number | null;
+  supplier_verified_variant_id?: string | null;
   supplier_cost?: number | string | null;
   supplier_shipping_cost?: number | string | null;
   supplier_inventory_checked_at?: string | null;
@@ -81,6 +82,7 @@ async function attachSupplierEvidence(rows: Listing[], supabase: ReturnType<type
     return {
       ...row,
       supplier_inventory: evidence?.inventory ?? null,
+      supplier_verified_variant_id: evidence?.supplier_variant_id ?? null,
       supplier_cost: evidence?.cost ?? null,
       supplier_shipping_cost: evidence?.shipping_cost ?? null,
       supplier_inventory_checked_at: evidence?.inventory_checked_at ?? null,
@@ -95,6 +97,7 @@ function supplierEvidenceReasons(row: Listing): string[] {
   const reasons: string[] = [];
   if (!row.supplier_listing_id) reasons.push("supplier_listing_missing");
   if (!row.supplier_variant_id || !row.supplier_variant_id.trim()) reasons.push("supplier_variant_missing");
+  if (!row.supplier_verified_variant_id || row.supplier_verified_variant_id !== row.supplier_variant_id) reasons.push("supplier_variant_identity_mismatch");
   if (row.supplier_inventory_confirmed !== true || !timestampIsFresh(row.supplier_inventory_checked_at, SUPPLIER_INVENTORY_MAX_AGE_MS)) {
     reasons.push("supplier_inventory_not_freshly_confirmed");
   }
@@ -316,7 +319,7 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("shop_listings")
-    .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_error")
+    .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_status,shopify_sync_error")
     .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
     .or("shopify_sync_status.is.null,shopify_sync_status.neq.syncing")
     .order("shopify_product_id", { ascending: true, nullsFirst: true })
@@ -324,13 +327,16 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
     .limit(Math.min(Math.max(limit, 1), 1000));
   if (error) throw new Error(error.message);
   const linkedSupplierIds = await getLinkedSupplierListingIds((data ?? []).map((row) => row.supplier_listing_id));
+  const rowsWithIdentity = ((data ?? []) as Array<Listing & { shopify_sync_error?: string | null }>).map((rawRow) => ({
+    ...rawRow,
+    identity_status: rawRow.supplier_listing_id && linkedSupplierIds.has(rawRow.supplier_listing_id) ? "linked" : null,
+  }));
+  const rows = await attachSupplierEvidence(rowsWithIdentity, supabase);
   const reasonCounts: Record<string, number> = {};
-  const rowsWithIdentity = ((data ?? []) as Array<Listing & { shopify_sync_error?: string | null }>).map((rawRow) => {
-    const row = { ...rawRow, identity_status: rawRow.supplier_listing_id && linkedSupplierIds.has(rawRow.supplier_listing_id) ? "linked" : null };
+  const evaluatedRows: ShopifySyncPreviewRow[] = rows.map((row) => {
     const reasons = blockReasons(row);
-    if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) reasons.push("image_url_invalid");
+    if (typeof row.image_url !== "string" || !/^https?:\\/\\//i.test(row.image_url)) reasons.push("image_url_invalid");
     if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");
-    if (!row.supplier_variant_id) reasons.push("supplier_variant_missing");
     for (const reason of reasons) reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1;
     return {
       listingId: row.id,
@@ -341,22 +347,13 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
       supplier: row.supplier_name,
       supplierProductId: row.supplier_product_id,
       supplierVariantId: row.supplier_variant_id,
-      imageOk: typeof row.image_url === "string" && /^https?:\/\//i.test(row.image_url),
+      imageOk: typeof row.image_url === "string" && /^https?:\\/\\//i.test(row.image_url),
       sellingPrice: asNumber(row.selling_price),
       inventory: asNumber(row.inventory),
       shopifyProductId: row.shopify_product_id,
       shopifyVariantId: row.shopify_variant_id,
       lastError: row.shopify_sync_error ? String(row.shopify_sync_error).slice(0, 120) : null,
     };
-  });
-  const rows = await attachSupplierEvidence(rowsWithIdentity as Listing[], supabase);
-  const evaluatedRows = rows.map((row) => {
-    const reasons = blockReasons(row);
-    if (typeof row.image_url !== "string" || !/^https?:\\/\\//i.test(row.image_url)) reasons.push("image_url_invalid");
-    if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");
-    for (const reason of reasons) reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1;
-    const prior = rowsWithIdentity.find((item) => item.id === row.id);
-    return { ...prior, eligible: reasons.length === 0, blockReasons: reasons };
   });
   return { considered: evaluatedRows.length, eligible: evaluatedRows.filter((row) => row.eligible).length, rows: evaluatedRows, reasonCounts };
 }
