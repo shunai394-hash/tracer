@@ -225,13 +225,30 @@ export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
 
   async createOrder(input): Promise<SupplierOrderResult> {
     const supabase = createSupabaseAdminClient();
+    const purchaseOrderId = input.orderNumber.startsWith("dropship:")
+      ? input.orderNumber.slice("dropship:".length)
+      : null;
+    if (!purchaseOrderId) {
+      return {
+        succeeded: false,
+        supplierOrderId: null,
+        responseCode: "PURCHASE_ORDER_ID_MISSING",
+        responseMessage: "TRACER internal fulfillment requires the purchase-order id in the idempotency key.",
+        trackingNumber: null,
+        raw: null,
+      };
+    }
+
     const existing = await supabase
       .from("internal_fulfillment_orders")
-      .select("id,status")
-      .eq("order_number", input.orderNumber)
+      .select("id,status,order_number")
+      .eq("purchase_order_id", purchaseOrderId)
       .maybeSingle();
     if (existing.error) throw new Error(existing.error.message);
     if (existing.data?.id) {
+      if (String(existing.data.order_number) !== input.orderNumber) {
+        throw new Error("internal_fulfillment_idempotency_key_conflict_manual_reconciliation_required");
+      }
       return {
         succeeded: true,
         supplierOrderId: String(existing.data.id),
@@ -266,23 +283,53 @@ export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
       };
     }
 
-    const purchaseOrderId = input.orderNumber.startsWith("dropship:")
-      ? input.orderNumber.slice("dropship:".length)
-      : null;
-    if (!purchaseOrderId) {
-      return {
-        succeeded: false,
-        supplierOrderId: null,
-        responseCode: "PURCHASE_ORDER_ID_MISSING",
-        responseMessage: "TRACER internal fulfillment requires the purchase-order id in the idempotency key.",
-        trackingNumber: null,
-        raw: null,
-      };
-    }
+    // Reservation and compensation are keyed to the purchase-order idempotency key.
+    const releaseReservation = async (reason: string) => {
+      const released = await supabase.rpc("release_internal_supply_variant", {
+        p_reservation_key: input.orderNumber,
+        p_variant_id: input.supplierVariantId,
+        p_quantity: input.quantity,
+        p_reason: reason,
+      });
+      if (released.error) {
+        console.error("[TRACER INTERNAL INVENTORY RELEASE FAILED]", {
+          reservationKey: input.orderNumber,
+          purchaseOrderId,
+          variantId: input.supplierVariantId,
+          quantity: input.quantity,
+          reason,
+          error: released.error.message,
+        });
+        return { ok: false, inventory: null as number | null };
+      }
+      const inventory = asNumber(released.data?.[0]?.restored_inventory);
+      if (inventory === null) {
+        console.warn("[TRACER INTERNAL INVENTORY RELEASE NOT APPLIED]", {
+          reservationKey: input.orderNumber,
+          purchaseOrderId,
+          variantId: input.supplierVariantId,
+          quantity: input.quantity,
+          reason,
+        });
+        return { ok: false, inventory: null as number | null };
+      }
+      try {
+        await syncInternalInventoryProjection(supabase, input.supplierVariantId, inventory);
+      } catch (error) {
+        console.error("[TRACER INTERNAL INVENTORY PROJECTION AFTER RELEASE FAILED]", {
+          reservationKey: input.orderNumber,
+          purchaseOrderId,
+          variantId: input.supplierVariantId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return { ok: true, inventory };
+    };
 
-    // Reserve inventory atomically in Postgres. Concurrent executions cannot
-    // reserve the same units.
+    // Reserve inventory atomically in Postgres. Replaying the same key returns
+    // the existing reservation without deducting the inventory a second time.
     const reserved = await supabase.rpc("reserve_internal_supply_variant", {
+      p_reservation_key: input.orderNumber,
       p_variant_id: input.supplierVariantId,
       p_quantity: input.quantity,
     });
@@ -301,17 +348,16 @@ export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
 
     const reservedInventory = asNumber(reserved.data[0]?.remaining_inventory);
     if (reservedInventory === null) {
-      await supabase.rpc("release_internal_supply_variant", {
-        p_variant_id: input.supplierVariantId,
-        p_quantity: input.quantity,
-      });
+      const compensation = await releaseReservation("reservation_projection_missing");
       return {
         succeeded: false,
         supplierOrderId: null,
         responseCode: "INVENTORY_PROJECTION_FAILED",
-        responseMessage: "TRACER inventory reservation returned no remaining quantity.",
+        responseMessage: compensation.ok
+          ? "TRACER inventory reservation returned no remaining quantity and was compensated."
+          : "TRACER inventory reservation returned no remaining quantity; compensation needs manual reconciliation.",
         trackingNumber: null,
-        raw: reserved.data,
+        raw: { reservation: reserved.data, compensationApplied: compensation.ok },
       };
     }
 
@@ -322,17 +368,7 @@ export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
         reservedInventory,
       );
     } catch (error) {
-      const released = await supabase.rpc("release_internal_supply_variant", {
-        p_variant_id: input.supplierVariantId,
-        p_quantity: input.quantity,
-      });
-      if (!released.error && released.data?.[0]?.restored_inventory !== undefined) {
-        await syncInternalInventoryProjection(
-          supabase,
-          input.supplierVariantId,
-          Number(released.data[0].restored_inventory),
-        );
-      }
+      await releaseReservation("inventory_projection_sync_failed");
       throw error;
     }
 
@@ -360,24 +396,37 @@ export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
       .single();
 
     if (inserted.error) {
-      const released = await supabase.rpc("release_internal_supply_variant", {
-        p_variant_id: input.supplierVariantId,
-        p_quantity: input.quantity,
-      });
-      if (!released.error && released.data?.[0]?.restored_inventory !== undefined) {
-        await syncInternalInventoryProjection(
-          supabase,
-          input.supplierVariantId,
-          Number(released.data[0].restored_inventory),
-        );
-      }
       if (inserted.error.code === "23505") {
+        // A uniqueness race can mean another request already created the order.
+        // Never release inventory until that possibility has been ruled out.
         const retry = await supabase
           .from("internal_fulfillment_orders")
-          .select("id")
-          .eq("order_number", input.orderNumber)
+          .select("id,status,order_number")
+          .eq("purchase_order_id", purchaseOrderId)
           .maybeSingle();
-        if (retry.data?.id) {
+        if (retry.error) {
+          console.error("[TRACER INTERNAL ORDER DEDUPE LOOKUP FAILED]", {
+            reservationKey: input.orderNumber,
+            purchaseOrderId,
+            variantId: input.supplierVariantId,
+            error: retry.error.message,
+          });
+          throw new Error("internal_order_dedupe_lookup_failed_manual_reconciliation_required");
+        }
+        if (retry.data?.id && String(retry.data.order_number) === input.orderNumber) {
+          const committed = await supabase.rpc("commit_internal_supply_variant_reservation", {
+            p_reservation_key: input.orderNumber,
+            p_variant_id: input.supplierVariantId,
+            p_quantity: input.quantity,
+          });
+          if (committed.error || committed.data !== true) {
+            console.error("[TRACER INTERNAL RESERVATION COMMIT FAILED]", {
+              reservationKey: input.orderNumber,
+              purchaseOrderId,
+              variantId: input.supplierVariantId,
+              error: committed.error?.message ?? "commit_not_confirmed",
+            });
+          }
           return {
             succeeded: true,
             supplierOrderId: String(retry.data.id),
@@ -387,8 +436,38 @@ export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
             raw: retry.data,
           };
         }
+        // A 23505 without a confirmed matching order is ambiguous. Keep the
+        // reservation for manual reconciliation rather than risk a double return.
+        console.error("[TRACER INTERNAL ORDER UNIQUE CONFLICT UNRESOLVED]", {
+          reservationKey: input.orderNumber,
+          purchaseOrderId,
+          variantId: input.supplierVariantId,
+          error: inserted.error.message,
+        });
+        throw new Error("internal_order_unique_conflict_manual_reconciliation_required");
+      }
+
+      const compensation = await releaseReservation("internal_fulfillment_insert_failed");
+      if (!compensation.ok) {
+        throw new Error("internal_fulfillment_insert_failed_and_inventory_compensation_failed_manual_reconciliation_required");
       }
       throw new Error(inserted.error.message);
+    }
+
+    const committed = await supabase.rpc("commit_internal_supply_variant_reservation", {
+      p_reservation_key: input.orderNumber,
+      p_variant_id: input.supplierVariantId,
+      p_quantity: input.quantity,
+    });
+    if (committed.error || committed.data !== true) {
+      // The order row itself protects stock from compensation, but a failed
+      // ledger transition must remain visible for later reconciliation.
+      console.error("[TRACER INTERNAL RESERVATION COMMIT FAILED]", {
+        reservationKey: input.orderNumber,
+        purchaseOrderId,
+        variantId: input.supplierVariantId,
+        error: committed.error?.message ?? "commit_not_confirmed",
+      });
     }
 
     return {
@@ -397,7 +476,7 @@ export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
       responseCode: "INTERNAL_ORDER_CREATED",
       responseMessage: "TRACER internal fulfillment order reserved.",
       trackingNumber: null,
-      raw: inserted.data,
+      raw: { ...inserted.data, reservationCommitted: committed.data === true && !committed.error },
     };
   },
 
