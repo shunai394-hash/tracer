@@ -1,4 +1,4 @@
-name: BASE product backup
+name: BASE product reconciliation audit
 
 on:
   workflow_dispatch:
@@ -22,8 +22,6 @@ jobs:
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
-          import { writeFile } from "node:fs/promises";
-
           const audience = "https://tracer-pied-alpha.vercel.app";
           const tokenUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
           tokenUrl.searchParams.set("audience", audience);
@@ -59,8 +57,6 @@ jobs:
           if (ids.some((id) => !id) || new Set(ids).size !== ids.length) {
             throw new Error("BASE_SNAPSHOT_ITEM_ID_MISSING_OR_DUPLICATE");
           }
-          const file = `tracer-base-products-${new Date().toISOString().slice(0, 10)}-${process.env.GITHUB_RUN_ID}.json`;
-          await writeFile(file, JSON.stringify(snapshot, null, 2), { mode: 0o600 });
 
           const auditResponse = await fetch(`${audience}/api/admin/channels/base/reconciliation`, {
             method: "POST",
@@ -80,34 +76,27 @@ jobs:
           if (report.complete !== true || !Array.isArray(report.items) || report.baseItemCount !== report.items.length) {
             throw new Error("BASE_RECONCILIATION_INCOMPLETE_OR_COUNT_MISMATCH");
           }
-          const reportFile = `tracer-base-reconciliation-${new Date().toISOString().slice(0, 10)}-${process.env.GITHUB_RUN_ID}.json`;
-          await writeFile(reportFile, JSON.stringify(report, null, 2), { mode: 0o600 });
+
+          // Only aggregate counts are written to public workflow logs.
+          // Raw product snapshots and per-item reconciliation records must be
+          // stored only after a private, access-controlled destination is configured.
           console.log(JSON.stringify({
-            reconciliationFile: reportFile,
+            audit: "base-reconciliation",
+            complete: report.complete,
             tracerListingCount: report.tracerListingCount,
+            baseItemCount: report.baseItemCount,
             exactBaseIdMappedCount: report.exactBaseIdMappedCount,
             baseItemsWithoutExactMappingCount: report.baseItemsWithoutExactMappingCount,
             baseItemsWithAmbiguousExactMappingCount: report.baseItemsWithAmbiguousExactMappingCount,
             baseItemsWithExactTitleCandidateCount: report.baseItemsWithExactTitleCandidateCount,
             tracerListingsWithoutBaseItemIdCount: report.tracerListingsWithoutBaseItemIdCount,
             duplicateBaseItemIdGroupsInTracer: report.duplicateBaseItemIdGroupsInTracer,
-          }));
-          console.log(JSON.stringify({
-            backupFile: file,
-            complete: snapshot.complete,
-            pages: snapshot.pages,
-            itemCount: snapshot.itemCount,
+            snapshotPages: snapshot.pages,
             visibleCount: snapshot.visibleCount,
             hiddenCount: snapshot.hiddenCount,
             unknownVisibilityCount: snapshot.unknownVisibilityCount,
             uniqueItemIds: new Set(ids).size,
             generatedAt: snapshot.generatedAt,
+            rawArtifactStored: false,
           }));
           NODE
-      - name: Store verified snapshot as a private repository workflow artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tracer-base-products-${{ github.run_id }}
-          path: tracer-base-*.json
-          if-no-files-found: error
-          retention-days: 90
