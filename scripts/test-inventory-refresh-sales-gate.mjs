@@ -30,9 +30,10 @@ assert.match(refreshRoute, /restoreSupplierError[\s\S]{0,220}update\(\{ orderabl
 
 
 const orosyImport = readFileSync(new URL("../app/api/cron/orosy-bulk-import/route.ts", import.meta.url), "utf8");
-assert.match(orosyImport, /getOrosyShippingQuote/, "Orosy bulk import must obtain a separate Japan shipping quote");
-assert.match(orosyImport, /shipping_status:\s*shippingVerified\s*\?\s*"verified"\s*:\s*"unknown"/, "shipping cannot be marked verified when quote evidence is unresolved");
-assert.match(orosyImport, /shipping_checked_at:\s*shippingVerified\s*\?\s*now\s*:\s*null/, "shipping freshness timestamp requires a verified quote");
+assert.match(orosyImport, /getOrosyShippingQuote/, "Orosy bulk import records a product-level quote for diagnostics");
+assert.match(orosyImport, /product-level quote is not sufficient evidence for this[\s\S]*exact variant/, "product-level shipping must not be promoted to variant-level evidence");
+assert.match(orosyImport, /shipping_status:\s*"unknown"/, "product-level quote must not verify variant-level shipping");
+assert.match(orosyImport, /shipping_checked_at:\s*null/, "variant-level shipping freshness must remain unset until exact-variant quote exists");
 assert.match(orosyImport, /orderable:\s*false/, "Orosy import must not claim autonomous ordering while order creation/payment are unsupported");
 assert.match(orosyImport, /tracking_available:\s*null/, "tracking must not be claimed without order lifecycle evidence");
 assert.match(orosyImport, /contribution_profit:\s*null[\s\S]*contribution_margin:\s*null/, "profitability must remain unset until landed cost and Sales Test Gate are established");
