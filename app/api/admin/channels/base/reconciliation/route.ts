@@ -148,6 +148,17 @@ export async function POST(request: Request) {
       }
     }
 
+    // Build supplier identity collision counts once for the complete listing scan.
+    // Keep this global so duplicates without title/image overlap still block confidence.
+    const candidateIdentityCounts = new Map<string, number>();
+    for (const row of listings) {
+      const productId = String(row.supplier_product_id ?? "").trim();
+      const variantId = String(row.supplier_variant_id ?? "").trim();
+      if (!productId || !variantId) continue;
+      const identityKey = JSON.stringify([productId, variantId]);
+      candidateIdentityCounts.set(identityKey, (candidateIdentityCounts.get(identityKey) ?? 0) + 1);
+    }
+
     const items = typedSnapshotItems.map((item) => {
       const baseItemId = String(item.item_id ?? "");
       const title = String(item.title ?? item.name ?? "");
@@ -189,16 +200,6 @@ export async function POST(request: Request) {
       const topScore = candidateScores[0]?.score ?? 0;
       const topCandidates = candidateScores.filter((candidate) => candidate.score === topScore);
       const reviewRequired = topCandidates.length > 1 || (topScore > 0 && topScore < 100);
-      // Count identity collisions across the full TRACER listing set, not just
-      // scored candidates; a duplicate row may have no title/image overlap at all.
-      const candidateIdentityCounts = new Map<string, number>();
-      for (const row of listings) {
-        const productId = String(row.supplier_product_id ?? "").trim();
-        const variantId = String(row.supplier_variant_id ?? "").trim();
-        if (!productId || !variantId) continue;
-        const identityKey = JSON.stringify([productId, variantId]);
-        candidateIdentityCounts.set(identityKey, (candidateIdentityCounts.get(identityKey) ?? 0) + 1);
-      }
       return {
         baseItemId,
         visible: visibility(item.visible),
