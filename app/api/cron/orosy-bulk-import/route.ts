@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
-import { getOrosyProductDetail, searchOrosyProducts } from "@/lib/sources/orosy";
+import { getOrosyProductDetail, getOrosyShippingQuote, searchOrosyProducts } from "@/lib/sources/orosy";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-listings";
 
 export const runtime = "nodejs";
@@ -107,6 +107,26 @@ export async function GET(request: Request) {
     if (supplierExisting.error) throw new Error(supplierExisting.error.message);
 
     const now = new Date().toISOString();
+    // Product detail does not prove destination shipping cost. Fetch a separate
+    // JP quote and retain unknown when the quote is unresolved or non-JPY.
+    let shippingQuote: Awaited<ReturnType<typeof getOrosyShippingQuote>> | null = null;
+    try {
+      shippingQuote = await getOrosyShippingQuote(detail.id);
+    } catch {
+      // Import as blocked evidence; a quote failure must not abort other products.
+    }
+    const shippingVerified = Boolean(
+      shippingQuote &&
+      !shippingQuote.unresolved &&
+      typeof shippingQuote.amount === "number" &&
+      Number.isFinite(shippingQuote.amount) &&
+      shippingQuote.amount >= 0 &&
+      shippingQuote.currency?.trim().toUpperCase() === "JPY"
+    );
+    const shippingCost = shippingVerified ? shippingQuote!.amount : null;
+    const blockReason = shippingVerified
+      ? "orosy_auto_ordering_not_supported"
+      : "orosy_shipping_quote_unverified";
     const supplierPayload = {
       supplier: "orosy",
       external_id: detail.id,
@@ -118,20 +138,21 @@ export async function GET(request: Request) {
       currency: variation.currency ?? "JPY",
       inventory: variation.stockQty,
       ship_to: "JP",
-      tracking_available: true,
+      tracking_available: null,
       order_method: "orosy_api",
       api_available: true,
       identity_method: variation.jan ? "jan" : "orosy_supplier_variant",
       identity_status: "linked",
       identity_confidence: variation.jan ? 1 : 0.98,
       configured: true,
-      orderable: true,
+      orderable: false,
       price_confirmed: true,
       price_checked_at: now,
       inventory_confirmed: true,
-      verification_status: "verified",
-      shipping_status: "verified",
-      shipping_checked_at: now,
+      verification_status: shippingVerified ? "verified" : "retryable",
+      shipping_cost: shippingCost,
+      shipping_status: shippingVerified ? "verified" : "unknown",
+      shipping_checked_at: shippingVerified ? now : null,
       inventory_checked_at: now,
       last_verified_at: now,
       fetched_at: now,
@@ -157,31 +178,31 @@ export async function GET(request: Request) {
       supplier_listing_id: supplierListingId,
       slug: listingSlug,
       title: detail.title,
-      description: `${detail.brand ? detail.brand + "｜" : ""}${detail.category ?? "日本製品"}。Orosyの在庫・仕入価格・バリエーションを確認済み。`,
+      description: `${detail.brand ? detail.brand + "｜" : ""}${detail.category ?? "日本製品"}。`,
       image_url: detail.imageUrl,
       selling_price: sellingPrice,
       currency: "JPY",
       published: false,
-      selection_reasons: ["OROSY_BULK_IMPORT", "JAPANESE_TITLE", "WOMEN_FOCUSED", "IN_STOCK", "IMAGE_VERIFIED", "ORDERABLE", "TRACKING_CAPABILITY_VERIFIED"],
-      missing: [],
+      selection_reasons: ["OROSY_BULK_IMPORT", "JAPANESE_TITLE", "WOMEN_FOCUSED", "IN_STOCK", "IMAGE_VERIFIED"],
+      missing: [blockReason],
       published_at: null,
-      pipeline_stage: "SELECTED",
-      pipeline_status: "selected",
-      pipeline_reason: "orosy_import_pending_shopify_gate",
-      pipeline_error: null,
+      pipeline_stage: "BLOCKED",
+      pipeline_status: "blocked",
+      pipeline_reason: blockReason,
+      pipeline_error: blockReason,
       pipeline_updated_at: now,
       supplier_name: "orosy",
       supplier_product_id: detail.id,
       supplier_variant_id: variation.variationId,
       source_cost: variation.buyerPrice,
-      shipping_cost: null,
+      shipping_cost: shippingCost,
       inventory: variation.stockQty,
-      orderable: true,
-      tracking_available: true,
+      orderable: false,
+      tracking_available: null,
       identity_method: variation.jan ? "jan" : "orosy_supplier_variant",
       identity_confidence: variation.jan ? 1 : 0.98,
-      contribution_profit: sellingPrice - variation.buyerPrice,
-      contribution_margin: ((sellingPrice - variation.buyerPrice) / sellingPrice) * 100,
+      contribution_profit: null,
+      contribution_margin: null,
       updated_at: now,
     };
 
