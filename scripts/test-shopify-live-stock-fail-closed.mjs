@@ -58,3 +58,10 @@ assert.match(refresh, /fresh_supplier_variant_price_or_japan_shipping_unverified
 
 console.log("Supplier price/shipping currency guards: 3 passed");
 
+assert.match(refresh, /supplier_cost_changed_profitability_retest_required/, "changed supplier economics must invalidate prior profitability approval");
+assert.match(refresh, /contribution_profit: null/, "changed supplier costs must clear stale contribution profit");
+assert.match(refresh, /contribution_margin: null/, "changed supplier costs must clear stale contribution margin");
+assert.match(refresh, /selection_reasons: invalidatedReasons/, "changed supplier costs must persist invalidated sales-test provenance");
+assert.match(refresh, /reason !== SALES_TEST_GATE_PASSED/, "changed supplier costs must remove the prior Sales Test Gate pass marker");
+assert.match(refresh, /pipeline_stage: "BLOCKED"/, "changed supplier economics must block the listing pending retest");
+assert.match(refresh, /visible: false/, "changed supplier economics must hide the linked BASE item");
