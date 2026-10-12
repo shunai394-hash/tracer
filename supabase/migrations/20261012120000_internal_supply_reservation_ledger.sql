@@ -92,7 +92,7 @@ returns trigger
 language plpgsql
 security invoker
 set search_path = public
-as $
+as $$
 declare
   v_reservation_status text;
 begin
@@ -121,7 +121,7 @@ begin
 
   return new;
 end;
-$;
+$$;
 
 drop trigger if exists internal_fulfillment_requires_reservation on public.internal_fulfillment_orders;
 create trigger internal_fulfillment_requires_reservation
