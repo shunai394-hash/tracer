@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { verifyGitHubOidcToken } from "../lib/security/cron-auth.ts";
+import { verifyGitHubOidcToken } from "../lib/security/github-oidc-verifier.ts";
 
 const audience = "https://tracer-pied-alpha.vercel.app";
 const expectedWorkflowRef =
