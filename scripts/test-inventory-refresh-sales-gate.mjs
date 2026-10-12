@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { hasDurableSalesTestGate } from "../lib/suppliers/inventory-refresh-gate.ts";
+import { isStripePaymentConfirmed } from "../lib/payments/stripe/payment-confirmation-policy.ts";
 
 const marker = "sales_test_gate_passed";
 const cases = [
@@ -13,6 +14,17 @@ const cases = [
 ];
 for (const item of cases) {
   assert.equal(hasDurableSalesTestGate(item.input), item.expected, item.name);
+}
+const paymentStatusCases = [
+  ["paid", true],
+  ["unpaid", false],
+  ["no_payment_required", false],
+  [null, false],
+  [undefined, false],
+  ["Paid", false],
+];
+for (const [status, expected] of paymentStatusCases) {
+  assert.equal(isStripePaymentConfirmed(status), expected, `Stripe payment status ${String(status)}`);
 }
 const persistence = readFileSync(new URL("../lib/intelligence/persist-cj-supply-intelligence.ts", import.meta.url), "utf8");
 assert.match(persistence, /price_checked_at:\s*null/, "cached or caller-provided CJ cost must not be stamped as a fresh price observation");
@@ -56,7 +68,7 @@ assert.match(checkoutRoute, /Number\.isSafeInteger\(Number\(item\.qty\)\)[\s\S]{
 
 const stripeWebhook = readFileSync(new URL("../app/api/webhooks/stripe/route.ts", import.meta.url), "utf8");
 assert.match(stripeWebhook, /constructStripeEvent\(rawBody, signature\)/, "Stripe webhook must verify the signed raw request body");
-assert.match(stripeWebhook, /if \(session\.payment_status !== "paid"\)[\s\S]{0,240}return shopOrderId/, "checkout completion without a paid session must not authorize fulfillment");
+assert.match(stripeWebhook, /isStripePaymentConfirmed\(session\.payment_status\)/, "Stripe webhook must use the tested payment confirmation policy");
 assert.match(stripeWebhook, /if \(paymentUpdateError\) \{\s*throw new Error\(paymentUpdateError\.message\);\s*\}/, "payment confirmation persistence errors must fail the webhook");
 assert.match(stripeWebhook, /createDropshipPurchaseOrdersForShopOrder\(shopOrderId\)/, "fulfillment creation must follow the confirmed payment path");
 assert.match(stripeWebhook, /stripe_event_id[\s\S]{0,260}processed: false/, "webhook events must be durably claimed before processing");
