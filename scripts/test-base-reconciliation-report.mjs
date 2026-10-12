@@ -24,5 +24,5 @@ assert.match(workflow, /BASE_RECONCILIATION_INCOMPLETE_OR_COUNT_MISMATCH/);
 console.log("BASE/TRACER reconciliation report contract: 17 assertions passed");
 
 assert.match(workflow, /summarize-base-reconciliation\.mjs/);
-assert.match(workflow, /aggregate reconciliation/);
+assert.match(workflow, /Publish sanitized BASE reconciliation summary/);
 console.log("BASE reconciliation summary workflow contract: 2 additional assertions passed");
