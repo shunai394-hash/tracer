@@ -23,6 +23,7 @@
     "test:order-gate": "node --experimental-strip-types --no-warnings scripts/test-order-gate.mjs",
     "test:cj-quota-policy": "node --experimental-strip-types --no-warnings scripts/test-cj-quota-policy.mjs",
     "test:shopify-live-stock-fail-closed": "node --experimental-strip-types --no-warnings scripts/test-shopify-live-stock-fail-closed.mjs",
+    "test:shopify-variant-sku-match": "node --experimental-strip-types --no-warnings scripts/test-shopify-variant-sku-match.mjs",
     "test:amazon-child-variant-diagnostics": "node scripts/test-amazon-child-variant-diagnostics.mjs",
     "test:shop-order-request-validation": "node --experimental-strip-types --no-warnings scripts/test-shop-order-request-validation.mjs",
     "test:marketplace-canonical-evidence-policy": "node scripts/test-marketplace-canonical-evidence-policy.mjs",
