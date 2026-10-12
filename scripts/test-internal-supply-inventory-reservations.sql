@@ -1,4 +1,4 @@
-\\set ON_ERROR_STOP on
+\set ON_ERROR_STOP on
 
 -- Disposable CI database only. Never run against production.
 do $$
@@ -59,10 +59,10 @@ create table public.shop_listings (
   updated_at timestamptz not null default now()
 );
 
-\\i supabase/migrations/20260929191000_tracer_internal_fulfillment_orders.sql
-\\i supabase/migrations/20260930070000_internal_supply_inventory_reservation.sql
-\\i supabase/migrations/20260930090000_fix_internal_supply_inventory_reservation_return_names.sql
-\\i supabase/migrations/20261012120000_internal_supply_reservation_ledger.sql
+\i supabase/migrations/20260929191000_tracer_internal_fulfillment_orders.sql
+\i supabase/migrations/20260930070000_internal_supply_inventory_reservation.sql
+\i supabase/migrations/20260930090000_fix_internal_supply_inventory_reservation_return_names.sql
+\i supabase/migrations/20261012120000_internal_supply_reservation_ledger.sql
 
 insert into public.internal_supply_products(id, active) values
  ('10000000-0000-4000-8000-000000000001', true),
