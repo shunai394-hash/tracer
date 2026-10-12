@@ -85,7 +85,7 @@ export async function POST(request: Request) {
     const customer = (order.customer ?? {}) as Record<string, unknown>;
     const billing = (order.billing_address ?? {}) as Record<string, unknown>;
     const currency = String(order.currency ?? order.presentment_currency ?? "JPY");
-    const inserted = await db.from("shop_orders").insert({
+    const orderPayload = {
       listing_id: bySku.get(skus[0])?.id ?? null,
       status: "placed",
       payment_method: "shopify",
@@ -110,16 +110,13 @@ export async function POST(request: Request) {
       shopify_order_number: order.order_number == null ? null : String(order.order_number),
       shopify_financial_status: financial,
       shopify_fulfillment_status: order.fulfillment_status ? String(order.fulfillment_status) : null,
-    }).select("id").single();
-    if (inserted.error) throw new Error(inserted.error.message);
-
-    for (const [index, item] of items.entries()) {
+    };
+    const itemPayloads = items.map((item, index) => {
       // Use the same normalized SKU used during resolution; Shopify payloads may
       // contain surrounding whitespace even though lookup keys are trimmed.
       const listing = bySku.get(skus[index]);
-      if (!listing) throw new Error("listing mapping missing during item insert");
-      const row = await db.from("shop_order_items").insert({
-        order_id: inserted.data.id,
+      if (!listing) throw new Error("listing mapping missing during item preparation");
+      return {
         listing_id: listing.id,
         product_id: listing.product_id,
         supplier_listing_id: listing.supplier_listing_id ?? null,
@@ -131,11 +128,27 @@ export async function POST(request: Request) {
         unit_price: n(item.price) ?? n(listing.selling_price),
         currency,
         shopify_line_item_id: item.id == null ? null : String(item.id),
-      });
-      if (row.error) throw new Error(row.error.message);
-    }
+      };
+    });
 
-    return NextResponse.json({ ok: true, orderId: String(inserted.data.id), paid });
+    // One PostgreSQL function call keeps the parent order and all line items
+    // in a single transaction. Any line-item failure rolls back the whole import.
+    const { data: orderId, error: importError } = await db.rpc("tracer_import_shopify_order_with_items", {
+      p_order: orderPayload,
+      p_items: itemPayloads,
+    });
+    if (importError) {
+      // A concurrent duplicate delivery may win the unique Shopify order ID.
+      if (importError.code === "23505") {
+        const duplicate = await db.from("shop_orders").select("id").eq("shopify_order_id", externalId).maybeSingle();
+        if (duplicate.error) throw new Error(duplicate.error.message);
+        if (duplicate.data) return NextResponse.json({ ok: true, duplicate: true, orderId: String(duplicate.data.id) });
+      }
+      throw new Error(importError.message);
+    }
+    if (!orderId) throw new Error("shopify_atomic_order_import_missing_id");
+
+    return NextResponse.json({ ok: true, orderId: String(orderId), paid });
   } catch (error) {
     console.error("[TRACER SHOPIFY ORDER WEBHOOK ERROR]", error);
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
