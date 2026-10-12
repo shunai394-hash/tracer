@@ -123,17 +123,23 @@ function productMatchesQuery(query: string, productName: string, allProductNames
 type PagedResult<T> = { data: T[] | null; error: { message: string } | null };
 
 async function readAll<T>(
+  name: string,
   page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
   pageSize = 1000,
   maxRows = 20_000,
 ): Promise<PagedResult<T>> {
+  const startedAt = Date.now();
   const rows: T[] = [];
   for (let from = 0; from < maxRows; from += pageSize) {
     const { data, error } = await page(from, from + pageSize - 1);
-    if (error) return { data: null, error };
+    if (error) {
+      console.warn("[TRACER MATCH READ]", { name, elapsedMs: Date.now() - startedAt, rows: rows.length, error: error.message });
+      return { data: null, error };
+    }
     rows.push(...(data ?? []));
     if (!data || data.length < pageSize) break;
   }
+  console.info("[TRACER MATCH READ]", { name, elapsedMs: Date.now() - startedAt, rows: rows.length });
   return { data: rows, error: null };
 }
 
@@ -182,9 +188,9 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   const demandBatchIdList = [...demandBatchIds];
 
   const [productResult, bestsellerResult, identifierResult] = await Promise.all([
-    readAll((from, to) => supabase.from("product_intelligence").select("product_id, normalized_title").order("product_id").range(from, to)),
-    readAll((from, to) => supabase.from("marketplace_bestsellers").select("product_id, jan, gtin, ean, upc, mpn, model, brand").not("product_id", "is", null).order("id").range(from, to)),
-    readAll((from, to) => supabase.from("product_identifiers").select("product_id, scheme, value").not("product_id", "is", null).order("id").range(from, to)),
+    readAll("product_intelligence", (from, to) => supabase.from("product_intelligence").select("product_id, normalized_title").order("product_id").range(from, to)),
+    readAll("marketplace_bestsellers", (from, to) => supabase.from("marketplace_bestsellers").select("product_id, jan, gtin, ean, upc, mpn, model, brand").not("product_id", "is", null).order("id").range(from, to)),
+    readAll("product_identifiers", (from, to) => supabase.from("product_identifiers").select("product_id, scheme, value").not("product_id", "is", null).order("id").range(from, to)),
   ]);
   if (productResult.error) throw new Error(productResult.error.message);
   if (bestsellerResult.error) throw new Error(bestsellerResult.error.message);
