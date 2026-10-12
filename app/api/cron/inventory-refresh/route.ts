@@ -463,19 +463,64 @@ export async function GET(request: Request) {
               visible: orderable,
             });
             baseUpdated++;
-            await supabase.from("shop_listings").update({
-              base_last_error: null,
-            }).eq("id", listingId);
+            const { error: clearBaseError } = await supabase
+              .from("shop_listings")
+              .update({ base_last_error: null })
+              .eq("id", listingId);
+            if (clearBaseError) throw new Error(clearBaseError.message);
           } catch (error) {
             baseSyncError = error instanceof Error ? error.message : String(error);
             baseErrors++;
-            await supabase.from("shop_listings").update({
-              base_last_error: baseSyncError,
-            }).eq("id", listingId);
+            // Fail closed locally: a failed BASE sync must not leave this listing
+            // marked as orderable/published while the remote state is uncertain.
+            const { error: blockListingError } = await supabase
+              .from("shop_listings")
+              .update({
+                published: false,
+                orderable: false,
+                pipeline_stage: "BLOCKED",
+                pipeline_status: "blocked",
+                pipeline_reason: "base_inventory_sync_failed",
+                pipeline_error: "base_inventory_sync_failed",
+                pipeline_updated_at: now,
+                base_last_error: baseSyncError,
+                updated_at: now,
+              })
+              .eq("id", listingId);
+            if (blockListingError) throw new Error(blockListingError.message);
+
+            // Make one best-effort attempt to hide the remote BASE item as well.
+            try {
+              await editBaseItem({
+                itemId: String(listing.base_item_id),
+                title: String(listing.title ?? ""),
+                detail: String(listing.description ?? listing.title ?? ""),
+                price: Number(listing.selling_price),
+                stock: 0,
+                visible: false,
+              });
+              baseUpdated++;
+            } catch (hideError) {
+              const hideMessage = hideError instanceof Error ? hideError.message : String(hideError);
+              baseSyncError = `${baseSyncError}; hide retry failed: ${hideMessage}`;
+              const { error: recordHideError } = await supabase
+                .from("shop_listings")
+                .update({ base_last_error: baseSyncError, updated_at: now })
+                .eq("id", listingId);
+              if (recordHideError) throw new Error(recordHideError.message);
+            }
           }
         }
 
-        results.push({ listingId, ok: true, inventory, orderable, baseSyncError });
+        results.push({
+          listingId,
+          ok: baseSyncError === null,
+          blocked: baseSyncError !== null,
+          inventory,
+          orderable: orderable && baseSyncError === null,
+          baseSyncError,
+          ...(baseSyncError ? { reason: "base_inventory_sync_failed" } : {}),
+        });
       } catch (error) {
         results.push({
           listingId,
