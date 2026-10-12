@@ -299,7 +299,8 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
         groupsWithVariantCount += markup.groupsWithVariantCount;
         variantProductNodeCount += markup.variantProductNodeCount;
         absoluteTypeIriCount += markup.absoluteTypeIriCount;
-        item.canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl);
+        const canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl);
+        item.canonicalVariants = canonicalVariants;
         // Amazon pages often expose child ASINs in their explicit variation map
         // even when they omit Schema.org ProductGroup.hasVariant. Resolve those
         // ASINs against each child's own detail page; never inherit the parent's
@@ -312,7 +313,7 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
           const childAsins = parseAmazonVariationAsinMap(detailHtml, item.productUrl).slice(0, 6);
           variationAsinsFound += childAsins.length;
           const childAsinsNeedingBarcode = childAsins.filter((child) => {
-            const existing = item.canonicalVariants.find((variant) => variant.asin === child.asin);
+            const existing = canonicalVariants.find((variant) => variant.asin === child.asin);
             return !existing || !(existing.jan || existing.gtin || existing.ean || existing.upc);
           });
           childDetailAttempted += childAsinsNeedingBarcode.length;
@@ -355,15 +356,15 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
           }));
           for (const variant of recovered) {
             if (!variant) continue;
-            const existingIndex = item.canonicalVariants.findIndex((existing) => existing.asin === variant.asin);
+            const existingIndex = canonicalVariants.findIndex((existing) => existing.asin === variant.asin);
             if (existingIndex >= 0) {
-              item.canonicalVariants[existingIndex] = { ...item.canonicalVariants[existingIndex], ...variant };
+              canonicalVariants[existingIndex] = { ...canonicalVariants[existingIndex], ...variant };
             } else {
-              item.canonicalVariants.push(variant);
+              canonicalVariants.push(variant);
             }
           }
         }
-        canonicalVariantCount += item.canonicalVariants.length;
+        canonicalVariantCount += canonicalVariants.length;
         item.brand = detail.brand;
         item.model = detail.model;
         item.jan = normalizeIdentifier("jan", detail.jan);
