@@ -50,7 +50,10 @@ async function getGitHubSigningKey(kid: string): Promise<GitHubJwk | null> {
   return jwksCache.keys.find((key) => key.kid === kid) ?? null;
 }
 
-async function verifyGitHubOidcToken(token: string): Promise<boolean> {
+async function verifyGitHubOidcToken(
+  token: string,
+  expectedWorkflowRef?: string,
+): Promise<boolean> {
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return false;
@@ -75,6 +78,9 @@ async function verifyGitHubOidcToken(token: string): Promise<boolean> {
     if (claims.nbf && claims.nbf > now + 30) return false;
     if (claims.repository !== "shunai394-hash/tracer") return false;
     if (claims.ref !== "refs/heads/main") return false;
+    if (expectedWorkflowRef && claims.workflow_ref !== expectedWorkflowRef) {
+      return false;
+    }
     if (
       claims.workflow_ref &&
       !claims.workflow_ref.startsWith(
@@ -151,6 +157,45 @@ export async function requireAutomationAuth(
       error: cronSecret
         ? "Unauthorized"
         : "cron_secret_not_configured_and_github_oidc_invalid",
+    },
+    { status: 401 },
+  );
+}
+
+
+/**
+ * BASE audit endpoints accept the configured server secret or OIDC tokens
+ * issued specifically to the production BASE audit workflow on main.
+ * Keep the generic automation policy unchanged for unrelated cron jobs.
+ */
+export async function requireBaseAuditAuth(
+  request: Request,
+): Promise<NextResponse | null> {
+  const authorization = request.headers.get("authorization");
+  const cronSecret = process.env.CRON_SECRET;
+
+  if (cronSecret && authorization === `Bearer ${cronSecret}`) {
+    return null;
+  }
+
+  const expectedWorkflowRef =
+    "shunai394-hash/tracer/.github/workflows/base-product-backup.yml@refs/heads/main";
+  if (
+    authorization?.startsWith("Bearer ") &&
+    (await verifyGitHubOidcToken(
+      authorization.slice("Bearer ".length),
+      expectedWorkflowRef,
+    ))
+  ) {
+    return null;
+  }
+
+  return NextResponse.json(
+    {
+      ok: false,
+      error: cronSecret
+        ? "Unauthorized"
+        : "cron_secret_not_configured_and_base_audit_oidc_invalid",
     },
     { status: 401 },
   );
