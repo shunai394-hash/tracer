@@ -31,11 +31,12 @@ async function recordEvent(args: {
     payload: args.payload ?? {},
   }, { onConflict: "event_key" });
 
-  if (error && error.code !== "42501" && error.code !== "42P01") {
-    throw new Error(error.message);
-  }
+  // An automation event is part of the safety record, not optional telemetry.
+  // If it cannot be persisted (including missing table or RLS/permission
+  // errors), fail closed instead of reporting a successful execution without
+  // its audit trail.
   if (error) {
-    console.warn("[TRACER AUTOMATION EVENT AUDIT SKIPPED]", error.message);
+    throw new Error(`automation_event_persist_failed:${error.code ?? "unknown"}:${error.message}`);
   }
 }
 
