@@ -42,6 +42,7 @@ type Listing = {
   supplier_inventory?: number | null;
   supplier_verified_variant_id?: string | null;
   supplier_cost?: number | string | null;
+  supplier_currency?: string | null;
   supplier_shipping_cost?: number | string | null;
   supplier_inventory_checked_at?: string | null;
   supplier_price_checked_at?: string | null;
@@ -71,7 +72,7 @@ async function attachSupplierEvidence(rows: Listing[], supabase: ReturnType<type
   if (ids.length === 0) return rows;
   const { data, error } = await supabase
     .from("supplier_listings")
-    .select("id,supplier_variant_id,cost,shipping_cost,inventory,inventory_checked_at,price_checked_at,shipping_checked_at,inventory_confirmed,price_confirmed")
+    .select("id,supplier_variant_id,cost,currency,shipping_cost,inventory,inventory_checked_at,price_checked_at,shipping_checked_at,inventory_confirmed,price_confirmed")
     .in("id", ids);
   if (error) throw new Error(`shopify_supplier_evidence_lookup_failed:${error.message}`);
   const byId = new Map((data ?? []).map((item) => [String(item.id), item]));
@@ -82,6 +83,7 @@ async function attachSupplierEvidence(rows: Listing[], supabase: ReturnType<type
       supplier_inventory: evidence?.inventory ?? null,
       supplier_verified_variant_id: evidence?.supplier_variant_id ?? null,
       supplier_cost: evidence?.cost ?? null,
+      supplier_currency: evidence?.currency ?? null,
       supplier_shipping_cost: evidence?.shipping_cost ?? null,
       supplier_inventory_checked_at: evidence?.inventory_checked_at ?? null,
       supplier_price_checked_at: evidence?.price_checked_at ?? null,
@@ -101,6 +103,7 @@ function supplierEvidenceReasons(row: Listing): string[] {
     reasons.push("supplier_inventory_not_freshly_confirmed");
   }
   if (row.supplier_price_confirmed !== true || !timestampIsFresh(row.supplier_price_checked_at, SUPPLIER_PRICE_MAX_AGE_MS)
+      || String(row.supplier_currency ?? "").trim().toUpperCase() !== "JPY"
       || asNumber(row.supplier_cost) === null
       || asNumber(row.source_cost) === null || Math.abs(Number(row.supplier_cost) - Number(row.source_cost)) >= 0.01) {
     reasons.push("supplier_cost_unconfirmed_stale_or_mismatch");
