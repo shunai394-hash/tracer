@@ -1,4 +1,3 @@
-import { IntelligencePingButton } from "@/components/intelligence-ping-button";
 import { OpportunityCard } from "@/components/opportunity-card";
 import { OpportunityKpis } from "@/components/opportunity-kpis";
 import { getOpportunityKpis, listOpportunities } from "@/lib/intelligence/opportunity-store";
@@ -30,7 +29,7 @@ export default async function IntelligencePage() {
           {opportunities.length > 0 ? <div className="grid gap-5">{opportunities.map((opportunity) => <OpportunityCard key={opportunity.id} opportunity={opportunity} />)}</div> : <div className="tracer-empty"><span>NEXT SELECTION / IN PROGRESS</span><h2>確認できる商機を探しています。</h2><p>需要・商品・仕入・価格の根拠が揃うまで、候補を無理に増やしません。新しい観測が入るたびに再確認します。</p></div>}
         </section>
       </>}
-      <section className="tracer-footer-tool"><div><span>AI QUALITY CHECK</span><p>AIの補助が利用できるかを確認できます。公開条件そのものは変わりません。</p></div><IntelligencePingButton /></section>
+      <section className="tracer-footer-tool"><div><span>AI QUALITY CHECK</span><p>Geminiの接続確認は保護された運用経路から実行します。公開ページから外部AI APIを直接呼び出す機能は提供しません。</p></div></section>
     </main>
   );
 }
