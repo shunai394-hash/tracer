@@ -25,4 +25,14 @@ assert.match(refreshRoute, /visible:\s*false/, "BASE sync failures must attempt 
 assert.match(refreshRoute, /hide retry failed:/, "failed BASE hide attempts must be recorded");
 assert.match(refreshRoute, /from\("supplier_listings"\)[\s\S]{0,180}update\(\{ orderable: false, fetched_at: now \}\)/, "BASE sync failures must also block supplier-side eligibility");
 
-console.log(`Inventory refresh sales-gate invariant: ${cases.length} cases passed; supplier price freshness: 2 assertions; BASE fail-closed: 4 assertions passed`);
+
+const orosyImport = readFileSync(new URL("../app/api/cron/orosy-bulk-import/route.ts", import.meta.url), "utf8");
+assert.match(orosyImport, /getOrosyShippingQuote/, "Orosy bulk import must obtain a separate Japan shipping quote");
+assert.match(orosyImport, /shipping_status:\s*shippingVerified\s*\?\s*"verified"\s*:\s*"unknown"/, "shipping cannot be marked verified when quote evidence is unresolved");
+assert.match(orosyImport, /shipping_checked_at:\s*shippingVerified\s*\?\s*now\s*:\s*null/, "shipping freshness timestamp requires a verified quote");
+assert.match(orosyImport, /orderable:\s*false/, "Orosy import must not claim autonomous ordering while order creation/payment are unsupported");
+assert.match(orosyImport, /tracking_available:\s*null/, "tracking must not be claimed without order lifecycle evidence");
+assert.match(orosyImport, /contribution_profit:\s*null[\s\S]*contribution_margin:\s*null/, "profitability must remain unset until landed cost and Sales Test Gate are established");
+assert.doesNotMatch(orosyImport, /selection_reasons:\s*\[[^\]]*"ORDERABLE"/, "candidate import must not stamp the orderable marker");
+
+console.log(`Inventory refresh sales-gate invariant: ${cases.length} cases passed; supplier price freshness: 2 assertions; BASE fail-closed: 4 assertions; Orosy import safety: 7 assertions`);
