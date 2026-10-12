@@ -104,7 +104,7 @@ export async function POST(request: Request) {
         const listing = bySku.get(sku);
         const quantity = n(item.quantity);
         const unitPrice = n(item.price);
-        if (!listing || !Number.isInteger(quantity) || quantity! <= 0 || unitPrice === null || unitPrice < 0) {
+        if (!listing || quantity === null || !Number.isInteger(quantity) || quantity <= 0 || unitPrice === null || unitPrice < 0) {
           return NextResponse.json({ ok: false, error: "shopify_missing_line_item_invalid_manual_reconciliation_required", orderId: existingOrderId, lineItemId: String(item.id) }, { status: 409 });
         }
         const row = await db.from("shop_order_items").insert({
