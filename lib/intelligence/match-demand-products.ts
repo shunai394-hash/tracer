@@ -358,6 +358,10 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
           geminiDisabledForRun = true;
         }
         console.error("[demand-gemini-classify]", { query, error, geminiDisabledForRun });
+        // A provider failure is not evidence that this query is non-product.
+        // Leave the observation unclassified for a later rotating patrol.
+        intentDeferred += 1;
+        continue;
       }
     }
     if (!intent.isProduct) { intentNonProduct += 1; continue; }
