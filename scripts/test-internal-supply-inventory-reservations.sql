@@ -75,7 +75,8 @@ insert into public.purchase_orders(id) values
  ('30000000-0000-4000-8000-000000000002'),
  ('30000000-0000-4000-8000-000000000003'),
  ('30000000-0000-4000-8000-000000000004'),
- ('30000000-0000-4000-8000-000000000005');
+ ('30000000-0000-4000-8000-000000000005'),
+ ('30000000-0000-4000-8000-000000000006');
 insert into public.tracer_supply_catalog(id, status, inventory, orderable) values
  ('40000000-0000-4000-8000-000000000001', 'ready', 10, true),
  ('40000000-0000-4000-8000-000000000002', 'ready', 10, true);
@@ -241,7 +242,36 @@ begin
   if v_status <> 'released' then raise exception 'released reservation was re-opened'; end if;
   select inventory into v_inventory from public.internal_supply_variants where id='20000000-0000-4000-8000-000000000001';
   if v_inventory <> 10 then raise exception 'retry after release consumed stock again'; end if;
-end $$;
+end $;
+
+-- A cancelled order returns its stock once and records a distinct reason.
+do $
+declare
+  v_inventory integer;
+  v_status text;
+  v_reason text;
+begin
+  select remaining_inventory into v_inventory
+    from public.reserve_internal_supply_for_order(
+      '30000000-0000-4000-8000-000000000006',
+      '20000000-0000-4000-8000-000000000001', 1
+    );
+  if v_inventory <> 9 then raise exception 'cancelled-order reservation incorrect'; end if;
+
+  select restored_inventory, reservation_status into v_inventory, v_status
+    from public.release_internal_supply_reservation(
+      '30000000-0000-4000-8000-000000000006',
+      'supplier_status_cancelled'
+    );
+  if v_inventory <> 10 or v_status <> 'released_now' then
+    raise exception 'cancelled-order release incorrect: inventory %, status %', v_inventory, v_status;
+  end if;
+  select release_reason into v_reason from public.internal_supply_inventory_reservations
+   where purchase_order_id='30000000-0000-4000-8000-000000000006';
+  if v_reason <> 'supplier_status_cancelled' then
+    raise exception 'cancelled-order release reason was not recorded: %', v_reason;
+  end if;
+end $;
 
 -- Inject order-row creation failure after reservation, then compensate once.
 create function public.inject_internal_order_insert_failure()
