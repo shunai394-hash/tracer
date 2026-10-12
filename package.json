@@ -32,7 +32,8 @@
     "test:base-publication-finalize": "node scripts/test-base-publication-finalize.mjs",
     "test:base-snapshot-export": "node scripts/test-base-snapshot-export.mjs",
     "test:base-reconciliation-report": "node scripts/test-base-reconciliation-report.mjs",
-    "test:base-create-id-recovery": "node scripts/test-base-create-id-recovery.mjs"
+    "test:base-create-id-recovery": "node scripts/test-base-create-id-recovery.mjs",
+    "test:webhook-replay-contract": "node scripts/test-webhook-replay-contract.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
