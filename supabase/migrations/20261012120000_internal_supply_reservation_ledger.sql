@@ -87,6 +87,47 @@ begin
 end;
 $$;
 
+create or replace function public.assert_internal_fulfillment_reservation()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $
+declare
+  v_reservation_status text;
+begin
+  select r.status into v_reservation_status
+    from public.internal_supply_inventory_reservations r
+   where r.purchase_order_id = new.purchase_order_id
+     and r.variant_id = new.supply_variant_id
+     and r.quantity = new.quantity
+   for update;
+
+  if not found then
+    raise exception 'internal_fulfillment_requires_active_reservation';
+  end if;
+
+  if v_reservation_status = 'committed' and exists (
+    select 1 from public.internal_fulfillment_orders o
+     where o.purchase_order_id = new.purchase_order_id
+  ) then
+    -- Let the unique constraint identify a concurrent duplicate of an existing order.
+    return new;
+  end if;
+
+  if v_reservation_status <> 'reserved' then
+    raise exception 'internal_fulfillment_requires_active_reservation';
+  end if;
+
+  return new;
+end;
+$;
+
+drop trigger if exists internal_fulfillment_requires_reservation on public.internal_fulfillment_orders;
+create trigger internal_fulfillment_requires_reservation
+before insert on public.internal_fulfillment_orders
+for each row execute function public.assert_internal_fulfillment_reservation();
+
 create or replace function public.release_internal_supply_reservation(
   p_purchase_order_id uuid,
   p_reason text default null
@@ -203,5 +244,6 @@ $$;
 
 revoke all on function public.reserve_internal_supply_for_order(uuid, uuid, integer) from public, anon, authenticated;
 revoke all on function public.release_internal_supply_reservation(uuid, text) from public, anon, authenticated;
+revoke all on function public.assert_internal_fulfillment_reservation() from public, anon, authenticated;
 grant execute on function public.reserve_internal_supply_for_order(uuid, uuid, integer) to service_role;
 grant execute on function public.release_internal_supply_reservation(uuid, text) to service_role;
