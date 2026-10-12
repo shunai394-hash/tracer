@@ -43,7 +43,11 @@ try {
   const invalid = spawnSync(process.execPath, ["scripts/summarize-base-reconciliation.mjs", input], { encoding: "utf8" });
   assert.notEqual(invalid.status, 0);
   assert.match(invalid.stderr, /RECONCILIATION_REPORT_INCOMPLETE/);
-  console.log("BASE reconciliation aggregate diagnostics: 11 assertions passed");
+  await writeFile(input, JSON.stringify({ complete: true, baseItemCount: 1, items: [{ exactTitleCandidates: [] }] }));
+  const malformed = spawnSync(process.execPath, ["scripts/summarize-base-reconciliation.mjs", input], { encoding: "utf8" });
+  assert.notEqual(malformed.status, 0);
+  assert.match(malformed.stderr, /RECONCILIATION_CANDIDATE_COUNTS_INVALID/);
+  console.log("BASE reconciliation aggregate diagnostics: 13 assertions passed");
 } finally {
   await rm(dir, { recursive: true, force: true });
 }
