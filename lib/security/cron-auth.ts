@@ -1,6 +1,7 @@
 import "server-only";
 
 import { NextResponse } from "next/server";
+import { checkCronAuth } from "./cron-auth-core";
 
 type GitHubOidcClaims = {
   iss?: string;
@@ -109,23 +110,8 @@ async function verifyGitHubOidcToken(token: string): Promise<boolean> {
 }
 
 export function requireCronAuth(request: Request): NextResponse | null {
-  const cronSecret = process.env.CRON_SECRET;
-
-  if (!cronSecret) {
-    return NextResponse.json(
-      { ok: false, error: "cron_secret_not_configured" },
-      { status: 401 },
-    );
-  }
-
-  if (request.headers.get("authorization") !== `Bearer ${cronSecret}`) {
-    return NextResponse.json(
-      { ok: false, error: "Unauthorized" },
-      { status: 401 },
-    );
-  }
-
-  return null;
+  const failure = checkCronAuth(request, process.env.CRON_SECRET);
+  return failure ? NextResponse.json(failure.body, { status: failure.status }) : null;
 }
 
 export async function requireAutomationAuth(
