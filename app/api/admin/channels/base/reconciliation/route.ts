@@ -45,11 +45,19 @@ function normalizedImage(value: unknown): string {
 function textTokens(value: unknown): string[] {
   const normalized = normalizedTitle(value);
   if (!normalized) return [];
-  const tokens = String(value ?? "").normalize("NFKC").toLocaleLowerCase("ja-JP")
-    .match(/[\p{L}\p{N}]{2,}/gu) ?? [];
+  const text = String(value ?? "").normalize("NFKC").toLocaleLowerCase("ja-JP");
+  const tokens = text.match(/[\p{L}\p{N}]{2,}/gu) ?? [];
+  // Japanese titles often contain no spaces. Add adjacent CJK bigrams so partial
+  // overlaps remain measurable without treating a whole Japanese sentence as one token.
+  const cjkRuns = text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+/gu) ?? [];
+  for (const run of cjkRuns) {
+    if (run.length === 1) tokens.push(run);
+    for (let index = 0; index < run.length - 1; index += 1) {
+      tokens.push(run.slice(index, index + 2));
+    }
+  }
   return [...new Set(tokens)];
 }
-
 function partialTitleScore(baseTitle: unknown, tracerTitle: unknown): number {
   const a = new Set(textTokens(baseTitle));
   const b = new Set(textTokens(tracerTitle));
