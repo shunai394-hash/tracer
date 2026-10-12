@@ -136,6 +136,8 @@ export async function linkInternalSupplyForBestseller(args: {
         identity_status: "linked",
         identity_confidence: selected.identity.confidence,
         configured: true,
+        // The tracer_internal adapter resolves these fields against internal_supply_products.id
+        // and internal_supply_variants.id; do not substitute upstream supplier IDs here.
         supplier_product_id: String(product.id),
         supplier_variant_id: variant.id ? String(variant.id) : (variant.variant_id ? String(variant.variant_id) : null),
         orderable: true,

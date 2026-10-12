@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:tracer-core
+      - name: Test BASE/TRACER reconciliation candidate safeguards
+        run: node scripts/test-base-reconciliation-report.mjs
       - name: Test Shopify order SKU mapping
         run: npm run test:shopify-order-sku-mapping
       - name: Test order gate profit invariants
