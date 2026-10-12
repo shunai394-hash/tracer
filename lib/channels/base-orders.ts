@@ -171,6 +171,9 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
           ) {
             update.order_status = "fulfillment_pending";
           }
+        } else if (existing.payment_status === "paid") {
+          // A transient/stale BASE read must never downgrade a previously
+          // confirmed payment. Keep the payment and fulfillment state intact.
         } else {
           update.payment_status = "pending";
           update.order_status = "pending_payment";
