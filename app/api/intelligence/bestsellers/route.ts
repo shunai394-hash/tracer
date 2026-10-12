@@ -17,12 +17,12 @@ const NON_PHYSICAL_PRODUCT_PATTERNS = [
   /商品券/i,
   /デジタルギフト/i,
   /ギフトカード/i,
-  /gift\\s*card/i,
-  /e[-\\s]?gift/i,
+  /gift\s*card/i,
+  /e[-\s]?gift/i,
   /voucher/i,
   /coupon/i,
   /download/i,
-  /digital\\s+(gift|product)/i,
+  /digital\s+(gift|product)/i,
 ];
 
 function isNonPhysicalProduct(title: string): boolean {
