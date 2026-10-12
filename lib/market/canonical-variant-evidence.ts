@@ -32,6 +32,39 @@ function nodeList(value: unknown): unknown[] {
   return value == null ? [] : [value];
 }
 
+function collectDimensionStrings(value: unknown): string[] {
+  if (typeof value === "string" && value.trim()) return [value.trim()];
+  if (Array.isArray(value)) return value.flatMap(collectDimensionStrings);
+  const record = asRecord(value);
+  return record ? Object.values(record).flatMap(collectDimensionStrings) : [];
+}
+
+function extractBalancedJsonObject(source: string, start: number): { value: unknown; end: number } | null {
+  if (source[start] !== "{") return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < source.length; i += 1) {
+    const char = source[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === "{") depth += 1;
+    else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        try { return { value: JSON.parse(source.slice(start, i + 1)), end: i + 1 }; }
+        catch { return null; }
+      }
+    }
+  }
+  return null;
+}
+
 function jsonLdNodes(html: string): Record<string, unknown>[] {
   const nodes: Record<string, unknown>[] = [];
   const scriptPattern = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
@@ -236,22 +269,23 @@ export function parseAmazonVariationAsinMap(
   const output: AmazonVariationAsinEvidence[] = [];
   const seen = new Set<string>();
   const patterns = [
-    /(?:var|let|const)\s+dimensionValuesDisplayData\s*=\s*(\{[\s\S]*?\})\s*;/gi,
-    /dimensionValuesDisplayData\s*:\s*(\{[\s\S]*?\})\s*[,}]/gi,
+    /(?:var|let|const)\s+dimensionValuesDisplayData\s*=/gi,
+    /dimensionValuesDisplayData\s*:/gi,
   ];
   for (const pattern of patterns) {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(html))) {
-      let parsed: unknown;
-      try { parsed = JSON.parse(match[1]); } catch { continue; }
-      const record = asRecord(parsed);
+      let start = pattern.lastIndex;
+      while (start < html.length && /\s/.test(html[start])) start += 1;
+      const extracted = extractBalancedJsonObject(html, start);
+      if (!extracted) continue;
+      pattern.lastIndex = extracted.end;
+      const record = asRecord(extracted.value);
       if (!record) continue;
       for (const [rawAsin, rawValues] of Object.entries(record)) {
         const asin = normalizeIdentifier("asin", rawAsin);
         if (!asin || asin === parentAsin || seen.has(asin)) continue;
-        const variationValues = nodeList(rawValues)
-          .map(asString)
-          .filter((value): value is string => Boolean(value));
+        const variationValues = collectDimensionStrings(rawValues);
         seen.add(asin);
         output.push({ asin, variationValues });
       }
