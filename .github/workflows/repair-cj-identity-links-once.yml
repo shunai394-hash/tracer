@@ -1,0 +1,46 @@
+name: One-time exact CJ identity link repair
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/repair-cj-identity-links-once.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dry-run and repair only exact unique links
+        shell: bash
+        env:
+          OIDC_URL: ${{ vars.TRACER_PRODUCTION_URL }}
+        run: |
+          set -euo pipefail
+          BASE_URL="${OIDC_URL:-https://tracer-pied-alpha.vercel.app}"
+          TOKEN_JSON="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https://tracer-pied-alpha.vercel.app")"
+          OIDC_TOKEN="$(printf '%s' "$TOKEN_JSON" | jq -er '.value')"
+          DRY_RUN="$(curl --fail-with-body --silent --show-error \
+            -X POST "${BASE_URL}/api/admin/shopify/identity-repair" \
+            -H "Authorization: Bearer ${OIDC_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"apply":false,"limit":1000}')"
+          printf '%s' "$DRY_RUN" | jq '{ok,apply,scanned,repairable,ambiguous,noMatch,internalProductMismatch,publicationChanged}'
+          REPAIRABLE="$(printf '%s' "$DRY_RUN" | jq -er '.repairable')"
+          if [ "$REPAIRABLE" -gt 0 ]; then
+            APPLIED="$(curl --fail-with-body --silent --show-error \
+              -X POST "${BASE_URL}/api/admin/shopify/identity-repair" \
+              -H "Authorization: Bearer ${OIDC_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data '{"apply":true,"limit":1000}')"
+            printf '%s' "$APPLIED" | jq '{ok,apply,scanned,repaired,ambiguous,noMatch,internalProductMismatch,publicationChanged}'
+          else
+            echo "No exact unique links eligible for repair; no database rows changed."
+          fi
