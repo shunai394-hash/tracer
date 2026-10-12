@@ -26,15 +26,31 @@ export async function POST(request: Request) {
     if (existing.data) return NextResponse.json({ ok: true, duplicate: true, orderId: String(existing.data.id) });
 
     const items = Array.isArray(order.line_items) ? order.line_items as Array<Record<string, unknown>> : [];
-    const skus = items.map((item) => String(item.sku ?? "")).filter(Boolean);
-    if (!items.length || !skus.length) return NextResponse.json({ ok: true, blocked: true, reason: "listing_sku_missing" });
+    const skus = items.map((item) => String(item.sku ?? "").trim());
+    // Validate every line before creating a parent order; otherwise a missing
+    // SKU on a later line could leave a partial order record behind.
+    if (!items.length || skus.some((sku) => !sku)) {
+      return NextResponse.json({ ok: true, blocked: true, reason: "listing_sku_missing" });
+    }
 
     // Shopify SKUs are generated as TRC-<supplier_variant_id>, falling back
     // to supplier_product_id and finally listing.id. Do not treat the SKU itself
     // as shop_listings.id: resolve its exact stable identity first.
     const lookup = getOrderSkuLookup(skus);
     const listingSelect = "id,product_id,title,published,orderable,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id";
-    const candidateRows: Array<Record<string, any>> = [];
+    type ListingRow = {
+      id: string;
+      product_id: string;
+      title: string;
+      published: boolean;
+      orderable: boolean;
+      selling_price: number | string | null;
+      supplier_listing_id: string | null;
+      supplier_name: string | null;
+      supplier_product_id: string | null;
+      supplier_variant_id: string | null;
+    };
+    const candidateRows: ListingRow[] = [];
     if (lookup.supplierSources.length) {
       const [byVariant, byProduct] = await Promise.all([
         db.from("shop_listings").select(listingSelect).in("supplier_variant_id", lookup.supplierSources),
