@@ -384,7 +384,7 @@ async function syncListingRows(
             `query ProductById($id: ID!) {
               product(id: $id) {
                 id handle status vendor tags
-                variants(first: 10) { nodes { id sku price } }
+                variants(first: 250) { nodes { id sku price } pageInfo { hasNextPage endCursor } }
                 media(first: 10) { nodes { mediaContentType preview { image { url } } } }
               }
             }`,
