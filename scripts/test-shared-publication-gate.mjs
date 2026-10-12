@@ -45,4 +45,14 @@ for (const reason of [
 assert.match(base, /if \(!validHttpUrl\(listing\.image_url\)\)/, "BASE must reject malformed image URLs");
 assert.match(base, /if \(availableInventory === null \|\| !Number\.isFinite\(availableInventory\) \|\| availableInventory <= 0 \|\| listing\.orderable !== true\)/, "BASE must reject unknown/nonpositive stock and non-orderable supply");
 
+// BASE hide failures must persist a retryable state; successful hides must not
+// occupy every later limited batch, and OAuth failures must stop publication.
+assert.match(base, /base_publication_status: "failed"/, "failed hides must be queryable for retry");
+assert.match(base, /base_publication_status: "hidden"/, "successful hides must be marked reconciled");
+assert.match(base, /base_publication_status\.eq\.failed/, "normal patrol must select failed hide attempts");
+assert.match(base, /BASE_OAUTH_REFRESH_FAILED\|BASE_API_REQUEST_FAILED:HTTP_\(401\|403\)/, "actual BASE client auth error format must trigger auth stop");
+assert.match(base, /if \(baseAuthBlocked\) \{\s*return \{/, "auth failure must stop the rest of the batch before publication");
+assert.match(base, /base_hide_failed_state_persist_failed/, "DB failure while recording a hide failure must be surfaced");
+assert.match(base, /base_hide_price_unknown/, "missing price must persist a retryable hide failure");
+
 console.log("Publication gate source-contract checks passed (Shopify shared preview/sync gate; BASE channel-specific guards).");
