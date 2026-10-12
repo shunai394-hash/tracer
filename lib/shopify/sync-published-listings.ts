@@ -33,6 +33,7 @@ type Listing = {
   shopify_variant_id: string | null;
   shopify_handle: string | null;
   shopify_sync_status: string | null;
+  shopify_sync_error?: string | null;
   shipping_cost?: number | string | null;
   source_cost?: number | string | null;
   contribution_profit?: number | string | null;
