@@ -33,6 +33,10 @@ export async function POST(request: Request) {
     if (items.some((item) => item.id == null || !String(item.id).trim())) {
       return NextResponse.json({ ok: false, error: "shopify_line_item_id_missing" }, { status: 400 });
     }
+    const externalLineIds = items.map((item) => String(item.id));
+    if (new Set(externalLineIds).size !== externalLineIds.length) {
+      return NextResponse.json({ ok: false, error: "shopify_line_item_id_duplicate" }, { status: 400 });
+    }
     if (items.some((item) => !Number.isInteger(n(item.quantity)) || Number(item.quantity) <= 0)) {
       return NextResponse.json({ ok: false, error: "shopify_line_item_quantity_invalid" }, { status: 400 });
     }
@@ -155,7 +159,7 @@ export async function POST(request: Request) {
         }
         continue;
       }
-      const row = await db.from("shop_order_items").insert({
+      const row = await db.from("shop_order_items").upsert({
         order_id: insertedOrderId,
         listing_id: listing.id,
         product_id: listing.product_id,
@@ -168,8 +172,24 @@ export async function POST(request: Request) {
         unit_price: unitPrice,
         currency,
         shopify_line_item_id: externalLineId,
-      });
+      }, { onConflict: "order_id,shopify_line_item_id", ignoreDuplicates: true });
       if (row.error) throw new Error(row.error.message);
+
+      // Re-read after the insert/upsert so concurrent deliveries are checked
+      // against the row that won the unique-key race, not blindly accepted.
+      const confirmed = await db.from("shop_order_items")
+        .select("listing_id, qty, unit_price")
+        .eq("order_id", insertedOrderId)
+        .eq("shopify_line_item_id", externalLineId)
+        .maybeSingle();
+      if (confirmed.error || !confirmed.data) {
+        throw new Error(confirmed.error?.message ?? "shopify_line_item_persist_missing:" + externalLineId);
+      }
+      if (String(confirmed.data.listing_id) !== String(listing.id) ||
+          Number(confirmed.data.qty) !== qty ||
+          Number(confirmed.data.unit_price) !== unitPrice) {
+        throw new Error("shopify_line_item_replay_conflict:" + externalLineId);
+      }
     }
 
     return NextResponse.json({ ok: true, orderId: insertedOrderId, paid, reconciled: Boolean(existing.data) });
