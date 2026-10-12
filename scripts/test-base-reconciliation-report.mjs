@@ -42,13 +42,14 @@ assert.match(route, /partialTitleScore/);
 assert.match(route, /Script=Han.*Script=Hiragana.*Script=Katakana/); // Japanese unspaced titles use CJK bigrams
 assert.match(route, /scoredCandidates/);
 assert.match(route, /MULTIPLE_TOP_CANDIDATES_REVIEW_REQUIRED/);
-assert.match(policy, /\(baseVariant \|\| rowVariant\) && \(!baseVariant \|\| !rowVariant \|\| baseVariant !== rowVariant\)/); // missing or mismatched variant identity requires review
+assert.match(policy, /if \(!input\.evidence\.includes\("supplier_variant_id_exact"\)\) return false/); // exact variant evidence is required
+assert.match(policy, /if \(!baseVariant \|\| !rowVariant \|\| baseVariant !== rowVariant\) return false/); // both variant IDs must match exactly
 assert.match(policy, /baseProduct && rowProduct && baseProduct !== rowProduct/);
 assert.match(policy, /input\.score !== input\.topScore \|\| input\.topCandidateCount !== 1/);
 assert.match(route, /duplicateIdentityCount:/);
 assert.match(route, /for \(const row of listings\)/); // duplicate identities are counted globally, not only among scored candidates
 assert.match(policy, /input\.duplicateIdentityCount > 1/);
-assert.match(policy, /input\.evidence\.some\(\(entry\) => entry === "supplier_product_id_exact" \|\| entry === "supplier_variant_id_exact"\)/);
+assert.match(policy, /input\.evidence\.includes\("supplier_variant_id_exact"\)/);
 assert.match(route, /REVIEW_REQUIRED/);
 assert.doesNotMatch(route, /score >= 100 \? "HIGH_CONFIDENCE_CANDIDATE_NOT_AUTO_MAPPED"/);
 assert.match(route, /baseItemsWithScoredCandidateCount/);
