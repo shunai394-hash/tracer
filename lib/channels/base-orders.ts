@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getBaseOrderDetail, listBaseOrders, isBaseConfigured } from "@/lib/channels/base";
 import { createDropshipPurchaseOrdersForShopOrder } from "@/lib/ordering/dropship";
+import { getExistingBaseOrderPaymentPatch } from "@/lib/channels/base-order-payment-state";
 
 export type BaseOrderSyncResult = {
   configured: boolean;
@@ -160,26 +161,12 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
           },
         };
 
-        if (canceled) {
-          update.payment_status = "failed";
-          update.order_status = "cancelled";
-        } else if (paid) {
-          update.payment_status = "paid";
-          if (
-            existing.order_status === "pending_payment" ||
-            existing.order_status === "fulfillment_pending"
-          ) {
-            update.order_status = "fulfillment_pending";
-          }
-        } else if (existing.payment_status === "paid") {
-          // A transient/stale BASE read must never downgrade a previously
-          // confirmed payment. Keep the payment and fulfillment state intact.
-        } else if (existing.payment_status === "paid") {
-          // Never downgrade a previously confirmed payment because a BASE read is stale.
-        } else {
-          update.payment_status = "pending";
-          update.order_status = "pending_payment";
-        }
+        Object.assign(update, getExistingBaseOrderPaymentPatch({
+          existingPaymentStatus: existing.payment_status,
+          existingOrderStatus: existing.order_status,
+          paid,
+          canceled,
+        }));
 
         const { error: existingUpdateError } = await supabase
           .from("shop_orders")
