@@ -45,4 +45,7 @@ assert.match(source, /\.eq\("order_status", String\(order\.order_status\)\)/, "c
 assert.match(source, /if \(purchaseOrdersError\) throw new Error/);
 assert.match(source, /if \(attemptsError\) throw new Error/);
 assert.match(source, /refund_created_but_order_state_persist_failed_manual_reconciliation_required/);
-console.log("Shop order cancellation-vs-supplier race tests: 12 assertions passed");
+assert.match(source, /const \{ data: refundStateSaved, error: refundPersistError \}/, "refund persistence must detect a zero-row compare-and-set");
+assert.match(source, /const \{ data: heldOrder, error: holdError \}/, "missing payment intent must be durably held for manual refund");
+assert.match(source, /status: refundStateSaved \? "refund_pending" : "manual_review"/);
+console.log("Shop order cancellation-vs-supplier race tests: 15 assertions passed");
