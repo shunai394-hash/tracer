@@ -257,7 +257,7 @@ export async function POST(request: Request) {
           supplierProductId: row.supplier_product_id,
           supplierVariantId: row.supplier_variant_id,
           imageUrlMatches: Boolean(baseImage && normalizedImage(row.image_url) === baseImage),
-          status: !reviewRequired &&
+          status: score === topScore && topCandidates.length === 1 &&
             !supplierIdentityConflict({ row, score, evidence }) &&
             (() => {
               const productId = String(row.supplier_product_id ?? "").trim();
