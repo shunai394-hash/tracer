@@ -85,7 +85,54 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
     }
   }
 
-  // Both evidence-row uniqueness and canonical-parent uniqueness are required.
+  // If explicit child-variant evidence is unavailable, allow a narrowly-scoped
+  // fallback only when the LIVE barcode of this exact CJ variant matches one
+  // and only one marketplace bestseller's own declared barcode. This is not a
+  // title/brand guess and never copies a parent barcode to a child. The unique
+  // marketplace row must already point to a canonical product.
+  if (evidenceById.size === 0) {
+    const directMatches = new Map<string, Record<string, unknown>>();
+    for (const value of lookupValues) {
+      const clauses = ["jan", "gtin", "ean", "upc"].map((column) => `${column}.eq.${value}`);
+      const { data, error } = await args.db
+        .from("marketplace_bestsellers")
+        .select("id,product_id,source_item_key,asin,jan,gtin,ean,upc")
+        .or(clauses.join(","))
+        .limit(51);
+      if (error) throw new Error(`CJ exact-barcode marketplace lookup failed: ${error.message}`);
+      if ((data?.length ?? 0) > 50) return null;
+      for (const row of data ?? []) {
+        const rowIds = identifiersFromRecord(row as Record<string, unknown>);
+        const identity = matchProductIdentity({
+          market: rowIds,
+          supply: { asin: null, mpn: null, gtin: validBarcode, jan: validBarcode, ean: validBarcode, upc: validBarcode },
+        });
+        if (!identity.salesEligible || !["gtin", "jan", "ean", "upc"].includes(identity.method)) continue;
+        if (typeof row.product_id !== "string" || !row.product_id.trim()) continue;
+        directMatches.set(String(row.id), {
+          ...row,
+          method: identity.method,
+          confidence: identity.confidence,
+          rationale: `Unique exact barcode match against marketplace product identifiers; ${identity.rationale}`,
+        });
+      }
+    }
+    // Any ambiguity means no link. Do not pick the first matching product.
+    if (directMatches.size === 1) {
+      const direct = [...directMatches.values()][0];
+      return {
+        bestsellerId: String(direct.id),
+        productId: String(direct.product_id),
+        canonicalVariantEvidenceId: `marketplace_bestsellers:${String(direct.id)}`,
+        sourceVariantId: String(direct.asin ?? direct.source_item_key ?? direct.id),
+        method: direct.method as MarketplaceIdentity["method"],
+        confidence: Number(direct.confidence),
+        rationale: String(direct.rationale),
+      };
+    }
+  }
+
+  // Both child-evidence uniqueness and canonical-parent uniqueness are required.
   if (evidenceById.size !== 1) return null;
   const evidence = [...evidenceById.values()][0];
   const bestsellerId = String(evidence.bestseller_id ?? "");
