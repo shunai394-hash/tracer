@@ -23,7 +23,7 @@ assert.ok(claim >= 0 && duplicateGuard > claim && cursorRead > duplicateGuard, "
 assert.ok(guard >= 0, "evidence guard must remain in the pipeline");
 assert.ok(finalReturn > guard, "normal success return must follow the retry guard");
 
-const cursorPolicy = await readFile(new URL("../lib/market/market-cursor.ts", import.meta.url), "utf8");
+const cursorPolicy = await readFile(new URL("../lib/market/market-cursor-policy.mjs", import.meta.url), "utf8");
 assert.ok(cursorPolicy.includes("observation.hasMore"), "cursor transition must distinguish same-source pagination from source rotation");
 assert.ok(cursorPolicy.includes("observation.nextIndex"), "cursor transition must resume at the next page offset");
 assert.ok(cursorPolicy.includes("(Math.max(0, observation.sourceIndex) + 1) % SOURCE_COUNT"), "completed source must advance exactly once");
