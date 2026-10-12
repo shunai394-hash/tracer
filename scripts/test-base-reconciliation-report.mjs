@@ -42,6 +42,7 @@ assert.match(policy, /baseVariant && baseVariant !== rowVariant/); // variant mi
 assert.match(policy, /baseProduct && rowProduct && baseProduct !== rowProduct/);
 assert.match(policy, /input\.score !== input\.topScore \|\| input\.topCandidateCount !== 1/);
 assert.match(route, /duplicateIdentityCount:/);
+assert.match(route, /for \(const row of listings\)/); // duplicate identities are counted globally, not only among scored candidates
 assert.match(policy, /input\.duplicateIdentityCount > 1/);
 assert.match(policy, /input\.evidence\.some\(\(entry\) => entry === "supplier_product_id_exact" \|\| entry === "supplier_variant_id_exact"\)/);
 assert.match(route, /REVIEW_REQUIRED/);
