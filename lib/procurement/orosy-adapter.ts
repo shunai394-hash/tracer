@@ -154,7 +154,7 @@ export const orosySupplierAdapter: TracerSupplierAdapter = {
       supplierProductId: detail.id,
       supplierVariantId: variation.variationId,
       amount: variation.buyerPrice,
-      currency: variation.currency ?? detail.currency ?? "JPY",
+      currency: variation.currency ?? detail.currency ?? "UNKNOWN",
       observedAt: new Date().toISOString(),
     };
   },
