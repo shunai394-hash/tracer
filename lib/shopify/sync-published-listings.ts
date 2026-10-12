@@ -199,6 +199,20 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
  * Why a listing may not be written to Shopify. Empty means it passes the same
  * gate, supplier, inventory and economics checks the sync applies.
  */
+function hasValidHttpUrl(value: unknown): boolean {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Canonical Shopify publication gate. Both preview and the actual candidate
+ * selector call this function; any new publication invariant belongs here.
+ */
 function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
   if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
@@ -208,13 +222,17 @@ function blockReasons(row: Listing): string[] {
   if (!hasGateProvenance(row)) reasons.push("sales_test_gate_not_passed");
   if (row.orderable !== true) reasons.push("not_orderable");
   if (row.tracking_available !== true) reasons.push("tracking_unavailable");
-  if (!(Number(row.inventory) > 0)) reasons.push("inventory_zero_or_unknown");
+  if (!(Number(row.inventory) > 0) || !Number.isFinite(Number(row.inventory))) reasons.push("inventory_zero_or_unknown");
   if (String(row.currency ?? "").trim().toUpperCase() !== "JPY") reasons.push("currency_not_jpy");
   if (!/^CJ/i.test(String(row.supplier_name ?? ""))) reasons.push("supplier_not_cj");
-  if (asNumber(row.shipping_cost) === null) reasons.push("shipping_cost_unknown");
-  if (asNumber(row.source_cost) === null) reasons.push("source_cost_unknown");
+  if (asNumber(row.shipping_cost) === null || (asNumber(row.shipping_cost) ?? -1) < 0) reasons.push("shipping_cost_unknown");
+  if (asNumber(row.source_cost) === null || (asNumber(row.source_cost) ?? -1) < 0) reasons.push("source_cost_unknown");
   if (!((asNumber(row.contribution_profit) ?? 0) > 0)) reasons.push("profit_not_positive");
   if (!((asNumber(row.contribution_margin) ?? 0) > 0)) reasons.push("margin_not_positive");
+  if (!hasValidHttpUrl(row.image_url)) reasons.push("image_url_invalid");
+  if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");
+  if (!String(row.supplier_product_id ?? "").trim()) reasons.push("supplier_product_missing");
+  if (!String(row.supplier_variant_id ?? "").trim()) reasons.push("supplier_variant_missing");
   return reasons;
 }
 
@@ -256,8 +274,6 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
   const rows = ((data ?? []) as Array<Listing & { shopify_sync_error?: string | null }>).map((rawRow) => {
     const row = { ...rawRow, identity_status: rawRow.supplier_listing_id && linkedSupplierIds.has(rawRow.supplier_listing_id) ? "linked" : null };
     const reasons = blockReasons(row);
-    if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) reasons.push("image_url_invalid");
-    if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");
     if (!row.supplier_variant_id) reasons.push("supplier_variant_missing");
     for (const reason of reasons) reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1;
     return {
