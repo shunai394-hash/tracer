@@ -8,6 +8,7 @@ assert.match(source, /const existingOrderId = existing\.data \? String\(existing
 assert.ok(!source.includes('if (existing.data) return NextResponse.json({ ok: true, duplicate: true'),
   "existing parent orders must not short-circuit before line-item reconciliation");
 assert.match(source, /\.from\("shop_order_items"\)[\s\S]*?\.select\("shopify_line_item_id"\)[\s\S]*?\.eq\("order_id", existingOrderId\)/);
+assert.match(source, /existing_line_items_missing_external_ids_manual_reconciliation_required/);
 assert.match(source, /const existingLineIds = new Set/);
 assert.match(source, /const missingItems = items\.filter/);
 assert.match(source, /shopify_line_item_id_missing_manual_reconciliation_required/);
