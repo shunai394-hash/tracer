@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getBaseOrderDetail, listBaseOrders, isBaseConfigured } from "@/lib/channels/base";
 import { createDropshipPurchaseOrdersForShopOrder } from "@/lib/ordering/dropship";
+import { shouldPreserveBaseOrderState } from "@/lib/channels/base-order-state";
 
 export type BaseOrderSyncResult = {
   configured: boolean;
@@ -146,6 +147,34 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
         const detail = await getBaseOrderDetail(baseOrderKey);
         const paid = isBaseOrderPaid(detail);
         await repairBaseOrderItems(supabase, String(existing.id), baseOrderKey, detail);
+
+        // BASE may report an older unpaid snapshot after a refund/cancellation
+        // has already been recorded in TRACER. Preserve protected local states
+        // and never create procurement from such a re-import.
+        if (shouldPreserveBaseOrderState(existing.order_status, existing.payment_status)) {
+          const { error: protectedStateSyncError } = await supabase
+            .from("shop_orders")
+            .update({
+              base_order_synced_at: new Date().toISOString(),
+              metadata: {
+                source: "base",
+                base_order_key: baseOrderKey,
+                base_dispatch_status: detail.dispatch_status ?? null,
+                base_payment: detail.payment ?? null,
+                local_protected_state_preserved: true,
+              },
+            })
+            .eq("id", existing.id);
+          if (protectedStateSyncError) throw new Error(protectedStateSyncError.message);
+          results.push({
+            baseOrderKey,
+            ok: true,
+            imported: false,
+            shopOrderId: String(existing.id),
+            skipped: true,
+          });
+          continue;
+        }
         const canceled =
           detail.dispatch_status === "cancelled" ||
           detail.dispatch_status === "unshippable";
