@@ -537,6 +537,7 @@ export async function runIntelligencePipeline(options: {
     .from("supplier_listings")
     .select("product_id")
     .eq("supplier", "cj")
+    .eq("identity_status", "linked")
     .eq("verification_status", "verified")
     .eq("orderable", true)
     .not("product_id", "is", null)
