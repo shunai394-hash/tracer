@@ -65,4 +65,18 @@ assert.deepEqual(
   "exclude parent ASIN and invalid child identifiers",
 );
 
+
+const nestedVariationHtml = `
+<script>
+var dimensionValuesDisplayData = {"B0CHILD003":["レッド",{"size":{"label":"XL"}}],"B0CHILD004":["グリーン","S"]};
+</script>`;
+assert.deepEqual(
+  parseAmazonVariationAsinMap(nestedVariationHtml, parentUrl),
+  [
+    { asin: "B0CHILD003", variationValues: ["レッド", "XL"] },
+    { asin: "B0CHILD004", variationValues: ["グリーン", "S"] },
+  ],
+  "parse complete nested dimension map rather than truncating at the first closing brace",
+);
+
 console.log("Amazon variant parser fixtures: passed");
