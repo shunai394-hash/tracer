@@ -24,7 +24,7 @@ export type PublicationRollbackResult = {
 export async function compensateShopifyPublication(args: {
   productId: string;
   originalError: string;
-  unpublish: (productId: string) => Promise<void>;
+  unpublish: (productId: string) => Promise<unknown>;
   persist: (patch: PublicationRollbackPatch) => PromiseLike<{ error?: { message: string } | null }>;
   now?: () => string;
 }): Promise<PublicationRollbackResult> {
