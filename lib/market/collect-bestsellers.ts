@@ -304,11 +304,19 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
         // even when they omit Schema.org ProductGroup.hasVariant. Resolve those
         // ASINs against each child's own detail page; never inherit the parent's
         // JAN/GTIN, and persist only child pages with a valid concrete barcode.
-        if (item.canonicalVariants.length === 0) {
+        {
+          // Do not stop at a partial Schema.org variant list: some entries have
+          // only ASIN/option labels and no sellable identifier. Retry explicit
+          // child ASINs whose existing evidence lacks a concrete barcode, then
+          // merge recovered child-page evidence by ASIN without duplicating rows.
           const childAsins = parseAmazonVariationAsinMap(detailHtml, item.productUrl).slice(0, 6);
           variationAsinsFound += childAsins.length;
-          childDetailAttempted += childAsins.length;
-          const recovered = await Promise.all(childAsins.map(async (child) => {
+          const childAsinsNeedingBarcode = childAsins.filter((child) => {
+            const existing = item.canonicalVariants.find((variant) => variant.asin === child.asin);
+            return !existing || !(existing.jan || existing.gtin || existing.ean || existing.upc);
+          });
+          childDetailAttempted += childAsinsNeedingBarcode.length;
+          const recovered = await Promise.all(childAsinsNeedingBarcode.map(async (child) => {
             const childUrl = `https://www.amazon.co.jp/dp/${child.asin}`;
             const childHtml = await fetchHtml(childUrl, { retryBrightDataWhenAmazonIdentifierMissing: true });
             if (!childHtml) return null;
@@ -345,7 +353,15 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
               },
             };
           }));
-          item.canonicalVariants.push(...recovered.filter((value): value is NonNullable<typeof value> => value !== null));
+          for (const variant of recovered) {
+            if (!variant) continue;
+            const existingIndex = item.canonicalVariants.findIndex((existing) => existing.asin === variant.asin);
+            if (existingIndex >= 0) {
+              item.canonicalVariants[existingIndex] = { ...item.canonicalVariants[existingIndex], ...variant };
+            } else {
+              item.canonicalVariants.push(variant);
+            }
+          }
         }
         canonicalVariantCount += item.canonicalVariants.length;
         item.brand = detail.brand;
