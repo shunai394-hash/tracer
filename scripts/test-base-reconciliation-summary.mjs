@@ -47,7 +47,15 @@ try {
   const malformed = spawnSync(process.execPath, ["scripts/summarize-base-reconciliation.mjs", input], { encoding: "utf8" });
   assert.notEqual(malformed.status, 0);
   assert.match(malformed.stderr, /RECONCILIATION_CANDIDATE_COUNTS_INVALID/);
-  console.log("BASE reconciliation aggregate diagnostics: 13 assertions passed");
+  await writeFile(input, JSON.stringify({ ...report, baseVisibleCount: -1 })); 
+  const negativeAggregate = spawnSync(process.execPath, ["scripts/summarize-base-reconciliation.mjs", input], { encoding: "utf8" });
+  assert.notEqual(negativeAggregate.status, 0);
+  assert.match(negativeAggregate.stderr, /RECONCILIATION_AGGREGATE_COUNTS_INVALID/);
+  await writeFile(input, JSON.stringify({ ...report, exactBaseIdMappedCount: 2 }));
+  const inconsistentAggregate = spawnSync(process.execPath, ["scripts/summarize-base-reconciliation.mjs", input], { encoding: "utf8" });
+  assert.notEqual(inconsistentAggregate.status, 0);
+  assert.match(inconsistentAggregate.stderr, /RECONCILIATION_AGGREGATE_COUNTS_INCONSISTENT/);
+  console.log("BASE reconciliation aggregate diagnostics: 17 assertions passed");
 } finally {
   await rm(dir, { recursive: true, force: true });
 }
