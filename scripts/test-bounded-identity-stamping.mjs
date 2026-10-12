@@ -27,6 +27,8 @@ assert.match(reverify, /\.limit\(MAX_CANDIDATE_SCAN\)/);
 assert.match(reverify, /buildCandidateQuery\(\)\.gt\("id", priorCursor\)/);
 assert.match(reverify, /nextCursor: scanCursor/);
 assert.match(reverify, /typeof row\.product_id === "string" \? row\.product_id\.trim\(\) : ""/, "null product IDs must not become the truthy string null");
+assert.match(reverify, /\.not\("supplier_product_id", "is", null\)/, "CJ identity scan must exclude missing supplier product IDs");
+assert.match(reverify, /if \(!supplierProductId \|\| !supplierVariantId\)/, "CJ identity scan must reject blank product or variant IDs before provider calls");
 const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
 const beautySourceIndex = collector.indexOf('source: "amazon_bestsellers_beauty"');
 const genericAmazonSourceIndex = collector.indexOf('source: "amazon_bestsellers" },');
