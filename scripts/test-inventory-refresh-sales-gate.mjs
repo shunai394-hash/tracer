@@ -53,4 +53,16 @@ assert.match(checkoutRoute, /currencies\.size !== 1 \|\| !currencies\.has\("JPY"
 assert.doesNotMatch(checkoutRoute, /orderItems\[0\]\.currency \?\? ["']USD["']/, "card checkout must not silently default an unknown currency to USD");
 assert.match(checkoutRoute, /Number\.isSafeInteger\(Number\(item\.qty\)\)[\s\S]{0,220}Number\.isFinite\(Number\(item\.unit_price\)\)/, "card checkout must reject invalid quantities and prices before creating a Stripe session");
 
+
+const stripeWebhook = readFileSync(new URL("../app/api/webhooks/stripe/route.ts", import.meta.url), "utf8");
+assert.match(stripeWebhook, /constructStripeEvent\(rawBody, signature\)/, "Stripe webhook must verify the signed raw request body");
+assert.match(stripeWebhook, /if \(session\.payment_status !== "paid"\)[\s\S]{0,240}return shopOrderId/, "checkout completion without a paid session must not authorize fulfillment");
+assert.match(stripeWebhook, /if \(paymentUpdateError\) \{\s*throw new Error\(paymentUpdateError\.message\);\s*\}/, "payment confirmation persistence errors must fail the webhook");
+assert.match(stripeWebhook, /createDropshipPurchaseOrdersForShopOrder\(shopOrderId\)/, "fulfillment creation must follow the confirmed payment path");
+assert.match(stripeWebhook, /stripe_event_id[\s\S]{0,260}processed: false/, "webhook events must be durably claimed before processing");
+assert.match(stripeWebhook, /processed: !error/, "failed webhook processing must remain retryable rather than marked processed");
+const dropship = readFileSync(new URL("../lib/ordering/dropship.ts", import.meta.url), "utf8");
+assert.match(dropship, /if \(String\(order\.payment_status\) !== "paid"\)[\s\S]{0,220}shop_order_payment_not_confirmed/, "supplier PO creation must reject orders whose payment is not confirmed");
+assert.match(dropship, /idempotency_key: idempotencyKey/, "supplier PO creation must use a per-line idempotency key");
+
 console.log(`Inventory refresh sales-gate invariant: ${cases.length} cases passed; supplier price freshness: 2 assertions; BASE fail-closed: 10 assertions; Orosy import safety: 10 assertions`);
