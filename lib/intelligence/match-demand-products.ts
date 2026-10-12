@@ -348,7 +348,6 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
         const aiIntent = await classifyDemandIntent(query);
         if (aiIntent.is_product_demand) intent = { isProduct: true, category: aiIntent.category ?? null, reason: `gemini:${aiIntent.reason}` };
       } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
         // Quota exhaustion, transient provider outages, and explicit timeout
         // codes are not query-specific; stop further Gemini calls this patrol.
         geminiCircuitBreaker.recordFailure(error);
