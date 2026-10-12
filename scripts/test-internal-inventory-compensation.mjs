@@ -17,4 +17,4 @@ const calls = [...source.matchAll(/releaseInventoryReservation\(supabase, input\
 assert.equal(calls.length, 3, "all compensation paths must use the checked helper");
 assert.doesNotMatch(source, /if \(!released\.error && released\.data\?\.\[0\]\?\.restored_inventory/, "unchecked compensation must not remain");
 
-console.log("Internal inventory compensation guards: 7 passed");
+console.log("Internal inventory compensation guards: 8 passed");
