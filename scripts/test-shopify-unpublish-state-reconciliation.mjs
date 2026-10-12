@@ -21,7 +21,7 @@ assert.match(sync, /published_at: null/);
 
 // Include all Shopify-linked rows in the bounded reconciliation scan so drifted
 // rows cannot evade unpublication merely because their internal state is mixed.
-assert.match(sync, /shopify_product_id\.not\.is\.null\)"/);
+assert.match(sync, /shopify_product_id\.not\.is\.null"/);
 assert.match(sync, /Eligible rows with drifted internal state must also be reconciled/);
 assert.match(sync, /if \(row\.shopify_product_id\) return true/);
 
