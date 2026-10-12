@@ -25,7 +25,9 @@ const reverify = await readFile(new URL("../lib/suppliers/reverify-cj-identity.t
 assert.match(reverify, /const MAX_CANDIDATE_SCAN = 500/);
 assert.match(reverify, /\.limit\(MAX_CANDIDATE_SCAN\)/);
 assert.match(reverify, /buildCandidateQuery\(\)\.gt\("id", priorCursor\)/);
-assert.match(reverify, /nextCursor: scanCursor/);
+assert.match(reverify, /const selectedRows = allRows\.slice\(0, limit\)/, "CJ reverify must process due candidates in ID scan order");
+assert.match(reverify, /const nextCursor = selectedRows\.length >= limit[\s\S]*?String\(selectedRows\[selectedRows\.length - 1\]\.id\)[\s\S]*?: scanCursor/, "a full batch must resume after the last processed row, not the last scanned row");
+assert.doesNotMatch(reverify, /const selectedWomens =|const selectedOther =/, "reordering candidates must not skip unprocessed IDs");
 assert.match(reverify, /typeof row\.product_id === "string" \? row\.product_id\.trim\(\) : ""/, "null product IDs must not become the truthy string null");
 assert.match(reverify, /\.not\("supplier_product_id", "is", null\)/, "CJ identity scan must exclude missing supplier product IDs");
 assert.match(reverify, /if \(!supplierProductId \|\| !supplierVariantId\)/, "CJ identity scan must reject blank product or variant IDs before provider calls");
