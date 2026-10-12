@@ -189,9 +189,28 @@ export async function executeSupplierPurchaseOrder(
     };
   }
 
-  const { data: shopOrder } = po.shop_order_id
-    ? await supabase.from("shop_orders").select("*").eq("id", po.shop_order_id).maybeSingle()
-    : { data: null };
+  let shopOrder: Record<string, unknown> | null = null;
+  if (po.shop_order_id) {
+    const { data, error } = await supabase
+      .from("shop_orders")
+      .select("*")
+      .eq("id", po.shop_order_id)
+      .maybeSingle();
+    if (error || !data) {
+      console.error("[TRACER SHOP ORDER LOOKUP FAILED]", {
+        purchaseOrderId,
+        shopOrderId: po.shop_order_id,
+        error: error?.message ?? "shop_order_not_found",
+      });
+      return {
+        purchaseOrderId, supplierName, attempted: false, succeeded: false,
+        supplierOrderId: null,
+        reason: error ? "shop_order_lookup_failed_manual_reconciliation_required" : "shop_order_missing_manual_reconciliation_required",
+        gate: null,
+      };
+    }
+    shopOrder = data as Record<string, unknown>;
+  }
   if (shopOrder && ["cancellation_requested", "refund_pending", "cancelled", "refunded"].includes(String(shopOrder.order_status))) {
     return {
       purchaseOrderId,
@@ -203,19 +222,43 @@ export async function executeSupplierPurchaseOrder(
       gate: null,
     };
   }
-  const { data: item } = await supabase
+  const { data: item, error: itemLookupError } = await supabase
     .from("purchase_order_items")
     .select("*")
     .eq("purchase_order_id", purchaseOrderId)
     .limit(1)
     .maybeSingle();
+  if (itemLookupError || !item) {
+    console.error("[TRACER PURCHASE ORDER ITEM LOOKUP FAILED]", {
+      purchaseOrderId,
+      error: itemLookupError?.message ?? "purchase_order_item_not_found",
+    });
+    return {
+      purchaseOrderId, supplierName, attempted: false, succeeded: false,
+      supplierOrderId: null,
+      reason: itemLookupError ? "purchase_order_item_lookup_failed_manual_reconciliation_required" : "purchase_order_item_missing_manual_reconciliation_required",
+      gate: null,
+    };
+  }
 
-  const { data: duplicateAttempts } = await supabase
+  const { data: duplicateAttempts, error: duplicateAttemptsError } = await supabase
     .from("supplier_order_attempts")
     .select("id,purchase_order_id,supplier_order_id,state")
     .eq("purchase_order_id", purchaseOrderId)
     .neq("idempotency_key", asString(po.idempotency_key) ?? `dropship:${purchaseOrderId}`)
     .limit(1);
+  if (duplicateAttemptsError) {
+    console.error("[TRACER DUPLICATE SUPPLIER ATTEMPT LOOKUP FAILED]", {
+      purchaseOrderId,
+      error: duplicateAttemptsError.message,
+    });
+    return {
+      purchaseOrderId, supplierName, attempted: false, succeeded: false,
+      supplierOrderId: null,
+      reason: "duplicate_supplier_attempt_lookup_failed_manual_reconciliation_required",
+      gate: null,
+    };
+  }
 
   const duplicateOrderExists = Boolean(duplicateAttempts?.length);
 
