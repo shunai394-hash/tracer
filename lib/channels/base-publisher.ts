@@ -35,6 +35,7 @@ async function ensureJapaneseCatalogCopy(title: string, detail: string): Promise
   const translatedTitle = String(result?.title ?? "").trim();
   const translatedDetail = String(result?.detail ?? "").trim();
   if (!isJapaneseProductTitle(translatedTitle)) throw new Error("BASE japanese catalog copy returned a non-Japanese title");
+  if (isNonPhysicalProductTitle(translatedTitle)) throw new Error("BASE japanese catalog copy returned a non-physical product");
   if (!isPublishableCatalogTitle(translatedTitle)) throw new Error("BASE japanese catalog copy returned workflow or disqualification text");
   if (!isPublishableCatalogDescription(translatedDetail)) throw new Error("BASE japanese catalog copy returned generic placeholder text");
   if (!hasUsableJapaneseCopy(translatedDetail)) throw new Error("BASE japanese catalog copy returned an English-heavy description");
