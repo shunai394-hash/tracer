@@ -5,7 +5,7 @@ import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers"
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
-import { womenProductPriority } from "@/lib/intelligence/womens-priority";
+import { filterSupplierCandidateIds } from "@/lib/intelligence/filter-supplier-candidates";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync";
 import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
@@ -13,21 +13,6 @@ import { BESTSELLER_CANDIDATE_BATCH_SIZE } from "@/lib/market/candidate-batch";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const NON_PHYSICAL_PRODUCT_PATTERNS = [
-  /商品券/i,
-  /デジタルギフト/i,
-  /ギフトカード/i,
-  /gift\s*card/i,
-  /e[-\s]?gift/i,
-  /voucher/i,
-  /coupon/i,
-  /download/i,
-  /digital\s+(gift|product)/i,
-];
-
-function isNonPhysicalProduct(title: string): boolean {
-  return NON_PHYSICAL_PRODUCT_PATTERNS.some((pattern) => pattern.test(title));
-}
 
 export async function POST(request: Request) {
   const authError = requireCronAuth(request);
@@ -55,23 +40,15 @@ export async function POST(request: Request) {
           .in("id", candidateIds);
     if (candidateReadError) throw new Error(candidateReadError.message);
 
-    const candidateById = new Map(
-      (candidateRows ?? []).map((row) => [String(row.id), row as Record<string, unknown>]),
+    const supplierCandidateFilter = filterSupplierCandidateIds(
+      candidateIds,
+      (candidateRows ?? []).map((row) => ({
+        id: row.id,
+        title: row.title,
+        category: row.category,
+      })),
     );
-    const supplierCandidateIds = candidateIds.filter((id) => {
-      const row = candidateById.get(id);
-      if (!row) return false;
-      const title = String(row.title ?? "").normalize("NFKC").trim();
-      const category = String(row.category ?? "");
-      if (!title || isNonPhysicalProduct(title)) return false;
-      return womenProductPriority({ title, category }).isWomenFocused;
-    });
-
-    const supplierCandidateFilter = {
-      inputCount: candidateIds.length,
-      eligibleCount: supplierCandidateIds.length,
-      skippedNonWomenOrNonPhysicalCount: candidateIds.length - supplierCandidateIds.length,
-    };
+    const { supplierCandidateIds } = supplierCandidateFilter;
 
     // 3. Resolve supplier evidence only for relevant, physical candidates.
     const suppliers = await investigateDropshipForBestsellers(supplierCandidateIds);
