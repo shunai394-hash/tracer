@@ -395,7 +395,13 @@ export async function runIntelligencePipeline(options: {
   // Demand matching runs first. It reads persisted demand/catalog evidence
   // and does not depend on the current marketplace fetch. Previously the
   // marketplace stage could consume the budget before matching started.
-  steps.push(await runStep("match", () => matchDemandProductsByCategory(), { budgetMs: 25_000 }));
+  // Marketplace collection is independent of demand matching. If matching exhausts
+  // its own budget, preserve the rest of the patrol so canonical marketplace
+  // variant evidence can still be collected and exact identity linking can run.
+  steps.push(await runStep("match", () => matchDemandProductsByCategory(), {
+    budgetMs: 25_000,
+    stopPipelineOnTimeout: false,
+  }));
 
   // Resume market discovery from the persisted cursor instead of re-reading
   // marketplace 0 / item 0 on every patrol, and advance it afterwards.
