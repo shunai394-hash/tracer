@@ -63,10 +63,13 @@ jobs:
           await writeFile(file, JSON.stringify(snapshot, null, 2), { mode: 0o600 });
 
           const auditResponse = await fetch(`${audience}/api/admin/channels/base/reconciliation`, {
+            method: "POST",
             headers: {
               Authorization: `Bearer ${tokenBody.value}`,
+              "Content-Type": "application/json",
               Accept: "application/json",
             },
+            body: JSON.stringify({ snapshot }),
             signal: AbortSignal.timeout(110_000),
           });
           if (!auditResponse.ok) {
