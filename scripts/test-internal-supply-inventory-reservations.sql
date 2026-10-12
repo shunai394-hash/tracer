@@ -87,6 +87,28 @@ insert into public.shop_listings(id, supplier_name, supplier_variant_id, invento
  ('60000000-0000-4000-8000-000000000001', 'TRACER_INTERNAL', '20000000-0000-4000-8000-000000000001', 10, true),
  ('60000000-0000-4000-8000-000000000002', 'TRACER_INTERNAL', '20000000-0000-4000-8000-000000000002', 10, true);
 
+-- Database-level guard: an internal fulfillment order cannot be inserted
+-- unless its purchase order has an active matching inventory reservation.
+do $
+declare
+  v_failed boolean := false;
+begin
+  begin
+    insert into public.internal_fulfillment_orders(
+      purchase_order_id, supply_product_id, supply_variant_id, quantity, status, order_number
+    ) values (
+      '30000000-0000-4000-8000-000000000005',
+      '10000000-0000-4000-8000-000000000002',
+      '20000000-0000-4000-8000-000000000002',
+      1, 'reserved', 'unreserved-order'
+    );
+  exception when others then
+    v_failed := sqlerrm = 'internal_fulfillment_requires_active_reservation';
+    if not v_failed then raise; end if;
+  end;
+  if not v_failed then raise exception 'unreserved internal fulfillment order was accepted'; end if;
+end $;
+
 -- Inject allocation failure. The variant update and ledger insert must both
 -- roll back; the same PO remains available for the later concurrency test.
 create function public.inject_inventory_allocation_failure()
