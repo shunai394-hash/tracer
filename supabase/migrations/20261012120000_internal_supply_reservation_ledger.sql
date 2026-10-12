@@ -223,7 +223,7 @@ begin
          release_reason = nullif(trim(coalesce(p_reason, '')), ''),
          updated_at = now()
    where purchase_order_id = p_purchase_order_id
-     and status = 'reserved';
+     and status in ('reserved', 'committed');
 
   -- Keep internal catalog/listing projections aligned with the canonical stock.
   update public.tracer_supply_variants
