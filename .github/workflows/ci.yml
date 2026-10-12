@@ -57,6 +57,8 @@ jobs:
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-deferred-bestseller-gate.mjs
       - run: node scripts/test-canonical-variant-evidence-retry.mjs
+      - name: Test market cursor single-owner and resume invariants
+        run: node --experimental-strip-types --no-warnings scripts/test-market-cursor-ownership.mjs
       - name: Test Amazon child variant recovery diagnostics
         run: npm run test:amazon-child-variant-diagnostics
       - run: node --experimental-strip-types --no-warnings scripts/test-base-auth-retry-circuit.mjs
