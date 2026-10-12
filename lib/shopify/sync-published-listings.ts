@@ -6,6 +6,7 @@ import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapanes
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { compensateShopifyPublication } from "@/lib/shopify/publication-rollback";
 
 type Listing = {
   id: string;
@@ -350,6 +351,7 @@ async function syncListingRows(
   }
 
   for (const row of candidates) {
+    let publishedProductId: string | null = null;
     const claim = await supabase
       .from("shop_listings")
       .update({ shopify_sync_status: "syncing", shopify_sync_error: null })
@@ -432,6 +434,7 @@ async function syncListingRows(
       });
 
       const publication = await ensureShopifyProductPublished(product.id);
+      if (publication.published === true) publishedProductId = product.id;
       const { error: updateError } = await supabase.from("shop_listings").update({
         shopify_product_id: product.id,
         shopify_variant_id: variant?.id ?? null,
@@ -454,6 +457,27 @@ async function syncListingRows(
       results.listingIds.push(row.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      // Shopify may already be public when the local DB write fails. Compensate
+      // by unpublishing remotely and persist an explicit blocked/failed state.
+      if (publishedProductId) {
+        const rollback = await compensateShopifyPublication({
+          productId: publishedProductId,
+          originalError: message,
+          unpublish: unpublishShopifyProduct,
+          persist: (patch) => supabase.from("shop_listings").update(patch).eq("id", row.id),
+        });
+        if (!rollback.statePersisted) {
+          console.error("[TRACER SHOPIFY PUBLICATION ROLLBACK STATE WRITE FAILED]", {
+            listingId: row.id,
+            productId: publishedProductId,
+            originalError: message,
+            rollbackError: rollback.error,
+          });
+        }
+        results.failed += 1;
+        results.errors.push({ listingId: row.id, error: rollback.error });
+        continue;
+      }
       if (message === "japanese_catalog_title_localization_failed" || message === "japanese_catalog_copy_invalid") {
         if (row.shopify_product_id) await unpublishShopifyProduct(String(row.shopify_product_id));
         await supabase.from("shop_listings").update({
