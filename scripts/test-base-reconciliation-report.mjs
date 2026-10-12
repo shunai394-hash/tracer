@@ -40,7 +40,7 @@ assert.match(route, /partialTitleScore/);
 assert.match(route, /Script=Han.*Script=Hiragana.*Script=Katakana/); // Japanese unspaced titles use CJK bigrams
 assert.match(route, /scoredCandidates/);
 assert.match(route, /MULTIPLE_TOP_CANDIDATES_REVIEW_REQUIRED/);
-assert.match(policy, /baseVariant && baseVariant !== rowVariant/); // variant mismatch requires review
+assert.match(policy, /\(baseVariant \|\| rowVariant\) && \(!baseVariant \|\| !rowVariant \|\| baseVariant !== rowVariant\)/); // missing or mismatched variant identity requires review
 assert.match(policy, /baseProduct && rowProduct && baseProduct !== rowProduct/);
 assert.match(policy, /input\.score !== input\.topScore \|\| input\.topCandidateCount !== 1/);
 assert.match(route, /duplicateIdentityCount:/);
