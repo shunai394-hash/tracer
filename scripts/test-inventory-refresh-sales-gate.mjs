@@ -32,7 +32,7 @@ assert.doesNotMatch(persistence, /price_checked_at:\s*Number\.isFinite\(args\.co
 
 const baseOrders = readFileSync(new URL("../lib/channels/base-orders.ts", import.meta.url), "utf8");
 assert.ok(baseOrders.includes("function assertUniqueBaseItemMappings") && baseOrders.includes("base_item_mapping_ambiguous"), "ambiguous BASE item IDs must fail closed instead of selecting an arbitrary listing");
-assert.equal((baseOrders.match(/assertUniqueBaseItemMappings\\(listings\\)/g) ?? []).length, 2, "both BASE order repair and initial import must reject ambiguous item mappings");
+assert.equal((baseOrders.match(/assertUniqueBaseItemMappings\(listings\)/g) ?? []).length, 2, "both BASE order repair and initial import must reject ambiguous item mappings");
 const refreshRoute = readFileSync(new URL("../app/api/cron/inventory-refresh/route.ts", import.meta.url), "utf8");
 assert.match(refreshRoute, /pipeline_reason:\s*"base_inventory_sync_failed"/, "BASE sync failures must be durably classified");
 assert.match(refreshRoute, /published:\s*false,\s*orderable:\s*false/, "BASE sync failures must fail closed locally");
