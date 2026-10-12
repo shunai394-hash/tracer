@@ -235,26 +235,48 @@ export function parseAmazonVariationAsinMap(
   const parentAsin = extractAsinFromUrl(parentProductUrl);
   const output: AmazonVariationAsinEvidence[] = [];
   const seen = new Set<string>();
-  const patterns = [
-    /(?:var|let|const)\s+dimensionValuesDisplayData\s*=\s*(\{[\s\S]*?\})\s*;/gi,
-    /dimensionValuesDisplayData\s*:\s*(\{[\s\S]*?\})\s*[,}]/gi,
-  ];
-  for (const pattern of patterns) {
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(html))) {
-      let parsed: unknown;
-      try { parsed = JSON.parse(match[1]); } catch { continue; }
-      const record = asRecord(parsed);
-      if (!record) continue;
-      for (const [rawAsin, rawValues] of Object.entries(record)) {
-        const asin = normalizeIdentifier("asin", rawAsin);
-        if (!asin || asin === parentAsin || seen.has(asin)) continue;
-        const variationValues = nodeList(rawValues)
-          .map(asString)
-          .filter((value): value is string => Boolean(value));
-        seen.add(asin);
-        output.push({ asin, variationValues });
+  // A lazy brace regex truncates JSON when nested objects are present. Scan
+  // balanced braces while respecting quoted strings and escapes.
+  const keyPattern = /dimensionValuesDisplayData\s*(?:=|:)\s*\{/gi;
+  let match: RegExpExecArray | null;
+  while ((match = keyPattern.exec(html))) {
+    const openBrace = match.index + match[0].lastIndexOf("{");
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let end = -1;
+    for (let index = openBrace; index < html.length; index += 1) {
+      const char = html[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === "\\") escaped = true;
+        else if (char === '"') inString = false;
+        continue;
       }
+      if (char === '"') { inString = true; continue; }
+      if (char === "{") depth += 1;
+      else if (char === "}") {
+        depth -= 1;
+        if (depth === 0) { end = index + 1; break; }
+      }
+    }
+    if (end < 0) continue;
+    let parsed: unknown;
+    try { parsed = JSON.parse(html.slice(openBrace, end)); } catch { continue; }
+    const record = asRecord(parsed);
+    if (!record) continue;
+    for (const [rawAsin, rawValues] of Object.entries(record)) {
+      const asin = normalizeIdentifier("asin", rawAsin);
+      if (!asin || asin === parentAsin || seen.has(asin)) continue;
+      const collectStrings = (value: unknown): string[] => {
+        if (typeof value === "string" && value.trim()) return [value.trim()];
+        if (Array.isArray(value)) return value.flatMap(collectStrings);
+        const nested = asRecord(value);
+        return nested ? Object.values(nested).flatMap(collectStrings) : [];
+      };
+      const variationValues = collectStrings(rawValues);
+      seen.add(asin);
+      output.push({ asin, variationValues });
     }
   }
   return output;
