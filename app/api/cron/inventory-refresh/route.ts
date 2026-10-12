@@ -279,16 +279,33 @@ export async function GET(request: Request) {
           continue;
         }
 
+        // The boolean evidenceMatches flag does not narrow nullable adapter values
+        // for TypeScript. Re-check the amounts explicitly before any persistence.
+        if (
+          priceResult === null ||
+          shippingResult === null ||
+          typeof priceResult.amount !== "number" ||
+          !Number.isFinite(priceResult.amount) ||
+          priceResult.amount < 0 ||
+          typeof shippingResult.amount !== "number" ||
+          !Number.isFinite(shippingResult.amount) ||
+          shippingResult.amount < 0
+        ) {
+          throw new Error("Supplier price or Japan shipping amount is invalid");
+        }
+        const verifiedPrice = priceResult.amount;
+        const verifiedShipping = shippingResult.amount;
+
         const { error: supplierEvidenceError } = await supabase
           .from("supplier_listings")
           .update({
             inventory,
             inventory_checked_at: now,
             inventory_confirmed: true,
-            cost: priceResult.amount,
+            cost: verifiedPrice,
             price_confirmed: true,
             price_checked_at: now,
-            shipping_cost: shippingResult.amount,
+            shipping_cost: verifiedShipping,
             shipping_checked_at: now,
             fetched_at: now,
           })
@@ -298,8 +315,6 @@ export async function GET(request: Request) {
         // Fresh supplier costs invalidate prior profitability decisions when the
         // landed-cost inputs change. Do not silently reuse a previously passed
         // Sales Test Gate or re-enable the BASE item with stale margins.
-        const verifiedPrice = Number(priceResult.amount);
-        const verifiedShipping = Number(shippingResult.amount);
         const priorSourceCost = listing.source_cost === null || listing.source_cost === undefined ? null : Number(listing.source_cost);
         const priorShippingCost = listing.shipping_cost === null || listing.shipping_cost === undefined ? null : Number(listing.shipping_cost);
         const economicsChanged =
@@ -319,8 +334,8 @@ export async function GET(request: Request) {
           const { error: invalidateError } = await supabase
             .from("shop_listings")
             .update({
-              source_cost: priceResult.amount,
-              shipping_cost: shippingResult.amount,
+              source_cost: verifiedPrice,
+              shipping_cost: verifiedShipping,
               contribution_profit: null,
               contribution_margin: null,
               selection_reasons: invalidatedReasons,
