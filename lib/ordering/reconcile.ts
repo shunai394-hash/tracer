@@ -38,7 +38,7 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
     .from("purchase_orders")
     .select("id,supplier_name,supplier_order_id,status,fulfillment_kind,metadata")
     .not("supplier_order_id", "is", null)
-    .in("status", ["placed", "processing", "shipped", "delivered"])
+    .in("status", ["placed", "processing", "shipped", "delivered", "supplier_payment_pending", "supplier_payment_verification_failed"])
     .order("updated_at", { ascending: true })
     .limit(Math.max(1, Math.min(limit, 100)));
 
@@ -69,6 +69,87 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
         stage: "supplier_adapter_lookup",
         reason: "supplier_adapter_unavailable",
       });
+      continue;
+    }
+
+    const currentStatus = String(po.status ?? "");
+    if (currentStatus === "supplier_payment_pending" || currentStatus === "supplier_payment_verification_failed") {
+      // Recovery for an existing supplier order is lookup-only. Never call
+      // executeSupplierPurchaseOrder here: an unknown payment outcome must not
+      // create or resend a supplier order.
+      let stage = "supplier_payment_status_lookup";
+      try {
+        const paymentResult = await adapter.getOrderStatus(supplierOrderId);
+        const paymentConfirmed = paymentResult?.paymentConfirmed === true;
+        const observedAt = new Date().toISOString();
+        const previousMetadata = (po.metadata as Record<string, unknown> | null) ?? {};
+        const previousPayment = (previousMetadata.supplier_payment as Record<string, unknown> | undefined) ?? {};
+        const paymentMetadata = {
+          ...previousMetadata,
+          supplier_payment: {
+            ...previousPayment,
+            confirmed: paymentConfirmed,
+            supplier_order_id: supplierOrderId,
+            supplier_status: paymentResult?.status ?? null,
+            verified_at: observedAt,
+            verification_error: null,
+            recovery_source: "supplier_status_reconciliation",
+          },
+        };
+
+        if (paymentConfirmed) {
+          stage = "supplier_payment_attempt_ledger_update";
+          const { data: attempt, error: attemptError } = await supabase
+            .from("supplier_order_attempts")
+            .update({
+              succeeded: true,
+              response_code: "SUPPLIER_PAYMENT_CONFIRMED",
+              response_message: "Supplier payment confirmed by read-only reconciliation",
+              state: "completed",
+            })
+            .eq("purchase_order_id", purchaseOrderId)
+            .eq("supplier_order_id", supplierOrderId)
+            .select("id")
+            .maybeSingle();
+          if (attemptError) throw new Error(attemptError.message);
+          if (!attempt) throw new Error("supplier_order_attempt_ledger_missing_manual_reconciliation_required");
+
+          stage = "supplier_payment_purchase_order_update";
+          const { error: paymentUpdateError } = await supabase
+            .from("purchase_orders")
+            .update({
+              status: "placed",
+              supplier_status: "paid",
+              supplier_synced_at: observedAt,
+              metadata: paymentMetadata,
+            })
+            .eq("id", purchaseOrderId)
+            .in("status", ["supplier_payment_pending", "supplier_payment_verification_failed"]);
+          if (paymentUpdateError) throw new Error(paymentUpdateError.message);
+        } else {
+          stage = "supplier_payment_pending_evidence_update";
+          const { error: pendingUpdateError } = await supabase
+            .from("purchase_orders")
+            .update({
+              status: "supplier_payment_pending",
+              supplier_status: paymentResult?.status ?? "payment_pending",
+              supplier_synced_at: observedAt,
+              metadata: paymentMetadata,
+            })
+            .eq("id", purchaseOrderId)
+            .in("status", ["supplier_payment_pending", "supplier_payment_verification_failed"]);
+          if (pendingUpdateError) throw new Error(pendingUpdateError.message);
+        }
+
+        updated += 1;
+        purchaseOrderIds.push(purchaseOrderId);
+      } catch (error) {
+        failed += 1;
+        failedPurchaseOrderIds.push(purchaseOrderId);
+        const reason = error instanceof Error ? error.message : String(error);
+        failureDetails.push({ purchaseOrderId, stage, reason });
+        console.error("[TRACER SUPPLIER PAYMENT RECOVERY]", { purchaseOrderId, stage, reason });
+      }
       continue;
     }
 
