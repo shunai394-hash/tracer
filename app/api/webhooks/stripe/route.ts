@@ -49,7 +49,7 @@ async function markProcessed(
   shopOrderId: string | null,
   error?: string,
 ): Promise<void> {
-  await supabase
+  const { data, error: updateError } = await supabase
     .from("stripe_webhook_events")
     .update({
       processed: !error,
@@ -57,7 +57,18 @@ async function markProcessed(
       shop_order_id: shopOrderId,
       processed_at: new Date().toISOString(),
     })
-    .eq("stripe_event_id", eventId);
+    .eq("stripe_event_id", eventId)
+    .select("stripe_event_id")
+    .maybeSingle();
+
+  // Never acknowledge a webhook if its durable processing state could not be
+  // recorded. Stripe can retry the delivery; handlers must remain idempotent.
+  if (updateError) {
+    throw new Error(`stripe_webhook_event_status_update_failed:${updateError.message}`);
+  }
+  if (!data?.stripe_event_id) {
+    throw new Error("stripe_webhook_event_status_row_missing");
+  }
 }
 
 async function handleCheckoutCompleted(
