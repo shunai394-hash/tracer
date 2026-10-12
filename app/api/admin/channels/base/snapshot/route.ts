@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { requireBaseAuditAuth } from "@/lib/security/cron-auth";
 import { fetchBaseItemsSnapshot, isBaseConfigured } from "@/lib/channels/base";
 
 export const runtime = "nodejs";
@@ -11,7 +11,7 @@ export const maxDuration = 120;
  * It deliberately excludes orders and customer data and never logs product payloads.
  */
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
+  const authError = await requireBaseAuditAuth(request);
   if (authError) return authError;
 
   if (!isBaseConfigured()) {
