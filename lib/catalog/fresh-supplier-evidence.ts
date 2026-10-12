@@ -35,12 +35,16 @@ export async function getFreshSupplierEvidence(refs: SupplierEvidenceRef[], nowM
     const variantId = String(row.supplier_variant_id ?? "");
     if (productId !== ref.supplierProductId || variantId !== ref.supplierVariantId) continue;
     const inventory = Number(row.inventory);
-    if (!Number.isFinite(inventory) || inventory <= 0 || !(Number(row.cost) > 0) ||
-      !Number.isFinite(Number(row.shipping_cost)) || Number(row.shipping_cost) < 0) continue;
+    const cost = Number(row.cost);
+    const shippingCost = Number(row.shipping_cost);
+    if (!Number.isFinite(inventory) || inventory <= 0 || !Number.isFinite(cost) || cost <= 0 ||
+      !Number.isFinite(shippingCost) || shippingCost < 0) continue;
     const checkedAt = typeof row.inventory_checked_at === "string" ? Date.parse(row.inventory_checked_at) : NaN;
     if (!Number.isFinite(checkedAt) || nowMs - checkedAt > MAX_AGE_MS || checkedAt > nowMs + 5 * 60 * 1000) continue;
-    const next = typeof row.next_verification_at === "string" ? Date.parse(row.next_verification_at) : NaN;
-    if (Number.isFinite(next) && next <= nowMs) continue;
+    if (row.next_verification_at !== null && row.next_verification_at !== undefined) {
+      const next = typeof row.next_verification_at === "string" ? Date.parse(row.next_verification_at) : NaN;
+      if (!Number.isFinite(next) || next <= nowMs) continue;
+    }
     result.set(ref.listingId, { inventory: Math.floor(inventory), supplierProductId: productId, supplierVariantId: variantId });
   }
   return result;
