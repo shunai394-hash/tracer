@@ -98,12 +98,15 @@ export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
     price: true,
     shipping: true,
     shippingRequiresDestination: false,
-    orderPreflight: true,
-    orderCreation: true,
-    payment: true,
+    // This adapter only reserves TRACER-owned internal inventory and creates
+    // an internal fulfillment record. It does not submit a supplier-side order
+    // or confirm payment with an external supplier, so it is not auto-procurement.
+    orderPreflight: false,
+    orderCreation: false,
+    payment: false,
     orderStatus: true,
     tracking: true,
-    liveOrdering: true,
+    liveOrdering: false,
   },
 
   async search(query: string): Promise<SupplierProduct[]> {
