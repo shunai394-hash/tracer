@@ -367,13 +367,10 @@ async function syncListingRows(
       }
       results.failed += 1;
       results.errors.push({ listingId: row.id, error: `unpublish_failed:${message}` });
+      // Shopify is still potentially published when the external call fails.
+      // Preserve publication fields so the next audit can detect and retry drift;
+      // never represent an unverified external unpublish as internally complete.
       const { error: failureWriteError } = await supabase.from("shop_listings").update({
-        published: false,
-        pipeline_stage: "BLOCKED",
-        pipeline_status: "blocked",
-        pipeline_reason: "sales_test_gate_unpublish_failed",
-        pipeline_updated_at: new Date().toISOString(),
-        published_at: null,
         shopify_sync_status: "failed",
         shopify_sync_error: `unpublish_failed:${message}`.slice(0, 2000),
         shopify_synced_at: new Date().toISOString(),
