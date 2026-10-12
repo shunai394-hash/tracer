@@ -188,7 +188,7 @@ export async function GET(request: Request) {
       orderable: detail.orderable === true,
       tracking_available: false,
       identity_method: variation.jan ? "jan" : "orosy_supplier_variant",
-      identity_confidence: variation.jan ? 1 : 0.98,
+      identity_confidence: variation.jan ? 1 : 0.7,
       // Gross profit cannot be asserted until shipping and channel/payment fees are known.
       contribution_profit: null,
       contribution_margin: null,
