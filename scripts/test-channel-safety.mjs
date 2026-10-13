@@ -391,6 +391,57 @@ await test("Shopify preview and sync use the same eligibility and refuse an ambi
     probeImage: async () => true,
   });
   assert.equal(eligiblePreview.rows[0].eligible, true);
+
+  // A previously passed item held only for an inventory outlier can recover
+  // after fresh supplier stock is normal, even though publication was cleared.
+  const recovering = eligibleShopifyRow({
+    published: false,
+    pipeline_stage: "BLOCKED",
+    pipeline_status: "blocked",
+    pipeline_reason: "inventory_outlier_requires_recheck",
+    inventory: 20,
+    orderable: true,
+  });
+  const recoveryPreview = await previewShopifySync(10, {
+    supabase: {
+      from() {
+        const api = {
+          select() { return api; },
+          or() { return api; },
+          order() { return api; },
+          limit() { return Promise.resolve({ data: [recovering], error: null }); },
+        };
+        return api;
+      },
+    },
+    probeImage: async () => true,
+  });
+  assert.equal(recoveryPreview.rows[0].eligible, true, JSON.stringify(recoveryPreview.rows[0]));
+  const stillBlocked = eligibleShopifyRow({
+    published: false,
+    pipeline_stage: "BLOCKED",
+    pipeline_status: "blocked",
+    pipeline_reason: "identity_not_confirmed",
+    identity_method: null,
+    identity_confidence: null,
+  });
+  const blockedPreview = await previewShopifySync(10, {
+    supabase: {
+      from() {
+        const api = {
+          select() { return api; },
+          or() { return api; },
+          order() { return api; },
+          limit() { return Promise.resolve({ data: [stillBlocked], error: null }); },
+        };
+        return api;
+      },
+    },
+    probeImage: async () => true,
+  });
+  assert.equal(blockedPreview.rows[0].eligible, false);
+  assert.ok(blockedPreview.rows[0].blockReasons.includes("pipeline_blocked"));
+
   const ambiguousDb = shopifyDb();
   let inventoryCalls = 0;
   const product = {
