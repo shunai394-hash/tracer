@@ -72,4 +72,5 @@ assert.match(selector, /womenMerchandisingPriority/, "candidate ordering must ap
 assert.match(alternateSelector, /isPublishableCatalogTitle\(sourceTitle\)/, "alternate sales-test route must reject generic titles");
 assert.match(alternateSelector, /domestic_shipping_unknown_or_invalid/, "alternate sales-test route must block unknown domestic delivery cost");
 assert.match(alternateSelector, /domesticShipping: domesticShippingJpy/, "alternate sales-test route must include observed domestic delivery cost");
+assert.match(alternateSelector, /womenMerchandisingPriority/, "alternate sales-test route must apply the requested category priority");
 console.log(`Catalog title/description quality tests: ${cases.length} cases + 13 channel wiring checks + ${priorityCases.length} merchandising priority cases passed.`);
