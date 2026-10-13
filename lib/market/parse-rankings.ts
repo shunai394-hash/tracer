@@ -18,7 +18,7 @@ export type ParsedBestseller = {
   reviewCount: number | null;
   productUrl: string | null;
   imageUrl: string | null;
-  /** Explicit canonical child variants parsed from ProductGroup.hasVariant JSON-LD only. */
+  /** Explicit child variants from ProductGroup.hasVariant or Product.isVariantOf. */
   canonicalVariants?: CanonicalMarketplaceVariantEvidence[];
 };
 

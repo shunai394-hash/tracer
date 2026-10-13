@@ -20,6 +20,9 @@ import {
 import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { normalizeIdentifier } from "../lib/market/identifiers.ts";
 import { parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
+import { verifyDropshipOrderGateInvariants } from "../lib/ordering/dropship-gate.ts";
+import { verifySalesTestGateInvariants } from "../lib/market/sales-test-gate.ts";
+import { decideStorefrontStock } from "../lib/shop/live-stock-policy.ts";
 import { internalLinkRetryDelayMs, internalProductCandidateStatus, selectDueInternalLinkRetryIds, supplierListingStateForIdentity, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
@@ -52,6 +55,46 @@ test("canonical marketplace variant evidence", "does not use the parent ASIN as 
   assert.equal(sameParentUrlVariants.length, 1);
   assert.equal(sameParentUrlVariants[0].sourceVariantId, "ITEM-SAME-PARENT-URL");
   assert.equal(sameParentUrlVariants[0].asin, null, "explicitly repeated parent URL must not become child ASIN evidence");
+});
+
+test("canonical marketplace variant evidence", "reads Product.isVariantOf children and ignores barcodes nested on the parent reference", () => {
+  const html = '<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"ProductGroup","@id":"https://www.amazon.co.jp/dp/B0PARENT01","name":"Parent Bottle","gtin13":"4006381333931"},{"@type":"Product","name":"Bottle 500 ml","sku":"BOTTLE-500","url":"https://www.amazon.co.jp/dp/B0VARIANT1","gtin13":"4006381333931","isVariantOf":{"@id":"https://www.amazon.co.jp/dp/B0PARENT01"}},{"@type":"Product","name":"Bottle 1 L","sku":"BOTTLE-1000","url":"https://www.amazon.co.jp/dp/B0VARIANT2","isVariantOf":{"@type":"ProductGroup","gtin13":"4006381333931","productGroupID":"PARENT"}},{"@type":"Product","name":"Standalone parent product","sku":"PARENT-SKU","gtin13":"4006381333931","url":"https://www.amazon.co.jp/dp/B0PARENT01"}]}</script>';
+  const variants = parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01");
+  assert.deepEqual(variants.map((variant) => variant.sourceVariantId), ["B0VARIANT1", "B0VARIANT2"]);
+  assert.equal(variants[0].evidenceSource, "schema_org_product_is_variant_of");
+  assert.equal(variants[0].gtin, "4006381333931");
+  assert.equal(variants[0].asin, "B0VARIANT1");
+  assert.equal(variants[1].gtin, null, "GTIN declared only on isVariantOf must not be copied onto the child");
+  assert.equal(variants[1].asin, "B0VARIANT2");
+  assert.equal(variants.some((variant) => variant.sourceVariantId === "B0PARENT01" || variant.sourceVariantId === "PARENT-SKU"), false);
+});
+
+test("canonical marketplace variant evidence", "dedupes a child declared both as hasVariant and isVariantOf", () => {
+  const html = '<script type="application/ld+json">{"@graph":[{"@type":"ProductGroup","hasVariant":[{"@type":"Product","sku":"SAME-SKU","name":"Shared child","url":"https://www.amazon.co.jp/dp/B0VARIANT1"}]},{"@type":"Product","sku":"SAME-SKU","name":"Shared child","url":"https://www.amazon.co.jp/dp/B0VARIANT1","isVariantOf":{"@id":"#group"}}]}</script>';
+  const variants = parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01");
+  assert.equal(variants.length, 1);
+  assert.equal(variants[0].sourceVariantId, "B0VARIANT1");
+  assert.equal(variants[0].evidenceSource, "schema_org_product_group_has_variant");
+});
+
+test("dropship order gate", "blocks non-positive FX and non-positive profit before live execution", () => {
+  const result = verifyDropshipOrderGateInvariants();
+  assert.equal(result.ok, true, result.cases.filter((item) => item.actual !== item.expected).map((item) => item.name).join(", "));
+});
+
+test("sales test gate", "requires a japanese title and a known positive contribution profit", () => {
+  const result = verifySalesTestGateInvariants();
+  assert.equal(result.ok, true, result.cases.filter((item) => item.actual !== item.expected).map((item) => item.name).join(", "));
+  assert.equal(result.cases.length, 12);
+});
+
+test("storefront stock", "does not treat a failed or missing Shopify quantity as in stock", () => {
+  assert.deepEqual(decideStorefrontStock({ shopifyConfigured: true, liveCheckFailed: true, shopifyVariantId: "gid://shopify/ProductVariant/1", dbInventory: 8, liveQuantity: undefined }), { visible: false, reason: "live_stock_unavailable" });
+  assert.deepEqual(decideStorefrontStock({ shopifyConfigured: true, liveCheckFailed: false, shopifyVariantId: "gid://shopify/ProductVariant/1", dbInventory: 8, liveQuantity: undefined }), { visible: false, reason: "live_stock_unknown" });
+  assert.deepEqual(decideStorefrontStock({ shopifyConfigured: true, liveCheckFailed: false, shopifyVariantId: null, dbInventory: 8, liveQuantity: 4 }), { visible: false, reason: "shopify_variant_unknown" });
+  assert.deepEqual(decideStorefrontStock({ shopifyConfigured: true, liveCheckFailed: false, shopifyVariantId: "gid://shopify/ProductVariant/1", dbInventory: 8, liveQuantity: 0 }), { visible: false, reason: "live_stock_zero" });
+  assert.deepEqual(decideStorefrontStock({ shopifyConfigured: true, liveCheckFailed: false, shopifyVariantId: "gid://shopify/ProductVariant/1", dbInventory: 8, liveQuantity: 3 }), { visible: true, inventory: 3 });
+  assert.deepEqual(decideStorefrontStock({ shopifyConfigured: false, liveCheckFailed: false, shopifyVariantId: null, dbInventory: 8, liveQuantity: undefined }), { visible: true, inventory: 8 });
 });
 
 

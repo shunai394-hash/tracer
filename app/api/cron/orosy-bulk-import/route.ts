@@ -118,7 +118,7 @@ export async function GET(request: Request) {
       currency: variation.currency ?? "JPY",
       inventory: variation.stockQty,
       ship_to: "JP",
-      tracking_available: true,
+      tracking_available: false,
       order_method: "orosy_api",
       api_available: true,
       identity_method: variation.jan ? "jan" : "orosy_supplier_variant",
@@ -176,7 +176,7 @@ export async function GET(request: Request) {
       shipping_cost: null,
       inventory: variation.stockQty,
       orderable: true,
-      tracking_available: true,
+      tracking_available: false,
       identity_method: variation.jan ? "jan" : "orosy_supplier_variant",
       identity_confidence: variation.jan ? 1 : 0.98,
       contribution_profit: sellingPrice - variation.buyerPrice,
@@ -205,13 +205,19 @@ export async function GET(request: Request) {
     shopify = { failed: accepted.length, error: error instanceof Error ? error.message : String(error) };
   }
 
+  const shopifyFailed = shopify && typeof shopify === "object" && "failed" in shopify
+    ? Array.isArray(shopify.failed) ? shopify.failed.length : typeof shopify.failed === "number" ? shopify.failed : 0
+    : 0;
+  const shopifyError = shopify && typeof shopify === "object" && "error" in shopify && shopify.error ? 1 : 0;
+  const failed = shopifyFailed + shopifyError + rejected.length;
   return NextResponse.json({
-    ok: true,
+    ok: failed === 0,
     source: "orosy",
     candidates: candidates.size,
     accepted: accepted.length,
     rejected: rejected.length,
+    failed,
     shopify,
     elapsedMs: Date.now() - started,
-  });
+  }, { status: failed === 0 ? 200 : 207 });
 }

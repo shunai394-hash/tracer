@@ -5,7 +5,11 @@ import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
+import { evaluateChannelListingEligibility } from "@/lib/market/channel-listing-eligibility";
+import { currencyMismatchFromProfitReason } from "@/lib/market/commercial-terms";
+import { probeListingImage } from "@/lib/market/probe-listing-image";
 import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { getSupplierAdapter } from "@/lib/procurement/registry";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 
 function asNumber(value: unknown): number | null {
@@ -158,7 +162,7 @@ export async function selectAndPublishSalesTests(
           internalCatalogVariant?.internal_supply_variant_id ??
           (internalCatalogVariant?.id ?? (internalCatalog.evidence as Record<string, unknown> | null)?.supply_variant_id),
         cost: internalCatalog.cost,
-        shipping_cost: internalCatalog.shipping_cost ?? 0,
+        shipping_cost: internalCatalog.shipping_cost ?? null,
         handling_cost: internalCatalog.handling_cost ?? 0,
         inventory: internalCatalog.inventory,
         inventory_confirmed: true,
@@ -250,7 +254,38 @@ export async function selectAndPublishSalesTests(
 
     if (!profit.calculable) reasons.push(profit.incalculableReason ?? "profit_unknown");
     if (profit.shippingUnknown) reasons.push("shipping_unknown");
-    if (profit.contributionProfit !== null && profit.contributionProfit <= 0) reasons.push("profit_not_positive");
+    if (profit.contributionProfit === null || !Number.isFinite(profit.contributionProfit) || profit.contributionProfit <= 0) reasons.push("profit_not_positive");
+    const catalogDescription = isInternalSupply
+      ? "TRACER独自供給カタログの商品です。需要・価格・在庫・注文可否をTRACER側で管理しています。"
+      : "市場ランキングで確認された売れ筋商品です。仕入は識別子で同一商品と確認できた無在庫仕入先のみを使います。";
+    const sellingCurrency = isInternalSupply ? (typeof listing.currency === "string" ? listing.currency : null) : (typeof bestseller.currency === "string" ? bestseller.currency : null);
+    const channel = evaluateChannelListingEligibility({
+      title: localizeProductTitle(bestseller.title, String(bestseller.category ?? "")),
+      description: catalogDescription,
+      imageUrl: bestseller.image_url,
+      imageReachable: await probeListingImage(bestseller.image_url),
+      sellingPrice: isInternalSupply ? asNumber(listing.catalog_sale_price) : asNumber(bestseller.price),
+      currency: sellingCurrency,
+      sourceCost: asNumber(listing.cost),
+      shippingCost: asNumber(listing.shipping_cost),
+      contributionProfit: profit.contributionProfit,
+      profitCalculable: profit.calculable,
+      currencyMismatch: currencyMismatchFromProfitReason(profit.incalculableReason),
+      inventory: asNumber(listing.inventory),
+      inventoryConfirmed: listing.inventory_confirmed === true,
+      orderable: listing.orderable === true,
+      trackingAvailable: listing.tracking_available === true,
+      supplierProductId: listing.supplier_product_id,
+      supplierVariantId: listing.supplier_variant_id,
+      identityLinked: identifierGradeMethods.has(identityMethod),
+      identityMethod,
+      identityConfidence,
+      salesTestPassed: false,
+      requireSalesTestPass: false,
+      supplierName: listing.supplier,
+      supplierAdapterRegistered: getSupplierAdapter(String(listing.supplier ?? "")) !== null,
+    });
+    reasons.push(...channel.reasons.filter((reason) => !reasons.includes(reason)));
 
     if (reasons.length > 0) {
       await markPipeline(String(bestseller.id), "SALES_TEST", "blocked", reasons.join(","));
@@ -381,11 +416,11 @@ export async function selectAndPublishSalesTests(
       contribution_profit: item.profit.contributionProfit,
       contribution_margin: item.profit.contributionMargin,
       published: true,
-      selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:market", ...item.reasons],
+      selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:market", ...(item.listing.inventory_confirmed === true ? ["inventory_confirmed"] : []), ...item.reasons],
       missing: [],
       pipeline_stage: "PUBLISHED",
       pipeline_status: "published",
-      pipeline_reason: "sales_test_gate_passed_canonical_publish",
+      pipeline_reason: SALES_TEST_GATE_PASSED,
       pipeline_error: null,
       pipeline_updated_at: fetchedAt,
       published_at: fetchedAt,

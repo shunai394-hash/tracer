@@ -155,9 +155,8 @@ export async function discoverAndCreateCjSupply(
   // variant, stock, Japan freight and cost. Payment/order-creation gates stay
   // closed for procurement; they must never prevent finding valid supply.
   //
-  // CJ exposes live order-status/tracking APIs, so discovered offers can carry
-  // tracking capability without enabling automatic purchasing.
-  const cjTrackingAvailable = true;
+  // Catalog discovery does not observe a tracking number or an order acceptance.
+  // Those paths are not connected, so a stock count must not become orderable.
 
   const fx = await getObservedUsdToJpyRate();
   const fxRate = fx?.rate ?? null;
@@ -388,7 +387,7 @@ export async function discoverAndCreateCjSupply(
         identity_status: "supply_discovered", identity_confidence: 1, configured: true,
         supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
         gtin: variantBarcode,
-        orderable: true, price_confirmed: true, inventory_confirmed: true, tracking_available: cjTrackingAvailable,
+        orderable: false, price_confirmed: true, inventory_confirmed: true, tracking_available: false,
         fetched_at: new Date().toISOString(), metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate }
       }, seededCandidate.supplierListingId);
       if (supplierInsert.error) throw new Error(supplierInsert.error.message);
@@ -598,10 +597,10 @@ export async function discoverAndCreateCjSupply(
               supplier_variant_id: variant.vid,
               cj_variant_id: variant.vid,
               gtin: variantBarcode,
-              orderable: true,
+              orderable: false,
               price_confirmed: true,
               inventory_confirmed: true,
-              tracking_available: cjTrackingAvailable,
+              tracking_available: false,
               fetched_at: now,
               metadata: {
                 source: "cj_supply_first",

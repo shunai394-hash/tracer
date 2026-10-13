@@ -167,7 +167,7 @@ const NON_PRODUCT_TITLE_PATTERNS = [
 
 export function isJapaneseProductTitle(value: unknown): boolean {
   if (typeof value !== "string") return false;
-  const title = value.normalize("NFKC").trim().replace(/\\s+/g, " ");
+  const title = value.normalize("NFKC").trim().replace(/\s+/g, " ");
   if (!title || NON_PRODUCT_TITLE_PATTERNS.some((pattern) => pattern.test(title))) return false;
   const japanese = (title.match(/[ぁ-んァ-ヶ一-龯々〆ヵー]/g) ?? []).length;
   return japanese >= 2;

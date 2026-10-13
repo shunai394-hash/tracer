@@ -89,6 +89,39 @@ async function loadVariant(productId: string, variantId: string) {
   };
 }
 
+export type InternalFulfillmentRecord = {
+  id: string;
+  status: string | null;
+  purchaseOrderId: string | null;
+  orderNumber: string | null;
+};
+
+/**
+ * Read-only lookup of an internal fulfillment row by the idempotency key
+ * stored as order_number. This does not reserve stock or create an order.
+ */
+export async function findInternalFulfillmentByOrderNumber(
+  orderNumber: string,
+  supabase: ReturnType<typeof createSupabaseAdminClient> = createSupabaseAdminClient(),
+): Promise<{ rows: InternalFulfillmentRecord[]; error: string | null }> {
+  const key = orderNumber.trim();
+  if (!key) return { rows: [], error: "order_number_missing" };
+  const { data, error } = await supabase
+    .from("internal_fulfillment_orders")
+    .select("id,status,purchase_order_id,order_number")
+    .eq("order_number", key)
+    .limit(2);
+  if (error) return { rows: [], error: error.message };
+  const rawRows = Array.isArray(data) ? data : data ? [data] : [];
+  const rows = rawRows.map((row) => ({
+    id: String(row.id),
+    status: typeof row.status === "string" ? row.status : null,
+    purchaseOrderId: row.purchase_order_id ? String(row.purchase_order_id) : null,
+    orderNumber: typeof row.order_number === "string" ? row.order_number : null,
+  }));
+  return { rows, error: null };
+}
+
 export const tracerInternalSupplierAdapter: TracerSupplierAdapter = {
   name: "tracer_internal",
   capabilities: {

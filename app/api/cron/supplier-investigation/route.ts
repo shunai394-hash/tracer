@@ -45,7 +45,10 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
 
   try {
-    await recoverStaleCronRun(supabase, "supplier-investigation", maxDuration);
+    const recovery = await recoverStaleCronRun(supabase, "supplier-investigation", maxDuration);
+    if (!recovery.ok) {
+      return NextResponse.json({ ok: false, reason: "cron_lock_recovery_failed", error: recovery.error, job: "supplier-investigation" }, { status: 500 });
+    }
 
     const { data: cronRun, error: claimError } = await supabase
       .from("cron_runs")
@@ -60,7 +63,7 @@ export async function GET(request: Request) {
     if (claimError) {
       if (claimError.code === "23505") {
         return NextResponse.json(
-          { ok: true, skipped: true, reason: "cron_already_running", job: "supplier-investigation" },
+          { ok: false, skipped: true, reason: "cron_already_running", job: "supplier-investigation" },
           { status: 409 },
         );
       }
@@ -328,22 +331,26 @@ export async function GET(request: Request) {
       // deliberately not chained here. Each has its own cron schedule.
     };
 
+    let ledgerUpdateFailed = !cronRunId;
     if (cronRunId) {
-      await supabase
+      const ledger = await supabase
         .from("cron_runs")
         .update({
-          status: "succeeded",
+          status: result.rowErrors + internalLinkFailures.length > 0 ? "partial" : "succeeded",
           finished_at: new Date().toISOString(),
           duration_ms: Date.now() - startedAt,
           processed: candidateIds.length,
-          failed: result.rowErrors,
+          failed: result.rowErrors + internalLinkFailures.length,
           metadata,
         })
         .eq("id", cronRunId);
+      ledgerUpdateFailed = Boolean(ledger.error);
     }
 
+    const failed = result.rowErrors + internalLinkFailures.length + (ledgerUpdateFailed ? 1 : 0);
     return NextResponse.json({
-      ok: true,
+      ok: failed === 0,
+      ledgerUpdateFailed,
       phase: "supplier_investigation",
       elapsedMs: Date.now() - startedAt,
       candidateIds,
@@ -362,7 +369,7 @@ export async function GET(request: Request) {
       ...result,
       totalMatched,
       nextPhase: "sales_test_publication",
-    });
+    }, { status: failed === 0 ? 200 : 207 });
   } catch (error) {
     if (cronRunId) {
       try {

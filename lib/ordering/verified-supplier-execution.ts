@@ -15,6 +15,23 @@ import {
  * cannot be promoted back to purchase_orders.status=placed solely from its ID.
  */
 // States that supplier sync sets after a paid order progresses.
+export function fulfillmentOutcomeAfterPayment(input: {
+  paymentConfirmed: boolean;
+  trackingNumber: string | null;
+  trackingCheckFailed: boolean;
+}): { shipped: false; status: "supplier_payment_pending" | "placed"; trackingStatus: "pending" | "present"; reason: string | null } {
+  if (!input.paymentConfirmed) {
+    return { shipped: false, status: "supplier_payment_pending", trackingStatus: "pending", reason: "supplier_payment_not_confirmed" };
+  }
+  const trackingPending = input.trackingCheckFailed || !input.trackingNumber;
+  return {
+    shipped: false,
+    status: "placed",
+    trackingStatus: trackingPending ? "pending" : "present",
+    reason: trackingPending ? "supplier_payment_confirmed_tracking_pending" : null,
+  };
+}
+
 const POST_PAYMENT_STATUSES = new Set([
   "processing",
   "supplier_processing",
@@ -29,6 +46,14 @@ export async function executeVerifiedSupplierPurchaseOrder(
 ): Promise<ExecuteSupplierPurchaseOrderResult> {
   const result = await executeSupplierPurchaseOrder(purchaseOrderId);
   if (!result.supplierOrderId) return result;
+  // A supplier id that was not stored is a reconciliation case. Payment
+  // verification waits until a later run can read the stored attempt.
+  if (
+    result.reason === "supplier_order_created_db_sync_failed" ||
+    result.reason === "supplier_order_created_attempt_record_failed_manual_reconciliation_required"
+  ) {
+    return result;
+  }
 
   const supabase = createSupabaseAdminClient();
   const { data: current, error: currentError } = await supabase
@@ -101,6 +126,11 @@ export async function executeVerifiedSupplierPurchaseOrder(
     };
   }
 
+  const pendingOutcome = fulfillmentOutcomeAfterPayment({
+    paymentConfirmed,
+    trackingNumber: null,
+    trackingCheckFailed: false,
+  });
   if (!paymentConfirmed) {
     await supabase
       .from("purchase_orders")
@@ -109,7 +139,7 @@ export async function executeVerifiedSupplierPurchaseOrder(
         live_order: true,
         supplier_status: "payment_pending",
         supplier_synced_at: new Date().toISOString(),
-        status: "supplier_payment_pending",
+        status: pendingOutcome.status,
         metadata: {
           ...metadata,
           supplier_payment: {
@@ -136,9 +166,23 @@ export async function executeVerifiedSupplierPurchaseOrder(
     return {
       ...result,
       succeeded: false,
-      reason: "supplier_payment_not_confirmed",
+      reason: pendingOutcome.reason ?? "supplier_payment_not_confirmed",
     };
   }
+
+  let trackingNumber: string | null = null;
+  let trackingCheckFailed = false;
+  try {
+    const tracking = await adapter.getTracking(result.supplierOrderId);
+    trackingNumber = tracking?.trackingNumber ?? null;
+  } catch {
+    trackingCheckFailed = true;
+  }
+  const paidOutcome = fulfillmentOutcomeAfterPayment({
+    paymentConfirmed: true,
+    trackingNumber,
+    trackingCheckFailed,
+  });
 
   const { error: paymentPersistError } = await supabase
     .from("purchase_orders")
@@ -147,13 +191,18 @@ export async function executeVerifiedSupplierPurchaseOrder(
       live_order: true,
       supplier_status: "paid",
       supplier_synced_at: new Date().toISOString(),
-      status: "placed",
+      status: paidOutcome.status,
       metadata: {
         ...metadata,
         supplier_payment: {
           confirmed: true,
           supplier_order_id: result.supplierOrderId,
           supplier_status: supplierStatus,
+          verified_at: new Date().toISOString(),
+        },
+        supplier_tracking: {
+          status: paidOutcome.trackingStatus,
+          tracking_number: trackingNumber,
           verified_at: new Date().toISOString(),
         },
       },
@@ -171,9 +220,9 @@ export async function executeVerifiedSupplierPurchaseOrder(
   await supabase
     .from("supplier_order_attempts")
     .update({
-      succeeded: true,
-      response_code: "SUPPLIER_PAYMENT_CONFIRMED",
-      response_message: `Supplier payment confirmed; status=${supplierStatus ?? "unknown"}`,
+      succeeded: paidOutcome.trackingStatus === "present",
+      response_code: paidOutcome.trackingStatus === "present" ? "SUPPLIER_PAYMENT_CONFIRMED" : "SUPPLIER_PAYMENT_CONFIRMED_TRACKING_PENDING",
+      response_message: `Supplier payment confirmed; tracking=${paidOutcome.trackingStatus}; status=${supplierStatus ?? "unknown"}`,
       state: "completed",
     })
     .eq("purchase_order_id", purchaseOrderId)
@@ -181,7 +230,7 @@ export async function executeVerifiedSupplierPurchaseOrder(
 
   return {
     ...result,
-    succeeded: true,
-    reason: null,
+    succeeded: paidOutcome.trackingStatus === "present",
+    reason: paidOutcome.reason,
   };
 }

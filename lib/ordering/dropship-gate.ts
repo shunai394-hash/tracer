@@ -40,6 +40,12 @@ export function evaluateDropshipOrderGate(
   if (!input.currency) missing.push("currency_unknown");
   if (input.sellingPrice === null) missing.push("selling_price_unknown");
   if (input.currency && input.sellingPrice !== null && input.sourceFxRateToSelling === null) missing.push("fx_rate_unknown");
+  if (
+    input.sourceFxRateToSelling !== null &&
+    (!Number.isFinite(input.sourceFxRateToSelling) || input.sourceFxRateToSelling <= 0)
+  ) {
+    blocked.push("fx_rate_invalid");
+  }
   if (input.addressComplete === null) missing.push("address_unknown");
   if (input.addressComplete === false) blocked.push("address_incomplete");
   if (input.killSwitchBlocked) blocked.push("kill_switch_active");
@@ -55,10 +61,21 @@ export function evaluateDropshipOrderGate(
   const profitCalculable =
     input.sourceCost !== null && input.shippingCost !== null && input.sellingPrice !== null;
 
+  const fxRate = input.sourceFxRateToSelling;
+  const fxUsable = fxRate !== null && Number.isFinite(fxRate) && fxRate > 0;
   const estimatedProfit =
-    profitCalculable && input.quantity !== null
-      ? (input.sellingPrice! - (input.sourceCost! + input.shippingCost!) * (input.sourceFxRateToSelling ?? 1)) * input.quantity
+    profitCalculable && input.quantity !== null && fxUsable
+      ? (input.sellingPrice! - (input.sourceCost! + input.shippingCost!) * fxRate) * input.quantity
       : null;
+
+  if (
+    fxUsable &&
+    profitCalculable &&
+    input.quantity !== null &&
+    (estimatedProfit === null || !Number.isFinite(estimatedProfit) || estimatedProfit <= 0)
+  ) {
+    blocked.push("profit_not_positive");
+  }
 
   const liveOrderingDisabled = !input.liveOrderingEnabled;
 
@@ -107,6 +124,8 @@ export function verifyDropshipOrderGateInvariants(): {
   const unknownInventory = evaluateDropshipOrderGate({ ...base, inventoryQty: null });
   const insufficientInventory = evaluateDropshipOrderGate({ ...base, inventoryQty: 1, quantity: 2 });
   const duplicate = evaluateDropshipOrderGate({ ...base, duplicateOrderExists: true });
+  const zeroFx = evaluateDropshipOrderGate({ ...base, sourceFxRateToSelling: 0 });
+  const negativeProfit = evaluateDropshipOrderGate({ ...base, sellingPrice: 5 });
 
   const cases = [
     {
@@ -136,7 +155,7 @@ export function verifyDropshipOrderGateInvariants(): {
     {
       name: "unknown_fx_is_missing",
       expected: true,
-      actual: unknownFx.canExecuteLive === false && unknownFx.missing.includes("fx_rate_unknown"),
+      actual: unknownFx.canExecuteLive === false && unknownFx.missing.includes("fx_rate_unknown") && unknownFx.estimatedProfit === null,
     },
     {
       name: "unknown_address_is_missing_not_blocked",
@@ -163,6 +182,20 @@ export function verifyDropshipOrderGateInvariants(): {
       name: "duplicate_order_blocks_execution",
       expected: true,
       actual: duplicate.canExecuteLive === false && duplicate.blocked.includes("duplicate_order"),
+    },
+    {
+      name: "non_positive_fx_rate_cannot_zero_out_supplier_cost",
+      expected: true,
+      actual: zeroFx.canExecuteLive === false && zeroFx.blocked.includes("fx_rate_invalid") && zeroFx.estimatedProfit === null,
+    },
+    {
+      name: "non_positive_profit_blocks_live_execution",
+      expected: true,
+      actual:
+        negativeProfit.canExecuteLive === false &&
+        negativeProfit.blocked.includes("profit_not_positive") &&
+        negativeProfit.estimatedProfit !== null &&
+        negativeProfit.estimatedProfit <= 0,
     },
   ];
 

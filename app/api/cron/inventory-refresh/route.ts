@@ -5,7 +5,11 @@ import { isSupplierConfigured } from "@/lib/config/env";
 import { initializeProcurement } from "@/lib/procurement/init";
 import { getSupplierAdapter } from "@/lib/procurement/registry";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
-import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { evaluateShopListingRecord } from "@/lib/market/listing-commercial-gate";
+import { attachSupplierCommercialEvidence } from "@/lib/market/supplier-commercial-evidence";
+import { isShopifyConfigured, toShopifyGid, unpublishShopifyProduct } from "@/lib/shopify/admin";
+import { probeListingImage } from "@/lib/market/probe-listing-image";
+import { mayRestoreChannelVisibility, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
@@ -20,7 +24,7 @@ export async function GET(request: Request) {
     const supabase = createSupabaseAdminClient();
     const { data: listings, error } = await supabase
       .from("shop_listings")
-      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason")
+      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, shopify_product_id, title, description, image_url, selling_price, currency, source_cost, shipping_cost, contribution_profit, identity_method, identity_confidence, tracking_available, published, selection_reasons, pipeline_stage, pipeline_status, pipeline_reason")
       .not("supplier_name", "is", null)
       .not("supplier_variant_id", "is", null)
       .or("base_item_id.not.is.null,and(pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published,pipeline_reason.eq.sales_test_gate_passed)")
@@ -34,7 +38,7 @@ export async function GET(request: Request) {
     // become orderable again. selection_reasons carries the durable marker.
     const { data: gatedListings, error: gatedError } = await supabase
       .from("shop_listings")
-      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, title, description, selling_price, pipeline_stage, pipeline_status, pipeline_reason")
+      .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, shopify_product_id, title, description, image_url, selling_price, currency, source_cost, shipping_cost, contribution_profit, identity_method, identity_confidence, tracking_available, published, selection_reasons, pipeline_stage, pipeline_status, pipeline_reason")
       .not("supplier_name", "is", null)
       .not("supplier_variant_id", "is", null)
       .eq("published", true)
@@ -44,16 +48,40 @@ export async function GET(request: Request) {
     if (gatedError) throw new Error(gatedError.message);
 
     const seen = new Set<string>();
-    const refreshTargets = [...(listings ?? []), ...(gatedListings ?? [])].filter((row) => {
+    const refreshTargets = await attachSupplierCommercialEvidence(supabase, [...(listings ?? []), ...(gatedListings ?? [])].filter((row) => {
       const id = String(row.id);
       if (seen.has(id)) return false;
       seen.add(id);
       return true;
-    });
+    }));
 
     const results = [];
     let baseUpdated = 0;
     let baseErrors = 0;
+    let shopifyStopped = 0;
+    let shopifyStopErrors = 0;
+    let shopifyStopSkipped = 0;
+    async function stopShopifyListing(productId: unknown): Promise<string | null> {
+      const id = typeof productId === "string" ? productId.trim() : "";
+      if (!id) return null;
+      if (!isShopifyConfigured()) {
+        shopifyStopSkipped += 1;
+        return "shopify_not_configured";
+      }
+      try {
+        const gid = toShopifyGid("Product", id);
+        if (!gid) {
+          shopifyStopErrors += 1;
+          return "shopify_product_id_invalid";
+        }
+        await unpublishShopifyProduct(gid);
+        shopifyStopped += 1;
+        return null;
+      } catch (error) {
+        shopifyStopErrors += 1;
+        return error instanceof Error ? error.message : String(error);
+      }
+    }
     for (const listing of refreshTargets) {
       const listingId = String(listing.id);
       const supplierName = String(listing.supplier_name ?? "").trim();
@@ -116,6 +144,7 @@ export async function GET(request: Request) {
             }
           }
 
+          const shopifySyncError = await stopShopifyListing(listing.shopify_product_id);
           results.push({
             listingId,
             ok: false,
@@ -123,6 +152,7 @@ export async function GET(request: Request) {
             reason: "supplier_auto_procurement_capability_missing",
             missing: autoProcurement.missing,
             baseSyncError,
+            shopifySyncError,
           });
           continue;
         }
@@ -187,11 +217,21 @@ export async function GET(request: Request) {
             }
           }
 
-          results.push({ listingId, ok: false, blocked: true, reason: "inventory_unknown", baseSyncError });
+          const shopifySyncError = await stopShopifyListing(listing.shopify_product_id);
+          results.push({ listingId, ok: false, blocked: true, reason: "inventory_unknown", baseSyncError, shopifySyncError });
           continue;
         }
 
-        const orderable = inventory > 0;
+        const imageReachable = await probeListingImage(listing.image_url);
+        const refreshDecision = evaluateShopListingRecord(listing as unknown as Record<string, unknown>, imageReachable, {
+          inventory,
+          inventoryConfirmed: true,
+          orderable: inventory > 0,
+          salesTestPassed: mayRestoreChannelVisibility(listing),
+          supplierAdapterRegistered: true,
+        });
+        const orderable = refreshDecision.eligible;
+        const showOnBase = refreshDecision.eligible;
         const { error: listingError } = await supabase
           .from("shop_listings")
           .update({
@@ -223,8 +263,8 @@ export async function GET(request: Request) {
               title: String(listing.title ?? ""),
               detail: String(listing.description ?? listing.title ?? ""),
               price: Number(listing.selling_price),
-              stock: orderable ? Math.max(0, Math.floor(inventory)) : 0,
-              visible: orderable,
+              stock: showOnBase ? Math.max(0, Math.floor(inventory)) : 0,
+              visible: showOnBase,
             });
             baseUpdated++;
             await supabase.from("shop_listings").update({
@@ -239,7 +279,8 @@ export async function GET(request: Request) {
           }
         }
 
-        results.push({ listingId, ok: true, inventory, orderable, baseSyncError });
+        const shopifySyncError = showOnBase ? null : await stopShopifyListing(listing.shopify_product_id);
+        results.push({ listingId, ok: true, inventory, orderable, baseSyncError, shopifySyncError });
       } catch (error) {
         results.push({
           listingId,
@@ -249,8 +290,9 @@ export async function GET(request: Request) {
       }
     }
 
+    const errors = results.filter((item) => !item.ok && !item.blocked).length + baseErrors + shopifyStopErrors;
     return NextResponse.json({
-      ok: true,
+      ok: errors === 0,
       configured: (listings ?? []).length > 0,
       inspected: results.length,
       updated: results.filter((item) => item.ok).length,
@@ -258,8 +300,11 @@ export async function GET(request: Request) {
       errors: results.filter((item) => !item.ok && !item.blocked).length,
       baseUpdated,
       baseErrors,
+      shopifyStopped,
+      shopifyStopErrors,
+      shopifyStopSkipped,
       results,
-    });
+    }, { status: errors === 0 ? 200 : 207 });
   } catch (error) {
     console.error("[TRACER INVENTORY REFRESH CRON ERROR]", error);
     return NextResponse.json(

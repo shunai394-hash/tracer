@@ -5,10 +5,10 @@ import { verifyWomenPriorityInvariants } from "@/lib/intelligence/womens-priorit
 
 const root = process.cwd();
 const checks = [
-  ["Shopify legacy sync", "lib/shopify/sync.ts", "hasPassedSalesTestGate"],
+  ["Shopify legacy sync", "lib/shopify/sync.ts", "syncCanonicalShopifyListings"],
   ["Shopify canonical sync", "lib/shopify/sync-published-listings.ts", "hasPassedSalesTestGate"],
   ["Shopify sync live-stock guard", "lib/shopify/sync-published-listings.ts", "Number(row.inventory) > 0"],
-  ["Shopify final CJ supplier safety boundary", "lib/shopify/sync-published-listings.ts", '!/^(cj|cjdropshipping)$/i.test(String(row.supplier_name ?? "").trim())'],
+  ["Shopify final CJ supplier safety boundary", "lib/shopify/sync-published-listings.ts", '!/^(cj|cjdropshipping|cj dropshipping)$/i.test(String(row.supplier_name ?? "").trim())'],
   ["Shopify Japanese title boundary", "lib/shopify/sync-published-listings.ts", "isJapaneseProductTitle(row.title)"],
   ["Orosy live order fail-closed", "lib/procurement/orosy-adapter.ts", "OROSY_ORDER_BLOCKED_CART_STATE"],
   ["Orosy live order preflight", "lib/procurement/orosy-adapter.ts", "OROSY_ORDER_PREFLIGHT_PASSED"],

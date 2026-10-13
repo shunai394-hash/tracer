@@ -53,7 +53,10 @@ export async function GET(request: Request) {
   let cronRunId: string | null = null;
 
   try {
-    await recoverStaleCronRun(db, JOB_NAME, 60);
+    const recovery = await recoverStaleCronRun(db, JOB_NAME, 60);
+    if (!recovery.ok) {
+      return NextResponse.json({ ok: false, reason: "cron_lock_recovery_failed", error: recovery.error, job: JOB_NAME }, { status: 500 });
+    }
 
     const { data: cronRun, error: claimError } = await db
       .from("cron_runs")
@@ -72,7 +75,7 @@ export async function GET(request: Request) {
     if (claimError) {
       if (claimError.code === "23505") {
         return NextResponse.json(
-          { ok: true, skipped: true, reason: "cron_already_running", job: JOB_NAME },
+          { ok: false, skipped: true, reason: "cron_already_running", job: JOB_NAME },
           { status: 409 },
         );
       }
@@ -143,10 +146,14 @@ export async function GET(request: Request) {
       }
     }
 
+    const failedCount = discovery.blocked.length + gate.rejected.length + (typeof base.failed === "number" ? base.failed : 0);
+    const cronStatus = failedCount === 0 ? "succeeded" : "partial";
     const result = {
-      ok: true,
+      ok: cronStatus === "succeeded",
       route: "SUPER_DELIVERY -> TRACER -> SALES_TEST_GATE -> BASE -> NEWFIND",
       elapsedMs: Date.now() - startedAt,
+      failed: failedCount,
+      cronStatus,
       stages: {
         superdelivery: discovery,
         salesTestGate: gate,
@@ -155,26 +162,32 @@ export async function GET(request: Request) {
       },
     };
 
+    let ledgerUpdateFailed = !cronRunId;
     if (cronRunId) {
-      await db
+      const ledger = await db
         .from("cron_runs")
         .update({
-          status: "succeeded",
+          status: cronStatus,
           finished_at: new Date().toISOString(),
           duration_ms: Date.now() - startedAt,
           processed: discovery.considered,
-          failed: discovery.blocked.length + gate.rejected.length + base.failed,
+          failed: failedCount,
           metadata: result,
         })
         .eq("id", cronRunId);
+      ledgerUpdateFailed = Boolean(ledger.error);
+    }
+    if (ledgerUpdateFailed) {
+      return NextResponse.json({ ...result, ok: false, reason: "cron_ledger_update_failed", ledgerUpdateFailed: true }, { status: 500 });
     }
 
-    return NextResponse.json(result);
+    return NextResponse.json(result, { status: cronStatus === "succeeded" ? 200 : 207 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
+    let ledgerUpdateFailed = !cronRunId;
     if (cronRunId) {
-      await db
+      const ledger = await db
         .from("cron_runs")
         .update({
           status: "failed",
@@ -183,6 +196,7 @@ export async function GET(request: Request) {
           error: message,
         })
         .eq("id", cronRunId);
+      ledgerUpdateFailed = Boolean(ledger.error);
     }
 
     console.error("[TRACER SUPER DELIVERY SALES ROUTE ERROR]", error);
@@ -191,6 +205,7 @@ export async function GET(request: Request) {
         ok: false,
         route: "SUPER_DELIVERY -> TRACER -> SALES_TEST_GATE -> BASE -> NEWFIND",
         error: message,
+        ledgerUpdateFailed,
       },
       { status: 500 },
     );

@@ -16,6 +16,8 @@ import {
   evaluateDropshipOrderGate,
   type DropshipOrderGateResult,
 } from "@/lib/ordering/dropship-gate";
+import { classifyCreateOrderResult, classifyStoredAttempt } from "@/lib/ordering/supplier-attempt-disposition";
+import { findInternalFulfillmentByOrderNumber } from "@/lib/procurement/tracer-internal-adapter";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -28,6 +30,65 @@ function asNumber(value: unknown): number | null {
 
 function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export const SUPPLIER_ATTEMPT_LEASE_MS = 10 * 60 * 1000;
+
+function attemptUpdatedAt(attempt: { updated_at?: unknown; created_at?: unknown } | null | undefined): number | null {
+  const raw = attempt?.updated_at ?? attempt?.created_at;
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function attemptIdFrom(attempt: { id?: unknown } | null | undefined): string | null {
+  return typeof attempt?.id === "string" && attempt.id.trim() ? attempt.id : null;
+}
+
+function recordedOrderAgrees(idempotencyKey: string, purchaseOrderId: string, recordedPurchaseOrderId: string | null): boolean {
+  if (!recordedPurchaseOrderId) return false;
+  if (recordedPurchaseOrderId === purchaseOrderId) return true;
+  const suffix = idempotencyKey.startsWith("dropship:") ? idempotencyKey.slice("dropship:".length) : "";
+  return suffix.length > 0 && recordedPurchaseOrderId === suffix;
+}
+
+/**
+ * An unknown attempt is never reordered. Internal supply can be matched to
+ * the fulfillment row already stored under the same idempotency key. Other
+ * suppliers stay on manual reconciliation until a confirmed read API exists.
+ */
+export async function reconcileUnknownSupplierAttempt(args: {
+  supabase: ReturnType<typeof createSupabaseAdminClient>;
+  supplierName: string;
+  purchaseOrderId: string;
+  idempotencyKey: string;
+  savedSupplierOrderId: string | null;
+}): Promise<{ supplierOrderId: string | null; reason: string }> {
+  const supplier = args.supplierName.trim().toLowerCase();
+  if (supplier !== "tracer_internal") {
+    return { supplierOrderId: null, reason: "supplier_order_lookup_unsupported_manual_reconciliation_required" };
+  }
+  let found: Awaited<ReturnType<typeof findInternalFulfillmentByOrderNumber>>;
+  try {
+    found = await findInternalFulfillmentByOrderNumber(args.idempotencyKey, args.supabase);
+  } catch (error) {
+    return {
+      supplierOrderId: null,
+      reason: `supplier_order_lookup_failed_manual_reconciliation_required:${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+  if (found.error) return { supplierOrderId: null, reason: "supplier_order_lookup_failed_manual_reconciliation_required" };
+  if (found.rows.length > 1) return { supplierOrderId: null, reason: "supplier_order_reconciliation_ambiguous_manual_reconciliation_required" };
+  if (found.rows.length === 0) return { supplierOrderId: null, reason: "supplier_order_absence_unconfirmed_manual_reconciliation_required" };
+  const row = found.rows[0];
+  if (!recordedOrderAgrees(args.idempotencyKey, args.purchaseOrderId, row.purchaseOrderId)) {
+    return { supplierOrderId: null, reason: "supplier_order_reconciliation_mismatch_manual_reconciliation_required" };
+  }
+  const saved = args.savedSupplierOrderId?.trim() ?? "";
+  if (saved && saved !== row.id) {
+    return { supplierOrderId: null, reason: "supplier_order_reconciliation_mismatch_manual_reconciliation_required" };
+  }
+  return { supplierOrderId: row.id, reason: "supplier_order_reconciled_payment_pending" };
 }
 
 function addressComplete(order: Record<string, unknown>): boolean | null {
@@ -384,7 +445,7 @@ export async function executeSupplierPurchaseOrder(
     .eq("idempotency_key", idempotencyKey)
     .maybeSingle();
 
-  if (existingAttempt?.supplier_order_id) {
+  if (existingAttempt?.supplier_order_id && existingAttempt.state !== "unknown") {
     await supabase
       .from("purchase_orders")
       .update({
@@ -410,14 +471,49 @@ export async function executeSupplierPurchaseOrder(
     };
   }
 
-  if (existingAttempt?.state === "unknown" || (existingAttempt?.state === "completed" && !existingAttempt?.supplier_order_id)) {
+  const storedAttempt = classifyStoredAttempt(existingAttempt);
+  if (storedAttempt === "unknown") {
+    const reconciled = await reconcileUnknownSupplierAttempt({
+      supabase,
+      supplierName,
+      purchaseOrderId,
+      idempotencyKey,
+      savedSupplierOrderId: typeof existingAttempt?.supplier_order_id === "string" ? existingAttempt.supplier_order_id : null,
+    });
+    if (reconciled.supplierOrderId && attemptIdFrom(existingAttempt)) {
+      await supabase.from("supplier_order_attempts").update({
+        supplier_order_id: reconciled.supplierOrderId,
+        succeeded: false,
+        state: "unknown",
+        response_code: "RECONCILED_EXISTING_ORDER",
+        response_message: "Existing internal fulfillment row matched the idempotency key. Payment is not confirmed.",
+      }).eq("id", attemptIdFrom(existingAttempt));
+      await supabase.from("purchase_orders").update({
+        supplier_order_id: reconciled.supplierOrderId,
+        live_order: true,
+        supplier_status: "payment_pending",
+        supplier_synced_at: new Date().toISOString(),
+        status: "supplier_payment_pending",
+      }).eq("id", purchaseOrderId);
+    }
+    return {
+      purchaseOrderId,
+      supplierName,
+      attempted: false,
+      succeeded: false,
+      supplierOrderId: reconciled.supplierOrderId,
+      reason: reconciled.reason,
+      gate,
+    };
+  }
+  if (storedAttempt === "explicit_rejection") {
     return {
       purchaseOrderId,
       supplierName,
       attempted: false,
       succeeded: false,
       supplierOrderId: null,
-      reason: "supplier_attempt_outcome_unknown_manual_reconciliation_required",
+      reason: `supplier_explicitly_rejected:${String(existingAttempt?.response_code ?? "unknown")}`,
       gate,
     };
   }
@@ -462,13 +558,66 @@ export async function executeSupplierPurchaseOrder(
   let attemptId: string | null = existingAttempt?.id ? String(existingAttempt.id) : null;
 
   if (existingAttempt?.state === "in_progress") {
+    const updatedAt = attemptUpdatedAt(existingAttempt);
+    const leaseExpired = updatedAt !== null && Date.now() - updatedAt >= SUPPLIER_ATTEMPT_LEASE_MS;
+    if (!leaseExpired) {
+      return {
+        purchaseOrderId,
+        supplierName,
+        attempted: false,
+        succeeded: false,
+        supplierOrderId: null,
+        reason: "supplier_attempt_in_progress",
+        gate,
+      };
+    }
+    const reconciled = await reconcileUnknownSupplierAttempt({
+      supabase,
+      supplierName,
+      purchaseOrderId,
+      idempotencyKey,
+      savedSupplierOrderId: typeof existingAttempt.supplier_order_id === "string" ? existingAttempt.supplier_order_id : null,
+    });
+    if (reconciled.supplierOrderId && attemptId) {
+      await supabase.from("supplier_order_attempts").update({
+        supplier_order_id: reconciled.supplierOrderId,
+        succeeded: false,
+        state: "unknown",
+        response_code: "RECONCILED_EXISTING_ORDER",
+        response_message: "Stale in-progress attempt matched an existing fulfillment row. Payment is not confirmed. No reorder.",
+      }).eq("id", attemptId).eq("state", "in_progress");
+      await supabase.from("purchase_orders").update({
+        supplier_order_id: reconciled.supplierOrderId,
+        live_order: true,
+        supplier_status: "payment_pending",
+        supplier_synced_at: new Date().toISOString(),
+        status: "supplier_payment_pending",
+      }).eq("id", purchaseOrderId);
+      return {
+        purchaseOrderId,
+        supplierName,
+        attempted: false,
+        succeeded: false,
+        supplierOrderId: reconciled.supplierOrderId,
+        reason: reconciled.reason,
+        gate,
+      };
+    }
+    if (attemptId) {
+      await supabase.from("supplier_order_attempts").update({
+        succeeded: false,
+        state: "unknown",
+        response_code: "STALE_IN_PROGRESS",
+        response_message: `Lease expired. ${reconciled.reason}. Supplier order absence is not confirmed. No reorder.`,
+      }).eq("id", attemptId).eq("state", "in_progress");
+    }
     return {
       purchaseOrderId,
       supplierName,
       attempted: false,
       succeeded: false,
       supplierOrderId: null,
-      reason: "supplier_attempt_in_progress",
+      reason: `supplier_attempt_stale_manual_reconciliation_required:${reconciled.reason}`,
       gate,
     };
   }
@@ -571,30 +720,44 @@ export async function executeSupplierPurchaseOrder(
     };
   }
 
-  // A response without a supplier order ID is ambiguous: the supplier may have
-  // accepted the order even if its response was incomplete. Never mark that
-  // outcome as safely retryable, because a second createOrder call could
-  // create a duplicate shipment.
-  const state = result.succeeded && result.supplierOrderId ? "completed" : "unknown";
+  // A response without a supplier order ID is ambiguous. Explicit rejection
+  // (succeeded false, no id, concrete response code) is terminal and is not
+  // reordered. Unknown stays unknown and is not reordered.
+  const classified = classifyCreateOrderResult({
+    succeeded: result.succeeded === true,
+    supplierOrderId: typeof result.supplierOrderId === "string" ? result.supplierOrderId : null,
+    responseCode: typeof result.responseCode === "string" ? result.responseCode : null,
+  });
   const { error: attemptUpdateError } = await supabase
     .from("supplier_order_attempts")
     .update({
       response_code: result.responseCode,
       response_message: result.responseMessage,
       supplier_order_id: result.supplierOrderId,
-      succeeded: result.succeeded && Boolean(result.supplierOrderId),
-      state,
+      succeeded: classified.succeeded,
+      state: classified.state,
     })
     .eq("id", attemptId);
 
   if (attemptUpdateError) {
+    if (result.supplierOrderId) {
+      await supabase.from("supplier_order_attempts").update({
+        supplier_order_id: result.supplierOrderId,
+        succeeded: false,
+        state: "unknown",
+        response_code: "ATTEMPT_RECORD_PARTIAL",
+        response_message: "Supplier order id was returned but the attempt record update failed",
+      }).eq("id", attemptId);
+    }
     return {
       purchaseOrderId,
       supplierName,
       attempted: true,
       succeeded: false,
-      supplierOrderId: null,
-      reason: "supplier_attempt_record_update_failed_manual_reconciliation_required",
+      supplierOrderId: typeof result.supplierOrderId === "string" ? result.supplierOrderId : null,
+      reason: result.supplierOrderId
+        ? "supplier_order_created_attempt_record_failed_manual_reconciliation_required"
+        : "supplier_attempt_record_update_failed_manual_reconciliation_required",
       gate,
     };
   }
@@ -626,7 +789,7 @@ export async function executeSupplierPurchaseOrder(
         purchaseOrderId,
         supplierName,
         attempted: true,
-        succeeded: true,
+        succeeded: false,
         supplierOrderId: result.supplierOrderId,
         reason: "supplier_order_created_db_sync_failed",
         gate,
@@ -647,11 +810,12 @@ export async function executeSupplierPurchaseOrder(
   await supabase
     .from("purchase_orders")
     .update({
-      status: "supplier_rejected",
+      status: classified.disposition === "explicit_rejection" ? "supplier_rejected" : "supplier_outcome_unknown",
       metadata: {
         ...((po.metadata as Record<string, unknown>) ?? {}),
         supplier_error: result.responseMessage,
         supplier_response_code: result.responseCode,
+        supplier_disposition: classified.disposition,
       },
     })
     .eq("id", purchaseOrderId);
@@ -662,7 +826,9 @@ export async function executeSupplierPurchaseOrder(
     attempted: true,
     succeeded: false,
     supplierOrderId: null,
-    reason: result.responseMessage ?? "supplier_rejected",
+    reason: classified.disposition === "explicit_rejection"
+      ? `supplier_explicitly_rejected:${result.responseCode ?? "unknown"}`
+      : "supplier_order_outcome_unknown_manual_reconciliation_required",
     gate,
   };
 }
