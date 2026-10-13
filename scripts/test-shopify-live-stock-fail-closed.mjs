@@ -12,6 +12,18 @@ assert.equal(hasVerifiedPositiveShopifyStock(validVariant, null), false, "unknow
 assert.equal(hasVerifiedPositiveShopifyStock(null, 3), false, "missing variant ID is blocked");
 assert.equal(hasVerifiedPositiveShopifyStock("SKU-123", 3), false, "non-Shopify variant ID is blocked");
 
+const webhook = await readFile(new URL("../app/api/webhooks/shopify/orders/route.ts", import.meta.url), "utf8");
+assert.match(webhook, /\.from\("supplier_listings"\)/, "Shopify order intake must re-read the canonical supplier row");
+assert.match(webhook, /identity_status === "linked"/, "unlinked supplier identity must block order intake");
+assert.match(webhook, /verification_status === "verified"/, "unverified supplier rows must block order intake");
+assert.match(webhook, /api_available === true/, "supplier API readiness must be confirmed at order intake");
+assert.match(webhook, /tracking_available === true/, "supplier tracking readiness must be confirmed at order intake");
+assert.match(webhook, /price_confirmed === true/, "supplier price must be confirmed at order intake");
+assert.match(webhook, /inventory_confirmed === true/, "supplier inventory must be confirmed at order intake");
+assert.match(webhook, /inventory! >= quantity!/, "requested quantity must not exceed confirmed supplier inventory");
+assert.match(webhook, /supplier_fulfillment_gate_failed/, "failed supplier gate must return a block reason");
+assert.ok(webhook.indexOf("supplier_fulfillment_gate_failed") < webhook.indexOf('.from("shop_orders").insert'), "supplier gate must run before parent order creation");
+
 const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
 assert.match(store, /shopify_live_stock_unconfigured/, "missing Shopify credentials must fail closed");
 assert.match(store, /shopify_live_stock_variant_ids_empty/, "empty live-stock request must not use cached stock");
