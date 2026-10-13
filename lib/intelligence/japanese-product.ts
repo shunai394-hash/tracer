@@ -1,4 +1,6 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/groin electric clippers|groin hair clipper|pubic hair trimmer/i, "デリケートゾーン用 電動トリマー"],
+  [/graffiti art.*african girl.*shower curtain|african girl.*shower curtain/i, "アフリカンアート柄 シャワーカーテン"],
   [/portable cosmetic bag.*(divider|multi.grid|pockets)|cosmetic bag.*(divider|multi.grid|pockets)/i, "仕切り付き コスメポーチ"],
   [/\b(women|women's|female)\b.{0,50}(cosmetic|makeup) bag|((cosmetic|makeup) bag).{0,50}\b(women|women's|female)\b/i, "レディース コスメポーチ"],
   [/flower.*hair clip|hair clip.*flower|bohemian.*hair clip/i, "フラワーモチーフ ヘアクリップ"],
