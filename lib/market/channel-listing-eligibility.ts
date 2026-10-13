@@ -30,6 +30,13 @@ export type ChannelListingEligibilityInput = {
   supplierAdapterRegistered: boolean;
 };
 
+/**
+ * Conservative listing ceiling: exceptionally large counts require a fresh
+ * supplier-side reconciliation instead of being copied to storefront inventory.
+ * This is a safety stop, not a claim that suppliers cannot hold more stock.
+ */
+export const MAX_LISTABLE_INVENTORY_WITHOUT_MANUAL_RECHECK = 1000;
+
 function finite(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
@@ -79,6 +86,7 @@ export function evaluateChannelListingEligibility(input: ChannelListingEligibili
   if (input.inventoryConfirmed !== true) reasons.push("inventory_unconfirmed");
   const inventory = finite(input.inventory);
   if (inventory === null || inventory <= 0) reasons.push("inventory_zero_or_unknown");
+  else if (inventory > MAX_LISTABLE_INVENTORY_WITHOUT_MANUAL_RECHECK) reasons.push("inventory_outlier_requires_recheck");
   if (input.orderable !== true) reasons.push("supplier_not_orderable");
   if (input.trackingAvailable !== true) reasons.push("tracking_unavailable");
   if (!trimmedSupplierId(input.supplierProductId)) reasons.push("supplier_product_unknown");
