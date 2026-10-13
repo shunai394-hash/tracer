@@ -4,50 +4,77 @@ import { formatMoney } from "@/lib/intelligence/format-display";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Shop — TRACER", description: "TRACERのSales Test Gateを通過し、Shopifyへ同期された販売中の商品。" };
+export const metadata = {
+  title: "販売商品 — TRACER",
+  description: "仕入れと販売の条件を確認した商品一覧。",
+};
 
 export default async function ShopPage() {
   let listings: Awaited<ReturnType<typeof listPublishedShopListings>> = [];
   let error: string | null = null;
-  try { listings = await listPublishedShopListings(); }
-  catch (caught) { error = caught instanceof SupabaseConfigError ? "店舗データを読み込めません。時間をおいてもう一度お試しください。" : caught instanceof Error ? caught.message : "店舗を読み込めませんでした。"; }
+
+  try {
+    listings = await listPublishedShopListings();
+  } catch (caught) {
+    error = caught instanceof SupabaseConfigError
+      ? "店舗データを読み込めません。設定を確認してください。"
+      : caught instanceof Error
+        ? caught.message
+        : "商品を読み込めませんでした。";
+  }
 
   return (
-    <main className="tracer-editorial-page">
-      <header className="tracer-editorial-hero tracer-shop-hero">
-        <div className="tracer-editorial-index"><span>01</span><span>SHOPIFY / STORE</span><span>{String(listings.length).padStart(2, "0")} LIVE</span></div>
-        <div className="tracer-editorial-hero-grid">
-          <div><p className="tracer-kicker">TRACER × Shopify</p><h1>「気になる」を、<br /><em>買える</em>まで。</h1><p className="tracer-lede">Sales Test Gateを通過し、Shopifyへ同期され、在庫・配送・注文可能性まで確認できる商品だけを並べます。</p></div>
-          <aside className="tracer-editorial-note"><span>販売条件</span><strong>審査 → Shopify同期 →<br />公開。</strong><p>TRACERだけの下書きは表示しません。</p><Link href="/bestsellers">選定の背景を見る ↗</Link></aside>
+    <main className="min-h-screen bg-white text-neutral-900">
+      <header className="border-b border-neutral-200">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
+          <Link href="/" className="text-xl font-semibold tracking-tight">TRACER</Link>
+          <Link href="/intelligence" className="text-sm underline underline-offset-4">商品候補を調べる</Link>
         </div>
-        <div className="tracer-editorial-scan"><span>販売条件確認済み</span><span>Shopify同期済み</span><span>在庫あり</span><span>発注可能</span><span>追跡対応</span></div>
       </header>
 
-      {error ? <p role="alert" className="tracer-alert">{error}</p> : listings.length === 0 ? (
-        <section className="tracer-empty" aria-labelledby="empty-heading">
-          <span>SHOPIFY CATALOG / 00 LIVE</span><h2 id="empty-heading">現在、販売可能なShopify商品はありません。</h2>
-          <p>商品を捏造して埋めることはしません。Sales Test Gate、Shopify同期、在庫、注文可能性、追跡可能性をすべて満たした商品だけが自動でここに現れます。</p>
-          <div className="mt-8 flex flex-wrap justify-center gap-3"><Link href="/bestsellers" className="border border-cyan-300/30 px-5 py-3 text-xs text-cyan-100 hover:bg-cyan-300/10">売れ筋を見る →</Link><Link href="/intelligence" className="border border-white/10 px-5 py-3 text-xs text-zinc-300 hover:border-white/20">商機を見る →</Link></div>
-        </section>
-      ) : (
-        <section className="tracer-content-section" aria-labelledby="catalog-heading">
-          <div className="tracer-section-heading"><div><span>SHOPIFY CATALOG</span><h2 id="catalog-heading">販売中の商品</h2></div><b>{String(listings.length).padStart(2, "0")} ITEMS</b></div>
-          <div className="grid gap-px overflow-hidden border border-white/8 bg-white/8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {listings.map((listing, index) => <Link key={listing.id} href={`/shop/${listing.slug}`} className="group flex h-full flex-col bg-[#080b0e] transition duration-500 hover:-translate-y-1 hover:bg-[#0b1014] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-inset">
-              <div className="relative overflow-hidden bg-zinc-900">
-                {listing.imageUrl ? <img src={listing.imageUrl} alt={listing.title} loading={index < 4 ? "eager" : "lazy"} decoding="async" className="aspect-[4/3] h-auto w-full object-cover transition duration-700 motion-safe:group-hover:scale-[1.04]" /> : <div className="flex aspect-[4/3] items-center justify-center text-[9px] font-mono tracking-[.18em] text-zinc-600">IMAGE COMING SOON</div>}
-                <span className="absolute left-3 top-3 border border-cyan-300/20 bg-black/75 px-2 py-1 text-[8px] font-mono tracking-[.15em] text-cyan-100">SHOPIFY LIVE</span>
-                <span className="absolute right-3 bottom-3 font-mono text-[8px] tracking-[.16em] text-white/45">{String(index + 1).padStart(2, "0")}</span>
-              </div>
-              <div className="flex flex-1 flex-col p-5"><h3 className="line-clamp-2 text-base font-medium leading-6 text-zinc-100 group-hover:text-white">{listing.title}</h3>
-                {listing.description ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-zinc-500">{listing.description}</p> : null}
-                <div className="mt-5 flex flex-wrap gap-2"><span className="border border-white/10 px-2 py-1 text-[7px] font-mono tracking-[.14em] text-zinc-500">販売条件確認済み</span><span className="border border-white/10 px-2 py-1 text-[7px] font-mono tracking-[.14em] text-zinc-500">{listing.inventory} 在庫あり</span><span className="border border-white/10 px-2 py-1 text-[7px] font-mono tracking-[.14em] text-zinc-500">追跡対応</span></div>
-                <div className="mt-auto flex items-end justify-between gap-3 border-t border-white/8 pt-5 mt-6"><div><span className="block font-mono text-[7px] tracking-[.16em] text-zinc-600">PRICE</span><span className="mt-1 block text-lg text-zinc-100">{formatMoney(listing.sellingPrice, listing.currency)}</span></div><span className="text-[9px] font-mono tracking-[.12em] text-zinc-500 group-hover:text-cyan-200">DETAIL ↗</span></div>
-              </div>
-            </Link>)}
+      <section className="mx-auto max-w-6xl px-5 py-10 sm:py-14">
+        <p className="text-sm text-neutral-500">販売商品</p>
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+          <h1 className="text-3xl font-semibold tracking-tight">販売できる商品</h1>
+          <p className="text-sm text-neutral-500">{listings.length}件</p>
+        </div>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-600">
+          仕入れ先との商品・バリエーション照合、在庫、原価、発注可否を確認した商品を掲載します。
+          Amazon・楽天市場・Yahoo!ショッピングのランキング観測データは、販売商品として表示しません。
+        </p>
+
+        {error ? (
+          <p role="alert" className="mt-8 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p>
+        ) : listings.length === 0 ? (
+          <div className="mt-8 rounded-lg border border-neutral-200 p-8">
+            <h2 className="font-semibold">現在、掲載条件を満たした商品はありません。</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-600">
+              ランキング商品や未確認の仕入れ候補で件数を埋めず、仕入れ可能性と利益を確認できた商品から掲載します。
+            </p>
+            <Link href="/intelligence" className="mt-5 inline-flex rounded-md bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-neutral-700">
+              商品候補を調べる
+            </Link>
           </div>
-        </section>
-      )}
+        ) : (
+          <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {listings.map((listing) => (
+              <Link key={listing.id} href={`/shop/${listing.slug}`} className="group overflow-hidden rounded-lg border border-neutral-200 bg-white transition hover:border-neutral-400">
+                {listing.imageUrl ? (
+                  <img src={listing.imageUrl} alt={listing.title} loading="lazy" className="aspect-square w-full bg-neutral-100 object-cover" />
+                ) : (
+                  <div className="flex aspect-square items-center justify-center bg-neutral-100 text-sm text-neutral-400">画像準備中</div>
+                )}
+                <div className="p-4">
+                  <h2 className="line-clamp-2 font-medium group-hover:underline">{listing.title}</h2>
+                  {listing.description ? <p className="mt-2 line-clamp-2 text-sm leading-5 text-neutral-500">{listing.description}</p> : null}
+                  <p className="mt-4 text-lg font-semibold">{formatMoney(listing.sellingPrice, listing.currency)}</p>
+                  <p className="mt-1 text-xs text-neutral-500">在庫 {listing.inventory} · 販売条件確認済み</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
     </main>
   );
 }
