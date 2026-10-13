@@ -106,6 +106,14 @@ function listingBlockReasons(row: Listing, imageReachable: boolean | null): stri
   return Array.from(new Set(reasons));
 }
 
+const SHOPIFY_VARIANT_MAPPING_ERRORS = new Set([
+  "shopify_sku_missing",
+  "shopify_variant_missing",
+  "shopify_variant_sku_unmatched",
+  "shopify_variant_sku_ambiguous",
+  "shopify_variant_sku_mismatch",
+]);
+
 async function ensureJapaneseCopy(row: Listing): Promise<{ title: string; description: string }> {
   const title = String(row.title ?? "").trim();
   const description = String(row.description ?? title).trim();
@@ -395,6 +403,8 @@ export async function syncListingRows(
     }
     if (!claim.data) continue;
 
+    let remoteProductIdForSafety: string | null = row.shopify_product_id;
+    let remoteProductHandleForSafety: string | null = row.shopify_handle;
     try {
       const copy = await ensureJapaneseCopy(row);
       const price = asNumber(row.selling_price);
@@ -428,6 +438,10 @@ export async function syncListingRows(
       if (existing && existing.vendor && existing.vendor !== "TRACER" && !existing.tags.includes("TRACER")) {
         throw new Error("shopify_handle_owned_by_non_tracer_product");
       }
+      if (existing) {
+        remoteProductIdForSafety = existing.id;
+        remoteProductHandleForSafety = existing.handle;
+      }
 
       const selectedVariant = existing ? selectShopifyVariantForSku(existing.variants?.nodes ?? [], productInput.sku) : null;
       if (selectedVariant && "error" in selectedVariant) throw new Error(selectedVariant.error);
@@ -443,6 +457,8 @@ export async function syncListingRows(
             imageUrl: existing.media?.nodes?.length ? null : row.image_url,
           })
         : await createProduct({ ...productInput, imageUrl: row.image_url });
+      remoteProductIdForSafety = product.id;
+      remoteProductHandleForSafety = product.handle;
 
       const createdVariant = selectShopifyVariantForSku(product.variants?.nodes ?? [], productInput.sku);
       if ("error" in createdVariant) throw new Error(createdVariant.error);
@@ -475,6 +491,49 @@ export async function syncListingRows(
       results.listingIds.push(row.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (SHOPIFY_VARIANT_MAPPING_ERRORS.has(message)) {
+        const now = new Date().toISOString();
+        let unpublishError: string | null = null;
+        if (remoteProductIdForSafety) {
+          try {
+            await unpublish(String(remoteProductIdForSafety));
+          } catch (hideError) {
+            unpublishError = hideError instanceof Error ? hideError.message : String(hideError);
+          }
+        }
+        const { error: blockedStateError } = await supabase.from("shop_listings").update({
+          ...(remoteProductIdForSafety ? { shopify_product_id: remoteProductIdForSafety } : {}),
+          ...(remoteProductHandleForSafety ? { shopify_handle: remoteProductHandleForSafety } : {}),
+          published: false,
+          pipeline_stage: "BLOCKED",
+          pipeline_status: "blocked",
+          pipeline_reason: "shopify_variant_mapping_mismatch",
+          pipeline_updated_at: now,
+          published_at: null,
+          shopify_sync_status: unpublishError ? "reconciliation_required" : "blocked",
+          shopify_sync_error: unpublishError
+            ? `${message};unpublish_failed:${unpublishError}`.slice(0, 2000)
+            : message,
+          shopify_synced_at: now,
+        }).eq("id", row.id);
+        results.failed += 1;
+        results.errors.push({
+          listingId: row.id,
+          error: blockedStateError
+            ? `variant_mapping_blocked_state_write_failed:${blockedStateError.message}`
+            : unpublishError
+              ? `variant_mapping_unpublish_failed:${unpublishError}`
+              : message,
+        });
+        if (blockedStateError) {
+          await supabase.from("shop_listings").update({
+            shopify_sync_status: "reconciliation_required",
+            shopify_sync_error: `variant_mapping_blocked_state_write_failed:${blockedStateError.message}`.slice(0, 2000),
+            shopify_synced_at: now,
+          }).eq("id", row.id);
+        }
+        continue;
+      }
       if (message === "japanese_catalog_title_localization_failed" || message === "japanese_catalog_copy_invalid") {
         if (row.shopify_product_id) await unpublish(String(row.shopify_product_id));
         await supabase.from("shop_listings").update({
