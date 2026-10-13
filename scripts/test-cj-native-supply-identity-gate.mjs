@@ -8,6 +8,11 @@ assert.ok(source.includes('candidate.verification_status === "verified"'), "nati
 assert.ok(source.includes('candidate.shipping_status === "verified"'), "native CJ identity requires verified shipping evidence");
 assert.ok(source.includes('options.allowNativeCjIdentity === true && ["cj", "cjdropshipping"].includes(supplier)'), "native CJ identity is disabled by default");
 assert.ok(source.includes('if (!nativeCjSupplyIdentity && (num(listing.identity_confidence) === null'), "generic identity confidence must not block verified native CJ identity");
+assert.ok(source.includes('if (num(intelligence.demand_score) === null) reasons.push("demand_evidence_missing")'), "demand evidence is mandatory even for supply-verified candidates");
+assert.ok(source.includes('if (num(intelligence.search_fit_score) === null) reasons.push("search_fit_evidence_missing")'), "search-fit evidence is mandatory even for supply-verified candidates");
+assert.ok(source.includes('if (num(intelligence.market_gap_score) === null) reasons.push("market_gap_evidence_missing")'), "market-gap evidence is mandatory even for supply-verified candidates");
+assert.ok(source.includes('if (String(intelligence.sellability_state ?? "") !== "TEST_READY") reasons.push("sellability_not_ready")'), "supply verification cannot bypass sellability readiness");
+assert.ok(!source.includes("if (!supplySalesTestReady)"), "supply verification cannot bypass demand and intelligence readiness");
 assert.ok(source.includes('identityConfidence: nativeCjSupplyIdentity ? 1 : num(listing.identity_confidence)'), "native CJ evidence must be passed to the sales-test gate");
 assert.ok(source.includes('candidate.price_confirmed === true') && source.includes('candidate.inventory_confirmed === true') && source.includes('candidate.orderable === true') && source.includes('candidate.tracking_available === true') && source.includes('candidate.api_available === true'), "native identity must not bypass price, stock, orderability, tracking or API gates");
 assert.ok(source.includes('profitCalculable: profit.calculable') && source.includes('contributionProfit: profit.contributionProfit'), "contribution-profit gate must remain in the flow");
