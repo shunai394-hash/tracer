@@ -68,4 +68,25 @@ assert.deepEqual(duplicateLiveResult.reconciliation.visibleItemIdsWithAmbiguousB
 assert.equal(duplicateLiveResult.reconciliation.visibleItemsWithAmbiguousBaseApiId, 1);
 assert.equal(duplicateLiveResult.reconciliation.liveApiDuplicateExternalIdGroups, 1);
 
+const publicationStateResult = reconcileBaseIds(
+  [
+    { id: "db-published-hidden", base_item_id: "501", published: true },
+    { id: "db-unpublished-visible", base_item_id: "502", published: false },
+    { id: "db-aligned-visible", base_item_id: "503", published: true },
+  ],
+  [
+    { item_id: 501, visible: false },
+    { item_id: 502, visible: true },
+    { item_id: 503, visible: true },
+  ],
+  [
+    { item_id: 502, visible: true },
+    { item_id: 503, visible: true },
+  ],
+);
+assert.deepEqual(publicationStateResult.reconciliation.dbPublishedButBaseHiddenIds, ["501"]);
+assert.equal(publicationStateResult.reconciliation.dbPublishedButBaseHidden, 1);
+assert.deepEqual(publicationStateResult.reconciliation.dbUnpublishedButBaseVisibleIds, ["502"]);
+assert.equal(publicationStateResult.reconciliation.dbUnpublishedButBaseVisible, 1);
+
 console.log("BASE external-ID reconciliation unit tests passed");
