@@ -31,15 +31,18 @@ export type CanonicalSupplierIdentityCandidate = {
   product_id: string | null;
   supplier_product_id: string | null;
   supplier_variant_id: string | null;
+  selling_currency: string | null;
 };
 
 /**
  * Return only supplier rows whose review is linked and whose canonical product,
  * external product ID, and exact variant ID match the shop listing. A linked
  * supplier row by itself is insufficient when the downstream listing was
- * populated with a different product or variant.
+ * populated with a different product or variant. Unknown or mismatched supplier
+ * currency is also blocked here until an explicit fresh FX-conversion contract
+ * is wired into publication eligibility.
  */
-export async function getExactlyLinkedSupplierListingIds(
+export async function getExactlyEligibleSupplierListingIds(
   candidates: CanonicalSupplierIdentityCandidate[],
 ): Promise<Set<string>> {
   const byId = new Map<string, CanonicalSupplierIdentityCandidate[]>();
@@ -59,7 +62,7 @@ export async function getExactlyLinkedSupplierListingIds(
     const batch = ids.slice(offset, offset + 100);
     const { data, error } = await supabase
       .from("supplier_listings")
-      .select("id,product_id,supplier_product_id,supplier_variant_id,identity_status")
+      .select("id,product_id,supplier_product_id,supplier_variant_id,identity_status,currency")
       .in("id", batch);
     if (error) throw new Error(`supplier_identity_exact_lookup_failed:${error.message}`);
 
@@ -75,13 +78,17 @@ export async function getExactlyLinkedSupplierListingIds(
       const sourceSupplierProductId = typeof source.supplier_product_id === "string" ? source.supplier_product_id.trim() : "";
       const listingVariantId = typeof listing.supplier_variant_id === "string" ? listing.supplier_variant_id.trim() : "";
       const sourceVariantId = typeof source.supplier_variant_id === "string" ? source.supplier_variant_id.trim() : "";
+      const sellingCurrency = typeof listing.selling_currency === "string" ? listing.selling_currency.trim().toUpperCase() : "";
+      const sourceCurrency = typeof source.currency === "string" ? source.currency.trim().toUpperCase() : "";
       if (
         canonicalProductId &&
         sourceProductId === canonicalProductId &&
         listingSupplierProductId &&
         sourceSupplierProductId === listingSupplierProductId &&
         listingVariantId &&
-        sourceVariantId === listingVariantId
+        sourceVariantId === listingVariantId &&
+        sellingCurrency &&
+        sourceCurrency === sellingCurrency
       ) linked.add(String(source.id));
     }
   }
