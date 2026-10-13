@@ -221,10 +221,13 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
         continue;
       }
 
+      // Keep the narrowed source-list type separate from legacy parser branches.
+      // Only Yahoo Shopping is configured for collection in this branch.
+      const sourceMarketplace: string = source.marketplace;
       const items: ParsedBestseller[] =
-        source.marketplace === "amazon.co.jp"
+        sourceMarketplace === "amazon.co.jp"
           ? parseAmazonBestsellersHtml(html).map(enrichAmazon)
-          : source.marketplace === "rakuten"
+          : sourceMarketplace === "rakuten"
             ? parseRakutenRankingHtml(html)
             : parseYahooRankingHtml(html);
 
