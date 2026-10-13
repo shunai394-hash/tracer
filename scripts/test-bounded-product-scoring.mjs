@@ -18,7 +18,7 @@ assert.match(pipeline, /runStep\("score", \(\) => scoreProductIntelligence\(\), 
 assert.match(pipeline, /runStep\("shopping_demand_sync", \(\) => syncShoppingDemandObservations\(\), \{ budgetMs: 15_000 \}\)/);
 assert.match(pipeline, /runStep\("demand", \(\) => inspectDemandObservations\(\), \{ budgetMs: 5_000 \}\)/);
 assert.match(pipeline, /runStep\("demand_analyze", \(\) => persistDemandIntelligence\(\), \{ budgetMs: 25_000 \}\)/);
-assert.match(pipeline, /const bestsellerStep = await runStep\("bestsellers", [\s\S]*?\{ budgetMs: 40_000 \}\)/);
+assert.match(pipeline, /const bestsellerStep: PipelineStepResult = \{[\s\S]*?reason: "marketplace_ranking_sources_disabled_by_policy"/);\nassert.doesNotMatch(pipeline, /runStep\("bestsellers"/);\nassert.match(pipeline, /const bestsellerCanFeedSalesGate = false/);
 assert.match(pipeline, /runStep\("ordering", \(\) => persistReorderRecommendations\(\), \{ downstream: true, budgetMs: 15_000 \}\)/);
 
 // Persist provider quota exhaustion across patrol invocations so the five-minute
