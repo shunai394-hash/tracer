@@ -143,6 +143,16 @@ await test("listing gate blocks unresolved currency, profit, inventory, and vari
   const ready = evaluateShopListingRecord(listing(), true, { supplierAdapterRegistered: true, salesTestPassed: true });
   assert.equal(ready.eligible, true, ready.reasons.join(","));
 
+  for (const marketplace of ["amazon.co.jp", "amazon", "rakuten"]) {
+    const removedSource = evaluateShopListingRecord(
+      listing({ marketplace }),
+      true,
+      { supplierAdapterRegistered: true, salesTestPassed: true },
+    );
+    assert.equal(removedSource.eligible, false, `${marketplace} must be excluded by shared gate`);
+    assert.ok(removedSource.reasons.includes("source_marketplace_removed_by_policy"));
+  }
+
   const usd = evaluateShopListingRecord(listing({ source_currency: "USD", contribution_profit: 99999 }), true, { supplierAdapterRegistered: true, salesTestPassed: true });
   assert.equal(usd.eligible, false);
   assert.ok(usd.reasons.includes("profit_unknown"));
