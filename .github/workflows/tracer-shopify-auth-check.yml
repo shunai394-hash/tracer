@@ -125,10 +125,14 @@ jobs:
           print("candidate samples:", json.dumps((d.get("results") or [])[:10], ensure_ascii=False))
           PY
           echo "=== CJ-native supply publication dry-run (no writes) ==="
-          supply_dry_run_code=$(curl -sS -o supply-dry-run.json -w "%{http_code}" --max-time 180 -H "Authorization: Bearer $(token)" "$BASE/api/cron/sales-test-publication?dryRun=true" || echo 000)
+          supply_dry_run_code=$(curl -sS -o supply-dry-run.json -w "%{http_code}" --max-time 90 -H "Authorization: Bearer $(token)" "$BASE/api/cron/sales-test-publication?dryRun=true" || true)
+          if [ -z "$supply_dry_run_code" ]; then supply_dry_run_code=000; fi
           echo "=== api/cron/sales-test-publication?dryRun=true HTTP $supply_dry_run_code ==="
           python3 - <<'PY'
-          import collections, json
+          import collections, json, os
+          if not os.path.exists("supply-dry-run.json"):
+              print(json.dumps({"ok": False, "dryRun": True, "noWrites": True, "error": "request_timeout_or_no_response"}, indent=1))
+              raise SystemExit(0)
           try:
               d = json.load(open("supply-dry-run.json"))
           except Exception:
