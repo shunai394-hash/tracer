@@ -76,8 +76,9 @@ function extractItems(xml: string): TrendItem[] {
     const title = extractTag(item, "title");
     if (!title) continue;
     const traffic = parseTraffic(extractTag(item, "ht:approx_traffic"));
-    const publishedAt =
-      extractTag(item, "pubDate") ?? extractTag(item, "ht:picture");
+    // ht:picture is an image URL, not a publication timestamp.
+    // Keep missing pubDate as null rather than storing a misleading value.
+    const publishedAt = extractTag(item, "pubDate");
     items.push({ title, traffic, publishedAt });
   }
   return items;
