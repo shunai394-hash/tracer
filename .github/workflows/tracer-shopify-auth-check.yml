@@ -146,6 +146,7 @@ jobs:
               "eligibleProductCount": len(s.get("eligibleProductIds") or []),
               "rejectedCount": len(rejected),
               "topRejectionReasons": dict(counts.most_common(12)),
+              "eligibleSamples": (s.get("eligibleSamples") or [])[:10],
               "rejectedSample": rejected[:5],
           }, ensure_ascii=False, indent=1))
           PY
