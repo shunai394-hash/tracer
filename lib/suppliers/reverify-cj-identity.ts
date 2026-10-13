@@ -96,7 +96,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   }
   const limit = Math.max(1, Math.min(options.limit ?? DEFAULT_LIMIT, MAX_LIMIT));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
-  const candidateFilter = db.from("supplier_listings").select("id", { count: "exact", head: true }).eq("supplier", "cj").in("verification_status", ["unverified", "retryable", "verified"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_variant_id", "is", null);
+  const candidateFilter = db.from("supplier_listings").select("id", { count: "exact", head: true }).eq("supplier", "cj").in("verification_status", ["unverified", "retryable", "verified", "identity_unverified"]).or("identity_method.in.(supply_discovered,none),identity_method.is.null").not("supplier_variant_id", "is", null);
   const { count: candidateCount, error: countError } = await candidateFilter;
   if (countError) throw new Error(`identity reverify candidate count failed: ${countError.message}`);
   const total = candidateCount ?? 0;
@@ -117,8 +117,8 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
     .from("supplier_listings")
     .select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency")
     .eq("supplier", "cj")
-    .in("verification_status", ["unverified", "retryable", "verified"])
-    .in("identity_method", ["supply_discovered", "none"])
+    .in("verification_status", ["unverified", "retryable", "verified", "identity_unverified"])
+    .or("identity_method.in.(supply_discovered,none),identity_method.is.null")
     .not("supplier_variant_id", "is", null)
     .order("id", { ascending: true })
     .limit(MAX_CANDIDATE_SCAN);
