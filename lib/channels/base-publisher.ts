@@ -243,17 +243,19 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       if (listing.base_item_id) {
         if (!Number.isFinite(price) || price <= 0) {
           hideError = "base_hide_price_unknown";
-        } else try {
-          await editBaseItem({
-            itemId: String(listing.base_item_id),
-            title: "販売停止中の商品",
-            detail: "商品画像を確認できないため、現在販売を停止しています。",
-            price: price,
-            stock: 0,
-            visible: false,
-          });
-        } catch (error) {
-          hideError = error instanceof Error ? error.message : String(error);
+        } else {
+          try {
+            await editBaseItem({
+              itemId: String(listing.base_item_id),
+              title: "販売停止中の商品",
+              detail: "商品画像を確認できないため、現在販売を停止しています。",
+              price: price,
+              stock: 0,
+              visible: false,
+            });
+          } catch (error) {
+            hideError = error instanceof Error ? error.message : String(error);
+          }
         }
       }
       const { error: blockWriteError } = await supabase.from("shop_listings").update({
