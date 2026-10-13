@@ -278,8 +278,44 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
 
     if (!validHttpUrl(listing.image_url)) {
-      await supabase.from("shop_listings").update({ pipeline_stage: "BASE_PUBLICATION", pipeline_status: "blocked", pipeline_reason: "image_url_invalid", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
-      results.push({ listingId, ok: false, skipped: true, error: "image_url_invalid" });
+      // Fail closed for image-less products, including items already visible on BASE.
+      // Hide the remote item before recording the local block whenever an external ID exists.
+      let hideError: string | null = null;
+      if (listing.base_item_id) {
+        try {
+          await editBaseItem({
+            itemId: String(listing.base_item_id),
+            title: "販売停止中の商品",
+            detail: "商品画像を確認できないため、現在販売を停止しています。",
+            price: price,
+            stock: 0,
+            visible: false,
+          });
+        } catch (error) {
+          hideError = error instanceof Error ? error.message : String(error);
+        }
+      }
+      const { error: blockWriteError } = await supabase.from("shop_listings").update({
+        published: false,
+        orderable: false,
+        published_at: null,
+        base_publication_status: listing.base_item_id ? (hideError ? "failed" : "published") : "blocked",
+        base_publication_lease_until: null,
+        base_last_error: hideError ? `image_url_invalid;base_hide_failed:${hideError}`.slice(0, 2000) : "image_url_invalid",
+        pipeline_stage: "BLOCKED",
+        pipeline_status: hideError ? "failed" : "blocked",
+        pipeline_reason: hideError ? "image_url_invalid_hide_failed" : "image_url_invalid",
+        pipeline_error: hideError,
+        pipeline_updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      if (blockWriteError) {
+        results.push({ listingId, ok: false, error: `image_url_invalid;block_write_failed:${blockWriteError.message}` });
+      } else if (hideError) {
+        results.push({ listingId, ok: false, error: `image_url_invalid;hide_failed:${hideError}` });
+      } else {
+        results.push({ listingId, ok: false, skipped: true, error: "image_url_invalid" });
+      }
       continue;
     }
 
