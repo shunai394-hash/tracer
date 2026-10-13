@@ -27,13 +27,32 @@ export async function POST(request: Request) {
     if (existing.data) {
       const financial = String(order.financial_status ?? "pending");
       const paid = financial === "paid";
+      const cancelled = Boolean(order.cancelled_at) || financial === "voided";
+      const refunded = financial === "refunded";
       let paymentStatus = String(existing.data.payment_status ?? "");
+      const existingOrderStatus = String(existing.data.order_status ?? "");
+      if (cancelled || refunded) {
+        const { error: terminalUpdateError } = await db
+          .from("shop_orders")
+          .update({
+            payment_status: refunded ? "refunded" : paymentStatus,
+            order_status: refunded ? "refunded" : "cancelled",
+            shopify_financial_status: financial,
+            shopify_fulfillment_status: order.fulfillment_status ? String(order.fulfillment_status) : null,
+          })
+          .eq("id", existing.data.id)
+          .not("order_status", "in", '("cancelled","refunded")');
+        if (terminalUpdateError) throw new Error(terminalUpdateError.message);
+        return NextResponse.json({ ok: true, duplicate: true, terminal: true, orderId: String(existing.data.id) });
+      }
       if (paid && paymentStatus !== "paid") {
         const { error: paymentUpdateError } = await db
           .from("shop_orders")
           .update({
             payment_status: "paid",
-            order_status: "fulfillment_pending",
+            order_status: ["cancelled", "refunded", "cancellation_requested", "refund_pending"].includes(existingOrderStatus)
+              ? existingOrderStatus
+              : "fulfillment_pending",
             paid_at: new Date().toISOString(),
             shopify_financial_status: financial,
             shopify_fulfillment_status: order.fulfillment_status ? String(order.fulfillment_status) : null,
@@ -44,9 +63,8 @@ export async function POST(request: Request) {
         paymentStatus = "paid";
       }
       // Shopify may deliver a later paid/update event for the same order ID.
-      // Retry the idempotent PO snapshot step for paid orders rather than
-      // acknowledging a duplicate while leaving procurement uninitialized.
-      if (paid || paymentStatus === "paid") {
+      // Retry idempotent PO snapshots only when the order has not been cancelled/refunded.
+      if ((paid || paymentStatus === "paid") && !["cancelled", "refunded", "cancellation_requested", "refund_pending"].includes(existingOrderStatus)) {
         await createDropshipPurchaseOrdersForShopOrder(String(existing.data.id));
       }
       return NextResponse.json({ ok: true, duplicate: true, orderId: String(existing.data.id), paid: paid || paymentStatus === "paid" });
