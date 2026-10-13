@@ -134,6 +134,53 @@ export async function GET(request: Request) {
     && Array.isArray(adminApi.missingScopes)
     && adminApi.missingScopes.length === 0;
 
+  const adminApiRecord = adminApi as Record<string, unknown>;
+  const adminShop = adminApiRecord.shop && typeof adminApiRecord.shop === "object"
+    ? adminApiRecord.shop as Record<string, unknown>
+    : null;
+  // Structured, credential-free production evidence lets operations verify
+  // the read-only probe from Vercel logs without relying on CI log access.
+  console.info("[TRACER SHOPIFY AUTH PROBE]", {
+    generatedAt: new Date().toISOString(),
+    ok: shopifyProbe.ok && scopeReady,
+    scopeReady,
+    shopifyHttpStatus: shopifyProbe.shopifyHttpStatus,
+    config: {
+      storeDomain: config.storeDomain,
+      storeDomainIsMyshopify: config.storeDomainIsMyshopify,
+      authMode: config.authMode,
+      adminAccessTokenPresent: config.adminAccessTokenPresent,
+      clientIdPresent: config.clientIdPresent,
+      clientSecretPresent: config.clientSecretPresent,
+      vercelEnv: config.vercelEnv,
+      commitSha: config.commitSha,
+    },
+    tokenExchange: {
+      attempted: tokenExchange.attempted,
+      httpStatus: tokenExchange.httpStatus ?? null,
+      ok: tokenExchange.ok ?? null,
+      error: tokenExchange.error ?? null,
+    },
+    adminApi: {
+      ok: adminApiRecord.ok,
+      httpStatus: adminApiRecord.httpStatus ?? null,
+      shopName: adminShop?.name ?? null,
+      shopDomain: adminShop?.myshopifyDomain ?? null,
+      grantedScopes: adminApiRecord.grantedScopes ?? [],
+      missingScopes: adminApiRecord.missingScopes ?? [],
+    },
+    db: {
+      shopListings: listings,
+      published,
+      shopifyLinked: linked,
+      shopifySynced: synced,
+      shopifySyncFailed: failed,
+      shopifyHttp401Rows: http401,
+      preflight401Rows: preflight401,
+      latest401Count: (lastErrors ?? []).length,
+    },
+  });
+
   return NextResponse.json({
     ok: shopifyProbe.ok && scopeReady,
     scopeReady,
