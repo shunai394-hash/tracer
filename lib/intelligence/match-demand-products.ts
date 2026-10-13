@@ -149,8 +149,36 @@ async function readAll<T>(
 // pipeline budget, so the step was deferred forever and nothing was matched.
 const MAX_GEMINI_CLASSIFICATIONS_PER_RUN = 10;
 
+const GEMINI_QUOTA_COOLDOWN_JOB = "gemini-intent-classifier-cooldown";
+const GEMINI_QUOTA_COOLDOWN_MS = 20 * 60 * 60 * 1000;
+
+function hasGeminiQuotaExhaustion(error: unknown): boolean {
+  const value = error && typeof error === "object" ? error as { status?: unknown; code?: unknown } : {};
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return Number(value.status) === 429
+    || /RESOURCE_EXHAUSTED|quota exceeded|generate_content_free_tier_requests/i.test(message);
+}
+
 export async function matchDemandProductsByCategory(): Promise<DemandProductMatchResult> {
   const supabase = createSupabaseAdminClient();
+
+  // Persist provider quota cooldown across the five-minute patrol invocations.
+  // A run-local breaker alone still spends one doomed request every patrol
+  // until Google's quota resets.
+  const cooldownResult = await supabase
+    .from("cron_runs")
+    .select("metadata")
+    .eq("job_name", GEMINI_QUOTA_COOLDOWN_JOB)
+    .eq("status", "succeeded")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (cooldownResult.error) throw new Error(`Gemini quota cooldown read failed: ${cooldownResult.error.message}`);
+  const cooldownMetadata = cooldownResult.data?.metadata && typeof cooldownResult.data.metadata === "object" && !Array.isArray(cooldownResult.data.metadata)
+    ? cooldownResult.data.metadata as Record<string, unknown>
+    : {};
+  const cooldownUntil = typeof cooldownMetadata.cooldownUntil === "string" ? Date.parse(cooldownMetadata.cooldownUntil) : NaN;
+  const geminiQuotaBlocked = Number.isFinite(cooldownUntil) && cooldownUntil > Date.now();
 
   // Count only to choose a rotating, bounded demand page. Do not materialize
   // the entire demand history or every demand candidate on each patrol.
@@ -296,6 +324,12 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   // Otherwise this loop keeps spending calls on the same failing provider for
   // every remaining query in the batch, amplifying 429/503 storms.
   const geminiCircuitBreaker = createGeminiRunCircuitBreaker();
+  if (geminiQuotaBlocked) {
+    geminiCircuitBreaker.recordFailure({ status: 429 });
+    console.warn("[demand-gemini-classify] provider quota cooldown active", {
+      cooldownUntil: new Date(cooldownUntil).toISOString(),
+    });
+  }
   for (const demand of demandRows) {
     processed += 1;
     const metadata = demand.metadata && typeof demand.metadata === "object" && !Array.isArray(demand.metadata)
@@ -351,6 +385,19 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
         // Quota exhaustion, transient provider outages, and explicit timeout
         // codes are not query-specific; stop further Gemini calls this patrol.
         geminiCircuitBreaker.recordFailure(error);
+        if (hasGeminiQuotaExhaustion(error)) {
+          const nextCooldownUntil = new Date(Date.now() + GEMINI_QUOTA_COOLDOWN_MS).toISOString();
+          const { error: cooldownWriteError } = await supabase.from("cron_runs").insert({
+            job_name: GEMINI_QUOTA_COOLDOWN_JOB,
+            status: "succeeded",
+            started_at: new Date().toISOString(),
+            finished_at: new Date().toISOString(),
+            metadata: { cooldownUntil: nextCooldownUntil, reason: "gemini_quota_exhausted" },
+          });
+          if (cooldownWriteError) {
+            console.warn("[demand-gemini-classify] failed to persist quota cooldown", cooldownWriteError.message);
+          }
+        }
         console.error("[demand-gemini-classify]", { query, error, geminiDisabledForRun: geminiCircuitBreaker.isOpen() });
         // A provider failure is not evidence that this query is non-product.
         // Leave the observation unclassified for a later rotating patrol.
