@@ -444,6 +444,7 @@ await test("Shopify preview and sync use the same eligibility and refuse an ambi
 
   const ambiguousDb = shopifyDb();
   let inventoryCalls = 0;
+  let variantMismatchUnpublishes = 0;
   const product = {
     id: "gid://shopify/Product/1",
     handle: "mat",
@@ -457,9 +458,12 @@ await test("Shopify preview and sync use the same eligibility and refuse an ambi
     probeImage: async () => true,
     shopifyGraphQL: async () => ({ product }),
     updateShopifyProduct: async () => product,
+    unpublishShopifyProduct: async () => { variantMismatchUnpublishes += 1; return { published: false }; },
     setShopifyVariantInventory: async () => { inventoryCalls += 1; },
   });
   assert.equal(inventoryCalls, 0);
+  assert.equal(variantMismatchUnpublishes, 1, "an ambiguous Shopify variant must be unpublished");
+  assert.ok(ambiguousDb.calls.some((call) => call.payload?.pipeline_reason === "shopify_variant_mapping_mismatch" && call.payload?.published === false));
   assert.ok(ambiguous.errors.some((error) => error.error === "shopify_variant_sku_ambiguous"));
 
   const failedDb = shopifyDb({ message: "db down" });
