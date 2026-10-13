@@ -20,7 +20,7 @@ assert.match(webhook, /api_available === true/, "supplier API readiness must be 
 assert.match(webhook, /tracking_available === true/, "supplier tracking readiness must be confirmed at order intake");
 assert.match(webhook, /price_confirmed === true/, "supplier price must be confirmed at order intake");
 assert.match(webhook, /inventory_confirmed === true/, "supplier inventory must be confirmed at order intake");
-assert.match(webhook, /inventory! >= quantity!/, "requested quantity must not exceed confirmed supplier inventory");
+assert.match(webhook, /Number.isFinite\(inventory\) && inventory! > 0/, "supplier inventory must be confirmed and positive");
 assert.match(webhook, /requestedBySupplierListing/, "duplicate line quantities must be aggregated by canonical supplier listing");
 assert.match(webhook, /supplier_inventory_insufficient/, "combined requested quantity must block confirmed-stock oversell");
 assert.match(webhook, /Number.isFinite\(sourceCost\) && sourceCost! > 0/, "missing or non-positive supplier cost must block order intake");
