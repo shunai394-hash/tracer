@@ -129,7 +129,7 @@ jobs:
           print("candidate samples:", json.dumps((d.get("results") or [])[:10], ensure_ascii=False))
           PY
           echo "=== CJ-native supply publication dry-run (no writes) ==="
-          supply_dry_run_code=$(curl -sS -o supply-dry-run.json -w "%{http_code}" --max-time 90 -H "Authorization: Bearer $(token)" "$BASE/api/cron/sales-test-publication?dryRun=true" || true)
+          supply_dry_run_code=$(curl -sS -o supply-dry-run.json -w "%{http_code}" --max-time 90 -H "Authorization: Bearer $(token)" "$BASE/api/cron/sales-test-publication?dryRun=true&limit=450" || true)
           if [ -z "$supply_dry_run_code" ]; then supply_dry_run_code=000; fi
           echo "=== api/cron/sales-test-publication?dryRun=true HTTP $supply_dry_run_code ==="
           python3 - <<'PY'
