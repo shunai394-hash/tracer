@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSupplier, unpublishWorkflow, patrolWorkflow, patrolRoute, discoverCJ, directGate, salesPublicationRoute, e2eFunnel, intelligencePipeline] = await Promise.all([
+const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSupplier, unpublishWorkflow, patrolWorkflow, patrolRoute, discoverCJ, directGate, salesPublicationRoute, e2eFunnel, intelligencePipeline, baseRepair] = await Promise.all([
   readFile(new URL("../lib/catalog/canonical-supplier-identity.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8"),
@@ -19,6 +19,7 @@ const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSup
   readFile(new URL("../app/api/cron/sales-test-publication/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/intelligence/e2e-funnel/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/channels/base/identity-repair/route.ts", import.meta.url), "utf8"),
 ]);
 assert.match(helper, /identity_status === "linked"/);
 assert.match(persist, /verification_error: marketplaceIdentity \? null : "no_unique_canonical_child_variant_match"/, "unmatched CJ identity must persist an explicit reason rather than retaining stale verification state");
@@ -81,6 +82,12 @@ assert.match(base, /invalid_request.*break/s, "BASE auth failures must stop the 
 assert.match(base, /unpublishFailed \+= 1/);
 assert.match(base, /hidden: results\.filter\(\(r\) => r\.ok && r\.hidden\)\.length/);
 assert.match(route, /publishPublishedListingsToBase\(50/);
+assert.match(baseRepair, /base_create_id_persist_failed/ , "BASE identity repair may use the exact ID saved when item creation succeeded but DB persistence failed");
+assert.match(baseRepair, /persisted_create_marker/);
+assert.match(baseRepair, /identity_evidence_ambiguous/);
+assert.match(baseRepair, /snapshot\.complete/, "incomplete BASE snapshots must never be used for identity repair");
+assert.match(baseRepair, /\.is\("base_item_id", null\)/, "BASE identity repair must compare-and-set only missing links");
+assert.doesNotMatch(baseRepair, /\.update\(\{[^}]*published\s*:/, "BASE identity repair must not change publication state");
 // Keep Vercel Cron disabled; guarded 15-minute reconciliation runs through GitHub Actions OIDC.
 assert.doesNotMatch(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/);
 assert.match(unpublishWorkflow, /cron: "\*\/15 \* \* \* \*"/, "guarded unlinked listing reconciliation must retry every 15 minutes via GitHub Actions");
