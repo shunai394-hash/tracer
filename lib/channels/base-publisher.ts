@@ -58,7 +58,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   if (!isBaseConfigured()) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
   if (listingIds !== undefined && listingIds.length === 0) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
   const supabase = createSupabaseAdminClient();
-  let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons");
+  let query = supabase.from("shop_listings").select("id,title,description,selling_price,currency,source_cost,contribution_profit,contribution_margin,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons");
   if (listingIds && listingIds.length > 0) {
     // Explicit admin retries can target an exact listing regardless of its
     // current publication status.
@@ -229,6 +229,47 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const hasSalesTestGate = hasPassedSalesTestGate({ ...listing, title: catalogCopy.title, normalized_title: catalogCopy.title } as Parameters<typeof hasPassedSalesTestGate>[0]) || hasSelectedGate;
 
     if (!listing.base_item_id && !hasSalesTestGate) { results.push({ listingId, ok: false, skipped: true, error: "sales_test_gate_not_passed" }); continue; }
+
+    // Fail closed before creating or updating a BASE item when canonical economics
+    // are absent/invalid. Existing external items are hidden rather than deleted.
+    const listingCurrency = String(listing.currency ?? "").trim().toUpperCase();
+    const sourceCost = listing.source_cost === null || listing.source_cost === undefined ? null : Number(listing.source_cost);
+    const contributionProfit = listing.contribution_profit === null || listing.contribution_profit === undefined ? null : Number(listing.contribution_profit);
+    const contributionMargin = listing.contribution_margin === null || listing.contribution_margin === undefined ? null : Number(listing.contribution_margin);
+    const economicsError =
+      listingCurrency !== "JPY" ? "currency_not_jpy" :
+      sourceCost === null || !Number.isFinite(sourceCost) || sourceCost <= 0 ? "source_cost_unknown_or_invalid" :
+      contributionProfit === null || !Number.isFinite(contributionProfit) || contributionProfit <= 0 ? "profit_not_positive_or_unknown" :
+      contributionMargin === null || !Number.isFinite(contributionMargin) || contributionMargin <= 0 ? "margin_not_positive_or_unknown" :
+      null;
+    if (economicsError) {
+      if (listing.base_item_id) {
+        try {
+          await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price: Number(listing.selling_price ?? 0), stock: 0, visible: false });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          await supabase.from("shop_listings").update({ published: false, orderable: false, pipeline_stage: "BASE_RECONCILIATION", pipeline_status: "failed", pipeline_reason: "base_economics_block_hide_failed", pipeline_error: message, pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
+          results.push({ listingId, ok: false, error: `economics_block_hide_failed:${message}` });
+          continue;
+        }
+      }
+      const { error: blockError } = await supabase.from("shop_listings").update({
+        published: false,
+        orderable: false,
+        published_at: null,
+        base_publication_status: listing.base_item_id ? "published" : "blocked",
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "blocked",
+        pipeline_reason: economicsError,
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      if (blockError) {
+        results.push({ listingId, ok: false, error: `economics_block_persist_failed:${blockError.message}` });
+        continue;
+      }
+      results.push({ listingId, ok: false, skipped: true, error: economicsError });
+      continue;
+    }
 
     // BASE publication is a sales-channel operation, not procurement authorization.
     // A listing may be sold on BASE only when the canonical Sales Test Gate has
