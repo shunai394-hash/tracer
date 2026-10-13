@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 
 const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
 const persistence = await readFile(new URL("../lib/market/persist-bestsellers.ts", import.meta.url), "utf8");
+const marketSourcingCron = await readFile(new URL("../lib/ops/market-sourcing-cron.ts", import.meta.url), "utf8");
 const migration = await readFile(new URL("../supabase/migrations/20261013120000_remove_amazon_rakuten_market_data.sql", import.meta.url), "utf8");
 
 assert.match(collector, /selectedSource\.marketplace === "amazon\.co\.jp"/);
@@ -10,6 +11,10 @@ assert.match(collector, /selectedSource\.marketplace === "rakuten"/);
 assert.match(collector, /reason: "marketplace_source_removed_by_policy"/);
 assert.match(collector, /const firstEnabledSourceIndex = MARKETPLACE_SOURCES\.findIndex/);
 assert.match(persistence, /if \(lookupFilters\.length > 0\) \{[\s\S]*?\} else \{[\s\S]*?eq\("identity_key", identityKey\)[\s\S]*?maybeSingle\(\);[\s\S]*?if \(productId\)/);
+assert.match(persistence, /failedMarketplaces = collected\.marketplaces[\s\S]*?item\.reason !== "marketplace_source_removed_by_policy"/);
+assert.match(marketSourcingCron, /const MARKET_SOURCING_BATCH_SIZE = 10;/);
+assert.match(marketSourcingCron, /canonicalVariantEvidenceWriteFailures \+ observation\.failedMarketplaces\.length/);
+assert.doesNotMatch(marketSourcingCron, /canonicalVariantEvidenceWriteFailures \+ observation\.skippedMarketplaces\.length/);
 assert.match(collector, /if \(enabledEntries\.length === 0\) \{[\s\S]*?cursorBeforeFirstEnabled[\s\S]*?sourceIndex: cursorBeforeFirstEnabled/);
 assert.match(collector, /if \(disabledMarketplace\) \{[\s\S]*?itemCount: 0,[\s\S]*?return/);
 assert.match(migration, /delete from public\.marketplace_bestsellers[\s\S]*?lower\(trim\(marketplace\)\) in \('amazon\.co\.jp', 'amazon', 'rakuten'\)/i);
