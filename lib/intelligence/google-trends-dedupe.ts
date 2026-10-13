@@ -28,3 +28,61 @@ export function dedupeGoogleTrendItems<T extends GoogleTrendItem>(items: T[]): T
   }
   return unique;
 }
+
+
+export type GoogleTrendObservationRow = {
+  idempotency_key: string;
+  product_id: null;
+  source_id: string;
+  signal_type: "search_volume";
+  value: number | null;
+  unit: "searches_approx";
+  observed_at: string;
+  metadata: {
+    query: string;
+    original_query: string;
+    country: "JP";
+    provider: "google_trends";
+    source_url: string;
+    published_at: string | null;
+  };
+};
+
+type UpsertResult = { data: Array<{ id: string }> | null; error: { message: string } | null };
+
+export async function persistGoogleTrendObservations(args: {
+  sourceId: string;
+  trends: GoogleTrendItem[];
+  observedAt: string;
+  sourceUrl: string;
+  upsert: (
+    rows: GoogleTrendObservationRow[],
+    options: { onConflict: "idempotency_key"; ignoreDuplicates: true },
+  ) => Promise<UpsertResult>;
+}) {
+  const rows: GoogleTrendObservationRow[] = args.trends.map((trend) => ({
+    idempotency_key: buildGoogleTrendObservationKey(args.sourceId, trend.title, args.observedAt),
+    product_id: null,
+    source_id: args.sourceId,
+    signal_type: "search_volume",
+    value: trend.traffic,
+    unit: "searches_approx",
+    observed_at: args.observedAt,
+    metadata: {
+      query: trend.title,
+      original_query: trend.title,
+      country: "JP",
+      provider: "google_trends",
+      source_url: args.sourceUrl,
+      published_at: trend.publishedAt,
+    },
+  }));
+
+  const { data, error } = await args.upsert(rows, {
+    onConflict: "idempotency_key",
+    ignoreDuplicates: true,
+  });
+  if (error) throw new Error(`Failed to insert Google Trends observations: ${error.message}`);
+  const inserted = data?.length ?? 0;
+  return { rows, inserted, alreadyObserved: rows.length - inserted };
+}
