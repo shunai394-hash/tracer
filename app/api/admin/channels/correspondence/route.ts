@@ -39,7 +39,7 @@ async function fetchShopifyTracerProducts(): Promise<CorrespondenceShopifyProduc
       }`,
       { after, publicationId },
     );
-    if (data.products.nodes.some((node) => node.variants.pageInfo.hasNextPage)) throw new Error("SHOPIFY_VARIANTS_INCOMPLETE");
+    if (data.products.nodes.some((node) => node.variants.pageInfo.hasNextPage)) throw new Error("SHOPIFY_TRACER_VARIANTS_INCOMPLETE");
     products.push(...data.products.nodes.map((node) => ({ ...node, variants: node.variants.nodes })));
     if (!data.products.pageInfo.hasNextPage) return products;
     after = data.products.pageInfo.endCursor;
