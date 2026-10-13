@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:tracer-core
+      - name: Test marketplace ranking sources disabled by policy
+        run: node --experimental-strip-types --no-warnings scripts/test-marketplace-ranking-sources-disabled.mjs
       - name: Test Shopify order SKU mapping
         run: npm run test:shopify-order-sku-mapping
       - name: Test order gate profit invariants
