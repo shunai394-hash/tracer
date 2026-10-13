@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [shopify, basePublisher, shopifyRoute, baseRoute, vercel] = await Promise.all([
+const [shopify, basePublisher, identity, shopifyRoute, baseRoute, vercel] = await Promise.all([
   readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8"),
+  readFile(new URL("../lib/catalog/canonical-supplier-identity.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/cron/shopify-publish/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/cron/base-publish/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../vercel.json", import.meta.url), "utf8"),
@@ -13,6 +14,12 @@ const [shopify, basePublisher, shopifyRoute, baseRoute, vercel] = await Promise.
 // External writes remain disabled in this test: it only inspects source.
 assert.match(shopifyRoute, /syncPublishedListingsToShopify\(150\)/);
 assert.match(baseRoute, /publishPublishedListingsToBase\(50\)/);
+assert.match(shopify, /getExactlyLinkedSupplierListingIds/);
+assert.match(basePublisher, /getExactlyLinkedSupplierListingIds/);
+assert.match(identity, /sourceProductId === canonicalProductId/);
+assert.match(identity, /sourceSupplierProductId === listingSupplierProductId/);
+assert.match(identity, /sourceVariantId === listingVariantId/);
+assert.match(identity, /candidateGroup.length !== 1/);
 assert.match(shopify, /supplier_variant_missing/);
 assert.match(shopify, /supplier_product_missing/);
 assert.match(shopify, /canonical_product_id_missing/);
