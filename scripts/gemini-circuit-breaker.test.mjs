@@ -32,3 +32,12 @@ test("classification provider failure is deferred instead of counted as non-prod
   assert.match(source, /intentDeferred \+= 1;\s*continue;/);
   assert.match(source, /geminiCircuitBreaker\.recordFailure\(error\)/);
 });
+
+test("automotive demand requires an explicit product type, not a brand or model alone", async () => {
+  const source = await readFile(new URL("../lib/intelligence/match-demand-products.ts", import.meta.url), "utf8");
+  const automobileLine = source.split("\n").find((line) => line.trim().startsWith("automobile:"));
+  assert.ok(automobileLine, "automobile category must remain explicit");
+  assert.match(automobileLine, /車用フロアマット|ドライブレコーダー|車載ホルダー/);
+  assert.doesNotMatch(automobileLine, /"toyota"|"prius"|"honda"|"nissan"|"mazda"/i);
+  assert.doesNotMatch(automobileLine, /"car"|"automobile"|"vehicle"/i);
+});
