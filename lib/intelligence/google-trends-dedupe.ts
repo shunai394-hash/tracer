@@ -5,7 +5,7 @@ export type GoogleTrendItem = {
 };
 
 export function normalizeGoogleTrendQuery(value: string): string {
-  return value.normalize("NFKC").trim().replace(/\\s+/g, " ").toLocaleLowerCase("ja-JP");
+  return value.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase("ja-JP");
 }
 
 /**
