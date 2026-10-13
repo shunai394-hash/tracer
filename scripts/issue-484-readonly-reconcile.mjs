@@ -103,7 +103,7 @@ for (const row of evidenced) {
   currencyPairs[key] = (currencyPairs[key] ?? 0) + 1;
 }
 
-const external = evidenced.filter((row) => row.shopify_product_id || row.base_item_id);
+const external = evidenced.filter((row) => row.shopify_product_id || row.shopify_variant_id || row.base_item_id);
 const shopify = [];
 if (isShopifyConfigured() || external.some((row) => row.shopify_product_id)) {
   if (!isShopifyConfigured()) {
@@ -300,13 +300,53 @@ for (const row of external.filter((item) => item.base_item_id)) {
     }
     const body = await response.json();
     const item = body.item ?? body;
+    const expectedPrice = typeof row.selling_price === "number"
+      ? row.selling_price
+      : typeof row.selling_price === "string" && row.selling_price.trim()
+        ? Number(row.selling_price)
+        : null;
+    const livePriceValue = item.price ?? item.price_with_tax ?? item.price_without_tax ?? null;
+    const parsedLivePrice = typeof livePriceValue === "number"
+      ? livePriceValue
+      : typeof livePriceValue === "string" && livePriceValue.trim()
+        ? Number(livePriceValue)
+        : null;
+    const livePrice = Number.isFinite(parsedLivePrice) ? parsedLivePrice : null;
+    const expectedInventory = typeof row.inventory === "number"
+      ? row.inventory
+      : typeof row.inventory === "string" && row.inventory.trim()
+        ? Number(row.inventory)
+        : null;
+    const liveStockValue = item.stock ?? null;
+    const parsedLiveStock = typeof liveStockValue === "number"
+      ? liveStockValue
+      : typeof liveStockValue === "string" && liveStockValue.trim()
+        ? Number(liveStockValue)
+        : null;
+    const liveStock = Number.isFinite(parsedLiveStock) ? parsedLiveStock : null;
+    const priceMatches = Number.isFinite(expectedPrice) && livePrice !== null
+      ? Math.abs(expectedPrice - livePrice) <= 0.01
+      : null;
+    const inventoryMatches = Number.isFinite(expectedInventory) && liveStock !== null
+      ? expectedInventory === liveStock
+      : null;
+    const visibilityDisagreement = typeof item.visible === "boolean"
+      ? item.visible !== (row.published === true)
+      : null;
     base.push({
       listingId: row.id,
       found: true,
       visible: item.visible ?? null,
-      stock: item.stock ?? null,
-      published: row.published === true,
-      orderable: row.orderable === true,
+      dbPublished: row.published === true,
+      dbOrderable: row.orderable === true,
+      liveStock,
+      expectedInventory: Number.isFinite(expectedInventory) ? expectedInventory : null,
+      inventoryMatches,
+      livePrice,
+      expectedPrice: Number.isFinite(expectedPrice) ? expectedPrice : null,
+      priceMatches,
+      visibilityDisagreement,
+      itemCode: item.item_code ?? item.itemCode ?? null,
     });
   } catch {
     base.push({ listingId: row.id, state: "read_failed" });
@@ -324,6 +364,16 @@ console.log(JSON.stringify({
   reasonCounts,
   externalListings: external.length,
   shopify,
+  baseReconciliation: {
+    linkedRows: base.length,
+    readFailures: base.filter((row) => row.state && row.state !== "read_failed" && row.state !== "access_token_absent_refresh_not_attempted" && !row.found).length,
+    visibleButDbBlocked: base.filter((row) => row.visible === true && row.dbPublished === false).length,
+    hiddenButDbPublished: base.filter((row) => row.visible === false && row.dbPublished === true).length,
+    priceMismatch: base.filter((row) => row.priceMatches === false).length,
+    inventoryMismatch: base.filter((row) => row.inventoryMatches === false).length,
+    mismatchSamples: base.filter((row) => row.visible === true && row.dbPublished === false || row.visible === false && row.dbPublished === true || row.priceMatches === false || row.inventoryMatches === false).slice(0, 200),
+    note: "BASE visibility and inventory are compared with TRACER's canonical flags/count. Missing price fields are reported as unknown, not as a match.",
+  },
   base,
   writes: "none",
 }, null, 2));
