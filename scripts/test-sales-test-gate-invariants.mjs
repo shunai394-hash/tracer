@@ -45,7 +45,11 @@ for (const blocked of [
 assert.equal(isPublishableCatalogTitle("トレンド・seeded_dueアイテム"), false);
 assert.equal(isPublishableCatalogTitle("Aroma Filter"), true);
 assert.match(supplySelector, /product_master_title_not_publishable/);
-assert.match(marketSelector, /requireDomesticShipping: true/);
+assert.match(marketSelector, /resolveSupplyShippingPolicy/);
+assert.match(marketSelector, /requireDomesticShipping: shippingPolicy\\.requireDomesticShipping/);
+assert.match(marketSelector, /domesticShipping: shippingPolicy\\.domesticShipping/);
+assert.match(marketSelector, /shipTo: listing\\.ship_to/);
+assert.match(marketSelector, /shippingStatus: listing\\.shipping_status/);
 assert.match(supplySelector, /rejectedCount: rejected\.length/);
 assert.match(supplySelector, /rejectionCounts: summarizeRejections\(rejected\)/);
 assert.match(supplySelector, /title: sourceTitle/);
