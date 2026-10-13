@@ -18,12 +18,10 @@ import { inspectCanonicalMarketplaceVariantMarkup, parseAmazonVariationAsinMap, 
 import { decodeHtmlBytes } from "@/lib/market/charset";
 import { isAmazonChallengeHtml } from "@/lib/market/amazon-response";
 
-export const MARKETPLACE_SOURCES = [
-  // Amazon and Rakuten are intentionally excluded from new collection.
-  // Keep only Yahoo Shopping as a discovery source; listings still require
-  // independently verified identity, image, supplier variant, and orderability.
-  { marketplace: "yahoo_shopping", url: "https://shopping.yahoo.co.jp/ranking/", source: "yahoo_shopping_ranking" },
-] as const;
+// Marketplace ranking collection is intentionally disabled. Demand discovery
+// must come from first-party trend signals and supplier-verifiable products,
+// not Amazon, Rakuten, or Yahoo Shopping marketplace listings.
+export const MARKETPLACE_SOURCES: Array<{ marketplace: string; url: string; source: string }> = [];
 
 /**
  * How many collected items per marketplace get a detail-page fetch for
