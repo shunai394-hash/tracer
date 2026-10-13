@@ -67,6 +67,8 @@ export type CollectedMarketplace = {
     childDetailAttempted: number;
     childDetailFetched: number;
     childBarcodeFound: number;
+    /** Whether the configured proxy provider can retry Amazon anti-bot/challenge responses. */
+    brightDataConfigured: boolean;
   };
 };
 
@@ -399,6 +401,7 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
       childDetailAttempted,
       childDetailFetched,
       childBarcodeFound,
+      brightDataConfigured: isBrightDataConfigured(),
     },
   };
 }
