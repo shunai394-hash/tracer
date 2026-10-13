@@ -72,6 +72,12 @@ export type CollectedMarketplace = {
   };
 };
 
+/** Detect common Amazon robot-check responses; HTTP 200 alone is not a usable product page. */
+function isAmazonChallengeHtml(html: string | null, url: string): boolean {
+  if (!html || !/amazon\\.co\\.jp$/i.test(new URL(url).hostname)) return false;
+  return /(?:validateCaptcha|captcha\\.amazon|robot check|sorry, we just need to make sure you['’]?re not a robot|enter the characters you see below|automated access to amazon|api-services-support@amazon\\.com|\u30ed\u30dc\u30c3\u30c8\u3067\u306f\u306a\u3044\u3053\u3068\u3092\u78ba\u8a8d)/i.test(html);
+}
+
 async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVariantsMissing?: boolean; retryBrightDataWhenAmazonIdentifierMissing?: boolean } = {}): Promise<string | null> {
   const directFetch = async (): Promise<string | null> => {
     try {
@@ -132,7 +138,9 @@ async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVar
       normalizeIdentifier("upc", detail.upc)
     );
   };
+  const directIsChallenge = isAmazonChallengeHtml(directHtml, url);
   const directHasRequiredEvidence =
+    !directIsChallenge &&
     (!options.retryBrightDataWhenCanonicalVariantsMissing || hasAmazonVariantEvidence(directHtml)) &&
     (!options.retryBrightDataWhenAmazonIdentifierMissing || hasAmazonProductIdentifier(directHtml));
   if (directHtml && directHasRequiredEvidence) return directHtml;
@@ -141,6 +149,7 @@ async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVar
     try {
       const page = await fetchBrightDataPage(url);
       const brightDataHasRequiredEvidence =
+        !isAmazonChallengeHtml(page.html, url) &&
         (!options.retryBrightDataWhenCanonicalVariantsMissing || hasAmazonVariantEvidence(page.html)) &&
         (!options.retryBrightDataWhenAmazonIdentifierMissing || hasAmazonProductIdentifier(page.html));
       if (page.html && brightDataHasRequiredEvidence) {
@@ -149,14 +158,14 @@ async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVar
       // If Bright Data did not improve the response, retain a usable direct
       // response for ordinary parsing/diagnostics. It still cannot create
       // canonical evidence unless the strict JSON-LD parser finds child nodes.
-      if (directHtml) return directHtml;
-      if (page.html) return page.html;
+      if (directHtml && !directIsChallenge) return directHtml;
+      if (page.html && !isAmazonChallengeHtml(page.html, url)) return page.html;
     } catch {
       // Fall through to the direct response if one exists.
     }
   }
 
-  return directHtml;
+  return directIsChallenge ? null : directHtml;
 }
 function enrichAmazon(item: ParsedBestseller): ParsedBestseller {
   return {
