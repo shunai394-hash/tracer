@@ -5,6 +5,7 @@ import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { evaluateSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 
 function num(value: unknown): number | null {
@@ -105,6 +106,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (!validHttpUrl(base.image_url)) reasons.push("image_url_invalid");
     const localizedTitle = localizeProductTitle(sourceTitle, metadataCategory(base.metadata));
     if (!isJapaneseProductTitle(localizedTitle)) reasons.push("japanese_title_unavailable");
+    else if (!isPublishableCatalogTitle(localizedTitle)) reasons.push("catalog_title_not_publishable");
 
     const rawIdentityMethod = String(listing.identity_method ?? "").trim().toLowerCase();
     const identifierGradeMethods = new Set(["asin", "jan", "gtin", "ean", "upc", "mpn", "brand_mpn", "tracer_catalog"]);
@@ -192,6 +194,9 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     eligibleSamples: eligible.slice(0, 50).map((item) => ({
       productId: item.productId,
       title: String(item.listing.title ?? item.base.normalized_title ?? ""),
+      localizedTitle: localizeProductTitle(String(item.listing.title ?? item.base.normalized_title ?? ""), metadataCategory(item.base.metadata)),
+      titleQualityPass: isPublishableCatalogTitle(localizeProductTitle(String(item.listing.title ?? item.base.normalized_title ?? ""), metadataCategory(item.base.metadata))),
+      category: metadataCategory(item.base.metadata),
       supplier: String(item.listing.supplier ?? ""),
       supplierProductId: item.listing.supplier_product_id ?? null,
       supplierVariantId: item.listing.supplier_variant_id ?? null,
