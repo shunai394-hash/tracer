@@ -14,11 +14,12 @@ const [shopify, basePublisher, identity, shopifyRoute, baseRoute, vercel] = awai
 // External writes remain disabled in this test: it only inspects source.
 assert.match(shopifyRoute, /syncPublishedListingsToShopify\(150\)/);
 assert.match(baseRoute, /publishPublishedListingsToBase\(50\)/);
-assert.match(shopify, /getExactlyLinkedSupplierListingIds/);
-assert.match(basePublisher, /getExactlyLinkedSupplierListingIds/);
+assert.match(shopify, /getExactlyEligibleSupplierListingIds/);
+assert.match(basePublisher, /getExactlyEligibleSupplierListingIds/);
 assert.match(identity, /sourceProductId === canonicalProductId/);
 assert.match(identity, /sourceSupplierProductId === listingSupplierProductId/);
 assert.match(identity, /sourceVariantId === listingVariantId/);
+assert.match(identity, /sourceCurrency === sellingCurrency/);
 assert.match(identity, /candidateGroup.length !== 1/);
 assert.match(shopify, /supplier_variant_missing/);
 assert.match(shopify, /supplier_product_missing/);
