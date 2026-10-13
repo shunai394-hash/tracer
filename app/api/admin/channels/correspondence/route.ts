@@ -32,7 +32,7 @@ async function fetchShopifyTracerProducts(): Promise<CorrespondenceShopifyProduc
           nodes {
             id title status
             publishedOnPublication(publicationId: $publicationId)
-            variants(first: 5) { nodes { id sku price inventoryQuantity } }
+            variants(first: 250) { nodes { id sku price inventoryQuantity } }
           }
           pageInfo { hasNextPage endCursor }
         }
