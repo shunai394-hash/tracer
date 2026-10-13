@@ -16,10 +16,12 @@ assert.equal((discovery.match(/persistCjInternalSupplyCandidate\(/g) ?? []).leng
 assert.match(discovery, /internalSupplyIngested: Boolean\(internalSupply\)/);
 assert.match(discovery, /"women handbag", "women crossbody bag", "women shoulder bag", "women tote bag"/,
   "new supply discovery must prioritize women's bags before beauty tools and hair accessories");
-assert.match(discovery, /"beauty tools", "facial cleansing brush", "makeup brush cleaner", "makeup organizer"/,
+assert.match(discovery, /"women makeup bag", "beauty tool set", "facial cleansing brush"/,
   "beauty tools must follow women's bags in the supply query priority");
-assert.match(discovery, /"hair styling tools", "hair clip women", "claw clip women"/,
+assert.match(discovery, /"hair clip women", "claw clip women", "flower hair clip"/,
   "hair accessories must be an explicit high-priority catalog segment");
+assert.match(discovery, /Avoid broad unrelated searches that dilute the/,
+  "catalog queries must stay focused on the requested women's product categories");
 assert.match(discovery, /supply-first-catalog-cursor-v2/,
   "query-order changes must not reinterpret an old cursor index");
 assert.match(discovery, /next_verification_at\.is\.null,next_verification_at\.lte/,
@@ -30,10 +32,10 @@ assert.match(discovery, /let seededChecked = 0/,
   "failed seeded refreshes must count as attempts and not starve fresh catalog discovery");
 assert.match(discovery, /seededChecked >= seededVerificationLimit/,
   "seeded verification must have a hard per-run attempt budget");
-assert.match(marketCollector, /retryBrightDataWhenCanonicalVariantsMissing/,
-  "Amazon detail fetches must retry Bright Data when direct HTML lacks JSON-LD");
-assert.match(marketCollector, /hasAmazonVariantEvidence\(directHtml\)/,
-  "a non-empty Amazon page without canonical child variants or an explicit variation-ASIN map must not suppress the Bright Data fallback");
+assert.match(marketCollector, /MARKETPLACE_SOURCES:\s*Array<\{[^}]+\}>\s*=\s*\[\]/,
+  "Amazon, Rakuten and Yahoo marketplace ranking intake must remain disabled");
+assert.match(marketCollector, /Marketplace ranking collection is intentionally disabled/,
+  "the collector must document the new demand-signal and direct-supplier policy");
 assert.match(ingest, /sourceRef = `cj:\$\{args\.supplierProductId\}:\$\{args\.supplierVariantId\}`/,
   "source reference must be deterministic for the concrete supplier product+variant");
 assert.match(ingest, /onConflict: "source_name,source_ref"/,
