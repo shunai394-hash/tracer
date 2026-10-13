@@ -35,6 +35,29 @@ jobs:
         run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-supplier-order-safety.mjs
       - name: Test internal supply retry lifecycle
         run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-internal-link-retry-lifecycle.mjs
+      - name: Set up disposable local PostgreSQL for integration tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql postgresql-client
+          sudo pg_ctlcluster 16 main start
+          sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'ci-postgres-password';"
+          sudo -u postgres createdb tracer_test
+      - name: Run atomic catalog sync PostgreSQL integration tests (disposable CI database only)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: ci-postgres-password
+          PGDATABASE: tracer_test
+        run: psql -v ON_ERROR_STOP=1 -f scripts/test-atomic-catalog-sync.sql
+      - name: Run canonical marketplace variant evidence migration tests (disposable CI database only)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: ci-postgres-password
+          PGDATABASE: tracer_test
+        run: psql -v ON_ERROR_STOP=1 -f scripts/test-canonical-variant-evidence.sql
       - name: Verify demand match evidence
         run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
       - name: TypeScript
