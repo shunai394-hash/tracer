@@ -221,7 +221,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
 
   const [productResult, bestsellerResult, identifierResult] = await Promise.all([
     readAll("product_intelligence", (from, to) => supabase.from("product_intelligence").select("product_id, normalized_title").order("product_id").range(from, to)),
-    readAll("marketplace_bestsellers", (from, to) => supabase.from("marketplace_bestsellers").select("product_id, jan, gtin, ean, upc, mpn, model, brand").not("product_id", "is", null).order("id").range(from, to)),
+    readAll("marketplace_bestsellers", (from, to) => supabase.from("marketplace_bestsellers").select("product_id, jan, gtin, ean, upc, mpn, model, brand").not("marketplace", "in", '("amazon.co.jp","rakuten","yahoo_shopping")').not("product_id", "is", null).order("id").range(from, to)),
     readAll("product_identifiers", (from, to) => supabase.from("product_identifiers").select("product_id, scheme, value").not("product_id", "is", null).order("id").range(from, to)),
   ]);
   if (productResult.error) throw new Error(productResult.error.message);
