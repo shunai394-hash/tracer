@@ -21,6 +21,9 @@ on:
       - "lib/shopify/admin.ts"
       - "lib/shopify/sync-orders.ts"
       - "app/api/cron/shopify-orders/route.ts"
+      - "app/api/cron/sales-test-publication/route.ts"
+      - "lib/market/select-supply-sales-tests.ts"
+      - "scripts/test-cj-native-supply-identity-gate.mjs"
   workflow_dispatch:
     inputs:
       sync_batch:
@@ -120,6 +123,32 @@ jobs:
               raise SystemExit(0)
           print(json.dumps({k: v for k, v in d.items() if k != "results"}, ensure_ascii=False, indent=1))
           print("candidate samples:", json.dumps((d.get("results") or [])[:10], ensure_ascii=False))
+          PY
+          echo "=== CJ-native supply publication dry-run (no writes) ==="
+          supply_dry_run_code=$(curl -sS -o supply-dry-run.json -w "%{http_code}" --max-time 180 -H "Authorization: Bearer $(token)" "$BASE/api/cron/sales-test-publication?dryRun=true" || echo 000)
+          echo "=== api/cron/sales-test-publication?dryRun=true HTTP $supply_dry_run_code ==="
+          python3 - <<'PY'
+          import collections, json
+          try:
+              d = json.load(open("supply-dry-run.json"))
+          except Exception:
+              print("non-JSON response:", open("supply-dry-run.json").read()[:500])
+              raise SystemExit(0)
+          s = d.get("supplySelected") or {}
+          rejected = s.get("rejected") or []
+          counts = collections.Counter(reason for row in rejected for reason in (row.get("reasons") or []))
+          print(json.dumps({
+              "ok": d.get("ok"),
+              "dryRun": d.get("dryRun"),
+              "noWrites": d.get("noWrites"),
+              "featureEnabledForLiveRuns": d.get("featureEnabledForLiveRuns"),
+              "considered": s.get("considered"),
+              "eligibleProductCount": len(s.get("eligibleProductIds") or []),
+              "rejectedCount": len(rejected),
+              "topRejectionReasons": dict(counts.most_common(12)),
+              "eligibleSamples": (s.get("eligibleSamples") or [])[:10],
+              "rejectedSample": rejected[:5],
+          }, ensure_ascii=False, indent=1))
           PY
           summarize_sync() {
             python3 - <<'PY'

@@ -1,0 +1,23 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const source = await readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8");
+const route = await readFile(new URL("../app/api/cron/sales-test-publication/route.ts", import.meta.url), "utf8");
+const workflow = await readFile(new URL("../.github/workflows/tracer-shopify-auth-check.yml", import.meta.url), "utf8");
+assert.ok(source.includes('candidate.verification_status === "verified"'), "native CJ identity requires verified supplier evidence");
+assert.ok(source.includes('candidate.shipping_status === "verified"'), "native CJ identity requires verified shipping evidence");
+assert.ok(source.includes('options.allowNativeCjIdentity === true && ["cj", "cjdropshipping"].includes(supplier)'), "native CJ identity is disabled by default");
+assert.ok(source.includes('if (!nativeCjSupplyIdentity && (num(listing.identity_confidence) === null'), "generic identity confidence must not block verified native CJ identity");
+assert.ok(source.includes('identityConfidence: nativeCjSupplyIdentity ? 1 : num(listing.identity_confidence)'), "native CJ evidence must be passed to the sales-test gate");
+assert.ok(source.includes('candidate.price_confirmed === true') && source.includes('candidate.inventory_confirmed === true') && source.includes('candidate.orderable === true') && source.includes('candidate.tracking_available === true') && source.includes('candidate.api_available === true'), "native identity must not bypass price, stock, orderability, tracking or API gates");
+assert.ok(source.includes('profitCalculable: profit.calculable') && source.includes('contributionProfit: profit.contributionProfit'), "contribution-profit gate must remain in the flow");
+assert.ok(source.includes("eligibleSamples: eligible.slice(0, 50)") && source.includes("contributionProfit: item.profit.contributionProfit"), "dry-run must expose eligible evidence for quality review");
+assert.ok(route.includes('const dryRun = new URL(request.url).searchParams.get("dryRun") === "true"'), "dry-run mode must be explicit");
+assert.ok(route.includes('if (!dryRun) {\n      await recoverStaleCronRun'), "dry-run must not create cron lock records");
+assert.ok(route.includes('if (dryRun) {\n      return NextResponse.json({\n        ok: true,\n        dryRun: true,\n        noWrites: true'), "dry-run must return before downstream publication");
+assert.ok(route.includes('process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true"'), "live native CJ publication must be feature-flagged off by default");
+assert.ok(route.includes('const { data: nativeCjSupply, error: nativeCjSupplyError }'), "native CJ supply must be queried independently of marketplace identity");
+assert.ok(route.includes('.eq("shipping_status", "verified")') && route.includes('.eq("price_confirmed", true)') && route.includes('.eq("api_available", true)'), "native CJ query requires verified shipping, price and API evidence");
+assert.ok(workflow.includes('$BASE/api/cron/sales-test-publication?dryRun=true'), "production workflow must run a no-write supply dry run");
+assert.ok(workflow.includes('"app/api/cron/sales-test-publication/route.ts"'), "route changes must trigger production diagnostics after deployment");
+console.log("CJ-native supply identity and no-write dry-run regression: 16 assertions passed");
