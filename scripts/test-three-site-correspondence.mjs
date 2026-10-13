@@ -85,6 +85,12 @@ assert.ok(issuesFor([listing({ published: false, inventory: 0 })], [baseItem({ s
   assert.ok(earlyReturn < route.indexOf("publishPublishedListingsToBase(1, [listingId])"), "dry run must return before any channel write");
   assert.doesNotMatch(route, /createCJOrder|executeSupplierPurchaseOrder|createDropshipPurchaseOrders/, "the sync route must never order");
   const correspondence = await readFile(new URL("../app/api/admin/channels/correspondence/route.ts", import.meta.url), "utf8");
+  // Shopify rejects one query above 1000 cost points (~products x variants).
+  const productsFirst = Number(correspondence.match(/products\(first: (\d+)/)?.[1]);
+  const variantsFirst = Number(correspondence.match(/variants\(first: (\d+)/)?.[1]);
+  assert.ok(productsFirst > 0 && variantsFirst > 0, "catalog page sizes must be explicit");
+  assert.ok(productsFirst + productsFirst * variantsFirst <= 1000, "catalog query must stay under the Shopify cost limit");
+  assert.match(correspondence, /SHOPIFY_TRACER_VARIANTS_INCOMPLETE/, "truncated variant lists must fail closed");
   assert.doesNotMatch(correspondence, /\.(insert|update|upsert|delete)\(|createBaseItem|editBaseItem|productUpdate|productCreate/, "the correspondence table must be read-only");
 }
 console.log("PASS three-site correspondence");

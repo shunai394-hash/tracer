@@ -25,14 +25,16 @@ async function fetchShopifyTracerProducts(): Promise<CorrespondenceShopifyProduc
   const publicationId = await getOnlineStorePublicationId();
   const products: CorrespondenceShopifyProduct[] = [];
   let after: string | null = null;
-  for (let page = 0; page < 10; page += 1) {
+  // Shopify rejects a single query above 1000 cost points; 25 products x 30
+  // variants stays under it. Truncated variant lists still fail closed below.
+  for (let page = 0; page < 40; page += 1) {
     const data: { products: { nodes: ShopifyNode[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } = await shopifyGraphQL(
       `query TracerCorrespondence($after: String, $publicationId: ID!) {
-        products(first: 100, after: $after, query: "vendor:TRACER") {
+        products(first: 25, after: $after, query: "vendor:TRACER") {
           nodes {
             id title status
             publishedOnPublication(publicationId: $publicationId)
-            variants(first: 250) { nodes { id sku price inventoryQuantity } pageInfo { hasNextPage } }
+            variants(first: 30) { nodes { id sku price inventoryQuantity } pageInfo { hasNextPage } }
           }
           pageInfo { hasNextPage endCursor }
         }
