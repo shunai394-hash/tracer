@@ -2,6 +2,7 @@
 // Run: node --experimental-strip-types scripts/verify-demand-match-evidence.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import {
   buildIdentifierIndex,
   canonicalGtin,
@@ -18,8 +19,9 @@ import {
   variantsCompatible,
 } from "../lib/intelligence/demand-match-evidence.ts";
 import { classifySellability } from "../lib/intelligence/sellability.ts";
-import { normalizeIdentifier } from "../lib/market/identifiers.ts";
-import { parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
+import { matchProductIdentity, normalizeIdentifier, pickSupplierBarcodeIdentifier, EMPTY_IDENTIFIERS } from "../lib/market/identifiers.ts";
+import { inspectCanonicalMarketplaceVariantMarkup, parseAmazonVariationAsinMap, parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
+import { isAmazonChallengeHtml } from "../lib/market/amazon-response.ts";
 import { verifyDropshipOrderGateInvariants } from "../lib/ordering/dropship-gate.ts";
 import { verifySalesTestGateInvariants } from "../lib/market/sales-test-gate.ts";
 import { decideStorefrontStock } from "../lib/shop/live-stock-policy.ts";
@@ -27,6 +29,33 @@ import { internalLinkRetryDelayMs, internalProductCandidateStatus, selectDueInte
 
 const results = [];
 const pending = [];
+
+test("demand match bounds", "rotates a bounded observation page and scopes large secondary tables to that page", async () => {
+  const source = await readFile(new URL("../lib/intelligence/match-demand-products.ts", import.meta.url), "utf8");
+  assert.match(source, /select\("id", \{ count: "exact", head: true \}\)/);
+  assert.match(source, /\.range\(demandBatchPage \* demandBatchSize, \(demandBatchPage \+ 1\) \* demandBatchSize - 1\)/);
+  assert.match(source, /\.in\("demand_observation_id", demandBatchIdList\)/);
+  assert.match(source, /\.in\("demand_product_candidate_id", candidateIds\)/);
+  assert.match(source, /\.in\("metadata->>demand_observation_id", demandBatchIdList\)/);
+  assert.doesNotMatch(source, /readAll\(\(from, to\) => supabase\.from\("product_offers"/);
+  assert.doesNotMatch(source, /readAll\(\(from, to\) => supabase\.from\("demand_product_candidates"/);
+});
+
+test("Gemini demand classification failure", "provider failure is deferred instead of counted as a non-product result", async () => {
+  const source = await readFile(new URL("../lib/intelligence/match-demand-products.ts", import.meta.url), "utf8");
+  assert.match(source, /geminiCircuitBreaker\.recordFailure\(error\)/);
+  assert.match(source, /geminiCircuitBreaker\.canCall\(geminiCalls, MAX_GEMINI_CLASSIFICATIONS_PER_RUN\)/);
+  assert.match(source, /A provider failure is not evidence that this query is non-product/);
+  assert.match(source, /intentDeferred \+= 1;\s*continue;/);
+  assert.match(source, /intentDeferred \+= 1;\s*continue;/);
+});
+
+test("Amazon response classification", "rejects HTTP-200 robot-check HTML as product detail evidence", () => {
+  assert.equal(isAmazonChallengeHtml("<html><title>Robot Check</title><body>Enter the characters you see below</body></html>", "https://www.amazon.co.jp/dp/B000000001"), true);
+  assert.equal(isAmazonChallengeHtml("<html><body>通常の商品詳細</body></html>", "https://www.amazon.co.jp/dp/B000000001"), false);
+  assert.equal(isAmazonChallengeHtml("<html><body>Robot Check</body></html>", "https://store.example.com/item"), false);
+  assert.equal(isAmazonChallengeHtml(null, "https://www.amazon.co.jp/dp/B000000001"), false);
+});
 
 test("canonical marketplace variant evidence", "captures only explicit ProductGroup child variants and never copies parent barcodes", () => {
   const html = '<script type="application/ld+json">{"@context":"https://schema.org","@type":"ProductGroup","productGroupID":"PARENT-MODEL","gtin13":"4006381333931","hasVariant":[{"@type":"Product","name":"Bottle 500 ml","sku":"BOTTLE-500","url":"https://www.amazon.co.jp/dp/B0VARIANT1","gtin13":"4006381333931"},{"@type":"Product","name":"Bottle 1 L","sku":"BOTTLE-1000","url":"https://www.amazon.co.jp/dp/B0VARIANT2","gtin13":"4006381333932"}]}</script>';
@@ -41,6 +70,31 @@ test("canonical marketplace variant evidence", "captures only explicit ProductGr
     "parent product barcode must not be copied onto a child variant");
 });
 
+
+test("canonical marketplace variant evidence", "accepts absolute Schema.org type IRIs inside @graph", () => {
+  const html = '<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"https://schema.org/ProductGroup","hasVariant":[{"@type":"https://schema.org/Product","name":"Variant IRI","sku":"IRI-SKU","url":"https://www.amazon.co.jp/dp/B0IRI12345"}]}]}</script>';
+  const variants = parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01");
+  assert.equal(variants.length, 1);
+  assert.equal(variants[0].sourceVariantId, "B0IRI12345");
+});
+
+test("canonical marketplace variant diagnostics", "distinguishes missing ProductGroup markup from unrecognized absolute type IRIs", () => {
+  const html = '<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"https://schema.org/ProductGroup","hasVariant":[{"@type":"https://schema.org/Product","name":"Variant IRI","sku":"IRI-SKU","url":"https://www.amazon.co.jp/dp/B0IRI12345"}]}]}</script>';
+  assert.deepEqual(inspectCanonicalMarketplaceVariantMarkup(html), {
+    jsonLdNodeCount: 1,
+    productGroupCount: 1,
+    groupsWithVariantCount: 1,
+    variantProductNodeCount: 1,
+    absoluteTypeIriCount: 2,
+  });
+  assert.deepEqual(inspectCanonicalMarketplaceVariantMarkup("<html></html>"), {
+    jsonLdNodeCount: 0,
+    productGroupCount: 0,
+    groupsWithVariantCount: 0,
+    variantProductNodeCount: 0,
+    absoluteTypeIriCount: 0,
+  });
+});
 
 test("canonical marketplace variant evidence", "does not use the parent ASIN as a child ID when variants omit their own URL", () => {
   const html = '<script type="application/ld+json">{"@context":"https://schema.org","@type":"ProductGroup","gtin13":"4006381333931","hasVariant":[{"@type":"Product","name":"Size Small","sku":"ITEM-S"},{"@type":"Product","name":"Size Large","sku":"ITEM-L"}]}</script>';
@@ -98,6 +152,31 @@ test("storefront stock", "does not treat a failed or missing Shopify quantity as
 });
 
 
+test("canonical marketplace variant evidence", "resolves ProductGroup hasVariant @id references within the same JSON-LD graph", () => {
+  const html = '<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":["https://schema.org/ProductGroup"],"@id":"https://www.amazon.co.jp/group/PARENT01","hasVariant":[{"@id":"https://www.amazon.co.jp/dp/B0VARIANT3"}]},{"@type":"https://schema.org/Product","@id":"https://www.amazon.co.jp/dp/B0VARIANT3","name":"Bottle 250 ml","sku":"BOTTLE-250","gtin13":"4006381333931"}]}</script>';
+  const variants = parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01");
+  assert.equal(variants.length, 1);
+  assert.equal(variants[0].sourceVariantId, "B0VARIANT3");
+  assert.equal(variants[0].gtin, "4006381333931");
+  assert.equal(variants[0].asin, "B0VARIANT3");
+});
+
+test("canonical marketplace variant evidence", "does not infer identity from an unresolved hasVariant @id", () => {
+  const html = '<script type="application/ld+json">{"@context":"https://schema.org","@type":"ProductGroup","hasVariant":[{"@id":"https://www.amazon.co.jp/dp/B0MISSING01"}]}</script>';
+  assert.deepEqual(parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01"), []);
+});
+
+
+
+test("Amazon child variation map", "extracts only explicit child ASINs and excludes the parent ASIN", () => {
+  const html = '<script>var dimensionValuesDisplayData = {"B0CHILD001":["Blue","Small"],"B0CHILD002":["Red","Large"],"B0PARENT01":["Parent"]};</script>';
+  const variants = parseAmazonVariationAsinMap(html, "https://www.amazon.co.jp/dp/B0PARENT01");
+  assert.deepEqual(variants, [
+    { asin: "B0CHILD001", variationValues: ["Blue", "Small"] },
+    { asin: "B0CHILD002", variationValues: ["Red", "Large"] },
+  ]);
+  assert.deepEqual(parseAmazonVariationAsinMap("<html></html>", "https://www.amazon.co.jp/dp/B0PARENT01"), []);
+});
 
 function test(group, name, fn) {
   const record = (ok, error) => results.push({ group, name, ok, error });
@@ -122,6 +201,25 @@ test("supplier listing identity activation gate", "keeps unverified listings non
     configured: true,
     orderable: true,
   });
+});
+
+test("CJ supplier barcode selection", "MPN-only metadata does not suppress fresh barcode lookup", () => {
+  assert.equal(pickSupplierBarcodeIdentifier({ jan: null, gtin: null, ean: null, upc: null, mpn: "MODEL-123" }), null);
+  assert.equal(pickSupplierBarcodeIdentifier({ jan: null, gtin: null, ean: null, upc: null, mpn: "MODEL-123" }) ?? "fetch-from-CJ", "fetch-from-CJ");
+  assert.equal(pickSupplierBarcodeIdentifier({ jan: "4006381333931", gtin: null, ean: null, upc: null, mpn: "MODEL-123" }), "4006381333931");
+  assert.equal(pickSupplierBarcodeIdentifier({ jan: null, gtin: "4006381333931", ean: null, upc: null, mpn: "MODEL-123" }), "4006381333931");
+});
+
+test("MPN identity safety", "an MPN alone cannot prove a product link without matching brand", () => {
+  const market = { ...EMPTY_IDENTIFIERS, mpn: "MODEL-123", brand: "Brand A" };
+  const noSupplierBrand = matchProductIdentity({ market, supply: { ...EMPTY_IDENTIFIERS, mpn: "MODEL-123" } });
+  assert.equal(noSupplierBrand.salesEligible, false);
+  assert.equal(noSupplierBrand.linked, false);
+  const conflictingBrand = matchProductIdentity({ market, supply: { ...EMPTY_IDENTIFIERS, mpn: "MODEL-123", brand: "Brand B" } });
+  assert.equal(conflictingBrand.salesEligible, false);
+  const matchingBrand = matchProductIdentity({ market, supply: { ...EMPTY_IDENTIFIERS, mpn: "MODEL-123", brand: " brand a " } });
+  assert.equal(matchingBrand.salesEligible, true);
+  assert.equal(matchingBrand.method, "brand_mpn");
 });
 
 test("CJ identity reverify policy", "retry intervals, candidate selection, raw GTIN audit, and unique-link gate", () => {

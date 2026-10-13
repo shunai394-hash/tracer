@@ -55,12 +55,22 @@ export async function runAutonomousOrderControl(runKey: string): Promise<RunResu
   initializeProcurement();
   const supabase = createSupabaseAdminClient();
 
-  // The automation audit tables are operational telemetry, not a prerequisite
-  // for creating or executing a supplier order. A stale/missing Supabase grant
-  // must not turn a paid customer order into a silently unprocessed order.
-  let auditPersistence = true;
-  let existingRun: { data: { id?: string; status?: string; processed_count?: number; succeeded_count?: number; failed_count?: number } | null; error?: { code?: string; message?: string } | null };
+  // Vercel can terminate a request before its run row is finalized. Reclaim
+  // only rows older than ten minutes: every caller of this control plane has
+  // a shorter execution budget (60–300s), so this cannot steal a live claim.
+  // This is run-ledger maintenance only; it never retries a supplier order.
+  const staleBefore = new Date(Date.now() - 10 * 60_000).toISOString();
+  const staleClaims = await supabase
+    .from("order_automation_runs")
+    .update({ status: "failed", finished_at: new Date().toISOString() })
+    .eq("status", "running")
+    .lt("started_at", staleBefore);
+  if (staleClaims.error) {
+    throw new Error(`automation_stale_claim_recovery_failed:${staleClaims.error.message}`);
+  }
 
+  // The run row is an execution claim, not optional telemetry. If it cannot
+  // be persisted, stop before reading orders or calling suppliers.
   const existingRunQuery = await supabase
     .from("order_automation_runs")
     .select("id,status,processed_count,succeeded_count,failed_count")
@@ -68,62 +78,61 @@ export async function runAutonomousOrderControl(runKey: string): Promise<RunResu
     .maybeSingle();
 
   if (existingRunQuery.error) {
-    if (existingRunQuery.error.code === "42501" || existingRunQuery.error.code === "42P01") {
-      auditPersistence = false;
-      existingRun = { data: null, error: existingRunQuery.error };
-      console.warn("[TRACER AUTOMATION AUDIT DEGRADED]", existingRunQuery.error.message);
-    } else {
-      throw new Error(existingRunQuery.error.message);
+    throw new Error(`automation_run_claim_lookup_failed:${existingRunQuery.error.message}`);
+  }
+
+  if (existingRunQuery.data) {
+    if (existingRunQuery.data.status === "completed") {
+      return {
+        runId: String(existingRunQuery.data.id),
+        processed: Number(existingRunQuery.data.processed_count ?? 0),
+        succeeded: Number(existingRunQuery.data.succeeded_count ?? 0),
+        failed: Number(existingRunQuery.data.failed_count ?? 0),
+        purchaseOrderIds: [],
+      };
     }
-  } else {
-    existingRun = existingRunQuery;
+    // A running or failed claim may have an ambiguous supplier-side outcome.
+    // Do not replay it under the same key; reconcile first and use a new key.
+    throw new Error(`automation_run_already_claimed:${String(existingRunQuery.data.status ?? "unknown")}`);
   }
 
-  if (auditPersistence && existingRun.data?.status === "completed") {
-    return {
-      runId: String(existingRun.data.id),
-      processed: Number(existingRun.data.processed_count ?? 0),
-      succeeded: Number(existingRun.data.succeeded_count ?? 0),
-      failed: Number(existingRun.data.failed_count ?? 0),
-      purchaseOrderIds: [],
-    };
-  }
+  const insertedRun = await supabase
+    .from("order_automation_runs")
+    .insert({ run_key: runKey, mode: "scheduled", status: "running" })
+    .select("id")
+    .single();
 
-  const run = auditPersistence
-    ? existingRun.data?.id
-      ? { id: String(existingRun.data.id) }
-      : await (async () => {
-          const inserted = await supabase
-            .from("order_automation_runs")
-            .insert({ run_key: runKey, mode: "scheduled", status: "running" })
-            .select("id")
-            .single();
-          if (inserted.error) {
-            if (inserted.error.code === "23505") {
-              const retry = await supabase
-                .from("order_automation_runs")
-                .select("id")
-                .eq("run_key", runKey)
-                .single();
-              if (!retry.data) throw new Error(retry.error?.message ?? "automation run claim failed");
-              return { id: String(retry.data.id) };
-            }
-            if (inserted.error.code === "42501" || inserted.error.code === "42P01") {
-              auditPersistence = false;
-              console.warn("[TRACER AUTOMATION AUDIT DEGRADED]", inserted.error.message);
-              return { id: `degraded:${runKey}` };
-            }
-            throw new Error(inserted.error.message);
-          }
-          return { id: String(inserted.data.id) };
-        })()
-    : { id: `degraded:${runKey}` };
+  if (insertedRun.error) {
+    if (insertedRun.error.code === "23505") {
+      const racedRun = await supabase
+        .from("order_automation_runs")
+        .select("id,status,processed_count,succeeded_count,failed_count")
+        .eq("run_key", runKey)
+        .maybeSingle();
+      if (racedRun.error) {
+        throw new Error(`automation_run_claim_race_lookup_failed:${racedRun.error.message}`);
+      }
+      if (racedRun.data?.status === "completed") {
+        return {
+          runId: String(racedRun.data.id),
+          processed: Number(racedRun.data.processed_count ?? 0),
+          succeeded: Number(racedRun.data.succeeded_count ?? 0),
+          failed: Number(racedRun.data.failed_count ?? 0),
+          purchaseOrderIds: [],
+        };
+      }
+      throw new Error(`automation_run_claim_lost:${String(racedRun.data?.status ?? "unknown")}`);
+    }
+    throw new Error(`automation_run_claim_insert_failed:${insertedRun.error.message}`);
+  }
+  if (!insertedRun.data?.id) throw new Error("automation_run_claim_insert_missing_id");
+  const runId = String(insertedRun.data.id);
 
   const { data: orders, error } = await supabase
     .from("shop_orders")
     .select("id,payment_status,order_status")
     .eq("payment_status", "paid")
-    .in("order_status", ["placed", "processing", "fulfilled"])
+    .in("order_status", ["placed", "processing", "fulfillment_pending"])
     .order("created_at", { ascending: true })
     .limit(25);
 
@@ -204,25 +213,20 @@ export async function runAutonomousOrderControl(runKey: string): Promise<RunResu
     }
   }
 
-  if (auditPersistence) {
-    const { error: runUpdateError } = await supabase
-      .from("order_automation_runs")
-      .update({
-        status: failed > 0 && succeeded === 0 ? "failed" : "completed",
-        finished_at: new Date().toISOString(),
-        processed_count: processed,
-        succeeded_count: succeeded,
-        failed_count: failed,
-      })
-      .eq("id", run.id);
+  const { error: runUpdateError } = await supabase
+    .from("order_automation_runs")
+    .update({
+      status: failed > 0 && succeeded === 0 ? "failed" : "completed",
+      finished_at: new Date().toISOString(),
+      processed_count: processed,
+      succeeded_count: succeeded,
+      failed_count: failed,
+    })
+    .eq("id", runId);
 
-    if (runUpdateError && runUpdateError.code !== "42501" && runUpdateError.code !== "42P01") {
-      throw new Error(runUpdateError.message);
-    }
-    if (runUpdateError) {
-      console.warn("[TRACER AUTOMATION AUDIT UPDATE SKIPPED]", runUpdateError.message);
-    }
+  if (runUpdateError) {
+    throw new Error(`automation_run_finalization_failed:${runUpdateError.message}`);
   }
 
-  return { runId: run.id, processed, succeeded, failed, purchaseOrderIds };
+  return { runId, processed, succeeded, failed, purchaseOrderIds };
 }

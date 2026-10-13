@@ -2,8 +2,7 @@ name: TRACER Production Patrol
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "17 0 * * *" # once daily at 09:17 JST; manual runs remain available
+  # Scheduled runs are owned by tracer-production-patrol-15m.yml to re-register cadence.
 
 permissions:
   id-token: write
@@ -16,7 +15,7 @@ concurrency:
 jobs:
   patrol:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 8
     steps:
       - name: Measure, repair, and report
         shell: bash
@@ -28,7 +27,7 @@ jobs:
             "$OIDC_URL" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           test -n "$OIDC_TOKEN"
 
-          curl --fail-with-body --silent --show-error --max-time 55 \
+          curl --fail-with-body --silent --show-error --max-time 310 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
             "https://tracer-pied-alpha.vercel.app/api/cron/patrol-ai" | tee patrol-report.json
 

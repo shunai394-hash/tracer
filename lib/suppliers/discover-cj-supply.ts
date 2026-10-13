@@ -9,10 +9,13 @@ import {
   searchCJProducts,
   calculateCJFreight,
 } from "@/lib/sources/cj";
+import { isCJQuotaCircuitBlockingError } from "@/lib/sources/cj/client";
 import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/cj/variant-select";
 import { persistCjSupplyIntelligence } from "@/lib/intelligence/persist-cj-supply-intelligence";
 import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
 import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { normalizeIdentifier } from "@/lib/market/identifiers";
+import { persistCjInternalSupplyCandidate } from "@/lib/suppliers/persist-cj-internal-supply";
 
 function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
   const landed = (costUsd + shippingUsd) * fx;
@@ -20,16 +23,39 @@ function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
   return Math.ceil(withMargin / 100) * 100;
 }
 
+function priorityWomenSupplyCategory(title: unknown, metadata: unknown): number {
+  const record = metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? metadata as Record<string, unknown>
+    : {};
+  const searchable = [
+    typeof title === "string" ? title : "",
+    typeof record.query === "string" ? record.query : "",
+    typeof record.category === "string" ? record.category : "",
+  ].join(" ").toLowerCase();
+  if (/handbag|crossbody bag|shoulder bag|tote bag|mini bag|women'?s bag|womens bag|ladies bag/.test(searchable)) return 0;
+  if (/makeup|cosmetic|skincare|skin care|gua sha|face roller|beauty tool|nail lamp|facial brush/.test(searchable)) return 1;
+  if (/hair clip|claw clip|hairpin|hair accessory|hair accessories|heatless curl/.test(searchable)) return 2;
+  return 99;
+}
+
+// Commercial priority: women's bags first, then practical beauty tools,
+ // then hair accessories. Specific intent queries beat broad category searches.
 const CATALOG_QUERIES = [
-  "skincare", "beauty", "makeup", "hair care", "hair tools", "women fashion",
-  "women shoes", "women accessories", "jewelry", "handbag", "period care",
-  "wellness", "self care", "beauty organizer", "cosmetic organizer",
-  "jewelry organizer", "closet organizer", "garment steamer", "bathroom organization",
-  "home organization", "kitchen", "pet", "phone accessories", "fitness",
-  "lighting", "garden", "office", "outdoor", "car accessories",
+  "women handbag", "women crossbody bag", "women shoulder bag", "women tote bag",
+  "women mini bag", "women work bag", "women cosmetic bag", "travel makeup bag",
+  "beauty tools", "facial cleansing brush", "makeup brush cleaner", "makeup organizer",
+  "hair styling tools", "hair clip women", "claw clip women", "flower hair clip",
+  "hair accessories women", "heatless curling rod", "skincare tools", "beauty",
+  "makeup", "hair care", "hair tools", "women fashion", "women accessories",
+  "jewelry", "period care", "wellness", "self care", "beauty organizer",
+  "cosmetic organizer", "jewelry organizer", "closet organizer", "garment steamer",
+  "bathroom organization", "home organization", "kitchen", "pet", "phone accessories",
+  "fitness", "lighting", "garden", "office", "outdoor", "car accessories",
 ];
 const MAX_CATALOG_PAGES = 50;
-const CATALOG_CURSOR_JOB = "supply-first-catalog-cursor";
+// Version the cursor because query order changed; don't reinterpret an old
+// index as a different category and silently skip the highest-priority searches.
+const CATALOG_CURSOR_JOB = "supply-first-catalog-cursor-v2";
 
 type CatalogCursor = { queryIndex: number; page: number };
 
@@ -170,6 +196,10 @@ export async function discoverAndCreateCjSupply(
   let verified = 0;
   let catalogDiscovered = 0;
   let rejected = 0;
+  // Once CJ reports an exhausted/unknown quota circuit, stop this invocation.
+  // Repeating dozens of searches cannot recover the provider quota and only
+  // creates noisy failure records; leave the cursor on the same query to resume later.
+  let cjQuotaBlocked = false;
 
   // Reuse previously discovered CJ IDs first. These rows are only candidates;
   // stock, variant and Japan freight are re-verified live before publication.
@@ -212,23 +242,30 @@ export async function discoverAndCreateCjSupply(
   // verified variants are valid publication candidates and are live rechecked.
   const { data: seededRows, error: seededError } = await db
     .from("supplier_listings")
-    .select("id,product_id,title,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,next_verification_at,verification_attempts")
+    .select("id,product_id,title,metadata,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,next_verification_at,verification_attempts")
     .eq("supplier", "cj")
     .not("supplier_product_id", "is", null)
     .not("supplier_variant_id", "is", null)
     .in("verification_status", ["verified", "unverified", "retryable"])
-    .order("verification_status", { ascending: true })
+    .or(`next_verification_at.is.null,next_verification_at.lte.${new Date().toISOString()}`)
+    .order("next_verification_at", { ascending: true, nullsFirst: true })
     .order("inventory", { ascending: false, nullsFirst: false })
     .limit(500);
   if (seededError) throw new Error(`supply-first candidate query failed: ${seededError.message}`);
 
   const seenSeedKeys = new Set<string>();
-  const seeded = (seededRows ?? []).filter((row) => {
-    const key = `${String(row.supplier_product_id)}:${String(row.supplier_variant_id)}`;
-    if (existingVariants.has(key) || seenSeedKeys.has(key)) return false;
-    seenSeedKeys.add(key);
-    return true;
-  });
+  const seeded = (seededRows ?? [])
+    .filter((row) => {
+      const key = `${String(row.supplier_product_id)}:${String(row.supplier_variant_id)}`;
+      if (existingVariants.has(key) || seenSeedKeys.has(key)) return false;
+      seenSeedKeys.add(key);
+      return priorityWomenSupplyCategory(row.title, row.metadata) < 99;
+    })
+    .sort((a, b) =>
+      priorityWomenSupplyCategory(a.title, a.metadata) - priorityWomenSupplyCategory(b.title, b.metadata) ||
+      String(a.next_verification_at ?? "").localeCompare(String(b.next_verification_at ?? "")) ||
+      Number(b.inventory ?? 0) - Number(a.inventory ?? 0),
+    );
 
   const deadlineAt = options?.deadlineAt ?? Number.POSITIVE_INFINITY;
   let deadlineReached = false;
@@ -247,13 +284,19 @@ export async function discoverAndCreateCjSupply(
     attempts: Number(row.verification_attempts ?? 0),
   }));
 
-  const seededVerificationLimit = Math.min(10, limit);
+  // Reserve most of the invocation budget for NEW catalog discovery. A
+  // failed seeded refresh previously did not increment `verified`, so the
+  // loop could spend the entire deadline on repeated failures and never reach
+  // the priority query cursor. Count attempts separately from successes.
+  const seededVerificationLimit = Math.min(1, Math.max(0, limit));
+  let seededChecked = 0;
   for (const seededCandidate of candidateInputs) {
-    if (verified >= seededVerificationLimit) break;
+    if (seededChecked >= seededVerificationLimit) break;
     if (Date.now() >= deadlineAt) {
       deadlineReached = true;
       break;
     }
+    seededChecked += 1;
     const candidate = {
       id: seededCandidate.id,
       variantId: seededCandidate.variantId,
@@ -381,20 +424,16 @@ export async function discoverAndCreateCjSupply(
       if (productInsert.error) throw new Error(productInsert.error.message);
       const productId = String(productInsert.data.id);
       const supplierInsert = await upsertSupplierListing(db, {
-        supplier: "cj", external_id: candidate.variantId, sku: null, title: detail.title, product_id: productId,
+        supplier: "cj", external_id: candidate.variantId, sku: null, title: detail.title, product_id: null,
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
-        order_method: "cj_api", api_available: true, identity_method: "supply_discovered",
-        identity_status: "supply_discovered", identity_confidence: 1, configured: true,
+        order_method: "cj_api", api_available: false, verification_status: "unverified", shipping_status: "verified", identity_method: "supply_discovered",
+        identity_status: "supply_discovered", identity_confidence: 0, configured: true,
         supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
-        gtin: variantBarcode,
+        gtin: normalizeIdentifier("gtin", variantBarcode),
         orderable: false, price_confirmed: true, inventory_confirmed: true, tracking_available: false,
         fetched_at: new Date().toISOString(), metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate }
       }, seededCandidate.supplierListingId);
       if (supplierInsert.error) throw new Error(supplierInsert.error.message);
-      await markVerification(db, String(supplierInsert.data.id), { status: "verified", shippingStatus: "verified" });
-      if (seededCandidate.supplierListingId && seededCandidate.supplierListingId !== String(supplierInsert.data.id)) {
-        await markVerification(db, seededCandidate.supplierListingId, { status: "verified", shippingStatus: "verified" });
-      }
       const intelligence = await persistCjSupplyIntelligence({
         productId,
         title: displayTitle,
@@ -410,6 +449,31 @@ export async function discoverAndCreateCjSupply(
         sellingPriceJpy: salePrice,
         variantBarcode,
       });
+      let internalSupply: { productId: string; variantId: string; sourceRef: string; identityLink: { bestsellerId: string; method: string; rationale: string } | null; auditStatus: "written" | "table_missing" | "write_failed" } | null = null;
+      let internalSupplyError: string | null = null;
+      try {
+        internalSupply = await persistCjInternalSupplyCandidate({
+          supplierProductId: candidate.id,
+          supplierVariantId: candidate.variantId,
+          supplierSku: seededVariant?.sku ?? null,
+          title: displayTitle,
+          imageUrl: detail.imageUrl,
+          barcode: variantBarcode,
+          costUsd: cost,
+          shippingUsd: freight,
+          inventory: Math.floor(stock),
+          fxRate,
+          sellingPriceJpy: salePrice,
+          query,
+        });
+      } catch (error) {
+        internalSupplyError = error instanceof Error ? error.message : String(error);
+        console.warn("[supply-first] internal supply ingest failed", {
+          supplierProductId: candidate.id,
+          supplierVariantId: candidate.variantId,
+          error: internalSupplyError,
+        });
+      }
       discovered++;
       verified++;
       items.push({
@@ -426,13 +490,29 @@ export async function discoverAndCreateCjSupply(
         sellingPriceJpy: salePrice,
         fxRate,
         published: false,
+        internalSupplyIngested: Boolean(internalSupply),
+        internalSupplyProductId: internalSupply?.productId ?? null,
+        internalSupplyVariantId: internalSupply?.variantId ?? null,
+        internalSupplySourceRef: internalSupply?.sourceRef ?? null,
+        internalSupplyAuditStatus: internalSupply?.auditStatus ?? "not_attempted",
+        internalSupplyError,
+        identityLink: internalSupply?.identityLink ?? null,
       });
     } catch (error) {
       rejected++;
       const message = error instanceof Error ? error.message : String(error);
-      items.push({ rejectedStage: "error", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, error: message });
-      if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: message.slice(0, 500), attempts: seededCandidate.attempts });
-      console.warn("[supply-first] seeded candidate rejected", { productId: candidate.id, error: message });
+      cjQuotaBlocked = isCJQuotaCircuitBlockingError(error);
+      items.push({
+        rejectedStage: cjQuotaBlocked ? "supplier_quota_cooldown" : "error",
+        supplierProductId: candidate.id,
+        supplierVariantId: candidate.variantId,
+        error: message,
+      });
+      if (seededCandidate.supplierListingId && !cjQuotaBlocked) {
+        await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: message.slice(0, 500), attempts: seededCandidate.attempts });
+      }
+      console.warn("[supply-first] seeded candidate rejected", { productId: candidate.id, error: message, quotaBlocked: cjQuotaBlocked });
+      if (cjQuotaBlocked) break;
     }
   }
 
@@ -447,7 +527,7 @@ export async function discoverAndCreateCjSupply(
   let page = cursor.page;
   let pagesScanned = 0;
   const seenSearchProducts = new Set<string>();
-  while (catalogDiscovered < limit && pagesScanned < queries.length * 2) {
+  while (!cjQuotaBlocked && catalogDiscovered < limit && pagesScanned < queries.length * 2) {
     if (Date.now() >= deadlineAt) {
       deadlineReached = true;
       break;
@@ -459,7 +539,15 @@ export async function discoverAndCreateCjSupply(
     try {
       search = await searchCJProducts(query, { page, size: 20 });
     } catch (error) {
-      items.push({ rejectedStage: "catalog_search_failed", query, page, error: error instanceof Error ? error.message : String(error) });
+      const message = error instanceof Error ? error.message : String(error);
+      cjQuotaBlocked = isCJQuotaCircuitBlockingError(error);
+      items.push({
+        rejectedStage: cjQuotaBlocked ? "supplier_quota_cooldown" : "catalog_search_failed",
+        query,
+        page,
+        error: message,
+      });
+      if (cjQuotaBlocked) break;
       ({ queryIndex, page } = nextCatalogQuery(queryIndex, queries.length));
       continue;
     }
@@ -581,22 +669,24 @@ export async function discoverAndCreateCjSupply(
               external_id: variant.vid,
               sku: variant.sku,
               title: detail.title,
-              product_id: productId,
+              // Discovery is not canonical identity. Keep unresolved supply detached until a unique exact-variant match exists.
+              product_id: null,
               cost,
               shipping_cost: freight,
               currency: "USD",
               inventory: Math.floor(stock),
               ship_to: "JP",
               order_method: "cj_api",
-              api_available: true,
+              api_available: false,
+              verification_status: "unverified",
               identity_method: "supply_discovered",
               identity_status: "supply_discovered",
-              identity_confidence: 1,
+              identity_confidence: 0,
               configured: true,
               supplier_product_id: candidate.id,
               supplier_variant_id: variant.vid,
               cj_variant_id: variant.vid,
-              gtin: variantBarcode,
+              gtin: normalizeIdentifier("gtin", variantBarcode),
               orderable: false,
               price_confirmed: true,
               inventory_confirmed: true,
@@ -631,6 +721,31 @@ export async function discoverAndCreateCjSupply(
           sellingPriceJpy: salePrice,
           variantBarcode,
         });
+        let internalSupply: { productId: string; variantId: string; sourceRef: string; identityLink: { bestsellerId: string; method: string; rationale: string } | null; auditStatus: "written" | "table_missing" | "write_failed" } | null = null;
+        let internalSupplyError: string | null = null;
+        try {
+          internalSupply = await persistCjInternalSupplyCandidate({
+            supplierProductId: candidate.id,
+            supplierVariantId: variant.vid,
+            supplierSku: variant.sku ?? null,
+            title: displayTitle,
+            imageUrl: detail.imageUrl,
+            barcode: variantBarcode,
+            costUsd: cost,
+            shippingUsd: freight,
+            inventory: Math.floor(stock),
+            fxRate,
+            sellingPriceJpy: salePrice,
+            query,
+          });
+        } catch (error) {
+          internalSupplyError = error instanceof Error ? error.message : String(error);
+          console.warn("[supply-first] internal supply ingest failed", {
+            supplierProductId: candidate.id,
+            supplierVariantId: variant.vid,
+            error: internalSupplyError,
+          });
+        }
         discovered++;
         verified++;
         catalogDiscovered++;
@@ -648,6 +763,13 @@ export async function discoverAndCreateCjSupply(
           sellingPriceJpy: salePrice,
           fxRate,
           published: false,
+          internalSupplyIngested: Boolean(internalSupply),
+          internalSupplyProductId: internalSupply?.productId ?? null,
+          internalSupplyVariantId: internalSupply?.variantId ?? null,
+          internalSupplySourceRef: internalSupply?.sourceRef ?? null,
+          internalSupplyAuditStatus: internalSupply?.auditStatus ?? "not_attempted",
+          internalSupplyError,
+          identityLink: internalSupply?.identityLink ?? null,
         });
       } catch (error) {
         reject("error", { error: error instanceof Error ? error.message : String(error) });

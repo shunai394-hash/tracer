@@ -1,6 +1,7 @@
 import "server-only";
 
 import { classifyDemandIntent } from "@/lib/intelligence/classify-demand-intent";
+import { createGeminiRunCircuitBreaker, isGeminiCircuitBreakerFailure } from "@/lib/intelligence/gemini-circuit-breaker";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
@@ -39,10 +40,34 @@ type DemandProductMatchResult = {
 type ProductIntent = { isProduct: boolean; category: string | null; reason: string };
 
 const PRODUCT_CATEGORY_KEYWORDS: Record<string, string[]> = {
+  // Women-focused Japanese demand discovery. Category intent is research
+  // evidence only; it never establishes product identity or publishability.
+  "women's_bags": [
+    "handbag", "handbags", "crossbody bag", "shoulder bag", "tote bag", "mini bag",
+    "women's bag", "womens bag", "レディースバッグ", "ショルダーバッグ",
+    "トートバッグ", "ハンドバッグ", "斜めがけバッグ", "ミニバッグ", "バッグ",
+  ],
+  beauty_tools: [
+    "beauty tool", "beauty tools", "facial device", "face massager", "gua sha",
+    "makeup brush", "eyelash curler", "美顔器", "美容家電", "美容ツール",
+    "メイクブラシ", "ビューラー", "フェイスローラー", "かっさ",
+  ],
+  hair_accessories: [
+    "hair clip", "claw clip", "hair claw", "hair accessory", "hair accessories",
+    "heatless curls", "ヘアアクセ", "ヘアクリップ", "バンスクリップ",
+    "シュシュ", "ヘアピン", "ヘアバンド",
+  ],
+  jewelry: [
+    "jewelry", "earrings", "necklace", "bracelet", "ジュエリー", "ピアス",
+    "イヤリング", "ネックレス", "ブレスレット", "アクセサリー",
+  ],
+  skincare: [
+    "serum", "moisturizer", "face cream", "skincare", "skin care", "sunscreen",
+    "スキンケア", "美容液", "化粧水", "乳液", "日焼け止め", "コスメ",
+  ],
   "wireless earbuds": ["airpods", "air pods", "earbuds", "wireless earbuds", "true wireless", "bluetooth earbuds"],
   headphones: ["headphones", "wireless headphones", "noise cancelling", "noise-canceling"],
   smartphone: ["iphone", "ipad", "galaxy", "pixel", "android phone", "smartphone", "mobile phone"],
-  skincare: ["serum", "moisturizer", "face cream", "skincare", "skin care", "sunscreen"],
   sneakers: ["sneakers", "running shoes", "trainers", "shoes"],
   automobile: ["car", "automobile", "vehicle", "toyota", "prius", "honda", "nissan", "mazda"],
 };
@@ -99,17 +124,23 @@ function productMatchesQuery(query: string, productName: string, allProductNames
 type PagedResult<T> = { data: T[] | null; error: { message: string } | null };
 
 async function readAll<T>(
+  name: string,
   page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
   pageSize = 1000,
   maxRows = 20_000,
 ): Promise<PagedResult<T>> {
+  const startedAt = Date.now();
   const rows: T[] = [];
   for (let from = 0; from < maxRows; from += pageSize) {
     const { data, error } = await page(from, from + pageSize - 1);
-    if (error) return { data: null, error };
+    if (error) {
+      console.warn("[TRACER MATCH READ]", { name, elapsedMs: Date.now() - startedAt, rows: rows.length, error: error.message });
+      return { data: null, error };
+    }
     rows.push(...(data ?? []));
     if (!data || data.length < pageSize) break;
   }
+  console.info("[TRACER MATCH READ]", { name, elapsedMs: Date.now() - startedAt, rows: rows.length });
   return { data: rows, error: null };
 }
 
@@ -118,29 +149,116 @@ async function readAll<T>(
 // pipeline budget, so the step was deferred forever and nothing was matched.
 const MAX_GEMINI_CLASSIFICATIONS_PER_RUN = 10;
 
+const GEMINI_QUOTA_COOLDOWN_JOB = "gemini-intent-classifier-cooldown";
+const GEMINI_QUOTA_COOLDOWN_MS = 20 * 60 * 60 * 1000;
+const GEMINI_TRANSIENT_COOLDOWN_MS = 60 * 60 * 1000;
+
+function geminiCooldownMs(error: unknown): number {
+  const value = error && typeof error === "object" ? error as { status?: unknown; code?: unknown } : {};
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const quotaExhausted = Number(value.status) === 429
+    || /RESOURCE_EXHAUSTED|quota exceeded|generate_content_free_tier_requests/i.test(message);
+  if (quotaExhausted) return GEMINI_QUOTA_COOLDOWN_MS;
+  return isGeminiCircuitBreakerFailure(error) ? GEMINI_TRANSIENT_COOLDOWN_MS : 0;
+}
+
 export async function matchDemandProductsByCategory(): Promise<DemandProductMatchResult> {
   const supabase = createSupabaseAdminClient();
 
-  // Paged reads: PostgREST caps a plain select at 1000 rows, which silently
-  // dropped products (product_intelligence alone exceeds 1000 rows).
-  const [demandResult, productResult, candidateResult, cjProductResult, sourceOfferResult, bestsellerResult, identifierResult] = await Promise.all([
-    readAll((from, to) => supabase.from("demand_observations").select("id, metadata, value, observed_at").is("product_id", null).in("signal_type", ["search_volume", "search_result_count"]).order("observed_at", { ascending: false }).order("id").range(from, to)),
-    readAll((from, to) => supabase.from("product_intelligence").select("product_id, normalized_title").order("product_id").range(from, to)),
-    readAll((from, to) => supabase.from("demand_product_candidates").select("id, demand_observation_id").order("id").range(from, to)),
-    readAll((from, to) => supabase.from("demand_cj_products").select("id, demand_product_candidate_id, product_id, identity_status, identity_confidence").order("id").range(from, to)),
-    readAll((from, to) => supabase.from("product_offers").select("id, product_id, metadata, seller_name, observed_at").eq("seller_name", "CJdropshipping").order("id").range(from, to)),
-    readAll((from, to) => supabase.from("marketplace_bestsellers").select("product_id, jan, gtin, ean, upc, mpn, model, brand").not("product_id", "is", null).order("id").range(from, to)),
-    readAll((from, to) => supabase.from("product_identifiers").select("product_id, scheme, value").not("product_id", "is", null).order("id").range(from, to)),
-  ]);
+  // Persist provider quota cooldown across the five-minute patrol invocations.
+  // A run-local breaker alone still spends one doomed request every patrol
+  // until Google's quota resets.
+  const cooldownResult = await supabase
+    .from("cron_runs")
+    .select("metadata")
+    .eq("job_name", GEMINI_QUOTA_COOLDOWN_JOB)
+    .eq("status", "succeeded")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (cooldownResult.error) throw new Error(`Gemini quota cooldown read failed: ${cooldownResult.error.message}`);
+  const cooldownMetadata = cooldownResult.data?.metadata && typeof cooldownResult.data.metadata === "object" && !Array.isArray(cooldownResult.data.metadata)
+    ? cooldownResult.data.metadata as Record<string, unknown>
+    : {};
+  const cooldownUntil = typeof cooldownMetadata.cooldownUntil === "string" ? Date.parse(cooldownMetadata.cooldownUntil) : NaN;
+  const geminiQuotaBlocked = Number.isFinite(cooldownUntil) && cooldownUntil > Date.now();
+
+  // Count only to choose a rotating, bounded demand page. Do not materialize
+  // the entire demand history or every demand candidate on each patrol.
+  const demandCountResult = await supabase
+    .from("demand_observations")
+    .select("id", { count: "exact", head: true })
+    .is("product_id", null)
+    .in("signal_type", ["search_volume", "search_result_count"]);
+  if (demandCountResult.error) throw new Error(demandCountResult.error.message);
+
+  const demandBatchSize = 100;
+  const demandBatchPages = Math.max(1, Math.ceil((demandCountResult.count ?? 0) / demandBatchSize));
+  const demandBatchPage = Math.floor(Date.now() / (15 * 60_000)) % demandBatchPages;
+  const demandResult = await supabase
+    .from("demand_observations")
+    .select("id, metadata, value, observed_at")
+    .is("product_id", null)
+    .in("signal_type", ["search_volume", "search_result_count"])
+    .order("observed_at", { ascending: false })
+    .order("id")
+    .range(demandBatchPage * demandBatchSize, (demandBatchPage + 1) * demandBatchSize - 1);
   if (demandResult.error) throw new Error(demandResult.error.message);
+
+  const demandRows = demandResult.data ?? [];
+  if (demandRows.length === 0) {
+    return {
+      processed: 0, intentProduct: 0, intentNonProduct: 0, matched: 0, unmatched: 0,
+      candidatesCreated: 0, candidatesExisting: 0, skippedInvalid: 0, exactMatches: 0,
+      ambiguousIdentifier: 0, variantRejected: 0, brandRejected: 0, geminiCalls: 0,
+      intentDeferred: 0, matchRows: 0, byMethod: {}, persisted: 0,
+      persistSchema: "none", persistErrors: [],
+    };
+  }
+
+  const demandBatchIds = new Set(demandRows.map((row) => String(row.id)));
+  const demandBatchIdList = [...demandBatchIds];
+
+  const [productResult, bestsellerResult, identifierResult] = await Promise.all([
+    readAll("product_intelligence", (from, to) => supabase.from("product_intelligence").select("product_id, normalized_title").order("product_id").range(from, to)),
+    readAll("marketplace_bestsellers", (from, to) => supabase.from("marketplace_bestsellers").select("product_id, jan, gtin, ean, upc, mpn, model, brand").not("product_id", "is", null).order("id").range(from, to)),
+    readAll("product_identifiers", (from, to) => supabase.from("product_identifiers").select("product_id, scheme, value").not("product_id", "is", null).order("id").range(from, to)),
+  ]);
   if (productResult.error) throw new Error(productResult.error.message);
-  if (candidateResult.error) throw new Error(candidateResult.error.message);
-  if (cjProductResult.error) throw new Error(cjProductResult.error.message);
-  if (sourceOfferResult.error) throw new Error(sourceOfferResult.error.message);
   if (bestsellerResult.error) throw new Error(bestsellerResult.error.message);
   if (identifierResult.error) throw new Error(identifierResult.error.message);
 
-  const demandRows = demandResult.data ?? [];
+  // All secondary demand data is scoped to this batch. These tables can grow
+  // much larger than the active demand page; full-table reads caused patrol
+  // timeouts even when only a handful of observations needed matching.
+  const candidateResult = await supabase
+    .from("demand_product_candidates")
+    .select("id, demand_observation_id")
+    .in("demand_observation_id", demandBatchIdList);
+  if (candidateResult.error) throw new Error(candidateResult.error.message);
+  const candidateIds = (candidateResult.data ?? []).map((row) => String(row.id));
+
+  const cjProductResult = candidateIds.length > 0
+    ? await supabase
+        .from("demand_cj_products")
+        .select("id, demand_product_candidate_id, product_id, identity_status, identity_confidence")
+        .in("demand_product_candidate_id", candidateIds)
+    : { data: [], error: null };
+  if (cjProductResult.error) throw new Error(cjProductResult.error.message);
+
+  const sourceOfferResult = await supabase
+    .from("product_offers")
+    .select("id, product_id, metadata, seller_name, observed_at")
+    .eq("seller_name", "CJdropshipping")
+    .in("metadata->>demand_observation_id", demandBatchIdList)
+    .limit(1000);
+  if (sourceOfferResult.error) throw new Error(sourceOfferResult.error.message);
+
+  const candidateObservationIds = new Set(
+    (candidateResult.data ?? [])
+      .map((row) => String(row.demand_observation_id))
+      .filter(Boolean),
+  );
   const productRows = productResult.data ?? [];
   const allProductNames = productRows.map((product) => product.normalized_title);
   const productTitleById = new Map(productRows.map((product) => [String(product.product_id), product.normalized_title]));
@@ -165,7 +283,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
       ? (offer.metadata as Record<string, unknown>)
       : {};
     const observationId = typeof metadata.demand_observation_id === "string" ? metadata.demand_observation_id : null;
-    if (!observationId || !offer.product_id) continue;
+    if (!observationId || !demandBatchIds.has(observationId) || !offer.product_id) continue;
     keep({
       demandObservationId: observationId,
       productId: offer.product_id,
@@ -185,7 +303,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   for (const cj of cjProductResult.data ?? []) {
     if (!cj.product_id || cj.identity_status !== "linked") continue;
     const observationId = observationByCandidate.get(cj.demand_product_candidate_id);
-    if (!observationId) continue;
+    if (!observationId || !demandBatchIds.has(String(observationId))) continue;
     const confidence = Number(cj.identity_confidence ?? 0);
     if (!Number.isFinite(confidence) || confidence < 0.88) continue;
     keep({
@@ -205,8 +323,16 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
   let candidatesCreated = 0, candidatesExisting = 0, skippedInvalid = 0;
   let exactMatches = 0, ambiguousIdentifier = 0, variantRejected = 0, brandRejected = 0;
   let geminiCalls = 0, intentDeferred = 0;
-  const candidateObservationIds = new Set((candidateResult.data ?? []).map((row) => String(row.demand_observation_id)));
-
+  // A provider quota/outage response should open a run-local circuit breaker.
+  // Otherwise this loop keeps spending calls on the same failing provider for
+  // every remaining query in the batch, amplifying 429/503 storms.
+  const geminiCircuitBreaker = createGeminiRunCircuitBreaker();
+  if (geminiQuotaBlocked) {
+    geminiCircuitBreaker.recordFailure({ status: 429 });
+    console.warn("[demand-gemini-classify] provider quota cooldown active", {
+      cooldownUntil: new Date(cooldownUntil).toISOString(),
+    });
+  }
   for (const demand of demandRows) {
     processed += 1;
     const metadata = demand.metadata && typeof demand.metadata === "object" && !Array.isArray(demand.metadata)
@@ -246,21 +372,44 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
       variantRejected += 1;
     }
 
+    // Existing candidates have already entered supplier-resolution. Still
+    // allow newly available exact identifiers above to strengthen their match,
+    // but do not repeatedly run O(products) title matching on the same row.
+    if (candidateObservationIds.has(String(demand.id))) continue;
+
     let intent = detectProductIntent(query);
-    // Observations that already produced a candidate were classified before;
-    // do not pay for another Gemini call on every run.
-    if (!intent.isProduct && intent.reason === "no_product_signal" && candidateObservationIds.has(demand.id)) {
-      intentNonProduct += 1;
-      continue;
-    }
     if (!intent.isProduct && intent.reason === "no_product_signal" && isGeminiConfigured()) {
-      if (geminiCalls >= MAX_GEMINI_CLASSIFICATIONS_PER_RUN) { intentDeferred += 1; continue; }
+      if (!geminiCircuitBreaker.canCall(geminiCalls, MAX_GEMINI_CLASSIFICATIONS_PER_RUN)) { intentDeferred += 1; continue; }
       geminiCalls += 1;
       try {
         const aiIntent = await classifyDemandIntent(query);
         if (aiIntent.is_product_demand) intent = { isProduct: true, category: aiIntent.category ?? null, reason: `gemini:${aiIntent.reason}` };
       } catch (error) {
-        console.error("[demand-gemini-classify]", { query, error });
+        // Quota exhaustion, transient provider outages, and explicit timeout
+        // codes are not query-specific; stop further Gemini calls this patrol.
+        geminiCircuitBreaker.recordFailure(error);
+        const cooldownMs = geminiCooldownMs(error);
+        if (cooldownMs > 0) {
+          const nextCooldownUntil = new Date(Date.now() + cooldownMs).toISOString();
+          const { error: cooldownWriteError } = await supabase.from("cron_runs").insert({
+            job_name: GEMINI_QUOTA_COOLDOWN_JOB,
+            status: "succeeded",
+            started_at: new Date().toISOString(),
+            finished_at: new Date().toISOString(),
+            metadata: {
+              cooldownUntil: nextCooldownUntil,
+              reason: cooldownMs === GEMINI_QUOTA_COOLDOWN_MS ? "gemini_quota_exhausted" : "gemini_provider_transient_failure",
+            },
+          });
+          if (cooldownWriteError) {
+            console.warn("[demand-gemini-classify] failed to persist quota cooldown", cooldownWriteError.message);
+          }
+        }
+        console.error("[demand-gemini-classify]", { query, error, geminiDisabledForRun: geminiCircuitBreaker.isOpen() });
+        // A provider failure is not evidence that this query is non-product.
+        // Leave the observation unclassified for a later rotating patrol.
+        intentDeferred += 1;
+        continue;
       }
     }
     if (!intent.isProduct) { intentNonProduct += 1; continue; }

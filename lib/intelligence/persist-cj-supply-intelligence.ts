@@ -3,7 +3,7 @@ import "server-only";
 import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
-import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates } from "@/lib/market/identifiers";
+import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates, pickSupplierBarcodeIdentifier } from "@/lib/market/identifiers";
 import { decideCjSupplyWrite } from "@/lib/intelligence/cj-supply-write-policy";
 import { hasUniqueMarketplaceIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
 
@@ -24,13 +24,12 @@ export type PersistCjSupplyIntelligenceArgs = {
   supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null;
 };
 
-export type MarketplaceIdentity = { bestsellerId: string; productId: string; method: "gtin" | "jan" | "ean" | "upc" | "mpn"; confidence: number; rationale: string };
+export type MarketplaceIdentity = { bestsellerId: string; productId: string; canonicalVariantEvidenceId: string; sourceVariantId: string; method: "gtin" | "jan" | "ean" | "upc"; confidence: number; rationale: string };
 
 function normalizeBarcode(value: unknown): string { return typeof value === "string" ? value.trim().replace(/[^0-9]/g, "") : ""; }
 
 async function readSupplierBarcode(args: { supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null }): Promise<string> {
-  const supplied = normalizeBarcode(args.variantBarcode);
-  if (supplied) return supplied;
+  // A persisted/listing-level barcode is not proof for this exact variant. Always re-read the live CJ variant.
   try {
     const variants = await fetchCJProductVariants(args.supplierProductId, { countryCode: "JP" });
     const direct = normalizeBarcode(variants.find((item) => item.vid === args.supplierVariantId)?.barcode);
@@ -44,38 +43,121 @@ async function readSupplierBarcode(args: { supplierProductId: string; supplierVa
 }
 
 export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<MarketplaceIdentity | null> {
-  const suppliedIds = identifiersFromRecord({ gtin: args.supplierIdentifiers?.gtin, jan: args.supplierIdentifiers?.jan, ean: args.supplierIdentifiers?.ean, upc: args.supplierIdentifiers?.upc, mpn: args.supplierIdentifiers?.mpn });
-  const barcode = Object.values(suppliedIds).find((value) => typeof value === "string" && value.trim()) ?? await readSupplierBarcode(args);
-  const supplyIds = identifiersFromRecord({ ...suppliedIds, gtin: barcode || suppliedIds.gtin });
-  if (!supplyIds.gtin && !supplyIds.jan && !supplyIds.ean && !supplyIds.upc && !supplyIds.mpn) return null;
+  // Identity must be proven by a fresh barcode returned for this exact supplier variant.
+  // Never use parent-product MPN, title, or a caller-supplied stale barcode as a substitute.
+  const barcode = normalizeBarcode(await readSupplierBarcode(args));
+  const barcodeIds = identifiersFromRecord({ gtin: barcode, jan: barcode, ean: barcode, upc: barcode });
+  const validBarcode = pickSupplierBarcodeIdentifier(barcodeIds);
+  if (!validBarcode) return null;
 
-  const matchesByProduct = new Map<string, MarketplaceIdentity & { fetchedAt: string }>();
-  const lookupValues = new Set<string>();
-  for (const value of [supplyIds.gtin, supplyIds.jan, supplyIds.ean, supplyIds.upc]) if (value) marketplaceBarcodeCandidates(value).forEach((candidate) => lookupValues.add(candidate));
-  if (supplyIds.mpn) lookupValues.add(supplyIds.mpn);
-
+  const lookupValues = [...new Set(marketplaceBarcodeCandidates(validBarcode))];
+  const evidenceById = new Map<string, Record<string, unknown>>();
   for (const value of lookupValues) {
-    const clauses = ["jan", "gtin", "ean", "upc", "mpn"].map((column) => `${column}.eq.${value}`);
-    const { data: bestsellers, error } = await args.db.from("marketplace_bestsellers").select("id,product_id,asin,jan,gtin,ean,upc,mpn,title,brand,fetched_at").or(clauses.join(",")).limit(51);
-    if (error) throw new Error(`CJ marketplace identity lookup failed: ${error.message}`);
-    if ((bestsellers?.length ?? 0) > 50) return null;
-    for (const row of bestsellers ?? []) {
-      if (typeof row.product_id !== "string" || !row.product_id.trim()) continue;
-      const marketIds = identifiersFromRecord(row as Record<string, unknown>);
-      const identity = matchProductIdentity({ market: { ...marketIds, brand: typeof row.brand === "string" ? row.brand : null, title: typeof row.title === "string" ? row.title : null }, supply: { ...supplyIds, title: null, brand: null } });
-      if (!identity.salesEligible || !["gtin", "jan", "ean", "upc", "mpn"].includes(identity.method)) continue;
-      const productId = String(row.product_id);
-      const candidate = { bestsellerId: String(row.id), productId, method: identity.method as MarketplaceIdentity["method"], confidence: identity.confidence, rationale: identity.rationale, fetchedAt: typeof row.fetched_at === "string" ? row.fetched_at : "" };
-      const current = matchesByProduct.get(productId);
-      if (!current || candidate.confidence > current.confidence || (candidate.confidence === current.confidence && candidate.fetchedAt > current.fetchedAt)) matchesByProduct.set(productId, candidate);
+    const clauses = ["jan", "gtin", "ean", "upc"].map((column) => `${column}.eq.${value}`);
+    const { data, error } = await args.db
+      .from("marketplace_bestseller_variants")
+      .select("id,bestseller_id,source_variant_id,jan,gtin,ean,upc,evidence_source,raw_evidence,title,product_url,sku")
+      .or(clauses.join(","))
+      .limit(51);
+    if (error) throw new Error(`CJ canonical child-variant identity lookup failed: ${error.message}`);
+    if ((data?.length ?? 0) > 50) return null;
+    for (const row of data ?? []) {
+      // Accept explicit Schema.org children or a child ASIN whose own detail
+      // page returned its own valid barcode. Never inherit the parent barcode.
+      const rawEvidence = row.raw_evidence && typeof row.raw_evidence === "object" && !Array.isArray(row.raw_evidence)
+        ? row.raw_evidence as Record<string, unknown>
+        : {};
+      const schemaChild = row.evidence_source === "schema_org_product_group_has_variant";
+      const verifiedAmazonChild = row.evidence_source === "amazon_variation_asin_map"
+        && rawEvidence.extraction === "child_detail_page"
+        && typeof rawEvidence.child_product_url === "string"
+        && rawEvidence.child_product_url.startsWith("https://www.amazon.co.jp/dp/")
+        && typeof row.source_variant_id === "string"
+        && /^[A-Z0-9]{10}$/i.test(row.source_variant_id);
+      if (!schemaChild && !verifiedAmazonChild) continue;
+      if (typeof row.source_variant_id !== "string" || !row.source_variant_id.trim()) continue;
+      const rowIds = identifiersFromRecord(row as Record<string, unknown>);
+      const identity = matchProductIdentity({
+        market: rowIds,
+        supply: { asin: null, mpn: null, gtin: validBarcode, jan: validBarcode, ean: validBarcode, upc: validBarcode },
+      });
+      if (!identity.salesEligible || !["gtin", "jan", "ean", "upc"].includes(identity.method)) continue;
+      evidenceById.set(String(row.id), { ...row, method: identity.method, confidence: identity.confidence, rationale: identity.rationale });
     }
   }
-  if (!hasUniqueMarketplaceIdentity(matchesByProduct.size)) return null;
-  const match = [...matchesByProduct.values()][0];
-  return { bestsellerId: match.bestsellerId, productId: match.productId, method: match.method, confidence: match.confidence, rationale: match.rationale };
+
+  // If explicit child-variant evidence is unavailable, allow a narrowly-scoped
+  // fallback only when the LIVE barcode of this exact CJ variant matches one
+  // and only one marketplace bestseller's own declared barcode. This is not a
+  // title/brand guess and never copies a parent barcode to a child. The unique
+  // marketplace row must already point to a canonical product.
+  if (evidenceById.size === 0) {
+    const directMatches = new Map<string, Record<string, unknown>>();
+    for (const value of lookupValues) {
+      const clauses = ["jan", "gtin", "ean", "upc"].map((column) => `${column}.eq.${value}`);
+      const { data, error } = await args.db
+        .from("marketplace_bestsellers")
+        .select("id,product_id,source_item_key,asin,jan,gtin,ean,upc")
+        .or(clauses.join(","))
+        .limit(51);
+      if (error) throw new Error(`CJ exact-barcode marketplace lookup failed: ${error.message}`);
+      if ((data?.length ?? 0) > 50) return null;
+      for (const row of data ?? []) {
+        const rowIds = identifiersFromRecord(row as Record<string, unknown>);
+        const identity = matchProductIdentity({
+          market: rowIds,
+          supply: { asin: null, mpn: null, gtin: validBarcode, jan: validBarcode, ean: validBarcode, upc: validBarcode },
+        });
+        if (!identity.salesEligible || !["gtin", "jan", "ean", "upc"].includes(identity.method)) continue;
+        if (typeof row.product_id !== "string" || !row.product_id.trim()) continue;
+        directMatches.set(String(row.id), {
+          ...row,
+          method: identity.method,
+          confidence: identity.confidence,
+          rationale: `Unique exact barcode match against marketplace product identifiers; ${identity.rationale}`,
+        });
+      }
+    }
+    // Any ambiguity means no link. Do not pick the first matching product.
+    if (directMatches.size === 1) {
+      const direct = [...directMatches.values()][0];
+      return {
+        bestsellerId: String(direct.id),
+        productId: String(direct.product_id),
+        canonicalVariantEvidenceId: `marketplace_bestsellers:${String(direct.id)}`,
+        sourceVariantId: String(direct.asin ?? direct.source_item_key ?? direct.id),
+        method: direct.method as MarketplaceIdentity["method"],
+        confidence: Number(direct.confidence),
+        rationale: String(direct.rationale),
+      };
+    }
+  }
+
+  // Both child-evidence uniqueness and canonical-parent uniqueness are required.
+  if (evidenceById.size !== 1) return null;
+  const evidence = [...evidenceById.values()][0];
+  const bestsellerId = String(evidence.bestseller_id ?? "");
+  if (!bestsellerId) return null;
+  const { data: parent, error: parentError } = await args.db
+    .from("marketplace_bestsellers")
+    .select("id,product_id")
+    .eq("id", bestsellerId)
+    .maybeSingle();
+  if (parentError) throw new Error(`CJ canonical parent lookup failed: ${parentError.message}`);
+  if (!parent || typeof parent.product_id !== "string" || !parent.product_id.trim()) return null;
+
+  return {
+    bestsellerId,
+    productId: parent.product_id,
+    canonicalVariantEvidenceId: String(evidence.id),
+    sourceVariantId: String(evidence.source_variant_id),
+    method: evidence.method as MarketplaceIdentity["method"],
+    confidence: Number(evidence.confidence),
+    rationale: String(evidence.rationale),
+  };
 }
 
-export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntelligenceArgs, options: { identity?: MarketplaceIdentity | null; db?: ReturnType<typeof createSupabaseAdminClient>; observedVariantId?: string | null; trackingObserved?: boolean | null } = {}): Promise<{ offerId: string | null; intelligenceId: string; identity: MarketplaceIdentity | null; orderable: false; reasons: string[] }> {
+export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntelligenceArgs, options: { identity?: MarketplaceIdentity | null; db?: ReturnType<typeof createSupabaseAdminClient>; observedVariantId?: string | null; trackingObserved?: boolean | null } = {}): Promise<{ offerId: string | null; intelligenceId: string | null; identity: MarketplaceIdentity | null; orderable: false; reasons: string[] }> {
   const supabase = options.db ?? createSupabaseAdminClient();
   const now = new Date().toISOString();
   const currencyAssessment = assessCurrencyConfidence({ currency: "USD", price: args.cost, provider: "cj" });
@@ -95,9 +177,12 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
   const existingListing = await supabase.from("supplier_listings").select("metadata").eq("id", args.supplierListingId).maybeSingle();
   if (existingListing.error) throw new Error(`CJ supplier listing read failed: ${existingListing.error.message}`);
   if (existingListing.data?.metadata && typeof existingListing.data.metadata === "object" && !Array.isArray(existingListing.data.metadata)) existingListingMetadata = existingListing.data.metadata as Record<string, unknown>;
-  const verifiedMetadata = { ...existingListingMetadata, source: "cj_supply_first", sellable: false, hold_reasons: decision.reasons, identity_source: marketplaceIdentity ? "cj_variant_or_listing_identifier_to_marketplace_bestseller" : "cj_variant_evidence", identity_rationale: marketplaceIdentity?.rationale ?? "CJ variant/listing identifier evidence persisted; marketplace identity not yet confirmed", supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: args.variantBarcode ?? existingListingMetadata.variant_barcode ?? null };
-  const { error: evidenceError } = await supabase.from("supplier_listings").update({ ...(marketplaceIdentity ? { bestseller_id: marketplaceIdentity.bestsellerId, product_id: canonicalProductId, identity_method: marketplaceIdentity.method, identity_status: "linked", identity_confidence: marketplaceIdentity.confidence } : { identity_status: "unverified", orderable: false }), cost: args.cost, shipping_cost: args.shippingCost, inventory: Number.isFinite(args.inventory) ? args.inventory : null, price_confirmed: decision.priceConfirmed, inventory_confirmed: decision.inventoryConfirmed, orderable: false, tracking_available: decision.trackingAvailable, api_available: false, verification_status: decision.verificationStatus, fetched_at: now, metadata: verifiedMetadata }).eq("id", args.supplierListingId);
+  const verifiedMetadata = { ...existingListingMetadata, source: "cj_supply_first", sellable: false, hold_reasons: decision.reasons, identity_source: marketplaceIdentity ? "fresh_exact_cj_variant_barcode_to_canonical_child_variant" : "exact_variant_identity_unresolved", identity_rationale: marketplaceIdentity?.rationale ?? "No unique canonical child-variant evidence for the live CJ variant barcode", supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: await readSupplierBarcode({ supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId }), canonical_variant_evidence_id: marketplaceIdentity?.canonicalVariantEvidenceId ?? null, canonical_source_variant_id: marketplaceIdentity?.sourceVariantId ?? null };
+  const { error: evidenceError } = await supabase.from("supplier_listings").update({ bestseller_id: marketplaceIdentity?.bestsellerId ?? null, product_id: marketplaceIdentity?.productId ?? null, identity_method: marketplaceIdentity?.method ?? "supply_discovered", identity_status: marketplaceIdentity ? "linked" : "supply_discovered", identity_confidence: marketplaceIdentity?.confidence ?? 0, cost: args.cost, shipping_cost: args.shippingCost, inventory: Number.isFinite(args.inventory) ? args.inventory : null, price_confirmed: decision.priceConfirmed, inventory_confirmed: decision.inventoryConfirmed, orderable: false, tracking_available: decision.trackingAvailable, api_available: false, verification_status: decision.verificationStatus, verification_error: marketplaceIdentity ? null : "no_unique_canonical_child_variant_match", last_verified_at: now, fetched_at: now, metadata: verifiedMetadata }).eq("id", args.supplierListingId);
   if (evidenceError) throw new Error(`CJ supplier evidence persistence failed: ${evidenceError.message}`);
+  // Supply discovery is not canonical product identity. Preserve the supplier evidence above,
+  // but never attach it to the caller-supplied fallback product ID when identity is unresolved.
+  if (!marketplaceIdentity) return { offerId: null, intelligenceId: null, identity: null, orderable: false, reasons: decision.reasons };
   let offerId: string | null = null;
   if (decision.writeSalesOffer) {
     const offerPayload = { product_id: canonicalProductId, seller_name: "CJdropshipping", offer_url: null, image_url: args.imageUrl, currency: "USD", price: args.cost, currency_confidence: currencyAssessment.confidence, availability: "unavailable", shipping_price: args.shippingCost, observed_at: now, metadata: { provider: "cj", source: "cj_supply_first", sellable: false, supplier_listing_id: args.supplierListingId, supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: args.variantBarcode ?? null, inventory: args.inventory, query: args.query, fx_rate: args.fxRate, selling_price_jpy: args.sellingPriceJpy, hold_reasons: decision.reasons } };

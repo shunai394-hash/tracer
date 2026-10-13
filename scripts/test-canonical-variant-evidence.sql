@@ -8,6 +8,7 @@ create table if not exists public.marketplace_bestsellers (
 );
 
 \i supabase/migrations/20261010170000_marketplace_bestseller_variants.sql
+\i supabase/migrations/20261011110000_allow_amazon_child_asin_evidence.sql
 \i supabase/migrations/20261011123000_variant_is_variant_of_evidence.sql
 
 insert into public.marketplace_bestsellers(id, marketplace, title, source)
@@ -40,6 +41,20 @@ values (
 on conflict (bestseller_id, source_variant_id) do update
 set evidence_source = excluded.evidence_source, updated_at = now();
 
+insert into public.marketplace_bestseller_variants(
+  bestseller_id, marketplace, source, source_variant_id, asin, jan,
+  evidence_source, raw_evidence, fetched_at
+)
+values (
+  '30000000-0000-4000-8000-000000000001', 'amazon.co.jp', 'ci_fixture',
+  'B0CHILD001', 'B0CHILD001', '4006381333931',
+  'amazon_variation_asin_map',
+  '{"child_page_barcode":true,"parent_barcode_not_inherited":true}'::jsonb, now()
+)
+on conflict (bestseller_id, source_variant_id) do update
+set jan = excluded.jan, evidence_source = excluded.evidence_source,
+    raw_evidence = excluded.raw_evidence, updated_at = now();
+
 do $$
 declare
   v_count integer;
@@ -52,6 +67,16 @@ begin
      and source_variant_id in ('B0VARIANT01', 'B0ISVARIANT');
   if v_count <> 2 then
     raise exception 'expected hasVariant and isVariantOf rows, got %', v_count;
+  end if;
+
+  select count(*) into v_count
+    from public.marketplace_bestseller_variants
+   where bestseller_id = '30000000-0000-4000-8000-000000000001'
+     and source_variant_id = 'B0CHILD001'
+     and evidence_source = 'amazon_variation_asin_map'
+     and jan = '4006381333931';
+  if v_count <> 1 then
+    raise exception 'explicit Amazon child-ASIN evidence with its own barcode was not accepted';
   end if;
 
   begin

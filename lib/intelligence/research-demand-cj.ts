@@ -1,6 +1,7 @@
 ﻿import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { searchCJProducts } from "@/lib/sources/cj";
 import { generateCJProductQueries } from "@/lib/intelligence/generate-cj-product-queries";
+import { isGeminiConfigured } from "@/lib/ai/gemini";
 
 
 export async function recordCandidateResolutionEvidence(args: {
@@ -85,6 +86,7 @@ export async function researchDemandCandidateWithCJ(
       confidence: 1,
       metadata: {
         stage: "cj_search",
+        query_mode: isGeminiConfigured() ? "gemini" : "deterministic_exact_query_fallback",
         cj_total_records: result.totalRecords,
         cj_total_pages: result.totalPages,
         result_count: result.products.length,

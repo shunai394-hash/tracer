@@ -7,6 +7,27 @@ name: TRACER Shopify Auth Check
 # unpublished), by explicit listing id, never a blind bulk sync. Never prints
 # credential values.
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/tracer-shopify-auth-check.yml"
+      - "app/api/admin/shopify/identity-audit/route.ts"
+      - "app/api/admin/shopify/auth-check/route.ts"
+      - "app/api/channels/base/diagnostics/route.ts"
+      - "lib/config/env.ts"
+      - "lib/channels/base.ts"
+      - "lib/channels/base-orders.ts"
+      - "lib/shopify/admin.ts"
+      - "lib/shopify/sync-orders.ts"
+      - "app/api/cron/shopify-orders/route.ts"
+      - "app/api/cron/sales-test-publication/route.ts"
+      - "lib/market/select-supply-sales-tests.ts"
+      - "scripts/test-cj-native-supply-identity-gate.mjs"
+      - "lib/intelligence/womens-priority.ts"
+      - "lib/intelligence/japanese-product.ts"
+      - "lib/catalog/publishable-title.ts"
+      - "scripts/test-publishable-title.mjs"
   workflow_dispatch:
     inputs:
       sync_batch:
@@ -16,6 +37,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
   id-token: write
 
 jobs:
@@ -23,6 +45,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Checkout commit history for deployment ancestry check
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Wait for the production deployment of this commit
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for i in $(seq 1 20); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected-or-ancestor=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              echo "Production commit $sha contains the diagnostic-trigger commit; proceeding read-only."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Production is not at this commit or a descendant of it; refusing to run diagnostics."
+          exit 1
       - name: Auth check, readiness and catalog (read-only)
         shell: bash
         run: |
@@ -33,8 +80,9 @@ jobs:
               "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
-          SYNC_BATCH="${{ inputs.sync_batch }}"
-          for path in api/admin/shopify/auth-check api/admin/shopify/readiness api/admin/shopify/catalog api/admin/shopify/reconcile; do
+          # Keep push-triggered diagnostics strictly read-only; only a reviewed manual dispatch may opt into a positive batch.
+          SYNC_BATCH="${{ inputs.sync_batch || 0 }}"
+          for path in api/admin/shopify/auth-check api/admin/shopify/readiness api/admin/shopify/catalog api/admin/shopify/reconcile api/admin/shopify/identity-audit api/channels/base/diagnostics; do
             code=$(curl -sS -o out.json -w "%{http_code}" --max-time 60 -H "Authorization: Bearer $(token)" "$BASE/$path" || echo 000)
             echo "=== $path HTTP $code ==="
             python3 - "$path" <<'PY'
@@ -48,7 +96,68 @@ jobs:
               d.pop("products", None)
           print(json.dumps(d, ensure_ascii=False, indent=1)[:6000])
           PY
+            if [ "$path" = "api/admin/shopify/auth-check" ]; then cp out.json auth-check.json; fi
+            if [ "$path" = "api/admin/shopify/identity-audit" ]; then cp out.json identity-audit.json; fi
+            if [ "$path" = "api/channels/base/diagnostics" ]; then cp out.json base-diagnostics.json; fi
           done
+          echo "=== exact supplier-link repair preview (read-only) ==="
+          repair_code=$(curl -sS -o identity-repair.json -w "%{http_code}" --max-time 60 -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" -X POST "$BASE/api/admin/shopify/identity-repair" -d '{"apply":false,"limit":1000}' || echo 000)
+          echo "=== api/admin/shopify/identity-repair dry-run HTTP $repair_code ==="
+          python3 - <<'PY'
+          import json
+          try:
+              d = json.load(open("identity-repair.json"))
+          except Exception:
+              print("non-JSON response:", open("identity-repair.json").read()[:500])
+              raise SystemExit(0)
+          print(json.dumps({k: v for k, v in d.items() if k != "results"}, ensure_ascii=False, indent=1))
+          rows = d.get("results") or []
+          print("repairable samples:", json.dumps([r for r in rows if r.get("outcome") == "repairable_dry_run"][:10], ensure_ascii=False))
+          print("blocked samples:", json.dumps([r for r in rows if r.get("outcome") not in ("repairable_dry_run",)][:10], ensure_ascii=False))
+          PY
+          echo "=== exact BASE identifier repair preview (read-only) ==="
+          base_repair_code=$(curl -sS -o base-identity-repair.json -w "%{http_code}" --max-time 120 -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" -X POST "$BASE/api/channels/base/identity-repair" -d '{"apply":false,"limit":1000}' || echo 000)
+          echo "=== api/channels/base/identity-repair dry-run HTTP $base_repair_code ==="
+          python3 - <<'PY'
+          import json
+          try:
+              d = json.load(open("base-identity-repair.json"))
+          except Exception:
+              print("non-JSON response:", open("base-identity-repair.json").read()[:500])
+              raise SystemExit(0)
+          print(json.dumps({k: v for k, v in d.items() if k != "results"}, ensure_ascii=False, indent=1))
+          print("candidate samples:", json.dumps((d.get("results") or [])[:10], ensure_ascii=False))
+          PY
+          echo "=== CJ-native supply publication dry-run (no writes) ==="
+          supply_dry_run_code=$(curl -sS -o supply-dry-run.json -w "%{http_code}" --max-time 90 -H "Authorization: Bearer $(token)" "$BASE/api/cron/sales-test-publication?dryRun=true&limit=450" || true)
+          if [ -z "$supply_dry_run_code" ]; then supply_dry_run_code=000; fi
+          echo "=== api/cron/sales-test-publication?dryRun=true HTTP $supply_dry_run_code ==="
+          python3 - <<'PY'
+          import collections, json, os
+          if not os.path.exists("supply-dry-run.json"):
+              print(json.dumps({"ok": False, "dryRun": True, "noWrites": True, "error": "request_timeout_or_no_response"}, indent=1))
+              raise SystemExit(0)
+          try:
+              d = json.load(open("supply-dry-run.json"))
+          except Exception:
+              print("non-JSON response:", open("supply-dry-run.json").read()[:500])
+              raise SystemExit(0)
+          s = d.get("supplySelected") or {}
+          rejected = s.get("rejected") or []
+          counts = collections.Counter(reason for row in rejected for reason in (row.get("reasons") or []))
+          print(json.dumps({
+              "ok": d.get("ok"),
+              "dryRun": d.get("dryRun"),
+              "noWrites": d.get("noWrites"),
+              "featureEnabledForLiveRuns": d.get("featureEnabledForLiveRuns"),
+              "considered": s.get("considered"),
+              "eligibleProductCount": len(s.get("eligibleProductIds") or []),
+              "rejectedCount": len(rejected),
+              "topRejectionReasons": dict(counts.most_common(12)),
+              "eligibleSamples": (s.get("eligibleSamples") or [])[:10],
+              "rejectedSample": rejected[:25],
+          }, ensure_ascii=False, indent=1))
+          PY
           summarize_sync() {
             python3 - <<'PY'
           import json
@@ -82,3 +191,50 @@ jobs:
             curl -sS -o out.json --max-time 60 -H "Authorization: Bearer $(token)" "$BASE/api/admin/shopify/reconcile"
             python3 -c 'import json; d=json.load(open("out.json")); print(json.dumps({k: d.get(k) for k in ("ok","shopify","db","error")}, ensure_ascii=False, indent=1)); print(json.dumps(d.get("samples",{}).get("mismatches",[])[:3], ensure_ascii=False))'
           fi
+
+      - name: Publish sanitized read-only auth result for review
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > auth-report.md
+          import collections, json, os
+          shopify = json.load(open("auth-check.json"))
+          shopify.pop("db", None)
+          base = json.load(open("base-diagnostics.json"))
+          identity_audit = json.load(open("identity-audit.json"))
+          supply_dry_run = {"ok": False, "dryRun": True, "noWrites": True, "error": "request_timeout_or_no_response"}
+          if os.path.exists("supply-dry-run.json"):
+              try:
+                  raw = json.load(open("supply-dry-run.json"))
+                  selected = raw.get("supplySelected") or {}
+                  rejected = selected.get("rejected") or []
+                  reasons = collections.Counter(reason for row in rejected for reason in (row.get("reasons") or []))
+                  supply_dry_run = {
+                      "ok": raw.get("ok"),
+                      "dryRun": raw.get("dryRun"),
+                      "noWrites": raw.get("noWrites"),
+                      "featureEnabledForLiveRuns": raw.get("featureEnabledForLiveRuns"),
+                      "considered": selected.get("considered"),
+                      "eligibleProductCount": len(selected.get("eligibleProductIds") or []),
+                      "rejectedCount": selected.get("rejectedCount", len(rejected)),
+                      "topRejectionReasons": selected.get("rejectionCounts") or dict(reasons.most_common(12)),
+                      "eligibleSamples": (selected.get("eligibleSamples") or [])[:10],
+                      "rejectedSamples": rejected[:25],
+                  }
+              except Exception:
+                  supply_dry_run = {"ok": False, "dryRun": True, "noWrites": True, "error": "invalid_dry_run_response"}
+          print("# TRACER Shopify read-only authentication result")
+          print()
+          print("Generated by the read-only production diagnostic workflow. No product/order write was requested.")
+          print()
+          print("```json")
+          print(json.dumps({"shopify": shopify, "base": base, "identityAudit": identity_audit, "supplyDryRun": supply_dry_run}, ensure_ascii=False, indent=2))
+          print("```")
+          PY
+          gh issue create \
+            --repo shunai394-hash/tracer \
+            --title "[TRACER auth diagnostic] Run $GITHUB_RUN_ID" \
+            --body-file auth-report.md \

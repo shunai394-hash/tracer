@@ -212,9 +212,24 @@ function scriptedDb(responder) {
   };
 }
 
+// Every channel fixture below is a canonically linked supplier listing unless a
+// test says otherwise; the identity gate itself is covered by the storefront tests.
+const linkedSupplierIdsFixture = async (ids) => new Set(ids.filter((id) => typeof id === "string" && id.length > 0));
+
 const description = "玄関に置く床用フロアマットです。サイズと素材は販売ページの仕様を確認してください。";
 
 await test("resolveMarketplaceIdentity then persistCjSupplyIntelligence does not save a sales offer", async () => {
+  // Identity is proven only by the live barcode CJ returns for this exact variant,
+  // so the CJ client is replaced with a fixture instead of trusting caller identifiers.
+  const { mock } = await import("node:test");
+  const actualCj = await import("../lib/sources/cj/index.ts");
+  mock.module("@/lib/sources/cj", {
+    namedExports: {
+      ...actualCj,
+      fetchCJProductVariants: async () => [{ vid: "cj-variant", barcode: "4006381333931" }],
+      fetchCJVariantByVid: async () => ({ vid: "cj-variant", barcode: "4006381333931" }),
+    },
+  });
   const { resolveMarketplaceIdentity, persistCjSupplyIntelligence } = await import("../lib/intelligence/persist-cj-supply-intelligence.ts");
   const bestseller = { id: "b1", product_id: "p1", jan: "4006381333931", gtin: "4006381333931", ean: null, upc: null, mpn: null, title: "床用フロアマット", brand: null, fetched_at: "2026-10-12T00:00:00.000Z" };
   async function identityFor(rows) {
@@ -310,6 +325,7 @@ function shopifyDb(updateError = null) {
 function eligibleShopifyRow(overrides = {}) {
   return {
     id: "listing-1",
+    supplier_listing_id: "supplier-listing-1",
     product_id: "p1",
     title: "床用フロアマット",
     description,
@@ -356,7 +372,7 @@ await test("Shopify preview and sync use the same eligibility and refuse an ambi
       return api;
     },
   };
-  const preview = await previewShopifySync(10, { supabase: previewDb, probeImage: async () => true });
+  const preview = await previewShopifySync(10, { supabase: previewDb, linkedSupplierListingIds: linkedSupplierIdsFixture, probeImage: async () => true });
   assert.equal(preview.rows[0].eligible, false);
   assert.ok(preview.rows[0].blockReasons.includes("supplier_variant_unknown"));
   assert.ok(preview.rows[0].blockReasons.includes("cj_order_api_not_connected"));
@@ -365,7 +381,7 @@ await test("Shopify preview and sync use the same eligibility and refuse an ambi
   let unpublished = 0;
   let inventoryWrites = 0;
   const blocked = await syncListingRows([missing], syncDb, {
-    probeImage: async () => true,
+    linkedSupplierListingIds: linkedSupplierIdsFixture, probeImage: async () => true,
     unpublishShopifyProduct: async () => { unpublished += 1; return { published: false }; },
     setShopifyVariantInventory: async () => { inventoryWrites += 1; },
   });
@@ -388,7 +404,7 @@ await test("Shopify preview and sync use the same eligibility and refuse an ambi
         return api;
       },
     },
-    probeImage: async () => true,
+    linkedSupplierListingIds: linkedSupplierIdsFixture, probeImage: async () => true,
   });
   assert.equal(eligiblePreview.rows[0].eligible, true);
 
@@ -414,7 +430,7 @@ await test("Shopify preview and sync use the same eligibility and refuse an ambi
         return api;
       },
     },
-    probeImage: async () => true,
+    linkedSupplierListingIds: linkedSupplierIdsFixture, probeImage: async () => true,
   });
   assert.equal(recoveryPreview.rows[0].eligible, true, JSON.stringify(recoveryPreview.rows[0]));
   const stillBlocked = eligibleShopifyRow({
@@ -437,7 +453,7 @@ await test("Shopify preview and sync use the same eligibility and refuse an ambi
         return api;
       },
     },
-    probeImage: async () => true,
+    linkedSupplierListingIds: linkedSupplierIdsFixture, probeImage: async () => true,
   });
   assert.equal(blockedPreview.rows[0].eligible, false);
   assert.ok(blockedPreview.rows[0].blockReasons.includes("pipeline_blocked"));
@@ -455,7 +471,7 @@ await test("Shopify preview and sync use the same eligibility and refuse an ambi
     media: { nodes: [] },
   };
   const ambiguous = await syncListingRows([eligible], ambiguousDb, {
-    probeImage: async () => true,
+    linkedSupplierListingIds: linkedSupplierIdsFixture, probeImage: async () => true,
     shopifyGraphQL: async () => ({ product }),
     updateShopifyProduct: async () => product,
     unpublishShopifyProduct: async () => { variantMismatchUnpublishes += 1; return { published: false }; },
@@ -468,7 +484,7 @@ await test("Shopify preview and sync use the same eligibility and refuse an ambi
 
   const failedDb = shopifyDb({ message: "db down" });
   await syncListingRows([missing], failedDb, {
-    probeImage: async () => true,
+    linkedSupplierListingIds: linkedSupplierIdsFixture, probeImage: async () => true,
     unpublishShopifyProduct: async () => ({ published: false }),
   });
   assert.ok(failedDb.calls.some((call) => call.payload?.shopify_sync_status === "reconciliation_required"));
@@ -506,17 +522,17 @@ await test("BASE hide failure stays retryable and does not claim the listing is 
   let edits = 0;
   const unknownPrice = await publishPublishedListingsToBase(5, ["listing-1"], {
     forceConfigured: true,
-    supabase: db([{ id: "listing-1", published: false, base_item_id: "base-1", selling_price: null, title: "床用フロアマット", description }]),
+    supabase: db([{ id: "listing-1", supplier_listing_id: "supplier-listing-1", published: false, base_item_id: "base-1", selling_price: null, title: "床用フロアマット", description }]),
     editBaseItem: async () => { edits += 1; return { item_id: "base-1" }; },
-    probeImage: async () => false,
+    linkedSupplierListingIds: linkedSupplierIdsFixture, probeImage: async () => false,
   });
   assert.equal(edits, 0);
   let staleEdits = 0;
   const staleFailure = await publishPublishedListingsToBase(5, ["listing-stale"], {
     forceConfigured: true,
-    supabase: db([{ id: "listing-stale", published: false, base_item_id: "base-stale", selling_price: 3980, title: "床用フロアマット", description }]),
+    supabase: db([{ id: "listing-stale", supplier_listing_id: "supplier-listing-stale", published: false, base_item_id: "base-stale", selling_price: 3980, title: "床用フロアマット", description }]),
     editBaseItem: async () => { staleEdits += 1; throw new Error("oauth_unauthorized"); },
-    probeImage: async () => false,
+    linkedSupplierListingIds: linkedSupplierIdsFixture, probeImage: async () => false,
   });
   assert.equal(staleEdits, 1);
   assert.equal(staleFailure.results.some((result) => result.error === "oauth_unauthorized"), true);
@@ -531,7 +547,7 @@ await test("BASE hide failure stays retryable and does not claim the listing is 
   const oauth = await publishPublishedListingsToBase(5, ["listing-2"], {
     forceConfigured: true,
     supabase: db([{
-      id: "listing-2",
+      id: "listing-2", supplier_listing_id: "supplier-listing-2",
       published: true,
       base_item_id: "base-2",
       selling_price: 3980,
@@ -544,7 +560,7 @@ await test("BASE hide failure stays retryable and does not claim the listing is 
       selection_reasons: ["sales_test_gate_passed"],
     }]),
     editBaseItem: async () => { throw new Error("oauth_unauthorized"); },
-    probeImage: async () => true,
+    linkedSupplierListingIds: linkedSupplierIdsFixture, probeImage: async () => true,
   });
   assert.equal(oauth.results.some((result) => result.error === "oauth_unauthorized"), true);
   assert.ok(calls.some((call) => call.payload?.pipeline_reason === "base_hide_failed"));
@@ -555,7 +571,7 @@ await test("BASE hide failure stays retryable and does not claim the listing is 
   const dbFailed = await publishPublishedListingsToBase(5, ["listing-3"], {
     forceConfigured: true,
     supabase: db([{
-      id: "listing-3",
+      id: "listing-3", supplier_listing_id: "supplier-listing-3",
       published: true,
       base_item_id: "base-3",
       selling_price: 3980,
@@ -568,7 +584,7 @@ await test("BASE hide failure stays retryable and does not claim the listing is 
       selection_reasons: ["sales_test_gate_passed"],
     }], { failPublishedUpdate: true }),
     editBaseItem: async () => { hideCalls += 1; return { item_id: "base-3" }; },
-    probeImage: async () => true,
+    linkedSupplierListingIds: linkedSupplierIdsFixture, probeImage: async () => true,
   });
   assert.equal(hideCalls, 1);
   assert.equal(dbFailed.results.some((result) => result.error === "base_hide_succeeded_db_update_failed"), true);

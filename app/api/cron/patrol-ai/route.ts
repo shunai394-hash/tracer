@@ -271,7 +271,55 @@ export async function GET(request: Request) {
           : "AI巡回でフルIntelligence Pipelineを実行しました。今回は新規公開条件を満たす商品はありませんでした。",
     };
 
-    console.log("[TRACER PATROL AI REPORT]", JSON.stringify(report));
+    const safeSteps = pipeline.steps.map((step) => {
+      const raw = step.result && typeof step.result === "object" && !Array.isArray(step.result)
+        ? step.result as Record<string, unknown>
+        : {};
+      const resultSummary: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(raw)) {
+        if (value === null || ["string", "number", "boolean"].includes(typeof value)) {
+          resultSummary[key] = value;
+        } else if (Array.isArray(value)) {
+          resultSummary[`${key}Count`] = value.length;
+        } else if (typeof value === "object") {
+          const scalarEntries = Object.entries(value as Record<string, unknown>)
+            .filter(([, item]) => item === null || ["string", "number", "boolean"].includes(typeof item))
+            .slice(0, 20);
+          if (scalarEntries.length > 0) resultSummary[key] = Object.fromEntries(scalarEntries);
+        }
+      }
+      return {
+        name: step.name,
+        ok: step.ok,
+        skipped: step.skipped,
+        retryable: step.retryable,
+        errorCategory: step.error ? step.error.split(":")[0] : null,
+        result: resultSummary,
+      };
+    });
+    const safeReport = {
+      ok: report.ok,
+      status: report.status,
+      durationMs: report.durationMs,
+      decision: report.decision,
+      before: report.before,
+      after: report.after,
+      progress: report.progress,
+      pipelineComplete: pipeline.complete,
+      errorCount: errors.length,
+      errorCategories: Array.from(new Set(errors.map((error) => error.split(":")[0]))),
+      steps: safeSteps,
+      actions: actions.map((action) => ({
+        action: action.action,
+        skipped: action.skipped,
+        reason: action.reason,
+        attempted: action.attempted,
+        published: action.published,
+        failed: action.failed,
+      })),
+    };
+    // Keep full detail in the run ledger; production logs contain only bounded counts and stage summaries.
+    console.log("[TRACER PATROL AI REPORT]", JSON.stringify(safeReport));
 
     let ledgerUpdateFailed = !cronId;
     if (cronId) {

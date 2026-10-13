@@ -21,13 +21,12 @@ import {
 import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { readMarketCursor, writeMarketCursor } from "@/lib/market/market-cursor";
-import { reverifyCjSupplyIdentities } from "@/lib/suppliers/reverify-cj-identity";
-import { isGeminiConfigured } from "@/lib/ai/gemini";
 import {
   GeminiConfigError,
   GeminiRequestError,
   GeminiTimeoutError,
 } from "@/lib/ai/gemini/errors";
+import { canFeedSalesGate } from "@/lib/intelligence/bestseller-sales-gate";
 
 export type PipelineStepResult = {
   name: string;
@@ -42,20 +41,38 @@ function classifyFailure(error: unknown): {
   retryable: boolean;
   skippable: boolean;
   message: string;
+  category: "gemini" | "supplier_quota" | "transient" | "fatal";
 } {
   const message = error instanceof Error ? error.message : "Unknown error";
+  const errorCode =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+  // CJ quota errors can occur during supplier search after query ideation.
+  // Never mislabel generic "quota"/HTTP 429 text as a Gemini failure.
+  const supplierQuotaFailure =
+    errorCode === "CJ_QUOTA_EXHAUSTED" ||
+    errorCode === "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN" ||
+    /CJ API quota cooldown|CJ quota circuit state/i.test(message);
   const geminiFailure =
     error instanceof GeminiConfigError ||
     error instanceof GeminiRequestError ||
     error instanceof GeminiTimeoutError ||
-    /gemini|429|quota|rate limit/i.test(message);
+    /gemini/i.test(message);
+  const transientFailure =
+    /timeout|temporar|econnreset|503|502|fetch failed|429|quota|rate limit/i.test(message);
 
   return {
-    retryable:
-      geminiFailure ||
-      /timeout|temporar|econnreset|503|502|fetch failed/i.test(message),
-    skippable: geminiFailure,
+    retryable: supplierQuotaFailure || geminiFailure || transientFailure,
+    skippable: supplierQuotaFailure || geminiFailure,
     message,
+    category: supplierQuotaFailure
+      ? "supplier_quota"
+      : geminiFailure
+        ? "gemini"
+        : transientFailure
+          ? "transient"
+          : "fatal",
   };
 }
 
@@ -175,38 +192,13 @@ async function researchLimitedSupply(): Promise<unknown> {
   const { data: candidates, error } = await supabase
     .from("demand_product_candidates")
     .select("id, status")
-    .eq("status", "new")
+    .in("status", ["new", "researching"])
     .order("created_at", { ascending: false })
     .limit(1);
 
   if (error) throw new Error(error.message);
   const candidate = candidates?.[0];
   if (!candidate) return { skipped: true, reason: "no_new_candidates" };
-
-  if (!isGeminiConfigured()) {
-    // Candidate resolution is a mandatory part of the AI→MATCHER loop.
-    // Do not silently skip it and let a patrol look complete: the candidate
-    // must remain blocked until the configured AI query planner is available.
-    await recordCandidateResolutionEvidence({
-      candidateId: String(candidate.id),
-      fieldName: "candidate_resolution_blocked",
-      fieldValue: "gemini_not_configured",
-      evidenceClass: "actual",
-      confidence: 1,
-      metadata: {
-        stage: "query_ideation",
-        retryable: true,
-        reason: "gemini_not_configured_candidate_resolution_blocked",
-      },
-    });
-    return {
-      skipped: true,
-      retryable: true,
-      reason: "gemini_not_configured_candidate_resolution_blocked",
-      candidateId: candidate.id,
-      note: "Candidate→supplier resolution is incomplete until Gemini query ideation is available",
-    };
-  }
 
   try {
     const researched = await researchDemandCandidateWithCJ(candidate.id);
@@ -218,11 +210,15 @@ async function researchLimitedSupply(): Promise<unknown> {
       await recordCandidateResolutionEvidence({
         candidateId: String(candidate.id),
         fieldName: "candidate_resolution_failed",
-        fieldValue: "gemini_failed",
+        fieldValue: classified.category === "supplier_quota" ? "supplier_quota_cooldown" : "gemini_failed",
         evidenceClass: "actual",
         confidence: 1,
         metadata: {
-          stage: "query_ideation",
+          stage: classified.category === "supplier_quota" ? "cj_search" : "query_ideation",
+          failure_category: classified.category,
+          error_code: error && typeof error === "object" && "code" in error
+            ? String((error as { code?: unknown }).code ?? "")
+            : null,
           retryable: classified.retryable,
           error: classified.message,
         },
@@ -230,7 +226,9 @@ async function researchLimitedSupply(): Promise<unknown> {
       return {
         skipped: true,
         retryable: classified.retryable,
-        reason: "gemini_failed",
+        reason: classified.category === "supplier_quota"
+          ? "supplier_quota_cooldown"
+          : "gemini_failed",
         candidateId: candidate.id,
         error: classified.message,
       };
@@ -409,30 +407,65 @@ export async function runIntelligencePipeline(options: {
       batchSize: 10,
     });
     const next = await writeMarketCursor(db, observation, "patrol-ai");
+    // A non-empty ranking batch is not enough to unblock canonical identity.
+    // If no child-variant evidence was parsed (or all parsed evidence writes failed),
+    // defer the pipeline so publication/procurement never treats source coverage as identity proof.
+    const emptyCollection = observation.itemCount === 0;
+    const emptyVariantEvidence = observation.canonicalVariantEvidenceParsed === 0;
+    const amazonProxyUnavailable = observation.enrichment.some(
+      (item) => item.marketplace === "amazon.co.jp" && !item.brightDataConfigured,
+    );
+    // Yahoo Shopping (0) and Rakuten (1) are useful demand-observation sources,
+    // but this exact-variant sales gate only accepts Amazon child-variant
+    // evidence. Do not stall the entire intelligence loop while rotating through
+    // those sources; their rows remain ineligible for downstream sales matching.
+    const sourceDoesNotProvideCanonicalChildVariants = observation.sourceIndex < 2;
+    const evidencePersistenceFailed = observation.canonicalVariantEvidenceParsed > 0
+      && observation.canonicalVariantEvidenceWritten === 0
+      && observation.canonicalVariantEvidenceWriteFailures > 0;
+    if (emptyCollection || emptyVariantEvidence || evidencePersistenceFailed) {
+      const nonBlockingSourceCoverageSkip =
+        !emptyCollection && emptyVariantEvidence && sourceDoesNotProvideCanonicalChildVariants;
+      return {
+        ...observation,
+        cursor,
+        nextCursor: next,
+        skipped: true,
+        retryable: !nonBlockingSourceCoverageSkip,
+        reason: emptyCollection
+          ? "marketplace_collection_empty"
+          : evidencePersistenceFailed
+            ? "canonical_variant_evidence_write_failed"
+            : nonBlockingSourceCoverageSkip
+              ? "source_has_no_canonical_child_variant_contract"
+              : emptyVariantEvidence && amazonProxyUnavailable
+                ? "canonical_variant_evidence_empty_brightdata_not_configured"
+                : "canonical_variant_evidence_empty",
+      };
+    }
     return { ...observation, cursor, nextCursor: next };
-  }, { budgetMs: 25_000 });
+  }, { budgetMs: 40_000 });
   steps.push(bestsellerStep);
 
+  // A deferred/retryable stage can still carry raw candidate IDs. Only
+  // canonical evidence persisted by a completed stage may feed downstream gates.
+  const bestsellerCanFeedSalesGate = canFeedSalesGate(bestsellerStep);
+
   const bestsellerIds =
-    bestsellerStep.ok && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { bestsellerIds?: unknown }).bestsellerIds)
+    bestsellerCanFeedSalesGate && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { bestsellerIds?: unknown }).bestsellerIds)
       ? ((bestsellerStep.result as { bestsellerIds: string[] }).bestsellerIds)
       : [];
 
   const supplierCandidateIds =
-    bestsellerStep.ok && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { supplierCandidateIds?: unknown }).supplierCandidateIds)
+    bestsellerCanFeedSalesGate && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { supplierCandidateIds?: unknown }).supplierCandidateIds)
       ? (bestsellerStep.result as { supplierCandidateIds: string[] }).supplierCandidateIds
       : [];
 
   steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand(), { budgetMs: 5_000 }));
 
-  // Identity linking is a publication-critical path. Run it before the
-  // rotating normalization/intelligence work so a slow normalization batch
-  // cannot starve exact supplier->marketplace barcode verification.
-  steps.push(await runStep("identity_reverify", () =>
-    reverifyCjSupplyIdentities({
-      limit: 25,
-      deadlineAt: Math.min(pipelineDeadlineAt - 1_000, Date.now() + 20_000),
-    }), { budgetMs: 20_000 }));
+  // CJ identity re-verification runs through its dedicated cron endpoint only.
+  // Keeping it out of this pipeline prevents timed-out network requests from
+  // overlapping bestseller collection and violating CJ's 1-request/second quota.
 
   const normalizeWindowSize = 200;
   const normalizeProductCount = await db
@@ -446,9 +479,9 @@ export async function runIntelligencePipeline(options: {
     budgetMs: 20_000,
     stopPipelineOnTimeout: false,
   }));
-  steps.push(await runStep("shopping_demand_sync", () => syncShoppingDemandObservations(), { budgetMs: 4_000 }));
-  steps.push(await runStep("demand", () => inspectDemandObservations(), { budgetMs: 2_000 }));
-  steps.push(await runStep("demand_analyze", () => persistDemandIntelligence(), { budgetMs: 6_000 }));
+  steps.push(await runStep("shopping_demand_sync", () => syncShoppingDemandObservations(), { budgetMs: 15_000 }));
+  steps.push(await runStep("demand", () => inspectDemandObservations(), { budgetMs: 5_000 }));
+  steps.push(await runStep("demand_analyze", () => persistDemandIntelligence(), { budgetMs: 25_000 }));
   steps.push(await runStep("supply", () => researchLimitedSupply(), { budgetMs: 18_000 }));
 
   // Supply-first is discovery only. It creates canonical product/offer/intelligence
@@ -500,7 +533,7 @@ export async function runIntelligencePipeline(options: {
     { downstream: true, budgetMs: 75_000 },
   );
   steps.push(intelligence);
-  steps.push(await runStep("score", () => scoreProductIntelligence(), { downstream: true, budgetMs: 6_000 }));
+  steps.push(await runStep("score", () => scoreProductIntelligence(), { downstream: true, budgetMs: 20_000 }));
 
   // Reconsider supply verified by earlier patrols too, so a deferred or
   // timed-out patrol does not strand verified supply before the gate.
@@ -509,6 +542,7 @@ export async function runIntelligencePipeline(options: {
     .from("supplier_listings")
     .select("product_id")
     .eq("supplier", "cj")
+    .eq("identity_status", "linked")
     .eq("verification_status", "verified")
     .eq("orderable", true)
     .not("product_id", "is", null)
@@ -544,7 +578,7 @@ export async function runIntelligencePipeline(options: {
   // one slow downstream destination cannot consume the entire patrol timeout.
   steps.push(await runStep("newfind_retry", () => retryPendingNewfindPromotions(1), { downstream: true, budgetMs: 4_000 }));
 
-  steps.push(await runStep("ordering", () => persistReorderRecommendations(), { downstream: true, budgetMs: 4_000 }));
+  steps.push(await runStep("ordering", () => persistReorderRecommendations(), { downstream: true, budgetMs: 15_000 }));
   steps.push(await runStep("test_ready", async () => {
     if (!intelligence.ok) {
       return { skipped: true, reason: "intelligence_step_failed", retryable: intelligence.retryable === true };
@@ -560,6 +594,25 @@ export async function runIntelligencePipeline(options: {
   // earlier patrol were never investigated (only the current run's inserts
   // were). Drain a few per patrol, oldest observations first.
   steps.push(await runStep("dropship", async () => {
+    // The pending-barcode backlog is still raw marketplace evidence. Do not
+    // let it bypass the canonical-variant prerequisite when bestseller intake
+    // was deferred or retryable.
+    if (!bestsellerCanFeedSalesGate) {
+      const bestsellerResult = bestsellerStep.result && typeof bestsellerStep.result === "object"
+        ? bestsellerStep.result as { reason?: unknown }
+        : {};
+      const observationOnlySource =
+        bestsellerStep.skipped === true &&
+        bestsellerStep.retryable !== true &&
+        bestsellerResult.reason === "source_has_no_canonical_child_variant_contract";
+      return {
+        skipped: true,
+        retryable: bestsellerStep.retryable === true,
+        reason: observationOnlySource
+          ? "bestseller_source_has_no_canonical_child_variant_contract"
+          : "bestseller_canonical_evidence_deferred",
+      };
+    }
     const { data: backlog, error: backlogError } = await db
       .from("marketplace_bestsellers")
       .select("id")
@@ -578,6 +631,10 @@ export async function runIntelligencePipeline(options: {
   const blockingFailed = steps.some((step) => !step.ok && !step.skipped);
   const deferredStep = steps.find((step) => {
     if (!step.skipped) return false;
+    // Canonical identity re-verification is a bounded background enrichment step.
+    // If CJ is slow, its cursor resumes on a later patrol; unresolved identities
+    // remain blocked by the sales-test gate and must never be force-linked.
+    if (step.name === "identity_reverify") return false;
     if (step.retryable === true) return true;
     const reason =
       step.result &&
@@ -589,7 +646,8 @@ export async function runIntelligencePipeline(options: {
       reason === "step_time_budget_exceeded_deferred" ||
       reason === "previous_step_timeout_stops_pipeline" ||
       reason === "gemini_not_configured_candidate_resolution_blocked" ||
-      reason === "gemini_failed";
+      reason === "gemini_failed" ||
+      reason === "supplier_quota_cooldown";
   });
   const incomplete = pipelineTimedOut || Boolean(deferredStep);
   return {

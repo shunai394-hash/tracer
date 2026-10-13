@@ -1,4 +1,15 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/groin electric clippers|groin hair clipper|pubic hair trimmer/i, "デリケートゾーン用 電動トリマー"],
+  [/graffiti art.*african girl.*shower curtain|african girl.*shower curtain/i, "アフリカンアート柄 シャワーカーテン"],
+  [/portable cosmetic bag.*(divider|multi.grid|pockets)|cosmetic bag.*(divider|multi.grid|pockets)/i, "仕切り付き コスメポーチ"],
+  [/\b(women|women's|female)\b.{0,50}(cosmetic|makeup) bag|((cosmetic|makeup) bag).{0,50}\b(women|women's|female)\b/i, "レディース コスメポーチ"],
+  [/flower.*hair clip|hair clip.*flower|bohemian.*hair clip/i, "フラワーモチーフ ヘアクリップ"],
+  [/hair clip|claw clip|hair claw/i, "ヘアクリップ"],
+  [/cosmetic brush storage|makeup brush.*storage|makeup brush cleaner/i, "メイクブラシ収納・お手入れ用品"],
+  [/women.{0,60}crossbody.{0,40}bag|crossbody.{0,40}bag.{0,60}women/i, "レディース クロスボディバッグ"],
+  [/women.{0,60}shoulder.{0,40}bag|shoulder.{0,40}bag.{0,60}women/i, "レディース ショルダーバッグ"],
+  [/women.{0,60}tote.{0,40}bag|tote.{0,40}bag.{0,60}women/i, "レディース トートバッグ"],
+  [/women.{0,60}handbag|handbag.{0,60}women/i, "レディース ハンドバッグ"],
   [/a4\s+portable\s+printers?|thermal printer.*phomemo|phomemo.*thermal printer/i, "A4対応 ポータブル感熱プリンター"],
   [/jellyfish.*humidifier|humidifier.*jellyfish/i, "クラゲ型 加湿器・アロマディフューザー"],
   [/kitchen bathroom toilet cleaning magic brush|bath brush.*glass wall|window slot clean brush/i, "浴室・窓まわり用 クリーニングブラシ"],
@@ -117,6 +128,11 @@ export function localizeProductDescription(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const source = value.normalize("NFKC");
   const rules: Array<[RegExp, string]> = [
+    [/women.{0,60}(crossbody|shoulder|tote|handbag).{0,40}bag|((crossbody|shoulder|tote|handbag).{0,40}bag).{0,60}women/i, "日常のお出かけに使うバッグです。寸法・素材・収納部・ストラップ仕様は販売元の情報をご確認ください。"],
+    [/portable cosmetic bag.*(divider|multi.grid|pockets)|cosmetic bag.*(divider|multi.grid|pockets)/i, "小物を分けて収納できるコスメポーチです。寸法・仕切り構成・素材・防水性は販売元の仕様をご確認ください。"],
+    [/flower.*hair clip|hair clip.*flower|bohemian.*hair clip/i, "花モチーフのヘアクリップです。サイズ・材質・留め具の仕様は販売元の情報をご確認ください。"],
+    [/hair clip|claw clip|hair claw/i, "髪をまとめるためのヘアクリップです。サイズ・材質・保持力は販売元の仕様をご確認ください。"],
+    [/cosmetic brush storage|makeup brush.*storage|makeup brush cleaner/i, "メイクブラシの収納またはお手入れに使う用品です。対応サイズ・洗浄方法・材質は販売元の仕様をご確認ください。"],
     [/a4\s+portable\s+printers?|thermal printer.*phomemo|phomemo.*thermal printer/i, "A4サイズの用紙に対応する携帯型感熱プリンターです。対応用紙・接続方式・付属品は販売元の仕様をご確認ください。"],
     [/jellyfish.*humidifier|humidifier.*jellyfish/i, "クラゲ型デザインの加湿器・ディフューザーです。給電方式・タンク容量・使用可能な香料は販売元の仕様をご確認ください。"],
     [/kitchen bathroom toilet cleaning magic brush|bath brush.*glass wall|window slot clean brush/i, "浴室や窓まわりの清掃に使うブラシです。対応する面材や使用方法は販売元の仕様をご確認ください。"],

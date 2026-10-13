@@ -105,6 +105,13 @@ export async function executeMarketSourcingCron(
       : (observation.sourceIndex + 1) % 8;
     const nextStartIndex = observation.hasMore ? observation.nextIndex : 0;
 
+    const canonicalVariantEvidenceStatus = observation.canonicalVariantEvidenceWriteFailures > 0
+      ? "write_failed"
+      : observation.canonicalVariantEvidenceParsed === 0
+        ? "no_canonical_variant_evidence"
+        : observation.canonicalVariantEvidenceWritten === observation.canonicalVariantEvidenceParsed
+          ? "persisted"
+          : "incomplete";
     const metadata = {
       phase: "market_observation",
       itemCount: observation.itemCount,
@@ -117,6 +124,10 @@ export async function executeMarketSourcingCron(
       hasMore: observation.hasMore,
       enrichment: observation.enrichment,
       supplierCandidateCount: observation.supplierCandidateIds.length,
+      canonicalVariantEvidenceParsed: observation.canonicalVariantEvidenceParsed,
+      canonicalVariantEvidenceWritten: observation.canonicalVariantEvidenceWritten,
+      canonicalVariantEvidenceWriteFailures: observation.canonicalVariantEvidenceWriteFailures,
+      canonicalVariantEvidenceStatus: canonicalVariantEvidenceStatus,
       failed: observation.canonicalVariantEvidenceWriteFailures + observation.skippedMarketplaces.length,
     };
 
@@ -153,6 +164,10 @@ export async function executeMarketSourcingCron(
           productsCreated: observation.productsCreated,
           supplierCandidateCount: observation.supplierCandidateIds.length,
           enrichment: observation.enrichment,
+          canonicalVariantEvidenceParsed: observation.canonicalVariantEvidenceParsed,
+          canonicalVariantEvidenceWritten: observation.canonicalVariantEvidenceWritten,
+          canonicalVariantEvidenceWriteFailures: observation.canonicalVariantEvidenceWriteFailures,
+          canonicalVariantEvidenceStatus: canonicalVariantEvidenceStatus,
           sourceIndex: nextSourceIndex,
           startIndex: observation.startIndex,
           processedCount: observation.processedCount,

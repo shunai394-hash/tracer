@@ -2,6 +2,15 @@ export type StorefrontStockDecision =
   | { visible: true; inventory: number }
   | { visible: false; reason: "live_stock_unavailable" | "shopify_variant_unknown" | "live_stock_unknown" | "live_stock_zero" | "db_inventory_zero" };
 
+/** Return true only when a valid Shopify variant has finite, positive live stock. */
+export function hasVerifiedPositiveShopifyStock(
+  variantId: unknown,
+  liveQuantity: unknown,
+): boolean {
+  if (typeof variantId !== "string" || !/^gid:\/\/shopify\/ProductVariant\/\d+$/.test(variantId)) return false;
+  return typeof liveQuantity === "number" && Number.isFinite(liveQuantity) && liveQuantity > 0;
+}
+
 /**
  * Storefront orderability when Shopify is the stock authority.
  * A failed or missing live quantity is not treated as in stock.
@@ -20,9 +29,11 @@ export function decideStorefrontStock(args: {
       : { visible: false, reason: "db_inventory_zero" };
   }
   if (args.liveCheckFailed) return { visible: false, reason: "live_stock_unavailable" };
-  if (!args.shopifyVariantId) return { visible: false, reason: "shopify_variant_unknown" };
+  if (!args.shopifyVariantId || !/^gid:\/\/shopify\/ProductVariant\/\d+$/.test(args.shopifyVariantId)) {
+    return { visible: false, reason: "shopify_variant_unknown" };
+  }
   if (args.liveQuantity === undefined) return { visible: false, reason: "live_stock_unknown" };
-  if (!Number.isFinite(args.liveQuantity) || args.liveQuantity <= 0) {
+  if (!hasVerifiedPositiveShopifyStock(args.shopifyVariantId, args.liveQuantity)) {
     return { visible: false, reason: "live_stock_zero" };
   }
   return { visible: true, inventory: Math.floor(args.liveQuantity) };

@@ -59,12 +59,12 @@ export function simulateContributionProfit(args: {
   sourceProvider?: string | null;
   internationalShipping?: number | null;
   domesticShipping?: number | null;
-  /** Whether missing domestic delivery cost must keep the margin unknown. */
-  requireDomesticShipping?: boolean;
   shippingCurrency?: string | null;
   /** Observed multiplier from source currency into selling currency. */
   sourceFxRateToSelling?: number | null;
   sourceFxRateSource?: string | null;
+  /** Publication selectors must set this to avoid treating unknown domestic delivery as free. */
+  requireDomesticShipping?: boolean;
 }): ProfitSimulation {
   const sellingAssessment = assessCurrencyConfidence({
     currency: args.sellingCurrency,
@@ -468,6 +468,23 @@ export function verifyProfitInvariants(): {
     shippingCurrency: "USD",
     sourceFxRateToSelling: 150,
     sourceFxRateSource: "test",
+    domesticShipping: 500,
+    requireDomesticShipping: true,
+  });
+
+  const missingDomesticShipping = simulateContributionProfit({
+    sellingPrice: 5000,
+    sellingCurrency: "JPY",
+    sellingCurrencyConfidence: "high",
+    sellingProvider: "test",
+    sourceCost: 1000,
+    sourceCurrency: "JPY",
+    sourceCurrencyConfidence: "high",
+    sourceProvider: "test",
+    internationalShipping: 300,
+    domesticShipping: null,
+    shippingCurrency: "JPY",
+    requireDomesticShipping: true,
   });
 
   const cases = [
@@ -493,6 +510,11 @@ export function verifyProfitInvariants(): {
         healthy.roi !== null &&
         healthy.totalCost !== null &&
         healthy.totalCost > 0,
+    },
+    {
+      name: "unknown_domestic_shipping_blocks_publication_profit",
+      expected: true,
+      actual: !missingDomesticShipping.calculable && missingDomesticShipping.incalculableReason === "domestic_shipping_unknown" && missingDomesticShipping.shippingUnknown,
     },
     {
       name: "cross_currency_shipping_uses_source_fx",

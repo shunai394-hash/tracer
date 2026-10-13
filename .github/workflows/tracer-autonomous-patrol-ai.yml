@@ -2,6 +2,7 @@ name: TRACER Autonomous Patrol AI
 
 on:
   workflow_dispatch:
+  # The scheduled cadence is owned by tracer-patrol.yml to avoid duplicate production calls.
 
 permissions:
   id-token: write
@@ -21,7 +22,7 @@ jobs:
         run: |
           set -euo pipefail
           OIDC_TOKEN=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://tracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
-          RESPONSE=$(curl -sS -w "\n%{http_code}" --max-time 55 \
+          RESPONSE=$(curl -sS -w "\n%{http_code}" --max-time 310 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
             "https://tracer-pied-alpha.vercel.app/api/cron/patrol-ai")
           BODY=$(printf "%s" "$RESPONSE" | sed '$d')

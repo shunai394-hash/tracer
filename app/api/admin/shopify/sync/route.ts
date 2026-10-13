@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     // dryRun: report exactly what the next sync would write (no Shopify or DB writes).
     if (body.dryRun === true) {
       const limit = Number(body.limit);
-      const preview = await previewShopifySync(Number.isFinite(limit) && limit > 0 ? limit : 150);
+      const preview = await previewShopifySync(Number.isFinite(limit) && limit > 0 ? Math.min(150, Math.floor(limit)) : 150);
       return NextResponse.json({ ok: true, dryRun: true, ...preview });
     }
     const listingIds = Array.isArray(body.listingIds)
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       : undefined;
 
     const rawSyncLimit = Number(body.limit);
-    const syncLimit = Number.isFinite(rawSyncLimit) && rawSyncLimit > 0 ? Math.min(150, Math.floor(rawSyncLimit)) : 150;
+    const syncLimit = Number.isFinite(rawSyncLimit) && rawSyncLimit > 0 ? Math.min(15, Math.floor(rawSyncLimit)) : 10;
     const result = await syncPublishedListingsToShopify(listingIds, syncLimit);
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

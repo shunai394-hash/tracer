@@ -2,9 +2,20 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { verifySalesTestGateInvariants } from "@/lib/market/sales-test-gate";
 import { verifyWomenPriorityInvariants } from "@/lib/intelligence/womens-priority";
+import { verifyProfitInvariants } from "@/lib/intelligence/simulate-profit";
+import { isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 
 const root = process.cwd();
 const checks = [
+  ["Shopify publishable title guard", "lib/shopify/sync-published-listings.ts", "catalog_title_not_publishable"],
+  ["Shopify publishable description guard", "lib/shopify/sync-published-listings.ts", "catalog_description_not_publishable"],
+  ["BASE publishable description guard", "lib/channels/base-publisher.ts", "BASE catalog description contains generic placeholder text"],
+  ["Storefront publishable description guard", "lib/shop/store.ts", "isPublishableCatalogDescription(listing.description)"],
+  ["Checkout publishable description guard", "lib/shop/store.ts", "listing description failed catalog quality gate"],
+  ["Storefront publishable title guard", "lib/shop/store.ts", "isPublishableCatalogTitle(listing.title)"],
+  ["Checkout publishable title guard", "lib/shop/store.ts", "listing title failed catalog quality gate"],
+  ["BASE publishable title guard", "lib/channels/base-publisher.ts", "BASE catalog title contains workflow or disqualification text"],
+  ["BASE catalog validation fail-closed hide", "lib/channels/base-publisher.ts", "base_hide_failed_after_catalog_validation"],
   ["Shopify legacy sync", "lib/shopify/sync.ts", "syncCanonicalShopifyListings"],
   ["Shopify canonical sync", "lib/shopify/sync-published-listings.ts", "hasPassedSalesTestGate"],
   ["Shopify sync live-stock guard", "lib/shopify/sync-published-listings.ts", "Number(row.inventory) > 0"],
@@ -36,6 +47,8 @@ const checks = [
   ["BASE publisher idempotent claim", "lib/channels/base-publisher.ts", "base_publication_claim_lost"],
   ["BASE publisher image contract", "lib/channels/base-publisher.ts", "imageNo: 1"],
   ["Supply sales selector", "lib/market/select-supply-sales-tests.ts", "evaluateSalesTestGate"],
+  ["Supply sales selector requires domestic shipping", "lib/market/select-supply-sales-tests.ts", "requireDomesticShipping: true"],
+  ["Market sales selector requires domestic shipping", "lib/market/select-sales-tests.ts", "requireDomesticShipping: true"],
   ["Market sales selector", "lib/market/select-sales-tests.ts", "SALES_TEST_GATE_PASSED"],
   ["CJ identity reverify", "lib/suppliers/reverify-cj-identity.ts", "variantBarcode"],
   ["CJ womens recovery priority", "lib/suppliers/reverify-cj-identity.ts", "womensSelected"],
@@ -56,9 +69,22 @@ const checks = [
   ["CJ identity recovery twice daily", "vercel.json", "9 18 * * *"],
 ] as const;
 
+const titleCases: Array<[string, unknown, boolean]> = [
+  ["ordinary Japanese product title", "折りたたみ収納ボックス", true],
+  ["identity failure suffix", "暮らしの便利アイテム 商品アイデンティティが未確定のため、選定対象外", false],
+  ["sales gate failure suffix", "ペット用品 必須ゲートを満たしていないため、テスト優先度は低い", false],
+  ["truncated evidence suffix", "スマホケース は観測された需要と供給データに基", false],
+  ["generic specification placeholder", "商品の仕様・サイズ・素材・使用方法は、販売元の掲載情報をご確認ください。", false],
+  ["empty title", "", false],
+  ["overlong title", "a".repeat(181), false],
+];
+const titleFailures = titleCases.filter(([name, title, expected]) => isPublishableCatalogTitle(title) !== expected).map(([name]) => name);
 const failures: string[] = [];
+if (titleFailures.length) failures.push(`publishable-title cases failed: ${titleFailures.join(", ")}`);
 const invariant = verifySalesTestGateInvariants();
 const womenInvariant = verifyWomenPriorityInvariants();
+const profitInvariant = verifyProfitInvariants();
+if (!profitInvariant.ok) failures.push(`profit invariants failed: ${JSON.stringify(profitInvariant.cases)}`);
 if (!womenInvariant.ok) failures.push(`women-priority invariants failed: ${JSON.stringify(womenInvariant.cases)}`);
 if (!invariant.ok) failures.push(`sales-test-gate invariants failed: ${JSON.stringify(invariant.cases)}`);
 for (const [name, relativePath, required] of checks) {
@@ -72,4 +98,4 @@ if (failures.length) {
   process.exit(1);
 }
 console.log("TRACER QUALITY GATE AUDIT: PASS");
-console.log(`Checked ${checks.length} critical publication/downstream paths plus ${invariant.cases.length} gate invariants.`);
+console.log(`Checked ${checks.length} critical publication/downstream paths plus ${invariant.cases.length + womenInvariant.cases.length + profitInvariant.cases.length} gate invariants.`);

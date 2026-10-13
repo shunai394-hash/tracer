@@ -5,9 +5,14 @@ process.env.TRACER_TEST_MOCK_SUPABASE = "1";
 
 const DESCRIPTION = "床に敷いて使うフロアマットです。室内用の日本製サイズです。";
 
+// Fixtures are canonically linked supplier listings unless a case overrides it.
+const positiveStock = async () => new Map([["gid://shopify/ProductVariant/1", 5]]);
+const linkedFixture = async (ids) => new Set(ids.filter((id) => id === "supplier-listing-1"));
+
 function sellable(overrides = {}) {
   return {
     id: "listing-1",
+    supplier_listing_id: "supplier-listing-1",
     slug: "floor-mat",
     title: "床用フロアマット",
     description: DESCRIPTION,
@@ -89,17 +94,35 @@ const order = {
 async function rejected(row, probe = async () => true) {
   active = client([row]);
   const listed = await listPublishedShopListings({
-    supabase: active,
+    supabase: active, linkedSupplierListingIds: linkedFixture,
     probeImage: probe,
-    shopifyConfigured: false,
+    shopifyConfigured: true, readLiveStock: positiveStock,
   });
   assert.equal(listed.length, 0, JSON.stringify(row.supplier_name ?? row.id));
   await assert.rejects(
-    () => placeShopOrder(order, { supabase: active, probeImage: probe, shopifyConfigured: false }),
+    () => placeShopOrder(order, { supabase: active, linkedSupplierListingIds: linkedFixture, probeImage: probe, shopifyConfigured: true, readLiveStock: positiveStock }),
     /listing is not sellable/,
   );
   assert.equal(active.calls.some((call) => call.table === "shop_orders" && call.op === "insert"), false);
 }
+
+// Without Shopify as the live stock authority nothing is listed or orderable.
+active = client([sellable()]);
+assert.equal((await listPublishedShopListings({ supabase: active, linkedSupplierListingIds: linkedFixture, probeImage: async () => true, shopifyConfigured: false })).length, 0);
+await assert.rejects(
+  () => placeShopOrder(order, { supabase: active, linkedSupplierListingIds: linkedFixture, probeImage: async () => true, shopifyConfigured: false }),
+  /shopify_live_stock_unconfigured/,
+);
+assert.equal(active.calls.some((call) => call.table === "shop_orders" && call.op === "insert"), false);
+
+// An unlinked supplier listing is neither listed nor orderable.
+active = client([sellable({ supplier_listing_id: "supplier-listing-unlinked" })]);
+assert.equal((await listPublishedShopListings({ supabase: active, linkedSupplierListingIds: linkedFixture, probeImage: async () => true, shopifyConfigured: true, readLiveStock: positiveStock })).length, 0);
+await assert.rejects(
+  () => placeShopOrder(order, { supabase: active, linkedSupplierListingIds: linkedFixture, probeImage: async () => true, shopifyConfigured: true, readLiveStock: positiveStock }),
+  /supplier_identity_unlinked/,
+);
+assert.equal(active.calls.some((call) => call.table === "shop_orders" && call.op === "insert"), false);
 
 await rejected(sellable({ source_cost: 5000 }));
 await rejected(sellable({ identity_method: null, identity_confidence: null }));
@@ -127,7 +150,7 @@ await rejected(sellable({
 
 active = client([sellable()]);
 const visible = await listPublishedShopListings({
-  supabase: active,
+  supabase: active, linkedSupplierListingIds: linkedFixture,
   probeImage: async () => true,
   shopifyConfigured: true,
   readLiveStock: async () => new Map([["gid://shopify/ProductVariant/1", 0]]),
@@ -135,27 +158,27 @@ const visible = await listPublishedShopListings({
 assert.equal(visible.length, 0);
 await assert.rejects(
   () => placeShopOrder(order, {
-    supabase: active,
+    supabase: active, linkedSupplierListingIds: linkedFixture,
     probeImage: async () => true,
     shopifyConfigured: true,
     readLiveStock: async () => new Map([["gid://shopify/ProductVariant/1", 0]]),
   }),
-  /live_stock_zero/,
+  /shopify_live_stock_unverified/,
 );
 assert.equal(active.calls.some((call) => call.table === "shop_orders" && call.op === "insert"), false);
 
 active = client([sellable()]);
 const shown = await listPublishedShopListings({
-  supabase: active,
+  supabase: active, linkedSupplierListingIds: linkedFixture,
   probeImage: async () => true,
-  shopifyConfigured: false,
+  shopifyConfigured: true, readLiveStock: positiveStock,
 });
 assert.equal(shown.length, 1);
 assert.equal(shown[0].id, "listing-1");
 const placed = await placeShopOrder(order, {
-  supabase: active,
+  supabase: active, linkedSupplierListingIds: linkedFixture,
   probeImage: async () => true,
-  shopifyConfigured: false,
+  shopifyConfigured: true, readLiveStock: positiveStock,
 });
 assert.equal(placed.orderId, "order-1");
 const inserted = active.calls.find((call) => call.table === "shop_orders" && call.op === "insert");

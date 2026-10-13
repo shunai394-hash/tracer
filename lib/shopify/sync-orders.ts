@@ -13,6 +13,7 @@ type ShopifyOrder = {
   displayFinancialStatus: string | null;
   displayFulfillmentStatus: string | null;
   createdAt: string;
+  cancelledAt: string | null;
   totalPriceSet: { shopMoney: { amount: string; currencyCode: string } };
   shippingAddress: {
     name: string | null;
@@ -33,6 +34,7 @@ type ShopifyOrder = {
       originalUnitPriceSet: { shopMoney: { amount: string; currencyCode: string } };
       variant: { id: string; sku: string | null } | null;
     }>;
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
   };
 };
 
@@ -68,40 +70,127 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
     return { configured: false, fetched: 0, imported: 0, skipped: 0, failed: 0, orderIds: [], errors: [] };
   }
 
-  const data = await shopifyGraphQL<{
-    orders: { nodes: ShopifyOrder[] };
-  }>(
-    `query PaidOrders($first: Int!) {
-      orders(first: $first, query: "financial_status:paid", sortKey: CREATED_AT) {
-        nodes {
-          id name email phone displayFinancialStatus displayFulfillmentStatus createdAt
-          totalPriceSet { shopMoney { amount currencyCode } }
-          shippingAddress { name address1 address2 city province zip country countryCodeV2 phone }
-          lineItems(first: 100) {
-            nodes {
-              id title quantity
-              originalUnitPriceSet { shopMoney { amount currencyCode } }
-              variant { id sku }
+  const supabase = createSupabaseAdminClient();
+  const maxNewOrders = Math.min(Math.max(limit, 1), 100);
+  const orders: ShopifyOrder[] = [];
+  let scannedOrders = 0;
+  let after: string | null = null;
+  let hasNextOrdersPage = true;
+
+  // Search newest paid orders first and skip orders already imported. Without
+  // this outer pagination, the same first page can starve all later orders.
+  while (hasNextOrdersPage && orders.length < maxNewOrders) {
+    const data: {
+      orders: {
+        nodes: ShopifyOrder[];
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      };
+    } = await shopifyGraphQL<{
+      orders: {
+        nodes: ShopifyOrder[];
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      };
+    }>(
+      `query PaidOrders($first: Int!, $after: String) {
+        orders(first: $first, after: $after, query: "financial_status:paid status:open fulfillment_status:unfulfilled", sortKey: CREATED_AT, reverse: true) {
+          nodes {
+            id name email phone displayFinancialStatus displayFulfillmentStatus createdAt cancelledAt
+            totalPriceSet { shopMoney { amount currencyCode } }
+            shippingAddress { name address1 address2 city province zip country countryCodeV2 phone }
+            lineItems(first: 100) {
+              nodes {
+                id title quantity
+                originalUnitPriceSet { shopMoney { amount currencyCode } }
+                variant { id sku }
+              }
+              pageInfo { hasNextPage endCursor }
             }
           }
+          pageInfo { hasNextPage endCursor }
         }
-      }
-    }`,
-    { first: Math.min(Math.max(limit, 1), 100) },
-  );
+      }`,
+      { first: 100, after },
+    );
 
-  const orders = data.orders.nodes ?? [];
+    const pageOrders: ShopifyOrder[] = data.orders.nodes ?? [];
+    scannedOrders += pageOrders.length;
+    if (pageOrders.length > 0) {
+      const { data: existingRows, error: existingRowsError } = await supabase
+        .from("shop_orders")
+        .select("shopify_order_id")
+        .in("shopify_order_id", pageOrders.map((order) => order.id));
+      if (existingRowsError) throw new Error(existingRowsError.message);
+      const existingIds = new Set((existingRows ?? []).map((row) => String(row.shopify_order_id)));
+      for (const order of pageOrders) {
+        if (!existingIds.has(order.id) && orders.length < maxNewOrders) orders.push(order);
+      }
+    }
+
+    hasNextOrdersPage = data.orders.pageInfo.hasNextPage;
+    const nextCursor: string | null = data.orders.pageInfo.endCursor;
+    if (hasNextOrdersPage && (!nextCursor || nextCursor === after)) {
+      throw new Error("shopify_orders_cursor_not_advancing");
+    }
+    after = nextCursor;
+  }
+
+  // Shopify paginates nested lineItems independently from the orders connection.
+  // Resolve every page before any local DB read/write so a cursor failure cannot
+  // leave a partial order that looks imported.
+  for (const order of orders) {
+    let after = order.lineItems.pageInfo.endCursor;
+    let hasNextPage = order.lineItems.pageInfo.hasNextPage;
+    while (hasNextPage) {
+      if (!after) throw new Error(`shopify_line_items_cursor_missing:${order.id}`);
+      const nextPage = await shopifyGraphQL<{
+        order: {
+          lineItems: {
+            nodes: ShopifyOrder["lineItems"]["nodes"];
+            pageInfo: { hasNextPage: boolean; endCursor: string | null };
+          };
+        } | null;
+      }>(
+        `query PaidOrderLineItems($id: ID!, $first: Int!, $after: String!) {
+          order(id: $id) {
+            lineItems(first: $first, after: $after) {
+              nodes {
+                id title quantity
+                originalUnitPriceSet { shopMoney { amount currencyCode } }
+                variant { id sku }
+              }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+        }`,
+        { id: order.id, first: 100, after },
+      );
+      const connection = nextPage.order?.lineItems;
+      if (!connection) throw new Error(`shopify_line_items_page_missing:${order.id}`);
+      order.lineItems.nodes.push(...connection.nodes);
+      const nextCursor = connection.pageInfo.endCursor;
+      if (connection.pageInfo.hasNextPage && (!nextCursor || nextCursor === after)) {
+        throw new Error(`shopify_line_items_cursor_not_advancing:${order.id}`);
+      }
+      hasNextPage = connection.pageInfo.hasNextPage;
+      after = nextCursor;
+    }
+
+    const seenLineItemIds = new Set<string>();
+    for (const item of order.lineItems.nodes) {
+      if (seenLineItemIds.has(item.id)) throw new Error(`shopify_line_item_duplicate_id:${order.id}:${item.id}`);
+      seenLineItemIds.add(item.id);
+    }
+  }
+
   const result: ShopifyOrderSyncResult = {
     configured: true,
-    fetched: orders.length,
+    fetched: scannedOrders,
     imported: 0,
     skipped: 0,
     failed: 0,
     orderIds: [],
     errors: [],
   };
-  const supabase = createSupabaseAdminClient();
-
   const variantIds = Array.from(new Set(
     orders.flatMap((order) => order.lineItems.nodes.map((item) => item.variant?.id).filter(Boolean)),
   ));
@@ -120,7 +209,18 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
   for (const order of orders) {
     let insertedOrderId: string | null = null;
     try {
+      // Do not turn a cancelled, partially fulfilled, or already fulfilled
+      // Shopify order into a new procurement job. Query filters are backed by
+      // explicit response checks because supplier execution is irreversible.
+      if (order.cancelledAt) {
+        result.skipped += 1;
+        continue;
+      }
       if (order.displayFinancialStatus !== "PAID") {
+        result.skipped += 1;
+        continue;
+      }
+      if (order.displayFulfillmentStatus !== "UNFULFILLED") {
         result.skipped += 1;
         continue;
       }
@@ -149,7 +249,7 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
 
       const ambiguousItems = order.lineItems.nodes.filter((item) => item.variant?.id && ambiguousVariants.has(item.variant.id));
       if (ambiguousItems.length) {
-        throw new Error(`shopify_variant_ambiguous:${ambiguousItems.map((item) => item.variant?.id).join(",")}`);
+        throw new Error(`shopify_variant_mapping_ambiguous:${ambiguousItems.map((item) => item.variant?.id).join(",")}`);
       }
       const mappedItems = order.lineItems.nodes.map((item) => {
         const listing = item.variant?.id ? listingByVariant.get(item.variant.id) : undefined;

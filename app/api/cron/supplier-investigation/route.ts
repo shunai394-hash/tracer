@@ -94,9 +94,33 @@ export async function GET(request: Request) {
       BESTSELLER_CANDIDATE_BATCH_SIZE,
     );
 
+    // Do not leave candidates with no usable identity fields in the pending queue forever.
+    // Quarantine them immediately; this is reversible (status/reason only), and
+    // prevents repeated discovery runs from treating impossible-to-match rows as work.
+    const { data: identitylessRows, error: identitylessError } = await supabase
+      .from("marketplace_bestsellers")
+      .update({
+        pipeline_status: "blocked",
+        pipeline_stage: "SUPPLIER_INVESTIGATION",
+        pipeline_reason: "supplier_search_identifier_missing",
+        pipeline_updated_at: new Date().toISOString(),
+      })
+      .in("pipeline_status", ["pending", "failed"])
+      .is("jan", null)
+      .is("gtin", null)
+      .is("ean", null)
+      .is("upc", null)
+      .is("mpn", null)
+      .is("asin", null)
+      .select("id");
+
+    if (identitylessError) throw new Error(identitylessError.message);
+
     // Pull a wider queue, then spend the limited supplier-call budget on the
     // strongest strict identity evidence first. ASIN/MPN are intentionally
     // retained because investigate-dropship can enrich them before matching.
+    console.info("[TRACER SUPPLIER INVESTIGATION] identityless candidates quarantined", { count: identitylessRows?.length ?? 0 });
+
     const queuePoolSize = Math.max(BESTSELLER_CANDIDATE_BATCH_SIZE * 5, 50);
     const { data: freshRows, error: freshError } = await supabase
       .from("marketplace_bestsellers")

@@ -10,10 +10,12 @@ import {
 import { getSupplierAdapter, getSupplierCapabilities } from "@/lib/procurement/registry";
 import type { SupplierOrderInput } from "@/lib/procurement/types";
 import { initializeProcurement } from "@/lib/procurement/init";
+import { persistOrderStateUpdate } from "@/lib/ordering/status-write";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { getObservedFxRate } from "@/lib/intelligence/fx";
 import {
   evaluateDropshipOrderGate,
+  isCjSupplierName,
   type DropshipOrderGateResult,
 } from "@/lib/ordering/dropship-gate";
 import { classifyCreateOrderResult, classifyStoredAttempt } from "@/lib/ordering/supplier-attempt-disposition";
@@ -171,6 +173,40 @@ export async function executeSupplierPurchaseOrder(
       reason: `purchase_order_status_${po.status}`,
       gate: null,
     };
+  }
+
+  // CJ supply discovery is not enough to authorize a customer-order purchase.
+  // Require one exact supplier product+variant row, linked to this canonical product.
+  // Lookup failures and duplicate rows fail closed before any supplier API call.
+  if (isCjSupplierName(supplierName)) {
+    const canonicalProductId = asString(po.product_id);
+    const externalProductId = asString(po.supplier_product_id);
+    const externalVariantId = asString(po.supplier_variant_id);
+    if (!canonicalProductId || !externalProductId || !externalVariantId) {
+      return {
+        purchaseOrderId, supplierName, attempted: false, succeeded: false,
+        supplierOrderId: null, reason: "supplier_identity_missing", gate: null,
+      };
+    }
+    const { data: identityRows, error: identityError } = await supabase
+      .from("supplier_listings")
+      .select("product_id,identity_status")
+      .eq("supplier", "cj")
+      .eq("supplier_product_id", externalProductId)
+      .eq("supplier_variant_id", externalVariantId)
+      .limit(2);
+    if (identityError) {
+      return {
+        purchaseOrderId, supplierName, attempted: false, succeeded: false,
+        supplierOrderId: null, reason: "supplier_identity_lookup_failed", gate: null,
+      };
+    }
+    if (identityRows?.length !== 1 || identityRows?.[0]?.identity_status !== "linked" || String(identityRows?.[0]?.product_id ?? "") !== canonicalProductId) {
+      return {
+        purchaseOrderId, supplierName, attempted: false, succeeded: false,
+        supplierOrderId: null, reason: "supplier_identity_unlinked_or_ambiguous", gate: null,
+      };
+    }
   }
 
   const adapter = getSupplierAdapter(supplierName);
@@ -439,26 +475,57 @@ export async function executeSupplierPurchaseOrder(
   const idempotencyKey =
     asString(po.idempotency_key) ?? `dropship:${purchaseOrderId}`;
 
-  const { data: existingAttempt } = await supabase
+  const { data: existingAttempt, error: existingAttemptError } = await supabase
     .from("supplier_order_attempts")
     .select("*")
     .eq("idempotency_key", idempotencyKey)
     .maybeSingle();
 
+  if (existingAttemptError) {
+    console.error("[TRACER SUPPLIER ATTEMPT LOOKUP FAILED]", {
+      purchaseOrderId,
+      supplierName,
+      error: existingAttemptError.message,
+    });
+    return {
+      purchaseOrderId,
+      supplierName,
+      attempted: false,
+      succeeded: false,
+      supplierOrderId: null,
+      reason: "supplier_attempt_lookup_failed_manual_reconciliation_required",
+      gate,
+    };
+  }
+
   if (existingAttempt?.supplier_order_id && existingAttempt.state !== "unknown") {
-    await supabase
-      .from("purchase_orders")
-      .update({
-        supplier_order_id: existingAttempt.supplier_order_id,
-        live_order: true,
-        supplier_status: "created",
-        supplier_synced_at: new Date().toISOString(),
-        // An existing supplier order is not a paid one. Only
-        // executeVerifiedSupplierPurchaseOrder may move this to "placed"
-        // after the supplier reports payment.
-        status: "supplier_payment_pending",
-      })
-      .eq("id", purchaseOrderId);
+    const syncResult = await persistOrderStateUpdate(
+      { table: "purchase_orders", id: purchaseOrderId, purchaseOrderId, context: "dedupe_existing_supplier_order" },
+      () => supabase
+        .from("purchase_orders")
+        .update({
+          supplier_order_id: existingAttempt.supplier_order_id,
+          live_order: true,
+          supplier_status: "created",
+          supplier_synced_at: new Date().toISOString(),
+          // An existing supplier order is not a paid one. Only
+          // executeVerifiedSupplierPurchaseOrder may move this to "placed"
+          // after the supplier reports payment.
+          status: "supplier_payment_pending",
+        })
+        .eq("id", purchaseOrderId),
+    );
+    if (!syncResult.ok) {
+      return {
+        purchaseOrderId,
+        supplierName,
+        attempted: false,
+        succeeded: false,
+        supplierOrderId: String(existingAttempt.supplier_order_id),
+        reason: "deduped_supplier_order_status_sync_failed_manual_reconciliation_required",
+        gate,
+      };
+    }
 
     return {
       purchaseOrderId,
@@ -672,16 +739,60 @@ export async function executeSupplierPurchaseOrder(
   // Re-read immediately before the external side effect. A customer cancellation
   // can arrive while live supplier validation is running; cancellation must win.
   if (po.shop_order_id) {
-    const { data: latestShopOrder } = await supabase
+    const { data: latestShopOrder, error: latestShopOrderError } = await supabase
       .from("shop_orders")
       .select("order_status")
       .eq("id", po.shop_order_id)
       .maybeSingle();
+    if (latestShopOrderError) {
+      console.error("[TRACER ORDER CANCELLATION CHECK FAILED]", {
+        purchaseOrderId,
+        shopOrderId: po.shop_order_id,
+        supplierAttemptId: attemptId,
+        error: latestShopOrderError.message,
+      });
+      const checkFailureWrite = await persistOrderStateUpdate(
+        { table: "supplier_order_attempts", id: attemptId, purchaseOrderId, context: "cancellation_check_failed" },
+        () => supabase
+          .from("supplier_order_attempts")
+          .update({
+            state: "unknown",
+            response_code: "CANCELLATION_CHECK_FAILED",
+            response_message: latestShopOrderError.message,
+          })
+          .eq("id", attemptId),
+      );
+      return {
+        purchaseOrderId,
+        supplierName,
+        attempted: false,
+        succeeded: false,
+        supplierOrderId: null,
+        reason: checkFailureWrite.ok
+          ? "shop_order_cancellation_check_failed_manual_reconciliation_required"
+          : "shop_order_cancellation_check_and_attempt_state_write_failed_manual_reconciliation_required",
+        gate,
+      };
+    }
     if (latestShopOrder && ["cancellation_requested", "refund_pending", "cancelled", "refunded"].includes(String(latestShopOrder.order_status))) {
-      await supabase
-        .from("supplier_order_attempts")
-        .update({ state: "unknown", response_code: "CUSTOMER_CANCELLATION_REQUESTED", response_message: "Customer cancellation arrived before supplier execution." })
-        .eq("id", attemptId);
+      const cancellationWrite = await persistOrderStateUpdate(
+        { table: "supplier_order_attempts", id: attemptId, purchaseOrderId, context: "cancellation_before_supplier_execution" },
+        () => supabase
+          .from("supplier_order_attempts")
+          .update({ state: "unknown", response_code: "CUSTOMER_CANCELLATION_REQUESTED", response_message: "Customer cancellation arrived before supplier execution." })
+          .eq("id", attemptId),
+      );
+      if (!cancellationWrite.ok) {
+        return {
+          purchaseOrderId,
+          supplierName,
+          attempted: false,
+          succeeded: false,
+          supplierOrderId: null,
+          reason: "cancellation_attempt_state_write_failed_manual_reconciliation_required",
+          gate,
+        };
+      }
       return {
         purchaseOrderId,
         supplierName,
@@ -699,15 +810,18 @@ export async function executeSupplierPurchaseOrder(
     result = await adapter.createOrder(orderInput);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await supabase
-      .from("supplier_order_attempts")
-      .update({
-        response_code: "EXCEPTION",
-        response_message: message,
-        succeeded: false,
-        state: "unknown",
-      })
-      .eq("id", attemptId);
+    const failureWrite = await persistOrderStateUpdate(
+      { table: "supplier_order_attempts", id: attemptId, purchaseOrderId, context: "supplier_create_order_exception" },
+      () => supabase
+        .from("supplier_order_attempts")
+        .update({
+          response_code: "EXCEPTION",
+          response_message: message,
+          succeeded: false,
+          state: "unknown",
+        })
+        .eq("id", attemptId),
+    );
 
     return {
       purchaseOrderId,
@@ -715,7 +829,9 @@ export async function executeSupplierPurchaseOrder(
       attempted: true,
       succeeded: false,
       supplierOrderId: null,
-      reason: `supplier_order_outcome_unknown_manual_reconciliation_required:${message}`,
+      reason: failureWrite.ok
+        ? `supplier_order_outcome_unknown_manual_reconciliation_required:${message}`
+        : `supplier_order_outcome_unknown_and_attempt_state_write_failed_manual_reconciliation_required:${failureWrite.error}`,
       gate,
     };
   }
@@ -740,6 +856,11 @@ export async function executeSupplierPurchaseOrder(
     .eq("id", attemptId);
 
   if (attemptUpdateError) {
+    console.error("[TRACER SUPPLIER ATTEMPT RESULT WRITE FAILED]", {
+      purchaseOrderId,
+      supplierAttemptId: attemptId,
+      error: attemptUpdateError.message,
+    });
     if (result.supplierOrderId) {
       await supabase.from("supplier_order_attempts").update({
         supplier_order_id: result.supplierOrderId,
@@ -785,6 +906,11 @@ export async function executeSupplierPurchaseOrder(
       .eq("id", purchaseOrderId);
 
     if (purchaseOrderUpdateError) {
+      console.error("[TRACER PURCHASE ORDER STATUS WRITE FAILED]", {
+        purchaseOrderId,
+        supplierOrderId: result.supplierOrderId,
+        error: purchaseOrderUpdateError.message,
+      });
       return {
         purchaseOrderId,
         supplierName,
@@ -807,18 +933,32 @@ export async function executeSupplierPurchaseOrder(
     };
   }
 
-  await supabase
-    .from("purchase_orders")
-    .update({
-      status: classified.disposition === "explicit_rejection" ? "supplier_rejected" : "supplier_outcome_unknown",
-      metadata: {
-        ...((po.metadata as Record<string, unknown>) ?? {}),
-        supplier_error: result.responseMessage,
-        supplier_response_code: result.responseCode,
-        supplier_disposition: classified.disposition,
-      },
-    })
-    .eq("id", purchaseOrderId);
+  const rejectedWrite = await persistOrderStateUpdate(
+    { table: "purchase_orders", id: purchaseOrderId, purchaseOrderId, context: "supplier_rejected" },
+    () => supabase
+      .from("purchase_orders")
+      .update({
+        status: classified.disposition === "explicit_rejection" ? "supplier_rejected" : "supplier_outcome_unknown",
+        metadata: {
+          ...((po.metadata as Record<string, unknown>) ?? {}),
+          supplier_error: result.responseMessage,
+          supplier_response_code: result.responseCode,
+          supplier_disposition: classified.disposition,
+        },
+      })
+      .eq("id", purchaseOrderId),
+  );
+  if (!rejectedWrite.ok) {
+    return {
+      purchaseOrderId,
+      supplierName,
+      attempted: true,
+      succeeded: false,
+      supplierOrderId: null,
+      reason: "supplier_rejection_status_write_failed_manual_reconciliation_required",
+      gate,
+    };
+  }
 
   return {
     purchaseOrderId,

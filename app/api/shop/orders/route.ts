@@ -4,6 +4,7 @@ import { createDropshipPurchaseOrdersForShopOrder } from "@/lib/ordering/dropshi
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createCheckoutSession, toStripeMinorUnits } from "@/lib/payments/stripe/client";
 import { getStripeConfig } from "@/lib/config/env";
+import { normalizeShopOrderPaymentMethod, validateShopOrderItems } from "@/lib/shop/checkout-request-validation";
 
 export const runtime = "nodejs";
 
@@ -43,13 +44,18 @@ export async function POST(request: Request) {
       );
     }
 
-    const items = (body.items ?? [])
-      .filter((item) => item.listingId && item.qty && item.qty > 0)
-      .map((item) => ({ listingId: String(item.listingId), qty: Number(item.qty) }));
+    // Reject malformed lines instead of silently creating an empty/partial order.
+    const validatedItems = validateShopOrderItems(body.items);
+    if (!validatedItems.ok) {
+      return NextResponse.json({ ok: false, error: validatedItems.reason }, { status: 400 });
+    }
 
-    const paymentMethod = body.paymentMethod ?? "cash_on_delivery";
+    const paymentMethod = normalizeShopOrderPaymentMethod(body.paymentMethod);
+    if (!paymentMethod) {
+      return NextResponse.json({ ok: false, error: "payment_method_invalid" }, { status: 400 });
+    }
     const order = await placeShopOrder({
-      items,
+      items: validatedItems.items,
       customerName: required.name!,
       customerEmail: required.email!,
       customerPhone: required.phone!,

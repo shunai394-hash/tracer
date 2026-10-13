@@ -2,6 +2,7 @@ import "server-only";
 
 type BaseItemInput = {
   title: string;
+  identifier?: string;
   detail: string;
   price: number;
   stock?: number;
@@ -17,46 +18,69 @@ type BaseItemResponse = {
 };
 
 const BASE_API_URL = process.env.BASE_API_URL?.trim() || "https://api.thebase.in/1";
-const BASE_ACCESS_TOKEN = process.env.BASE_ACCESS_TOKEN?.trim() || "";
 const BASE_CLIENT_ID = process.env.BASE_CLIENT_ID?.trim() || "";
 const BASE_CLIENT_SECRET = process.env.BASE_CLIENT_SECRET?.trim() || "";
 const BASE_REFRESH_TOKEN = process.env.BASE_REFRESH_TOKEN?.trim() || "";
 
-export function isBaseConfigured() {
-  return Boolean(BASE_ACCESS_TOKEN || (
-    BASE_CLIENT_ID && BASE_CLIENT_SECRET && BASE_REFRESH_TOKEN
-  ));
+const BASE_REDIRECT_URI = process.env.BASE_REDIRECT_URI?.trim() || "";
+
+function baseOAuthConfigReady(): boolean {
+  return Boolean(BASE_CLIENT_ID && BASE_CLIENT_SECRET && BASE_REFRESH_TOKEN && BASE_REDIRECT_URI);
 }
 
-async function getBaseAccessToken() {
-  if (BASE_CLIENT_ID && BASE_CLIENT_SECRET && BASE_REFRESH_TOKEN) {
-    const body = new URLSearchParams({
-      grant_type: "refresh_token",
-      client_id: BASE_CLIENT_ID,
-      client_secret: BASE_CLIENT_SECRET,
-      refresh_token: BASE_REFRESH_TOKEN,
-      redirect_uri: process.env.BASE_REDIRECT_URI?.trim() || "",
-    });
+function safeBaseError(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "unknown_error";
+  const record = payload as Record<string, unknown>;
+  const value = [record.error_description, record.error, record.message]
+    .find((item) => typeof item === "string");
+  return typeof value === "string"
+    ? value.replace(/(?:access|refresh)_token[=: ]+[^\s,;]+/gi, "[REDACTED]")
+        .replace(/client_secret[=: ]+[^\s,;]+/gi, "[REDACTED]")
+        .slice(0, 180)
+    : "unknown_error";
+}
 
-    const response = await fetch(`${BASE_API_URL}/oauth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-      body,
-      cache: "no-store",
-    });
-    const text = await response.text();
-    if (!response.ok) {
-      throw new Error(`BASE OAuth refresh HTTP ${response.status}: ${text.slice(0, 500)}`);
-    }
-    const data = JSON.parse(text) as { access_token?: string };
-    if (!data.access_token) throw new Error("BASE OAuth refresh did not return access_token");
-    return data.access_token;
+export function isBaseConfigured() {
+  // A standalone access token is not accepted as proof of a working BASE
+  // integration. Only the complete OAuth refresh configuration is supported.
+  return baseOAuthConfigReady();
+}
+
+async function getBaseAccessToken(): Promise<string> {
+  if (!baseOAuthConfigReady()) {
+    throw new Error("BASE_OAUTH_CONFIG_INCOMPLETE: configure BASE_CLIENT_ID, BASE_CLIENT_SECRET, BASE_REFRESH_TOKEN, and BASE_REDIRECT_URI");
   }
 
-  if (!BASE_ACCESS_TOKEN) {
-    throw new Error("BASE API credentials are not configured");
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: BASE_CLIENT_ID,
+    client_secret: BASE_CLIENT_SECRET,
+    refresh_token: BASE_REFRESH_TOKEN,
+    redirect_uri: BASE_REDIRECT_URI,
+  });
+
+  const response = await fetch(`${BASE_API_URL}/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+    body,
+    cache: "no-store",
+    signal: AbortSignal.timeout(20_000),
+  });
+  const text = await response.text();
+  let payload: Record<string, unknown> | null = null;
+  try {
+    payload = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    payload = null;
   }
-  return BASE_ACCESS_TOKEN;
+  if (!response.ok) {
+    throw new Error(`BASE_OAUTH_REFRESH_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
+  }
+  const accessToken = payload?.access_token;
+  if (typeof accessToken !== "string" || !accessToken.trim()) {
+    throw new Error("BASE_OAUTH_REFRESH_FAILED:ACCESS_TOKEN_MISSING");
+  }
+  return accessToken.trim();
 }
 
 async function requestBase(
@@ -85,7 +109,7 @@ async function requestBase(
   }
 
   if (!response.ok) {
-    throw new Error(`BASE API HTTP ${response.status}: ${text.slice(0, 500)}`);
+    throw new Error(`BASE_API_REQUEST_FAILED:HTTP_${response.status}:${safeBaseError(data)}`);
   }
 
   return data ?? { raw: text };
@@ -96,6 +120,7 @@ export async function createBaseItem(input: BaseItemInput) {
     "/items/add",
     new URLSearchParams({
       title: input.title,
+      ...(input.identifier ? { identifier: input.identifier } : {}),
       detail: input.detail,
       price: String(Math.round(input.price)),
       stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
@@ -212,9 +237,125 @@ export async function listBaseOrders(options?: {
     cache: "no-store",
   });
   const text = await response.text();
-  if (!response.ok) throw new Error(`BASE orders HTTP ${response.status}: ${text.slice(0, 500)}`);
+  if (!response.ok) {
+    let payload: unknown = null;
+    try { payload = JSON.parse(text); } catch { payload = null; }
+    throw new Error(`BASE_ORDERS_REQUEST_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
+  }
   const data = JSON.parse(text) as { orders?: BaseOrderSummary[] };
   return data.orders ?? [];
+}
+
+export type BaseReadOnlyProbeResult = {
+  orders: { apiStatus: 200; countReturned: number; dispatchStatuses: string[] };
+  items: {
+    apiStatus: number | null;
+    countReturned: number;
+    visibleCount: number;
+    hiddenCount: number;
+    unknownVisibilityCount: number;
+    pages: number;
+    complete: boolean;
+    errorStage: string | null;
+    entries: Array<{ itemId: string | null; identifier: string | null; visible: boolean | null }>;
+  };
+};
+
+/**
+ * Read-only BASE inventory probe. Uses one refreshed access token for all pages
+ * and returns counts only; no item IDs, titles, or customer data leave this helper.
+ */
+export async function probeBaseReadOnly(options?: {
+  itemPageLimit?: number;
+  itemMaxPages?: number;
+}): Promise<BaseReadOnlyProbeResult> {
+  const token = await getBaseAccessToken();
+  const requestJson = async (path: string, stage: string): Promise<Record<string, unknown>> => {
+    const response = await fetch(`${BASE_API_URL}${path}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
+    });
+    const text = await response.text();
+    let payload: Record<string, unknown> | null = null;
+    try { payload = JSON.parse(text) as Record<string, unknown>; } catch { payload = null; }
+    if (!response.ok) {
+      throw new Error(`${stage}:HTTP_${response.status}:${safeBaseError(payload)}`);
+    }
+    if (!payload) throw new Error(`${stage}:RESPONSE_INVALID`);
+    return payload;
+  };
+
+  const orderPayload = await requestJson("/orders?limit=1&offset=0", "BASE_ORDERS_PROBE_FAILED");
+  if (!Array.isArray(orderPayload.orders)) throw new Error("BASE_ORDERS_PROBE_RESPONSE_INVALID");
+  const orderRows = orderPayload.orders as BaseOrderSummary[];
+  const result: BaseReadOnlyProbeResult = {
+    orders: {
+      apiStatus: 200,
+      countReturned: orderRows.length,
+      dispatchStatuses: [...new Set(orderRows.map((order) => String(order.dispatch_status ?? "unknown")))].sort(),
+    },
+    items: {
+      apiStatus: null,
+      countReturned: 0,
+      visibleCount: 0,
+      hiddenCount: 0,
+      unknownVisibilityCount: 0,
+      pages: 0,
+      complete: false,
+      errorStage: null,
+      entries: [],
+    },
+  };
+
+  const pageLimit = Math.min(100, Math.max(1, Math.floor(options?.itemPageLimit ?? 100)));
+  const maxPages = Math.min(10, Math.max(1, Math.floor(options?.itemMaxPages ?? 10)));
+  let offset = 0;
+  for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+    try {
+      const payload = await requestJson(
+        `/items?limit=${pageLimit}&offset=${offset}`,
+        "BASE_ITEMS_PROBE_FAILED",
+      );
+      if (!Array.isArray(payload.items)) throw new Error("BASE_ITEMS_PROBE_RESPONSE_INVALID");
+      const rows = payload.items as Array<{ visible?: boolean | number | string }>;
+      result.items.apiStatus = 200;
+      result.items.pages += 1;
+      result.items.countReturned += rows.length;
+      for (const item of rows) {
+        const raw = item as { item_id?: string | number; identifier?: unknown };
+        const rawId = raw.item_id;
+        const itemId = rawId == null ? null : String(rawId);
+        const identifier = typeof raw.identifier === "string" && raw.identifier.trim() ? raw.identifier.trim() : null;
+        const visible = item.visible === true || item.visible === 1 || item.visible === "1"
+          ? true
+          : item.visible === false || item.visible === 0 || item.visible === "0"
+            ? false
+            : null;
+        result.items.entries.push({ itemId, identifier, visible });
+        if (visible === true) {
+          result.items.visibleCount += 1;
+        } else if (visible === false) {
+          result.items.hiddenCount += 1;
+        } else {
+          result.items.unknownVisibilityCount += 1;
+        }
+      }
+      if (rows.length < pageLimit) {
+        result.items.complete = true;
+        break;
+      }
+      offset += rows.length;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "BASE_ITEMS_PROBE_FAILED";
+      result.items.apiStatus = Number(message.match(/HTTP_(\d{3})/)?.[1] ?? 0) || null;
+      result.items.errorStage = message.split(":")[0].slice(0, 100);
+      break;
+    }
+  }
+
+  return result;
 }
 
 export async function getBaseOrderDetail(uniqueKey: string): Promise<BaseOrderDetail> {
@@ -228,8 +369,68 @@ export async function getBaseOrderDetail(uniqueKey: string): Promise<BaseOrderDe
     },
   );
   const text = await response.text();
-  if (!response.ok) throw new Error(`BASE order detail HTTP ${response.status}: ${text.slice(0, 500)}`);
+  if (!response.ok) {
+    let payload: unknown = null;
+    try { payload = JSON.parse(text); } catch { payload = null; }
+    throw new Error(`BASE_ORDER_DETAIL_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
+  }
   const data = JSON.parse(text) as { order?: BaseOrderDetail };
   if (!data.order) throw new Error("BASE order detail missing order");
   return data.order;
+}
+
+
+/**
+ * Fetches a complete, read-only product snapshot for an authenticated backup export.
+ * This intentionally excludes orders and customer data. Never log returned item payloads.
+ */
+export async function fetchBaseItemsSnapshot(options?: {
+  itemPageLimit?: number;
+  itemMaxPages?: number;
+}): Promise<{ items: Record<string, unknown>[]; pages: number; complete: boolean }> {
+  const token = await getBaseAccessToken();
+  const pageLimit = Math.min(100, Math.max(1, Math.floor(options?.itemPageLimit ?? 100)));
+  const maxPages = Math.min(10, Math.max(1, Math.floor(options?.itemMaxPages ?? 10)));
+  const items: Record<string, unknown>[] = [];
+  let pages = 0;
+  let offset = 0;
+  let complete = false;
+
+  for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+    const response = await fetch(`${BASE_API_URL}/items?limit=${pageLimit}&offset=${offset}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
+    });
+    const text = await response.text();
+    let payload: Record<string, unknown> | null = null;
+    try { payload = JSON.parse(text) as Record<string, unknown>; } catch { payload = null; }
+    if (!response.ok) {
+      throw new Error(`BASE_ITEMS_SNAPSHOT_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
+    }
+    if (!payload || !Array.isArray(payload.items)) {
+      throw new Error("BASE_ITEMS_SNAPSHOT_RESPONSE_INVALID");
+    }
+    const rows = payload.items.filter(
+      (item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item),
+    );
+    if (rows.length !== payload.items.length) {
+      throw new Error("BASE_ITEMS_SNAPSHOT_ROW_INVALID");
+    }
+    items.push(...rows);
+    pages += 1;
+    if (rows.length < pageLimit) {
+      complete = true;
+      break;
+    }
+    offset += rows.length;
+  }
+
+  if (!complete) throw new Error("BASE_ITEMS_SNAPSHOT_INCOMPLETE");
+  const ids = items.map((item) => String(item.item_id ?? "")).filter(Boolean);
+  if (ids.length !== items.length || new Set(ids).size !== ids.length) {
+    throw new Error("BASE_ITEMS_SNAPSHOT_ID_MISSING_OR_DUPLICATE");
+  }
+  return { items, pages, complete };
 }

@@ -8,13 +8,16 @@ import { probeListingImage } from "@/lib/market/probe-listing-image";
 import { channelVisibilityForSalesGate, hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
+import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
 
 export type BasePublicationResult = {
   attempted: number;
   published: number;
+  hidden: number;
   skipped: number;
   failed: number;
-  results: Array<{ listingId: string; ok: boolean; baseItemId?: string | null; skipped?: boolean; error?: string }>;
+  results: Array<{ listingId: string; ok: boolean; baseItemId?: string | null; hidden?: boolean; skipped?: boolean; error?: string }>;
 };
 
 type JapaneseCatalogCopy = { title: string; detail: string; };
@@ -22,6 +25,8 @@ type JapaneseCatalogCopy = { title: string; detail: string; };
 async function ensureJapaneseCatalogCopy(title: string, detail: string): Promise<JapaneseCatalogCopy> {
   const sourceTitle = String(title ?? "").trim();
   const sourceDetail = String(detail ?? "").trim();
+  if (!isPublishableCatalogTitle(sourceTitle)) throw new Error("BASE catalog title contains workflow or disqualification text");
+  if (!isPublishableCatalogDescription(sourceDetail)) throw new Error("BASE catalog description contains generic placeholder text");
   if (isJapaneseProductTitle(sourceTitle) && hasUsableJapaneseCopy(sourceDetail)) return { title: sourceTitle, detail: sourceDetail };
   if (!isGeminiConfigured()) throw new Error("BASE japanese catalog copy requires GEMINI_API_KEY");
   const result = await generateStructuredJson<JapaneseCatalogCopy>({
@@ -32,6 +37,8 @@ async function ensureJapaneseCatalogCopy(title: string, detail: string): Promise
   const translatedTitle = String(result?.title ?? "").trim();
   const translatedDetail = String(result?.detail ?? "").trim();
   if (!isJapaneseProductTitle(translatedTitle)) throw new Error("BASE japanese catalog copy returned a non-Japanese title");
+  if (!isPublishableCatalogTitle(translatedTitle)) throw new Error("BASE japanese catalog copy returned workflow or disqualification text");
+  if (!isPublishableCatalogDescription(translatedDetail)) throw new Error("BASE japanese catalog copy returned generic placeholder text");
   if (!hasUsableJapaneseCopy(translatedDetail)) throw new Error("BASE japanese catalog copy returned an English-heavy description");
   return { title: translatedTitle, detail: translatedDetail };
 }
@@ -51,6 +58,7 @@ type BasePublishDeps = {
   createBaseItem?: typeof createBaseItem;
   addBaseItemImage?: typeof addBaseItemImage;
   probeImage?: (url: string) => Promise<boolean>;
+  linkedSupplierListingIds?: (values: unknown[]) => Promise<Set<string>>;
   forceConfigured?: boolean;
 };
 
@@ -73,31 +81,69 @@ function validHttpUrl(value: unknown): boolean {
 }
 
 export async function publishPublishedListingsToBase(limit = 10, listingIds?: string[], deps?: BasePublishDeps): Promise<BasePublicationResult> {
-  if (!deps?.forceConfigured && !isBaseConfigured()) return { attempted: 0, published: 0, skipped: 0, failed: 0, results: [] };
-  if (listingIds !== undefined && listingIds.length === 0) return { attempted: 0, published: 0, skipped: 0, failed: 0, results: [] };
+  if (!deps?.forceConfigured && !isBaseConfigured()) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
+  if (listingIds !== undefined && listingIds.length === 0) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
   const supabase = deps?.supabase ?? createSupabaseAdminClient();
   const editItem = deps?.editBaseItem ?? editBaseItem;
   const createItem = deps?.createBaseItem ?? createBaseItem;
   const addImage = deps?.addBaseItemImage ?? addBaseItemImage;
   const probeImage = deps?.probeImage ?? probeListingImage;
-  let query = supabase.from("shop_listings").select("id,title,description,selling_price,currency,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,inventory,orderable,tracking_available,shipping_cost,source_cost,contribution_profit,identity_method,identity_confidence,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons").or("published.eq.true,base_item_id.not.is.null,pipeline_status.eq.selected");
-  if (listingIds && listingIds.length > 0) query = query.in("id", Array.from(new Set(listingIds)));
-  const { data: listings, error } = await query.order("base_item_id", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }).limit(limit);
-  const evidencedListings = await attachSupplierCommercialEvidence(supabase, listings ?? []);
+  let query = supabase.from("shop_listings").select("id,title,description,selling_price,currency,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,source_cost,contribution_profit,identity_method,identity_confidence,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons");
+  if (listingIds && listingIds.length > 0) {
+    // Explicit admin retries can target an exact listing regardless of its
+    // current publication status.
+    query = query.in("id", Array.from(new Set(listingIds)));
+  } else {
+    // Do not repeatedly select the same already-reconciled BASE items. That
+    // starved never-published listings because existing base_item_id rows were
+    // always ordered first and occupied every limited batch.
+    query = query.or([
+      "and(published.eq.true,base_publication_status.is.null)",
+      "and(published.eq.true,base_publication_status.neq.published)",
+      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.is.null)",
+      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.neq.published)",
+      "and(pipeline_status.eq.selected,base_item_id.is.null)",
+      "and(base_item_id.is.null,base_last_error.like.base_create_id_persist_failed:*)",
+    ].join(","));
+  }
+  const safeLimit = Math.min(15, Math.max(1, Math.floor(Number.isFinite(limit) ? limit : 10)));
+  const { data: listings, error } = await query.order("created_at", { ascending: true }).limit(safeLimit);
   if (error) throw new Error(error.message);
+  const evidencedListings = await attachSupplierCommercialEvidence(supabase, listings ?? []);
 
+  const linkedSupplierIds = await (deps?.linkedSupplierListingIds ?? getLinkedSupplierListingIds)((listings ?? []).map((listing) => listing.supplier_listing_id));
+  const identityUnlinkedIds = new Set((listings ?? [])
+    .filter((listing) => !listing.supplier_listing_id || !linkedSupplierIds.has(String(listing.supplier_listing_id)))
+    .map((listing) => String(listing.id)));
   const results: BasePublicationResult["results"] = [];
-  const handled = new Set<string>();
+  let unpublishFailed = 0;
+
+  // Mark unlinked catalog rows blocked before any downstream publication work.
+  if (identityUnlinkedIds.size > 0) {
+    const now = new Date().toISOString();
+    const { error: blockError } = await supabase.from("shop_listings").update({
+      published: false,
+      orderable: false,
+      published_at: null,
+      pipeline_stage: "BLOCKED",
+      pipeline_status: "blocked",
+      pipeline_reason: "supplier_identity_unlinked",
+      pipeline_updated_at: now,
+      updated_at: now,
+    }).in("id", [...identityUnlinkedIds]);
+    if (blockError) throw new Error(`supplier_identity_block_failed:${blockError.message}`);
+  }
 
   // Hide stale BASE items immediately. Do not spend Gemini time translating
   // listings that TRACER has already blocked/unpublished.
   for (const listing of evidencedListings) {
-    if (!listing.base_item_id || listing.published === true) continue;
-    const listingId = String(listing.id);
-    handled.add(listingId);
+    const isIdentityUnlinked = identityUnlinkedIds.has(String(listing.id));
+    if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked)) continue;
+    if (listing.published !== true && ["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
     if (listing.selling_price === null || !Number.isFinite(Number(listing.selling_price)) || Number(listing.selling_price) <= 0) {
-      const retryError = await recordBaseRetry(supabase, listingId, "base_hide_price_unknown", "base_hide_price_unknown");
-      results.push({ listingId, ok: false, error: retryError ? "base_hide_price_unknown_db_update_failed" : "base_hide_price_unknown" });
+      unpublishFailed += 1;
+      const retryError = await recordBaseRetry(supabase, String(listing.id), "base_hide_price_unknown", "base_hide_price_unknown");
+      results.push({ listingId: String(listing.id), ok: false, error: retryError ? "base_hide_price_unknown_db_update_failed" : "base_hide_price_unknown" });
       continue;
     }
     try {
@@ -110,28 +156,35 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         visible: false,
       });
       const hidden = await supabase.from("shop_listings").update({
-        base_publication_status: "published",
+        published: false,
+        orderable: false,
+        published_at: null,
+        base_publication_status: "failed",
         base_publication_lease_until: null,
-        base_last_error: null,
-        pipeline_stage: "BASE_RECONCILED",
+        base_last_error: isIdentityUnlinked ? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden",
+        pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
-        pipeline_reason: "tracer_unpublished",
+        pipeline_reason: isIdentityUnlinked ? "supplier_identity_unlinked" : "tracer_unpublished",
         pipeline_updated_at: new Date().toISOString(),
-      }).eq("id", listingId);
+        updated_at: new Date().toISOString(),
+      }).eq("id", String(listing.id));
       if (hidden.error) {
-        await recordBaseRetry(supabase, listingId, "base_hide_succeeded_db_update_failed", hidden.error.message);
-        results.push({ listingId, ok: false, error: "base_hide_succeeded_db_update_failed" });
+        await recordBaseRetry(supabase, String(listing.id), "base_hide_succeeded_db_update_failed", hidden.error.message);
+        results.push({ listingId: String(listing.id), ok: false, error: "base_hide_succeeded_db_update_failed" });
         continue;
       }
-      results.push({ listingId, ok: true, baseItemId: String(listing.base_item_id) });
+      results.push({ listingId: String(listing.id), ok: true, baseItemId: String(listing.base_item_id), hidden: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const retryError = await recordBaseRetry(supabase, listingId, "base_hide_failed", message);
-      results.push({ listingId, ok: false, error: retryError ? "base_hide_failed_db_update_failed" : message });
+      const retryError = await recordBaseRetry(supabase, String(listing.id), "base_hide_failed", message);
+      results.push({ listingId: String(listing.id), ok: false, error: retryError ? "base_hide_failed_db_update_failed" : message });
+      // A rejected/expired BASE token will fail every item in this batch; stop
+      // immediately to avoid hammering the API while credentials are repaired.
+      if (/アクセストークンが無効|invalid_request|BASE OAuth refresh HTTP 4\d\d/i.test(message)) break;
     }
   }
 
-  const activeListings = evidencedListings.filter((listing) => !listing.base_item_id || listing.published === true);
+  const activeListings = evidencedListings.filter((listing) => !identityUnlinkedIds.has(String(listing.id)) && !["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? "")) && (!listing.base_item_id || listing.published === true));
   // Generate Japanese copy concurrently only for listings that can remain visible.
   // spend the full serverless timeout waiting on Gemini one listing at a time.
   const copyResults = await Promise.all(activeListings.map(async (listing) => {
@@ -154,11 +207,45 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
 
   for (const listing of evidencedListings) {
     const listingId = String(listing.id);
-    if (handled.has(listingId)) continue;
+    // Already-hidden BASE items were reconciled above; do not process them a
+    // second time as missing-copy failures or overwrite their reconciliation reason.
+    if (identityUnlinkedIds.has(listingId) || ["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? "")) || (listing.base_item_id && listing.published !== true)) continue;
     const copyResult = copyByListingId.get(listingId);
     if (!copyResult?.copy) {
       const message = copyResult?.error ?? "japanese_catalog_copy_required";
+      // Fail closed for existing BASE items too: a catalog validation failure
+      // must not leave a previously visible product available for purchase.
+      if (listing.base_item_id) {
+        try {
+          await editItem({
+            itemId: String(listing.base_item_id),
+            title: "販売停止中の商品",
+            detail: "商品情報を再確認しているため、一時的に販売を停止しています。",
+            price: Number(listing.selling_price ?? 0),
+            stock: 0,
+            visible: false,
+          });
+        } catch (hideError) {
+          const hideMessage = hideError instanceof Error ? hideError.message : String(hideError);
+          await supabase.from("shop_listings").update({
+            published: false,
+            orderable: false,
+            base_last_error: `${message};base_hide_failed:${hideMessage}`.slice(0, 2000),
+            pipeline_stage: "BASE_RECONCILIATION",
+            pipeline_status: "failed",
+            pipeline_reason: "base_hide_failed_after_catalog_validation",
+            pipeline_error: hideMessage.slice(0, 2000),
+            pipeline_updated_at: new Date().toISOString(),
+          }).eq("id", listingId);
+          results.push({ listingId, ok: false, error: "base_hide_failed_after_catalog_validation" });
+          continue;
+        }
+      }
       await supabase.from("shop_listings").update({
+        published: false,
+        orderable: false,
+        base_publication_status: listing.base_item_id ? "published" : "blocked",
+        base_publication_lease_until: null,
         base_last_error: message,
         pipeline_stage: "BASE_PUBLICATION",
         pipeline_status: "blocked",
@@ -178,7 +265,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       && listing.pipeline_reason === SALES_TEST_GATE_PASSED
       && selection.includes(SALES_TEST_GATE_PASSED)
       && isJapaneseProductTitle(catalogCopy.title);
-    const salesToken = hasPassedSalesTestGate({ ...listing, title: catalogCopy.title } as Parameters<typeof hasPassedSalesTestGate>[0]) || hasSelectedGate;
+    const salesToken = hasPassedSalesTestGate({ ...listing, title: catalogCopy.title, normalized_title: catalogCopy.title } as Parameters<typeof hasPassedSalesTestGate>[0]) || hasSelectedGate;
     const imageReachable = await probeImage(String(listing.image_url ?? ""));
     const channel = evaluateShopListingRecord(listing as unknown as Record<string, unknown>, imageReachable, {
       title: catalogCopy.title,
@@ -188,14 +275,14 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const visibility = channelVisibilityForSalesGate(listing.base_item_id ? String(listing.base_item_id) : null, channel.eligible);
     if (visibility !== "publish") {
       if (visibility === "hide") {
-        const price = Number(listing.selling_price);
-        if (!Number.isFinite(price) || price <= 0) {
+        const hidePrice = Number(listing.selling_price);
+        if (!Number.isFinite(hidePrice) || hidePrice <= 0) {
           const retryError = await recordBaseRetry(supabase, listingId, "base_hide_price_unknown", "base_hide_price_unknown");
           results.push({ listingId, ok: false, error: retryError ? "base_hide_price_unknown_db_update_failed" : "base_hide_price_unknown" });
           continue;
         }
         try {
-          await editItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price, stock: 0, visible: false });
+          await editItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price: hidePrice, stock: 0, visible: false });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           const retryError = await recordBaseRetry(supabase, listingId, "base_hide_failed", message);
@@ -275,7 +362,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
 
     const shippingCost = listing.shipping_cost === null || listing.shipping_cost === undefined ? null : Number(listing.shipping_cost);
-    if (shippingCost === null || !Number.isFinite(shippingCost) || shippingCost < 0) {
+    if (shippingCost === null || !Number.isFinite(shippingCost) || shippingCost <= 0) {
       if (listing.base_item_id) {
         try { await editItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price, stock: 0, visible: false }); }
         catch (error) {
@@ -331,25 +418,65 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       }
     }
 
+    let baseItemId = listing.base_item_id ? String(listing.base_item_id) : null;
+    const recoveryMarker = String(listing.base_last_error ?? "").match(/^base_create_id_persist_failed:([^:]+)(?::|$)/);
+    if (!baseItemId && recoveryMarker?.[1]) baseItemId = recoveryMarker[1];
+
     try {
-      let baseItemId = listing.base_item_id ? String(listing.base_item_id) : null;
+      if (!listing.base_item_id && recoveryMarker?.[1] && baseItemId) {
+        // Recover the exact ID returned by BASE before any retry can create another item.
+        const { error: recoveryError } = await supabase.from("shop_listings").update({
+          base_item_id: baseItemId,
+          base_publication_status: "creating",
+          base_publication_lease_until: leaseUntil,
+          base_last_error: null,
+        }).eq("id", listingId);
+        if (recoveryError) throw new Error(`base_create_id_recovery_failed:${recoveryError.message}`);
+      }
       if (baseItemId) {
         await editItem({ itemId: baseItemId, title: catalogCopy.title, detail: catalogCopy.detail, price, stock: availableInventory, visible: true });
       } else {
-        const created = await createItem({ title: catalogCopy.title, detail: catalogCopy.detail, price, stock: availableInventory, visible: true });
+        const created = await createItem({ title: catalogCopy.title, identifier: `TRC-${listingId}`, detail: catalogCopy.detail, price, stock: availableInventory, visible: true });
         baseItemId = String(created.item_id ?? created.item?.item_id ?? "");
         if (!baseItemId) throw new Error("BASE create response missing item_id");
         const { error: persistIdError } = await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_publication_status: "creating", base_publication_lease_until: leaseUntil }).eq("id", listingId);
-        if (persistIdError) throw new Error(persistIdError.message);
+        if (persistIdError) throw new Error(`base_create_id_persist_failed:${baseItemId}:${persistIdError.message}`);
       }
       if (listing.image_url) await addImage({ itemId: baseItemId, imageNo: 1, imageUrl: listing.image_url });
-      await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_published_at: new Date().toISOString(), base_publication_status: "published", base_publication_lease_until: null, base_last_error: null, pipeline_stage: "BASE_PUBLISHED", pipeline_status: "published", pipeline_reason: "sales_test_gate_passed", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
+      const { error: finalizeError } = await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_published_at: new Date().toISOString(), base_publication_status: "published", base_publication_lease_until: null, base_last_error: null, pipeline_stage: "BASE_PUBLISHED", pipeline_status: "published", pipeline_reason: "sales_test_gate_passed", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
+      if (finalizeError) throw new Error(`base_publication_finalize_failed: ${finalizeError.message}`);
       results.push({ listingId, ok: true, baseItemId });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await supabase.from("shop_listings").update({ base_last_error: message, pipeline_stage: "BASE_PUBLICATION", pipeline_status: "failed", pipeline_reason: "base_publish_failed", pipeline_error: message, pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
-      results.push({ listingId, ok: false, error: message });
+      const createIdPersistFailure = message.match(/^base_create_id_persist_failed:([^:]+):([\s\S]*)$/);
+      const recoveryStillNeeded = !listing.base_item_id && recoveryMarker?.[1] && message.startsWith("base_create_id_recovery_failed:");
+      const safeErrorMarker = createIdPersistFailure
+        ? `base_create_id_persist_failed:${createIdPersistFailure[1]}:${createIdPersistFailure[2]}`.slice(0, 2000)
+        : recoveryStillNeeded
+          ? String(listing.base_last_error).slice(0, 2000)
+          : message.slice(0, 2000);
+      const { error: failureWriteError } = await supabase.from("shop_listings").update({
+        base_last_error: safeErrorMarker,
+        base_publication_status: "failed",
+        base_publication_lease_until: null,
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "failed",
+        pipeline_reason: createIdPersistFailure || recoveryStillNeeded ? "base_create_id_recovery_required" : "base_publish_failed",
+        pipeline_error: message.slice(0, 2000),
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      const reportedError = failureWriteError
+        ? `${message};failure_marker_write_failed:${failureWriteError.message}`
+        : message;
+      results.push({ listingId, ok: false, error: reportedError });
     }
   }
-  return { attempted: listings?.length ?? 0, published: results.filter((r) => r.ok && r.baseItemId).length, skipped: results.filter((r) => r.skipped).length, failed: results.filter((r) => !r.ok && !r.skipped).length, results };
+  return {
+    attempted: listings?.length ?? 0,
+    published: results.filter((r) => r.ok && r.baseItemId && !r.hidden).length,
+    hidden: results.filter((r) => r.ok && r.hidden).length,
+    skipped: results.filter((r) => r.skipped).length,
+    failed: unpublishFailed + results.filter((r) => !r.ok && !r.skipped).length,
+    results,
+  };
 }

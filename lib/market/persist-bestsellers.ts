@@ -31,7 +31,19 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
   canonicalVariantEvidenceWriteFailures: number;
   skippedMarketplaces: string[];
   /** Per-marketplace detail-page enrichment telemetry (see collect-bestsellers.ts). */
-  enrichment: Array<{ marketplace: string; attempted: number; htmlFetched: number; identifierFound: number }>;
+  enrichment: Array<{
+    marketplace: string;
+    attempted: number;
+    htmlFetched: number;
+    identifierFound: number;
+    canonicalVariantCount: number;
+    jsonLdNodeCount: number;
+    productGroupCount: number;
+    groupsWithVariantCount: number;
+    variantProductNodeCount: number;
+    absoluteTypeIriCount: number;
+    brightDataConfigured: boolean;
+  }>;
   /** Exact bestseller row IDs inserted by this run; downstream stages must use these IDs. */
   bestsellerIds: string[];
   /** Exact current-run rows carrying at least one verified marketplace identifier. */
@@ -42,9 +54,15 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
   nextIndex: number;
   hasMore: boolean;
 }> {
-  const sourceIndex = Math.max(0, options.sourceIndex ?? 0);
-  const collected = await collectMarketplaceBestsellers({ sourceIndex });
-  const startIndex = Math.max(0, options.startIndex ?? 0);
+  const requestedSourceIndex = Math.max(0, options.sourceIndex ?? 0);
+  const collected = await collectMarketplaceBestsellers({ sourceIndex: requestedSourceIndex });
+  // The collector may skip empty/challenge pages and succeed on a later source.
+  // Persist that effective index so the next cursor resumes where real items were found.
+  const sourceIndex = collected.sourceIndex;
+  const requestedStartIndex = Math.max(0, options.startIndex ?? 0);
+  // A fallback to another source must start at that source's first item, not
+  // reuse an offset from the empty source that was originally requested.
+  const startIndex = sourceIndex === requestedSourceIndex ? requestedStartIndex : 0;
   const batchSize = Math.max(1, options.batchSize ?? 50);
   const endIndex = startIndex + batchSize;
   let collectionIndex = 0;
@@ -60,7 +78,7 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
   const seenMarketplaceIdentityKeys = new Map<string, Set<string>>();
   const skippedMarketplaces = collected.marketplaces
     .filter((item) => item.skipped)
-    .map((item) => item.marketplace);
+    .map((item) => `${item.source}:${item.reason ?? "skipped"}`);
 
   for (const marketplace of collected.marketplaces) {
     for (const item of marketplace.items) {

@@ -27,6 +27,21 @@ export async function GET(request: Request) {
 
   const entries = {
     products: count(db, "products"),
+    // Supplier-investigation diagnostics: distinguish an empty source catalog
+    // from identity mismatches and from candidates merely waiting in the queue.
+    marketplace_bestsellers: count(db, "marketplace_bestsellers"),
+    marketplace_bestsellers_pending: count(db, "marketplace_bestsellers", (q) => q.eq("pipeline_status", "pending")),
+    marketplace_bestsellers_failed: count(db, "marketplace_bestsellers", (q) => q.eq("pipeline_status", "failed")),
+    marketplace_bestsellers_blocked: count(db, "marketplace_bestsellers", (q) => q.eq("pipeline_status", "blocked")),
+    marketplace_bestsellers_with_strict_identifier: count(db, "marketplace_bestsellers", (q) =>
+      q.or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null,mpn.not.is.null,asin.not.is.null")),
+    marketplace_bestseller_variants: count(db, "marketplace_bestseller_variants"),
+    internal_supply_products: count(db, "internal_supply_products"),
+    internal_supply_products_active: count(db, "internal_supply_products", (q) => q.eq("active", true)),
+    internal_supply_variants: count(db, "internal_supply_variants"),
+    internal_supply_variants_active_orderable_stocked: count(db, "internal_supply_variants", (q) =>
+      q.eq("active", true).eq("orderable", true).gt("inventory", 0)),
+    internal_supply_links: count(db, "internal_supply_links"),
     supplier_listings: count(db, "supplier_listings"),
     supplier_listings_orderable: count(db, "supplier_listings", (q) => q.eq("orderable", true)),
     supplier_listings_unconfigured_placeholders: count(db, "supplier_listings", (q) => q.eq("configured", false)),

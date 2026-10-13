@@ -80,7 +80,17 @@ export function getFoundationStatus(): FoundationStatus {
     gemini: present(readEnv("GEMINI_API_KEY")),
     brightData: present(readEnv("BRIGHTDATA_API_TOKEN")),
     brightDataMcp: present(readEnv("BRIGHTDATA_MCP_API_KEY")),
-    shopify: present(readEnv("SHOPIFY_STORE_DOMAIN")) && (present(readEnv("SHOPIFY_ADMIN_ACCESS_TOKEN")) || (present(readEnv("SHOPIFY_CLIENT_ID")) && present(readEnv("SHOPIFY_CLIENT_SECRET")))),
+    shopify: (() => {
+      const hasStaticToken = present(readEnv("SHOPIFY_ADMIN_ACCESS_TOKEN"));
+      const hasClientCredentials = present(readEnv("SHOPIFY_CLIENT_ID")) && present(readEnv("SHOPIFY_CLIENT_SECRET"));
+      const mode = readEnv("SHOPIFY_AUTH_MODE");
+      const modeValid = mode === "client_credentials"
+        ? hasClientCredentials
+        : mode === "static_admin_token"
+          ? hasStaticToken
+          : !mode && (hasStaticToken !== hasClientCredentials);
+      return present(readEnv("SHOPIFY_STORE_DOMAIN")) && modeValid;
+    })(),
     metaAds: present(readEnv("META_ACCESS_TOKEN")),
     newfindInbound: (() => {
       const config = getNewfindConfig();
@@ -98,14 +108,21 @@ export function getFoundationStatus(): FoundationStatus {
     printful: present(readEnv("PRINTFUL_ACCESS_TOKEN")),
     ecPulse: present(readEnv("EC_PULSE_API_KEY")),
     extension: present(readEnv("TRACER_EXTENSION_API_KEY")),
-    base: present(readEnv("BASE_ACCESS_TOKEN")) ||
-      present(readEnv("BASE_REFRESH_TOKEN")),
+    base: present(readEnv("BASE_CLIENT_ID")) &&
+      present(readEnv("BASE_CLIENT_SECRET")) &&
+      present(readEnv("BASE_REFRESH_TOKEN")) &&
+      present(readEnv("BASE_REDIRECT_URI")),
   };
 }
 
 export function getGeminiConfig() {
   const apiKey = readEnv("GEMINI_API_KEY");
-  const model = readEnv("GEMINI_MODEL") || "gemini-2.5-flash";
+  const configuredModel = readEnv("GEMINI_MODEL");
+  // Gemini 2.5 Flash is no longer available to some new API projects.
+  // Migrate the legacy default and legacy explicit setting to the current stable model.
+  const model = !configuredModel || configuredModel === "gemini-2.5-flash"
+    ? "gemini-3.8-flash"
+    : configuredModel;
   return { apiKey, model };
 }
 
@@ -227,6 +244,7 @@ export function getShopifyConfig() {
     adminAccessToken: readEnv("SHOPIFY_ADMIN_ACCESS_TOKEN"),
     clientId: readEnv("SHOPIFY_CLIENT_ID"),
     clientSecret: readEnv("SHOPIFY_CLIENT_SECRET"),
+    authMode: readEnv("SHOPIFY_AUTH_MODE"),
     apiVersion: readEnv("SHOPIFY_API_VERSION") || "2026-07",
   };
 }

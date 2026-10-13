@@ -119,6 +119,15 @@ export async function selectAndPublishSalesTests(
   for (const row of bestsellers ?? []) {
     const bestseller = row as Record<string, unknown>;
     const reasons: string[] = [];
+    const sourceTitle = String(bestseller.title ?? '').normalize('NFKC').trim();
+    const womenPriority = womenProductPriority({ title: sourceTitle, category: String(bestseller.category ?? '') });
+    if (!womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
+    if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
+    if (reasons.length > 0) {
+      await markPipeline(String(bestseller.id), 'SALES_TEST', 'blocked', reasons.join(','));
+      rejected.push({ id: String(bestseller.id), reasons });
+      continue;
+    }
 
     if (bestseller.rank === null) reasons.push("rank_unknown");
     if (!bestseller.title) reasons.push("title_unknown");
@@ -241,6 +250,7 @@ export async function selectAndPublishSalesTests(
       sourceProvider: String(listing.supplier ?? "unknown"),
       internationalShipping: asNumber(listing.shipping_cost),
       domesticShipping: null,
+      requireDomesticShipping: true,
       shippingCurrency: typeof listing.currency === "string" ? listing.currency : null,
       sourceFxRateToSelling:
         typeof bestseller.currency === "string" && typeof listing.currency === "string" && bestseller.currency.trim().toUpperCase() === "JPY" && listing.currency.trim().toUpperCase() === "USD"

@@ -258,6 +258,8 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       addressComplete: addrComplete,
       killSwitchBlocked: killSwitch.blocked,
       supplierConfigured: isSupplierConfigured(String(shopListing.supplier_name ?? "").trim()),
+      supplierName: String(shopListing.supplier_name ?? listingRow.supplier ?? "").trim(),
+      supplierIdentityStatus: typeof listingRow.identity_status === "string" ? listingRow.identity_status : null,
       cjConfigured: false,
       liveOrderingEnabled: isSupplierLiveOrderingEnabled(String(shopListing.supplier_name ?? "").trim()),
       inventoryQty: typeof listingRow.inventory === "number" ? listingRow.inventory : null,
