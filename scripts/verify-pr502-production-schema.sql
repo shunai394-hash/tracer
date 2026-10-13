@@ -1,10 +1,11 @@
--- Read-only production schema check for PR #502 (run before merging).
+-- Read-only POST-MIGRATION schema verification for PR #502.
 -- Verifies each PR #502 migration by the structure it creates, not by its
 -- version name, because an equivalent object may exist under another version.
 -- Contains only SELECT statements: it creates, alters and deletes nothing.
+-- For pre-merge checks of existing prerequisites, use scripts/verify-pr502-premerge.sql.
 -- 20261013120000_remove_amazon_rakuten_market_data.sql is intentionally not
 -- checked here and must not be applied as part of this rollout.
--- Every row should report ok = true before PR #502 is merged.
+-- Run after the approved non-destructive migrations are applied; every row should report ok = true before enabling the new production paths.
 
 with
 expected_shop_listing_columns(column_name) as (
