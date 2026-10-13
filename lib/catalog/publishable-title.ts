@@ -18,6 +18,12 @@ const NON_PRODUCT_TITLE_MARKERS = [
 const GENERIC_CATALOG_TITLES = new Set([
   "バスルームマット",
   "キッチン用品",
+  "バッグ",
+  "ビューティーツール",
+  "ヘアアクセサリー",
+  "bag",
+  "beauty tools",
+  "hair accessories",
 ]);
 
 /**
