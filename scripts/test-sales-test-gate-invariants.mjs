@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { verifySalesTestGateInvariants } from "../lib/market/sales-test-gate.ts";
 import { verifyWomenPriorityInvariants } from "../lib/intelligence/womens-priority.ts";
+import { isPublishableCatalogTitle } from "../lib/catalog/publishable-title.ts";
 
 const checks = [
   ["sales test gate", verifySalesTestGateInvariants()],
@@ -23,5 +24,8 @@ const [profit, supplySelector, marketSelector] = await Promise.all([
 assert.match(profit, /requireDomesticShipping === true && args\.domesticShipping == null/);
 assert.match(profit, /unknown\("domestic_shipping_unknown"\)/);
 assert.match(supplySelector, /requireDomesticShipping: true/);
+assert.equal(isPublishableCatalogTitle("トレンド・seeded_dueアイテム"), false);
+assert.equal(isPublishableCatalogTitle("Aroma Filter"), true);
+assert.match(supplySelector, /product_master_title_not_publishable/);
 assert.match(marketSelector, /requireDomesticShipping: true/);
-console.log("fully costed publication guard: 4 assertions passed");
+console.log("fully costed publication and product-master guards: 7 assertions passed");
