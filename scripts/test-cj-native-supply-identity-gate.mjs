@@ -17,7 +17,9 @@ assert.ok(route.includes('if (!dryRun) {\n      await recoverStaleCronRun'), "dr
 assert.ok(route.includes('if (dryRun) {\n      return NextResponse.json({\n        ok: true,\n        dryRun: true,\n        noWrites: true'), "dry-run must return before downstream publication");
 assert.ok(route.includes('process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true"'), "live native CJ publication must be feature-flagged off by default");
 assert.ok(route.includes('const { data: nativeCjSupply, error: nativeCjSupplyError }'), "native CJ supply must be queried independently of marketplace identity");
+assert.ok(route.includes("const dryRunProductIds") && route.includes("]).slice(0, 100)") && route.includes("dryRun ? 50 : 400"), "dry-run selection must be bounded and prioritize native CJ evidence");
+assert.ok(workflow.includes("--max-time 90") && workflow.includes("request_timeout_or_no_response"), "workflow must report dry-run timeouts without dropping the auth report");
 assert.ok(route.includes('.eq("shipping_status", "verified")') && route.includes('.eq("price_confirmed", true)') && route.includes('.eq("api_available", true)'), "native CJ query requires verified shipping, price and API evidence");
 assert.ok(workflow.includes('$BASE/api/cron/sales-test-publication?dryRun=true'), "production workflow must run a no-write supply dry run");
 assert.ok(workflow.includes('"app/api/cron/sales-test-publication/route.ts"'), "route changes must trigger production diagnostics after deployment");
-console.log("CJ-native supply identity and no-write dry-run regression: 16 assertions passed");
+console.log("CJ-native supply identity and no-write dry-run regression: 18 assertions passed");
