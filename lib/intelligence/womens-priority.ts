@@ -1,5 +1,5 @@
 const WOMEN_FOCUSED_PATTERNS = [
-  { pattern: /handbag|crossbody bag|tote bag|shoulder bag|レディースバッグ|ハンドバッグ|ショルダーバッグ|トートバッグ|斜めがけ/i, tier: "core" as const, priority: 1 },
+  { pattern: /handbag|crossbody bag|tote bag|shoulder bag|women'?s bag|womens bag|ladies bag|レディースバッグ|ハンドバッグ|ショルダーバッグ|トートバッグ|斜めがけ/i, tier: "core" as const, priority: 1 },
   { pattern: /beauty tool|beauty device|gua sha|face roller|cleansing brush|makeup brush|led beauty mask|nail lamp|nail drill|nail art|manicure|pedicure|美容ツール|美顔器|美顔|美容機器|フェイスローラー|かっさ|洗顔ブラシ|メイクブラシ|ネイル/i, tier: "core" as const, priority: 2 },
   { pattern: /hair care|haircare|hair brush|scalp massager|hair oil|heatless curls|hair dryer|hair curler|curling iron|hair straightener|hair clips?(?!per)\b|hair claw|hair removal|ヘアケア|ヘアブラシ|頭皮|ヘアオイル|ヘアドライヤー|ヘアアイロン|ヘアクリップ|バンスクリップ|ヘアアクセ|脱毛/i, tier: "core" as const, priority: 3 },
   { pattern: /beauty|skincare|skin care|serum|moisturizer|sunscreen|cosmetic|makeup|lipstick|lip gloss|blush|mascara|eyelash|eyeliner|化粧水|美容液|乳液|日焼け止め|コスメ|メイク|リップ|マスカラ|アイライナー/i, tier: "core" as const, priority: 4 },
