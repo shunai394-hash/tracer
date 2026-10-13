@@ -5,7 +5,7 @@ import { recoverStaleCronRun, writeCronLedger } from "@/lib/ops/cron-lock";
 import { assessCountedCronResult } from "@/lib/ops/publication-cron-report";
 import type { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
-const MARKET_SOURCING_BATCH_SIZE = 200;
+const MARKET_SOURCING_BATCH_SIZE = 10;
 
 export async function executeMarketSourcingCron(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
@@ -124,14 +124,16 @@ export async function executeMarketSourcingCron(
       hasMore: observation.hasMore,
       enrichment: observation.enrichment,
       supplierCandidateCount: observation.supplierCandidateIds.length,
+      skippedMarketplaces: observation.skippedMarketplaces,
+      failedMarketplaces: observation.failedMarketplaces,
       canonicalVariantEvidenceParsed: observation.canonicalVariantEvidenceParsed,
       canonicalVariantEvidenceWritten: observation.canonicalVariantEvidenceWritten,
       canonicalVariantEvidenceWriteFailures: observation.canonicalVariantEvidenceWriteFailures,
       canonicalVariantEvidenceStatus: canonicalVariantEvidenceStatus,
-      failed: observation.canonicalVariantEvidenceWriteFailures + observation.skippedMarketplaces.length,
+      failed: observation.canonicalVariantEvidenceWriteFailures + observation.failedMarketplaces.length,
     };
 
-    const workFailed = observation.canonicalVariantEvidenceWriteFailures + observation.skippedMarketplaces.length;
+    const workFailed = observation.canonicalVariantEvidenceWriteFailures + observation.failedMarketplaces.length;
     const preliminary = assessCountedCronResult({ processed: observation.inserted, failed: workFailed });
     const ledger = await writeCronLedger(supabase, cronRunId, {
       status: preliminary.cronStatus,
