@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { dedupeGoogleTrendItems } from "@/lib/intelligence/google-trends-dedupe";
+import { buildGoogleTrendObservationKey, dedupeGoogleTrendItems } from "@/lib/intelligence/google-trends-dedupe";
 
 const GOOGLE_TRENDS_RSS =
   "https://trends.google.com/trending/rss?geo=JP";
@@ -168,6 +168,7 @@ export async function collectGoogleTrendsDemand() {
   // budget when Supabase was under load.
   const observedAt = new Date().toISOString();
   const rows = productTrends.map((trend) => ({
+    idempotency_key: buildGoogleTrendObservationKey(sourceId, trend.title, observedAt),
     product_id: null,
     source_id: sourceId,
     signal_type: "search_volume",
@@ -184,10 +185,15 @@ export async function collectGoogleTrendsDemand() {
     },
   }));
 
-  const { error } = await supabase.from("demand_observations").insert(rows);
+  const { data: insertedRows, error } = await supabase
+    .from("demand_observations")
+    .upsert(rows, { onConflict: "idempotency_key", ignoreDuplicates: true })
+    .select("id");
   if (error) {
     throw new Error(`Failed to insert Google Trends observations: ${error.message}`);
   }
+  const inserted = insertedRows?.length ?? 0;
+  const alreadyObserved = rows.length - inserted;
 
   for (const trend of productTrends) {
     console.log("[google-trends-title]", JSON.stringify(trend.title));
@@ -198,6 +204,7 @@ export async function collectGoogleTrendsDemand() {
     fetched: trends.length,
     productRelevant: productRelevantTrends.length,
     duplicatesSkipped,
-    inserted: rows.length,
+    alreadyObserved,
+    inserted,
   };
 }
