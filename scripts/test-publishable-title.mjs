@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "../lib/catalog/publishable-title.ts";
 import { localizeProductDescription, localizeProductTitle } from "../lib/intelligence/japanese-product.ts";
+import { womenMerchandisingPriority } from "../lib/intelligence/womens-priority.ts";
 
 const cases = [
   ["ordinary Japanese product title", "折りたたみ収納ボックス", true],
@@ -39,6 +40,14 @@ assert.match(localizeProductDescription("Bohemian Beach Vacation Flower Hair Cli
 const shopify = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
 const base = await readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8");
 const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
+const selector = await readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8");
+const priorityCases = [
+  ["bag", womenMerchandisingPriority({ title: "レディース ショルダーバッグ" }), 3],
+  ["beauty tool", womenMerchandisingPriority({ title: "美顔器・美容ツール" }), 2],
+  ["hair accessory", womenMerchandisingPriority({ title: "フラワー ヘアクリップ" }), 1],
+  ["unrelated", womenMerchandisingPriority({ title: "潤滑部品" }), 0],
+];
+for (const [name, actual, expected] of priorityCases) assert.equal(actual, expected, `merchandising priority: ${name}`);
 assert.match(shopify, /isPublishableCatalogTitle\(row\.title\)/, "Shopify sync must enforce publishable title guard");
 assert.match(shopify, /catalog_title_not_publishable/, "Shopify sync must report title block reason");
 assert.match(shopify, /isPublishableCatalogDescription\(row\.description\)/, "Shopify sync must reject generic descriptions");
@@ -51,4 +60,7 @@ assert.match(base, /identityUnlinkedIds\.has\(listingId\).*base_last_error.*list
 assert.match(store, /isPublishableCatalogTitle\(listing\.title\)/, "storefront must filter invalid titles");
 assert.match(store, /isPublishableCatalogDescription\(listing\.description\)/, "storefront must filter generic descriptions");
 assert.match(store, /listing title failed catalog quality gate/, "order placement must revalidate title quality");
-console.log(`Catalog title/description quality tests: ${cases.length} cases + 13 channel wiring checks passed.`);
+assert.match(selector, /genericTitlePattern\.test\(supplierTitle\) \|\| genericTitlePattern\.test\(canonicalTitle\)/, "selector must reject generic supplier and canonical titles independently");
+assert.match(selector, /domestic_shipping_unknown_or_invalid/, "unknown domestic delivery cost must block candidate selection");
+assert.match(selector, /womenMerchandisingPriority/, "candidate ordering must apply the requested category priority");
+console.log(`Catalog title/description quality tests: ${cases.length} cases + 13 channel wiring checks + ${priorityCases.length} merchandising priority cases passed.`);
