@@ -199,7 +199,14 @@ export async function GET(request: Request) {
           String(listing.supplier_product_id ?? ""),
           variantId,
         );
-        const inventory = inventoryResult?.quantity ?? null;
+        const observedQuantity = inventoryResult?.quantity;
+        // Inventory is a discrete count. Missing, negative, NaN, or infinite
+        // quantities are treated as unverified rather than written to DB/channel.
+        const inventory = typeof observedQuantity === "number"
+          && Number.isFinite(observedQuantity)
+          && observedQuantity >= 0
+          ? Math.floor(observedQuantity)
+          : null;
         const now = new Date().toISOString();
 
         if (inventory === null) {
