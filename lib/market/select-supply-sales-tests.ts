@@ -92,13 +92,14 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   const eligible: Array<{ productId: string; listing: Record<string, unknown>; base: Record<string, unknown>; intelligence: Record<string, unknown>; profit: ReturnType<typeof simulateContributionProfit>; quality: number }> = [];
   for (const productId of uniqueProductIds) {
     const reasons: string[] = []; const intelligence = intelligenceByProduct.get(productId); const base = baseByProduct.get(productId); const listing = listingByProduct.get(productId);
-    const sourceTitle = (typeof listing?.title === "string" && listing.title.trim()
-      ? listing.title
-      : typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
+    const supplierTitle = (typeof listing?.title === "string" ? listing.title : "").normalize("NFKC").trim();
+    const canonicalTitle = (typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
+    const sourceTitle = supplierTitle || canonicalTitle;
     const sourceMetadata = base?.metadata && typeof base.metadata === 'object' && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
-    const womenPriority = womenProductPriority({ title: sourceTitle, category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
+    const womenPriority = womenProductPriority({ title: [supplierTitle, canonicalTitle].filter(Boolean).join(" "), category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
     if (base && !womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
-    if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
+    const genericTitlePattern = /(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i;
+    if (genericTitlePattern.test(supplierTitle) || genericTitlePattern.test(canonicalTitle)) reasons.push('generic_non_merchandisable_title');
     if (!intelligence) reasons.push("opportunity_intelligence_missing"); if (!base) reasons.push("product_intelligence_missing"); if (!listing) reasons.push("supplier_listing_missing");
     if (reasons.length > 0) { rejected.push({ productId, reasons }); continue; }
     if (!intelligence || !base || !listing) { rejected.push({ productId, reasons: ["required_supply_intelligence_missing"] }); continue; }
@@ -138,6 +139,11 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
 
     const sourceFxRateToSelling = num(metadata.fx_rate) ?? observedFx?.rate ?? null;
     const sourceFxRateSource = num(metadata.fx_rate) !== null ? "supplier_listing_metadata" : (observedFx?.source ?? null);
+    // Do not silently treat an unknown domestic delivery cost as zero. It must
+    // be supplied in JPY from the canonical product metadata before margin can
+    // authorize selection/publication.
+    const domesticShippingJpy = num(metadata.domestic_shipping_jpy);
+    if (domesticShippingJpy === null || domesticShippingJpy < 0) reasons.push("domestic_shipping_unknown_or_invalid");
     const profit = simulateContributionProfit({
       sellingPrice,
       sellingCurrency: "JPY",
@@ -146,7 +152,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
       sourceCurrency: typeof listing.currency === "string" ? listing.currency : "USD",
       sourceProvider: String(listing.supplier ?? "unknown"),
       internationalShipping: shippingCost,
-      domesticShipping: null,
+      domesticShipping: domesticShippingJpy,
       shippingCurrency: typeof listing.currency === "string" ? listing.currency : "USD",
       sourceFxRateToSelling,
       sourceFxRateSource: sourceFxRateSource ?? undefined,
