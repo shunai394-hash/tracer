@@ -92,11 +92,14 @@ export async function POST(request: Request) {
       .in("id", supplierListingIds);
     if (supplierRowsError) throw new Error(supplierRowsError.message);
     const supplierById = new Map((supplierRows ?? []).map((row) => [String(row.id), row]));
+    const requestedBySupplierListing = new Map<string, number>();
     for (const [index, item] of items.entries()) {
       const listing = bySku.get(skus[index]);
       const supplier = listing?.supplier_listing_id ? supplierById.get(listing.supplier_listing_id) : null;
       const quantity = n(item.quantity);
       const inventory = n(supplier?.inventory);
+      const sourceCost = n(supplier?.cost);
+      const shippingCost = n(supplier?.shipping_cost);
       const valid =
         Boolean(listing && supplier) &&
         supplier?.identity_status === "linked" &&
@@ -112,13 +115,38 @@ export async function POST(request: Request) {
         String(supplier?.supplier_variant_id) === String(listing?.supplier_variant_id) &&
         String(supplier?.product_id ?? "") === String(listing?.product_id ?? "") &&
         Number.isFinite(quantity) && quantity! > 0 &&
-        Number.isFinite(inventory) && inventory! >= quantity!;
+        Number.isFinite(inventory) && inventory! > 0 &&
+        Number.isFinite(sourceCost) && sourceCost! > 0 &&
+        Number.isFinite(shippingCost) && shippingCost! >= 0;
       if (!valid) {
         return NextResponse.json({
           ok: true,
           blocked: true,
           reason: "supplier_fulfillment_gate_failed",
           sku: skus[index],
+        });
+      }
+      const supplierListingId = String(listing!.supplier_listing_id);
+      requestedBySupplierListing.set(
+        supplierListingId,
+        (requestedBySupplierListing.get(supplierListingId) ?? 0) + quantity!,
+      );
+    }
+    // Aggregate duplicate lines for the same canonical supplier row. Checking
+    // each line separately would let two quantities individually pass while
+    // their combined quantity oversells the confirmed inventory.
+    for (const [supplierListingId, requestedQuantity] of requestedBySupplierListing) {
+      const supplier = supplierById.get(supplierListingId);
+      const inventory = n(supplier?.inventory);
+      if (inventory === null || requestedQuantity > inventory) {
+        const sku = resolvedListings.find((listing) => listing.supplier_listing_id === supplierListingId)
+          ? skus[resolvedListings.findIndex((listing) => listing.supplier_listing_id === supplierListingId)]
+          : undefined;
+        return NextResponse.json({
+          ok: true,
+          blocked: true,
+          reason: "supplier_inventory_insufficient",
+          ...(sku ? { sku } : {}),
         });
       }
     }
