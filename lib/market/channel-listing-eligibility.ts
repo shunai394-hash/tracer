@@ -1,5 +1,6 @@
 import { isJapaneseProductDescription, isJapaneseProductTitle } from "../intelligence/japanese-product.ts";
 import { cjSellabilityBlockReasons, isClosedSupplierFulfillment } from "../procurement/cj-fulfillment-gate.ts";
+import { CJ_NATIVE_IDENTITY_METHOD } from "../procurement/cj-native-identity.ts";
 
 export type ChannelListingEligibilityInput = {
   title: unknown;
@@ -93,7 +94,11 @@ export function evaluateChannelListingEligibility(input: ChannelListingEligibili
   if (!trimmedSupplierId(input.supplierVariantId)) reasons.push("supplier_variant_unknown");
   const identityMethod = typeof input.identityMethod === "string" ? input.identityMethod.trim().toLowerCase() : "";
   const identifierGrade = new Set(["asin", "jan", "gtin", "ean", "upc", "mpn", "brand_mpn", "tracer_catalog"]);
-  if (!input.identityLinked || !identifierGrade.has(identityMethod)) reasons.push("identity_not_confirmed");
+  // A CJ-native proof identifies the exact CJ variant only, so it counts for
+  // CJ supply alone and never as cross-marketplace identity.
+  const cjNativeProof = identityMethod === CJ_NATIVE_IDENTITY_METHOD
+    && String(input.supplierName ?? "").trim().toLowerCase() === "cj";
+  if (!input.identityLinked || !(identifierGrade.has(identityMethod) || cjNativeProof)) reasons.push("identity_not_confirmed");
   const confidence = finite(input.identityConfidence);
   if (confidence === null || confidence < 0.88) reasons.push("identity_confidence_low");
 

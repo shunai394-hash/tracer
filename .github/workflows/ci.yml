@@ -58,6 +58,8 @@ jobs:
         run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-supplier-order-safety.mjs
       - name: Test CJ order adapter contract (mocked CJ HTTP, no real orders)
         run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-cj-order-adapter.mjs
+      - name: Test CJ-native identity proof (mocked CJ reads, no writes to CJ)
+        run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-cj-native-identity.mjs
       - name: Test internal supply retry lifecycle
         run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-internal-link-retry-lifecycle.mjs
       - name: Set up disposable local PostgreSQL for integration tests
