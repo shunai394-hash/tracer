@@ -141,7 +141,9 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
     );
   } catch (error) {
     console.error("[shopify-live-stock-unavailable]", error instanceof Error ? error.message.slice(0, 300) : String(error));
-    return [];
+    // Keep eligible catalog cards visible using the last inventory-refresh snapshot.
+    // Checkout still requires a successful live Shopify stock check before creating an order.
+    return listings;
   }
 
   const staleSoldOut = listings.filter((listing) => {
