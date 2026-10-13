@@ -2,10 +2,11 @@ import { isSupplierIdentityEligible } from "../lib/catalog/supplier-identity-pol
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [shopify, basePublisher, identity, shopifyRoute, baseRoute, vercel] = await Promise.all([
+const [shopify, basePublisher, identity, identityPolicy, shopifyRoute, baseRoute, vercel] = await Promise.all([
   readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/catalog/canonical-supplier-identity.ts", import.meta.url), "utf8"),
+  readFile(new URL("../lib/catalog/supplier-identity-policy.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/cron/shopify-publish/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/cron/base-publish/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../vercel.json", import.meta.url), "utf8"),
@@ -41,10 +42,10 @@ assert.match(shopifyRoute, /syncPublishedListingsToShopify\(150\)/);
 assert.match(baseRoute, /publishPublishedListingsToBase\(50\)/);
 assert.match(shopify, /getExactlyEligibleSupplierListingIds/);
 assert.match(basePublisher, /getExactlyEligibleSupplierListingIds/);
-assert.match(identity, /sourceProductId === canonicalProductId/);
-assert.match(identity, /sourceSupplierProductId === listingSupplierProductId/);
-assert.match(identity, /sourceVariantId === listingVariantId/);
-assert.match(identity, /sourceCurrency === sellingCurrency/);
+assert.match(identityPolicy, /sourceProductId === canonicalProductId/);
+assert.match(identityPolicy, /sourceSupplierProductId === listingSupplierProductId/);
+assert.match(identityPolicy, /sourceVariantId === listingVariantId/);
+assert.match(identityPolicy, /sourceCurrency === sellingCurrency/);
 assert.match(identity, /candidateGroup.length !== 1/);
 assert.match(shopify, /supplier_variant_missing/);
 assert.match(shopify, /supplier_product_missing/);
