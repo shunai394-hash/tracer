@@ -7,6 +7,7 @@ import { writeEvidence } from "@/lib/market/evidence-ledger";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -118,7 +119,7 @@ export async function selectAndPublishSalesTests(
     const sourceTitle = String(bestseller.title ?? '').normalize('NFKC').trim();
     const womenPriority = womenProductPriority({ title: sourceTitle, category: String(bestseller.category ?? '') });
     if (!womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
-    if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
+    if (!isPublishableCatalogTitle(sourceTitle) || /(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
     if (reasons.length > 0) {
       await markPipeline(String(bestseller.id), 'SALES_TEST', 'blocked', reasons.join(','));
       rejected.push({ id: String(bestseller.id), reasons });
@@ -237,6 +238,10 @@ export async function selectAndPublishSalesTests(
       reasons.push("supplier_variant_unknown");
     }
 
+    const bestsellerMetadata = bestseller.metadata && typeof bestseller.metadata === "object" && !Array.isArray(bestseller.metadata) ? bestseller.metadata as Record<string, unknown> : {};
+    const domesticShippingJpy = asNumber(bestsellerMetadata.domestic_shipping_jpy);
+    if (domesticShippingJpy === null || domesticShippingJpy < 0) reasons.push("domestic_shipping_unknown_or_invalid");
+
     const profit = simulateContributionProfit({
       sellingPrice: isInternalSupply ? asNumber(listing.catalog_sale_price) : asNumber(bestseller.price),
       sellingCurrency: isInternalSupply ? (typeof listing.currency === "string" ? listing.currency : null) : (typeof bestseller.currency === "string" ? bestseller.currency : null),
@@ -245,7 +250,7 @@ export async function selectAndPublishSalesTests(
       sourceCurrency: typeof listing.currency === "string" ? listing.currency : null,
       sourceProvider: String(listing.supplier ?? "unknown"),
       internationalShipping: asNumber(listing.shipping_cost),
-      domesticShipping: null,
+      domesticShipping: domesticShippingJpy,
       shippingCurrency: typeof listing.currency === "string" ? listing.currency : null,
       sourceFxRateToSelling:
         typeof bestseller.currency === "string" && typeof listing.currency === "string" && bestseller.currency.trim().toUpperCase() === "JPY" && listing.currency.trim().toUpperCase() === "USD"
