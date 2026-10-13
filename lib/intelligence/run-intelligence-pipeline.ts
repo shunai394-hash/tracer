@@ -439,7 +439,7 @@ export async function runIntelligencePipeline(options: {
       };
     }
     return { ...observation, cursor, nextCursor: next };
-  }, { budgetMs: 25_000 });
+  }, { budgetMs: 40_000 });
   steps.push(bestsellerStep);
 
   // A deferred/retryable stage can still carry raw candidate IDs. Only
