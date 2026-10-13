@@ -31,11 +31,30 @@ const tables = [
 const counts = [];
 for (const table of tables) counts.push(await count(table));
 
-const { data: listings, error: listingError } = await supabase
-  .from("shop_listings")
-  .select("id,currency,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id,published,orderable,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,title,description,image_url,selling_price,source_cost,shipping_cost,contribution_profit,inventory,tracking_available,identity_method,identity_confidence,shopify_product_id,shopify_variant_id,base_item_id")
-  .limit(2000);
-if (listingError) throw new Error(listingError.code ?? "shop_listings_query_failed");
+const listingColumns = "id,currency,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id,published,orderable,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,title,description,image_url,selling_price,source_cost,shipping_cost,contribution_profit,inventory,tracking_available,identity_method,identity_confidence,shopify_product_id,shopify_variant_id,base_item_id";
+const maxListingRows = 100_000;
+const listingCount = counts.find((entry) => entry.table === "shop_listings");
+if (!listingCount || typeof listingCount.count !== "number") {
+  throw new Error("shop_listings_count_unavailable");
+}
+if (listingCount.count > maxListingRows) {
+  throw new Error("shop_listings_read_only_reconcile_safety_limit_exceeded");
+}
+
+// Walk every row deterministically; a single .limit(2000) silently omitted
+// older rows from the external-ID audit once the catalog grew beyond 2,000.
+const listings = [];
+const listingPageSize = 1000;
+for (let offset = 0; offset < maxListingRows; offset += listingPageSize) {
+  const { data: page, error: listingError } = await supabase
+    .from("shop_listings")
+    .select(listingColumns)
+    .order("id", { ascending: true })
+    .range(offset, Math.min(offset + listingPageSize, maxListingRows) - 1);
+  if (listingError) throw new Error(listingError.code ?? "shop_listings_query_failed");
+  listings.push(...(page ?? []));
+  if (!page || page.length < listingPageSize) break;
+}
 
 const evidenced = await attachSupplierCommercialEvidence(supabase, listings ?? []);
 const shopifyKeys = uniqueRowsByKey(evidenced, (row) => typeof row.shopify_variant_id === "string" ? row.shopify_variant_id : null);
