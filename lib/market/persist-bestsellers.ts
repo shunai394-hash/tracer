@@ -42,6 +42,7 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
     groupsWithVariantCount: number;
     variantProductNodeCount: number;
     absoluteTypeIriCount: number;
+    brightDataConfigured: boolean;
   }>;
   /** Exact bestseller row IDs inserted by this run; downstream stages must use these IDs. */
   bestsellerIds: string[];
