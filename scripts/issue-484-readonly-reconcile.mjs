@@ -312,6 +312,13 @@ for (const row of external.filter((item) => item.base_item_id)) {
         ? Number(livePriceValue)
         : null;
     const livePrice = Number.isFinite(parsedLivePrice) ? parsedLivePrice : null;
+    const liveVisible = typeof item.visible === "boolean"
+      ? item.visible
+      : item.visible === 1 || item.visible === "1"
+        ? true
+        : item.visible === 0 || item.visible === "0"
+          ? false
+          : null;
     const expectedInventory = typeof row.inventory === "number"
       ? row.inventory
       : typeof row.inventory === "string" && row.inventory.trim()
@@ -330,13 +337,13 @@ for (const row of external.filter((item) => item.base_item_id)) {
     const inventoryMatches = Number.isFinite(expectedInventory) && liveStock !== null
       ? expectedInventory === liveStock
       : null;
-    const visibilityDisagreement = typeof item.visible === "boolean"
-      ? item.visible !== (row.published === true)
-      : null;
+    const visibilityDisagreement = liveVisible === null
+      ? null
+      : liveVisible !== (row.published === true);
     base.push({
       listingId: row.id,
       found: true,
-      visible: item.visible ?? null,
+      visible: liveVisible,
       dbPublished: row.published === true,
       dbOrderable: row.orderable === true,
       liveStock,
@@ -366,7 +373,8 @@ console.log(JSON.stringify({
   shopify,
   baseReconciliation: {
     linkedRows: base.length,
-    readFailures: base.filter((row) => row.state && row.state !== "read_failed" && row.state !== "access_token_absent_refresh_not_attempted" && !row.found).length,
+    readFailures: base.filter((row) => row.state && row.state !== "access_token_absent_refresh_not_attempted").length,
+    notAttempted: base.filter((row) => row.state === "access_token_absent_refresh_not_attempted").length,
     visibleButDbBlocked: base.filter((row) => row.visible === true && row.dbPublished === false).length,
     hiddenButDbPublished: base.filter((row) => row.visible === false && row.dbPublished === true).length,
     priceMismatch: base.filter((row) => row.priceMatches === false).length,
