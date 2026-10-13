@@ -54,6 +54,19 @@ export function reconcileBaseIds(dbRows, allBaseRows, visibleBaseRows) {
   const dbIdsForHiddenBaseItems = [...uniqueDbIds]
     .filter((id) => allBaseIdSet.has(id) && !visibleBaseIdSet.has(id))
     .sort();
+  const uniqueDbRowByExternalId = new Map(
+    dbWithId
+      .filter((row) => !dbDuplicateSet.has(row.normalizedBaseId))
+      .map((row) => [row.normalizedBaseId, row]),
+  );
+  const dbPublishedButBaseHiddenIds = [...uniqueDbRowByExternalId.entries()]
+    .filter(([id, row]) => row.published === true && allBaseIdSet.has(id) && !visibleBaseIdSet.has(id))
+    .map(([id]) => id)
+    .sort();
+  const dbUnpublishedButBaseVisibleIds = [...uniqueDbRowByExternalId.entries()]
+    .filter(([id, row]) => row.published === false && visibleBaseIdSet.has(id) && !liveDuplicateSet.has(id))
+    .map(([id]) => id)
+    .sort();
 
   return {
     db: {
@@ -82,6 +95,10 @@ export function reconcileBaseIds(dbRows, allBaseRows, visibleBaseRows) {
       dbExternalIdsNotFoundInBaseList: dbIdsMissingFromBase,
       dbExternalIdsPresentButHiddenOnBase: dbIdsForHiddenBaseItems.length,
       dbExternalIdsPresentButHiddenOnBaseList: dbIdsForHiddenBaseItems,
+      dbPublishedButBaseHidden: dbPublishedButBaseHiddenIds.length,
+      dbPublishedButBaseHiddenIds,
+      dbUnpublishedButBaseVisible: dbUnpublishedButBaseVisibleIds.length,
+      dbUnpublishedButBaseVisibleIds,
       ambiguousDbExternalIdGroups: dbDuplicateIds.length,
       liveApiDuplicateExternalIdGroups: liveDuplicateIds.length,
     },
