@@ -6,18 +6,18 @@ const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts",
 const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
 const capabilityMap = await readFile(new URL("../components/capability-map.tsx", import.meta.url), "utf8");
 
-test("Amazon, Rakuten, and Yahoo Shopping ranking collection is disabled before any network fetch", () => {
-  assert.match(collector, /export const MARKETPLACE_SOURCING_ENABLED = false/);
-  assert.match(collector, /if \(!MARKETPLACE_SOURCING_ENABLED\)\s*\{\s*return \{ fetchedAt, marketplaces, itemCount: 0, sourceIndex: requestedSourceIndex \};\s*\}/);
-  const guardIndex = collector.indexOf("if (!MARKETPLACE_SOURCING_ENABLED)");
-  const fetchIndex = collector.indexOf("const collectedSources = await Promise.all");
-  assert.ok(guardIndex >= 0 && fetchIndex > guardIndex, "disabled guard must run before any source fetch");
+test("marketplace ranking collector contains no source URLs or fetch logic", () => {
+  assert.doesNotMatch(collector, /amazon\.co\.jp|ranking\.rakuten\.co\.jp|shopping\.yahoo\.co\.jp/i);
+  assert.doesNotMatch(collector, /fetch\(|fetchBrightDataPage|parseAmazon|parseRakuten|parseYahoo/);
+  assert.match(collector, /marketplaces: \[\]/);
+  assert.match(collector, /itemCount: 0/);
 });
 
-test("disabled ranking feeds do not defer the supplier-led intelligence pipeline", () => {
+test("ranking feeds cannot defer or feed the supplier-led intelligence pipeline", () => {
   assert.match(pipeline, /reason: "marketplace_ranking_sources_disabled_by_policy"/);
   assert.match(pipeline, /const bestsellerCanFeedSalesGate = false/);
   assert.doesNotMatch(pipeline, /persistMarketplaceBestsellers\(/);
+  assert.doesNotMatch(pipeline, /runStep\("bestsellers"/);
 });
 
 test("the product-facing system map describes supplier-led discovery, not marketplace rankings", () => {
