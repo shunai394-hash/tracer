@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { verifySalesTestGateInvariants } from "@/lib/market/sales-test-gate";
 import { verifyWomenPriorityInvariants } from "@/lib/intelligence/womens-priority";
+import { verifyProfitInvariants } from "@/lib/intelligence/simulate-profit";
 import { isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 
 const root = process.cwd();
@@ -46,6 +47,8 @@ const checks = [
   ["BASE publisher idempotent claim", "lib/channels/base-publisher.ts", "base_publication_claim_lost"],
   ["BASE publisher image contract", "lib/channels/base-publisher.ts", "imageNo: 1"],
   ["Supply sales selector", "lib/market/select-supply-sales-tests.ts", "evaluateSalesTestGate"],
+  ["Supply sales selector requires domestic shipping", "lib/market/select-supply-sales-tests.ts", "requireDomesticShipping: true"],
+  ["Market sales selector requires domestic shipping", "lib/market/select-sales-tests.ts", "requireDomesticShipping: true"],
   ["Market sales selector", "lib/market/select-sales-tests.ts", "SALES_TEST_GATE_PASSED"],
   ["CJ identity reverify", "lib/suppliers/reverify-cj-identity.ts", "variantBarcode"],
   ["CJ womens recovery priority", "lib/suppliers/reverify-cj-identity.ts", "womensSelected"],
@@ -80,6 +83,8 @@ const failures: string[] = [];
 if (titleFailures.length) failures.push(`publishable-title cases failed: ${titleFailures.join(", ")}`);
 const invariant = verifySalesTestGateInvariants();
 const womenInvariant = verifyWomenPriorityInvariants();
+const profitInvariant = verifyProfitInvariants();
+if (!profitInvariant.ok) failures.push(`profit invariants failed: ${JSON.stringify(profitInvariant.cases)}`);
 if (!womenInvariant.ok) failures.push(`women-priority invariants failed: ${JSON.stringify(womenInvariant.cases)}`);
 if (!invariant.ok) failures.push(`sales-test-gate invariants failed: ${JSON.stringify(invariant.cases)}`);
 for (const [name, relativePath, required] of checks) {
@@ -93,4 +98,4 @@ if (failures.length) {
   process.exit(1);
 }
 console.log("TRACER QUALITY GATE AUDIT: PASS");
-console.log(`Checked ${checks.length} critical publication/downstream paths plus ${invariant.cases.length} gate invariants.`);
+console.log(`Checked ${checks.length} critical publication/downstream paths plus ${invariant.cases.length + womenInvariant.cases.length + profitInvariant.cases.length} gate invariants.`);
