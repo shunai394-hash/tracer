@@ -61,8 +61,11 @@ export async function getExactlyLinkedSupplierListingIds(
     if (error) throw new Error(`supplier_identity_exact_lookup_failed:${error.message}`);
 
     for (const source of data ?? []) {
-      const listing = byId.get(String(source.id));
-      if (!listing || source.identity_status !== "linked") continue;
+      const candidateGroup = byId.get(String(source.id));
+      // A single supplier row must not validate multiple conflicting storefront
+      // mappings. Any repeated supplier_listing_id is ambiguous and blocked.
+      if (!candidateGroup || candidateGroup.length !== 1 || source.identity_status !== "linked") continue;
+      const listing = candidateGroup[0];
       const canonicalProductId = typeof listing.product_id === "string" ? listing.product_id.trim() : "";
       const sourceProductId = typeof source.product_id === "string" ? source.product_id.trim() : "";
       const listingSupplierProductId = typeof listing.supplier_product_id === "string" ? listing.supplier_product_id.trim() : "";
