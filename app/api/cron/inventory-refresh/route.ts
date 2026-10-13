@@ -203,57 +203,9 @@ export async function GET(request: Request) {
         const now = new Date().toISOString();
 
         if (inventory === null) {
-          const { error: listingError } = await supabase
-            .from("shop_listings")
-            .update({
-              inventory: null,
-              orderable: false,
-              pipeline_error: "Supplier variant stock could not be verified",
-              pipeline_updated_at: now,
-              updated_at: now,
-            })
-            .eq("id", listingId);
-          if (listingError) throw new Error(listingError.message);
-
-          if (listing.supplier_listing_id) {
-            const { error: supplierError } = await supabase
-              .from("supplier_listings")
-              .update({
-                inventory: null,
-                inventory_confirmed: false,
-                orderable: false,
-                fetched_at: now,
-              })
-              .eq("id", String(listing.supplier_listing_id));
-            if (supplierError) throw new Error(supplierError.message);
-          }
-
-          let baseSyncError: string | null = null;
-          if (listing.base_item_id && listing.selling_price !== null && isBaseConfigured()) {
-            try {
-              await editBaseItem({
-                itemId: String(listing.base_item_id),
-                title: String(listing.title ?? ""),
-                detail: String(listing.description ?? listing.title ?? ""),
-                price: Number(listing.selling_price),
-                stock: 0,
-                visible: false,
-              });
-              baseUpdated++;
-              await supabase.from("shop_listings").update({
-                base_last_error: null,
-              }).eq("id", listingId);
-            } catch (error) {
-              baseSyncError = error instanceof Error ? error.message : String(error);
-              baseErrors++;
-              await supabase.from("shop_listings").update({
-                base_last_error: baseSyncError,
-              }).eq("id", listingId);
-            }
-          }
-
-          const shopifySyncError = await stopShopifyListing(listing.shopify_product_id);
-          results.push({ listingId, ok: false, blocked: true, reason: "inventory_unknown", baseSyncError, shopifySyncError });
+          const reason = "inventory_unknown";
+          const stopped = await blockUnverifiedSupplierListing(listing, reason);
+          results.push({ listingId, ok: false, blocked: true, reason, ...stopped });
           continue;
         }
 
