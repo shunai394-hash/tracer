@@ -10,6 +10,7 @@ create table if not exists public.marketplace_bestsellers (
 \i supabase/migrations/20261010170000_marketplace_bestseller_variants.sql
 \i supabase/migrations/20261011110000_allow_amazon_child_asin_evidence.sql
 \i supabase/migrations/20261011123000_variant_is_variant_of_evidence.sql
+\i supabase/migrations/20261013040000_allow_amazon_variation_evidence.sql
 
 insert into public.marketplace_bestsellers(id, marketplace, title, source)
 values ('30000000-0000-4000-8000-000000000001', 'amazon.co.jp', 'Variant fixture parent', 'ci_fixture')
