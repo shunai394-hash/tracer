@@ -23,6 +23,29 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Test Issue 484 shared commerce gate and order identity
+        run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-issue-484-commerce.mjs
+      - run: npm run test:tracer-core
+      - name: Test Shopify order SKU mapping
+        run: npm run test:shopify-order-sku-mapping
+      - name: Test order gate profit invariants
+        run: npm run test:order-gate
+      - name: Test CJ quota exhaustion policy
+        run: npm run test:cj-quota-policy
+      - name: Test dropship order safety invariants
+        run: npm run test:dropship-order-gate
+      - name: Test autonomous order run-claim safety
+        run: npm run test:autonomous-order-claim
+      - name: Test Shopify order line-item pagination safety
+        run: npm run test:shopify-line-item-pagination
+      - name: Test sanitized provider diagnostics
+        run: npm run test:auth-diagnostics
+      - name: Test bounded product-intelligence scoring
+        run: npm run test:bounded-product-scoring
+      - name: Test bounded reorder recommendation writes
+        run: npm run test:bounded-reorder-recommendations
+      - name: Test bounded demand identity stamping
+        run: npm run test:bounded-identity-stamping
       - name: Set up disposable local PostgreSQL for integration tests
         run: |
           sudo apt-get update
@@ -30,8 +53,21 @@ jobs:
           sudo pg_ctlcluster 16 main start
           sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'ci-postgres-password';"
           sudo -u postgres createdb tracer_test
+          sudo -u postgres createdb tracer_ingestion_test
+          sudo -u postgres createdb tracer_variant_link_test
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
+      - run: node --experimental-strip-types --no-warnings scripts/test-deferred-bestseller-gate.mjs
+      - run: node scripts/test-canonical-variant-evidence-retry.mjs
+      - name: Test Amazon child variant recovery diagnostics
+        run: npm run test:amazon-child-variant-diagnostics
+      - name: Test Amazon child identifier fallback
+        run: node scripts/test-amazon-child-identifier-retry.mjs
+      - run: node --experimental-strip-types --no-warnings scripts/test-base-auth-retry-circuit.mjs
+      - run: node --experimental-strip-types --no-warnings scripts/test-publishable-title.mjs
+      - run: node --experimental-strip-types --no-warnings scripts/test-cj-query-fallback.mjs
+      - run: node --experimental-strip-types --no-warnings scripts/test-canonical-supplier-identity-gate.mjs
+      - run: node scripts/verify-cj-internal-supply-wiring.mjs
       - name: Run atomic catalog sync PostgreSQL integration tests (disposable CI database only)
         env:
           PGHOST: 127.0.0.1
@@ -48,6 +84,22 @@ jobs:
           PGPASSWORD: ci-postgres-password
           PGDATABASE: tracer_test
         run: psql -v ON_ERROR_STOP=1 -f scripts/test-canonical-variant-evidence.sql
+      - name: Run internal supply ingestion conflict-target tests (disposable CI database only)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: ci-postgres-password
+          PGDATABASE: tracer_ingestion_test
+        run: psql -v ON_ERROR_STOP=1 -f scripts/test-internal-supply-ingestion-conflicts.sql
+      - name: Run canonical supplier variant link migration tests (disposable CI database only)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: ci-postgres-password
+          PGDATABASE: tracer_variant_link_test
+        run: psql -v ON_ERROR_STOP=1 -f scripts/test-canonical-supplier-variant-links.sql
       - name: Run application internal supply retry lifecycle tests
         run: node --experimental-strip-types --no-warnings scripts/test-internal-link-retry-lifecycle.mjs
       - name: Run durable internal supply link retry queue tests (disposable CI database only)
