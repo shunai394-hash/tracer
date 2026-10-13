@@ -37,8 +37,12 @@ export function reconcileBaseIds(dbRows, allBaseRows, visibleBaseRows) {
   const allBaseIdSet = new Set(allBase.map((row) => row.normalizedBaseId));
   const visibleBaseIdSet = new Set(visibleBase.map((row) => row.normalizedBaseId));
   const liveDuplicateIds = duplicateGroups(allBase, (row) => row.normalizedBaseId);
-  const matchedVisibleIds = [...visibleBaseIdSet].filter((id) => uniqueDbIds.has(id));
-  const liveVisibleUnmatchedIds = [...visibleBaseIdSet].filter((id) => !uniqueDbIds.has(id)).sort();
+  const liveDuplicateSet = new Set(liveDuplicateIds.map((group) => group.id));
+  // A live BASE ID duplicated across records is ambiguous and must not count as a match.
+  const matchedVisibleIds = [...visibleBaseIdSet].filter((id) => uniqueDbIds.has(id) && !liveDuplicateSet.has(id));
+  const liveVisibleUnmatchedIds = [...visibleBaseIdSet]
+    .filter((id) => !uniqueDbIds.has(id) || liveDuplicateSet.has(id))
+    .sort();
   const dbIdsMissingFromBase = [...uniqueDbIds].filter((id) => !allBaseIdSet.has(id)).sort();
   const dbIdsForHiddenBaseItems = [...uniqueDbIds]
     .filter((id) => allBaseIdSet.has(id) && !visibleBaseIdSet.has(id))
