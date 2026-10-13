@@ -3,12 +3,23 @@ import { readFile } from "node:fs/promises";
 
 const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
 const gate = await readFile(new URL("../lib/intelligence/bestseller-sales-gate.ts", import.meta.url), "utf8");
+const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
 
-assert.ok(pipeline.includes("const sourceDoesNotProvideCanonicalChildVariants = observation.sourceIndex < 2"), "Yahoo/Rakuten source indices must be treated as observation-only for child-variant sales identity");
-assert.ok(pipeline.includes("retryable: !nonBlockingSourceCoverageSkip"), "unsupported variant evidence should not block unrelated pipeline stages");
-assert.ok(pipeline.includes('"source_has_no_canonical_child_variant_contract"'), "report the exact non-blocking source limitation");
-assert.ok(gate.includes("stage.ok && stage.skipped !== true && stage.retryable !== true"), "skipped source rows must never feed the sales gate");
-assert.ok(pipeline.includes("const bestsellerCanFeedSalesGate = canFeedSalesGate(bestsellerStep)"), "downstream sales matching must use the strict gate helper");
-assert.ok(pipeline.includes("retryable: bestsellerStep.retryable === true"), "dropship must inherit the source stage retryability instead of always deferring");
-assert.ok(pipeline.includes('"bestseller_source_has_no_canonical_child_variant_contract"'), "dropship must distinguish observation-only sources from retryable Amazon evidence");
-console.log("Marketplace canonical evidence policy: 7 assertions passed");
+// All marketplace-ranking sources are disabled. Tests must enforce that policy,
+// not the retired source-index-specific behavior.
+assert.ok(pipeline.includes('reason: "marketplace_ranking_sources_disabled_by_policy"'), "pipeline must explicitly skip marketplace ranking");
+assert.ok(pipeline.includes("const bestsellerCanFeedSalesGate = false"), "marketplace ranking results must never feed the sales gate");
+assert.ok(gate.includes("stage.ok && stage.skipped !== true && stage.retryable !== true"), "skipped or retryable stages must never feed the sales gate");
+assert.ok(collector.includes("marketplaces: []"), "collector must return no marketplace results");
+assert.ok(collector.includes("itemCount: 0"), "collector must report zero marketplace items");
+for (const forbidden of [
+  "amazon.co.jp",
+  "ranking.rakuten.co.jp",
+  "shopping.yahoo.co.jp",
+  "retryBrightDataWhenCanonicalVariantsMissing",
+  "hasAmazonVariantEvidence",
+  "fetch(",
+]) {
+  assert.equal(collector.includes(forbidden), false, `disabled collector must not contain ${forbidden}`);
+}
+console.log("Marketplace canonical evidence policy: disabled-source invariants passed");
