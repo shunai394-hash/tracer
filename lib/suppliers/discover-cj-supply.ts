@@ -52,7 +52,7 @@ const CATALOG_QUERIES = [
 const MAX_CATALOG_PAGES = 50;
 // Version the cursor because query order changed; don't reinterpret an old
 // index as a different category and silently skip the highest-priority searches.
-const CATALOG_CURSOR_JOB = "supply-first-catalog-cursor-v2";
+const CATALOG_CURSOR_JOB = "supply-first-catalog-cursor-v3";
 
 type CatalogCursor = { queryIndex: number; page: number };
 
