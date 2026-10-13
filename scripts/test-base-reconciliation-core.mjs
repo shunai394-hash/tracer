@@ -36,7 +36,9 @@ assert.equal(result.db.rowsWithValidBaseExternalId, 3);
 assert.equal(result.db.rowsWithoutValidBaseExternalId, 1);
 assert.equal(result.db.duplicateBaseExternalIdGroups, 1);
 assert.equal(result.reconciliation.visibleItemsMatchedToUniqueDbId, 1);
-assert.deepEqual(result.reconciliation.visibleItemIdsNotFoundInDb, ["200", "300"]);
+assert.deepEqual(result.reconciliation.visibleItemIdsNotFoundInDb, ["300"]);
+assert.deepEqual(result.reconciliation.visibleItemIdsWithAmbiguousDbId, ["200"]);
+assert.equal(result.reconciliation.visibleItemsWithAmbiguousDbId, 1);
 assert.deepEqual(result.reconciliation.dbExternalIdsNotFoundInBaseList, []);
 assert.deepEqual(result.reconciliation.dbExternalIdsPresentButHiddenOnBaseList, []);
 assert.equal(result.reconciliation.ambiguousDbExternalIdGroups, 1);
@@ -61,7 +63,9 @@ const duplicateLiveResult = reconcileBaseIds(
   ],
 );
 assert.equal(duplicateLiveResult.reconciliation.visibleItemsMatchedToUniqueDbId, 0);
-assert.deepEqual(duplicateLiveResult.reconciliation.visibleItemIdsNotFoundInDb, ["100"]);
+assert.deepEqual(duplicateLiveResult.reconciliation.visibleItemIdsNotFoundInDb, []);
+assert.deepEqual(duplicateLiveResult.reconciliation.visibleItemIdsWithAmbiguousBaseApiId, ["100"]);
+assert.equal(duplicateLiveResult.reconciliation.visibleItemsWithAmbiguousBaseApiId, 1);
 assert.equal(duplicateLiveResult.reconciliation.liveApiDuplicateExternalIdGroups, 1);
 
 console.log("BASE external-ID reconciliation unit tests passed");
