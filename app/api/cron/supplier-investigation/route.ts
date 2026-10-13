@@ -79,6 +79,7 @@ export async function GET(request: Request) {
         pipeline_updated_at: new Date().toISOString(),
       })
       .in("pipeline_status", ["pending", "failed"])
+      .not("marketplace", "in", '("amazon.co.jp","rakuten","yahoo_shopping")')
       .is("jan", null)
       .is("gtin", null)
       .is("ean", null)
@@ -100,6 +101,7 @@ export async function GET(request: Request) {
       .select("id,jan,gtin,ean,upc,mpn,asin,fetched_at")
       .in("pipeline_status", ["pending", "failed"])
       .or(IDENTIFIER_FILTER)
+      .not("marketplace", "in", '("amazon.co.jp","rakuten","yahoo_shopping")')
       .order("fetched_at", { ascending: false })
       .limit(queuePoolSize);
 
@@ -120,6 +122,7 @@ export async function GET(request: Request) {
         .eq("pipeline_status", "blocked")
         .lt("pipeline_updated_at", retryBefore)
         .or(IDENTIFIER_FILTER)
+        .not("marketplace", "in", '("amazon.co.jp","rakuten","yahoo_shopping")')
         .order("pipeline_updated_at", { ascending: true })
         .limit(Math.max(retrySlots * 5, 20));
 
