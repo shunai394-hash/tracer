@@ -8,7 +8,6 @@ create table if not exists public.marketplace_bestsellers (
 );
 
 \i supabase/migrations/20261010170000_marketplace_bestseller_variants.sql
-\i supabase/migrations/20261010170000_marketplace_bestseller_variants.sql
 \i supabase/migrations/20261011123000_variant_is_variant_of_evidence.sql
 
 insert into public.marketplace_bestsellers(id, marketplace, title, source)
