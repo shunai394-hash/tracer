@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { evaluateSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { womenMerchandisingPriority, womenProductPriority } from "@/lib/intelligence/womens-priority";
+import { isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 
@@ -99,7 +100,12 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const womenPriority = womenProductPriority({ title: [supplierTitle, canonicalTitle].filter(Boolean).join(" "), category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
     if (base && !womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
     const genericTitlePattern = /(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i;
-    if (genericTitlePattern.test(supplierTitle) || genericTitlePattern.test(canonicalTitle)) reasons.push('generic_non_merchandisable_title');
+    if (
+      genericTitlePattern.test(supplierTitle) ||
+      genericTitlePattern.test(canonicalTitle) ||
+      Boolean(supplierTitle && !isPublishableCatalogTitle(supplierTitle)) ||
+      Boolean(canonicalTitle && !isPublishableCatalogTitle(canonicalTitle))
+    ) reasons.push('generic_non_merchandisable_title');
     if (!intelligence) reasons.push("opportunity_intelligence_missing"); if (!base) reasons.push("product_intelligence_missing"); if (!listing) reasons.push("supplier_listing_missing");
     if (reasons.length > 0) { rejected.push({ productId, reasons }); continue; }
     if (!intelligence || !base || !listing) { rejected.push({ productId, reasons: ["required_supply_intelligence_missing"] }); continue; }
