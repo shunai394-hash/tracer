@@ -300,6 +300,16 @@ for (const row of external.filter((item) => item.base_item_id)) {
     }
     const body = await response.json();
     const item = body.item ?? body;
+    const returnedBaseId = item.item_id ?? item.id ?? null;
+    if (returnedBaseId === null || String(returnedBaseId) !== String(row.base_item_id)) {
+      base.push({
+        listingId: row.id,
+        state: "response_item_id_mismatch",
+        expectedItemId: String(row.base_item_id),
+        returnedItemId: returnedBaseId === null ? null : String(returnedBaseId),
+      });
+      continue;
+    }
     const expectedPrice = typeof row.selling_price === "number"
       ? row.selling_price
       : typeof row.selling_price === "string" && row.selling_price.trim()
