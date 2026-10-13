@@ -38,10 +38,17 @@ export function reconcileBaseIds(dbRows, allBaseRows, visibleBaseRows) {
   const visibleBaseIdSet = new Set(visibleBase.map((row) => row.normalizedBaseId));
   const liveDuplicateIds = duplicateGroups(allBase, (row) => row.normalizedBaseId);
   const liveDuplicateSet = new Set(liveDuplicateIds.map((group) => group.id));
-  // A live BASE ID duplicated across records is ambiguous and must not count as a match.
+  const dbAllIdSet = new Set(dbWithId.map((row) => row.normalizedBaseId));
+  // Keep true missing IDs separate from IDs that exist but are ambiguous.
   const matchedVisibleIds = [...visibleBaseIdSet].filter((id) => uniqueDbIds.has(id) && !liveDuplicateSet.has(id));
-  const liveVisibleUnmatchedIds = [...visibleBaseIdSet]
-    .filter((id) => !uniqueDbIds.has(id) || liveDuplicateSet.has(id))
+  const liveVisibleMissingDbIds = [...visibleBaseIdSet]
+    .filter((id) => !dbAllIdSet.has(id))
+    .sort();
+  const liveVisibleAmbiguousDbIds = [...visibleBaseIdSet]
+    .filter((id) => dbDuplicateSet.has(id))
+    .sort();
+  const liveVisibleAmbiguousBaseIds = [...visibleBaseIdSet]
+    .filter((id) => liveDuplicateSet.has(id))
     .sort();
   const dbIdsMissingFromBase = [...uniqueDbIds].filter((id) => !allBaseIdSet.has(id)).sort();
   const dbIdsForHiddenBaseItems = [...uniqueDbIds]
@@ -65,8 +72,12 @@ export function reconcileBaseIds(dbRows, allBaseRows, visibleBaseRows) {
     },
     reconciliation: {
       visibleItemsMatchedToUniqueDbId: matchedVisibleIds.length,
-      visibleItemsNotFoundInDb: liveVisibleUnmatchedIds.length,
-      visibleItemIdsNotFoundInDb: liveVisibleUnmatchedIds,
+      visibleItemsNotFoundInDb: liveVisibleMissingDbIds.length,
+      visibleItemIdsNotFoundInDb: liveVisibleMissingDbIds,
+      visibleItemsWithAmbiguousDbId: liveVisibleAmbiguousDbIds.length,
+      visibleItemIdsWithAmbiguousDbId: liveVisibleAmbiguousDbIds,
+      visibleItemsWithAmbiguousBaseApiId: liveVisibleAmbiguousBaseIds.length,
+      visibleItemIdsWithAmbiguousBaseApiId: liveVisibleAmbiguousBaseIds,
       dbExternalIdsNotFoundInBase: dbIdsMissingFromBase.length,
       dbExternalIdsNotFoundInBaseList: dbIdsMissingFromBase,
       dbExternalIdsPresentButHiddenOnBase: dbIdsForHiddenBaseItems.length,
