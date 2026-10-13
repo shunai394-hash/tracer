@@ -67,7 +67,12 @@ async function promoteGatePassedListings(selectedListingIds: string[]) {
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
-  const dryRun = new URL(request.url).searchParams.get("dryRun") === "true";
+  const searchParams = new URL(request.url).searchParams;
+  const dryRun = searchParams.get("dryRun") === "true";
+  const requestedDryRunLimit = Number(searchParams.get("limit") ?? 100);
+  const dryRunLimit = Number.isFinite(requestedDryRunLimit)
+    ? Math.max(1, Math.min(500, Math.floor(requestedDryRunLimit)))
+    : 100;
   const supabase = createSupabaseAdminClient();
   let cronRunId: string | null = null;
   const startedAt = Date.now();
@@ -146,7 +151,7 @@ export async function GET(request: Request) {
       ...nativeCjProductIds,
       ...(demandSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
       ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
-    ])).slice(0, 100);
+    ])).slice(0, dryRunLimit);
     const candidateProductIds = dryRun ? dryRunProductIds : verifiedSupplyIds;
     // Repair only the missing-intelligence subset for canonical supply. Do not
     // rebuild already-enriched products: this keeps the publication path bounded
