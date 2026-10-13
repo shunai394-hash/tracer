@@ -37,8 +37,8 @@ begin
    where id = p_variant_id and supply_product_id = p_product_id for update;
   if not found then return jsonb_build_object('ok', false, 'reason', 'variant_missing_or_wrong_owner'); end if;
 
-  if v_product.generation <> p_expected_product_generation
-     or v_variant.generation <> p_expected_variant_generation then
+  if v_product.generation is distinct from p_expected_product_generation
+     or v_variant.generation is distinct from p_expected_variant_generation then
     return jsonb_build_object('ok', false, 'reason', 'generation_conflict');
   end if;
 
