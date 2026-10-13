@@ -270,6 +270,7 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
     product_id: row.product_id,
     supplier_product_id: row.supplier_product_id,
     supplier_variant_id: row.supplier_variant_id,
+    selling_currency: row.currency,
   })));
   const reasonCounts: Record<string, number> = {};
   const rows = ((data ?? []) as Array<Listing & { shopify_sync_error?: string | null }>).map((rawRow) => {
