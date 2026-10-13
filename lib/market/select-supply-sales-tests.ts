@@ -3,7 +3,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { evaluateSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
-import { womenProductPriority } from "@/lib/intelligence/womens-priority";
+import { womenMerchandisingPriority, womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 
@@ -183,8 +183,17 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   }
 
   eligible.sort((a, b) => {
-    const womenA = womenProductPriority({ title: typeof a.base.normalized_title === "string" ? a.base.normalized_title : "", category: a.base.metadata && typeof a.base.metadata === "object" && !Array.isArray(a.base.metadata) && typeof (a.base.metadata as Record<string, unknown>).category === "string" ? String((a.base.metadata as Record<string, unknown>).category) : null });
-    const womenB = womenProductPriority({ title: typeof b.base.normalized_title === "string" ? b.base.normalized_title : "", category: b.base.metadata && typeof b.base.metadata === "object" && !Array.isArray(b.base.metadata) && typeof (b.base.metadata as Record<string, unknown>).category === "string" ? String((b.base.metadata as Record<string, unknown>).category) : null });
+    const titleA = String(a.listing.title ?? a.base.normalized_title ?? "");
+    const titleB = String(b.listing.title ?? b.base.normalized_title ?? "");
+    const metadataA = a.base.metadata && typeof a.base.metadata === "object" && !Array.isArray(a.base.metadata) ? a.base.metadata as Record<string, unknown> : {};
+    const metadataB = b.base.metadata && typeof b.base.metadata === "object" && !Array.isArray(b.base.metadata) ? b.base.metadata as Record<string, unknown> : {};
+    const categoryA = typeof metadataA.category === "string" ? metadataA.category : null;
+    const categoryB = typeof metadataB.category === "string" ? metadataB.category : null;
+    const merchandiseA = womenMerchandisingPriority({ title: titleA, category: categoryA });
+    const merchandiseB = womenMerchandisingPriority({ title: titleB, category: categoryB });
+    if (merchandiseB !== merchandiseA) return merchandiseB - merchandiseA;
+    const womenA = womenProductPriority({ title: titleA, category: categoryA });
+    const womenB = womenProductPriority({ title: titleB, category: categoryB });
     if (womenB.bonus !== womenA.bonus) return womenB.bonus - womenA.bonus;
     return b.quality - a.quality;
   });
