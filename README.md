@@ -59,38 +59,26 @@ npm run build
 
 ## Production market-to-publication pipeline
 
-TRACER separates **market observation** from **sourcing decisions**:
+TRACER separates **demand signals** from **supplier evidence**. Marketplace ranking collection from Amazon, Rakuten, and Yahoo!ショッピング is disabled. Demand discovery continues through Google Trends and supplier-direct discovery; a trend or product title is not proof that a specific supplier variant is orderable.
 
 ```text
-Amazon / Rakuten / Yahoo
+Google Trends / customer problem signals
         ↓
-market observation
+women's product opportunity scoring
         ↓
-verified marketplace identifiers
+direct CJ / Orosy supplier discovery
         ↓
-CJ supplier search
+canonical product identity + exact supplier variant
         ↓
-exact identity / variant confirmation
+fresh variant-level inventory + cost + Japan shipping
         ↓
-exact CJ variant
+image + order API + tracking verification
         ↓
-variant-level stock verification
+contribution-profit and sales-test gates
         ↓
-CJ CN → JP freight quote
+BASE / Shopify publication (only after all gates pass)
         ↓
-contribution-profit gate
-        ↓
-shop_listings.published = true
-        ↓
-/shop
-        ↓
-BASE publication
-        ↓
-BASE order polling
-        ↓
-TRACER fulfillment
-        ↓
-CJ supplier order (explicit live/auto switches)
+order polling → guarded supplier fulfillment
         ↓
 NEWFIND product_candidate
 ```
