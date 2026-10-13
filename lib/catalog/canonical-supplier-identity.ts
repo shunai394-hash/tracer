@@ -42,10 +42,13 @@ export type CanonicalSupplierIdentityCandidate = {
 export async function getExactlyLinkedSupplierListingIds(
   candidates: CanonicalSupplierIdentityCandidate[],
 ): Promise<Set<string>> {
-  const byId = new Map<string, CanonicalSupplierIdentityCandidate>();
+  const byId = new Map<string, CanonicalSupplierIdentityCandidate[]>();
   for (const candidate of candidates) {
     const id = typeof candidate.supplier_listing_id === "string" ? candidate.supplier_listing_id.trim() : "";
-    if (id) byId.set(id, candidate);
+    if (!id) continue;
+    const group = byId.get(id) ?? [];
+    group.push(candidate);
+    byId.set(id, group);
   }
   const ids = [...byId.keys()];
   if (ids.length === 0) return new Set();
