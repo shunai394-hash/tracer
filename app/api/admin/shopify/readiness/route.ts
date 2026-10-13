@@ -39,8 +39,15 @@ export async function GET(request: Request) {
   const womensMissingVariant = womensCandidates.filter((row) => !row.supplier_variant_id).length;
   const womensRecoverable = womensCandidates.filter((row) => row.supplier_product_id && row.verification_status !== "unavailable").length;
   const womensBlocked = womensCandidates.length - womensCanonicalReady.length;
+  const blockers = [
+      ...(!isShopifyConfigured() ? ["shopify_credentials_missing"] : []),
+      ...(live.length === 0 ? ["no_gate_passed_shopify_ready_listing"] : []),
+      ...(linkedCj.length === 0 ? ["no_canonical_linked_cj_supply"] : []),
+      ...(womensCanonicalReady.length === 0 && womensCandidates.length > 0 ? ["no_canonical_linked_womens_cj_supply"] : []),
+      ...(womensMissingVariant > 0 ? ["womens_supplier_variant_recovery_pending"] : []),
+  ];
   return NextResponse.json({
-    ok: true,
+    ok: blockers.length === 0,
     shopifyConfigured: isShopifyConfigured(),
     storefrontContract: "published + sales_test_gate_passed + shopify_synced + in_stock + orderable + trackable",
     shopListings: { inspected: rows.length, live: live.length, published: rows.filter((row) => row.published === true).length, shopifySynced: rows.filter((row) => row.shopify_sync_status === "synced").length },
@@ -52,12 +59,6 @@ export async function GET(request: Request) {
       womens: { candidates: womensCandidates.length, canonicalLinkedReady: womensCanonicalReady.length, blocked: womensBlocked, missingVariant: womensMissingVariant, recoverable: womensRecoverable },
     },
     reverify: recentReverify.data ?? [],
-    blockers: [
-      ...(!isShopifyConfigured() ? ["shopify_credentials_missing"] : []),
-      ...(live.length === 0 ? ["no_gate_passed_shopify_ready_listing"] : []),
-      ...(linkedCj.length === 0 ? ["no_canonical_linked_cj_supply"] : []),
-      ...(womensCanonicalReady.length === 0 && womensCandidates.length > 0 ? ["no_canonical_linked_womens_cj_supply"] : []),
-      ...(womensMissingVariant > 0 ? ["womens_supplier_variant_recovery_pending"] : []),
-    ],
+    blockers,
   }, { headers: { "Cache-Control": "no-store" } });
 }

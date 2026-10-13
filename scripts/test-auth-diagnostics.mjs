@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 
 const base = await readFile(new URL("../app/api/channels/base/diagnostics/route.ts", import.meta.url), "utf8");
 const shopify = await readFile(new URL("../app/api/admin/shopify/auth-check/route.ts", import.meta.url), "utf8");
+const readiness = await readFile(new URL("../app/api/admin/shopify/readiness/route.ts", import.meta.url), "utf8");
 const workflow = await readFile(new URL("../.github/workflows/tracer-shopify-auth-check.yml", import.meta.url), "utf8");
 const baseClient = await readFile(new URL("../lib/channels/base.ts", import.meta.url), "utf8");
 
@@ -30,5 +31,8 @@ assert.match(shopify, /probeShopifyAuth/);
 assert.match(shopify, /const scopeReady = adminApi\.ok === true[\s\S]*?adminApi\.missingScopes\.length === 0/);
 assert.match(shopify, /ok: shopifyProbe\.ok && scopeReady/);
 assert.match(shopify, /scopeReady,/);
+assert.match(readiness, /const blockers = \[/, "readiness must collect all blockers before responding");
+assert.match(readiness, /ok: blockers\.length === 0/, "readiness must not report ok when blockers exist");
+assert.match(readiness, /no_gate_passed_shopify_ready_listing/, "empty live listing state remains a readiness blocker");
 assert.ok(workflow.includes("api/channels/base/diagnostics"), "read-only auth workflow must include BASE diagnostics");
-console.log("Read-only channel auth diagnostics: 24 assertions passed");
+console.log("Read-only channel auth diagnostics: 27 assertions passed");
