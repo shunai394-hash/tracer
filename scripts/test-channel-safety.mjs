@@ -72,6 +72,14 @@ await test("channel gate rejects blank ids, non-JPY, non-positive profit, and un
   assert.ok(unconfirmed.reasons.includes("tracking_unavailable"));
 });
 
+await test("extreme inventory is held for supplier-side recheck without blocking ordinary stock", () => {
+  const normal = evaluateChannelListingEligibility(readyListing({ inventory: 1000 }));
+  assert.equal(normal.eligible, true);
+  const outlier = evaluateChannelListingEligibility(readyListing({ inventory: 14935 }));
+  assert.equal(outlier.eligible, false);
+  assert.ok(outlier.reasons.includes("inventory_outlier_requires_recheck"));
+});
+
 await test("inventory refresh and the storefront cannot restore a closed supplier from stock", () => {
   const restored = decideInventoryRefreshVisibility(readyListing({
     supplierName: "cj",
