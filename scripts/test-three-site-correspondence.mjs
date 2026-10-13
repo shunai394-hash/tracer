@@ -100,7 +100,7 @@ assert.ok(issuesFor([listing({ published: false, inventory: 0 })], [baseItem({ s
   assert.doesNotMatch(route, /createCJOrder|executeSupplierPurchaseOrder|createDropshipPurchaseOrders/, "the sync route must never order");
   const correspondence = await readFile(new URL("../app/api/admin/channels/correspondence/route.ts", import.meta.url), "utf8");
   assert.match(correspondence, /variants\(first: 30\).*pageInfo \{ hasNextPage \}/s, "correspondence must detect incomplete variant pages");
-  assert.match(correspondence, /node\.variants\.pageInfo\.hasNextPage[\s\S]*SHOPIFY_VARIANTS_INCOMPLETE/, "incomplete variant reads must fail closed");
+  assert.match(correspondence, /node\.variants\.pageInfo\.hasNextPage[\s\S]*SHOPIFY_TRACER_VARIANTS_INCOMPLETE/, "incomplete variant reads must fail closed");
   assert.match(route, /variants\(first: 30\).*pageInfo \{ hasNextPage \}/s, "single-product preflight must detect incomplete variant pages");
   assert.match(route, /data\.product\?\.variants\.pageInfo\.hasNextPage[\s\S]*SHOPIFY_VARIANTS_INCOMPLETE/, "single-product preflight must fail closed on incomplete variants");
   assert.doesNotMatch(correspondence, /\.(insert|update|upsert|delete)\(|createBaseItem|editBaseItem|productUpdate|productCreate/, "the correspondence table must be read-only");
