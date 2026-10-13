@@ -24,6 +24,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:tracer-core
+      - name: Test Google Trends feed deduplication
+        run: node --experimental-strip-types --no-warnings scripts/test-google-trends-dedupe.mjs
+      - name: Test Google Trends observation persistence contract
+        run: node --experimental-strip-types --no-warnings scripts/test-google-trends-persistence.mjs
       - name: Test Shopify order SKU mapping
         run: npm run test:shopify-order-sku-mapping
       - name: Test order gate profit invariants
@@ -53,6 +57,8 @@ jobs:
           sudo -u postgres createdb tracer_test
           sudo -u postgres createdb tracer_ingestion_test
           sudo -u postgres createdb tracer_variant_link_test
+          sudo -u postgres createdb tracer_demand_idempotency_test
+          sudo -u postgres createdb tracer_demand_concurrency_test
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-deferred-bestseller-gate.mjs
@@ -74,6 +80,22 @@ jobs:
           PGPASSWORD: ci-postgres-password
           PGDATABASE: tracer_test
         run: psql -v ON_ERROR_STOP=1 -f scripts/test-atomic-catalog-sync.sql
+      - name: Run demand observation idempotency migration tests (disposable CI database only)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: ci-postgres-password
+          PGDATABASE: tracer_demand_idempotency_test
+        run: psql -v ON_ERROR_STOP=1 -f scripts/test-demand-observation-idempotency.sql
+      - name: Run concurrent demand observation idempotency test (disposable CI database only)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: ci-postgres-password
+          PGDATABASE: tracer_demand_concurrency_test
+        run: bash scripts/test-demand-observation-concurrency.sh
       - name: Run canonical marketplace variant evidence migration tests (disposable CI database only)
         env:
           PGHOST: 127.0.0.1

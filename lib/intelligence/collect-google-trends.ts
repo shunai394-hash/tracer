@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { dedupeGoogleTrendItems, persistGoogleTrendObservations } from "@/lib/intelligence/google-trends-dedupe";
 
 const GOOGLE_TRENDS_RSS =
   "https://trends.google.com/trending/rss?geo=JP";
@@ -75,8 +76,9 @@ function extractItems(xml: string): TrendItem[] {
     const title = extractTag(item, "title");
     if (!title) continue;
     const traffic = parseTraffic(extractTag(item, "ht:approx_traffic"));
-    const publishedAt =
-      extractTag(item, "pubDate") ?? extractTag(item, "ht:picture");
+    // ht:picture is an image URL, not a publication timestamp.
+    // Keep missing pubDate as null rather than storing a misleading value.
+    const publishedAt = extractTag(item, "pubDate");
     items.push({ title, traffic, publishedAt });
   }
   return items;
@@ -113,7 +115,9 @@ export async function collectGoogleTrendsDemand() {
   if (trends.length === 0) {
     return { sourceId: null, fetched: 0, inserted: 0, skipped: true, reason: "google_trends_empty" };
   }
-  const productTrends = trends.filter((trend) => isProductDemandTrend(trend.title));
+  const productRelevantTrends = trends.filter((trend) => isProductDemandTrend(trend.title));
+  const productTrends = dedupeGoogleTrendItems(productRelevantTrends);
+  const duplicatesSkipped = productRelevantTrends.length - productTrends.length;
   if (productTrends.length === 0) {
     return {
       sourceId: null,
@@ -163,27 +167,20 @@ export async function collectGoogleTrendsDemand() {
   // one network/database request per trend item and could consume the patrol
   // budget when Supabase was under load.
   const observedAt = new Date().toISOString();
-  const rows = productTrends.map((trend) => ({
-    product_id: null,
-    source_id: sourceId,
-    signal_type: "search_volume",
-    value: trend.traffic,
-    unit: "searches_approx",
-    observed_at: observedAt,
-    metadata: {
-      query: trend.title,
-      original_query: trend.title,
-      country: "JP",
-      provider: "google_trends",
-      source_url: GOOGLE_TRENDS_RSS,
-      published_at: trend.publishedAt,
+  const persistence = await persistGoogleTrendObservations({
+    sourceId,
+    trends: productTrends,
+    observedAt,
+    sourceUrl: GOOGLE_TRENDS_RSS,
+    upsert: async (rows, options) => {
+      const result = await supabase
+        .from("demand_observations")
+        .upsert(rows, options)
+        .select("id");
+      return result;
     },
-  }));
-
-  const { error } = await supabase.from("demand_observations").insert(rows);
-  if (error) {
-    throw new Error(`Failed to insert Google Trends observations: ${error.message}`);
-  }
+  });
+  const { inserted, alreadyObserved } = persistence;
 
   for (const trend of productTrends) {
     console.log("[google-trends-title]", JSON.stringify(trend.title));
@@ -192,7 +189,9 @@ export async function collectGoogleTrendsDemand() {
   return {
     sourceId,
     fetched: trends.length,
-    productRelevant: productTrends.length,
-    inserted: rows.length,
+    productRelevant: productRelevantTrends.length,
+    duplicatesSkipped,
+    alreadyObserved,
+    inserted,
   };
 }
