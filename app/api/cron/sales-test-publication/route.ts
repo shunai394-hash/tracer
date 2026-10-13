@@ -67,8 +67,8 @@ async function promoteGatePassedListings(selectedListingIds: string[]) {
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
+  const dryRun = new URL(request.url).searchParams.get("dryRun") === "true";
   const searchParams = new URL(request.url).searchParams;
-  const dryRun = searchParams.get("dryRun") === "true";
   const requestedDryRunLimit = Number(searchParams.get("limit") ?? 100);
   const dryRunLimit = Number.isFinite(requestedDryRunLimit)
     ? Math.max(1, Math.min(500, Math.floor(requestedDryRunLimit)))
