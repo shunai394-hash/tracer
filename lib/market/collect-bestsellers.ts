@@ -6,9 +6,7 @@ import {
   isBrightDataConfigured,
 } from "@/lib/sources/brightdata/client";
 import {
-  parseAmazonBestsellersHtml,
   parseAmazonProductDetail,
-  parseRakutenRankingHtml,
   parseYahooProductDetail,
   parseYahooRankingHtml,
   type ParsedBestseller,
@@ -101,13 +99,6 @@ async function fetchHtml(url: string): Promise<string | null> {
 
   return null;
 }
-function enrichAmazon(item: ParsedBestseller): ParsedBestseller {
-  return {
-    ...item,
-    asin: item.asin ?? extractAsinFromUrl(item.productUrl),
-  };
-}
-
 export async function collectMarketplaceBestsellers(options: { sourceIndex?: number } = {}): Promise<{
   fetchedAt: string;
   marketplaces: CollectedMarketplace[];
@@ -174,19 +165,12 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
         continue;
       }
 
-      const items: ParsedBestseller[] =
-        source.marketplace === "amazon.co.jp"
-          ? parseAmazonBestsellersHtml(html).map(enrichAmazon)
-          : source.marketplace === "rakuten"
-            ? parseRakutenRankingHtml(html)
-            : parseYahooRankingHtml(html);
+      // The policy gate above returns before fetching any disabled marketplace.
+      // Only Yahoo Shopping can reach this parsing path.
+      const items: ParsedBestseller[] = parseYahooRankingHtml(html);
 
-      // Ranking/listing pages never carry a barcode themselves (Amazon,
-      // Rakuten and Yahoo all omit JAN from the grid view), so identity
-      // enrichment always requires a follow-up fetch of each item's own
-      // product page. Amazon and Yahoo!ショッピング both expose JAN on
-      // their detail pages; Rakuten does not reliably expose one and is
-      // left as-is rather than guessed at.
+      // Ranking pages do not carry authoritative supplier identity themselves.
+      // Any stronger identifier must come from the item's own detail page.
       //
       // Every collected item is enriched (not just the first few) —
       // whichever items happen to carry a real identifier must not depend
