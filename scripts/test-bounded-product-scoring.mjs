@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 
 const scoring = await readFile(new URL("../lib/intelligence/score-products.ts", import.meta.url), "utf8");
 const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
+const demandMatcher = await readFile(new URL("../lib/intelligence/match-demand-products.ts", import.meta.url), "utf8");
 
 // Keep scoring bounded so the full-catalog N+1 query pattern cannot return.
 assert.match(scoring, /const SCORE_BATCH_SIZE = 100/);
@@ -18,4 +19,11 @@ assert.match(pipeline, /runStep\("shopping_demand_sync", \(\) => syncShoppingDem
 assert.match(pipeline, /runStep\("demand", \(\) => inspectDemandObservations\(\), \{ budgetMs: 5_000 \}\)/);
 assert.match(pipeline, /runStep\("demand_analyze", \(\) => persistDemandIntelligence\(\), \{ budgetMs: 25_000 \}\)/);
 assert.match(pipeline, /runStep\("ordering", \(\) => persistReorderRecommendations\(\), \{ downstream: true, budgetMs: 15_000 \}\)/);
-console.log("Bounded scoring, demand-stage budgets, and reorder-stage budget: 10 assertions passed");
+
+// Persist provider quota exhaustion across patrol invocations so the five-minute
+// cron does not keep spending requests against an exhausted Gemini free-tier quota.
+assert.match(demandMatcher, /GEMINI_QUOTA_COOLDOWN_JOB = "gemini-intent-classifier-cooldown"/);
+assert.match(demandMatcher, /GEMINI_QUOTA_COOLDOWN_MS = 20 \* 60 \* 60 \* 1000/);
+assert.match(demandMatcher, /cooldownUntil/);
+assert.match(demandMatcher, /hasGeminiQuotaExhaustion\(error\)/);
+console.log("Bounded scoring, demand-stage budgets, reorder budget, and persistent Gemini cooldown: 14 assertions passed");
