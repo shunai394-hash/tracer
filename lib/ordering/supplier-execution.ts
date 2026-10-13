@@ -93,6 +93,33 @@ export async function reconcileUnknownSupplierAttempt(args: {
   return { supplierOrderId: row.id, reason: "supplier_order_reconciled_payment_pending" };
 }
 
+/**
+ * A rejected or unknown supplier order means this exact supplier variant can
+ * no longer be fulfilled with confidence. Stop selling it everywhere until it
+ * is re-verified: orderable=false and published=false let the Shopify and
+ * BASE syncs hide it on their next run.
+ */
+export async function stopListingSalesAfterSupplierFailure(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  args: { supplierProductId: string; supplierVariantId: string; reason: string },
+): Promise<{ ok: boolean; error: string | null }> {
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("shop_listings")
+    .update({
+      published: false,
+      orderable: false,
+      pipeline_stage: "BLOCKED",
+      pipeline_status: "blocked",
+      pipeline_reason: args.reason,
+      pipeline_updated_at: now,
+      updated_at: now,
+    })
+    .eq("supplier_product_id", args.supplierProductId)
+    .eq("supplier_variant_id", args.supplierVariantId);
+  return { ok: !error, error: error?.message ?? null };
+}
+
 function addressComplete(order: Record<string, unknown>): boolean | null {
   const fields = [
     order.shipping_country_code,
@@ -822,6 +849,11 @@ export async function executeSupplierPurchaseOrder(
         })
         .eq("id", attemptId),
     );
+    const listingStop = await stopListingSalesAfterSupplierFailure(supabase, {
+      supplierProductId,
+      supplierVariantId,
+      reason: "supplier_order_outcome_unknown",
+    });
 
     return {
       purchaseOrderId,
@@ -829,9 +861,10 @@ export async function executeSupplierPurchaseOrder(
       attempted: true,
       succeeded: false,
       supplierOrderId: null,
-      reason: failureWrite.ok
+      reason: (failureWrite.ok
         ? `supplier_order_outcome_unknown_manual_reconciliation_required:${message}`
-        : `supplier_order_outcome_unknown_and_attempt_state_write_failed_manual_reconciliation_required:${failureWrite.error}`,
+        : `supplier_order_outcome_unknown_and_attempt_state_write_failed_manual_reconciliation_required:${failureWrite.error}`)
+        + (listingStop.ok ? "" : `;listing_stop_failed:${listingStop.error}`),
       gate,
     };
   }
@@ -959,6 +992,11 @@ export async function executeSupplierPurchaseOrder(
       gate,
     };
   }
+  const listingStop = await stopListingSalesAfterSupplierFailure(supabase, {
+    supplierProductId,
+    supplierVariantId,
+    reason: classified.disposition === "explicit_rejection" ? "supplier_order_rejected" : "supplier_order_outcome_unknown",
+  });
 
   return {
     purchaseOrderId,
@@ -966,9 +1004,10 @@ export async function executeSupplierPurchaseOrder(
     attempted: true,
     succeeded: false,
     supplierOrderId: null,
-    reason: classified.disposition === "explicit_rejection"
+    reason: (classified.disposition === "explicit_rejection"
       ? `supplier_explicitly_rejected:${result.responseCode ?? "unknown"}`
-      : "supplier_order_outcome_unknown_manual_reconciliation_required",
+      : "supplier_order_outcome_unknown_manual_reconciliation_required")
+      + (listingStop.ok ? "" : `;listing_stop_failed:${listingStop.error}`),
     gate,
   };
 }

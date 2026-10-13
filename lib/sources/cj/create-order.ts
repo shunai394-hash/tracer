@@ -182,12 +182,19 @@ export async function createCJOrderV2(
 
   const payload = (await response.json().catch(() => null)) as CJCreateOrderResponse | null;
 
-  if (!response.ok || !payload) {
+  // A 5xx, timeout, throttle or unreadable body may still have created the
+  // order on CJ's side. Throw so the attempt is recorded as unknown and is
+  // never retried automatically; only a definite client error is a rejection.
+  const definiteRejection = response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429;
+  if (!payload || (!response.ok && !definiteRejection)) {
+    throw new CJRequestError(`CJ createOrderV2 outcome unknown (HTTP ${response.status})`);
+  }
+  if (!response.ok) {
     return {
       succeeded: false,
       supplierOrderId: null,
-      responseCode: String(response.status),
-      responseMessage: payload?.message ?? `HTTP ${response.status}`,
+      responseCode: `HTTP_${response.status}`,
+      responseMessage: payload.message ?? `HTTP ${response.status}`,
       raw: payload,
     };
   }

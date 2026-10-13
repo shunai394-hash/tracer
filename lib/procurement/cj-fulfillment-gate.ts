@@ -1,8 +1,10 @@
 /**
  * CJ and Super Delivery stay unsellable until an order, payment-confirmation,
- * and tracking path is actually connected. The registry refuses both names,
- * and createCJOrderV2 has no caller. Do not infer those capabilities from
- * inventory, freight, or a hardcoded flag.
+ * and tracking path is live. Super Delivery has no adapter. The CJ adapter is
+ * registered for verification and dry runs, but CJ live ordering is still
+ * hard-disabled, so a sale could not be fulfilled automatically. Lift this
+ * block only together with an approved CJ live-ordering change. Do not infer
+ * those capabilities from inventory, freight, or a hardcoded flag.
  */
 const CLOSED_SUPPLIERS = new Set([
   "cj",
