@@ -2,6 +2,7 @@ import "server-only";
 
 type BaseItemInput = {
   title: string;
+  identifier?: string;
   detail: string;
   price: number;
   stock?: number;
@@ -119,6 +120,7 @@ export async function createBaseItem(input: BaseItemInput) {
     "/items/add",
     new URLSearchParams({
       title: input.title,
+      ...(input.identifier ? { identifier: input.identifier } : {}),
       detail: input.detail,
       price: String(Math.round(input.price)),
       stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
@@ -255,7 +257,7 @@ export type BaseReadOnlyProbeResult = {
     pages: number;
     complete: boolean;
     errorStage: string | null;
-    entries: Array<{ itemId: string | null; visible: boolean | null }>;
+    entries: Array<{ itemId: string | null; identifier: string | null; visible: boolean | null }>;
   };
 };
 
@@ -322,14 +324,16 @@ export async function probeBaseReadOnly(options?: {
       result.items.pages += 1;
       result.items.countReturned += rows.length;
       for (const item of rows) {
-        const rawId = (item as { item_id?: string | number }).item_id;
+        const raw = item as { item_id?: string | number; identifier?: unknown };
+        const rawId = raw.item_id;
         const itemId = rawId == null ? null : String(rawId);
+        const identifier = typeof raw.identifier === "string" && raw.identifier.trim() ? raw.identifier.trim() : null;
         const visible = item.visible === true || item.visible === 1 || item.visible === "1"
           ? true
           : item.visible === false || item.visible === 0 || item.visible === "0"
             ? false
             : null;
-        result.items.entries.push({ itemId, visible });
+        result.items.entries.push({ itemId, identifier, visible });
         if (visible === true) {
           result.items.visibleCount += 1;
         } else if (visible === false) {
