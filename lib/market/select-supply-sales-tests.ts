@@ -127,7 +127,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     );
     const identityMethod = nativeCjSupplyIdentity ? "cj_supplier_variant" : rawIdentityMethod;
     if (!supplierVerifiedIdentity) reasons.push("identity_not_confirmed");
-    if (num(listing.identity_confidence) === null || (num(listing.identity_confidence) ?? 0) < 0.88) reasons.push("identity_confidence_low");
+    if (!nativeCjSupplyIdentity && (num(listing.identity_confidence) === null || (num(listing.identity_confidence) ?? 0) < 0.88)) reasons.push("identity_confidence_low");
 
     const metadata = base.metadata && typeof base.metadata === "object" && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const sellingPrice = num(metadata.selling_price_jpy);
