@@ -20,6 +20,7 @@ import {
 import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { matchProductIdentity, normalizeIdentifier, pickSupplierBarcodeIdentifier, EMPTY_IDENTIFIERS } from "../lib/market/identifiers.ts";
 import { inspectCanonicalMarketplaceVariantMarkup, parseAmazonVariationAsinMap, parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
+import { isAmazonChallengeHtml } from "../lib/market/amazon-response.ts";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
@@ -43,6 +44,13 @@ test("Gemini demand classification failure", "provider failure is deferred inste
   assert.match(source, /A provider failure is not evidence that this query is non-product/);
   assert.match(source, /intentDeferred \+= 1;\s*continue;/);
   assert.match(source, /intentDeferred \+= 1;\s*continue;/);
+});
+
+test("Amazon response classification", "rejects HTTP-200 robot-check HTML as product detail evidence", () => {
+  assert.equal(isAmazonChallengeHtml("<html><title>Robot Check</title><body>Enter the characters you see below</body></html>", "https://www.amazon.co.jp/dp/B000000001"), true);
+  assert.equal(isAmazonChallengeHtml("<html><body>通常の商品詳細</body></html>", "https://www.amazon.co.jp/dp/B000000001"), false);
+  assert.equal(isAmazonChallengeHtml("<html><body>Robot Check</body></html>", "https://store.example.com/item"), false);
+  assert.equal(isAmazonChallengeHtml(null, "https://www.amazon.co.jp/dp/B000000001"), false);
 });
 
 test("canonical marketplace variant evidence", "captures only explicit ProductGroup child variants and never copies parent barcodes", () => {
