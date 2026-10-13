@@ -14,6 +14,7 @@ const shopifyProduct = (overrides = {}) => ({
   ...overrides,
 });
 const run = (listings, baseItems, shopifyProducts) => buildThreeSiteCorrespondence({ listings, baseItems, shopifyProducts });
+const issuesFor = (...args) => run(...args).rows[0].issues;
 
 // One master listing, one product per channel, everything agreeing: consistent.
 {
@@ -42,7 +43,6 @@ assert.ok(issuesFor([listing({ shopify_variant_id: "gid://shopify/ProductVariant
   assert.ok(!report.rows[0].issues.includes("shopify_variant_not_found"));
 }
 
-const issuesFor = (...args) => run(...args).rows[0].issues;
 
 assert.ok(issuesFor([listing({ base_item_id: null })], [], [shopifyProduct()]).includes("base_id_missing"));
 assert.ok(issuesFor([listing({ shopify_product_id: null })], [baseItem()], []).includes("shopify_id_missing"));
