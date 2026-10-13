@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8");
 const route = await readFile(new URL("../app/api/cron/sales-test-publication/route.ts", import.meta.url), "utf8");
+const workflow = await readFile(new URL("../.github/workflows/tracer-shopify-auth-check.yml", import.meta.url), "utf8");
 assert.ok(source.includes('candidate.verification_status === "verified"'), "native CJ identity requires verified supplier evidence");
 assert.ok(source.includes('candidate.shipping_status === "verified"'), "native CJ identity requires verified shipping evidence");
 assert.ok(source.includes('options.allowNativeCjIdentity === true && ["cj", "cjdropshipping"].includes(supplier)'), "native CJ identity is disabled by default");
@@ -14,4 +15,6 @@ assert.ok(route.includes('const dryRun = new URL(request.url).searchParams.get("
 assert.ok(route.includes('if (!dryRun) {\n      await recoverStaleCronRun'), "dry-run must not create cron lock records");
 assert.ok(route.includes('if (dryRun) {\n      return NextResponse.json({\n        ok: true,\n        dryRun: true,\n        noWrites: true'), "dry-run must return before downstream publication");
 assert.ok(route.includes('process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true"'), "live native CJ publication must be feature-flagged off by default");
+assert.ok(workflow.includes('$BASE/api/cron/sales-test-publication?dryRun=true'), "production workflow must run a no-write supply dry run");
+assert.ok(workflow.includes('"app/api/cron/sales-test-publication/route.ts"'), "route changes must trigger production diagnostics after deployment");
 console.log("CJ-native supply identity and no-write dry-run regression: 10 assertions passed");
