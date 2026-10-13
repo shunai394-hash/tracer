@@ -12,6 +12,7 @@ const cases = [
   ["generic category-only beauty tool title", "ビューティーツール", false],
   ["generic category-only hair accessory title", "ヘアアクセサリー", false],
   ["generic category-only English bag title", "bag", false],
+  ["case-insensitive generic bag title", "Bag", false],
   ["descriptive bathroom mat title", "吸盤付き ノンスリップ バスマット", true],
   ["descriptive kitchen product title", "キッチン用品 収納ラック", true],
   ["identity failure suffix", "暮らしの便利アイテム 商品アイデンティティが未確定のため、選定対象外", false],
