@@ -40,7 +40,7 @@ assert.match(marketCollector, /MARKETPLACE_SOURCES:\s*Array<\{[^}]+\}>\s*=\s*\[\
   "Amazon, Rakuten and Yahoo marketplace ranking intake must remain disabled");
 assert.match(marketCollector, /Marketplace ranking collection is intentionally disabled/,
   "the collector must document the new demand-signal and direct-supplier policy");
-const legacySourceFilter = /\.not\("marketplace", "in", \'(?:\\\()?"amazon\\.co\\.jp","rakuten","yahoo_shopping"/;
+const legacySourceFilter = /\.not\("marketplace", "in", '\("amazon\.co\.jp","rakuten","yahoo_shopping"\)/;
 assert.match(salesSelector, legacySourceFilter,
   "the final sales selector must reject historical Amazon, Rakuten, and Yahoo Shopping rows even when passed explicit IDs");
 assert.match(salesRoute, legacySourceFilter,
