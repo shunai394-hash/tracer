@@ -46,6 +46,7 @@ export async function GET(request: Request) {
     const { data, error } = await supabase
       .from("marketplace_bestsellers")
       .select("id,title,brand,image_url,product_url,source_url,rank,review_count,price,currency,jan,gtin,ean,upc,mpn,asin,marketplace,source,fetched_at,metadata")
+      .not("marketplace", "in", '("amazon.co.jp","rakuten","yahoo_shopping")')
       .order("fetched_at", { ascending: false })
       .limit(1000);
     if (error) throw new Error(error.message);
