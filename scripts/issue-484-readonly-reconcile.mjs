@@ -78,7 +78,7 @@ for (const row of evidenced) {
 
 const external = evidenced.filter((row) => row.shopify_product_id || row.base_item_id);
 const shopify = [];
-if (external.some((row) => row.shopify_product_id)) {
+if (isShopifyConfigured() || external.some((row) => row.shopify_product_id)) {
   if (!isShopifyConfigured()) {
     shopify.push({ state: "unconfigured" });
   } else {
