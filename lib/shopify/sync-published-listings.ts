@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
 import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { evaluateShopListingRecord } from "@/lib/market/listing-commercial-gate";
+import { mayRestoreChannelVisibility } from "@/lib/market/sales-test-gate";
 import { attachSupplierCommercialEvidence } from "@/lib/market/supplier-commercial-evidence";
 import { probeListingImage } from "@/lib/market/probe-listing-image";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
@@ -89,9 +90,19 @@ export function selectShopifyVariantForSku(
 }
 
 function listingBlockReasons(row: Listing, imageReachable: boolean | null): string[] {
-  const decision = evaluateShopListingRecord(row as unknown as Record<string, unknown>, imageReachable);
+  // Inventory holds are intentionally recoverable when the durable Sales Test
+  // token is still present. Re-check the same commercial gate against live
+  // stock instead of treating the prior BLOCKED state as a permanent failure.
+  const recoverableInventoryHold = mayRestoreChannelVisibility(row);
+  const decision = evaluateShopListingRecord(
+    row as unknown as Record<string, unknown>,
+    imageReachable,
+    { salesTestPassed: recoverableInventoryHold },
+  );
   const reasons = [...decision.reasons];
-  if (row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") reasons.unshift("pipeline_blocked");
+  if ((row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") && !recoverableInventoryHold) {
+    reasons.unshift("pipeline_blocked");
+  }
   return Array.from(new Set(reasons));
 }
 
