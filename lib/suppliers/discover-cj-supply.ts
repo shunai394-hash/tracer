@@ -98,14 +98,6 @@ async function writeCatalogCursor(
   if (error) console.error("[supply-first] catalog cursor write failed", error.message);
 }
 
-function selectSupplyFirstVariant(variants: CJProductVariant[]): CJProductVariant | null {
-  const priced = variants
-    .map((variant) => ({ variant, price: Number(variant.sellPrice) }))
-    .filter((item) => item.variant.vid && Number.isFinite(item.price) && item.price > 0)
-    .sort((a, b) => a.price - b.price);
-  return priced[0]?.variant ?? null;
-}
-
 async function markVerification(
   db: ReturnType<typeof createSupabaseAdminClient>,
   id: string,
@@ -580,15 +572,15 @@ export async function discoverAndCreateCjSupply(
         const detail = { title: candidate.title, imageUrl: candidate.imageUrl, price: candidate.price };
 
         const variants = await fetchCJProductVariants(candidate.id);
-        // In supply-first the CJ variant itself is the sellable item, so a
-        // multi-variant product is not ambiguous: pick one concrete variant
-        // (cheapest priced) and name it explicitly in the listing title.
+        // Never infer a sellable variant from price. A CJ product may contain
+        // different sizes/colors with different stock, cost, and identity.
+        // Continue only with an explicitly requested variant or a uniquely
+        // unambiguous variant; ambiguous products remain candidates for retry.
         const variant =
           (candidate.variantId
             ? variants.find((x) => x.vid === candidate.variantId)
             : null) ??
-          selectUnambiguousVariant(variants) ??
-          selectSupplyFirstVariant(variants);
+          selectUnambiguousVariant(variants);
         if (!variant?.vid) {
           reject("variant_unavailable", { variantCount: variants.length });
           continue;
