@@ -1,4 +1,4 @@
-import { NextResponse } from "@/lib/next-response";
+import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchBaseItemsSnapshot, isBaseConfigured } from "@/lib/channels/base";
