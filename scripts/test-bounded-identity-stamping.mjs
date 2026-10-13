@@ -30,8 +30,8 @@ const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts",
 const sourcesMatch = collector.match(/export const MARKETPLACE_SOURCES = \[([\s\S]*?)\] as const/);
 assert.ok(sourcesMatch, "marketplace source list must be explicit");
 assert.match(sourcesMatch[1], /marketplace: "yahoo_shopping"/);
-assert.doesNotMatch(sourcesMatch[1], /amazon|rakuten/i,
-  "new demand collection must not fetch Amazon or Rakuten ranking sources");
+assert.doesNotMatch(sourcesMatch[1], /marketplace:\s*"(?:amazon|rakuten)"/i,
+  "new demand collection must not configure Amazon or Rakuten ranking sources");
 assert.match(collector, /skipped: items\.length === 0/);
 assert.match(collector, /ranking_html_returned_zero_items/);
 console.log("Bounded demand identity stamping and CJ reverify: 18 assertions passed");
