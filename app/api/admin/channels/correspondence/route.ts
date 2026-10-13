@@ -28,11 +28,11 @@ async function fetchShopifyTracerProducts(): Promise<CorrespondenceShopifyProduc
   for (let page = 0; page < 10; page += 1) {
     const data: { products: { nodes: ShopifyNode[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } = await shopifyGraphQL(
       `query TracerCorrespondence($after: String, $publicationId: ID!) {
-        products(first: 100, after: $after, query: "vendor:TRACER") {
+        products(first: 25, after: $after, query: "vendor:TRACER") {
           nodes {
             id title status
             publishedOnPublication(publicationId: $publicationId)
-            variants(first: 250) { nodes { id sku price inventoryQuantity } pageInfo { hasNextPage } }
+            variants(first: 30) { nodes { id sku price inventoryQuantity } pageInfo { hasNextPage } }
           }
           pageInfo { hasNextPage endCursor }
         }
