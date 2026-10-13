@@ -110,6 +110,7 @@ await rejected(sellable({ tracking_available: null }));
 await rejected(sellable({ currency: "USD" }));
 await rejected(sellable({ inventory: 0 }));
 await rejected(sellable({ inventory: null }));
+await rejected(sellable({ inventory: 14935 }));
 await rejected(sellable({ orderable: false }));
 await rejected(sellable({ supplier_name: "cj" }));
 await rejected(sellable({ supplier_name: "Super Delivery" }));
