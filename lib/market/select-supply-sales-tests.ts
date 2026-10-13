@@ -11,6 +11,7 @@ import { isJapaneseProductDescription } from "@/lib/intelligence/japanese-produc
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
+import { resolveSupplyShippingPolicy } from "@/lib/market/supply-shipping-policy";
 
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -91,6 +92,13 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
 
     const sourceFxRateToSelling = num(metadata.fx_rate) ?? observedFx?.rate ?? null;
     const sourceFxRateSource = num(metadata.fx_rate) !== null ? "supplier_listing_metadata" : (observedFx?.source ?? null);
+    const shippingPolicy = resolveSupplyShippingPolicy({
+      supplier: listing.supplier,
+      shipTo: listing.ship_to,
+      shippingCost,
+      verificationStatus: listing.verification_status,
+      shippingStatus: listing.shipping_status,
+    });
     const profit = simulateContributionProfit({
       sellingPrice,
       sellingCurrency: "JPY",
@@ -99,7 +107,8 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
       sourceCurrency: typeof listing.currency === "string" ? listing.currency : null,
       sourceProvider: String(listing.supplier ?? "unknown"),
       internationalShipping: shippingCost,
-      domesticShipping: null,
+      domesticShipping: shippingPolicy.domesticShipping,
+      requireDomesticShipping: shippingPolicy.requireDomesticShipping,
       shippingCurrency: typeof listing.currency === "string" ? listing.currency : null,
       sourceFxRateToSelling,
       sourceFxRateSource: sourceFxRateSource ?? undefined,
