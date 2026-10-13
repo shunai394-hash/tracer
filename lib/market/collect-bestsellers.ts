@@ -180,14 +180,13 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
     return { fetchedAt, marketplaces: [], itemCount: 0, sourceIndex: requestedSourceIndex };
   }
 
-  // Amazon and Rakuten are explicitly excluded from TRACER's sourcing pipeline.
-  // Keep their indices stable for existing cron cursors, but never fetch or persist
-  // their market data. Supplier discovery must be based on direct supplier evidence.
+  // Marketplace ranking sites are not approved sourcing inputs. Keep source
+  // indices stable for old cursors, but never fetch or persist Yahoo, Rakuten,
+  // or Amazon data. Product discovery must use direct supplier evidence.
   const enabledEntries: typeof sourceEntries = [];
   for (const entry of sourceEntries) {
     const selectedSource = entry.source;
-    const disabledMarketplace = selectedSource.marketplace === "amazon.co.jp"
-      || selectedSource.marketplace === "rakuten";
+    const disabledMarketplace = ["yahoo_shopping", "rakuten", "amazon.co.jp"].includes(selectedSource.marketplace);
     if (disabledMarketplace) {
       marketplaces.push({
         marketplace: selectedSource.marketplace,
@@ -203,11 +202,10 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
     enabledEntries.push(entry);
   }
   if (enabledEntries.length === 0) {
-    // Existing cron cursors can point at a disabled-only window. Return the
-    // index immediately before the first approved source so the cron's normal
-    // next-index step resumes at Yahoo, and reset its page offset next run.
+    // All configured marketplace ranking sources are disabled. Do not fetch
+    // any of them; preserve the cursor and let supplier-first discovery proceed.
     const firstEnabledSourceIndex = MARKETPLACE_SOURCES.findIndex(
-      (source) => source.marketplace !== "amazon.co.jp" && source.marketplace !== "rakuten",
+      (source) => !["yahoo_shopping", "rakuten", "amazon.co.jp"].includes(source.marketplace),
     );
     const cursorBeforeFirstEnabled = firstEnabledSourceIndex >= 0
       ? (firstEnabledSourceIndex + MARKETPLACE_SOURCES.length - 1) % MARKETPLACE_SOURCES.length
