@@ -49,4 +49,19 @@ const hiddenResult = reconcileBaseIds(
 assert.equal(hiddenResult.reconciliation.dbExternalIdsPresentButHiddenOnBase, 1);
 assert.deepEqual(hiddenResult.reconciliation.dbExternalIdsPresentButHiddenOnBaseList, ["400"]);
 
+const duplicateLiveResult = reconcileBaseIds(
+  [{ id: "db-a", base_item_id: "100" }],
+  [
+    { item_id: 100, visible: true },
+    { item_id: "100", visible: true },
+  ],
+  [
+    { item_id: 100, visible: true },
+    { item_id: "100", visible: true },
+  ],
+);
+assert.equal(duplicateLiveResult.reconciliation.visibleItemsMatchedToUniqueDbId, 0);
+assert.deepEqual(duplicateLiveResult.reconciliation.visibleItemIdsNotFoundInDb, ["100"]);
+assert.equal(duplicateLiveResult.reconciliation.liveApiDuplicateExternalIdGroups, 1);
+
 console.log("BASE external-ID reconciliation unit tests passed");
