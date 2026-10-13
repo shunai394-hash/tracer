@@ -93,6 +93,21 @@ jobs:
             if [ "$path" = "api/admin/shopify/identity-audit" ]; then cp out.json identity-audit.json; fi
             if [ "$path" = "api/channels/base/diagnostics" ]; then cp out.json base-diagnostics.json; fi
           done
+          echo "=== exact supplier-link repair preview (read-only) ==="
+          repair_code=$(curl -sS -o identity-repair.json -w "%{http_code}" --max-time 60 -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" -X POST "$BASE/api/admin/shopify/identity-repair" -d '{"apply":false,"limit":1000}' || echo 000)
+          echo "=== api/admin/shopify/identity-repair dry-run HTTP $repair_code ==="
+          python3 - <<'PY'
+          import json
+          try:
+              d = json.load(open("identity-repair.json"))
+          except Exception:
+              print("non-JSON response:", open("identity-repair.json").read()[:500])
+              raise SystemExit(0)
+          print(json.dumps({k: v for k, v in d.items() if k != "results"}, ensure_ascii=False, indent=1))
+          rows = d.get("results") or []
+          print("repairable samples:", json.dumps([r for r in rows if r.get("outcome") == "repairable_dry_run"][:10], ensure_ascii=False))
+          print("blocked samples:", json.dumps([r for r in rows if r.get("outcome") not in ("repairable_dry_run",)][:10], ensure_ascii=False))
+          PY
           summarize_sync() {
             python3 - <<'PY'
           import json
