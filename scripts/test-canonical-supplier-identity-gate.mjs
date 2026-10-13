@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSupplier, unpublishWorkflow, patrolWorkflow, patrolRoute, discoverCJ, directGate, salesPublicationRoute, e2eFunnel, intelligencePipeline, baseRepair] = await Promise.all([
+const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSupplier, unpublishWorkflow, patrolWorkflow, patrolRoute, discoverCJ, directGate, salesPublicationRoute, e2eFunnel, intelligencePipeline, baseRepair, productsPage] = await Promise.all([
   readFile(new URL("../lib/catalog/canonical-supplier-identity.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8"),
@@ -20,7 +20,9 @@ const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSup
   readFile(new URL("../app/api/intelligence/e2e-funnel/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/channels/base/identity-repair/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/products/page.tsx", import.meta.url), "utf8"),
 ]);
+assert.match(productsPage, /\.eq\("identity_status", "linked"\)[\s\S]*?\.eq\("verification_status", "verified"\)[\s\S]*?\.eq\("orderable", true\)[\s\S]*?\.eq\("api_available", true\)[\s\S]*?\.eq\("tracking_available", true\)[\s\S]*?\.eq\("price_confirmed", true\)[\s\S]*?\.eq\("inventory_confirmed", true\)/, "verified supply dashboard count must require linked identity and complete order evidence");
 assert.match(helper, /if \(row\.identity_status !== "linked"\) continue;/);
 assert.match(helper, /isCjNativeIdentityFresh\(row\.cj_native_observed_at, nowMs\)/, "a CJ-native proof must stop counting as linked once it is stale");
 assert.match(persist, /verification_error: marketplaceIdentity \? null : "no_unique_canonical_child_variant_match"/, "unmatched CJ identity must persist an explicit reason rather than retaining stale verification state");
