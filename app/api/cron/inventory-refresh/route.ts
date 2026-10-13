@@ -85,6 +85,79 @@ export async function GET(request: Request) {
         return error instanceof Error ? error.message : String(error);
       }
     }
+
+    async function blockUnverifiedSupplierListing(listing: (typeof refreshTargets)[number], reason: string) {
+      const now = new Date().toISOString();
+      const { error: listingError } = await supabase.from("shop_listings").update({
+        inventory: null,
+        orderable: false,
+        published: false,
+        pipeline_stage: "BLOCKED",
+        pipeline_status: "blocked",
+        // Treat unverified supply as an inventory hold; recovery still requires
+        // the durable Sales Test token and a fresh passing commercial gate.
+        pipeline_reason: "inventory_unknown",
+        pipeline_error: reason,
+        pipeline_updated_at: now,
+        updated_at: now,
+      }).eq("id", String(listing.id));
+      if (listingError) throw new Error(listingError.message);
+
+      if (listing.supplier_listing_id) {
+        const { error: supplierError } = await supabase.from("supplier_listings").update({
+          inventory: null,
+          inventory_confirmed: false,
+          orderable: false,
+          fetched_at: now,
+        }).eq("id", String(listing.supplier_listing_id));
+        if (supplierError) throw new Error(supplierError.message);
+      }
+
+      let baseSyncError: string | null = null;
+      if (listing.base_item_id) {
+        const price = Number(listing.selling_price);
+        if (!isBaseConfigured()) {
+          baseSyncSkipped++;
+          baseSyncError = "base_not_configured";
+        } else if (listing.selling_price === null || !Number.isFinite(price) || price <= 0) {
+          baseSyncSkipped++;
+          baseSyncError = "base_price_unknown";
+        } else {
+          try {
+            await editBaseItem({
+              itemId: String(listing.base_item_id),
+              title: String(listing.title ?? "販売停止中の商品"),
+              detail: "仕入先の在庫・発注可否を確認できないため、現在販売を停止しています。",
+              price,
+              stock: 0,
+              visible: false,
+            });
+            baseUpdated++;
+          } catch (error) {
+            baseErrors++;
+            baseSyncError = error instanceof Error ? error.message : String(error);
+          }
+        }
+        const { error: baseStateError } = await supabase.from("shop_listings").update({
+          base_last_error: baseSyncError,
+        }).eq("id", String(listing.id));
+        if (baseStateError) throw new Error(`base_reconciliation_state_write_failed:${baseStateError.message}`);
+      }
+
+      const shopifySyncError = await stopShopifyListing(listing.shopify_product_id);
+      if (String(listing.shopify_product_id ?? "").trim()) {
+        const { error: shopifyStateError } = await supabase.from("shop_listings").update({
+          shopify_sync_status: shopifySyncError ? "reconciliation_required" : "blocked",
+          shopify_sync_error: shopifySyncError
+            ? `inventory_refresh_unpublish_failed:${shopifySyncError}`.slice(0, 500)
+            : reason.slice(0, 500),
+          shopify_synced_at: now,
+        }).eq("id", String(listing.id));
+        if (shopifyStateError) throw new Error(`shopify_reconciliation_state_write_failed:${shopifyStateError.message}`);
+      }
+      return { baseSyncError, shopifySyncError };
+    }
+
     for (const listing of refreshTargets) {
       const listingId = String(listing.id);
       const supplierName = String(listing.supplier_name ?? "").trim();
