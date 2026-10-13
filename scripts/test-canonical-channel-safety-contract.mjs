@@ -28,5 +28,9 @@ assert.match(basePublisher, /base_economics_block_hide_failed/);
 
 // The established patrol loop is preserved; the safety patch must not silently
 // remove scheduled monitoring while tightening publication gates.
-assert.match(vercel, /"path": "\/api\/cron\/patrol-ai"/);
+const vercelConfig = JSON.parse(vercel);
+assert.ok(
+  vercelConfig.crons.some((cron) => cron.path === "/api/cron/patrol-ai"),
+  "the existing patrol-ai cron must remain configured",
+);
 console.log("Canonical channel safety contracts passed.");
