@@ -22,7 +22,7 @@ assert.match(discovery, /"hair clip women", "claw clip women", "flower hair clip
   "hair accessories must be an explicit high-priority catalog segment");
 assert.match(discovery, /Avoid broad unrelated searches that dilute the/,
   "catalog queries must stay focused on the requested women's product categories");
-assert.match(discovery, /supply-first-catalog-cursor-v2/,
+assert.match(discovery, /supply-first-catalog-cursor-v3/,
   "query-order changes must not reinterpret an old cursor index");
 assert.match(discovery, /next_verification_at\.is\.null,next_verification_at\.lte/,
   "supplier verification queue must select only rows whose next verification is due");
