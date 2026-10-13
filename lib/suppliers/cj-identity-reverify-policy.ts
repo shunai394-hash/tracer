@@ -9,8 +9,8 @@ export function isCjIdentityReverifyCandidate(args: {
   identityMethod: string | null;
   supplierVariantId: string | null;
 }): boolean {
-  return ["unverified", "retryable", "verified"].includes(args.verificationStatus ?? "")
-    && ["supply_discovered", "none"].includes(args.identityMethod ?? "")
+  return ["unverified", "retryable", "verified", "identity_unverified"].includes(args.verificationStatus ?? "")
+    && (["supply_discovered", "none"].includes(args.identityMethod ?? "") || args.identityMethod === null)
     && Boolean(args.supplierVariantId?.trim());
 }
 
