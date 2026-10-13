@@ -57,7 +57,18 @@ export async function GET(request: Request) {
       return true;
     }));
 
-    const results = [];
+    const results: Array<{
+      listingId: string;
+      ok: boolean;
+      blocked?: boolean;
+      reason?: string;
+      inventory?: number | null;
+      orderable?: boolean;
+      baseSyncError?: string | null;
+      shopifySyncError?: string | null;
+      missing?: string[];
+      supplier?: string;
+    }> = [];
     let baseUpdated = 0;
     let baseErrors = 0;
     let baseSyncSkipped = 0;
