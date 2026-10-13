@@ -41,7 +41,9 @@ export async function GET(request: Request) {
       .select("id, supplier_listing_id, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, shopify_product_id, title, description, image_url, selling_price, currency, source_cost, shipping_cost, contribution_profit, identity_method, identity_confidence, tracking_available, published, selection_reasons, pipeline_stage, pipeline_status, pipeline_reason")
       .not("supplier_name", "is", null)
       .not("supplier_variant_id", "is", null)
-      .eq("published", true)
+      // Include previously published items whose published flag was cleared by
+      // a safety hold. mayRestoreChannelVisibility requires the durable Sales
+      // Test token and an inventory-only pipeline reason before it can reopen.
       .filter("selection_reasons", "cs", JSON.stringify([SALES_TEST_GATE_PASSED]))
       .order("updated_at", { ascending: true })
       .limit(20);
