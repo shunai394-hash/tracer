@@ -34,6 +34,12 @@ for (const [name, title, expected] of cases) {
 assert.equal(localizeProductTitle("Simple Oil Wax Leather Messenger Shoulder Bags Women's High Capacity Portable Tote Bag"), "レディース ショルダーバッグ");
 assert.equal(localizeProductTitle("Portable Cosmetic Bag Waterproof Divider Multi-grid Pockets Toiletry Bags Travel Storage Handbags Women Make Up Bag"), "仕切り付き コスメポーチ");
 assert.equal(localizeProductTitle("Bohemian Beach Vacation Flower Hair Clip For Women Fashion Girl Accessories Gift"), "フラワーモチーフ ヘアクリップ");
+assert.equal(localizeProductTitle("Groin Electric Clippers Household Hair Clipper (Groin Electric Clippers Household Hair Clipper Black Cutter head)"), "デリケートゾーン用 電動トリマー");
+assert.equal(localizeProductTitle("Art Design Graffiti Art Hip Hop African Girl with Black Hair Big Earring with Modern Building Shower Curtain for Bathroom Decor"), "アフリカンアート柄 シャワーカーテン");
+assert.equal(isPublishableCatalogTitle("トレンド・beautyアイテム"), false);
+assert.equal(isPublishableCatalogTitle("アフリカンアート柄 シャワーカーテン"), true);
+const supplySelector = await readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8");
+assert.match(supplySelector, /isPublishableCatalogTitle\(localizedTitle\)/, "supply publication must enforce buyer-facing title quality");
 assert.match(localizeProductDescription("Bohemian Beach Vacation Flower Hair Clip For Women"), /花モチーフのヘアクリップ/);
  
 const shopify = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
@@ -51,4 +57,4 @@ assert.match(base, /identityUnlinkedIds\.has\(listingId\).*base_last_error.*list
 assert.match(store, /isPublishableCatalogTitle\(listing\.title\)/, "storefront must filter invalid titles");
 assert.match(store, /isPublishableCatalogDescription\(listing\.description\)/, "storefront must filter generic descriptions");
 assert.match(store, /listing title failed catalog quality gate/, "order placement must revalidate title quality");
-console.log(`Catalog title/description quality tests: ${cases.length} cases + 13 channel wiring checks passed.`);
+console.log(`Catalog title/description quality tests: ${cases.length} cases + 18 channel wiring/title-quality checks passed.`);
