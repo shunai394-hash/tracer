@@ -62,20 +62,26 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // A stale/unverified supplier row must not mask a different, currently
     // verified variant for the same canonical product. Prefer only rows that
     // already satisfy the live supply/identity prerequisites, then rank those.
-    const verifiedCandidates = candidates.filter((candidate) =>
-      candidate.verification_status === "verified" &&
-      candidate.identity_status === "linked" &&
-      identifierGradeMethods.has(String(candidate.identity_method ?? "").trim().toLowerCase()) &&
-      Boolean(candidate.supplier_product_id) &&
-      Boolean(candidate.supplier_variant_id) &&
-      (num(candidate.identity_confidence) ?? 0) >= 0.88 &&
-      candidate.price_confirmed === true &&
-      candidate.inventory_confirmed === true &&
-      (num(candidate.inventory) ?? 0) > 0 &&
-      candidate.orderable === true &&
-      candidate.tracking_available === true &&
-      candidate.api_available === true
-    );
+    const verifiedCandidates = candidates.filter((candidate) => {
+      const supplier = String(candidate.supplier ?? "").trim().toLowerCase();
+      const nativeSupplierIdentity = ["cj", "cjdropshipping"].includes(supplier)
+        && Boolean(candidate.supplier_product_id)
+        && Boolean(candidate.supplier_variant_id)
+        && candidate.verification_status === "verified"
+        && candidate.shipping_status === "verified";
+      const canonicalIdentity = candidate.identity_status === "linked"
+        && identifierGradeMethods.has(String(candidate.identity_method ?? "").trim().toLowerCase())
+        && (num(candidate.identity_confidence) ?? 0) >= 0.88;
+      return (nativeSupplierIdentity || canonicalIdentity)
+        && Boolean(candidate.supplier_product_id)
+        && Boolean(candidate.supplier_variant_id)
+        && candidate.price_confirmed === true
+        && candidate.inventory_confirmed === true
+        && (num(candidate.inventory) ?? 0) > 0
+        && candidate.orderable === true
+        && candidate.tracking_available === true
+        && candidate.api_available === true;
+    });
     const pool = verifiedCandidates.length > 0 ? verifiedCandidates : candidates;
     const best = pool.reduce<Record<string, unknown> | null>((current, candidate) =>
       !current || listingQuality(candidate) > listingQuality(current) ? candidate : current, null);
@@ -86,7 +92,9 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   const eligible: Array<{ productId: string; listing: Record<string, unknown>; base: Record<string, unknown>; intelligence: Record<string, unknown>; profit: ReturnType<typeof simulateContributionProfit>; quality: number }> = [];
   for (const productId of uniqueProductIds) {
     const reasons: string[] = []; const intelligence = intelligenceByProduct.get(productId); const base = baseByProduct.get(productId); const listing = listingByProduct.get(productId);
-    const sourceTitle = typeof base?.normalized_title === 'string' ? base.normalized_title.normalize('NFKC').trim() : '';
+    const sourceTitle = (typeof listing?.title === "string" && listing.title.trim()
+      ? listing.title
+      : typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
     const sourceMetadata = base?.metadata && typeof base.metadata === 'object' && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const womenPriority = womenProductPriority({ title: sourceTitle, category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
     if (base && !womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
@@ -95,7 +103,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (reasons.length > 0) { rejected.push({ productId, reasons }); continue; }
     if (!intelligence || !base || !listing) { rejected.push({ productId, reasons: ["required_supply_intelligence_missing"] }); continue; }
     if (!validHttpUrl(base.image_url)) reasons.push("image_url_invalid");
-    const localizedTitle = localizeProductTitle(base.normalized_title, metadataCategory(base.metadata));
+    const localizedTitle = localizeProductTitle(sourceTitle, metadataCategory(base.metadata));
     if (!isJapaneseProductTitle(localizedTitle)) reasons.push("japanese_title_unavailable");
 
     const rawIdentityMethod = String(listing.identity_method ?? "").trim().toLowerCase();
@@ -104,13 +112,20 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // it does not prove that it is the same item as the marketplace demand product.
     // Only an explicit server-side identity link with identifier-grade evidence may
     // pass this gate. Never infer marketplace identity from verification_status.
-    const supplierVerifiedIdentity = listing.identity_status === "linked"
+    const nativeCjSupplyIdentity = ["cj", "cjdropshipping"].includes(String(listing.supplier ?? "").trim().toLowerCase())
+      && Boolean(listing.supplier_product_id)
+      && Boolean(listing.supplier_variant_id)
+      && listing.verification_status === "verified"
+      && listing.shipping_status === "verified";
+    const supplierVerifiedIdentity = nativeCjSupplyIdentity || (
+      listing.identity_status === "linked"
       && identifierGradeMethods.has(rawIdentityMethod)
       && Boolean(listing.supplier_product_id)
       && Boolean(listing.supplier_variant_id)
       && num(listing.identity_confidence) !== null
-      && (num(listing.identity_confidence) ?? 0) >= 0.88;
-    const identityMethod = rawIdentityMethod;
+      && (num(listing.identity_confidence) ?? 0) >= 0.88
+    );
+    const identityMethod = nativeCjSupplyIdentity ? "cj_supplier_variant" : rawIdentityMethod;
     if (!supplierVerifiedIdentity) reasons.push("identity_not_confirmed");
     if (num(listing.identity_confidence) === null || (num(listing.identity_confidence) ?? 0) < 0.88) reasons.push("identity_confidence_low");
 
@@ -174,7 +189,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   const liveProductIds = new Set((liveListings ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean));
   const chosen = eligible.filter((item) => !liveProductIds.has(item.productId)).slice(0, limit); const publishedListingIds: string[] = []; const selectedListingIds: string[] = [];
   for (const item of chosen) {
-    const title = localizeProductTitle(item.base.normalized_title, metadataCategory(item.base.metadata)) ?? String(item.base.normalized_title ?? ("TRACER product " + item.productId)); const slug = slugify(title, item.productId); const now = new Date().toISOString();
+    const title = localizeProductTitle(String(item.listing.title ?? item.base.normalized_title ?? ""), metadataCategory(item.base.metadata)) ?? String(item.base.normalized_title ?? ("TRACER product " + item.productId)); const slug = slugify(title, item.productId); const now = new Date().toISOString();
     const metadata = item.base.metadata && typeof item.base.metadata === "object" && !Array.isArray(item.base.metadata) ? item.base.metadata as Record<string, unknown> : {};
     const payload = { product_id: item.productId, bestseller_id: null, supplier_listing_id: item.listing.id, slug, title, description: typeof item.intelligence.recommendation_summary === "string" && item.intelligence.recommendation_summary.trim() ? item.intelligence.recommendation_summary.trim().slice(0, 700) : "需要・供給・利益・公開条件を確認したTRACERセレクト商品です。", image_url: item.base.image_url, selling_price: num(metadata.selling_price_jpy), currency: "JPY", supplier_name: String(item.listing.supplier ?? "unknown"), supplier_product_id: item.listing.supplier_product_id, supplier_variant_id: item.listing.supplier_variant_id, source_cost: item.profit.sourceCost, shipping_cost: item.profit.internationalShipping, inventory: num(item.listing.inventory), orderable: item.listing.orderable === true, tracking_available: item.listing.tracking_available === true, identity_method: typeof item.listing.identity_method === "string" ? item.listing.identity_method : null, identity_confidence: num(item.listing.identity_confidence), contribution_profit: item.profit.contributionProfit, contribution_margin: item.profit.contributionMargin, published: true, selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:supply", "supply_intelligence_gate_passed", "selection_score_" + (num(item.intelligence.selection_score)?.toFixed(1) ?? "0")], missing: [], published_at: now, pipeline_stage: "PUBLISHED", pipeline_status: "published", pipeline_reason: SALES_TEST_GATE_PASSED, pipeline_error: null, pipeline_updated_at: now, updated_at: now };
     const existing = await supabase.from("shop_listings").select("id").eq("slug", slug).maybeSingle();
