@@ -24,4 +24,5 @@ assert.ok(route.includes('.eq("shipping_status", "verified")') && route.includes
 assert.ok(workflow.includes('$BASE/api/cron/sales-test-publication?dryRun=true'), "production workflow must run a no-write supply dry run");
 assert.ok(workflow.includes('"supplyDryRun": supply_dry_run') || workflow.includes('"supplyDryRun": supplyDryRun'), "diagnostic issue must preserve the supply dry-run result");
 assert.ok(workflow.includes('"app/api/cron/sales-test-publication/route.ts"'), "route changes must trigger production diagnostics after deployment");
-console.log("CJ-native supply identity and no-write dry-run regression: 20 assertions passed");
+assert.ok(workflow.includes('"lib/intelligence/womens-priority.ts"') && workflow.includes('"lib/intelligence/japanese-product.ts"') && workflow.includes('"lib/catalog/publishable-title.ts"') && workflow.includes('"scripts/test-publishable-title.mjs"'), "quality-gate changes must trigger a fresh production dry run");
+console.log("CJ-native supply identity and no-write dry-run regression: 21 assertions passed");

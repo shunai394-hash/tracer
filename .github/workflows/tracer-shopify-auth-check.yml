@@ -24,6 +24,10 @@ on:
       - "app/api/cron/sales-test-publication/route.ts"
       - "lib/market/select-supply-sales-tests.ts"
       - "scripts/test-cj-native-supply-identity-gate.mjs"
+      - "lib/intelligence/womens-priority.ts"
+      - "lib/intelligence/japanese-product.ts"
+      - "lib/catalog/publishable-title.ts"
+      - "scripts/test-publishable-title.mjs"
   workflow_dispatch:
     inputs:
       sync_batch:
