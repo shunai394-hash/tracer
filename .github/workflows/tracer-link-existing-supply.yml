@@ -20,6 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Wait until production includes this workflow commit
         shell: bash
         run: |
@@ -30,11 +34,9 @@ jobs:
             sha="$(curl -sS --max-time 15 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
             echo "attempt $i: production commit=$sha expected=$GITHUB_SHA"
             if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
-            if git ls-remote https://github.com/shunai394-hash/tracer.git "$sha" >/dev/null 2>&1 && [ -n "$sha" ]; then
-              if git fetch --quiet https://github.com/shunai394-hash/tracer.git "$sha" && git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
-                echo "Production is on a descendant commit containing this workflow."
-                exit 0
-              fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              echo "Production is on a descendant commit containing this workflow."
+              exit 0
             fi
             sleep 10
           done
