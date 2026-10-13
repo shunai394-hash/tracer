@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "../lib/catalog/publishable-title.ts";
 import { localizeProductDescription, localizeProductTitle } from "../lib/intelligence/japanese-product.ts";
+import { womenProductPriority } from "../lib/intelligence/womens-priority.ts";
 
 const cases = [
   ["ordinary Japanese product title", "折りたたみ収納ボックス", true],
@@ -38,6 +39,8 @@ assert.equal(localizeProductTitle("Groin Electric Clippers Household Hair Clippe
 assert.equal(localizeProductTitle("Art Design Graffiti Art Hip Hop African Girl with Black Hair Big Earring with Modern Building Shower Curtain for Bathroom Decor"), "アフリカンアート柄 シャワーカーテン");
 assert.equal(isPublishableCatalogTitle("トレンド・beautyアイテム"), false);
 assert.equal(isPublishableCatalogTitle("アフリカンアート柄 シャワーカーテン"), true);
+assert.equal(womenProductPriority({ title: "Groin Electric Clippers Household Hair Clipper" }).isWomenFocused, false, "hair clipper must not match the hair-clip accessory category");
+assert.equal(womenProductPriority({ title: "Flower Hair Clip Accessory" }).isWomenFocused, true, "actual hair-clip accessories remain women-focused");
 const supplySelector = await readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8");
 assert.match(supplySelector, /isPublishableCatalogTitle\(localizedTitle\)/, "supply publication must enforce buyer-facing title quality");
 assert.match(localizeProductDescription("Bohemian Beach Vacation Flower Hair Clip For Women"), /花モチーフのヘアクリップ/);
@@ -57,4 +60,4 @@ assert.match(base, /identityUnlinkedIds\.has\(listingId\).*base_last_error.*list
 assert.match(store, /isPublishableCatalogTitle\(listing\.title\)/, "storefront must filter invalid titles");
 assert.match(store, /isPublishableCatalogDescription\(listing\.description\)/, "storefront must filter generic descriptions");
 assert.match(store, /listing title failed catalog quality gate/, "order placement must revalidate title quality");
-console.log(`Catalog title/description quality tests: ${cases.length} cases + 18 channel wiring/title-quality checks passed.`);
+console.log(`Catalog title/description quality tests: ${cases.length} cases + 20 channel wiring/title-quality checks passed.`);
