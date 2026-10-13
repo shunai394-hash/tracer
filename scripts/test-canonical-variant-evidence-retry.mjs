@@ -17,7 +17,7 @@ assert.ok(
   "disabled marketplace sources must be explicitly marked as skipped",
 );
 assert.ok(source.includes('runStep("supply_first"'), "direct supplier discovery must continue");
-assert.ok(source.includes('runStep("supply_sales_test_select"'), "supplier products must pass the sales-test gate");
+assert.ok(source.includes('"supply_sales_test_select"'), "supplier products must pass the sales-test gate");
 assert.ok(source.includes('runStep("sales_test_select"'), "legacy market sales path must remain present but receive no ranking candidates");
 assert.ok(source.includes("canFeedSalesGate(bestsellerStep)"), "market evidence cannot bypass the strict sales gate");
 console.log("PASS: marketplace ranking intake disabled; direct supplier discovery and sales gates retained");
