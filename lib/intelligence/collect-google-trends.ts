@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { buildGoogleTrendObservationKey, dedupeGoogleTrendItems } from "@/lib/intelligence/google-trends-dedupe";
+import { dedupeGoogleTrendItems, persistGoogleTrendObservations } from "@/lib/intelligence/google-trends-dedupe";
 
 const GOOGLE_TRENDS_RSS =
   "https://trends.google.com/trending/rss?geo=JP";
@@ -167,33 +167,20 @@ export async function collectGoogleTrendsDemand() {
   // one network/database request per trend item and could consume the patrol
   // budget when Supabase was under load.
   const observedAt = new Date().toISOString();
-  const rows = productTrends.map((trend) => ({
-    idempotency_key: buildGoogleTrendObservationKey(sourceId, trend.title, observedAt),
-    product_id: null,
-    source_id: sourceId,
-    signal_type: "search_volume",
-    value: trend.traffic,
-    unit: "searches_approx",
-    observed_at: observedAt,
-    metadata: {
-      query: trend.title,
-      original_query: trend.title,
-      country: "JP",
-      provider: "google_trends",
-      source_url: GOOGLE_TRENDS_RSS,
-      published_at: trend.publishedAt,
+  const persistence = await persistGoogleTrendObservations({
+    sourceId,
+    trends: productTrends,
+    observedAt,
+    sourceUrl: GOOGLE_TRENDS_RSS,
+    upsert: async (rows, options) => {
+      const result = await supabase
+        .from("demand_observations")
+        .upsert(rows, options)
+        .select("id");
+      return result;
     },
-  }));
-
-  const { data: insertedRows, error } = await supabase
-    .from("demand_observations")
-    .upsert(rows, { onConflict: "idempotency_key", ignoreDuplicates: true })
-    .select("id");
-  if (error) {
-    throw new Error(`Failed to insert Google Trends observations: ${error.message}`);
-  }
-  const inserted = insertedRows?.length ?? 0;
-  const alreadyObserved = rows.length - inserted;
+  });
+  const { inserted, alreadyObserved } = persistence;
 
   for (const trend of productTrends) {
     console.log("[google-trends-title]", JSON.stringify(trend.title));
