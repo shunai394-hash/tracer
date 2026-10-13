@@ -23,6 +23,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Test CJ native supply identity and mandatory demand evidence
+        run: node scripts/test-cj-native-supply-identity-gate.mjs
       - run: npm run test:tracer-core
       - name: Test Shopify order SKU mapping
         run: npm run test:shopify-order-sku-mapping

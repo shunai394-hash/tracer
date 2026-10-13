@@ -175,22 +175,16 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     });
     const gate = evaluateSalesTestGate({ rank: null, title: localizedTitle, sellingPrice, identityLinked: supplierVerifiedIdentity || (listing.identity_status === "linked" && identifierGradeMethods.has(identityMethod)), identityMethod, identityConfidence: nativeCjSupplyIdentity ? 1 : num(listing.identity_confidence), sourceCost, shippingCost, trackingAvailable: listing.tracking_available === true, apiAvailable: listing.api_available === true, profitCalculable: profit.calculable, shippingUnknown: profit.shippingUnknown, contributionProfit: profit.contributionProfit, currencyMismatch: false, priceConfirmed: listing.price_confirmed === true, inventoryConfirmed: listing.inventory_confirmed === true, inventory: num(listing.inventory), orderable: listing.orderable === true, supplierProductId: typeof listing.supplier_product_id === "string" ? listing.supplier_product_id : null, supplierVariantId: typeof listing.supplier_variant_id === "string" ? listing.supplier_variant_id : null, requireRank: false });
     if (!gate.eligible) reasons.push(...gate.reasons);
-    const supplySalesTestReady =
-      supplierVerifiedIdentity &&
-      profit.calculable &&
-      profit.contributionMargin !== null &&
-      profit.contributionMargin > 0;
-    if (!supplySalesTestReady) {
-      if (String(intelligence.sellability_state ?? "") !== "TEST_READY") reasons.push("sellability_not_ready");
-      if (String(intelligence.filter_state ?? "") !== "PASS") reasons.push("intelligence_filter_not_pass");
-      if (String(intelligence.profit_state ?? "") !== "PROFIT_OK") reasons.push("intelligence_profit_not_ok");
-    }
-    if (!supplySalesTestReady) {
-      if (num(intelligence.demand_score) === null) reasons.push("demand_evidence_missing");
-      if (num(intelligence.search_fit_score) === null) reasons.push("search_fit_evidence_missing");
-      if (num(intelligence.market_gap_score) === null) reasons.push("market_gap_evidence_missing");
-      if (num(intelligence.overall_confidence) === null || (num(intelligence.overall_confidence) ?? 0) < 0.6) reasons.push("intelligence_confidence_low");
-    }
+    // Supplier verification and positive unit economics do not establish customer demand.
+    // Every candidate must independently pass the intelligence readiness states and
+    // provide complete demand/search-fit/market-gap evidence, even for native CJ identity.
+    if (String(intelligence.sellability_state ?? "") !== "TEST_READY") reasons.push("sellability_not_ready");
+    if (String(intelligence.filter_state ?? "") !== "PASS") reasons.push("intelligence_filter_not_pass");
+    if (String(intelligence.profit_state ?? "") !== "PROFIT_OK") reasons.push("intelligence_profit_not_ok");
+    if (num(intelligence.demand_score) === null) reasons.push("demand_evidence_missing");
+    if (num(intelligence.search_fit_score) === null) reasons.push("search_fit_evidence_missing");
+    if (num(intelligence.market_gap_score) === null) reasons.push("market_gap_evidence_missing");
+    if (num(intelligence.overall_confidence) === null || (num(intelligence.overall_confidence) ?? 0) < 0.6) reasons.push("intelligence_confidence_low");
     if (reasons.length) { rejected.push({ productId, reasons: Array.from(new Set(reasons)) }); continue; }
 
     const womenBonus = womenProductPriority({ title: typeof base.normalized_title === "string" ? base.normalized_title : "", category: typeof metadata.category === "string" ? metadata.category : null }).bonus;
