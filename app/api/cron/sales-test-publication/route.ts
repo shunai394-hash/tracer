@@ -139,14 +139,23 @@ export async function GET(request: Request) {
       ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
       ...(nativeCjSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
     ]));
+    // The read-only audit is bounded before any intelligence queries, and
+    // prioritizes verified native CJ evidence so it stays inside request limits.
+    const nativeCjProductIds = (nativeCjSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean);
+    const dryRunProductIds = Array.from(new Set([
+      ...nativeCjProductIds,
+      ...(demandSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
+      ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
+    ])).slice(0, 100);
+    const candidateProductIds = dryRun ? dryRunProductIds : verifiedSupplyIds;
     // Repair only the missing-intelligence subset for canonical supply. Do not
     // rebuild already-enriched products: this keeps the publication path bounded
     // while preventing verified supply from being permanently rejected merely
     // because an earlier patrol timed out before writing opportunity_intelligence.
     const opportunityProductIds = new Set<string>();
     const canonicalProductIds = new Set<string>();
-    for (let i = 0; i < verifiedSupplyIds.length; i += 100) {
-      const ids = verifiedSupplyIds.slice(i, i + 100);
+    for (let i = 0; i < candidateProductIds.length; i += 100) {
+      const ids = candidateProductIds.slice(i, i + 100);
       const [opportunityResult, canonicalResult] = await Promise.all([
         supabase.from("opportunity_intelligence").select("product_id").in("product_id", ids),
         supabase.from("product_intelligence").select("product_id").in("product_id", ids),
@@ -156,14 +165,14 @@ export async function GET(request: Request) {
       for (const row of opportunityResult.data ?? []) opportunityProductIds.add(String(row.product_id));
       for (const row of canonicalResult.data ?? []) canonicalProductIds.add(String(row.product_id));
     }
-    const missingOpportunityIds = verifiedSupplyIds.filter(
+    const missingOpportunityIds = candidateProductIds.filter(
       (id) => canonicalProductIds.has(id) && !opportunityProductIds.has(id),
     );
     if (missingOpportunityIds.length > 0 && !dryRun) {
       await buildOpportunityInBatches(missingOpportunityIds.slice(0, 30), 10);
     }
     const allowNativeCjIdentity = dryRun || process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true";
-    const supplySelected = await selectAndPublishSupplySalesTests(verifiedSupplyIds, 400, {
+    const supplySelected = await selectAndPublishSupplySalesTests(candidateProductIds, dryRun ? 50 : 400, {
       dryRun,
       allowNativeCjIdentity,
     });

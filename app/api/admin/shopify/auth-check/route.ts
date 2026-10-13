@@ -130,8 +130,13 @@ export async function GET(request: Request) {
     .order("shopify_synced_at", { ascending: false, nullsFirst: false })
     .limit(3);
 
+  const scopeReady = adminApi.ok === true
+    && Array.isArray(adminApi.missingScopes)
+    && adminApi.missingScopes.length === 0;
+
   return NextResponse.json({
-    ok: shopifyProbe.ok,
+    ok: shopifyProbe.ok && scopeReady,
+    scopeReady,
     shopifyHttpStatus: shopifyProbe.shopifyHttpStatus,
     shopifyRequestId: shopifyProbe.shopifyRequestId,
     graphqlErrors: shopifyProbe.graphqlErrors,
