@@ -397,44 +397,15 @@ export async function runIntelligencePipeline(options: {
   // marketplace stage could consume the budget before matching started.
   steps.push(await runStep("match", () => matchDemandProductsByCategory(), { budgetMs: 25_000 }));
 
-  // Resume market discovery from the persisted cursor instead of re-reading
-  // marketplace 0 / item 0 on every patrol, and advance it afterwards.
-  const bestsellerStep = await runStep("bestsellers", async () => {
-    const cursor = await readMarketCursor(db);
-    const observation = await persistMarketplaceBestsellers({
-      sourceIndex: cursor.sourceIndex,
-      startIndex: cursor.startIndex,
-      batchSize: 10,
-    });
-    const next = await writeMarketCursor(db, observation, "patrol-ai");
-    // A non-empty ranking batch is not enough to unblock canonical identity.
-    // If no child-variant evidence was parsed (or all parsed evidence writes failed),
-    // defer the pipeline so publication/procurement never treats source coverage as identity proof.
-    const emptyCollection = observation.itemCount === 0;
-    const emptyVariantEvidence = observation.canonicalVariantEvidenceParsed === 0;
-    // Amazon and Rakuten are excluded by sourcing policy; Yahoo Shopping is the
-    // only enabled marketplace source and must provide explicit child-variant
-    // evidence before downstream sales matching can proceed. Empty evidence is
-    // therefore always retryable, regardless of the persisted cursor index.
-    const evidencePersistenceFailed = observation.canonicalVariantEvidenceParsed > 0
-      && observation.canonicalVariantEvidenceWritten === 0
-      && observation.canonicalVariantEvidenceWriteFailures > 0;
-    if (emptyCollection || emptyVariantEvidence || evidencePersistenceFailed) {
-      return {
-        ...observation,
-        cursor,
-        nextCursor: next,
-        skipped: true,
-        retryable: true,
-        reason: emptyCollection
-          ? "marketplace_collection_empty"
-          : evidencePersistenceFailed
-            ? "canonical_variant_evidence_write_failed"
-            : "canonical_variant_evidence_empty",
-      };
-    }
-    return { ...observation, cursor, nextCursor: next };
-  }, { budgetMs: 40_000 });
+  // Marketplace ranking sites (Yahoo, Rakuten, Amazon) are intentionally not
+  // sourcing inputs. Do not fetch them or gate the supplier-first pipeline on
+  // their child-variant markup. Direct supplier identity, stock, freight and
+  // sales-test gates remain mandatory before publication or procurement.
+  const bestsellerStep = await runStep("bestsellers", async () => ({
+    skipped: true,
+    retryable: false,
+    reason: "marketplace_ranking_sources_disabled_by_policy",
+  }));
   steps.push(bestsellerStep);
 
   // A deferred/retryable stage can still carry raw candidate IDs. Only
