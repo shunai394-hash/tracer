@@ -67,22 +67,25 @@ async function promoteGatePassedListings(selectedListingIds: string[]) {
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
+  const dryRun = new URL(request.url).searchParams.get("dryRun") === "true";
   const supabase = createSupabaseAdminClient();
   let cronRunId: string | null = null;
   const startedAt = Date.now();
 
   try {
-    await recoverStaleCronRun(supabase, "sales-test-publication", maxDuration);
-    const { data: cronRun, error: claimError } = await supabase
-      .from("cron_runs")
-      .insert({ job_name: "sales-test-publication", status: "running", metadata: { phase: "sales_test_publication" } })
-      .select("id")
-      .single();
-    if (claimError) {
-      if (claimError.code === "23505") return NextResponse.json({ ok: true, skipped: true, reason: "cron_already_running", job: "sales-test-publication" }, { status: 409 });
-      throw new Error(claimError.message);
+    if (!dryRun) {
+      await recoverStaleCronRun(supabase, "sales-test-publication", maxDuration);
+      const { data: cronRun, error: claimError } = await supabase
+        .from("cron_runs")
+        .insert({ job_name: "sales-test-publication", status: "running", metadata: { phase: "sales_test_publication" } })
+        .select("id")
+        .single();
+      if (claimError) {
+        if (claimError.code === "23505") return NextResponse.json({ ok: true, skipped: true, reason: "cron_already_running", job: "sales-test-publication" }, { status: 409 });
+        throw new Error(claimError.message);
+      }
+      cronRunId = cronRun?.id ? String(cronRun.id) : null;
     }
-    cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
     // Consume only identifier-grade linked supply. CJ is a supported supply
     // source; payment automation remains an order-time concern and never
@@ -132,10 +135,24 @@ export async function GET(request: Request) {
     const missingOpportunityIds = verifiedSupplyIds.filter(
       (id) => canonicalProductIds.has(id) && !opportunityProductIds.has(id),
     );
-    if (missingOpportunityIds.length > 0) {
+    if (missingOpportunityIds.length > 0 && !dryRun) {
       await buildOpportunityInBatches(missingOpportunityIds.slice(0, 30), 10);
     }
-    const supplySelected = await selectAndPublishSupplySalesTests(verifiedSupplyIds, 400);
+    const allowNativeCjIdentity = dryRun || process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true";
+    const supplySelected = await selectAndPublishSupplySalesTests(verifiedSupplyIds, 400, {
+      dryRun,
+      allowNativeCjIdentity,
+    });
+    if (dryRun) {
+      return NextResponse.json({
+        ok: true,
+        dryRun: true,
+        noWrites: true,
+        mode: "canonical_supply_fast_path",
+        featureEnabledForLiveRuns: process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true",
+        supplySelected,
+      }, { headers: { "Cache-Control": "no-store" } });
+    }
 
     if (supplySelected.published > 0) {
       const downstream = await promoteGatePassedListings(supplySelected.selectedListingIds);
