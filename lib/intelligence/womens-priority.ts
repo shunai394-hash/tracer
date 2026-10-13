@@ -28,6 +28,27 @@ export function womenProductPriority(args: {
   return { isWomenFocused: tier !== "none", bonus, tier };
 }
 
+/**
+ * Explicit merchandising order requested for the current catalog strategy:
+ * handbags first, beauty tools second, hair accessories third. This is a
+ * ranking bonus only; all candidates must still pass identity, stock, cost,
+ * currency, title-quality, and profit gates.
+ */
+export function womenMerchandisingPriority(args: {
+  title: string;
+  category?: string | null;
+}): number {
+  const text = [args.title, args.category]
+    .filter(Boolean)
+    .join(" ")
+    .normalize("NFKC")
+    .toLowerCase();
+  if (/handbag|crossbody|tote bag|shoulder bag|women.?s bag|ハンドバッグ|ショルダーバッグ|トートバッグ|斜めがけバッグ/.test(text)) return 3;
+  if (/beauty tool|beauty device|facial roller|face roller|gua sha|makeup brush|cosmetic brush|美顔器|美容ツール|メイクブラシ|フェイスローラー/.test(text)) return 2;
+  if (/hair clip|hair claw|hairpin|headband|scrunchie|ヘアクリップ|バンスクリップ|ヘアアクセ|シュシュ|ヘアピン|カチューシャ/.test(text)) return 1;
+  return 0;
+}
+
 export function verifyWomenPriorityInvariants(): {
   ok: boolean;
   cases: Array<{ name: string; actual: boolean }>;
@@ -49,6 +70,9 @@ export function verifyWomenPriorityInvariants(): {
   });
   const japaneseBag = womenProductPriority({ title: "レディース ショルダーバッグ", category: "バッグ" });
   const japaneseBeauty = womenProductPriority({ title: "美顔器・美容機器", category: "美容" });
+  const bagPriority = womenMerchandisingPriority({ title: "レディース ショルダーバッグ" });
+  const beautyToolPriority = womenMerchandisingPriority({ title: "美顔器・美容ツール" });
+  const hairAccessoryPriority = womenMerchandisingPriority({ title: "フラワー ヘアクリップ" });
 
   const cases = [
     { name: "beauty_is_prioritized", actual: beauty.isWomenFocused && beauty.bonus === 12 && beauty.tier === "core" },
@@ -56,6 +80,9 @@ export function verifyWomenPriorityInvariants(): {
     { name: "women_signal_survives_query_noise", actual: hair.isWomenFocused && hair.bonus === 12 && hair.tier === "core" },
     { name: "japanese_womens_bag_is_prioritized", actual: japaneseBag.isWomenFocused && japaneseBag.tier === "core" },
     { name: "japanese_beauty_tool_is_prioritized", actual: japaneseBeauty.isWomenFocused },
+    { name: "handbags_rank_first", actual: bagPriority === 3 && bagPriority > beautyToolPriority && bagPriority > hairAccessoryPriority },
+    { name: "beauty_tools_rank_second", actual: beautyToolPriority === 2 && beautyToolPriority > hairAccessoryPriority },
+    { name: "hair_accessories_rank_third", actual: hairAccessoryPriority === 1 },
   ];
 
   return { ok: cases.every((item) => item.actual), cases };
