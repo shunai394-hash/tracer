@@ -85,6 +85,8 @@ assert.match(base, /if \(!validHttpUrl\(listing\.image_url\)\)/, "BASE publisher
 assert.match(base, /商品画像を確認できないため、現在販売を停止しています。/, "image-less existing BASE products must be hidden with zero stock");
 assert.match(base, /image_url_invalid_hide_failed/, "BASE hide failures for image-less products must be observable");
 assert.doesNotMatch(base, /base_publication_status:\s*[^,\n]*(?:"hidden"|"blocked")/, "BASE publication status must use only database-allowed enum values");
+assert.ok(base.indexOf('if (!validHttpUrl(listing.image_url))') < base.indexOf('if (listing.tracking_available !== true)'), "image-less BASE listings must be blocked before other eligibility checks can exit early");
+assert.ok(base.indexOf('if (!validHttpUrl(listing.image_url))') < base.indexOf('if (!listing.supplier_product_id || !listing.supplier_variant_id)'), "image-less BASE listings must be blocked before missing-variant exits");
 assert.match(shopify, /image_url_missing_or_invalid/, "Shopify sync must block products without usable images before create/update");
 assert.match(route, /publishPublishedListingsToBase\(50/);
 assert.match(baseRepair, /base_create_id_persist_failed/ , "BASE identity repair may use the exact ID saved when item creation succeeded but DB persistence failed");
