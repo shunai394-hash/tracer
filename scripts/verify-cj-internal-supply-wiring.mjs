@@ -12,6 +12,9 @@ const salesSelector = readFileSync("lib/market/select-sales-tests.ts", "utf8");
 const salesRoute = readFileSync("app/api/cron/sales-test-publication/route.ts", "utf8");
 const coreEngine = readFileSync("app/api/cron/core-engine/route.ts", "utf8");
 const intelligencePipeline = readFileSync("lib/intelligence/run-intelligence-pipeline.ts", "utf8");
+const supplierInvestigation = readFileSync("app/api/cron/supplier-investigation/route.ts", "utf8");
+const superdeliveryDiscovery = readFileSync("lib/suppliers/discover-superdelivery-supply.ts", "utf8");
+const demandMatcher = readFileSync("lib/intelligence/match-demand-products.ts", "utf8");
 const auditMigration = readFileSync("supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql", "utf8");
 
 assert.match(discovery, /import \{ persistCjInternalSupplyCandidate \} from "@\/lib\/suppliers\/persist-cj-internal-supply"/);
@@ -49,6 +52,12 @@ assert.match(coreEngine, legacySourceFilter,
   "the core engine must not seed new candidates from historical marketplace ranking rows");
 assert.match(intelligencePipeline, legacySourceFilter,
   "the supplier investigation backlog must exclude historical marketplace ranking rows");
+assert.ok((supplierInvestigation.match(new RegExp(legacySourceFilter.source, "g")) ?? []).length >= 3,
+  "supplier investigation fresh/retry/quarantine paths must exclude historical marketplace ranking rows");
+assert.match(superdeliveryDiscovery, legacySourceFilter,
+  "direct supplier discovery must not use historical marketplace ranking rows as its demand seed");
+assert.match(demandMatcher, legacySourceFilter,
+  "demand-product matching must not treat historical marketplace ranking rows as demand evidence");
 assert.match(ingest, /sourceRef = `cj:\$\{args\.supplierProductId\}:\$\{args\.supplierVariantId\}`/,
   "source reference must be deterministic for the concrete supplier product+variant");
 assert.match(ingest, /onConflict: "source_name,source_ref"/,
