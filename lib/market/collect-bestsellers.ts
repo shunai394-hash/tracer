@@ -18,6 +18,11 @@ import { inspectCanonicalMarketplaceVariantMarkup, parseAmazonVariationAsinMap, 
 import { decodeHtmlBytes } from "@/lib/market/charset";
 import { isAmazonChallengeHtml } from "@/lib/market/amazon-response";
 
+// Policy: TRACER no longer ingests Amazon, Rakuten, or Yahoo! Shopping ranking feeds.
+// Supplier discovery and product eligibility must be driven by approved suppliers (e.g. CJ)
+// and direct product/supply evidence, not these marketplace rankings.
+export const MARKETPLACE_SOURCING_ENABLED = false;
+
 export const MARKETPLACE_SOURCES = [
   { marketplace: "yahoo_shopping", url: "https://shopping.yahoo.co.jp/ranking/", source: "yahoo_shopping_ranking" },
   { marketplace: "rakuten", url: "https://ranking.rakuten.co.jp/", source: "rakuten_ranking" },
@@ -178,6 +183,9 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
   const fetchedAt = new Date().toISOString();
   const marketplaces: CollectedMarketplace[] = [];
   const requestedSourceIndex = Math.max(0, options.sourceIndex ?? 0);
+  if (!MARKETPLACE_SOURCING_ENABLED) {
+    return { fetchedAt, marketplaces, itemCount: 0, sourceIndex: requestedSourceIndex };
+  }
   const hasExplicitSourceIndex = options.sourceIndex !== undefined;
   const sourceEntries = hasExplicitSourceIndex
     ? Array.from({ length: Math.min(3, MARKETPLACE_SOURCES.length) }, (_, offset) => {
