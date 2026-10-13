@@ -29,7 +29,10 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
   canonicalVariantEvidenceParsed: number;
   canonicalVariantEvidenceWritten: number;
   canonicalVariantEvidenceWriteFailures: number;
+  /** All skipped sources, including sources intentionally disabled by policy. */
   skippedMarketplaces: string[];
+  /** Unexpected source skips that should count as failures, excluding intentional policy skips. */
+  failedMarketplaces: string[];
   /** Per-marketplace detail-page enrichment telemetry (see collect-bestsellers.ts). */
   enrichment: Array<{
     marketplace: string;
@@ -78,6 +81,9 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
   const seenMarketplaceIdentityKeys = new Map<string, Set<string>>();
   const skippedMarketplaces = collected.marketplaces
     .filter((item) => item.skipped)
+    .map((item) => `${item.source}:${item.reason ?? "skipped"}`);
+  const failedMarketplaces = collected.marketplaces
+    .filter((item) => item.skipped && item.reason !== "marketplace_source_removed_by_policy")
     .map((item) => `${item.source}:${item.reason ?? "skipped"}`);
 
   for (const marketplace of collected.marketplaces) {
@@ -210,6 +216,17 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
           .maybeSingle();
         if (existing.error) throw new Error(existing.error.message);
         if (existing.data?.id) productId = existing.data.id;
+      } else {
+        // Title-only identity keys are still unique in products. Look them up
+        // before INSERT so ordinary re-observation does not create a predictable
+        // 23505 error and a second request just to recover the existing row.
+        const existingByIdentityKey = await supabase
+          .from("products")
+          .select("id")
+          .eq("identity_key", identityKey)
+          .maybeSingle();
+        if (existingByIdentityKey.error) throw new Error(existingByIdentityKey.error.message);
+        if (existingByIdentityKey.data?.id) productId = existingByIdentityKey.data.id;
       }
 
       if (productId) {
@@ -353,6 +370,7 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
     canonicalVariantEvidenceWritten,
     canonicalVariantEvidenceWriteFailures,
     skippedMarketplaces,
+    failedMarketplaces,
     enrichment: collected.marketplaces
       .filter((marketplace) => marketplace.enrichment)
       .map((marketplace) => ({ marketplace: marketplace.marketplace, ...marketplace.enrichment! })),

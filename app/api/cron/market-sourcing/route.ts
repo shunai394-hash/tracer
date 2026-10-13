@@ -7,10 +7,10 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 // Keep each observation invocation comfortably below Vercel's 60s hard limit.
-// Larger batches are resumed through cron_runs.nextIndex on the next invocation.
-// Process a meaningful slice on every patrol. The workflow repeats this stage
-// several times so one hourly patrol can traverse multiple marketplace pages
-// instead of advancing only a few rows and appearing to stall at one product.
+// Market sourcing uses a bounded 10-item batch; larger catalogs resume through
+// cron_runs.nextIndex on subsequent invocations. The 5-minute patrol repeats
+// this stage, so reliability and complete ledger updates matter more than a
+// large batch that can be terminated by the platform timeout.
 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
