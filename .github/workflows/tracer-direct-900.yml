@@ -9,7 +9,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: read
 
 concurrency:
@@ -29,16 +28,24 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Pull production environment through Vercel OIDC
+      - name: Validate Vercel CLI credential
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${VERCEL_TOKEN:-}" ]]; then
+            echo "::error::Repository Actions secret VERCEL_TOKEN is required for the read-only production DB gate. Configure it in GitHub Actions secrets; do not use a GitHub OIDC token as a Vercel CLI token."
+            exit 1
+          fi
+
+      - name: Pull production environment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           set -euo pipefail
           export VERCEL_ORG_ID="team_yNR5X8H8XNJ253d4OoM1NePz"
-          export VERCEL_PROJECT_ID="prj_gmujzcFWLzl0nr8sZXJwkV1D0T99"
-          export VERCEL_OIDC_TOKEN="$(curl --fail-with-body --silent --show-error \
-            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Fvercel.com" |
-            python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
-          npx vercel@latest pull --yes --token "$VERCEL_OIDC_TOKEN" --environment=production --scope=shunai394-9704s-projects --project=tracer
+          export VERCEL_PROJECT_ID="prj_BPHJz1lzHLqw4hvcZxhoeSxCatoo"
+          npx vercel@latest pull --yes --token "$VERCEL_TOKEN" --environment=production --scope=shunai394-9704s-projects --project="$VERCEL_PROJECT_ID"
 
       - name: Run current source against production DB
         run: |
