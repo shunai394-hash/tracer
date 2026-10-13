@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { getOrosyProductDetail, searchOrosyProducts } from "@/lib/sources/orosy";
-import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-listings";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -63,29 +62,38 @@ export async function GET(request: Request) {
 
   const supabase = createSupabaseAdminClient();
   const started = Date.now();
-  const target = 240;
+  const target = 1200;
   const candidates = new Map<string, Awaited<ReturnType<typeof getOrosyProductDetail>>>();
 
+  // Search multiple pages per category instead of repeatedly sampling only page 1.
+  // This increases discovery coverage; it does not mean 1,200 items are imported in
+  // one invocation (the write batch remains capped and the endpoint is time-bounded).
   for (const query of QUERIES) {
     if (Date.now() - started > 180_000 || candidates.size >= target) break;
-    try {
-      const results = await searchOrosyProducts(query);
-      for (const item of results) {
-        if (candidates.size >= target) break;
-        if (!japaneseTitle(item.title) || !item.orderable || !item.imageUrl || !item.imageUrl.startsWith("https://")) continue;
-        if (candidates.has(item.id)) continue;
-        try {
-          const detail = await getOrosyProductDetail(item.id);
-          if (!detail || !japaneseTitle(detail.title) || !detail.orderable || !detail.imageUrl || !detail.imageUrl.startsWith("https://")) continue;
-          const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId);
-          if (!variation) continue;
-          candidates.set(`${detail.id}:${variation.variationId}`, detail);
-        } catch {
-          // One bad product must not abort the batch.
+    for (let page = 1; page <= 12; page++) {
+      if (Date.now() - started > 180_000 || candidates.size >= target) break;
+      try {
+        const results = await searchOrosyProducts(query, { page, perPage: 100 });
+        if (results.length === 0) break;
+        for (const item of results) {
+          if (candidates.size >= target) break;
+          if (!japaneseTitle(item.title) || !item.orderable || !item.imageUrl || !item.imageUrl.startsWith("https://")) continue;
+          if ([...candidates.values()].some(existing => existing?.id === item.id)) continue;
+          try {
+            const detail = await getOrosyProductDetail(item.id);
+            if (!detail || !japaneseTitle(detail.title) || !detail.orderable || !detail.imageUrl || !detail.imageUrl.startsWith("https://")) continue;
+            const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId);
+            if (!variation) continue;
+            candidates.set(`${detail.id}:${variation.variationId}`, detail);
+          } catch {
+            // One bad product must not abort the batch.
+          }
         }
+        if (results.length < 100) break;
+      } catch {
+        // Continue with the next page/category.
+        break;
       }
-    } catch {
-      // Continue with the next category.
     }
   }
 
@@ -118,19 +126,21 @@ export async function GET(request: Request) {
       currency: variation.currency ?? "JPY",
       inventory: variation.stockQty,
       ship_to: "JP",
-      tracking_available: true,
+      // Do not infer tracking capability from API access alone.
+      tracking_available: false,
       order_method: "orosy_api",
       api_available: true,
       identity_method: variation.jan ? "jan" : "orosy_supplier_variant",
       identity_status: "linked",
-      identity_confidence: variation.jan ? 1 : 0.98,
+      identity_confidence: variation.jan ? 1 : 0.7,
       configured: true,
       orderable: true,
       price_confirmed: true,
       inventory_confirmed: true,
       verification_status: "verified",
-      shipping_status: "verified",
-      shipping_checked_at: now,
+      // A product detail response does not prove destination-specific shipping cost or tracking.
+      shipping_status: "unverified",
+      shipping_checked_at: null,
       inventory_checked_at: now,
       last_verified_at: now,
       fetched_at: now,
@@ -161,8 +171,8 @@ export async function GET(request: Request) {
       selling_price: sellingPrice,
       currency: "JPY",
       published: false,
-      selection_reasons: ["OROSY_BULK_IMPORT", "JAPANESE_TITLE", "WOMEN_FOCUSED", "IN_STOCK", "IMAGE_VERIFIED", "ORDERABLE", "TRACKING_CAPABILITY_VERIFIED"],
-      missing: [],
+      selection_reasons: ["OROSY_BULK_IMPORT", "JAPANESE_TITLE", "IN_STOCK", "IMAGE_URL_PRESENT", "SUPPLIER_ORDERABLE_FLAG"],
+      missing: ["SHIPPING_COST_UNCONFIRMED", "TRACKING_UNCONFIRMED", "SALES_TEST_REQUIRED"],
       published_at: null,
       pipeline_stage: "SELECTED",
       pipeline_status: "selected",
@@ -175,12 +185,13 @@ export async function GET(request: Request) {
       source_cost: variation.buyerPrice,
       shipping_cost: null,
       inventory: variation.stockQty,
-      orderable: true,
-      tracking_available: true,
+      orderable: detail.orderable === true,
+      tracking_available: false,
       identity_method: variation.jan ? "jan" : "orosy_supplier_variant",
-      identity_confidence: variation.jan ? 1 : 0.98,
-      contribution_profit: sellingPrice - variation.buyerPrice,
-      contribution_margin: ((sellingPrice - variation.buyerPrice) / sellingPrice) * 100,
+      identity_confidence: variation.jan ? 1 : 0.7,
+      // Gross profit cannot be asserted until shipping and channel/payment fees are known.
+      contribution_profit: null,
+      contribution_margin: null,
       updated_at: now,
     };
 
@@ -198,12 +209,15 @@ export async function GET(request: Request) {
     accepted.push(String(listingResult.data.id));
   }
 
-  let shopify = null;
-  try {
-    shopify = await syncPublishedListingsToShopify(Math.min(200, accepted.length || 200));
-  } catch (error) {
-    shopify = { failed: accepted.length, error: error instanceof Error ? error.message : String(error) };
-  }
+  // Imported rows are deliberately unpublished until the independent sales-test
+  // publication gate records approval. Calling the published-listing sync here
+  // cannot publish these rows and, when accepted is empty, previously triggered
+  // an unrelated 200-row sync. Keep ingestion and channel publication separate.
+  const shopify = {
+    skipped: true,
+    reason: "awaiting_sales_test_publication_gate",
+    accepted: accepted.length,
+  };
 
   return NextResponse.json({
     ok: true,
