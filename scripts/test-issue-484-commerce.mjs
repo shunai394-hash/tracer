@@ -5,6 +5,8 @@ import { attachSupplierCommercialEvidence } from "../lib/market/supplier-commerc
 import { uniqueRowsByKey } from "../lib/ordering/channel-listing-match.ts";
 import { evaluateDropshipOrderGate } from "../lib/ordering/dropship-gate.ts";
 import { selectShopifyVariantForSku } from "../lib/shopify/sync-published-listings.ts";
+import { simulateContributionProfit } from "../lib/intelligence/simulate-profit.ts";
+import { resolveSupplyShippingPolicy } from "../lib/market/supply-shipping-policy.ts";
 
 const NOW = Date.parse("2026-10-13T00:00:00.000Z");
 const FRESH = "2026-10-12T12:00:00.000Z";
@@ -254,6 +256,89 @@ await test("dropship gate blocks a cross-currency order without FX evidence", ()
   });
   assert.equal(duplicate.canExecuteLive, false);
   assert.ok(duplicate.blocked.includes("duplicate_order"));
+});
+
+
+await test("only a verified CJ China-to-Japan quote can stand in for domestic delivery", () => {
+  const cjPolicy = resolveSupplyShippingPolicy({
+    supplier: "CJ Dropshipping",
+    shipTo: "JP",
+    shippingCost: 4.18,
+    verificationStatus: "verified",
+    shippingStatus: "verified",
+  });
+  assert.equal(cjPolicy.directToJapanShippingConfirmed, true);
+  assert.equal(cjPolicy.domesticShipping, 0);
+  assert.equal(cjPolicy.requireDomesticShipping, false);
+
+  const cjProfit = simulateContributionProfit({
+    sellingPrice: 3980,
+    sellingCurrency: "JPY",
+    sellingProvider: "tracer_supply",
+    sourceCost: 12,
+    sourceCurrency: "USD",
+    sourceProvider: "cj",
+    internationalShipping: 4.18,
+    domesticShipping: cjPolicy.domesticShipping,
+    requireDomesticShipping: cjPolicy.requireDomesticShipping,
+    shippingCurrency: "USD",
+    sourceFxRateToSelling: 150,
+    sourceFxRateSource: "test_observed_rate",
+  });
+  assert.equal(cjProfit.calculable, true, cjProfit.incalculableReason ?? "profit not calculable");
+  assert.equal(cjProfit.shippingUnknown, false);
+  assert.equal(cjProfit.domesticShipping, 0);
+  assert.ok(cjProfit.platformFee > 0);
+  assert.ok(cjProfit.paymentFee > 0);
+  assert.ok(cjProfit.advertisingAllowance > 0);
+  assert.ok(cjProfit.returnRefundReserve > 0);
+  assert.ok(cjProfit.fxReserve > 0);
+
+  const nonCjPolicy = resolveSupplyShippingPolicy({
+    supplier: "another_supplier",
+    shipTo: "JP",
+    shippingCost: 4.18,
+    verificationStatus: "verified",
+    shippingStatus: "verified",
+  });
+  assert.equal(nonCjPolicy.directToJapanShippingConfirmed, false);
+  assert.equal(nonCjPolicy.domesticShipping, null);
+  assert.equal(nonCjPolicy.requireDomesticShipping, true);
+  const nonCjProfit = simulateContributionProfit({
+    sellingPrice: 3980,
+    sellingCurrency: "JPY",
+    sellingProvider: "tracer_supply",
+    sourceCost: 1000,
+    sourceCurrency: "JPY",
+    sourceProvider: "another_supplier",
+    internationalShipping: 300,
+    domesticShipping: nonCjPolicy.domesticShipping,
+    requireDomesticShipping: nonCjPolicy.requireDomesticShipping,
+    shippingCurrency: "JPY",
+  });
+  assert.equal(nonCjProfit.calculable, false);
+  assert.equal(nonCjProfit.incalculableReason, "domestic_shipping_unknown");
+  assert.equal(nonCjProfit.shippingUnknown, true);
+
+  const unverifiedCjPolicy = resolveSupplyShippingPolicy({
+    supplier: "cj",
+    shipTo: "JP",
+    shippingCost: 4.18,
+    verificationStatus: "verified",
+    shippingStatus: "pending",
+  });
+  assert.equal(unverifiedCjPolicy.directToJapanShippingConfirmed, false);
+  assert.equal(unverifiedCjPolicy.requireDomesticShipping, true);
+
+  const missingQuotePolicy = resolveSupplyShippingPolicy({
+    supplier: "cj",
+    shipTo: "JP",
+    shippingCost: null,
+    verificationStatus: "verified",
+    shippingStatus: "verified",
+  });
+  assert.equal(missingQuotePolicy.directToJapanShippingConfirmed, false);
+  assert.equal(missingQuotePolicy.requireDomesticShipping, true);
 });
 
 await Promise.all(results.map(() => Promise.resolve()));
