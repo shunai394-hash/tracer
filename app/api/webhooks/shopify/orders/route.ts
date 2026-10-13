@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyShopifyWebhookHmac } from "@/lib/shopify/admin";
 import { getOrderSkuLookup, resolveShopifyOrderSkus } from "@/lib/shopify/order-sku-mapping";
+import { createDropshipPurchaseOrdersForShopOrder } from "@/lib/ordering/dropship";
 
 export const runtime = "nodejs";
 
@@ -21,9 +22,35 @@ export async function POST(request: Request) {
     if (!externalId) return NextResponse.json({ ok: false, error: "shopify_order_id_missing" }, { status: 400 });
 
     const db = createSupabaseAdminClient();
-    const existing = await db.from("shop_orders").select("id").eq("shopify_order_id", externalId).maybeSingle();
+    const existing = await db.from("shop_orders").select("id,payment_status,order_status").eq("shopify_order_id", externalId).maybeSingle();
     if (existing.error) throw new Error(existing.error.message);
-    if (existing.data) return NextResponse.json({ ok: true, duplicate: true, orderId: String(existing.data.id) });
+    if (existing.data) {
+      const financial = String(order.financial_status ?? "pending");
+      const paid = financial === "paid";
+      let paymentStatus = String(existing.data.payment_status ?? "");
+      if (paid && paymentStatus !== "paid") {
+        const { error: paymentUpdateError } = await db
+          .from("shop_orders")
+          .update({
+            payment_status: "paid",
+            order_status: "fulfillment_pending",
+            paid_at: new Date().toISOString(),
+            shopify_financial_status: financial,
+            shopify_fulfillment_status: order.fulfillment_status ? String(order.fulfillment_status) : null,
+          })
+          .eq("id", existing.data.id)
+          .neq("payment_status", "paid");
+        if (paymentUpdateError) throw new Error(paymentUpdateError.message);
+        paymentStatus = "paid";
+      }
+      // Shopify may deliver a later paid/update event for the same order ID.
+      // Retry the idempotent PO snapshot step for paid orders rather than
+      // acknowledging a duplicate while leaving procurement uninitialized.
+      if (paid || paymentStatus === "paid") {
+        await createDropshipPurchaseOrdersForShopOrder(String(existing.data.id));
+      }
+      return NextResponse.json({ ok: true, duplicate: true, orderId: String(existing.data.id), paid: paid || paymentStatus === "paid" });
+    }
 
     const items = Array.isArray(order.line_items) ? order.line_items as Array<Record<string, unknown>> : [];
     const skus = items.map((item) => String(item.sku ?? "").trim());
@@ -185,12 +212,12 @@ export async function POST(request: Request) {
     }).select("id").single();
     if (inserted.error) throw new Error(inserted.error.message);
 
-    for (const [index, item] of items.entries()) {
+    const itemRows = items.map((item, index) => {
       // Use the same normalized SKU used during resolution; Shopify payloads may
       // contain surrounding whitespace even though lookup keys are trimmed.
       const listing = bySku.get(skus[index]);
       if (!listing) throw new Error("listing mapping missing during item insert");
-      const row = await db.from("shop_order_items").insert({
+      return {
         order_id: inserted.data.id,
         listing_id: listing.id,
         product_id: listing.product_id,
@@ -203,8 +230,21 @@ export async function POST(request: Request) {
         unit_price: n(item.price) ?? n(listing.selling_price),
         currency,
         shopify_line_item_id: item.id == null ? null : String(item.id),
-      });
-      if (row.error) throw new Error(row.error.message);
+      };
+    });
+    const itemInsert = await db.from("shop_order_items").insert(itemRows);
+    if (itemInsert.error) {
+      // Do not leave a parent order that causes webhook retries to be treated
+      // as complete when its line items were not persisted.
+      const { error: cleanupError } = await db.from("shop_orders").delete().eq("id", inserted.data.id).eq("shopify_order_id", externalId);
+      if (cleanupError) console.error("[TRACER SHOPIFY ORDER CLEANUP ERROR]", cleanupError.message);
+      throw new Error(`shop_order_items_insert_failed:${itemInsert.error.message}`);
+    }
+
+    if (paid) {
+      // This creates idempotent internal purchase-order snapshots only; actual
+      // supplier execution remains separately gated and disabled unless enabled.
+      await createDropshipPurchaseOrdersForShopOrder(String(inserted.data.id));
     }
 
     return NextResponse.json({ ok: true, orderId: String(inserted.data.id), paid });
