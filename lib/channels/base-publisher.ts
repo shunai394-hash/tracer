@@ -235,54 +235,15 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     // passed and the currently observed supply is sellable. Automatic purchasing
     // is evaluated separately at order time; it must never suppress a valid
     // storefront listing here.
-    if (listing.tracking_available !== true) {
-      await supabase.from("shop_listings").update({
-        published: false,
-        orderable: false,
-        base_publication_status: "failed",
-        pipeline_stage: "BASE_PUBLICATION",
-        pipeline_status: "blocked",
-        pipeline_reason: "tracking_unavailable",
-        pipeline_updated_at: new Date().toISOString(),
-      }).eq("id", listingId);
-      if (listing.base_item_id) {
-        try {
-          await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price: Number(listing.selling_price ?? 0), stock: 0, visible: false });
-        } catch (error) {
-          results.push({ listingId, ok: false, error: error instanceof Error ? error.message : String(error) });
-          continue;
-        }
-      }
-      results.push({ listingId, ok: false, skipped: true, error: "tracking_unavailable" });
-      continue;
-    }
-
-    if (!listing.supplier_product_id || !listing.supplier_variant_id) {
-      await supabase.from("shop_listings").update({
-        published: false,
-        orderable: false,
-        pipeline_stage: "BASE_PUBLICATION",
-        pipeline_status: "blocked",
-        pipeline_reason: "supplier_variant_identity_missing",
-        pipeline_updated_at: new Date().toISOString(),
-      }).eq("id", listingId);
-      results.push({ listingId, ok: false, skipped: true, error: "supplier_variant_identity_missing" });
-      continue;
-    }
-
     const price = Number(listing.selling_price);
-    if (!Number.isFinite(price) || price <= 0) {
-      await supabase.from("shop_listings").update({ pipeline_stage: "BASE_PUBLICATION", pipeline_status: "blocked", pipeline_reason: "selling_price_invalid", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
-      results.push({ listingId, ok: false, skipped: true, error: "selling_price_invalid" });
-      continue;
-    }
-
     if (!validHttpUrl(listing.image_url)) {
       // Fail closed for image-less products, including items already visible on BASE.
       // Hide the remote item before recording the local block whenever an external ID exists.
       let hideError: string | null = null;
       if (listing.base_item_id) {
-        try {
+        if (!Number.isFinite(price) || price <= 0) {
+          hideError = "base_hide_price_unknown";
+        } else try {
           await editBaseItem({
             itemId: String(listing.base_item_id),
             title: "販売停止中の商品",
@@ -318,6 +279,49 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       }
       continue;
     }
+
+
+    if (listing.tracking_available !== true) {
+      await supabase.from("shop_listings").update({
+        published: false,
+        orderable: false,
+        base_publication_status: "failed",
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "blocked",
+        pipeline_reason: "tracking_unavailable",
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      if (listing.base_item_id) {
+        try {
+          await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price: Number(listing.selling_price ?? 0), stock: 0, visible: false });
+        } catch (error) {
+          results.push({ listingId, ok: false, error: error instanceof Error ? error.message : String(error) });
+          continue;
+        }
+      }
+      results.push({ listingId, ok: false, skipped: true, error: "tracking_unavailable" });
+      continue;
+    }
+
+    if (!listing.supplier_product_id || !listing.supplier_variant_id) {
+      await supabase.from("shop_listings").update({
+        published: false,
+        orderable: false,
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "blocked",
+        pipeline_reason: "supplier_variant_identity_missing",
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      results.push({ listingId, ok: false, skipped: true, error: "supplier_variant_identity_missing" });
+      continue;
+    }
+
+    if (!Number.isFinite(price) || price <= 0) {
+      await supabase.from("shop_listings").update({ pipeline_stage: "BASE_PUBLICATION", pipeline_status: "blocked", pipeline_reason: "selling_price_invalid", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
+      results.push({ listingId, ok: false, skipped: true, error: "selling_price_invalid" });
+      continue;
+    }
+
 
     const shippingCost = listing.shipping_cost === null || listing.shipping_cost === undefined ? null : Number(listing.shipping_cost);
     if (shippingCost === null || !Number.isFinite(shippingCost) || shippingCost <= 0) {
