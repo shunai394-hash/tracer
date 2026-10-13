@@ -20,12 +20,10 @@ function isWomens(title: unknown): boolean {
 }
 
 function selectSafeVariant(variants: CJProductVariant[]): CJProductVariant | null {
-  const unambiguous = selectUnambiguousVariant(variants);
-  if (unambiguous?.vid) return unambiguous;
-  const priced = variants
-    .filter((variant) => Boolean(variant.vid) && Number(variant.sellPrice) > 0)
-    .sort((a, b) => Number(a.sellPrice) - Number(b.sellPrice));
-  return priced.length > 0 ? priced[0] : null;
+  // A low price is not identity evidence. If CJ returns multiple variants,
+  // do not guess which size/color the listing represents.
+  const variant = selectUnambiguousVariant(variants);
+  return variant?.vid ? variant : null;
 }
 
 export async function repairCjMissingWomenVariants(options: { limit?: number } = {}) {
@@ -73,9 +71,11 @@ export async function repairCjMissingWomenVariants(options: { limit?: number } =
         inventory,
         inventory_confirmed: true,
         price_confirmed: true,
-        orderable: true,
-        tracking_available: true,
-        api_available: true,
+        // Variant recovery restores live supply evidence only. It does not
+        // prove marketplace identity or pass the sales-test gate.
+        orderable: false,
+        tracking_available: false,
+        api_available: false,
         verification_status: "retryable",
         verification_error: null,
         metadata: nextMetadata,
