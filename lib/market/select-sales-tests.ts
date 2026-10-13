@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { womenProductPriority } from "@/lib/intelligence/womens-priority";
+import { womenMerchandisingPriority, womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
@@ -340,8 +340,15 @@ export async function selectAndPublishSalesTests(
   }
 
   eligible.sort((a, b) => {
-    const womenA = womenProductPriority({ title: String(a.bestseller.title ?? ""), category: String(a.bestseller.category ?? "") });
-    const womenB = womenProductPriority({ title: String(b.bestseller.title ?? ""), category: String(b.bestseller.category ?? "") });
+    const titleA = String(a.bestseller.title ?? "");
+    const titleB = String(b.bestseller.title ?? "");
+    const categoryA = String(a.bestseller.category ?? "");
+    const categoryB = String(b.bestseller.category ?? "");
+    const merchandiseA = womenMerchandisingPriority({ title: titleA, category: categoryA });
+    const merchandiseB = womenMerchandisingPriority({ title: titleB, category: categoryB });
+    if (merchandiseB !== merchandiseA) return merchandiseB - merchandiseA;
+    const womenA = womenProductPriority({ title: titleA, category: categoryA });
+    const womenB = womenProductPriority({ title: titleB, category: categoryB });
     if (womenB.bonus !== womenA.bonus) return womenB.bonus - womenA.bonus;
     if (b.qualityScore !== a.qualityScore) return b.qualityScore - a.qualityScore;
     const rankA = asNumber(a.bestseller.rank) ?? Number.POSITIVE_INFINITY;
