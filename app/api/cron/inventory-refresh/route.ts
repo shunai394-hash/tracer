@@ -58,6 +58,7 @@ export async function GET(request: Request) {
     const results = [];
     let baseUpdated = 0;
     let baseErrors = 0;
+    let baseSyncSkipped = 0;
     let shopifyStopped = 0;
     let shopifyStopErrors = 0;
     let shopifyStopSkipped = 0;
@@ -277,9 +278,10 @@ export async function GET(request: Request) {
               visible: showOnBase,
             });
             baseUpdated++;
-            await supabase.from("shop_listings").update({
+            const { error: clearBaseError } = await supabase.from("shop_listings").update({
               base_last_error: null,
             }).eq("id", listingId);
+            if (clearBaseError) throw new Error(clearBaseError.message);
           } catch (error) {
             baseSyncError = error instanceof Error ? error.message : String(error);
             baseErrors++;
@@ -287,9 +289,27 @@ export async function GET(request: Request) {
               base_last_error: baseSyncError,
             }).eq("id", listingId);
           }
+        } else if (listing.base_item_id) {
+          // Never report the refresh as clean if an existing external item
+          // could not be reconciled because credentials or a valid price are absent.
+          baseSyncSkipped++;
+          baseSyncError = !isBaseConfigured() ? "base_not_configured" : "base_price_unknown";
+          await supabase.from("shop_listings").update({
+            base_last_error: baseSyncError,
+          }).eq("id", listingId);
         }
 
         const shopifySyncError = showOnBase ? null : await stopShopifyListing(listing.shopify_product_id);
+        if (!showOnBase) {
+          const { error: shopifyStateError } = await supabase.from("shop_listings").update({
+            shopify_sync_status: shopifySyncError ? "reconciliation_required" : "blocked",
+            shopify_sync_error: shopifySyncError
+              ? `inventory_refresh_unpublish_failed:${shopifySyncError}`.slice(0, 500)
+              : refreshDecision.reasons.join(",").slice(0, 500),
+            shopify_synced_at: now,
+          }).eq("id", listingId);
+          if (shopifyStateError) throw new Error(`shopify_reconciliation_state_write_failed:${shopifyStateError.message}`);
+        }
         results.push({ listingId, ok: true, inventory, orderable, baseSyncError, shopifySyncError });
       } catch (error) {
         results.push({
@@ -300,7 +320,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const errors = results.filter((item) => !item.ok && !item.blocked).length + baseErrors + shopifyStopErrors;
+    const errors = results.filter((item) => !item.ok && !item.blocked).length + baseErrors + baseSyncSkipped + shopifyStopErrors + shopifyStopSkipped;
     return NextResponse.json({
       ok: errors === 0,
       configured: (listings ?? []).length > 0,
@@ -310,6 +330,7 @@ export async function GET(request: Request) {
       errors: results.filter((item) => !item.ok && !item.blocked).length,
       baseUpdated,
       baseErrors,
+      baseSyncSkipped,
       shopifyStopped,
       shopifyStopErrors,
       shopifyStopSkipped,
