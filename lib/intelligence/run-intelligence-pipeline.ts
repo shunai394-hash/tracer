@@ -476,7 +476,7 @@ export async function runIntelligencePipeline(options: {
   }));
   steps.push(await runStep("shopping_demand_sync", () => syncShoppingDemandObservations(), { budgetMs: 15_000 }));
   steps.push(await runStep("demand", () => inspectDemandObservations(), { budgetMs: 5_000 }));
-  steps.push(await runStep("demand_analyze", () => persistDemandIntelligence(), { budgetMs: 12_000 }));
+  steps.push(await runStep("demand_analyze", () => persistDemandIntelligence(), { budgetMs: 25_000 }));
   steps.push(await runStep("supply", () => researchLimitedSupply(), { budgetMs: 18_000 }));
 
   // Supply-first is discovery only. It creates canonical product/offer/intelligence
