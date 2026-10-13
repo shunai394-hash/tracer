@@ -133,8 +133,9 @@ export function buildThreeSiteCorrespondence(input: {
     const shopifyTail = shopifyIdTail(listing.shopify_product_id);
     const product = shopifyTail ? shopifyById.get(shopifyTail) : undefined;
     const variantTail = shopifyIdTail(listing.shopify_variant_id);
-    const variant = product
-      ? (variantTail ? product.variants.find((v) => shopifyIdTail(v.id) === variantTail) : product.variants[0])
+    // Never infer a variant from array order. Missing or stale variant IDs must fail closed.
+    const variant = product && variantTail
+      ? product.variants.find((v) => shopifyIdTail(v.id) === variantTail)
       : undefined;
     const shopify: ChannelSide = {
       externalId: text(listing.shopify_product_id),
@@ -149,7 +150,8 @@ export function buildThreeSiteCorrespondence(input: {
     else if (!baseItem) issues.push("base_item_not_found");
     if (!shopifyTail) issues.push("shopify_id_missing");
     else if (!product) issues.push("shopify_product_not_found");
-    else if (variantTail && !variant) issues.push("shopify_variant_not_found");
+    else if (!variantTail) issues.push("shopify_variant_id_missing");
+    else if (!variant) issues.push("shopify_variant_not_found");
     if (baseId && (baseClaims.get(baseId) ?? 0) > 1) issues.push("base_id_shared_by_listings");
     if (shopifyTail && (shopifyClaims.get(shopifyTail) ?? 0) > 1) issues.push("shopify_id_shared_by_listings");
 
