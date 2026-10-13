@@ -29,6 +29,29 @@ function normalizedTitle(value: unknown): string {
     .replace(/[^\p{L}\p{N}]/gu, "");
 }
 
+function titleTokens(value: unknown): Set<string> {
+  const normalized = normalizedTitle(value);
+  const tokens = new Set<string>();
+  // Character bigrams support Japanese titles that have no whitespace.
+  if (normalized.length >= 2) {
+    for (let index = 0; index < normalized.length - 1; index += 1) {
+      tokens.add(normalized.slice(index, index + 2));
+    }
+  } else if (normalized) {
+    tokens.add(normalized);
+  }
+  return tokens;
+}
+
+function titleSimilarity(left: unknown, right: unknown): number {
+  const a = titleTokens(left);
+  const b = titleTokens(right);
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const token of a) if (b.has(token)) intersection += 1;
+  return intersection / (a.size + b.size - intersection);
+}
+
 function visibility(value: unknown): boolean | null {
   if (value === true || value === 1 || value === "1") return true;
   if (value === false || value === 0 || value === "0") return false;
@@ -110,6 +133,18 @@ export async function POST(request: Request) {
       const key = normalizedTitle(title);
       const exactIdListings = byBaseId.get(baseItemId) ?? [];
       const titleCandidates = key ? (byTitle.get(key) ?? []) : [];
+      const fuzzyTitleCandidates = listings
+        .filter((row) => normalizedTitle(row.title) && normalizedTitle(row.title) !== key)
+        .map((row) => ({
+          row,
+          titleSimilarity: titleSimilarity(title, row.title),
+          priceDifference: Number.isFinite(Number(item.price)) && Number.isFinite(Number(row.selling_price))
+            ? Number(row.selling_price) - Number(item.price)
+            : null,
+        }))
+        .filter((candidate) => candidate.titleSimilarity >= 0.18)
+        .sort((left, right) => right.titleSimilarity - left.titleSimilarity)
+        .slice(0, 10);
       return {
         baseItemId,
         visible: visibility(item.visible),
@@ -149,6 +184,25 @@ export async function POST(request: Request) {
             ? Number(row.selling_price) - Number(item.price)
             : null,
         })),
+        fuzzyTitleCandidateCount: fuzzyTitleCandidates.length,
+        fuzzyTitleCandidates: fuzzyTitleCandidates.map(({ row, titleSimilarity, priceDifference }) => ({
+          listingId: row.id,
+          title: row.title,
+          productId: row.product_id,
+          published: row.published,
+          existingBaseItemId: row.base_item_id,
+          supplierName: row.supplier_name,
+          supplierListingId: row.supplier_listing_id,
+          supplierProductId: row.supplier_product_id,
+          supplierVariantId: row.supplier_variant_id,
+          inventory: row.inventory,
+          orderable: row.orderable,
+          sellingPrice: row.selling_price,
+          basePublicationStatus: row.base_publication_status,
+          titleSimilarity: Number(titleSimilarity.toFixed(4)),
+          priceDifference,
+          reviewRequired: true,
+        })),
       };
     });
 
@@ -169,9 +223,10 @@ export async function POST(request: Request) {
       baseItemsWithoutExactMappingCount: unmapped,
       baseItemsWithAmbiguousExactMappingCount: ambiguous,
       baseItemsWithExactTitleCandidateCount: titleCandidateCount,
+      baseItemsWithFuzzyTitleCandidateCount: items.filter((item) => item.fuzzyTitleCandidateCount > 0).length,
       tracerListingsWithoutBaseItemIdCount: listings.filter((row) => !String(row.base_item_id ?? "").trim()).length,
       duplicateBaseItemIdGroupsInTracer: [...byBaseId.entries()].filter(([, rows]) => rows.length > 1).length,
-      note: "Exact-title candidates are unverified suggestions only. This report never writes mappings or changes BASE listings.",
+      note: "Exact and fuzzy title candidates are unverified suggestions only. Similarity is a review aid, not proof of identity. This report never writes mappings or changes BASE listings.",
       items,
     };
     const date = report.generatedAt.slice(0, 10);
