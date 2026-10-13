@@ -84,6 +84,7 @@ assert.match(base, /hidden: results\.filter\(\(r\) => r\.ok && r\.hidden\)\.leng
 assert.match(base, /if \(!validHttpUrl\(listing\.image_url\)\)/, "BASE publisher must reject missing or invalid product images");
 assert.match(base, /商品画像を確認できないため、現在販売を停止しています。/, "image-less existing BASE products must be hidden with zero stock");
 assert.match(base, /image_url_invalid_hide_failed/, "BASE hide failures for image-less products must be observable");
+assert.doesNotMatch(base, /base_publication_status:\s*[^,\n]*(?:"hidden"|"blocked")/, "BASE publication status must use only database-allowed enum values");
 assert.match(shopify, /image_url_missing_or_invalid/, "Shopify sync must block products without usable images before create/update");
 assert.match(route, /publishPublishedListingsToBase\(50/);
 assert.match(baseRepair, /base_create_id_persist_failed/ , "BASE identity repair may use the exact ID saved when item creation succeeded but DB persistence failed");
