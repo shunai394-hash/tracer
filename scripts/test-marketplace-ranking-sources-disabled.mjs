@@ -22,7 +22,7 @@ test("ranking feeds cannot defer or feed the supplier-led intelligence pipeline"
 });
 
 test("supplier investigation does not fetch Amazon product pages to enrich old marketplace rows", () => {
-  assert.doesNotMatch(supplierInvestigation, /amazon\\.co\\.jp|fetchBrightDataPage|parseAmazonProductDetail|enrichAsinOnlyRows/);
+  assert.doesNotMatch(supplierInvestigation, /amazon\.co\.jp|fetchBrightDataPage|parseAmazonProductDetail|enrichAsinOnlyRows/);
 });
 
 test("the product-facing system map describes supplier-led discovery, not marketplace rankings", () => {
