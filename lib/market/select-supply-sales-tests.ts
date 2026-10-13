@@ -33,7 +33,7 @@ function listingQuality(row: Record<string, unknown>): number {
 
 export type SupplySalesTestResult = { published: number; publishedListingIds: string[]; selectedListingIds: string[]; considered: number; rejected: Array<{ productId: string; reasons: string[] }> };
 
-export async function selectAndPublishSupplySalesTests(productIds: string[], limit = 3, options: { dryRun?: boolean; allowNativeCjIdentity?: boolean } = {}): Promise<SupplySalesTestResult & { eligibleProductIds?: string[] }> {
+export async function selectAndPublishSupplySalesTests(productIds: string[], limit = 3, options: { dryRun?: boolean; allowNativeCjIdentity?: boolean } = {}): Promise<SupplySalesTestResult & { eligibleProductIds?: string[]; eligibleSamples?: Array<Record<string, unknown>> }> {
   const supabase = createSupabaseAdminClient();
   const observedFx = await getObservedUsdToJpyRate();
   if (productIds.length === 0 || limit <= 0) return { published: 0, publishedListingIds: [], selectedListingIds: [], considered: 0, rejected: [] };
@@ -182,7 +182,35 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (womenB.bonus !== womenA.bonus) return womenB.bonus - womenA.bonus;
     return b.quality - a.quality;
   });
-  if (options.dryRun) return { published: 0, publishedListingIds: [], selectedListingIds: [], considered: uniqueProductIds.length, rejected: rejected.slice(0, 50), eligibleProductIds: eligible.map((item) => item.productId) };
+  if (options.dryRun) return {
+    published: 0,
+    publishedListingIds: [],
+    selectedListingIds: [],
+    considered: uniqueProductIds.length,
+    rejected: rejected.slice(0, 50),
+    eligibleProductIds: eligible.map((item) => item.productId),
+    eligibleSamples: eligible.slice(0, 50).map((item) => ({
+      productId: item.productId,
+      title: String(item.listing.title ?? item.base.normalized_title ?? ""),
+      supplier: String(item.listing.supplier ?? ""),
+      supplierProductId: item.listing.supplier_product_id ?? null,
+      supplierVariantId: item.listing.supplier_variant_id ?? null,
+      sellingPriceJpy: num((item.base.metadata as Record<string, unknown> | null)?.selling_price_jpy),
+      sourceCost: item.profit.sourceCost,
+      shippingCost: item.profit.internationalShipping,
+      inventory: num(item.listing.inventory),
+      contributionProfit: item.profit.contributionProfit,
+      contributionMargin: item.profit.contributionMargin,
+      identityMethod: item.listing.identity_method ?? null,
+      verificationStatus: item.listing.verification_status ?? null,
+      shippingStatus: item.listing.shipping_status ?? null,
+      priceConfirmed: item.listing.price_confirmed === true,
+      inventoryConfirmed: item.listing.inventory_confirmed === true,
+      orderable: item.listing.orderable === true,
+      trackingAvailable: item.listing.tracking_available === true,
+      apiAvailable: item.listing.api_available === true,
+    })),
+  };
   const eligibleProductIds = eligible.map((item) => item.productId);
   const { data: liveListings, error: liveListingsError } = await supabase.from("shop_listings").select("product_id").in("product_id", eligibleProductIds).eq("published", true).in("pipeline_status", ["published"]);
   if (liveListingsError) throw new Error(liveListingsError.message);
