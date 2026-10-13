@@ -96,6 +96,11 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const sourceTitle = (typeof listing?.title === "string" && listing.title.trim()
       ? listing.title
       : typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
+    // A concrete supplier title must not mask a generic or workflow-derived
+    // product-master title (for example "トレンド・seeded_dueアイテム").
+    const masterTitle = (typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
+    if (base && !masterTitle) reasons.push("product_master_title_missing");
+    else if (base && !isPublishableCatalogTitle(masterTitle)) reasons.push("product_master_title_not_publishable");
     const sourceMetadata = base?.metadata && typeof base.metadata === 'object' && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const womenPriority = womenProductPriority({ title: sourceTitle, category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
     if (base && !womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
@@ -149,6 +154,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
       sourceProvider: String(listing.supplier ?? "unknown"),
       internationalShipping: shippingCost,
       domesticShipping: null,
+      requireDomesticShipping: true,
       shippingCurrency: typeof listing.currency === "string" ? listing.currency : "USD",
       sourceFxRateToSelling,
       sourceFxRateSource: sourceFxRateSource ?? undefined,
