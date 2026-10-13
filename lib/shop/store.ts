@@ -140,9 +140,9 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
     );
   } catch (error) {
     console.error("[shopify-live-stock-unavailable]", error instanceof Error ? error.message.slice(0, 300) : String(error));
-    // Keep the database snapshot visible during an API outage, but checkout still
-    // independently requires a successful live-stock verification.
-    return listings;
+    // Fail closed: an unverified database snapshot must never be presented as
+    // currently available stock. Retry after the Shopify inventory API recovers.
+    return [];
   }
 
   const staleSoldOut = listings.filter((listing) => {
