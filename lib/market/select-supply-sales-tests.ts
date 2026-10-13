@@ -39,7 +39,7 @@ export type SupplySalesTestResult = {
   considered: number;
   rejectedCount: number;
   rejectionCounts: Record<string, number>;
-  rejected: Array<{ productId: string; reasons: string[] }>;
+  rejected: Array<{ productId: string; reasons: string[]; title?: string; masterTitle?: string; category?: string | null; supplier?: string; categoryPriority?: number; sellingPrice?: number | null; sourceCost?: number | null; internationalShipping?: number | null; domesticShippingKnown?: boolean; contributionProfit?: number | null; contributionMargin?: number | null }>;
 };
 
 function summarizeRejections(rows: Array<{ reasons: string[] }>): Record<string, number> {
@@ -103,7 +103,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (best) listingByProduct.set(productId, best);
   }
 
-  const rejected: Array<{ productId: string; reasons: string[] }> = [];
+  const rejected: SupplySalesTestResult["rejected"] = [];
   const eligible: Array<{ productId: string; listing: Record<string, unknown>; base: Record<string, unknown>; intelligence: Record<string, unknown>; profit: ReturnType<typeof simulateContributionProfit>; quality: number }> = [];
   for (const productId of uniqueProductIds) {
     const reasons: string[] = []; const intelligence = intelligenceByProduct.get(productId); const base = baseByProduct.get(productId); const listing = listingByProduct.get(productId);
@@ -120,8 +120,8 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (base && !womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
     if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
     if (!intelligence) reasons.push("opportunity_intelligence_missing"); if (!base) reasons.push("product_intelligence_missing"); if (!listing) reasons.push("supplier_listing_missing");
-    if (reasons.length > 0) { rejected.push({ productId, reasons }); continue; }
-    if (!intelligence || !base || !listing) { rejected.push({ productId, reasons: ["required_supply_intelligence_missing"] }); continue; }
+    if (reasons.length > 0) { rejected.push({ productId, reasons, title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
+    if (!intelligence || !base || !listing) { rejected.push({ productId, reasons: ["required_supply_intelligence_missing"], title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
     if (!validHttpUrl(base.image_url)) reasons.push("image_url_invalid");
     const localizedTitle = localizeProductTitle(sourceTitle, metadataCategory(base.metadata));
     if (!isJapaneseProductTitle(localizedTitle)) reasons.push("japanese_title_unavailable");
@@ -191,7 +191,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
       if (num(intelligence.market_gap_score) === null) reasons.push("market_gap_evidence_missing");
       if (num(intelligence.overall_confidence) === null || (num(intelligence.overall_confidence) ?? 0) < 0.6) reasons.push("intelligence_confidence_low");
     }
-    if (reasons.length) { rejected.push({ productId, reasons: Array.from(new Set(reasons)) }); continue; }
+    if (reasons.length) { rejected.push({ productId, reasons: Array.from(new Set(reasons)), title: sourceTitle, masterTitle, category: metadataCategory(base.metadata), supplier: String(listing.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority, sellingPrice, sourceCost, internationalShipping: shippingCost, domesticShippingKnown: false, contributionProfit: profit.contributionProfit, contributionMargin: profit.contributionMargin }); continue; }
 
     const womenBonus = womenProductPriority({ title: typeof base.normalized_title === "string" ? base.normalized_title : "", category: typeof metadata.category === "string" ? metadata.category : null }).bonus;
     const quality = (num(intelligence.selection_score) ?? 0) * 0.45 + (num(intelligence.demand_score) ?? 0) * 0.2 + (num(intelligence.search_fit_score) ?? 0) * 0.1 + (num(intelligence.market_gap_score) ?? 0) * 0.1 + (num(intelligence.competition_score) ?? 0) * 0.05 + (num(intelligence.creative_score) ?? 0) * 0.05 + (num(intelligence.overall_confidence) ?? 0) * 100 * 0.05 + womenBonus;
@@ -204,6 +204,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (womenB.bonus !== womenA.bonus) return womenB.bonus - womenA.bonus;
     return b.quality - a.quality;
   });
+  const rejectedSamples = [...rejected].sort((a, b) => Number(a.reasons.includes("outside_womens_product_strategy")) - Number(b.reasons.includes("outside_womens_product_strategy"))).slice(0, 50);
   if (options.dryRun) return {
     published: 0,
     publishedListingIds: [],
@@ -211,7 +212,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     considered: uniqueProductIds.length,
     rejectedCount: rejected.length,
     rejectionCounts: summarizeRejections(rejected),
-    rejected: rejected.slice(0, 50),
+    rejected: rejectedSamples,
     eligibleProductIds: eligible.map((item) => item.productId),
     eligibleSamples: eligible.slice(0, 50).map((item) => ({
       productId: item.productId,
@@ -256,5 +257,5 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (result.error) throw new Error(result.error.message);
     if (result.data?.id) { const listingId = String(result.data.id); selectedListingIds.push(listingId); publishedListingIds.push(listingId); }
   }
-  return { published: publishedListingIds.length, publishedListingIds, selectedListingIds, considered: uniqueProductIds.length, rejectedCount: rejected.length, rejectionCounts: summarizeRejections(rejected), rejected: rejected.slice(0, 50) };
+  return { published: publishedListingIds.length, publishedListingIds, selectedListingIds, considered: uniqueProductIds.length, rejectedCount: rejected.length, rejectionCounts: summarizeRejections(rejected), rejected: rejectedSamples };
 }
