@@ -70,7 +70,7 @@ export type CollectedMarketplace = {
   };
 };
 
-async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVariantsMissing?: boolean } = {}): Promise<string | null> {
+async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVariantsMissing?: boolean; retryBrightDataWhenAmazonIdentifierMissing?: boolean } = {}): Promise<string | null> {
   const directFetch = async (): Promise<string | null> => {
     try {
       const response = await fetch(url, {
@@ -117,14 +117,31 @@ async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVar
         parseAmazonVariationAsinMap(html, url).length > 0
       )
     );
-  if (directHtml && (!options.retryBrightDataWhenCanonicalVariantsMissing || hasAmazonVariantEvidence(directHtml))) {
-    return directHtml;
-  }
+  // Child detail pages need a stronger success condition than "some HTML":
+  // challenge pages often return HTTP 200 HTML but contain no concrete barcode.
+  // Only use that direct response immediately when the requested evidence exists.
+  const hasAmazonProductIdentifier = (html: string | null): boolean => {
+    if (!html) return false;
+    const detail = parseAmazonProductDetail(html);
+    return Boolean(
+      normalizeIdentifier("jan", detail.jan) ||
+      normalizeIdentifier("gtin", detail.gtin) ||
+      normalizeIdentifier("ean", detail.ean) ||
+      normalizeIdentifier("upc", detail.upc)
+    );
+  };
+  const directHasRequiredEvidence =
+    (!options.retryBrightDataWhenCanonicalVariantsMissing || hasAmazonVariantEvidence(directHtml)) &&
+    (!options.retryBrightDataWhenAmazonIdentifierMissing || hasAmazonProductIdentifier(directHtml));
+  if (directHtml && directHasRequiredEvidence) return directHtml;
 
   if (isBrightDataConfigured()) {
     try {
       const page = await fetchBrightDataPage(url);
-      if (page.html && (!options.retryBrightDataWhenCanonicalVariantsMissing || hasAmazonVariantEvidence(page.html))) {
+      const brightDataHasRequiredEvidence =
+        (!options.retryBrightDataWhenCanonicalVariantsMissing || hasAmazonVariantEvidence(page.html)) &&
+        (!options.retryBrightDataWhenAmazonIdentifierMissing || hasAmazonProductIdentifier(page.html));
+      if (page.html && brightDataHasRequiredEvidence) {
         return page.html;
       }
       // If Bright Data did not improve the response, retain a usable direct
@@ -302,7 +319,7 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
           childDetailAttempted += childAsins.length;
           const recovered = await Promise.all(childAsins.map(async (child) => {
             const childUrl = `https://www.amazon.co.jp/dp/${child.asin}`;
-            const childHtml = await fetchHtml(childUrl);
+            const childHtml = await fetchHtml(childUrl, { retryBrightDataWhenAmazonIdentifierMissing: true });
             if (!childHtml) return null;
             childDetailFetched += 1;
             const childDetail = parseAmazonProductDetail(childHtml);
