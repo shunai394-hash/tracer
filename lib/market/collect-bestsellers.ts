@@ -203,7 +203,16 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
     enabledEntries.push(entry);
   }
   if (enabledEntries.length === 0) {
-    return { fetchedAt, marketplaces, itemCount: 0, sourceIndex: requestedSourceIndex };
+    // Existing cron cursors can point at a disabled-only window. Return the
+    // index immediately before the first approved source so the cron's normal
+    // next-index step resumes at Yahoo, and reset its page offset next run.
+    const firstEnabledSourceIndex = MARKETPLACE_SOURCES.findIndex(
+      (source) => source.marketplace !== "amazon.co.jp" && source.marketplace !== "rakuten",
+    );
+    const cursorBeforeFirstEnabled = firstEnabledSourceIndex >= 0
+      ? (firstEnabledSourceIndex + MARKETPLACE_SOURCES.length - 1) % MARKETPLACE_SOURCES.length
+      : requestedSourceIndex;
+    return { fetchedAt, marketplaces, itemCount: 0, sourceIndex: cursorBeforeFirstEnabled };
   }
 
   // Probe up to three sources per patrol in priority order. A blocked or
