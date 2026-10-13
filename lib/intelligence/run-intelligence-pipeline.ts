@@ -412,35 +412,25 @@ export async function runIntelligencePipeline(options: {
     // defer the pipeline so publication/procurement never treats source coverage as identity proof.
     const emptyCollection = observation.itemCount === 0;
     const emptyVariantEvidence = observation.canonicalVariantEvidenceParsed === 0;
-    const amazonProxyUnavailable = observation.enrichment.some(
-      (item) => item.marketplace === "amazon.co.jp" && !item.brightDataConfigured,
-    );
-    // Yahoo Shopping (0) and Rakuten (1) are useful demand-observation sources,
-    // but this exact-variant sales gate only accepts Amazon child-variant
-    // evidence. Do not stall the entire intelligence loop while rotating through
-    // those sources; their rows remain ineligible for downstream sales matching.
-    const sourceDoesNotProvideCanonicalChildVariants = observation.sourceIndex < 2;
+    // Amazon and Rakuten are excluded by sourcing policy; Yahoo Shopping is the
+    // only enabled marketplace source and must provide explicit child-variant
+    // evidence before downstream sales matching can proceed. Empty evidence is
+    // therefore always retryable, regardless of the persisted cursor index.
     const evidencePersistenceFailed = observation.canonicalVariantEvidenceParsed > 0
       && observation.canonicalVariantEvidenceWritten === 0
       && observation.canonicalVariantEvidenceWriteFailures > 0;
     if (emptyCollection || emptyVariantEvidence || evidencePersistenceFailed) {
-      const nonBlockingSourceCoverageSkip =
-        !emptyCollection && emptyVariantEvidence && sourceDoesNotProvideCanonicalChildVariants;
       return {
         ...observation,
         cursor,
         nextCursor: next,
         skipped: true,
-        retryable: !nonBlockingSourceCoverageSkip,
+        retryable: true,
         reason: emptyCollection
           ? "marketplace_collection_empty"
           : evidencePersistenceFailed
             ? "canonical_variant_evidence_write_failed"
-            : nonBlockingSourceCoverageSkip
-              ? "source_has_no_canonical_child_variant_contract"
-              : emptyVariantEvidence && amazonProxyUnavailable
-                ? "canonical_variant_evidence_empty_brightdata_not_configured"
-                : "canonical_variant_evidence_empty",
+            : "canonical_variant_evidence_empty",
       };
     }
     return { ...observation, cursor, nextCursor: next };
