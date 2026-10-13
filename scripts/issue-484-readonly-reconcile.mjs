@@ -3,6 +3,11 @@ import { attachSupplierCommercialEvidence } from "../lib/market/supplier-commerc
 import { evaluateShopListingRecord } from "../lib/market/listing-commercial-gate.ts";
 import { uniqueRowsByKey } from "../lib/ordering/channel-listing-match.ts";
 import { isShopifyConfigured, shopifyGraphQL, toShopifyGid } from "../lib/shopify/admin.ts";
+import {
+  indexShopifyCatalog,
+  reconcileShopifyListing,
+  summarizeShopifyListingReconciliation,
+} from "./shopify-reconciliation-core.mjs";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -210,6 +215,15 @@ if (isShopifyConfigured() || external.some((row) => row.shopify_product_id)) {
         productId: normalizeId(p.legacyResourceId ?? p.id), title: p.title, status: p.status,
       }));
       const dbVariantMatchCount = [...dbVariantIds.keys()].filter((id) => liveVariantIds.has(id)).length;
+      // Reconcile every linked row by external product/variant ID, expected SKU,
+      // price, and inventory. This is read-only and deliberately not an order
+      // authorization: supplier-side orderability still needs separate evidence.
+      const catalogIndex = indexShopifyCatalog(catalogProducts);
+      const listingComparisons = external
+        .filter((row) => row.shopify_product_id || row.shopify_variant_id)
+        .map((row) => reconcileShopifyListing(row, catalogIndex));
+      const listingReconciliation = summarizeShopifyListingReconciliation(listingComparisons);
+      const comparisonByListingId = new Map(listingComparisons.map((row) => [row.listingId, row]));
       shopify.push({
         state: "read_complete",
         productPages,
@@ -220,6 +234,7 @@ if (isShopifyConfigured() || external.some((row) => row.shopify_product_id)) {
         dbProductsMissingFromShopify,
         dbVariantsMatched: dbVariantMatchCount,
         dbVariantsMissingFromShopify,
+        listingReconciliation,
         liveProductsMissingFromDbCount: liveProductsMissingFromDb.length,
         liveProductsMissingFromDb: liveProductsMissingFromDb.slice(0, 200),
         liveProductStatuses: catalogProducts.reduce((acc, p) => {
@@ -235,15 +250,27 @@ if (isShopifyConfigured() || external.some((row) => row.shopify_product_id)) {
         locationListsTruncated,
         note: "inventoryQuantity is Shopify's aggregate variant quantity; per-location available quantities are reported separately. Neither value proves supplier stock or supplier orderability.",
       });
-      for (const row of external.filter((item) => item.shopify_product_id)) {
-        const gid = toShopifyGid("Product", row.shopify_product_id);
+      for (const row of external.filter((item) => item.shopify_product_id || item.shopify_variant_id)) {
+        const gid = row.shopify_product_id ? toShopifyGid("Product", row.shopify_product_id) : null;
         const found = Boolean(gid && liveProductIds.has(normalizeId(gid)));
+        const comparison = comparisonByListingId.get(String(row.id));
         shopify.push({
           listingId: row.id,
           found,
           productId: row.shopify_product_id,
-          published: row.published === true,
+          variantId: row.shopify_variant_id,
+          dbPublished: row.published === true,
           orderable: row.orderable === true,
+          productStatus: comparison?.productStatus ?? null,
+          expectedSku: comparison?.expectedSku ?? null,
+          liveSku: comparison?.liveSku ?? null,
+          expectedPrice: comparison?.expectedPrice ?? null,
+          livePrice: comparison?.livePrice ?? null,
+          priceMatches: comparison?.priceMatches ?? false,
+          expectedInventory: comparison?.expectedInventory ?? null,
+          liveInventory: comparison?.liveInventory ?? null,
+          inventoryMatches: comparison?.inventoryMatches ?? false,
+          mismatches: comparison?.mismatches ?? [],
         });
       }
     } catch (error) {
