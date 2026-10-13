@@ -81,13 +81,13 @@ assert.match(base, /invalid_request.*break/s, "BASE auth failures must stop the 
 assert.match(base, /unpublishFailed \+= 1/);
 assert.match(base, /hidden: results\.filter\(\(r\) => r\.ok && r\.hidden\)\.length/);
 assert.match(route, /publishPublishedListingsToBase\(50/);
-// Keep Vercel Cron disabled; guarded 15-minute reconciliation runs through GitHub Actions OIDC.
+// Keep Vercel Cron disabled; guarded reconciliation runs through GitHub Actions OIDC.
 assert.doesNotMatch(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/);
 assert.match(unpublishWorkflow, /cron: "\*\/15 \* \* \* \*"/, "guarded unlinked listing reconciliation must retry every 15 minutes via GitHub Actions");
 assert.match(unpublishWorkflow, /api\/cron\/unpublish-unlinked/);
 assert.match(unpublishWorkflow, /id-token: write/);
 assert.match(unpublishWorkflow, /timeout-minutes: 13/);
-assert.match(patrolWorkflow, /cron: "\*\/15 \* \* \* \*"/);
+assert.match(patrolWorkflow, /cron: "\*\/5 \* \* \* \*"/, "production patrol must run every five minutes via GitHub Actions");
 assert.match(patrolWorkflow, /push:/, "core patrol changes must trigger a guarded post-deploy run");
 assert.match(patrolWorkflow, /git merge-base --is-ancestor/);
 assert.match(patrolWorkflow, /pipelineComplete:/);
