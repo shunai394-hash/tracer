@@ -60,7 +60,7 @@ function nextCatalogQuery(queryIndex: number, queryCount: number): CatalogCursor
   return { queryIndex: (queryIndex + 1) % queryCount, page: 1 };
 }
 
-function nextCatalogQuery(queryIndex: number, queryCount: number): CatalogCursor {(db: ReturnType<typeof createSupabaseAdminClient>): Promise<CatalogCursor> {
+async function readCatalogCursor(db: ReturnType<typeof createSupabaseAdminClient>): Promise<CatalogCursor> {
   const { data, error } = await db
     .from("cron_runs")
     .select("metadata")
