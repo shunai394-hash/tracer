@@ -82,22 +82,153 @@ if (external.some((row) => row.shopify_product_id)) {
   if (!isShopifyConfigured()) {
     shopify.push({ state: "unconfigured" });
   } else {
-    const ids = external.map((row) => toShopifyGid("Product", row.shopify_product_id)).filter(Boolean);
     try {
-      const data = await shopifyGraphQL(`query($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { id status } } }`, { ids });
-      const nodes = new Map((data.nodes ?? []).filter(Boolean).map((node) => [node.id, node.status]));
+      // Read-only full-catalog walk. Never call mutation helpers from this audit.
+      const catalogProducts = [];
+      let after = null;
+      let hasNextPage = true;
+      let productPages = 0;
+      while (hasNextPage) {
+        const data = await shopifyGraphQL(`query TracerReadOnlyCatalog($after: String) {
+          products(first: 100, after: $after, sortKey: ID) {
+            nodes {
+              id
+              legacyResourceId
+              title
+              status
+              variants(first: 100) {
+                nodes {
+                  id
+                  legacyResourceId
+                  sku
+                  price
+                  inventoryQuantity
+                  inventoryItem {
+                    tracked
+                    inventoryLevels(first: 50) {
+                      nodes {
+                        location { id name }
+                        quantities(names: ["available"]) { name quantity }
+                      }
+                      pageInfo { hasNextPage }
+                    }
+                  }
+                }
+                pageInfo { hasNextPage }
+              }
+            }
+            pageInfo { hasNextPage endCursor }
+          }
+        }`, { after });
+        const connection = data.products;
+        catalogProducts.push(...(connection.nodes ?? []));
+        hasNextPage = connection.pageInfo?.hasNextPage === true;
+        after = connection.pageInfo?.endCursor ?? null;
+        productPages += 1;
+        if (hasNextPage && !after) throw new Error("shopify_product_pagination_cursor_missing");
+        if (productPages > 10000) throw new Error("shopify_product_pagination_safety_limit");
+      }
+
+      const normalizeId = (value) => String(value ?? "").replace(/^gid:\/\/shopify\/(?:Product|ProductVariant)\//, "");
+      const dbProductIds = new Map();
+      const dbVariantIds = new Map();
+      for (const row of external) {
+        if (row.shopify_product_id) {
+          const id = normalizeId(row.shopify_product_id);
+          if (!dbProductIds.has(id)) dbProductIds.set(id, []);
+          dbProductIds.get(id).push(row);
+        }
+        if (row.shopify_variant_id) {
+          const id = normalizeId(row.shopify_variant_id);
+          if (!dbVariantIds.has(id)) dbVariantIds.set(id, []);
+          dbVariantIds.get(id).push(row);
+        }
+      }
+
+      const liveProductIds = new Set(catalogProducts.map((p) => normalizeId(p.legacyResourceId ?? p.id)));
+      const liveVariantIds = new Set();
+      const positiveInventory = [];
+      let variantCount = 0;
+      let variantPagesTruncated = 0;
+      let locationListsTruncated = 0;
+      let missingSkuCount = 0;
+      for (const product of catalogProducts) {
+        if (product.variants?.pageInfo?.hasNextPage) variantPagesTruncated += 1;
+        for (const variant of product.variants?.nodes ?? []) {
+          variantCount += 1;
+          const variantId = normalizeId(variant.legacyResourceId ?? variant.id);
+          liveVariantIds.add(variantId);
+          if (!String(variant.sku ?? "").trim()) missingSkuCount += 1;
+          if (variant.inventoryItem?.inventoryLevels?.pageInfo?.hasNextPage) locationListsTruncated += 1;
+          const levels = (variant.inventoryItem?.inventoryLevels?.nodes ?? []).map((level) => ({
+            locationId: level.location?.id ?? null,
+            location: level.location?.name ?? null,
+            available: level.quantities?.find((q) => q.name === "available")?.quantity ?? null,
+          }));
+          const totalAvailableAcrossReturnedLocations = levels.reduce((sum, level) => sum + (Number.isFinite(level.available) ? level.available : 0), 0);
+          if (levels.some((level) => Number.isFinite(level.available) && level.available > 0)) {
+            positiveInventory.push({
+              productId: normalizeId(product.legacyResourceId ?? product.id),
+              variantId,
+              title: product.title,
+              sku: variant.sku ?? null,
+              inventoryQuantity: variant.inventoryQuantity ?? null,
+              availableByLocation: levels,
+              totalAvailableAcrossReturnedLocations,
+              tracked: variant.inventoryItem?.tracked ?? null,
+              variantIdentityTruncated: product.variants?.pageInfo?.hasNextPage === true,
+              locationIdentityTruncated: variant.inventoryItem?.inventoryLevels?.pageInfo?.hasNextPage === true,
+            });
+          }
+        }
+      }
+      const dbProductsMissingFromShopify = [...dbProductIds.keys()].filter((id) => !liveProductIds.has(id));
+      const dbVariantsMissingFromShopify = [...dbVariantIds.keys()].filter((id) => !liveVariantIds.has(id));
+      const liveProductsMissingFromDb = catalogProducts.filter((p) => !dbProductIds.has(normalizeId(p.legacyResourceId ?? p.id))).map((p) => ({
+        productId: normalizeId(p.legacyResourceId ?? p.id), title: p.title, status: p.status,
+      }));
+      const dbVariantMatchCount = [...dbVariantIds.keys()].filter((id) => liveVariantIds.has(id)).length;
+      shopify.push({
+        state: "read_complete",
+        productPages,
+        catalogProductCount: catalogProducts.length,
+        dbLinkedProductIdCount: dbProductIds.size,
+        dbLinkedVariantIdCount: dbVariantIds.size,
+        matchedDbProductIdCount: [...dbProductIds.keys()].filter((id) => liveProductIds.has(id)).length,
+        dbProductsMissingFromShopify,
+        dbVariantsMatched: dbVariantMatchCount,
+        dbVariantsMissingFromShopify,
+        liveProductsMissingFromDbCount: liveProductsMissingFromDb.length,
+        liveProductsMissingFromDb: liveProductsMissingFromDb.slice(0, 200),
+        liveProductStatuses: catalogProducts.reduce((acc, p) => {
+          const status = String(p.status ?? "UNKNOWN");
+          acc[status] = (acc[status] ?? 0) + 1;
+          return acc;
+        }, {}),
+        liveVariantCountReturned: variantCount,
+        missingSkuCount,
+        positiveInventoryVariantCount: positiveInventory.length,
+        largestAvailableQuantities: positiveInventory.sort((a, b) => (Number(b.inventoryQuantity) || b.totalAvailableAcrossReturnedLocations) - (Number(a.inventoryQuantity) || a.totalAvailableAcrossReturnedLocations)).slice(0, 100),
+        variantPagesTruncated,
+        locationListsTruncated,
+        note: "inventoryQuantity is Shopify's aggregate variant quantity; per-location available quantities are reported separately. Neither value proves supplier stock or supplier orderability.",
+      });
       for (const row of external.filter((item) => item.shopify_product_id)) {
         const gid = toShopifyGid("Product", row.shopify_product_id);
+        const found = Boolean(gid && liveProductIds.has(normalizeId(gid)));
         shopify.push({
           listingId: row.id,
-          found: Boolean(gid && nodes.has(gid)),
-          status: gid ? nodes.get(gid) ?? null : null,
+          found,
+          productId: row.shopify_product_id,
           published: row.published === true,
           orderable: row.orderable === true,
         });
       }
-    } catch {
-      shopify.push({ state: "read_failed" });
+    } catch (error) {
+      shopify.push({
+        state: "read_failed",
+        error: error instanceof Error ? error.message.replace(/(?:shpat|shpca|shppa|shpss|shpua)_[A-Za-z0-9_-]+/gi, "[REDACTED_TOKEN]").slice(0, 200) : "unknown",
+      });
     }
   }
 }
