@@ -33,7 +33,7 @@ function listingQuality(row: Record<string, unknown>): number {
 
 export type SupplySalesTestResult = { published: number; publishedListingIds: string[]; selectedListingIds: string[]; considered: number; rejected: Array<{ productId: string; reasons: string[] }> };
 
-export async function selectAndPublishSupplySalesTests(productIds: string[], limit = 3, options: { dryRun?: boolean } = {}): Promise<SupplySalesTestResult & { eligibleProductIds?: string[] }> {
+export async function selectAndPublishSupplySalesTests(productIds: string[], limit = 3, options: { dryRun?: boolean; allowNativeCjIdentity?: boolean } = {}): Promise<SupplySalesTestResult & { eligibleProductIds?: string[] }> {
   const supabase = createSupabaseAdminClient();
   const observedFx = await getObservedUsdToJpyRate();
   if (productIds.length === 0 || limit <= 0) return { published: 0, publishedListingIds: [], selectedListingIds: [], considered: 0, rejected: [] };
@@ -64,7 +64,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // already satisfy the live supply/identity prerequisites, then rank those.
     const verifiedCandidates = candidates.filter((candidate) => {
       const supplier = String(candidate.supplier ?? "").trim().toLowerCase();
-      const nativeSupplierIdentity = ["cj", "cjdropshipping"].includes(supplier)
+      const nativeSupplierIdentity = options.allowNativeCjIdentity === true && ["cj", "cjdropshipping"].includes(supplier)
         && Boolean(candidate.supplier_product_id)
         && Boolean(candidate.supplier_variant_id)
         && candidate.verification_status === "verified"
@@ -112,7 +112,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // it does not prove that it is the same item as the marketplace demand product.
     // Only an explicit server-side identity link with identifier-grade evidence may
     // pass this gate. Never infer marketplace identity from verification_status.
-    const nativeCjSupplyIdentity = ["cj", "cjdropshipping"].includes(String(listing.supplier ?? "").trim().toLowerCase())
+    const nativeCjSupplyIdentity = options.allowNativeCjIdentity === true && ["cj", "cjdropshipping"].includes(String(listing.supplier ?? "").trim().toLowerCase())
       && Boolean(listing.supplier_product_id)
       && Boolean(listing.supplier_variant_id)
       && listing.verification_status === "verified"
