@@ -9,6 +9,7 @@ import { evaluateChannelListingEligibility } from "@/lib/market/channel-listing-
 import { currencyMismatchFromProfitReason } from "@/lib/market/commercial-terms";
 import { probeListingImage } from "@/lib/market/probe-listing-image";
 import { SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { resolveSupplyShippingPolicy } from "@/lib/market/supply-shipping-policy";
 import { getSupplierAdapter } from "@/lib/procurement/registry";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 
@@ -241,6 +242,13 @@ export async function selectAndPublishSalesTests(
       reasons.push("supplier_variant_unknown");
     }
 
+    const shippingPolicy = resolveSupplyShippingPolicy({
+      supplier: listing.supplier,
+      shipTo: listing.ship_to,
+      shippingCost: listing.shipping_cost,
+      verificationStatus: listing.verification_status,
+      shippingStatus: listing.shipping_status,
+    });
     const profit = simulateContributionProfit({
       sellingPrice: isInternalSupply ? asNumber(listing.catalog_sale_price) : asNumber(bestseller.price),
       sellingCurrency: isInternalSupply ? (typeof listing.currency === "string" ? listing.currency : null) : (typeof bestseller.currency === "string" ? bestseller.currency : null),
@@ -249,8 +257,8 @@ export async function selectAndPublishSalesTests(
       sourceCurrency: typeof listing.currency === "string" ? listing.currency : null,
       sourceProvider: String(listing.supplier ?? "unknown"),
       internationalShipping: asNumber(listing.shipping_cost),
-      domesticShipping: null,
-      requireDomesticShipping: true,
+      domesticShipping: shippingPolicy.domesticShipping,
+      requireDomesticShipping: shippingPolicy.requireDomesticShipping,
       shippingCurrency: typeof listing.currency === "string" ? listing.currency : null,
       sourceFxRateToSelling:
         typeof bestseller.currency === "string" && typeof listing.currency === "string" && bestseller.currency.trim().toUpperCase() === "JPY" && listing.currency.trim().toUpperCase() === "USD"
