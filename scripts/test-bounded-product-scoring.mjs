@@ -24,6 +24,7 @@ assert.match(pipeline, /runStep\("ordering", \(\) => persistReorderRecommendatio
 // cron does not keep spending requests against an exhausted Gemini free-tier quota.
 assert.match(demandMatcher, /GEMINI_QUOTA_COOLDOWN_JOB = "gemini-intent-classifier-cooldown"/);
 assert.match(demandMatcher, /GEMINI_QUOTA_COOLDOWN_MS = 20 \* 60 \* 60 \* 1000/);
+assert.match(demandMatcher, /GEMINI_TRANSIENT_COOLDOWN_MS = 60 \* 60 \* 1000/);
 assert.match(demandMatcher, /cooldownUntil/);
-assert.match(demandMatcher, /hasGeminiQuotaExhaustion\(error\)/);
+assert.match(demandMatcher, /geminiCooldownMs\(error\)/);
 console.log("Bounded scoring, demand-stage budgets, reorder budget, and persistent Gemini cooldown: 14 assertions passed");
