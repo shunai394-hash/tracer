@@ -505,6 +505,7 @@ export async function syncListingRows(
           ...(remoteProductIdForSafety ? { shopify_product_id: remoteProductIdForSafety } : {}),
           ...(remoteProductHandleForSafety ? { shopify_handle: remoteProductHandleForSafety } : {}),
           published: false,
+          orderable: false,
           pipeline_stage: "BLOCKED",
           pipeline_status: "blocked",
           pipeline_reason: "shopify_variant_mapping_mismatch",
