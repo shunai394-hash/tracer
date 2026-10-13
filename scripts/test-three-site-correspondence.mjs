@@ -94,7 +94,6 @@ assert.ok(issuesFor([listing({ published: false, inventory: 0 })], [baseItem({ s
   assert.ok(productsFirst + productsFirst * variantsFirst <= 1000, "catalog query must stay under the Shopify cost limit");
   assert.match(correspondence, /SHOPIFY_TRACER_VARIANTS_INCOMPLETE/, "truncated variant lists must fail closed");
   assert.doesNotMatch(correspondence, /\.(insert|update|upsert|delete)\(|createBaseItem|editBaseItem|productUpdate|productCreate/, "the correspondence table must be read-only");
-  assert.match(correspondence, /variants\(first: 250\)/, "correspondence must read the maximum Shopify variant page");
-  assert.match(correspondence, /SHOPIFY_TRACER_VARIANTS_INCOMPLETE/, "correspondence must not report partial variant data as complete");
+  assert.match(correspondence, /variants\(first: \d+\) \{ nodes \{[^}]*\} pageInfo \{ hasNextPage \} \}/, "correspondence must detect a truncated variant page");
 }
 console.log("PASS three-site correspondence");
