@@ -1,3 +1,4 @@
+import { isSupplierIdentityEligible } from "../lib/catalog/supplier-identity-policy.ts";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
@@ -12,6 +13,30 @@ const [shopify, basePublisher, identity, shopifyRoute, baseRoute, vercel] = awai
 
 // These are regression contracts for the real cron-to-service call paths.
 // External writes remain disabled in this test: it only inspects source.
+// Behavioral tests for the shared identity/currency policy. No external API or DB writes.
+const validIdentity = {
+  candidateCount: 1,
+  candidateProductId: "canonical-1",
+  candidateSupplierProductId: "supplier-product-1",
+  candidateVariantId: "variant-1",
+  candidateSellingCurrency: "JPY",
+  sourceIdentityStatus: "linked",
+  sourceProductId: "canonical-1",
+  sourceSupplierProductId: "supplier-product-1",
+  sourceVariantId: "variant-1",
+  sourceCurrency: "JPY",
+};
+assert.equal(isSupplierIdentityEligible(validIdentity), true);
+assert.equal(isSupplierIdentityEligible({ ...validIdentity, candidateCount: 0 }), false);
+assert.equal(isSupplierIdentityEligible({ ...validIdentity, candidateCount: 2 }), false);
+assert.equal(isSupplierIdentityEligible({ ...validIdentity, sourceIdentityStatus: "unverified" }), false);
+assert.equal(isSupplierIdentityEligible({ ...validIdentity, sourceProductId: "other-product" }), false);
+assert.equal(isSupplierIdentityEligible({ ...validIdentity, sourceSupplierProductId: "other-supplier-product" }), false);
+assert.equal(isSupplierIdentityEligible({ ...validIdentity, sourceVariantId: "other-variant" }), false);
+assert.equal(isSupplierIdentityEligible({ ...validIdentity, sourceVariantId: null }), false);
+assert.equal(isSupplierIdentityEligible({ ...validIdentity, sourceCurrency: "USD" }), false);
+assert.equal(isSupplierIdentityEligible({ ...validIdentity, sourceCurrency: null }), false);
+
 assert.match(shopifyRoute, /syncPublishedListingsToShopify\(150\)/);
 assert.match(baseRoute, /publishPublishedListingsToBase\(50\)/);
 assert.match(shopify, /getExactlyEligibleSupplierListingIds/);
