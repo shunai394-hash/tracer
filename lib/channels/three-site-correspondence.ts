@@ -165,6 +165,7 @@ export function buildThreeSiteCorrespondence(input: {
     if (base.found && shopify.found) {
       if (normalizeTitle(base.title) !== normalizeTitle(shopify.title)) issues.push("title_differs_between_channels");
       if (base.price !== null && shopify.price !== null && base.price !== shopify.price) issues.push("price_differs_between_channels");
+      if (base.stock !== null && shopify.stock !== null && base.stock !== shopify.stock) issues.push("inventory_differs_between_channels");
       if (base.live !== null && shopify.live !== null && base.live !== shopify.live) issues.push("visibility_differs_between_channels");
     }
 
