@@ -25,7 +25,13 @@ const reverify = await readFile(new URL("../lib/suppliers/reverify-cj-identity.t
 assert.match(reverify, /const MAX_CANDIDATE_SCAN = 500/);
 assert.match(reverify, /\.limit\(MAX_CANDIDATE_SCAN\)/);
 assert.match(reverify, /buildCandidateQuery\(\)\.gt\("id", priorCursor\)/);
-assert.match(reverify, /nextCursor: scanCursor/);
+assert.match(reverify, /const selectedRows = allRows\.slice\(0, limit\)/, "CJ reverify must process due candidates in ID scan order");
+assert.match(reverify, /const selectedRows = allRows\.slice\(0, limit\)[\s\S]*?selectedRows\.sort\(/, "women-first prioritization must only reorder the selected batch");
+assert.match(reverify, /const nextCursor = allRows\.length >= limit[\s\S]*?String\(allRows\[limit - 1\]\.id\)[\s\S]*?: scanCursor/, "cursor must stop at the contiguous selected window, not the last scanned row");
+assert.doesNotMatch(reverify, /const selectedWomens =|const selectedOther =/, "reordering candidates must not skip unprocessed IDs");
+assert.match(reverify, /typeof row\.product_id === "string" \? row\.product_id\.trim\(\) : ""/, "null product IDs must not become the truthy string null");
+assert.match(reverify, /\.not\("supplier_product_id", "is", null\)/, "CJ identity scan must exclude missing supplier product IDs");
+assert.match(reverify, /if \(!supplierProductId \|\| !supplierVariantId\)/, "CJ identity scan must reject blank product or variant IDs before provider calls");
 const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
 const beautySourceIndex = collector.indexOf('source: "amazon_bestsellers_beauty"');
 const genericAmazonSourceIndex = collector.indexOf('source: "amazon_bestsellers" },');
