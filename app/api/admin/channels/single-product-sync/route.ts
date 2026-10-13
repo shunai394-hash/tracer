@@ -32,17 +32,18 @@ async function readShopifyProduct(productId: unknown): Promise<CorrespondenceSho
   const gid = raw.startsWith("gid://") ? raw : `gid://shopify/Product/${raw}`;
   const publicationId = await getOnlineStorePublicationId();
   const data = await shopifyGraphQL<{
-    product: (Omit<CorrespondenceShopifyProduct, "variants"> & { variants: { nodes: CorrespondenceShopifyProduct["variants"] } }) | null;
+    product: (Omit<CorrespondenceShopifyProduct, "variants"> & { variants: { nodes: CorrespondenceShopifyProduct["variants"]; pageInfo: { hasNextPage: boolean } } }) | null;
   }>(
     `query TracerSingleProduct($id: ID!, $publicationId: ID!) {
       product(id: $id) {
         id title status
         publishedOnPublication(publicationId: $publicationId)
-        variants(first: 250) { nodes { id sku price inventoryQuantity } }
+        variants(first: 250) { nodes { id sku price inventoryQuantity } pageInfo { hasNextPage } }
       }
     }`,
     { id: gid, publicationId },
   );
+  if (data.product?.variants.pageInfo.hasNextPage) throw new Error("SHOPIFY_VARIANTS_INCOMPLETE");
   return data.product ? [{ ...data.product, variants: data.product.variants.nodes }] : [];
 }
 
