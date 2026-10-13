@@ -105,6 +105,8 @@ export function verifySalesTestGateInvariants(): { ok: boolean; cases: Array<{ n
       name: "inventory_hold_can_restore_visibility_other_blocks_cannot",
       expected: true,
       actual: mayRestoreChannelVisibility({ published: true, pipeline_stage: "BASE_PUBLICATION", pipeline_status: "blocked", pipeline_reason: "inventory_zero", title: "床用フロアマット", selection_reasons: [SALES_TEST_GATE_PASSED] })
+        && mayRestoreChannelVisibility({ published: false, pipeline_stage: "BLOCKED", pipeline_status: "blocked", pipeline_reason: "inventory_outlier_requires_recheck", title: "床用フロアマット", selection_reasons: [SALES_TEST_GATE_PASSED] })
+        && mayRestoreChannelVisibility({ published: false, pipeline_stage: "BLOCKED", pipeline_status: "blocked", pipeline_reason: "inventory_zero_or_unknown", title: "床用フロアマット", selection_reasons: [SALES_TEST_GATE_PASSED] })
         && mayRestoreChannelVisibility({ published: true, pipeline_stage: "BASE_PUBLICATION", pipeline_status: "blocked", pipeline_reason: "tracking_unavailable", title: "床用フロアマット", selection_reasons: [SALES_TEST_GATE_PASSED] }) === false,
     },
   ];
@@ -127,6 +129,9 @@ export const SALES_TEST_GATE_MARKET_ALIAS = "sales_test_gate_passed_canonical_pu
 const INVENTORY_RECOVERY_REASONS = new Set([
   "inventory_zero",
   "inventory_unknown",
+  "inventory_zero_or_unknown",
+  "inventory_unconfirmed",
+  "inventory_outlier_requires_recheck",
   "supplier_not_orderable",
 ]);
 
@@ -152,8 +157,10 @@ export function hasPassedSalesTestGate(row: SalesTestGateRow): boolean {
  */
 export function mayRestoreChannelVisibility(row: SalesTestGateRow): boolean {
   if (hasPassedSalesTestGate(row)) return true;
-  return row.published === true
-    && isJapaneseProductTitle(row.title)
+  // The published flag is deliberately cleared while a channel is held.
+  // A durable passed-sales-test token plus an inventory-only reason is the
+  // recovery authority; remote IDs and arbitrary blocked reasons never qualify.
+  return isJapaneseProductTitle(row.title)
     && Array.isArray(row.selection_reasons)
     && row.selection_reasons.includes(SALES_TEST_GATE_PASSED)
     && INVENTORY_RECOVERY_REASONS.has(String(row.pipeline_reason ?? ""));
