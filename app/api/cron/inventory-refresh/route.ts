@@ -232,11 +232,21 @@ export async function GET(request: Request) {
         });
         const orderable = refreshDecision.eligible;
         const showOnBase = refreshDecision.eligible;
+        // Persist the canonical gate result with the refreshed stock before
+        // syncing either channel. Without this, a rejected outlier could remain
+        // published=true in TRACER while BASE/Shopify were being stopped.
         const { error: listingError } = await supabase
           .from("shop_listings")
           .update({
             inventory,
             orderable,
+            published: orderable,
+            pipeline_stage: orderable ? "PUBLISHED" : "BLOCKED",
+            pipeline_status: orderable ? "published" : "blocked",
+            pipeline_reason: orderable
+              ? SALES_TEST_GATE_PASSED
+              : refreshDecision.reasons[0] ?? "listing_gate_not_passed",
+            pipeline_updated_at: now,
             updated_at: now,
           })
           .eq("id", listingId);
