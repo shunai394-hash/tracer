@@ -64,6 +64,8 @@ jobs:
         run: node scripts/test-base-reconciliation-core.mjs
       - name: Test Amazon and Rakuten source removal policy
         run: node scripts/test-marketplace-source-removal.mjs
+      - name: Test Shopify listing reconciliation
+        run: node scripts/test-shopify-reconciliation-core.mjs
       - name: Verify demand match evidence
         run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
       - name: TypeScript
