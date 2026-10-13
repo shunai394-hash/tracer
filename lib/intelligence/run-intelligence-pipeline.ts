@@ -9,7 +9,6 @@ import { scoreProductIntelligence } from "@/lib/intelligence/score-products";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { persistDemandIntelligence } from "@/lib/intelligence/persist-demand-intelligence";
 import { persistReorderRecommendations } from "@/lib/ordering/persist-reorder";
-import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
@@ -20,7 +19,6 @@ import {
 } from "@/lib/integration/newfind";
 import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { readMarketCursor, writeMarketCursor } from "@/lib/market/market-cursor";
 import {
   GeminiConfigError,
   GeminiRequestError,
