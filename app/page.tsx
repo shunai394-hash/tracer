@@ -6,7 +6,7 @@ import { SupabaseConfigError } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 export const metadata = {
   title: "TRACER — オンラインストア",
-  description: "日本語の商品情報と販売条件を確認できるオンラインストア。",
+  description: "毎日の暮らしに取り入れたいアイテムを見つけるオンラインストア。",
 };
 
 export default async function HomePage() {
@@ -29,7 +29,7 @@ export default async function HomePage() {
           <p className="text-sm text-neutral-500">TRACER ONLINE STORE</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">商品一覧</h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-neutral-600">
-            日本語の商品情報、価格、在庫、仕入れ条件を確認できた商品を掲載しています。
+            毎日の暮らしを少し楽しくするアイテムをセレクトしました。
           </p>
         </div>
       </section>
@@ -38,7 +38,7 @@ export default async function HomePage() {
         <div className="flex items-end justify-between gap-4 border-b border-neutral-200 pb-4">
           <div>
             <h2 className="text-xl font-semibold">販売商品</h2>
-            <p className="mt-1 text-sm text-neutral-500">確認済みの商品だけを表示</p>
+            <p className="mt-1 text-sm text-neutral-500">お気に入りの一品を見つけてください</p>
           </div>
           <p className="text-sm text-neutral-500">{error ? "読込エラー" : `${listings.length}件`}</p>
         </div>
@@ -47,9 +47,9 @@ export default async function HomePage() {
           <p role="alert" className="mt-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p>
         ) : listings.length === 0 ? (
           <div className="mt-6 rounded-lg border border-neutral-200 p-6">
-            <h3 className="font-medium">現在、販売条件を満たす商品はありません。</h3>
+            <h3 className="font-medium">ただいま商品を準備しています。</h3>
             <p className="mt-2 text-sm leading-6 text-neutral-600">
-              商品数を水増しせず、商品ID、バリエーション、在庫、原価、発注可否、日本語表記を確認できた商品から掲載します。
+              新しいアイテムを順次追加します。どうぞ楽しみにお待ちください。
             </p>
           </div>
         ) : (
