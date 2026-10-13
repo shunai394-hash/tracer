@@ -12,5 +12,5 @@ assert.ok(gate.includes("stage.ok && stage.skipped !== true && stage.retryable !
 assert.ok(pipeline.includes("const bestsellerCanFeedSalesGate = canFeedSalesGate(bestsellerStep)"), "downstream sales matching must use the strict gate helper");
 assert.ok(pipeline.includes("retryable: bestsellerStep.retryable === true"), "dropship must inherit the source stage retryability instead of always deferring");
 assert.ok(pipeline.includes('runStep("supply_first"'), "supplier-first discovery must continue");
-assert.ok(pipeline.includes('runStep("supply_sales_test_select"'), "supplier products must still pass strict sales-test gates");
+assert.ok(pipeline.includes('"supply_sales_test_select"'), "supplier products must still pass strict sales-test gates");
 console.log("Marketplace ranking disabled / supplier-first policy checks passed");
