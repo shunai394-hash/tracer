@@ -5,7 +5,7 @@ import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigure
 import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
-import { getExactlyLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { getExactlyEligibleSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
 
 type Listing = {
   id: string;
@@ -168,11 +168,12 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  const linkedSupplierIds = await getExactlyLinkedSupplierListingIds((data ?? []).map((row) => ({
+  const linkedSupplierIds = await getExactlyEligibleSupplierListingIds((data ?? []).map((row) => ({
     supplier_listing_id: row.supplier_listing_id,
     product_id: row.product_id,
     supplier_product_id: row.supplier_product_id,
     supplier_variant_id: row.supplier_variant_id,
+    selling_currency: row.currency,
   })));
   const rows = ((data ?? []) as Listing[]).map((row) => ({
     ...row,
@@ -264,7 +265,7 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
     .order("pipeline_updated_at", { ascending: false })
     .limit(Math.min(Math.max(limit, 1), 1000));
   if (error) throw new Error(error.message);
-  const linkedSupplierIds = await getExactlyLinkedSupplierListingIds((data ?? []).map((row) => ({
+  const linkedSupplierIds = await getExactlyEligibleSupplierListingIds((data ?? []).map((row) => ({
     supplier_listing_id: row.supplier_listing_id,
     product_id: row.product_id,
     supplier_product_id: row.supplier_product_id,
