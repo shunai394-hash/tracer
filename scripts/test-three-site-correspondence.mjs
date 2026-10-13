@@ -84,6 +84,8 @@ assert.ok(issuesFor([listing({ published: false, inventory: 0 })], [baseItem({ s
   assert.ok(earlyReturn < route.indexOf("syncPublishedListingsToShopify(1, [listingId])"), "dry run must return before any channel write");
   assert.ok(earlyReturn < route.indexOf("publishPublishedListingsToBase(1, [listingId])"), "dry run must return before any channel write");
   assert.doesNotMatch(route, /createCJOrder|executeSupplierPurchaseOrder|createDropshipPurchaseOrders/, "the sync route must never order");
+  assert.match(route, /variants\(first: 250\)/, "single-product verification must read the maximum Shopify variant page");
+  assert.match(route, /SHOPIFY_PRODUCT_VARIANTS_INCOMPLETE/, "single-product verification must fail closed if variants are truncated");
   const correspondence = await readFile(new URL("../app/api/admin/channels/correspondence/route.ts", import.meta.url), "utf8");
   // Shopify rejects one query above 1000 cost points (~products x variants).
   const productsFirst = Number(correspondence.match(/products\(first: (\d+)/)?.[1]);
@@ -92,5 +94,7 @@ assert.ok(issuesFor([listing({ published: false, inventory: 0 })], [baseItem({ s
   assert.ok(productsFirst + productsFirst * variantsFirst <= 1000, "catalog query must stay under the Shopify cost limit");
   assert.match(correspondence, /SHOPIFY_TRACER_VARIANTS_INCOMPLETE/, "truncated variant lists must fail closed");
   assert.doesNotMatch(correspondence, /\.(insert|update|upsert|delete)\(|createBaseItem|editBaseItem|productUpdate|productCreate/, "the correspondence table must be read-only");
+  assert.match(correspondence, /variants\(first: 250\)/, "correspondence must read the maximum Shopify variant page");
+  assert.match(correspondence, /SHOPIFY_TRACER_VARIANTS_INCOMPLETE/, "correspondence must not report partial variant data as complete");
 }
 console.log("PASS three-site correspondence");
