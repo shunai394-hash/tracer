@@ -41,6 +41,10 @@ export async function POST(request: Request) {
     const items = snapshot.items.slice(0, limit).map((item) => ({
       baseItemId: String(item.item_id ?? ""),
       identifier: typeof item.identifier === "string" ? item.identifier.trim() : "",
+      visible: item.visible === true || item.visible === 1 || item.visible === "1",
+      title: typeof item.title === "string" ? item.title.trim() : "",
+      detail: typeof item.detail === "string" ? item.detail.trim() : "",
+      price: Number(item.price),
     })).filter((item) => item.baseItemId);
 
     const candidates = items.map((item) => {
@@ -57,19 +61,21 @@ export async function POST(request: Request) {
     }
 
     const listingIds = [...idsByListing.keys()];
-    const baseItemIds = [...new Set(candidates.map((item) => item.baseItemId))];
+    const baseItemIds = [...new Set(items.map((item) => item.baseItemId))];
     const db = createSupabaseAdminClient();
 
-    const [listingResult, existingBaseResult] = await Promise.all([
+    const [listingResult, existingBaseResult, legacyListingResult] = await Promise.all([
       listingIds.length
         ? db.from("shop_listings").select("id,base_item_id").in("id", listingIds)
         : Promise.resolve({ data: [], error: null }),
       baseItemIds.length
         ? db.from("shop_listings").select("id,base_item_id").in("base_item_id", baseItemIds)
         : Promise.resolve({ data: [], error: null }),
+      db.from("shop_listings").select("id,title,description,selling_price").is("base_item_id", null).limit(2000),
     ]);
     if (listingResult.error) throw new Error("base_identity_listing_lookup_failed");
     if (existingBaseResult.error) throw new Error("base_identity_existing_id_lookup_failed");
+    if (legacyListingResult.error) throw new Error("base_identity_legacy_candidate_lookup_failed");
 
     const listingById = new Map((listingResult.data ?? []).map((row) => [String(row.id), row]));
     const listingsByBaseId = new Map<string, string[]>();
@@ -79,6 +85,42 @@ export async function POST(request: Request) {
       list.push(String(row.id));
       listingsByBaseId.set(key, list);
     }
+
+    // Legacy candidate audit is deliberately read-only. Exact title/price
+    // and title/price/detail fingerprints are diagnostic evidence only; they
+    // are never accepted by the repair loop as a linking rule.
+    const mappedBaseIds = new Set((existingBaseResult.data ?? []).map((row) => String(row.base_item_id ?? "")));
+    const stableItemIds = new Set(candidates.map((item) => item.baseItemId));
+    const legacyVisibleItems = items.filter((item) =>
+      item.visible && !stableItemIds.has(item.baseItemId) && !mappedBaseIds.has(item.baseItemId)
+    );
+    const legacyRows = legacyListingResult.data ?? [];
+    const candidateLists = legacyVisibleItems.map((item) => {
+      const titlePrice = Number.isFinite(item.price) && item.price > 0 && item.title
+        ? legacyRows.filter((row) => String(row.title ?? "").trim() === item.title && Number(row.selling_price) === item.price)
+        : [];
+      const titlePriceDetail = item.detail
+        ? titlePrice.filter((row) => String(row.description ?? "").trim() === item.detail)
+        : [];
+      return { baseItemId: item.baseItemId, titlePrice, titlePriceDetail };
+    });
+    const titlePriceUseCount = new Map<string, number>();
+    const titlePriceDetailUseCount = new Map<string, number>();
+    for (const item of candidateLists) {
+      for (const row of item.titlePrice) titlePriceUseCount.set(String(row.id), (titlePriceUseCount.get(String(row.id)) ?? 0) + 1);
+      for (const row of item.titlePriceDetail) titlePriceDetailUseCount.set(String(row.id), (titlePriceDetailUseCount.get(String(row.id)) ?? 0) + 1);
+    }
+    const legacyCandidateAudit = {
+      matchingRule: "diagnostic only: exact title+price and optionally exact non-empty detail; never auto-links",
+      visibleUnmappedWithoutStableIdentifier: legacyVisibleItems.length,
+      exactTitlePriceUnique: candidateLists.filter((item) => item.titlePrice.length === 1).length,
+      exactTitlePriceAmbiguous: candidateLists.filter((item) => item.titlePrice.length > 1).length,
+      exactTitlePriceNoMatch: candidateLists.filter((item) => item.titlePrice.length === 0).length,
+      exactTitlePriceGloballyUnique: candidateLists.filter((item) => item.titlePrice.length === 1 && titlePriceUseCount.get(String(item.titlePrice[0].id)) === 1).length,
+      exactTitlePriceDetailUnique: candidateLists.filter((item) => item.titlePriceDetail.length === 1).length,
+      exactTitlePriceDetailAmbiguous: candidateLists.filter((item) => item.titlePriceDetail.length > 1).length,
+      exactTitlePriceDetailGloballyUnique: candidateLists.filter((item) => item.titlePriceDetail.length === 1 && titlePriceDetailUseCount.get(String(item.titlePriceDetail[0].id)) === 1).length,
+    };
 
     const results: Array<{ baseItemId: string; outcome: string; listingId?: string }> = [];
     let repairable = 0;
@@ -152,6 +194,7 @@ export async function POST(request: Request) {
       snapshotComplete: snapshot.complete,
       scannedBaseItems: items.length,
       stableIdentifierCandidates: candidates.length,
+      legacyCandidateAudit,
       repairable,
       repaired,
       ambiguous,
