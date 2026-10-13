@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates, normalizeIdentifier } from "@/lib/market/identifiers";
+import { stageCjSupplierFirstDraft } from "@/lib/suppliers/stage-cj-supplier-first-catalog";
 
 type CandidateArgs = {
   supplierProductId: string;
@@ -42,6 +43,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
   sourceRef: string;
   identityLink: { bestsellerId: string; canonicalVariantEvidenceId: string; method: string; rationale: string } | null;
   auditStatus: "written" | "table_missing" | "write_failed";
+  catalogStage: { staged: boolean; reason: string; catalogId?: string; catalogVariantId?: string };
 }> {
   if (!args.supplierProductId.trim() || !args.supplierVariantId.trim()) {
     throw new Error("cj_internal_supply_missing_supplier_identity");
@@ -234,6 +236,26 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     throw new Error("cj_internal_supply_product_activation_failed: " + (activate.error?.message ?? "no row returned"));
   }
 
+  // Supplier-first catalog projection is intentionally independent of whether a
+  // global barcode or marketplace child-variant match exists. It remains draft
+  // and non-orderable; failures are audited but do not misreport source ingestion.
+  let catalogStage: { staged: boolean; reason: string; catalogId?: string; catalogVariantId?: string } = {
+    staged: false,
+    reason: "not_attempted",
+  };
+  try {
+    catalogStage = await stageCjSupplierFirstDraft({ productId, variantId });
+  } catch (error) {
+    catalogStage = {
+      staged: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+    console.warn("[cj-internal-supply] supplier-first draft catalog staging failed", {
+      sourceRef,
+      reason: catalogStage.reason,
+    });
+  }
+
   // Link only against independently stored marketplace CHILD-variant evidence.
   // Parent product barcodes, titles, and MPNs are not variant identity proof.
   let identityLink: {
@@ -358,6 +380,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       supplier_identifier_evidence_source: identifierEvidenceSource,
       order_creation_verified: false,
       identity_link: identityLink,
+      supplier_first_catalog_stage: catalogStage,
     },
   });
   const auditErrorCode = typeof audit.error?.code === "string" ? audit.error.code : "";
@@ -379,5 +402,5 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     });
   }
 
-  return { productId, variantId, sourceRef, identityLink, auditStatus };
+  return { productId, variantId, sourceRef, identityLink, auditStatus, catalogStage };
 }
