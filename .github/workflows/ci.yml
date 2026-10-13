@@ -26,6 +26,8 @@ jobs:
       - run: npm run test:tracer-core
       - name: Test Google Trends feed deduplication
         run: node --experimental-strip-types --no-warnings scripts/test-google-trends-dedupe.mjs
+      - name: Test Google Trends observation persistence contract
+        run: node --experimental-strip-types --no-warnings scripts/test-google-trends-persistence.mjs
       - name: Test Shopify order SKU mapping
         run: npm run test:shopify-order-sku-mapping
       - name: Test order gate profit invariants
