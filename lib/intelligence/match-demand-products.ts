@@ -1,7 +1,7 @@
 import "server-only";
 
 import { classifyDemandIntent } from "@/lib/intelligence/classify-demand-intent";
-import { createGeminiRunCircuitBreaker } from "@/lib/intelligence/gemini-circuit-breaker";
+import { createGeminiRunCircuitBreaker, isGeminiCircuitBreakerFailure } from "@/lib/intelligence/gemini-circuit-breaker";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
@@ -151,12 +151,15 @@ const MAX_GEMINI_CLASSIFICATIONS_PER_RUN = 10;
 
 const GEMINI_QUOTA_COOLDOWN_JOB = "gemini-intent-classifier-cooldown";
 const GEMINI_QUOTA_COOLDOWN_MS = 20 * 60 * 60 * 1000;
+const GEMINI_TRANSIENT_COOLDOWN_MS = 60 * 60 * 1000;
 
-function hasGeminiQuotaExhaustion(error: unknown): boolean {
+function geminiCooldownMs(error: unknown): number {
   const value = error && typeof error === "object" ? error as { status?: unknown; code?: unknown } : {};
   const message = error instanceof Error ? error.message : String(error ?? "");
-  return Number(value.status) === 429
+  const quotaExhausted = Number(value.status) === 429
     || /RESOURCE_EXHAUSTED|quota exceeded|generate_content_free_tier_requests/i.test(message);
+  if (quotaExhausted) return GEMINI_QUOTA_COOLDOWN_MS;
+  return isGeminiCircuitBreakerFailure(error) ? GEMINI_TRANSIENT_COOLDOWN_MS : 0;
 }
 
 export async function matchDemandProductsByCategory(): Promise<DemandProductMatchResult> {
@@ -385,14 +388,18 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
         // Quota exhaustion, transient provider outages, and explicit timeout
         // codes are not query-specific; stop further Gemini calls this patrol.
         geminiCircuitBreaker.recordFailure(error);
-        if (hasGeminiQuotaExhaustion(error)) {
-          const nextCooldownUntil = new Date(Date.now() + GEMINI_QUOTA_COOLDOWN_MS).toISOString();
+        const cooldownMs = geminiCooldownMs(error);
+        if (cooldownMs > 0) {
+          const nextCooldownUntil = new Date(Date.now() + cooldownMs).toISOString();
           const { error: cooldownWriteError } = await supabase.from("cron_runs").insert({
             job_name: GEMINI_QUOTA_COOLDOWN_JOB,
             status: "succeeded",
             started_at: new Date().toISOString(),
             finished_at: new Date().toISOString(),
-            metadata: { cooldownUntil: nextCooldownUntil, reason: "gemini_quota_exhausted" },
+            metadata: {
+              cooldownUntil: nextCooldownUntil,
+              reason: cooldownMs === GEMINI_QUOTA_COOLDOWN_MS ? "gemini_quota_exhausted" : "gemini_provider_transient_failure",
+            },
           });
           if (cooldownWriteError) {
             console.warn("[demand-gemini-classify] failed to persist quota cooldown", cooldownWriteError.message);
