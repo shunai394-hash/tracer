@@ -55,8 +55,11 @@ for (let offset = 0; offset < maxListingRows; offset += listingPageSize) {
   listings.push(...(page ?? []));
   if (!page || page.length < listingPageSize) break;
 }
+if (listings.length !== listingCount.count) {
+  throw new Error("shop_listings_read_only_reconcile_count_mismatch");
+}
 
-const evidenced = await attachSupplierCommercialEvidence(supabase, listings ?? []);
+const evidenced = await attachSupplierCommercialEvidence(supabase, listings);
 const shopifyKeys = uniqueRowsByKey(evidenced, (row) => typeof row.shopify_variant_id === "string" ? row.shopify_variant_id : null);
 const baseKeys = uniqueRowsByKey(evidenced, (row) => row.base_item_id === null || row.base_item_id === undefined ? null : String(row.base_item_id));
 const optimistic = [];
