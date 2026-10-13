@@ -39,7 +39,8 @@ export async function stageCjSupplierFirstDraft(args: {
   if (product.active !== true || variant.active !== true) {
     return { staged: false, reason: "source_inactive" };
   }
-  if (!Number.isInteger(Number(product.generation)) || !Number.isInteger(Number(variant.generation))) {
+  if (product.generation == null || variant.generation == null
+    || !Number.isInteger(Number(product.generation)) || !Number.isInteger(Number(variant.generation))) {
     return { staged: false, reason: "generation_missing" };
   }
 
