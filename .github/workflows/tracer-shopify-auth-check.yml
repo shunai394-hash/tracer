@@ -219,8 +219,8 @@ jobs:
                       "featureEnabledForLiveRuns": raw.get("featureEnabledForLiveRuns"),
                       "considered": selected.get("considered"),
                       "eligibleProductCount": len(selected.get("eligibleProductIds") or []),
-                      "rejectedCount": len(rejected),
-                      "topRejectionReasons": dict(reasons.most_common(12)),
+                      "rejectedCount": selected.get("rejectedCount", len(rejected)),
+                      "topRejectionReasons": selected.get("rejectionCounts") or dict(reasons.most_common(12)),
                       "eligibleSamples": (selected.get("eligibleSamples") or [])[:10],
                       "rejectedSamples": rejected[:5],
                   }
