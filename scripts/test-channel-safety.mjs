@@ -463,7 +463,7 @@ await test("Shopify preview and sync use the same eligibility and refuse an ambi
   });
   assert.equal(inventoryCalls, 0);
   assert.equal(variantMismatchUnpublishes, 1, "an ambiguous Shopify variant must be unpublished");
-  assert.ok(ambiguousDb.calls.some((call) => call.payload?.pipeline_reason === "shopify_variant_mapping_mismatch" && call.payload?.published === false));
+  assert.ok(ambiguousDb.calls.some((call) => call.payload?.pipeline_reason === "shopify_variant_mapping_mismatch" && call.payload?.published === false && call.payload?.orderable === false));
   assert.ok(ambiguous.errors.some((error) => error.error === "shopify_variant_sku_ambiguous"));
 
   const failedDb = shopifyDb({ message: "db down" });
