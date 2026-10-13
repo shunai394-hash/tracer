@@ -74,8 +74,11 @@ export type CollectedMarketplace = {
 
 /** Detect common Amazon robot-check responses; HTTP 200 alone is not a usable product page. */
 function isAmazonChallengeHtml(html: string | null, url: string): boolean {
-  if (!html || !/amazon\\.co\\.jp$/i.test(new URL(url).hostname)) return false;
-  return /(?:validateCaptcha|captcha\\.amazon|robot check|sorry, we just need to make sure you['’]?re not a robot|enter the characters you see below|automated access to amazon|api-services-support@amazon\\.com|\u30ed\u30dc\u30c3\u30c8\u3067\u306f\u306a\u3044\u3053\u3068\u3092\u78ba\u8a8d)/i.test(html);
+  if (!html) return false;
+  let hostname = "";
+  try { hostname = new URL(url).hostname.toLowerCase(); } catch { return false; }
+  if (hostname !== "amazon.co.jp" && !hostname.endsWith(".amazon.co.jp")) return false;
+  return /(?:validateCaptcha|captcha[.]amazon|robot check|sorry, we just need to make sure you['’]?re not a robot|enter the characters you see below|automated access to amazon|api-services-support@amazon[.]com|ロボットではないことを確認)/i.test(html);
 }
 
 async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVariantsMissing?: boolean; retryBrightDataWhenAmazonIdentifierMissing?: boolean } = {}): Promise<string | null> {
