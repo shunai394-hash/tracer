@@ -614,6 +614,7 @@ export async function runIntelligencePipeline(options: {
       .from("marketplace_bestsellers")
       .select("id")
       .eq("pipeline_status", "pending")
+      .not("marketplace", "in", '("amazon.co.jp","rakuten","yahoo_shopping")')
       .or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null")
       .order("fetched_at", { ascending: true })
       .limit(2);
