@@ -68,8 +68,10 @@ begin
   v_source_ref := 'cj:' || v_supplier_product_id || ':' || v_supplier_variant_id;
   v_tracer_sku := 'TRC-CJ-' || replace(p_product_id::text, '-', '');
   v_variant_sku := 'TRC-CJV-' || replace(p_variant_id::text, '-', '');
-  v_barcode := coalesce(nullif(btrim(v_variant.jan), ''), nullif(btrim(v_variant.gtin), ''),
-                        nullif(btrim(v_variant.ean), ''), nullif(btrim(v_variant.upc), ''));
+  -- Supplier identifiers are retained in the source attributes, but this draft
+  -- projection has not independently verified a global barcode. Do not promote
+  -- any supplied identifier into the canonical barcode column.
+  v_barcode := null;
 
   insert into public.tracer_supply_catalog (
     tracer_sku,title,brand,category,image_url,status,cost,shipping_cost,handling_cost,
