@@ -203,6 +203,8 @@ function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
   if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
   if (!isPublishableCatalogDescription(row.description)) reasons.push("catalog_description_not_publishable");
+  // Products without a usable image must never be created or remain purchasable on Shopify.
+  if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url.trim())) reasons.push("image_url_missing_or_invalid");
   if (row.identity_status !== "linked") reasons.push("supplier_identity_unlinked");
   if (row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") reasons.push("pipeline_blocked");
   if (!hasGateProvenance(row)) reasons.push("sales_test_gate_not_passed");
