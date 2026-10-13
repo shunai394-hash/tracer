@@ -29,7 +29,7 @@ assert.match(webhook, /supplier_fulfillment_gate_failed/, "failed supplier gate 
 assert.ok(webhook.indexOf("supplier_fulfillment_gate_failed") < webhook.indexOf('.from("shop_orders").insert'), "supplier gate must run before parent order creation");
 assert.match(webhook, /createDropshipPurchaseOrdersForShopOrder/, "paid Shopify webhook orders must initialize idempotent procurement snapshots");
 assert.match(webhook, /payment_status: "paid"/, "a later Shopify paid event must promote an existing pending order");
-assert.match(webhook, /if \(paid \|\| paymentStatus === "paid"\)/, "duplicate paid deliveries must retry procurement initialization");
+assert.match(webhook, /if \(\(paid \|\| paymentStatus === "paid"\) \&\& !\["cancelled", "refunded", "cancellation_requested", "refund_pending"\]\.includes\(existingOrderStatus\)\)/, "duplicate paid deliveries may retry procurement only for non-terminal orders");
 assert.match(webhook, /shop_order_items_insert_failed/, "line-item persistence failures must be surfaced");
 assert.match(webhook, /const cancelled = Boolean\(order\.cancelled_at\) \|\| financial === "voided"/, "cancelled or voided Shopify updates must stop procurement retries");
 assert.match(webhook, /const refunded = financial === "refunded"/, "refunded Shopify updates must be identified");
