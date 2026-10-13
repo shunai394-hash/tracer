@@ -15,6 +15,7 @@ assert.match(migration, /coalesce\(v_variant\.fetched_at, v_variant\.updated_at\
 assert.match(migration, /supplier_scoped_identity_mismatch/);
 assert.match(migration, /'identity_scope','supplier_variant'/);
 assert.match(migration, /'global_barcode_verified',false/);
+assert.match(migration, /v_barcode := null/);
 assert.match(migration, /'automated_order_creation_verified',false/);
 assert.match(migration, /'demand_evidence_status','not_observed'/);
 assert.match(migration, /status='draft'/);
