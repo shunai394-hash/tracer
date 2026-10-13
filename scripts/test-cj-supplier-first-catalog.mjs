@@ -8,6 +8,8 @@ const ingestion = await readFile("lib/suppliers/persist-cj-internal-supply.ts", 
 assert.match(migration, /stage_cj_supplier_first_catalog_draft/);
 assert.match(migration, /v_product\.source_name <> 'cj' or v_variant\.source_name <> 'cj'/);
 assert.match(migration, /supplier_evidence_stale/);
+assert.match(migration, /v_product\.generation is distinct from p_expected_product_generation/);
+assert.match(migration, /v_variant\.generation is distinct from p_expected_variant_generation/);
 assert.match(migration, /coalesce\(v_product\.fetched_at, v_product\.updated_at\) is null/);
 assert.match(migration, /coalesce\(v_variant\.fetched_at, v_variant\.updated_at\) is null/);
 assert.match(migration, /supplier_scoped_identity_mismatch/);
@@ -23,6 +25,7 @@ assert.doesNotMatch(migration, /marketplace_bestseller_variants/);
 assert.match(helper, /stage_cj_supplier_first_catalog_draft/);
 assert.match(helper, /variant_product_scope_mismatch/);
 assert.match(helper, /not_cj_source/);
+assert.match(helper, /product\.generation == null \|\| variant\.generation == null/);
 assert.match(ingestion, /stageCjSupplierFirstDraft/);
 assert.match(ingestion, /supplier_first_catalog_stage: catalogStage/);
 
