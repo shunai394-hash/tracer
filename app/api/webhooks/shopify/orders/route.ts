@@ -79,6 +79,50 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, blocked: true, reason: "listing_not_orderable" });
     }
 
+    // Re-check the canonical supplier row at order ingestion. A stale shop_listings
+    // orderable flag is not sufficient proof that this variant is safe to procure.
+    const resolvedListings = skus.map((sku) => bySku.get(sku)!);
+    const supplierListingIds = [...new Set(resolvedListings.map((listing) => listing.supplier_listing_id).filter((id): id is string => Boolean(id)))];
+    if (supplierListingIds.length !== new Set(resolvedListings.map((listing) => listing.id)).size) {
+      return NextResponse.json({ ok: true, blocked: true, reason: "supplier_identity_missing" });
+    }
+    const { data: supplierRows, error: supplierRowsError } = await db
+      .from("supplier_listings")
+      .select("id,product_id,supplier,supplier_product_id,supplier_variant_id,identity_status,verification_status,orderable,api_available,tracking_available,price_confirmed,inventory_confirmed,inventory,cost,shipping_cost")
+      .in("id", supplierListingIds);
+    if (supplierRowsError) throw new Error(supplierRowsError.message);
+    const supplierById = new Map((supplierRows ?? []).map((row) => [String(row.id), row]));
+    for (const [index, item] of items.entries()) {
+      const listing = bySku.get(skus[index]);
+      const supplier = listing?.supplier_listing_id ? supplierById.get(listing.supplier_listing_id) : null;
+      const quantity = n(item.quantity);
+      const inventory = n(supplier?.inventory);
+      const valid =
+        Boolean(listing && supplier) &&
+        supplier?.identity_status === "linked" &&
+        supplier?.verification_status === "verified" &&
+        supplier?.orderable === true &&
+        supplier?.api_available === true &&
+        supplier?.tracking_available === true &&
+        supplier?.price_confirmed === true &&
+        supplier?.inventory_confirmed === true &&
+        Boolean(supplier?.supplier_product_id) &&
+        Boolean(supplier?.supplier_variant_id) &&
+        String(supplier?.supplier_product_id) === String(listing?.supplier_product_id) &&
+        String(supplier?.supplier_variant_id) === String(listing?.supplier_variant_id) &&
+        String(supplier?.product_id ?? "") === String(listing?.product_id ?? "") &&
+        Number.isFinite(quantity) && quantity! > 0 &&
+        Number.isFinite(inventory) && inventory! >= quantity!;
+      if (!valid) {
+        return NextResponse.json({
+          ok: true,
+          blocked: true,
+          reason: "supplier_fulfillment_gate_failed",
+          sku: skus[index],
+        });
+      }
+    }
+
     const financial = String(order.financial_status ?? "pending");
     const paid = financial === "paid";
     const shipping = (order.shipping_address ?? {}) as Record<string, unknown>;
