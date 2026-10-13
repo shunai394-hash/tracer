@@ -21,7 +21,7 @@ SQL
 psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261013143000_google_trends_observation_idempotency.sql
 
 key="google-trends:concurrency-test:2026-10-13:shared-query"
-insert_sql="INSERT INTO public.demand_observations (metadata, idempotency_key) VALUES ('{\\"query\\":\\"shared-query\\"}'::jsonb, '$key') ON CONFLICT (idempotency_key) DO NOTHING;"
+insert_sql="INSERT INTO public.demand_observations (metadata, idempotency_key) VALUES (jsonb_build_object('query', 'shared-query'), '$key') ON CONFLICT (idempotency_key) DO NOTHING;"query\\":\\"shared-query\\"}'::jsonb, '$key') ON CONFLICT (idempotency_key) DO NOTHING;"
 
 # Start both requests before waiting for either one. The unique index, not
 # application-side prechecks, must arbitrate the race.
