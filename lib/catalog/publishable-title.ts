@@ -35,7 +35,7 @@ export function isPublishableCatalogTitle(value: unknown): boolean {
   if (typeof value !== "string") return false;
   const title = value.normalize("NFKC").replace(/\s+/g, " ").trim();
   if (!title || title.length > 180) return false;
-  if (GENERIC_CATALOG_TITLES.has(title)) return false;
+  if (GENERIC_CATALOG_TITLES.has(title.toLocaleLowerCase("ja-JP"))) return false;
   const normalized = title.toLocaleLowerCase("ja-JP");
   return !NON_PRODUCT_TITLE_MARKERS.some((marker) =>
     normalized.includes(marker.normalize("NFKC").toLocaleLowerCase("ja-JP")),
