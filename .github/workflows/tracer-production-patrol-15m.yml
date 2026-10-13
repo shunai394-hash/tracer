@@ -118,6 +118,11 @@ jobs:
               return {k:s.get(k) for k in ("name","ok","skipped","retryable")} | {
                   "reason":result.get("reason"),
                   "elapsedMs":result.get("elapsedMs"),
+                  "itemCount":result.get("itemCount"),
+                  "canonicalVariantEvidenceParsed":result.get("canonicalVariantEvidenceParsed"),
+                  "canonicalVariantEvidenceWritten":result.get("canonicalVariantEvidenceWritten"),
+                  "canonicalVariantEvidenceWriteFailures":result.get("canonicalVariantEvidenceWriteFailures"),
+                  "enrichment":result.get("enrichment"),
               }
           print("=== TRACER AI PATROL REPORT ===")
           print("status:", r.get("status"))
