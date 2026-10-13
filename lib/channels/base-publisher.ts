@@ -206,7 +206,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       await supabase.from("shop_listings").update({
         published: false,
         orderable: false,
-        base_publication_status: listing.base_item_id ? "published" : "blocked",
+        base_publication_status: "failed",
         base_publication_lease_until: null,
         base_last_error: message,
         pipeline_stage: "BASE_PUBLICATION",
@@ -239,7 +239,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       await supabase.from("shop_listings").update({
         published: false,
         orderable: false,
-        base_publication_status: listing.base_item_id ? "published" : "blocked",
+        base_publication_status: "failed",
         pipeline_stage: "BASE_PUBLICATION",
         pipeline_status: "blocked",
         pipeline_reason: "tracking_unavailable",
@@ -299,7 +299,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         published: false,
         orderable: false,
         published_at: null,
-        base_publication_status: listing.base_item_id ? (hideError ? "failed" : "hidden") : "blocked",
+        base_publication_status: "failed",
         base_publication_lease_until: null,
         base_last_error: hideError ? `image_url_invalid;base_hide_failed:${hideError}`.slice(0, 2000) : "image_url_invalid",
         pipeline_stage: "BLOCKED",
@@ -329,7 +329,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
           results.push({ listingId, ok: false, error: message }); continue;
         }
       }
-      await supabase.from("shop_listings").update({ published: false, base_publication_status: listing.base_item_id ? "published" : "blocked", base_publication_lease_until: null, pipeline_stage: "BASE_PUBLICATION", pipeline_status: "blocked", pipeline_reason: shippingCost === null ? "shipping_unknown" : "shipping_invalid", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
+      await supabase.from("shop_listings").update({ published: false, base_publication_status: "failed", base_publication_lease_until: null, pipeline_stage: "BASE_PUBLICATION", pipeline_status: "blocked", pipeline_reason: shippingCost === null ? "shipping_unknown" : "shipping_invalid", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
       results.push({ listingId, ok: false, skipped: true, error: shippingCost === null ? "shipping_unknown" : "shipping_invalid" }); continue;
     }
 
