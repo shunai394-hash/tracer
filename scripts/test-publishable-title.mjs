@@ -46,6 +46,7 @@ const shopify = await readFile(new URL("../lib/shopify/sync-published-listings.t
 const base = await readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8");
 const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
 const selector = await readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8");
+const alternateSelector = await readFile(new URL("../lib/market/select-sales-tests.ts", import.meta.url), "utf8");
 const priorityCases = [
   ["bag", womenMerchandisingPriority({ title: "レディース ショルダーバッグ" }), 3],
   ["beauty tool", womenMerchandisingPriority({ title: "美顔器・美容ツール" }), 2],
@@ -68,4 +69,7 @@ assert.match(store, /listing title failed catalog quality gate/, "order placemen
 assert.match(selector, /genericTitlePattern\.test\(supplierTitle\) \|\| genericTitlePattern\.test\(canonicalTitle\)/, "selector must reject generic supplier and canonical titles independently");
 assert.match(selector, /domestic_shipping_unknown_or_invalid/, "unknown domestic delivery cost must block candidate selection");
 assert.match(selector, /womenMerchandisingPriority/, "candidate ordering must apply the requested category priority");
+assert.match(alternateSelector, /isPublishableCatalogTitle\(sourceTitle\)/, "alternate sales-test route must reject generic titles");
+assert.match(alternateSelector, /domestic_shipping_unknown_or_invalid/, "alternate sales-test route must block unknown domestic delivery cost");
+assert.match(alternateSelector, /domesticShipping: domesticShippingJpy/, "alternate sales-test route must include observed domestic delivery cost");
 console.log(`Catalog title/description quality tests: ${cases.length} cases + 13 channel wiring checks + ${priorityCases.length} merchandising priority cases passed.`);
