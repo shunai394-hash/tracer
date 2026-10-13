@@ -111,9 +111,33 @@ export async function GET(request: Request) {
       .limit(1000);
     if (verifiedSupplyError) throw new Error(verifiedSupplyError.message);
 
+    // CJ-native supply is its own evidence path: exact supplier product + variant,
+    // verified shipping, price, stock, orderability, tracking and API availability.
+    // It does not need a marketplace ASIN/JAN match, but live publication remains
+    // disabled unless TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED=true.
+    const { data: nativeCjSupply, error: nativeCjSupplyError } = await supabase
+      .from("supplier_listings")
+      .select("product_id")
+      .in("supplier", ["cj", "cjdropshipping"])
+      .eq("verification_status", "verified")
+      .eq("shipping_status", "verified")
+      .eq("price_confirmed", true)
+      .eq("inventory_confirmed", true)
+      .gt("inventory", 0)
+      .eq("orderable", true)
+      .eq("tracking_available", true)
+      .eq("api_available", true)
+      .not("supplier_product_id", "is", null)
+      .not("supplier_variant_id", "is", null)
+      .not("product_id", "is", null)
+      .order("last_verified_at", { ascending: false, nullsFirst: false })
+      .limit(1000);
+    if (nativeCjSupplyError) throw new Error(nativeCjSupplyError.message);
+
     const verifiedSupplyIds = Array.from(new Set([
       ...(demandSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
       ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
+      ...(nativeCjSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
     ]));
     // Repair only the missing-intelligence subset for canonical supply. Do not
     // rebuild already-enriched products: this keeps the publication path bounded
