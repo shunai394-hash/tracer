@@ -27,12 +27,11 @@ assert.match(reverify, /\.limit\(MAX_CANDIDATE_SCAN\)/);
 assert.match(reverify, /buildCandidateQuery\(\)\.gt\("id", priorCursor\)/);
 assert.match(reverify, /nextCursor: scanCursor/);
 const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
-const beautySourceIndex = collector.indexOf('source: "amazon_bestsellers_beauty"');
-const genericAmazonSourceIndex = collector.indexOf('source: "amazon_bestsellers" },');
-const electronicsSourceIndex = collector.indexOf('source: "amazon_bestsellers_electronics"');
-assert.ok(beautySourceIndex >= 0 && genericAmazonSourceIndex >= 0 && electronicsSourceIndex >= 0
-  && beautySourceIndex < genericAmazonSourceIndex && genericAmazonSourceIndex < electronicsSourceIndex,
-  "Amazon beauty and general demand must be collected before electronics");
+const sourcesMatch = collector.match(/export const MARKETPLACE_SOURCES = \[([\s\S]*?)\] as const/);
+assert.ok(sourcesMatch, "marketplace source list must be explicit");
+assert.match(sourcesMatch[1], /marketplace: "yahoo_shopping"/);
+assert.doesNotMatch(sourcesMatch[1], /amazon|rakuten/i,
+  "new demand collection must not fetch Amazon or Rakuten ranking sources");
 assert.match(collector, /skipped: items\.length === 0/);
 assert.match(collector, /ranking_html_returned_zero_items/);
 console.log("Bounded demand identity stamping and CJ reverify: 18 assertions passed");
