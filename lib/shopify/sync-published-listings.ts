@@ -264,7 +264,12 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
     .order("pipeline_updated_at", { ascending: false })
     .limit(Math.min(Math.max(limit, 1), 1000));
   if (error) throw new Error(error.message);
-  const linkedSupplierIds = await getLinkedSupplierListingIds((data ?? []).map((row) => row.supplier_listing_id));
+  const linkedSupplierIds = await getExactlyLinkedSupplierListingIds((data ?? []).map((row) => ({
+    supplier_listing_id: row.supplier_listing_id,
+    product_id: row.product_id,
+    supplier_product_id: row.supplier_product_id,
+    supplier_variant_id: row.supplier_variant_id,
+  })));
   const reasonCounts: Record<string, number> = {};
   const rows = ((data ?? []) as Array<Listing & { shopify_sync_error?: string | null }>).map((rawRow) => {
     const row = { ...rawRow, identity_status: rawRow.supplier_listing_id && linkedSupplierIds.has(rawRow.supplier_listing_id) ? "linked" : null };
