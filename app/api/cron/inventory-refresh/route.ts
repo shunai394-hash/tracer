@@ -165,75 +165,34 @@ export async function GET(request: Request) {
       const adapter = getSupplierAdapter(supplierName);
       try {
         if (!supplierName || !adapter) {
-          results.push({ listingId, ok: false, blocked: true, reason: "supplier_adapter_not_registered" });
+          const stopped = await blockUnverifiedSupplierListing(listing, "supplier_adapter_not_registered");
+          results.push({ listingId, ok: false, blocked: true, reason: "supplier_adapter_not_registered", ...stopped });
           continue;
         }
         if (!isSupplierConfigured(supplierName)) {
-          results.push({ listingId, ok: false, blocked: true, reason: "supplier_not_configured", supplier: supplierName });
+          const stopped = await blockUnverifiedSupplierListing(listing, "supplier_not_configured");
+          results.push({ listingId, ok: false, blocked: true, reason: "supplier_not_configured", supplier: supplierName, ...stopped });
           continue;
         }
 
         const autoProcurement = getAutoProcurementEligibility(supplierName);
         if (!autoProcurement.eligible) {
-          const now = new Date().toISOString();
-          const { error: blockError } = await supabase
-            .from("shop_listings")
-            .update({
-              published: false,
-              orderable: false,
-              pipeline_error: autoProcurement.missing.join("|"),
-              pipeline_updated_at: now,
-              updated_at: now,
-            })
-            .eq("id", listingId);
-          if (blockError) throw new Error(blockError.message);
-
-          if (listing.supplier_listing_id) {
-            const { error: supplierError } = await supabase
-              .from("supplier_listings")
-              .update({
-                orderable: false,
-                fetched_at: now,
-              })
-              .eq("id", String(listing.supplier_listing_id));
-            if (supplierError) throw new Error(supplierError.message);
-          }
-
-          let baseSyncError: string | null = null;
-          if (listing.base_item_id && listing.selling_price !== null && isBaseConfigured()) {
-            try {
-              await editBaseItem({
-                itemId: String(listing.base_item_id),
-                title: String(listing.title ?? ""),
-                detail: String(listing.description ?? listing.title ?? ""),
-                price: Number(listing.selling_price),
-                stock: 0,
-                visible: false,
-              });
-              baseUpdated++;
-            } catch (error) {
-              baseSyncError = error instanceof Error ? error.message : String(error);
-              baseErrors++;
-              await supabase.from("shop_listings").update({
-                base_last_error: baseSyncError,
-              }).eq("id", listingId);
-            }
-          }
-
-          const shopifySyncError = await stopShopifyListing(listing.shopify_product_id);
+          const reason = "supplier_auto_procurement_capability_missing";
+          const stopped = await blockUnverifiedSupplierListing(listing, reason);
           results.push({
             listingId,
             ok: false,
             blocked: true,
-            reason: "supplier_auto_procurement_capability_missing",
+            reason,
             missing: autoProcurement.missing,
-            baseSyncError,
-            shopifySyncError,
+            ...stopped,
           });
           continue;
         }
         if (supplierName.toLowerCase() === "dsers") {
-          results.push({ listingId, ok: false, blocked: true, reason: "supplier_inventory_contract_unverified", supplier: supplierName });
+          const reason = "supplier_inventory_contract_unverified";
+          const stopped = await blockUnverifiedSupplierListing(listing, reason);
+          results.push({ listingId, ok: false, blocked: true, reason, supplier: supplierName, ...stopped });
           continue;
         }
         const inventoryResult = await adapter.getInventory(
