@@ -8,6 +8,8 @@ const ingestion = await readFile("lib/suppliers/persist-cj-internal-supply.ts", 
 assert.match(migration, /stage_cj_supplier_first_catalog_draft/);
 assert.match(migration, /v_product\.source_name <> 'cj' or v_variant\.source_name <> 'cj'/);
 assert.match(migration, /supplier_evidence_stale/);
+assert.match(migration, /coalesce\(v_product\.fetched_at, v_product\.updated_at\) is null/);
+assert.match(migration, /coalesce\(v_variant\.fetched_at, v_variant\.updated_at\) is null/);
 assert.match(migration, /supplier_scoped_identity_mismatch/);
 assert.match(migration, /'identity_scope','supplier_variant'/);
 assert.match(migration, /'global_barcode_verified',false/);
