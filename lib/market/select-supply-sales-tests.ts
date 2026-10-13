@@ -32,12 +32,26 @@ function listingQuality(row: Record<string, unknown>): number {
   return (row.identity_status === "linked" ? 1000 : 0) + (row.identity_method ? 100 : 0) + identity * 100 + (row.price_confirmed === true ? 100 : 0) + (row.inventory_confirmed === true ? 100 : 0) + (row.orderable === true ? 100 : 0) + (row.tracking_available === true ? 50 : 0) + (row.api_available === true ? 50 : 0) + (row.supplier_product_id ? 25 : 0) + (row.supplier_variant_id ? 25 : 0) + Math.min(inventory, 1000) / 1000;
 }
 
-export type SupplySalesTestResult = { published: number; publishedListingIds: string[]; selectedListingIds: string[]; considered: number; rejected: Array<{ productId: string; reasons: string[] }> };
+export type SupplySalesTestResult = {
+  published: number;
+  publishedListingIds: string[];
+  selectedListingIds: string[];
+  considered: number;
+  rejectedCount: number;
+  rejectionCounts: Record<string, number>;
+  rejected: Array<{ productId: string; reasons: string[] }>;
+};
+
+function summarizeRejections(rows: Array<{ reasons: string[] }>): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const row of rows) for (const reason of row.reasons) counts[reason] = (counts[reason] ?? 0) + 1;
+  return counts;
+}
 
 export async function selectAndPublishSupplySalesTests(productIds: string[], limit = 3, options: { dryRun?: boolean; allowNativeCjIdentity?: boolean } = {}): Promise<SupplySalesTestResult & { eligibleProductIds?: string[]; eligibleSamples?: Array<Record<string, unknown>> }> {
   const supabase = createSupabaseAdminClient();
   const observedFx = await getObservedUsdToJpyRate();
-  if (productIds.length === 0 || limit <= 0) return { published: 0, publishedListingIds: [], selectedListingIds: [], considered: 0, rejected: [] };
+  if (productIds.length === 0 || limit <= 0) return { published: 0, publishedListingIds: [], selectedListingIds: [], considered: 0, rejectedCount: 0, rejectionCounts: {}, rejected: [] };
   const uniqueProductIds = Array.from(new Set(productIds));
   const { data: intelligenceRows, error: intelligenceError } = await supabase.from("opportunity_intelligence").select("product_id,demand_score,search_fit_score,market_gap_score,competition_score,creative_score,selection_score,overall_confidence,selection_eligible,sellability_state,filter_state,profit_state,recommendation_summary,why_now").in("product_id", uniqueProductIds);
   if (intelligenceError) throw new Error(intelligenceError.message);
@@ -195,6 +209,8 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     publishedListingIds: [],
     selectedListingIds: [],
     considered: uniqueProductIds.length,
+    rejectedCount: rejected.length,
+    rejectionCounts: summarizeRejections(rejected),
     rejected: rejected.slice(0, 50),
     eligibleProductIds: eligible.map((item) => item.productId),
     eligibleSamples: eligible.slice(0, 50).map((item) => ({
@@ -240,5 +256,5 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (result.error) throw new Error(result.error.message);
     if (result.data?.id) { const listingId = String(result.data.id); selectedListingIds.push(listingId); publishedListingIds.push(listingId); }
   }
-  return { published: publishedListingIds.length, publishedListingIds, selectedListingIds, considered: uniqueProductIds.length, rejected: rejected.slice(0, 50) };
+  return { published: publishedListingIds.length, publishedListingIds, selectedListingIds, considered: uniqueProductIds.length, rejectedCount: rejected.length, rejectionCounts: summarizeRejections(rejected), rejected: rejected.slice(0, 50) };
 }
