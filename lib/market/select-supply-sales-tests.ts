@@ -149,6 +149,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
       sourceProvider: String(listing.supplier ?? "unknown"),
       internationalShipping: shippingCost,
       domesticShipping: null,
+      requireDomesticShipping: true,
       shippingCurrency: typeof listing.currency === "string" ? listing.currency : "USD",
       sourceFxRateToSelling,
       sourceFxRateSource: sourceFxRateSource ?? undefined,
