@@ -60,6 +60,10 @@ jobs:
         run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-cj-order-adapter.mjs
       - name: Test CJ-native identity proof (mocked CJ reads, no writes to CJ)
         run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-cj-native-identity.mjs
+      - name: Test Shopify order id canonicalization (no double import)
+        run: node --experimental-strip-types --no-warnings scripts/test-shopify-order-id.mjs
+      - name: Test TRACER-BASE-Shopify correspondence table
+        run: node --experimental-strip-types --no-warnings scripts/test-three-site-correspondence.mjs
       - name: Test internal supply retry lifecycle
         run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-internal-link-retry-lifecycle.mjs
       - name: Set up disposable local PostgreSQL for integration tests

@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
 import { uniqueRowsByKey } from "@/lib/ordering/channel-listing-match";
 import { createDropshipPurchaseOrdersForShopOrder } from "@/lib/ordering/dropship";
+import { shopifyOrderIdForms, shopifyOrderNumericId } from "@/lib/shopify/order-id";
 
 type ShopifyOrder = {
   id: string;
@@ -118,11 +119,12 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
       const { data: existingRows, error: existingRowsError } = await supabase
         .from("shop_orders")
         .select("shopify_order_id")
-        .in("shopify_order_id", pageOrders.map((order) => order.id));
+        .in("shopify_order_id", pageOrders.flatMap((order) => shopifyOrderIdForms(order.id)));
       if (existingRowsError) throw new Error(existingRowsError.message);
-      const existingIds = new Set((existingRows ?? []).map((row) => String(row.shopify_order_id)));
+      // Compare numeric tails: the REST webhook once stored numeric ids.
+      const existingIds = new Set((existingRows ?? []).map((row) => shopifyOrderNumericId(row.shopify_order_id)));
       for (const order of pageOrders) {
-        if (!existingIds.has(order.id) && orders.length < maxNewOrders) orders.push(order);
+        if (!existingIds.has(shopifyOrderNumericId(order.id)) && orders.length < maxNewOrders) orders.push(order);
       }
     }
 
@@ -228,7 +230,8 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
       const { data: existing, error: existingError } = await supabase
         .from("shop_orders")
         .select("id")
-        .eq("shopify_order_id", order.id)
+        .in("shopify_order_id", shopifyOrderIdForms(order.id))
+        .limit(1)
         .maybeSingle();
       if (existingError) throw new Error(existingError.message);
       if (existing) {

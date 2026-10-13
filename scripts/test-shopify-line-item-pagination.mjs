@@ -8,7 +8,7 @@ assert.match(source, /orders\(first: \$first, after: \$after,[\s\S]*?reverse: tr
 assert.match(source, /while \(hasNextOrdersPage && orders\.length < maxNewOrders\)/);
 assert.match(source, /shopify_orders_cursor_not_advancing/);
 assert.match(source, /fetched: scannedOrders/);
-assert.ok(source.includes("if (!existingIds.has(order.id)"), "already-imported orders must be skipped while paging");
+assert.ok(source.includes("if (!existingIds.has(shopifyOrderNumericId(order.id))"), "already-imported orders (GID or legacy numeric id) must be skipped while paging");
 assert.match(source, /financial_status:paid status:open fulfillment_status:unfulfilled/);
 assert.match(source, /cancelledAt: string \| null/);
 assert.match(source, /if \(order\.cancelledAt\)/);

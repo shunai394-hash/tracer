@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyShopifyWebhookHmac } from "@/lib/shopify/admin";
 import { getOrderSkuLookup, resolveShopifyOrderSkus } from "@/lib/shopify/order-sku-mapping";
 import { createDropshipPurchaseOrdersForShopOrder } from "@/lib/ordering/dropship";
+import { canonicalShopifyOrderId, shopifyOrderIdForms } from "@/lib/shopify/order-id";
 
 export const runtime = "nodejs";
 
@@ -18,12 +19,21 @@ export async function POST(request: Request) {
   }
   try {
     const order = JSON.parse(raw) as Record<string, unknown>;
-    const externalId = String(order.id ?? "");
+    // Store the GraphQL GID, the same form the order poller writes, and match
+    // the legacy numeric form too so one order is never imported twice.
+    const externalId = canonicalShopifyOrderId(order.admin_graphql_api_id) ?? canonicalShopifyOrderId(order.id);
     if (!externalId) return NextResponse.json({ ok: false, error: "shopify_order_id_missing" }, { status: 400 });
 
     const db = createSupabaseAdminClient();
-    const existing = await db.from("shop_orders").select("id,payment_status,order_status").eq("shopify_order_id", externalId).maybeSingle();
-    if (existing.error) throw new Error(existing.error.message);
+    const existingRows = await db
+      .from("shop_orders")
+      .select("id,payment_status,order_status,shopify_order_id")
+      .in("shopify_order_id", shopifyOrderIdForms(externalId))
+      .limit(2);
+    if (existingRows.error) throw new Error(existingRows.error.message);
+    const existing = {
+      data: (existingRows.data ?? []).find((row) => row.shopify_order_id === externalId) ?? existingRows.data?.[0] ?? null,
+    };
     if (existing.data) {
       const financial = String(order.financial_status ?? "pending");
       const paid = financial === "paid";
