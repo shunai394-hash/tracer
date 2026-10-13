@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isSupplierIdentityEligible } from "@/lib/catalog/supplier-identity-policy";
 
 /** Returns only supplier listings whose canonical identity review is explicitly linked. */
 export async function getLinkedSupplierListingIds(values: unknown[]): Promise<Set<string>> {
@@ -72,24 +73,18 @@ export async function getExactlyEligibleSupplierListingIds(
       // mappings. Any repeated supplier_listing_id is ambiguous and blocked.
       if (!candidateGroup || candidateGroup.length !== 1 || source.identity_status !== "linked") continue;
       const listing = candidateGroup[0];
-      const canonicalProductId = typeof listing.product_id === "string" ? listing.product_id.trim() : "";
-      const sourceProductId = typeof source.product_id === "string" ? source.product_id.trim() : "";
-      const listingSupplierProductId = typeof listing.supplier_product_id === "string" ? listing.supplier_product_id.trim() : "";
-      const sourceSupplierProductId = typeof source.supplier_product_id === "string" ? source.supplier_product_id.trim() : "";
-      const listingVariantId = typeof listing.supplier_variant_id === "string" ? listing.supplier_variant_id.trim() : "";
-      const sourceVariantId = typeof source.supplier_variant_id === "string" ? source.supplier_variant_id.trim() : "";
-      const sellingCurrency = typeof listing.selling_currency === "string" ? listing.selling_currency.trim().toUpperCase() : "";
-      const sourceCurrency = typeof source.currency === "string" ? source.currency.trim().toUpperCase() : "";
-      if (
-        canonicalProductId &&
-        sourceProductId === canonicalProductId &&
-        listingSupplierProductId &&
-        sourceSupplierProductId === listingSupplierProductId &&
-        listingVariantId &&
-        sourceVariantId === listingVariantId &&
-        sellingCurrency &&
-        sourceCurrency === sellingCurrency
-      ) linked.add(String(source.id));
+      if (isSupplierIdentityEligible({
+        candidateCount: candidateGroup.length,
+        candidateProductId: listing.product_id,
+        candidateSupplierProductId: listing.supplier_product_id,
+        candidateVariantId: listing.supplier_variant_id,
+        candidateSellingCurrency: listing.selling_currency,
+        sourceIdentityStatus: source.identity_status,
+        sourceProductId: source.product_id,
+        sourceSupplierProductId: source.supplier_product_id,
+        sourceVariantId: source.supplier_variant_id,
+        sourceCurrency: source.currency,
+      })) linked.add(String(source.id));
     }
   }
   return linked;
