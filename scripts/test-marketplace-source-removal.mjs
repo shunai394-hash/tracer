@@ -12,13 +12,13 @@ assert.match(migration, /delete from public\.marketplace_bestsellers[\s\S]*?lowe
 assert.match(migration, /delete from public\.evidence_ledger/i);
 assert.match(migration, /delete from public\.product_identifiers/i);
 assert.match(migration, /delete from public\.marketplace_bestseller_variants/i);
-assert.match(migration, /customer orders, and channel records are intentionally[\\s\\S]*?preserved/i);
+assert.match(migration, /customer orders, and channel records are intentionally[\s\S]*?preserved/i);
 
 // After Amazon/Rakuten removal, the remaining approved Yahoo source must
 // still persist only explicit structured child-variant evidence.
 assert.match(
   collector,
-  /const detail = parseYahooProductDetail\\(detailHtml\\);[\\s\\S]{0,500}item\\.canonicalVariants = parseCanonicalMarketplaceVariantEvidence\\(detailHtml, item\\.productUrl\\);[\\s\\S]{0,160}canonicalVariantCount \\+= item\\.canonicalVariants\\.length;/,
+  /const detail = parseYahooProductDetail\(detailHtml\);[\s\S]{0,500}item\.canonicalVariants = parseCanonicalMarketplaceVariantEvidence\(detailHtml, item\.productUrl\);[\s\S]{0,160}canonicalVariantCount \+= item\.canonicalVariants\.length;/,
 );
 
 console.log("marketplace source removal and Yahoo canonical evidence tests passed");
