@@ -299,7 +299,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         published: false,
         orderable: false,
         published_at: null,
-        base_publication_status: listing.base_item_id ? (hideError ? "failed" : "published") : "blocked",
+        base_publication_status: listing.base_item_id ? (hideError ? "failed" : "hidden") : "blocked",
         base_publication_lease_until: null,
         base_last_error: hideError ? `image_url_invalid;base_hide_failed:${hideError}`.slice(0, 2000) : "image_url_invalid",
         pipeline_stage: "BLOCKED",
