@@ -1,0 +1,79 @@
+name: TRACER Link Existing Verified Supply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tracer-link-existing-supply.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tracer-link-existing-supply
+  cancel-in-progress: false
+
+jobs:
+  link:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Wait until production includes this workflow commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://tracer-pied-alpha.vercel.app"
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          for i in $(seq 1 18); do
+            sha="$(curl -sS --max-time 15 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if git ls-remote https://github.com/shunai394-hash/tracer.git "$sha" >/dev/null 2>&1 && [ -n "$sha" ]; then
+              if git fetch --quiet https://github.com/shunai394-hash/tracer.git "$sha" && git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+                echo "Production is on a descendant commit containing this workflow."
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+          echo "Production has not reflected this commit; refusing to call a stale deployment."
+          exit 1
+
+      - name: Run bounded existing-catalog supplier linkage
+        shell: bash
+        run: |
+          set -euo pipefail
+          OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app"
+          OIDC_TOKEN="$(curl --fail-with-body --silent --show-error --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$OIDC_URL" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl -sS --max-time 300 -o linkage-report.json -w "%{http_code}" -H "Authorization: Bearer $OIDC_TOKEN" "https://tracer-pied-alpha.vercel.app/api/cron/supplier-investigation" || true)"
+          echo "=== SUPPLIER INVESTIGATION HTTP $code ==="
+          python3 - <<'PY'
+          import json,sys
+          try:
+              with open("linkage-report.json", encoding="utf-8") as f:
+                  r=json.load(f)
+          except Exception as e:
+              print("Could not parse linkage report:", e)
+              sys.exit(1)
+          summary = {
+              "ok": r.get("ok"),
+              "phase": r.get("phase"),
+              "candidateCount": len(r.get("candidateIds") or []),
+              "internalMatched": len(r.get("internalMatchedIds") or []),
+              "externalMatched": r.get("matched"),
+              "totalMatched": r.get("totalMatched"),
+              "rowErrors": r.get("rowErrors"),
+              "deferred": r.get("deferred"),
+              "internalResults": r.get("internalResults"),
+              "error": r.get("error"),
+          }
+          print("LINKAGE REPORT:", json.dumps(summary, ensure_ascii=False))
+          if r.get("ok") is not True:
+              sys.exit(1)
+          PY
+          if [ "$code" != "200" ]; then
+            echo "Supplier linkage did not return HTTP 200."
+            exit 1
+          fi
