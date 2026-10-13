@@ -163,7 +163,16 @@ export async function GET(request: Request) {
       await buildOpportunityInBatches(missingOpportunityIds.slice(0, 30), 10);
     }
     const allowNativeCjIdentity = dryRun || process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true";
-    const supplySelected = await selectAndPublishSupplySalesTests(verifiedSupplyIds, 400, {
+    // The read-only audit is bounded and prioritizes native CJ evidence so it
+    // can finish inside a workflow request timeout even when the catalog grows.
+    const nativeCjProductIds = (nativeCjSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean);
+    const dryRunProductIds = Array.from(new Set([
+      ...nativeCjProductIds,
+      ...(demandSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
+      ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
+    ])).slice(0, 100);
+    const selectionProductIds = dryRun ? dryRunProductIds : verifiedSupplyIds;
+    const supplySelected = await selectAndPublishSupplySalesTests(selectionProductIds, dryRun ? 50 : 400, {
       dryRun,
       allowNativeCjIdentity,
     });
