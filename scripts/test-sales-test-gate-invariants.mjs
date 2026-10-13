@@ -16,10 +16,12 @@ for (const [name, result] of checks) {
 
 // This script runs directly in Node before the Next build. Keep the profit
 // guard check static because simulate-profit.ts uses a Next/TS path alias.
-const [profit, supplySelector, marketSelector] = await Promise.all([
+const [profit, supplySelector, marketSelector, publicationRoute, diagnosticWorkflow] = await Promise.all([
   readFile(new URL("../lib/intelligence/simulate-profit.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/market/select-sales-tests.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/cron/sales-test-publication/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../.github/workflows/tracer-shopify-auth-check.yml", import.meta.url), "utf8"),
 ]);
 assert.match(profit, /requireDomesticShipping === true && args\.domesticShipping == null/);
 assert.match(profit, /unknown\("domestic_shipping_unknown"\)/);
@@ -28,4 +30,9 @@ assert.equal(isPublishableCatalogTitle("トレンド・seeded_dueアイテム"),
 assert.equal(isPublishableCatalogTitle("Aroma Filter"), true);
 assert.match(supplySelector, /product_master_title_not_publishable/);
 assert.match(marketSelector, /requireDomesticShipping: true/);
-console.log("fully costed publication and product-master guards: 7 assertions passed");
+assert.match(supplySelector, /rejectedCount: rejected\.length/);
+assert.match(supplySelector, /rejectionCounts: summarizeRejections\(rejected\)/);
+assert.match(publicationRoute, /Math\.min\(500, Math\.floor\(requestedDryRunLimit\)\)/);
+assert.match(publicationRoute, /\.slice\(0, dryRunLimit\)/);
+assert.match(diagnosticWorkflow, /sales-test-publication\?dryRun=true&limit=450/);
+console.log("fully costed publication, product-master, and 450-candidate audit guards: 12 assertions passed");
