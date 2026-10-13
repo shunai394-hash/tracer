@@ -62,6 +62,8 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f scripts/test-canonical-variant-evidence.sql
       - name: Test BASE external-ID reconciliation logic
         run: node scripts/test-base-reconciliation-core.mjs
+      - name: Test Amazon and Rakuten source removal policy
+        run: node scripts/test-marketplace-source-removal.mjs
       - name: Verify demand match evidence
         run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
       - name: TypeScript
