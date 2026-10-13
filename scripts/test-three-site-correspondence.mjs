@@ -27,6 +27,20 @@ const run = (listings, baseItems, shopifyProducts) => buildThreeSiteCorresponden
 // Legacy numeric Shopify ids still join.
 assert.equal(shopifyIdTail("11"), shopifyIdTail("gid://shopify/Product/11"));
 assert.equal(run([listing({ shopify_product_id: "11", shopify_variant_id: "21" })], [baseItem()], [shopifyProduct()]).rows[0].consistent, true);
+assert.ok(issuesFor([listing({ shopify_variant_id: null })], [baseItem()], [shopifyProduct()]).includes("shopify_variant_id_missing"));
+assert.ok(issuesFor([listing({ shopify_variant_id: "gid://shopify/ProductVariant/999" })], [baseItem()], [shopifyProduct()]).includes("shopify_variant_not_found"));
+// The exact target variant must be found even after the first five variants.
+{
+  const variants = Array.from({ length: 6 }, (_, index) => ({
+    id: `gid://shopify/ProductVariant/${index + 20}`,
+    sku: `TRC-v${index}`,
+    price: "3980.00",
+    inventoryQuantity: 5,
+  }));
+  const report = run([listing({ shopify_variant_id: "gid://shopify/ProductVariant/25" })], [baseItem()], [shopifyProduct({ variants })]);
+  assert.equal(report.rows[0].shopify.stock, 5);
+  assert.ok(!report.rows[0].issues.includes("shopify_variant_not_found"));
+}
 
 const issuesFor = (...args) => run(...args).rows[0].issues;
 
