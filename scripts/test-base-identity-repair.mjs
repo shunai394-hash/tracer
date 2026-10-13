@@ -11,6 +11,9 @@ assert.match(route, /body\.apply === true/, "writes must require explicit apply:
 assert.match(route, /\.eq\("id", listingId\)[\s\S]*?\.is\("base_item_id", null\)/, "repair must compare-and-set only missing IDs");
 assert.match(route, /listing_has_different_base_item_id/);
 assert.match(route, /base_item_already_mapped_to_other_listing/);
+assert.match(route, /diagnostic only: exact title\+price and optionally exact non-empty detail; never auto-links/);
+assert.match(route, /exactTitlePriceDetailGloballyUnique/);
+assert.match(route, /body\.apply === true/, "candidate fingerprints must not bypass explicit apply gate");
 assert.doesNotMatch(route, /\.update\(\{[^}]*published\s*:/, "identity repair must not change publication state");
 assert.match(base, /identifier\?: string/);
 assert.match(publisher, /identifier: `TRC-\$\{listingId\}`/);
