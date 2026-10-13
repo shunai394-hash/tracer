@@ -22,6 +22,7 @@ function observation(overrides = {}) {
     canonicalVariantEvidenceWritten: 0,
     canonicalVariantEvidenceWriteFailures: 0,
     skippedMarketplaces: [],
+    failedMarketplaces: [],
     enrichment: [],
     bestsellerIds: [],
     supplierCandidateIds: [],
@@ -136,13 +137,22 @@ assert.equal(partialLedger.payload.status, "partial");
 assert.equal(partialLedger.payload.failed, 2);
 
 reset();
+scenario.observation = observation({ inserted: 0, failedMarketplaces: ["yahoo_shopping"] });
+const failedSourceResponse = await executeMarketSourcingCron(active, 60);
+const failedSourceBody = failedSourceResponse.body;
+assert.equal(failedSourceResponse.httpStatus, 500);
+assert.equal(failedSourceBody.ok, false);
+assert.equal(failedSourceBody.cronStatus, "failed");
+assert.equal(failedSourceBody.failed, 1);
+
+// A marketplace skipped by source policy (Amazon/Rakuten) is intentional,
+// not a collection failure.
+reset();
 scenario.observation = observation({ inserted: 0, skippedMarketplaces: ["amazon.co.jp"] });
 const skippedResponse = await executeMarketSourcingCron(active, 60);
 const skippedBody = skippedResponse.body;
-assert.equal(skippedResponse.httpStatus, 500);
-assert.equal(skippedBody.ok, false);
-assert.equal(skippedBody.cronStatus, "failed");
-assert.equal(skippedBody.failed, 1);
+assert.equal(skippedBody.failed, 0);
+assert.notEqual(skippedBody.cronStatus, "failed");
 
 reset();
 scenario.ledgerError = "ledger write failed";
