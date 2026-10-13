@@ -246,6 +246,7 @@ export async function selectAndPublishSalesTests(
       sourceProvider: String(listing.supplier ?? "unknown"),
       internationalShipping: asNumber(listing.shipping_cost),
       domesticShipping: null,
+      requireDomesticShipping: true,
       shippingCurrency: typeof listing.currency === "string" ? listing.currency : null,
       sourceFxRateToSelling:
         typeof bestseller.currency === "string" && typeof listing.currency === "string" && bestseller.currency.trim().toUpperCase() === "JPY" && listing.currency.trim().toUpperCase() === "USD"
