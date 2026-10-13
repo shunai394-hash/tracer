@@ -59,6 +59,8 @@ export function simulateContributionProfit(args: {
   sourceProvider?: string | null;
   internationalShipping?: number | null;
   domesticShipping?: number | null;
+  /** Whether missing domestic delivery cost must keep the margin unknown. */
+  requireDomesticShipping?: boolean;
   shippingCurrency?: string | null;
   /** Observed multiplier from source currency into selling currency. */
   sourceFxRateToSelling?: number | null;
@@ -118,7 +120,8 @@ export function simulateContributionProfit(args: {
     totalCost: null,
     roi: null,
     shippingUnknown:
-      args.internationalShipping == null && args.domesticShipping == null,
+      args.internationalShipping == null ||
+      (args.requireDomesticShipping === true && args.domesticShipping == null),
     lines: [],
     provenance,
     incalculableReason: reason,
@@ -158,8 +161,14 @@ export function simulateContributionProfit(args: {
     });
   }
 
-  const shippingUnknown =
-    args.internationalShipping == null && args.domesticShipping == null;
+  if (args.requireDomesticShipping === true && args.domesticShipping == null) {
+    return unknown("domestic_shipping_unknown");
+  }
+  if (args.internationalShipping == null) {
+    return unknown("international_shipping_unknown");
+  }
+
+  const shippingUnknown = false;
   const shippingCurrency = args.shippingCurrency?.trim().toUpperCase() ?? null;
 
   if (!shippingUnknown && !shippingCurrency) {
