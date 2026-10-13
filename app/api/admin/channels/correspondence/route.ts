@@ -18,7 +18,7 @@ type ShopifyNode = {
   title: string | null;
   status: string | null;
   publishedOnPublication: boolean | null;
-  variants: { nodes: CorrespondenceShopifyProduct["variants"] };
+  variants: { nodes: CorrespondenceShopifyProduct["variants"]; pageInfo: { hasNextPage: boolean } };
 };
 
 async function fetchShopifyTracerProducts(): Promise<CorrespondenceShopifyProduct[]> {
@@ -32,13 +32,14 @@ async function fetchShopifyTracerProducts(): Promise<CorrespondenceShopifyProduc
           nodes {
             id title status
             publishedOnPublication(publicationId: $publicationId)
-            variants(first: 250) { nodes { id sku price inventoryQuantity } }
+            variants(first: 250) { nodes { id sku price inventoryQuantity } pageInfo { hasNextPage } }
           }
           pageInfo { hasNextPage endCursor }
         }
       }`,
       { after, publicationId },
     );
+    if (data.products.nodes.some((node) => node.variants.pageInfo.hasNextPage)) throw new Error("SHOPIFY_VARIANTS_INCOMPLETE");
     products.push(...data.products.nodes.map((node) => ({ ...node, variants: node.variants.nodes })));
     if (!data.products.pageInfo.hasNextPage) return products;
     after = data.products.pageInfo.endCursor;
