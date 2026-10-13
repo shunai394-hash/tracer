@@ -39,6 +39,9 @@ assert.ok(issuesFor([listing()], [baseItem()], [shopifyProduct({ title: "LED Des
 assert.ok(issuesFor([listing()], [baseItem({ title: "LEDライト 白" })], [shopifyProduct()]).includes("title_differs_between_channels"));
 assert.ok(issuesFor([listing()], [baseItem({ price: 4200 })], [shopifyProduct()]).includes("base_price_mismatch"));
 assert.ok(issuesFor([listing()], [baseItem({ price: 4200 })], [shopifyProduct()]).includes("price_differs_between_channels"));
+assert.ok(issuesFor([listing()], [baseItem({ stock: 4 })], [shopifyProduct()]).includes("inventory_differs_between_channels"));
+assert.ok(issuesFor([listing()], [baseItem()], [shopifyProduct({ variants: [{ id: "gid://shopify/ProductVariant/21", sku: "TRC-v1", price: "3980.00", inventoryQuantity: 4 }] })]).includes("inventory_differs_between_channels"));
+assert.ok(!issuesFor([listing()], [baseItem({ stock: 5 })], [shopifyProduct()]).includes("inventory_differs_between_channels"));
 assert.ok(issuesFor([listing()], [baseItem()], [shopifyProduct({ status: "DRAFT" })]).includes("shopify_not_live_but_tracer_published"));
 assert.ok(issuesFor([listing()], [baseItem()], [shopifyProduct({ status: "DRAFT" })]).includes("visibility_differs_between_channels"));
 // Sold on a channel while TRACER does not sell it, or without TRACER stock.
