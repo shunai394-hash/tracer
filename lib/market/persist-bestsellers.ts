@@ -210,6 +210,17 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
           .maybeSingle();
         if (existing.error) throw new Error(existing.error.message);
         if (existing.data?.id) productId = existing.data.id;
+      } else {
+        // Title-only identity keys are still unique in products. Look them up
+        // before INSERT so ordinary re-observation does not create a predictable
+        // 23505 error and a second request just to recover the existing row.
+        const existingByIdentityKey = await supabase
+          .from("products")
+          .select("id")
+          .eq("identity_key", identityKey)
+          .maybeSingle();
+        if (existingByIdentityKey.error) throw new Error(existingByIdentityKey.error.message);
+        if (existingByIdentityKey.data?.id) productId = existingByIdentityKey.data.id;
       }
 
       if (productId) {
