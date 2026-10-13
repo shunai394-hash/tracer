@@ -6,7 +6,7 @@ import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sal
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
-import { getExactlyLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { getExactlyEligibleSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -80,11 +80,12 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   const { data: listings, error } = await query.order("created_at", { ascending: true }).limit(safeLimit);
   if (error) throw new Error(error.message);
 
-  const linkedSupplierIds = await getExactlyLinkedSupplierListingIds((listings ?? []).map((listing) => ({
+  const linkedSupplierIds = await getExactlyEligibleSupplierListingIds((listings ?? []).map((listing) => ({
     supplier_listing_id: listing.supplier_listing_id,
     product_id: listing.product_id,
     supplier_product_id: listing.supplier_product_id,
     supplier_variant_id: listing.supplier_variant_id,
+    selling_currency: listing.currency,
   })));
   const identityUnlinkedIds = new Set((listings ?? [])
     .filter((listing) => !listing.supplier_listing_id || !linkedSupplierIds.has(String(listing.supplier_listing_id)))
