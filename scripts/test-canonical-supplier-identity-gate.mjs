@@ -88,6 +88,8 @@ assert.doesNotMatch(base, /base_publication_status:\s*[^,\n]*(?:"hidden"|"blocke
 assert.ok(base.indexOf('if (!validHttpUrl(listing.image_url))') < base.indexOf('if (listing.tracking_available !== true)'), "image-less BASE listings must be blocked before other eligibility checks can exit early");
 assert.ok(base.indexOf('if (!validHttpUrl(listing.image_url))') < base.indexOf('if (!listing.supplier_product_id || !listing.supplier_variant_id)'), "image-less BASE listings must be blocked before missing-variant exits");
 assert.match(shopify, /image_url_missing_or_invalid/, "Shopify sync must block products without usable images before create/update");
+assert.match(shopify, /function validHttpUrl\(value: unknown\): boolean[\s\S]*new URL\(value\.trim\(\)\)[\s\S]*parsed\.protocol === "http:" \|\| parsed\.protocol === "https:"/, "Shopify image gate must reject malformed URLs, not only missing schemes");
+assert.match(shopify, /imageOk: validHttpUrl\(row\.image_url\)/, "read-only Shopify preview must use the same URL validator as the write gate");
 assert.match(route, /publishPublishedListingsToBase\(50/);
 assert.match(baseRepair, /base_create_id_persist_failed/ , "BASE identity repair may use the exact ID saved when item creation succeeded but DB persistence failed");
 assert.match(baseRepair, /persisted_create_marker/);
