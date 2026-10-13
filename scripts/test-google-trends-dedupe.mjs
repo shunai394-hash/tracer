@@ -1,4 +1,5 @@
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { dedupeGoogleTrendItems, normalizeGoogleTrendQuery } from "../lib/intelligence/google-trends-dedupe.ts";
 
@@ -25,4 +26,11 @@ test("empty and whitespace-only titles do not create keys", () => {
     { title: " ", traffic: null, publishedAt: null },
     { title: "", traffic: null, publishedAt: null },
   ]), []);
+});
+
+
+test("Google Trends parser never uses the image URL as a publication date", async () => {
+  const source = await readFile(new URL("../lib/intelligence/collect-google-trends.ts", import.meta.url), "utf8");
+  assert.match(source, /const publishedAt = extractTag\(item, "pubDate"\);/);
+  assert.doesNotMatch(source, /extractTag\(item, "pubDate"\)\s*\?\?\s*extractTag\(item, "ht:picture"\)/);
 });
