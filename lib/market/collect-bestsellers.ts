@@ -121,6 +121,27 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
     return { fetchedAt, marketplaces: [], itemCount: 0 };
   }
 
+  // Amazon and Rakuten are explicitly excluded from TRACER's sourcing pipeline.
+  // Keep their indices stable for existing cron cursors, but never fetch or persist
+  // their market data. Supplier discovery must be based on direct supplier evidence.
+  const disabledMarketplace = selectedSource.marketplace === "amazon.co.jp"
+    || selectedSource.marketplace === "rakuten";
+  if (disabledMarketplace) {
+    return {
+      fetchedAt,
+      marketplaces: [{
+        marketplace: selectedSource.marketplace,
+        source: selectedSource.source,
+        sourceUrl: selectedSource.url,
+        fetchedAt,
+        items: [],
+        skipped: true,
+        reason: "marketplace_source_removed_by_policy",
+      }],
+      itemCount: 0,
+    };
+  }
+
   // Fetch independent marketplace ranking pages concurrently. The previous
   // sequential fan-out made the eight sources share one 60-second serverless
   // budget and allowed one slow marketplace to starve the whole observation run.
