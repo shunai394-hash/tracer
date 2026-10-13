@@ -31,6 +31,11 @@ assert.match(webhook, /createDropshipPurchaseOrdersForShopOrder/, "paid Shopify 
 assert.match(webhook, /payment_status: "paid"/, "a later Shopify paid event must promote an existing pending order");
 assert.match(webhook, /if \(paid \|\| paymentStatus === "paid"\)/, "duplicate paid deliveries must retry procurement initialization");
 assert.match(webhook, /shop_order_items_insert_failed/, "line-item persistence failures must be surfaced");
+assert.match(webhook, /const cancelled = Boolean\(order\.cancelled_at\) \|\| financial === "voided"/, "cancelled or voided Shopify updates must stop procurement retries");
+assert.match(webhook, /const refunded = financial === "refunded"/, "refunded Shopify updates must be identified");
+assert.ok(webhook.indexOf("if (cancelled || refunded)") < webhook.indexOf("await createDropshipPurchaseOrdersForShopOrder(String(existing.data.id))"), "terminal payment updates must be handled before duplicate paid-order procurement retry");
+assert.match(webhook, /order_status: refunded \? "refunded" : "cancelled"/, "terminal Shopify updates must persist a cancelled/refunded order state");
+
 assert.ok(webhook.includes('.from("shop_order_items").insert(itemRows)'), "all line items must be inserted as one batch");
 assert.ok(webhook.indexOf("shop_order_items_insert_failed") > webhook.indexOf('.from("shop_orders").insert'), "item failure handling must run after parent insertion");
 assert.match(webhook, /\.from\("shop_orders"\)\.delete\(\)\.eq\("id", inserted\.data\.id\)/, "failed line-item writes must clean up the parent order so webhook retry can recover");
