@@ -387,7 +387,19 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
         }
         if (item.jan || item.mpn) identifierFound += 1;
       } else {
+        // Yahoo Shopping is the remaining approved marketplace source after
+        // Amazon/Rakuten were removed by policy. Persist only explicit child
+        // variant relationships from its detail-page structured data; never
+        // infer a variant from title similarity or copy a parent identifier.
         const detail = parseYahooProductDetail(detailHtml);
+        const markup = inspectCanonicalMarketplaceVariantMarkup(detailHtml);
+        jsonLdNodeCount += markup.jsonLdNodeCount;
+        productGroupCount += markup.productGroupCount;
+        groupsWithVariantCount += markup.groupsWithVariantCount;
+        variantProductNodeCount += markup.variantProductNodeCount;
+        absoluteTypeIriCount += markup.absoluteTypeIriCount;
+        item.canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl);
+        canonicalVariantCount += item.canonicalVariants.length;
         item.jan = normalizeIdentifier("jan", detail.jan);
         item.gtin = normalizeIdentifier("gtin", detail.gtin);
         item.mpn = normalizeIdentifier("mpn", detail.mpn);
