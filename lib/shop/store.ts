@@ -93,30 +93,33 @@ async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, nu
     throw new Error("shopify_live_stock_variant_ids_invalid");
   }
   const liveStock = new Map<string, number>();
+  const batchSize = 100;
 
-  const data = await shopifyGraphQL<{
-    nodes: Array<ShopifyVariantStock | null>;
-  }>(
-    `query LiveVariantInventory($ids: [ID!]!) {
-      nodes(ids: $ids) {
-        ... on ProductVariant {
-          id
-          inventoryQuantity
+  for (let offset = 0; offset < ids.length; offset += batchSize) {
+    const batch = ids.slice(offset, offset + batchSize);
+    const data = await shopifyGraphQL<{
+      nodes: Array<ShopifyVariantStock | null>;
+    }>(
+      `query LiveVariantInventory($ids: [ID!]!) {
+        nodes(ids: $ids) {
+          ... on ProductVariant {
+            id
+            inventoryQuantity
+          }
         }
-      }
-    }`,
-    { ids },
-  );
+      }`,
+      { ids: batch },
+    );
 
-  const nodes = data.nodes ?? [];
-  for (const node of nodes) {
-    if (!node?.id || !ids.includes(node.id)) continue;
-    const quantity = asNumber(node.inventoryQuantity);
-    if (quantity === null) throw new Error("shopify_live_stock_quantity_unknown");
-    liveStock.set(node.id, Math.max(0, Math.floor(quantity)));
-  }
-  if (ids.some((id) => !liveStock.has(id))) {
-    throw new Error("shopify_live_stock_response_incomplete");
+    for (const node of data.nodes ?? []) {
+      if (!node?.id || !batch.includes(node.id)) continue;
+      const quantity = asNumber(node.inventoryQuantity);
+      if (quantity === null) throw new Error("shopify_live_stock_quantity_unknown");
+      liveStock.set(node.id, Math.max(0, Math.floor(quantity)));
+    }
+    if (batch.some((id) => !liveStock.has(id))) {
+      throw new Error("shopify_live_stock_response_incomplete");
+    }
   }
   return liveStock;
 }
@@ -130,10 +133,6 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
 
   if (listings.length === 0) return [];
 
-  // A Shopify Admin API failure (e.g. HTTP 401 after a credential change)
-  // must not blank the whole storefront: fall back to the DB inventory that
-  // inventory-refresh keeps current, exactly as when Shopify is not
-  // configured, and log it so the failure is visible in monitoring.
   let liveStock = new Map<string, number>();
   try {
     liveStock = await getLiveShopifyStock(
@@ -141,8 +140,8 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
     );
   } catch (error) {
     console.error("[shopify-live-stock-unavailable]", error instanceof Error ? error.message.slice(0, 300) : String(error));
-    // Keep eligible catalog cards visible using the last inventory-refresh snapshot.
-    // Checkout still requires a successful live Shopify stock check before creating an order.
+    // Keep the database snapshot visible during an API outage, but checkout still
+    // independently requires a successful live-stock verification.
     return listings;
   }
 
@@ -192,7 +191,7 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
     .gt("selling_price", 0)
     .eq("currency", "JPY")
     .order("published_at", { ascending: false })
-    .limit(48);
+    .limit(1800);
 
   if (error) throw new Error(error.message);
   const listings = (await loadLiveListings((data ?? []) as Record<string, unknown>[])).filter((listing) => hasJapaneseText(listing.title) && isPublishableCatalogTitle(listing.title) && isPublishableCatalogDescription(listing.description));
