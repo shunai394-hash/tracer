@@ -27,11 +27,7 @@ assert.match(reverify, /\.limit\(MAX_CANDIDATE_SCAN\)/);
 assert.match(reverify, /buildCandidateQuery\(\)\.gt\("id", priorCursor\)/);
 assert.match(reverify, /nextCursor: scanCursor/);
 const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
-const sourcesMatch = collector.match(/export const MARKETPLACE_SOURCES = \[([\s\S]*?)\] as const/);
-assert.ok(sourcesMatch, "marketplace source list must be explicit");
-assert.match(sourcesMatch[1], /marketplace: "yahoo_shopping"/);
-assert.doesNotMatch(sourcesMatch[1], /marketplace:\s*"(?:amazon|rakuten)"/i,
-  "new demand collection must not configure Amazon or Rakuten ranking sources");
-assert.match(collector, /skipped: items\.length === 0/);
-assert.match(collector, /ranking_html_returned_zero_items/);
+assert.match(collector, /MARKETPLACE_SOURCES:\s*Array<[^;]+>\s*=\s*\[\]/,
+  "no marketplace ranking sites may be configured for demand collection");
+assert.match(collector, /Marketplace ranking collection is intentionally disabled/);
 console.log("Bounded demand identity stamping and CJ reverify: 18 assertions passed");
