@@ -1,4 +1,4 @@
-name: TRACER Production Patrol (15m)
+name: TRACER Production Patrol (5m)
 
 on:
   push:
@@ -21,7 +21,7 @@ on:
       - "lib/suppliers/cj-identity-reverify-policy.ts"
   workflow_dispatch:
   schedule:
-    - cron: "*/15 * * * *" # continuous patrol every 15 minutes; times are UTC
+    - cron: "*/5 * * * *" # continuous patrol every 5 minutes; times are UTC
 
 permissions:
   id-token: write
