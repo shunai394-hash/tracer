@@ -51,6 +51,10 @@ jobs:
             sha="$(curl -sS --max-time 10 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
             echo "attempt $i: production commit=$sha expected=$GITHUB_SHA"
             if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            # A later commit may have reached production after this workflow started.
+            # Refresh the branch ref before testing ancestry; checkout's initial fetch
+            # can otherwise leave a valid descendant SHA unknown to this runner.
+            git fetch --no-tags origin main
             if git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
               echo "Production is on descendant commit $sha; the patrol code is included."
               exit 0
