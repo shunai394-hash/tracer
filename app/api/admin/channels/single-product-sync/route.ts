@@ -43,7 +43,7 @@ async function readShopifyProduct(productId: unknown): Promise<CorrespondenceSho
     }`,
     { id: gid, publicationId },
   );
-  if (data.product?.variants.pageInfo.hasNextPage) throw new Error("SHOPIFY_VARIANTS_INCOMPLETE");
+  if (data.product?.variants.pageInfo.hasNextPage) throw new Error("SHOPIFY_PRODUCT_VARIANTS_INCOMPLETE");
   return data.product ? [{ ...data.product, variants: data.product.variants.nodes }] : [];
 }
 
