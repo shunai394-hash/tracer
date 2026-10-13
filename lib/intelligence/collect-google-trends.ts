@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { dedupeGoogleTrendItems } from "@/lib/intelligence/google-trends-dedupe";
 
 const GOOGLE_TRENDS_RSS =
   "https://trends.google.com/trending/rss?geo=JP";
@@ -113,7 +114,9 @@ export async function collectGoogleTrendsDemand() {
   if (trends.length === 0) {
     return { sourceId: null, fetched: 0, inserted: 0, skipped: true, reason: "google_trends_empty" };
   }
-  const productTrends = trends.filter((trend) => isProductDemandTrend(trend.title));
+  const productRelevantTrends = trends.filter((trend) => isProductDemandTrend(trend.title));
+  const productTrends = dedupeGoogleTrendItems(productRelevantTrends);
+  const duplicatesSkipped = productRelevantTrends.length - productTrends.length;
   if (productTrends.length === 0) {
     return {
       sourceId: null,
@@ -192,7 +195,8 @@ export async function collectGoogleTrendsDemand() {
   return {
     sourceId,
     fetched: trends.length,
-    productRelevant: productTrends.length,
+    productRelevant: productRelevantTrends.length,
+    duplicatesSkipped,
     inserted: rows.length,
   };
 }
