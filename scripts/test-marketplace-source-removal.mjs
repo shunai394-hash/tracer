@@ -7,8 +7,8 @@ const migration = await readFile(new URL("../supabase/migrations/20261013120000_
 assert.match(collector, /selectedSource\.marketplace === "amazon\.co\.jp"/);
 assert.match(collector, /selectedSource\.marketplace === "rakuten"/);
 assert.match(collector, /reason: "marketplace_source_removed_by_policy"/);
-assert.match(collector, /const firstEnabledSourceIndex = MARKETPLACE_SOURCES\\.findIndex/);
-assert.match(collector, /if \\(enabledEntries\\.length === 0\\) \\{[\\s\\S]*?cursorBeforeFirstEnabled[\\s\\S]*?sourceIndex: cursorBeforeFirstEnabled/);
+assert.match(collector, /const firstEnabledSourceIndex = MARKETPLACE_SOURCES\.findIndex/);
+assert.match(collector, /if \(enabledEntries\.length === 0\) \{[\s\S]*?cursorBeforeFirstEnabled[\s\S]*?sourceIndex: cursorBeforeFirstEnabled/);
 assert.match(collector, /if \(disabledMarketplace\) \{[\s\S]*?itemCount: 0,[\s\S]*?return/);
 assert.match(migration, /delete from public\.marketplace_bestsellers[\s\S]*?lower\(trim\(marketplace\)\) in \('amazon\.co\.jp', 'amazon', 'rakuten'\)/i);
 assert.match(migration, /delete from public\.evidence_ledger/i);
