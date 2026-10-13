@@ -66,7 +66,9 @@ assert.match(base, /identityUnlinkedIds\.has\(listingId\).*base_last_error.*list
 assert.match(store, /isPublishableCatalogTitle\(listing\.title\)/, "storefront must filter invalid titles");
 assert.match(store, /isPublishableCatalogDescription\(listing\.description\)/, "storefront must filter generic descriptions");
 assert.match(store, /listing title failed catalog quality gate/, "order placement must revalidate title quality");
-assert.match(selector, /genericTitlePattern\.test\(supplierTitle\) \|\| genericTitlePattern\.test\(canonicalTitle\)/, "selector must reject generic supplier and canonical titles independently");
+assert.match(selector, /genericTitlePattern\.test\(supplierTitle\)/, "selector must reject generic supplier titles");
+assert.match(selector, /genericTitlePattern\.test\(canonicalTitle\)/, "selector must reject generic canonical titles");
+assert.match(selector, /!isPublishableCatalogTitle\(canonicalTitle\)/, "selector must reject category-only canonical titles before selection");
 assert.match(selector, /domestic_shipping_unknown_or_invalid/, "unknown domestic delivery cost must block candidate selection");
 assert.match(selector, /womenMerchandisingPriority/, "candidate ordering must apply the requested category priority");
 assert.match(alternateSelector, /isPublishableCatalogTitle\(sourceTitle\)/, "alternate sales-test route must reject generic titles");
