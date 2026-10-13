@@ -38,6 +38,7 @@ export async function discoverSuperDeliverySupply(
     .from("marketplace_bestsellers")
     .select("id,product_id,jan,title,pipeline_stage,pipeline_status")
     .not("jan", "is", null)
+    .not("marketplace", "in", '("amazon.co.jp","rakuten","yahoo_shopping")')
     .not("product_id", "is", null)
     .in("pipeline_stage", [
       "DISCOVERED",
