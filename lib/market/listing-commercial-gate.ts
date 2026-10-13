@@ -28,7 +28,7 @@ export function evaluateShopListingRecord(
   });
   const supplierName = typeof row.supplier_name === "string" ? row.supplier_name : "";
   const selection = Array.isArray(row.selection_reasons) ? row.selection_reasons.map(String) : [];
-  return evaluateChannelListingEligibility({
+  const decision = evaluateChannelListingEligibility({
     title: overrides.title ?? row.title,
     description: overrides.description ?? row.description,
     imageUrl: row.image_url,
@@ -54,4 +54,12 @@ export function evaluateShopListingRecord(
     supplierName,
     supplierAdapterRegistered: overrides.supplierAdapterRegistered ?? getSupplierAdapter(supplierName) !== null,
   });
+  const sourceMarketplace = String(row.marketplace ?? "").trim().toLowerCase();
+  if (["amazon", "amazon.co.jp", "rakuten"].includes(sourceMarketplace)) {
+    return {
+      eligible: false,
+      reasons: [...new Set([...decision.reasons, "source_marketplace_removed_by_policy"])],
+    };
+  }
+  return decision;
 }
