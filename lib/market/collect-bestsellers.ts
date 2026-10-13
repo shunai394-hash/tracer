@@ -16,6 +16,7 @@ import {
 import { extractAsinFromUrl, normalizeIdentifier } from "@/lib/market/identifiers";
 import { inspectCanonicalMarketplaceVariantMarkup, parseAmazonVariationAsinMap, parseCanonicalMarketplaceVariantEvidence } from "@/lib/market/canonical-variant-evidence";
 import { decodeHtmlBytes } from "@/lib/market/charset";
+import { isAmazonChallengeHtml } from "@/lib/market/amazon-response";
 
 export const MARKETPLACE_SOURCES = [
   { marketplace: "yahoo_shopping", url: "https://shopping.yahoo.co.jp/ranking/", source: "yahoo_shopping_ranking" },
@@ -132,7 +133,9 @@ async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVar
       normalizeIdentifier("upc", detail.upc)
     );
   };
+  const directIsChallenge = isAmazonChallengeHtml(directHtml, url);
   const directHasRequiredEvidence =
+    !directIsChallenge &&
     (!options.retryBrightDataWhenCanonicalVariantsMissing || hasAmazonVariantEvidence(directHtml)) &&
     (!options.retryBrightDataWhenAmazonIdentifierMissing || hasAmazonProductIdentifier(directHtml));
   if (directHtml && directHasRequiredEvidence) return directHtml;
@@ -141,6 +144,7 @@ async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVar
     try {
       const page = await fetchBrightDataPage(url);
       const brightDataHasRequiredEvidence =
+        !isAmazonChallengeHtml(page.html, url) &&
         (!options.retryBrightDataWhenCanonicalVariantsMissing || hasAmazonVariantEvidence(page.html)) &&
         (!options.retryBrightDataWhenAmazonIdentifierMissing || hasAmazonProductIdentifier(page.html));
       if (page.html && brightDataHasRequiredEvidence) {
@@ -149,14 +153,14 @@ async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVar
       // If Bright Data did not improve the response, retain a usable direct
       // response for ordinary parsing/diagnostics. It still cannot create
       // canonical evidence unless the strict JSON-LD parser finds child nodes.
-      if (directHtml) return directHtml;
-      if (page.html) return page.html;
+      if (directHtml && !directIsChallenge) return directHtml;
+      if (page.html && !isAmazonChallengeHtml(page.html, url)) return page.html;
     } catch {
       // Fall through to the direct response if one exists.
     }
   }
 
-  return directHtml;
+  return directIsChallenge ? null : directHtml;
 }
 function enrichAmazon(item: ParsedBestseller): ParsedBestseller {
   return {
