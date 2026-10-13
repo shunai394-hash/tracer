@@ -1,5 +1,5 @@
 const WOMEN_FOCUSED_PATTERNS = [
-  { pattern: /handbag|crossbody bag|tote bag|shoulder bag|women'?s bag|womens bag|ladies bag|レディースバッグ|ハンドバッグ|ショルダーバッグ|トートバッグ|斜めがけ/i, tier: "core" as const, priority: 1 },
+  { pattern: /handbag|crossbody bag|tote bag|shoulder bag|backpack|rucksack|purse|satchel|clutch bag|bucket bag|hobo bag|belt bag|waist bag|mini bag|laptop bag|women'?s bag|womens bag|ladies bag|レディースバッグ|ハンドバッグ|ショルダーバッグ|トートバッグ|バックパック|リュック|クラッチバッグ|バケットバッグ|ボディバッグ|ウエストポーチ|ミニバッグ|斜めがけ/i, tier: "core" as const, priority: 1 },
   { pattern: /beauty tool|beauty device|gua sha|face roller|cleansing brush|makeup brush|led beauty mask|nail lamp|nail drill|nail art|manicure|pedicure|美容ツール|美顔器|美顔|美容機器|フェイスローラー|かっさ|洗顔ブラシ|メイクブラシ|ネイル/i, tier: "core" as const, priority: 2 },
   { pattern: /hair care|haircare|hair brush|scalp massager|hair oil|heatless curls|hair dryer|hair curler|curling iron|hair straightener|hair clips?(?!per)\b|hair claw|hair removal|ヘアケア|ヘアブラシ|頭皮|ヘアオイル|ヘアドライヤー|ヘアアイロン|ヘアクリップ|バンスクリップ|ヘアアクセ|脱毛/i, tier: "core" as const, priority: 3 },
   { pattern: /beauty|skincare|skin care|serum|moisturizer|sunscreen|cosmetic|makeup|lipstick|lip gloss|blush|mascara|eyelash|eyeliner|化粧水|美容液|乳液|日焼け止め|コスメ|メイク|リップ|マスカラ|アイライナー/i, tier: "core" as const, priority: 4 },
@@ -51,6 +51,7 @@ export function verifyWomenPriorityInvariants(): {
     query: "toyota prius",
   });
   const japaneseBag = womenProductPriority({ title: "レディース ショルダーバッグ", category: "バッグ" });
+  const englishBackpack = womenProductPriority({ title: "Retro Cowhide Ladies Small Backpack" });
   const japaneseBeauty = womenProductPriority({ title: "美顔器・美容機器", category: "美容" });
 
   const cases = [
@@ -58,6 +59,7 @@ export function verifyWomenPriorityInvariants(): {
     { name: "automotive_is_not_prioritized", actual: !car.isWomenFocused && car.bonus === 0 && car.categoryPriority === 99 },
     { name: "women_signal_survives_query_noise", actual: hair.isWomenFocused && hair.bonus === 16 && hair.tier === "core" && hair.categoryPriority === 3 },
     { name: "japanese_womens_bag_is_first_priority", actual: japaneseBag.isWomenFocused && japaneseBag.tier === "core" && japaneseBag.categoryPriority === 1 && japaneseBag.bonus === 20 },
+    { name: "english_backpack_is_first_priority", actual: englishBackpack.isWomenFocused && englishBackpack.categoryPriority === 1 && englishBackpack.bonus === 20 },
     { name: "japanese_beauty_tool_is_second_priority", actual: japaneseBeauty.isWomenFocused && japaneseBeauty.categoryPriority === 2 && japaneseBeauty.bonus === 18 },
     { name: "hair_ranks_after_bags_and_beauty_tools", actual: japaneseBag.bonus > japaneseBeauty.bonus && japaneseBeauty.bonus > hair.bonus },
   ];

@@ -155,7 +155,7 @@ jobs:
               "rejectedCount": len(rejected),
               "topRejectionReasons": dict(counts.most_common(12)),
               "eligibleSamples": (s.get("eligibleSamples") or [])[:10],
-              "rejectedSample": rejected[:5],
+              "rejectedSample": rejected[:25],
           }, ensure_ascii=False, indent=1))
           PY
           summarize_sync() {
@@ -222,7 +222,7 @@ jobs:
                       "rejectedCount": selected.get("rejectedCount", len(rejected)),
                       "topRejectionReasons": selected.get("rejectionCounts") or dict(reasons.most_common(12)),
                       "eligibleSamples": (selected.get("eligibleSamples") or [])[:10],
-                      "rejectedSamples": rejected[:5],
+                      "rejectedSamples": rejected[:25],
                   }
               except Exception:
                   supply_dry_run = {"ok": False, "dryRun": True, "noWrites": True, "error": "invalid_dry_run_response"}

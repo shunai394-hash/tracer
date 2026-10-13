@@ -38,4 +38,6 @@ assert.match(supplySelector, /const rejectedSamples = \[\.\.\.rejected\]\.sort/)
 assert.match(publicationRoute, /Math\.min\(500, Math\.floor\(requestedDryRunLimit\)\)/);
 assert.match(publicationRoute, /\.slice\(0, dryRunLimit\)/);
 assert.match(diagnosticWorkflow, /sales-test-publication\?dryRun=true&limit=450/);
-console.log("fully costed publication, product-master, and 450-candidate audit guards: 17 assertions passed");
+assert.match(diagnosticWorkflow, /rejectedSample.*\[:25\]/);
+assert.match(diagnosticWorkflow, /rejectedSamples.*\[:25\]/);
+console.log("fully costed publication, product-master, and 450-candidate audit guards: 19 assertions passed");
