@@ -38,7 +38,7 @@ async function readShopifyProduct(productId: unknown): Promise<CorrespondenceSho
       product(id: $id) {
         id title status
         publishedOnPublication(publicationId: $publicationId)
-        variants(first: 250) { nodes { id sku price inventoryQuantity } pageInfo { hasNextPage } }
+        variants(first: 30) { nodes { id sku price inventoryQuantity } pageInfo { hasNextPage } }
       }
     }`,
     { id: gid, publicationId },
