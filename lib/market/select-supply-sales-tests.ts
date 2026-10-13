@@ -48,7 +48,39 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   const intelligenceByProduct = new Map((intelligenceRows ?? []).map((row) => [String(row.product_id), row as Record<string, unknown>]));
   const baseByProduct = new Map((intelligenceBase ?? []).map((row) => [String(row.product_id), row as Record<string, unknown>]));
   const listingByProduct = new Map<string, Record<string, unknown>>();
-  for (const row of listings ?? []) { const key = String(row.product_id); const candidate = row as Record<string, unknown>; const current = listingByProduct.get(key); if (!current || listingQuality(candidate) > listingQuality(current)) listingByProduct.set(key, candidate); }
+  const identifierGradeMethods = new Set(["asin", "jan", "gtin", "ean", "upc", "mpn", "brand_mpn", "tracer_catalog"]);
+  const listingCandidatesByProduct = new Map<string, Record<string, unknown>[]>();
+  for (const row of listings ?? []) {
+    const candidate = row as Record<string, unknown>;
+    const key = String(candidate.product_id ?? "");
+    if (!key) continue;
+    const bucket = listingCandidatesByProduct.get(key) ?? [];
+    bucket.push(candidate);
+    listingCandidatesByProduct.set(key, bucket);
+  }
+  for (const [productId, candidates] of listingCandidatesByProduct) {
+    // A stale/unverified supplier row must not mask a different, currently
+    // verified variant for the same canonical product. Prefer only rows that
+    // already satisfy the live supply/identity prerequisites, then rank those.
+    const verifiedCandidates = candidates.filter((candidate) =>
+      candidate.verification_status === "verified" &&
+      candidate.identity_status === "linked" &&
+      identifierGradeMethods.has(String(candidate.identity_method ?? "").trim().toLowerCase()) &&
+      Boolean(candidate.supplier_product_id) &&
+      Boolean(candidate.supplier_variant_id) &&
+      (num(candidate.identity_confidence) ?? 0) >= 0.88 &&
+      candidate.price_confirmed === true &&
+      candidate.inventory_confirmed === true &&
+      (num(candidate.inventory) ?? 0) > 0 &&
+      candidate.orderable === true &&
+      candidate.tracking_available === true &&
+      candidate.api_available === true
+    );
+    const pool = verifiedCandidates.length > 0 ? verifiedCandidates : candidates;
+    const best = pool.reduce<Record<string, unknown> | null>((current, candidate) =>
+      !current || listingQuality(candidate) > listingQuality(current) ? candidate : current, null);
+    if (best) listingByProduct.set(productId, best);
+  }
 
   const rejected: Array<{ productId: string; reasons: string[] }> = [];
   const eligible: Array<{ productId: string; listing: Record<string, unknown>; base: Record<string, unknown>; intelligence: Record<string, unknown>; profit: ReturnType<typeof simulateContributionProfit>; quality: number }> = [];
