@@ -16,7 +16,8 @@ concurrency:
 
 jobs:
   retry:
-    if: contains(github.event.head_commit.message, '[run-newfind-retry-now]')
+    # workflow_dispatch must run directly; push-triggered runs remain opt-in.
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-newfind-retry-now]')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -27,6 +28,7 @@ jobs:
         run: |
           set -uo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
+          failures=0
           token() {
             curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
@@ -34,25 +36,62 @@ jobs:
           call_get() {
             local path="$1" max_time="$2" out="$3"
             local t code
-            t="$(token)" || { echo "OIDC token failed for $path"; return 1; }
-            code="$(curl -sS -o "$out" -w "%{http_code}" --max-time "$max_time" -H "Authorization: Bearer $t" "$BASE/$path" || true)"
+            t="$(token)" || { echo "::error::OIDC token failed for $path"; return 1; }
+            code="$(curl -sS -o "$out" -w "%{http_code}" --max-time "$max_time" -H "Authorization: Bearer $t" "$BASE/$path")" || {
+              echo "::error::Request failed for $path (HTTP ${code:-unknown})"
+              return 1
+            }
             echo "=== $path HTTP $code ==="
-            python3 - "$out" <<'PY'
+            python3 - "$code" "$out" <<'PY'
           import json,sys
+          code=int(sys.argv[1]) if sys.argv[1].isdigit() else 0
           try:
-              d=json.load(open(sys.argv[1]))
-              keys=("ok","phase","attempted","published","synced","failed","processed","stillFailing","rescue","error")
-              print(json.dumps({k:d.get(k) for k in keys if k in d},ensure_ascii=False)[:2500])
-          except Exception:
-              print(open(sys.argv[1]).read()[:1000])
+              with open(sys.argv[2], encoding="utf-8") as f:
+                  d=json.load(f)
+          except Exception as e:
+              print(f"Invalid JSON response: {e}")
+              raise SystemExit(1)
+          keys=("ok","success","phase","attempted","published","synced","failed","processed","stillFailing","rescue","error")
+          print(json.dumps({k:d.get(k) for k in keys if k in d},ensure_ascii=False)[:2500])
+          if not 200 <= code < 300:
+              print(f"HTTP failure: {code}")
+              raise SystemExit(1)
+          if d.get("ok") is False or d.get("success") is False or d.get("error"):
+              print("API reported a failed operation")
+              raise SystemExit(1)
           PY
           }
           echo "=== Retry failed BASE publication without creating duplicate items ==="
-          call_get api/cron/base-publish 65 base-publish.json || true
+          call_get api/cron/base-publish 65 base-publish.json || failures=1
           echo "=== Sync gate-passed listings to Shopify ==="
-          call_get api/cron/shopify-publish 300 shopify-publish.json || true
+          call_get api/cron/shopify-publish 300 shopify-publish.json || failures=1
           echo "=== Drain NEWFIND deliveries and rescue gate-passed listings ==="
           for pass in $(seq 1 20); do
             echo "=== NEWFIND retry pass $pass/20 ==="
-            call_get api/cron/newfind-retry 65 "newfind-retry-$pass.json" || true
+            call_get api/cron/newfind-retry 65 "newfind-retry-$pass.json" || failures=1
           done
+          if [ -f newfind-retry-20.json ]; then
+            python3 - newfind-retry-20.json <<'PY'
+          import json,sys
+          try:
+              d=json.load(open(sys.argv[1], encoding="utf-8"))
+          except Exception:
+              raise SystemExit("Final NEWFIND retry response is not valid JSON")
+          remaining=d.get("stillFailing", 0)
+          try:
+              remaining=int(remaining or 0)
+          except (TypeError, ValueError):
+              raise SystemExit(f"Cannot verify remaining NEWFIND failures: {remaining!r}")
+          if remaining > 0:
+              raise SystemExit(f"NEWFIND queue still has {remaining} failing deliveries after 20 passes")
+          PY
+            [ "$?" -eq 0 ] || failures=1
+          else
+            echo "::error::No final NEWFIND retry response was produced"
+            failures=1
+          fi
+          if [ "$failures" -ne 0 ]; then
+            echo "::error::One or more publishing/retry operations failed; workflow must not report success"
+            exit 1
+          fi
+          echo "All endpoints returned successful responses and NEWFIND reported no remaining failures."
