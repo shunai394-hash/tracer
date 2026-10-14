@@ -83,17 +83,24 @@ async function readCatalogCursor(db: ReturnType<typeof createSupabaseAdminClient
 
 async function writeCatalogCursor(
   db: ReturnType<typeof createSupabaseAdminClient>,
-  cursor: CatalogCursor & { verified: number; rejected: number },
+  cursor: CatalogCursor & { verified: number; rejected: number; quotaBlocked: boolean },
 ): Promise<void> {
   const now = new Date().toISOString();
   const { error } = await db.from("cron_runs").insert({
     job_name: CATALOG_CURSOR_JOB,
-    status: "succeeded",
+    // A quota circuit is a blocked run, not a successful catalog pass.
+    // Ordinary candidate rejections remain counted without making the whole run fail.
+    status: cursor.quotaBlocked ? "failed" : "succeeded",
     started_at: now,
     finished_at: now,
     processed: cursor.verified,
     failed: cursor.rejected,
-    metadata: { queryIndex: cursor.queryIndex, page: cursor.page },
+    metadata: {
+      queryIndex: cursor.queryIndex,
+      page: cursor.page,
+      quotaBlocked: cursor.quotaBlocked,
+      reason: cursor.quotaBlocked ? "supplier_quota_cooldown" : null,
+    },
   });
   if (error) console.error("[supply-first] catalog cursor write failed", error.message);
 }
@@ -790,7 +797,7 @@ export async function discoverAndCreateCjSupply(
         : { queryIndex, page: page + 1 });
     }
   }
-  await writeCatalogCursor(db, { queryIndex, page, verified, rejected });
+  await writeCatalogCursor(db, { queryIndex, page, verified, rejected, quotaBlocked: cjQuotaBlocked });
 
   return { discovered, published: 0, verified, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
 }
