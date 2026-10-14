@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { retryPendingNewfindPromotions } from "@/lib/integration/newfind";
 import { rescueUndeliveredGatePassedListings, withdrawUnpublishedNewfindPromotions } from "@/lib/integration/newfind-reconcile";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -31,12 +32,27 @@ export async function GET(request: Request) {
     // Report the durable queue state, not just this invocation's batch.
     // The workflow's final gate must not assume the queue is empty when the
     // endpoint omits a remaining-count field.
-    const queue = await (await import("@/lib/supabase/admin")).createSupabaseAdminClient()
-      .from("newfind_promotion_deliveries")
-      .select("listing_id", { count: "exact", head: true })
-      .in("status", ["pending", "failed", "sent", "sending"]);
-    if (queue.error) throw new Error(`NEWFIND retry queue count failed: ${queue.error.message}`);
-    const stillFailing = queue.count ?? 0;
+    const db = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
+    const { data: activeListings, error: activeListingsError } = await db
+      .from("shop_listings")
+      .select("*")
+      .eq("published", true)
+      .limit(2000);
+    if (activeListingsError) throw new Error(`NEWFIND active listing query failed: ${activeListingsError.message}`);
+    const eligibleListingIds = (activeListings ?? [])
+      .filter((listing) => listing.shopify_sync_status === "synced" && hasPassedSalesTestGate(listing))
+      .map((listing) => String(listing.id))
+      .filter(Boolean);
+    let stillFailing = 0;
+    if (eligibleListingIds.length > 0) {
+      const queue = await db
+        .from("newfind_promotion_deliveries")
+        .select("listing_id", { count: "exact", head: true })
+        .in("listing_id", eligibleListingIds)
+        .in("status", ["pending", "failed", "sent", "sending"]);
+      if (queue.error) throw new Error(`NEWFIND retry queue count failed: ${queue.error.message}`);
+      stillFailing = queue.count ?? 0;
+    }
     return NextResponse.json({
       ok: true,
       phase: "newfind_retry",
