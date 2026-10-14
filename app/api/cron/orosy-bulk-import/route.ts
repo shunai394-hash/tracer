@@ -48,7 +48,7 @@ async function upsertProduct(
   detail: Awaited<ReturnType<typeof getOrosyProductDetail>>,
   jan: string,
 ): Promise<string | null> {
-  if (!detail || !/^\\d{8,14}$/.test(jan)) return null;
+  if (!detail || !/^\d{8,14}$/.test(jan)) return null;
 
   // Reuse an existing canonical record with the same JAN instead of creating a duplicate.
   const canonical = await supabase.from("products").select("id").eq("jan", jan).limit(2);
@@ -140,6 +140,14 @@ export async function GET(request: Request) {
       continue;
     }
 
+    // Apply the landed-cost and margin gate before writing canonical or supplier records.
+    const sellingPrice = priceFor(variation.buyerPrice, shippingQuote.amount, variation.retailPrice);
+    const contributionProfit = sellingPrice - variation.buyerPrice - shippingQuote.amount;
+    const contributionMargin = (contributionProfit / sellingPrice) * 100;
+    if (!Number.isFinite(sellingPrice) || sellingPrice <= 0 || !Number.isFinite(contributionProfit) || contributionProfit <= 0 || !Number.isFinite(contributionMargin) || contributionMargin < 20) {
+      rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "insufficient_landed_margin" });
+      continue;
+    }
     const productId = await upsertProduct(supabase, detail, variation.jan);
     if (!productId) {
       rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "canonical_identity_conflict" });
@@ -195,13 +203,6 @@ export async function GET(request: Request) {
       supplierListingId = String(inserted.data.id);
     }
 
-    const sellingPrice = priceFor(variation.buyerPrice, shippingQuote.amount, variation.retailPrice);
-    const contributionProfit = sellingPrice - variation.buyerPrice - shippingQuote.amount;
-    const contributionMargin = (contributionProfit / sellingPrice) * 100;
-    if (!Number.isFinite(sellingPrice) || sellingPrice <= 0 || contributionProfit <= 0 || contributionMargin < 20) {
-      rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "insufficient_landed_margin" });
-      continue;
-    }
     const listingSlug = slug(detail.title, detail.id, variation.variationId);
     const listingPayload = {
       product_id: productId,
