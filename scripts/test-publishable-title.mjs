@@ -134,6 +134,8 @@ assert.match(base, /isPublishableCatalogTitle\(translatedTitle\)/, "BASE must re
 assert.match(base, /isPublishableCatalogDescription\(sourceDetail\)/, "BASE must reject generic source descriptions");
 assert.match(base, /isPublishableCatalogDescription\(translatedDetail\)/, "BASE must reject generic translated descriptions");
 assert.match(base, /base_hide_failed_after_catalog_validation/, "BASE hide failure must be surfaced");
+assert.doesNotMatch(base, /title: "販売停止中の商品"/, "BASE reconciliation must never replace the buyer-facing product title with a workflow status");
+assert.match(base, /title: String\(listing\.title \?\? ""\)\.trim\(\) \|\| "商品情報確認中"/, "BASE reconciliation must preserve the existing title when a listing is hidden");
 assert.match(base, /identityUnlinkedIds\.has\(listingId\).*base_last_error.*listing\.base_item_id && listing\.published !== true/s, "BASE must keep unlinked and already-hidden rows out of the publish path");
 assert.match(store, /isPublishableCatalogTitle\(listing\.title\)/, "storefront must filter invalid titles");
 assert.match(store, /isPublishableCatalogDescription\(listing\.description\)/, "storefront must filter generic descriptions");
