@@ -252,7 +252,7 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
     inventory_confirmed: Number.isFinite(args.inventory) && args.inventory >= 0,
     verification_status: marketplaceIdentity || nativeEvidenceFresh ? "verified" : "unverified",
     verification_error: marketplaceIdentity || nativeEvidenceFresh ? null : (priorVerificationError || "no_unique_canonical_child_variant_match"),
-    last_verified_at: nativeEvidenceFresh || marketplaceIdentity ? now : existingListing.data?.last_verified_at ?? now,
+    last_verified_at: marketplaceIdentity ? now : existingListing.data?.last_verified_at ?? null,
     fetched_at: now,
     metadata: verifiedMetadata,
   }).eq("id", args.supplierListingId);
