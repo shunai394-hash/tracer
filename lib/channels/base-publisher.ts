@@ -7,6 +7,7 @@ import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/clie
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
+import { shopifyGraphQL } from "@/lib/shopify/admin";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -54,11 +55,44 @@ function validHttpUrl(value: unknown): boolean {
   try { const parsed = new URL(value); return parsed.protocol === "http:" || parsed.protocol === "https:"; } catch { return false; }
 }
 
+async function addBaseItemImageWithFallback(input: {
+  itemId: string;
+  imageUrl: string;
+  shopifyProductId?: string | null;
+}): Promise<void> {
+  try {
+    await addBaseItemImage({ itemId: input.itemId, imageNo: 1, imageUrl: input.imageUrl });
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const formatRejected = /このファイル形式はご利用できません|file format.{0,30}(not supported|unsupported)/i.test(message);
+    if (!formatRejected || !input.shopifyProductId || !/^gid:\/\/shopify\/Product\/\d+$/.test(input.shopifyProductId)) {
+      throw error;
+    }
+
+    // BASE sometimes rejects a supplier-hosted image even when the URL ends in
+    // .jpg. Shopify has already accepted and stored this listing's image, so use
+    // its CDN copy as a safe format-compatible fallback instead of abandoning
+    // publication or creating another BASE item.
+    const result = await shopifyGraphQL<{
+      product: { featuredImage: { url: string } | null } | null;
+    }>(
+      `query BaseCompatibleProductImage($id: ID!) {
+        product(id: $id) { featuredImage { url } }
+      }`,
+      { id: input.shopifyProductId },
+    );
+    const fallbackUrl = result.product?.featuredImage?.url;
+    if (!fallbackUrl || fallbackUrl === input.imageUrl || !validHttpUrl(fallbackUrl)) throw error;
+    await addBaseItemImage({ itemId: input.itemId, imageNo: 1, imageUrl: fallbackUrl });
+  }
+}
+
 export async function publishPublishedListingsToBase(limit = 10, listingIds?: string[]): Promise<BasePublicationResult> {
   if (!isBaseConfigured()) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
   if (listingIds !== undefined && listingIds.length === 0) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
   const supabase = createSupabaseAdminClient();
-  let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons");
+  let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,shopify_product_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons");
   if (listingIds && listingIds.length > 0) {
     // Explicit admin retries can target an exact listing regardless of its
     // current publication status.
@@ -364,7 +398,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         const { error: persistIdError } = await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_publication_status: "creating", base_publication_lease_until: leaseUntil }).eq("id", listingId);
         if (persistIdError) throw new Error(`base_create_id_persist_failed:${baseItemId}:${persistIdError.message}`);
       }
-      if (listing.image_url) await addBaseItemImage({ itemId: baseItemId, imageNo: 1, imageUrl: listing.image_url });
+      if (listing.image_url) await addBaseItemImageWithFallback({ itemId: baseItemId, imageUrl: listing.image_url, shopifyProductId: typeof listing.shopify_product_id === "string" ? listing.shopify_product_id : null });
       const { error: finalizeError } = await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_published_at: new Date().toISOString(), base_publication_status: "published", base_publication_lease_until: null, base_last_error: null, pipeline_stage: "BASE_PUBLISHED", pipeline_status: "published", pipeline_reason: "sales_test_gate_passed", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
       if (finalizeError) throw new Error(`base_publication_finalize_failed: ${finalizeError.message}`);
       results.push({ listingId, ok: true, baseItemId });
