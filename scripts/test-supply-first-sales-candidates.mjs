@@ -7,6 +7,7 @@ const marketSelector = readFileSync("lib/market/select-sales-tests.ts", "utf8");
 const pricing = readFileSync("lib/market/supply-pricing.ts", "utf8");
 const identity = readFileSync("lib/catalog/canonical-supplier-identity.ts", "utf8");
 const japaneseProduct = readFileSync("lib/intelligence/japanese-product.ts", "utf8");
+const vercel = JSON.parse(readFileSync("vercel.json", "utf8"));
 
 // The supply-first queue must not require a marketplace identity link: a
 // standalone CJ catalog item can be sellable once its own exact variant and
@@ -53,5 +54,8 @@ assert.match(selector, /isPublishableCatalogDescription\(localizedDescription\)/
 assert.match(selector, /if \(!publishableDescription\)/);
 assert.match(japaneseProduct, /knitted headband.*women/i);
 assert.match(japaneseProduct, /柔らかなニット素材のクロスヘアバンドです/);
+
+const patrolSchedules = vercel.crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule);
+assert.deepEqual(patrolSchedules, ["*/5 * * * *"], "AI patrol must run every five minutes; do not silently reduce it to daily checks");
 
 console.log("Supply-first candidate selection contract passed.");

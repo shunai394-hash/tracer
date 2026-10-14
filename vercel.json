@@ -72,7 +72,7 @@
     },
     {
       "path": "/api/cron/patrol-ai",
-      "schedule": "55 12 * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/cj-variant-repair",
@@ -109,10 +109,6 @@
     {
       "path": "/api/cron/intelligence",
       "schedule": "57 18 * * *"
-    },
-    {
-      "path": "/api/cron/patrol-ai",
-      "schedule": "59 18 * * *"
     },
     {
       "path": "/api/cron/cj-identity-reverify",
