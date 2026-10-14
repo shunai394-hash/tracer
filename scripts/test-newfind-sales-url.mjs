@@ -9,15 +9,21 @@ const [source, reconcile, store, page] = await Promise.all([
 ]);
 
 const retryGate = source.slice(source.indexOf("export async function retryPendingNewfindPromotions"), source.indexOf("export async function promoteShopListingToNewfind"));
-assert.match(retryGate, /\.select\("id, title, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons"\)/,
-  "retry gate checks must fetch the Japanese title they validate");
-assert.match(reconcile, /const columns = "id, title, base_item_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, updated_at"/,
+assert.match(retryGate, /\.select\("id, title, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status"\)/,
+  "retry gate checks must fetch the Japanese title and channel state they validate");
+assert.match(retryGate, /shopifyStatusById\.get\(b\) === "synced"/,
+  "NEWFIND retries must prioritize products already live on Shopify");
+assert.match(reconcile, /shopify_sync_status === "synced"/,
+  "rescue must prioritize Shopify-synced products before unsynced rows");
+assert.match(reconcile, /const columns = "id, title, base_item_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, updated_at"/,
   "rescue gate checks must fetch the Japanese title they validate");
 assert.match(reconcile, /\.select\("id, title, slug, bestseller_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons"\)/,
   "withdraw gate checks must fetch the Japanese title they validate");
 
 assert.match(source, /const productUrl = tracerUrl/);
-assert.match(source, /const tracerUrl = await resolveLiveTracerUrl/);
+assert.match(source, /const tracerResolution = await resolveLiveTracerUrl/);
+assert.match(source, /tracer_sales_url_http_\$\{response\.status\}/, "record the actual HTTP status when a product page is not live");
+assert.match(source, /tracer_sales_url_timeout/);
 assert.match(source, /tracer_sales_url_not_live/);
 assert.match(source, /sales_url: productUrl/);
 assert.match(source, /tracer_url: tracerUrl/);

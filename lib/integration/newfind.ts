@@ -27,9 +27,10 @@ function tracerSiteOrigin(): string | null {
   }
 }
 
-async function resolveLiveTracerUrl(slug: string | null): Promise<string | null> {
+async function resolveLiveTracerUrl(slug: string | null): Promise<{ url: string | null; reason: string | null }> {
   const origin = tracerSiteOrigin();
-  if (!origin || !slug) return null;
+  if (!origin) return { url: null, reason: "tracer_sales_url_origin_missing" };
+  if (!slug) return { url: null, reason: "tracer_sales_url_slug_missing" };
   const url = `${origin}/shop/${encodeURIComponent(slug)}`;
   try {
     const response = await fetch(url, {
@@ -39,9 +40,14 @@ async function resolveLiveTracerUrl(slug: string | null): Promise<string | null>
       redirect: "follow",
       signal: AbortSignal.timeout(10_000),
     });
-    return response.ok ? url : null;
-  } catch {
-    return null;
+    return response.ok
+      ? { url, reason: null }
+      : { url: null, reason: `tracer_sales_url_http_${response.status}` };
+  } catch (error) {
+    const reason = error instanceof Error && error.name === "TimeoutError"
+      ? "tracer_sales_url_timeout"
+      : "tracer_sales_url_fetch_failed";
+    return { url: null, reason };
   }
 }
 
@@ -114,29 +120,39 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
 
   const listingIds = Array.from(new Set((data ?? []).map((row) => String(row.listing_id))));
   const eligible: string[] = [];
-  for (let i = 0; i < listingIds.length && eligible.length < batch; i += 100) {
+  const shopifyStatusById = new Map<string, string>();
+  for (let i = 0; i < listingIds.length; i += 100) {
     const chunk = listingIds.slice(i, i + 100);
     const { data: listings, error: listingError } = await supabase
       .from("shop_listings")
-      .select("id, title, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
+      .select("id, title, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status")
       .in("id", chunk)
       .eq("published", true);
     if (listingError) throw new Error(listingError.message);
-    const passed = new Set((listings ?? []).filter((row) => hasPassedSalesTestGate(row)).map((row) => String(row.id)));
-    for (const id of chunk) {
-      if (passed.has(id) && eligible.length < batch) eligible.push(id);
+    for (const row of listings ?? []) {
+      const id = String(row.id);
+      shopifyStatusById.set(id, String(row.shopify_sync_status ?? ""));
+      if (hasPassedSalesTestGate(row)) eligible.push(id);
     }
   }
 
+  // The TRACER product page is intentionally available only for Shopify-synced
+  // products. Retry those first so a backlog of unsynced listings cannot starve
+  // products that are already live and purchasable.
+  eligible.sort((a, b) =>
+    Number(shopifyStatusById.get(b) === "synced") - Number(shopifyStatusById.get(a) === "synced"),
+  );
+  const selected = eligible.slice(0, batch);
+
   let processed = 0;
   let failed = 0;
-  for (const listingId of eligible) {
+  for (const listingId of selected) {
     const result = await promoteShopListingToNewfind(listingId);
     if (result.ackStatus === "processed" || result.ackStatus === "duplicate") processed += 1;
     else if (!result.sent) failed += 1;
   }
 
-  return { attempted: eligible.length, processed, failed, windowSize: listingIds.length };
+  return { attempted: selected.length, processed, failed, windowSize: listingIds.length };
 }
 
 export async function promoteShopListingToNewfind(listingId: string): Promise<NewfindPromotionResult> {
@@ -213,12 +229,13 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     brand = typeof bestseller?.brand === "string" ? bestseller.brand : null;
   }
 
-  const tracerUrl = await resolveLiveTracerUrl(typeof listing.slug === "string" ? listing.slug : null);
+  const tracerResolution = await resolveLiveTracerUrl(typeof listing.slug === "string" ? listing.slug : null);
+  const tracerUrl = tracerResolution.url;
   // NEWFIND validates that sales links originate from TRACER. Only publish a
   // TRACER URL after the actual product page passes its liveness check.
   const productUrl = tracerUrl;
   if (!productUrl) {
-    const reason = "tracer_sales_url_not_live";
+    const reason = tracerResolution.reason ?? "tracer_sales_url_not_live";
     await supabase.from("newfind_promotion_deliveries").update({ status: "failed", last_error: reason, last_attempt_at: new Date().toISOString(), lease_until: null, updated_at: new Date().toISOString() }).eq("listing_id", listingId).eq("status", "sending").eq("event_id", sendEventId);
     return { configured: true, sent: false, eventId: sendEventId, status: null, ackStatus: null, detail: reason };
   }
