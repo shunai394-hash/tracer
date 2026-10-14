@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:tracer-core
+      - name: Test Orosy canonical identity, shipping and full margin gate
+        run: node scripts/test-orosy-canonical-linking-gate.mjs
       - name: Test Shopify order SKU mapping
         run: npm run test:shopify-order-sku-mapping
       - name: Test order gate profit invariants

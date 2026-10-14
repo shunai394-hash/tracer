@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
-import { getOrosyProductDetail, searchOrosyProducts } from "@/lib/sources/orosy";
-import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-listings";
+import { getOrosyProductDetail, getOrosyShippingQuote, searchOrosyProducts } from "@/lib/sources/orosy";
+import { womenProductPriority } from "@/lib/intelligence/womens-priority";
+import { PROFIT_ASSUMPTIONS, simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -31,9 +32,21 @@ function japaneseTitle(title: string): boolean {
   return jp >= 3 && latin <= jp * 2;
 }
 
-function priceFor(cost: number, retail: number | null): number {
-  const floor = Math.ceil((cost / 0.62) / 100) * 100;
-  const retailFloor = retail && retail > cost ? Math.ceil(retail / 100) * 100 : 0;
+const DOMESTIC_SHIPPING_ESTIMATE_JPY = 500;
+const TARGET_CONTRIBUTION_MARGIN = 0.20;
+
+function priceFor(cost: number, shipping: number, retail: number | null): number {
+  const landedCost = cost + shipping + DOMESTIC_SHIPPING_ESTIMATE_JPY;
+  const variableCostRate =
+    PROFIT_ASSUMPTIONS.platform_fee_rate +
+    PROFIT_ASSUMPTIONS.payment_fee_rate +
+    PROFIT_ASSUMPTIONS.advertising_allowance_rate +
+    PROFIT_ASSUMPTIONS.return_refund_reserve_rate +
+    PROFIT_ASSUMPTIONS.fx_reserve_rate;
+  const retainedRate = 1 - variableCostRate - TARGET_CONTRIBUTION_MARGIN;
+  if (!Number.isFinite(landedCost) || landedCost <= 0 || retainedRate <= 0) return 0;
+  const floor = Math.ceil((landedCost / retainedRate) / 100) * 100;
+  const retailFloor = retail && retail > landedCost ? Math.ceil(retail / 100) * 100 : 0;
   return Math.max(floor, retailFloor);
 }
 
@@ -42,16 +55,34 @@ function slug(title: string, productId: string, variationId: string): string {
   return `${base || "orosy-product"}-${productId}-${variationId}`.slice(0, 180);
 }
 
-async function upsertProduct(supabase: ReturnType<typeof createSupabaseAdminClient>, detail: Awaited<ReturnType<typeof getOrosyProductDetail>>) {
-  if (!detail) return null;
+async function upsertProduct(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  detail: Awaited<ReturnType<typeof getOrosyProductDetail>>,
+  jan: string,
+): Promise<string | null> {
+  if (!detail || !/^\d{8,14}$/.test(jan)) return null;
+
+  // Reuse an existing canonical record with the same JAN instead of creating a duplicate.
+  const canonical = await supabase.from("products").select("id").eq("jan", jan).limit(2);
+  if (canonical.error) throw new Error(canonical.error.message);
+  if ((canonical.data ?? []).length > 1) return null;
+  if (canonical.data?.[0]?.id) return String(canonical.data[0].id);
+
   const identityKey = `orosy:${detail.id}`;
-  const existing = await supabase.from("products").select("id").eq("identity_key", identityKey).maybeSingle();
+  const existing = await supabase.from("products").select("id,jan").eq("identity_key", identityKey).maybeSingle();
   if (existing.error) throw new Error(existing.error.message);
-  if (existing.data?.id) return String(existing.data.id);
+  if (existing.data?.id) {
+    if (existing.data.jan && existing.data.jan !== jan) return null;
+    const updated = await supabase.from("products").update({ canonical_name: detail.title, jan })
+      .eq("id", existing.data.id).select("id").single();
+    if (updated.error) throw new Error(updated.error.message);
+    return String(updated.data.id);
+  }
+
   const inserted = await supabase.from("products").insert({
     canonical_name: detail.title,
     identity_key: identityKey,
-    jan: detail.barcode,
+    jan,
   }).select("id").single();
   if (inserted.error) throw new Error(inserted.error.message);
   return String(inserted.data.id);
@@ -64,7 +95,8 @@ export async function GET(request: Request) {
   const supabase = createSupabaseAdminClient();
   const started = Date.now();
   const target = 240;
-  const candidates = new Map<string, Awaited<ReturnType<typeof getOrosyProductDetail>>>();
+  const candidates = new Map<string, { detail: NonNullable<Awaited<ReturnType<typeof getOrosyProductDetail>>>; variation: NonNullable<Awaited<ReturnType<typeof getOrosyProductDetail>>>["variations"][number] }>();
+  const candidateProductIds = new Set<string>();
 
   for (const query of QUERIES) {
     if (Date.now() - started > 180_000 || candidates.size >= target) break;
@@ -73,13 +105,27 @@ export async function GET(request: Request) {
       for (const item of results) {
         if (candidates.size >= target) break;
         if (!japaneseTitle(item.title) || !item.orderable || !item.imageUrl || !item.imageUrl.startsWith("https://")) continue;
-        if (candidates.has(item.id)) continue;
+        if (candidateProductIds.has(item.id)) continue;
         try {
           const detail = await getOrosyProductDetail(item.id);
           if (!detail || !japaneseTitle(detail.title) || !detail.orderable || !detail.imageUrl || !detail.imageUrl.startsWith("https://")) continue;
-          const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId);
-          if (!variation) continue;
-          candidates.set(`${detail.id}:${variation.variationId}`, detail);
+          const priority = womenProductPriority({ title: detail.title, category: detail.category });
+          if (!priority.isWomenFocused) continue;
+          // A supplier variant ID is an order locator, not proof of canonical product identity.
+          // Require a real JAN before creating a canonical product/listing relationship.
+          const shippableVariations = detail.variations.filter(v =>
+            (v.stockQty ?? 0) > 0 &&
+            (v.buyerPrice ?? 0) > 0 &&
+            Boolean(v.variationId) &&
+            /^\d{8,14}$/.test(v.jan ?? "") &&
+            v.currency?.toUpperCase() === "JPY",
+          );
+          // The shipping quote endpoint accepts product ID, not variation ID.
+          // Only accept products where exactly one purchasable JAN/JPY variant exists.
+          if (shippableVariations.length !== 1) continue;
+          const variation = shippableVariations[0];
+          candidates.set(`${detail.id}:${variation.variationId}`, { detail, variation });
+          candidateProductIds.add(detail.id);
         } catch {
           // One bad product must not abort the batch.
         }
@@ -92,14 +138,70 @@ export async function GET(request: Request) {
   const accepted: string[] = [];
   const rejected: Array<{ id: string; reason: string }> = [];
 
-  for (const detail of candidates.values()) {
-    if (!detail) continue;
+  for (const candidate of candidates.values()) {
+    const { detail, variation } = candidate;
     if (Date.now() - started > 240_000 || accepted.length >= 200) break;
-    const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId);
-    if (!variation || variation.buyerPrice === null || variation.stockQty === null) continue;
+    const currentShippableVariations = detail.variations.filter(v =>
+      (v.stockQty ?? 0) > 0 &&
+      (v.buyerPrice ?? 0) > 0 &&
+      Boolean(v.variationId) &&
+      /^\d{8,14}$/.test(v.jan ?? "") &&
+      v.currency?.toUpperCase() === "JPY",
+    );
+    if (currentShippableVariations.length !== 1 || currentShippableVariations[0].variationId !== variation.variationId) {
+      rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "variant_shipping_ambiguity" });
+      continue;
+    }
+    if (!variation || variation.buyerPrice === null || variation.stockQty === null || !variation.jan || !/^\d{8,14}$/.test(variation.jan) || variation.currency?.toUpperCase() !== "JPY") {
+      rejected.push({ id: detail.id, reason: "canonical_jan_or_jpy_price_missing" });
+      continue;
+    }
+    const priority = womenProductPriority({ title: detail.title, category: detail.category });
+    if (!priority.isWomenFocused) {
+      rejected.push({ id: detail.id, reason: "outside_womens_product_strategy" });
+      continue;
+    }
+    let shippingQuote: Awaited<ReturnType<typeof getOrosyShippingQuote>>;
+    try {
+      shippingQuote = await getOrosyShippingQuote(detail.id);
+    } catch {
+      rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "shipping_quote_unavailable" });
+      continue;
+    }
+    if (shippingQuote.unresolved || shippingQuote.amount === null || shippingQuote.amount <= 0 || shippingQuote.currency?.toUpperCase() !== "JPY" || !shippingQuote.status || /fail|error|unavailable|unknown|unresolved|pending/i.test(shippingQuote.status)) {
+      rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "shipping_quote_unresolved" });
+      continue;
+    }
 
-    const productId = await upsertProduct(supabase, detail);
-    if (!productId) continue;
+    // Apply the landed-cost and margin gate before writing canonical or supplier records.
+    const sellingPrice = priceFor(variation.buyerPrice, shippingQuote.amount, variation.retailPrice);
+    const profit = simulateContributionProfit({
+      sellingPrice,
+      sellingCurrency: "JPY",
+      sellingCurrencyConfidence: "high",
+      sellingProvider: "tracer",
+      sourceCost: variation.buyerPrice,
+      sourceCurrency: "JPY",
+      sourceCurrencyConfidence: "high",
+      sourceProvider: "orosy",
+      internationalShipping: shippingQuote.amount,
+      domesticShipping: DOMESTIC_SHIPPING_ESTIMATE_JPY,
+      shippingCurrency: "JPY",
+      requireDomesticShipping: true,
+    });
+    const contributionProfit = profit.contributionProfit;
+    const contributionMargin = profit.contributionMargin;
+    if (!profit.calculable || !Number.isFinite(sellingPrice) || sellingPrice <= 0 ||
+        contributionProfit === null || contributionProfit <= 0 ||
+        contributionMargin === null || contributionMargin < TARGET_CONTRIBUTION_MARGIN * 100) {
+      rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: profit.incalculableReason ?? "insufficient_fully_costed_margin" });
+      continue;
+    }
+    const productId = await upsertProduct(supabase, detail, variation.jan);
+    if (!productId) {
+      rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "canonical_identity_conflict" });
+      continue;
+    }
 
     const supplierExisting = await supabase.from("supplier_listings")
       .select("id").eq("supplier", "orosy").eq("supplier_product_id", detail.id)
@@ -110,6 +212,8 @@ export async function GET(request: Request) {
     const supplierPayload = {
       supplier: "orosy",
       external_id: detail.id,
+      supplier_product_id: detail.id,
+      supplier_variant_id: variation.variationId,
       title: detail.title,
       product_id: productId,
       jan: variation.jan,
@@ -121,20 +225,21 @@ export async function GET(request: Request) {
       tracking_available: true,
       order_method: "orosy_api",
       api_available: true,
-      identity_method: variation.jan ? "jan" : "orosy_supplier_variant",
+      identity_method: "jan",
       identity_status: "linked",
-      identity_confidence: variation.jan ? 1 : 0.98,
+      identity_confidence: 1,
       configured: true,
       orderable: true,
       price_confirmed: true,
       inventory_confirmed: true,
       verification_status: "verified",
+      shipping_cost: shippingQuote.amount,
       shipping_status: "verified",
       shipping_checked_at: now,
       inventory_checked_at: now,
       last_verified_at: now,
       fetched_at: now,
-      metadata: { source: "orosy_bulk_import", delivery_group: detail.deliveryGroup, category: detail.category },
+      metadata: { source: "orosy_bulk_import", delivery_group: detail.deliveryGroup, category: detail.category, domestic_shipping_estimate_jpy: DOMESTIC_SHIPPING_ESTIMATE_JPY, profit_assumptions: PROFIT_ASSUMPTIONS },
     };
 
     let supplierListingId: string;
@@ -149,7 +254,6 @@ export async function GET(request: Request) {
       supplierListingId = String(inserted.data.id);
     }
 
-    const sellingPrice = priceFor(variation.buyerPrice, variation.retailPrice);
     const listingSlug = slug(detail.title, detail.id, variation.variationId);
     const listingPayload = {
       product_id: productId,
@@ -161,7 +265,7 @@ export async function GET(request: Request) {
       selling_price: sellingPrice,
       currency: "JPY",
       published: false,
-      selection_reasons: ["OROSY_BULK_IMPORT", "JAPANESE_TITLE", "WOMEN_FOCUSED", "IN_STOCK", "IMAGE_VERIFIED", "ORDERABLE", "TRACKING_CAPABILITY_VERIFIED"],
+      selection_reasons: ["OROSY_BULK_IMPORT", "JAPANESE_TITLE", "WOMEN_FOCUSED", "JAN_VERIFIED", "IN_STOCK", "IMAGE_VERIFIED", "ORDERABLE", "TRACKING_CAPABILITY_VERIFIED", "SHIPPING_QUOTE_VERIFIED"],
       missing: [],
       published_at: null,
       pipeline_stage: "SELECTED",
@@ -173,14 +277,14 @@ export async function GET(request: Request) {
       supplier_product_id: detail.id,
       supplier_variant_id: variation.variationId,
       source_cost: variation.buyerPrice,
-      shipping_cost: null,
+      shipping_cost: shippingQuote.amount,
       inventory: variation.stockQty,
       orderable: true,
       tracking_available: true,
-      identity_method: variation.jan ? "jan" : "orosy_supplier_variant",
-      identity_confidence: variation.jan ? 1 : 0.98,
-      contribution_profit: sellingPrice - variation.buyerPrice,
-      contribution_margin: ((sellingPrice - variation.buyerPrice) / sellingPrice) * 100,
+      identity_method: "jan",
+      identity_confidence: 1,
+      contribution_profit: contributionProfit,
+      contribution_margin: contributionMargin,
       updated_at: now,
     };
 
@@ -198,20 +302,13 @@ export async function GET(request: Request) {
     accepted.push(String(listingResult.data.id));
   }
 
-  let shopify = null;
-  try {
-    shopify = await syncPublishedListingsToShopify(Math.min(200, accepted.length || 200));
-  } catch (error) {
-    shopify = { failed: accepted.length, error: error instanceof Error ? error.message : String(error) };
-  }
-
+  // Discovery/linking must never trigger a broad Shopify sync. Publication is a separate, gated job.
   return NextResponse.json({
     ok: true,
     source: "orosy",
     candidates: candidates.size,
     accepted: accepted.length,
     rejected: rejected.length,
-    shopify,
     elapsedMs: Date.now() - started,
   });
 }
