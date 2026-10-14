@@ -216,7 +216,7 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
         provider: "cj",
         source: "cj_supply_first",
         catalog_stage: "candidate",
-        purchasable: false,
+        purchasable: nativeEvidenceFresh,
         identity_status: "supply_discovered",
         identity_method: "supply_discovered",
         supplier_listing_id: args.supplierListingId,
