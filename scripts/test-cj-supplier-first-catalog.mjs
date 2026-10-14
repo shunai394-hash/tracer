@@ -5,6 +5,7 @@ const migration = await readFile("supabase/migrations/20261014100000_cj_supplier
 const helper = await readFile("lib/suppliers/stage-cj-supplier-first-catalog.ts", "utf8");
 const ingestion = await readFile("lib/suppliers/persist-cj-internal-supply.ts", "utf8");
 const discovery = await readFile("lib/suppliers/discover-cj-supply.ts", "utf8");
+const internalAdapter = await readFile("lib/procurement/tracer-internal-adapter.ts", "utf8");
 
 const includes = (source, fragment, label = fragment) => assert.ok(source.includes(fragment), `missing contract: ${label}`);
 const excludes = (source, fragment, label = fragment) => assert.ok(!source.includes(fragment), `unexpected contract: ${label}`);
@@ -46,5 +47,15 @@ includes(discovery, "const rejectedReasons = items.reduce");
 includes(discovery, "const status = cursor.quotaBlocked");
 includes(discovery, 'cursor.verified > 0 ? "partial" : "failed"');
 includes(discovery, "status,\n    started_at: now");
+
+// Inventory synchronization must never infer sale/order readiness from stock alone.
+const projectionStart = internalAdapter.indexOf("async function syncInternalInventoryProjection(");
+const projectionEnd = internalAdapter.indexOf("\nasync function loadVariant(", projectionStart);
+assert.ok(projectionStart >= 0 && projectionEnd > projectionStart, "missing inventory projection function");
+const inventoryProjection = internalAdapter.slice(projectionStart, projectionEnd);
+excludes(inventoryProjection, "orderable: inventory > 0", "inventory refresh must not enable orderability");
+excludes(inventoryProjection, 'status: inventory > 0 ? "ready" : "draft"', "inventory refresh must not promote catalog status");
+includes(inventoryProjection, "Inventory observation is not proof of supplier orderability or sale readiness");
+includes(inventoryProjection, "Keep the publication/orderability gate independent from inventory refreshes");
 
 console.log("CJ supplier-first catalog draft contract: passed");
