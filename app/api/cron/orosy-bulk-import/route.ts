@@ -83,7 +83,7 @@ export async function GET(request: Request) {
   const supabase = createSupabaseAdminClient();
   const started = Date.now();
   const target = 240;
-  const candidates = new Map<string, Awaited<ReturnType<typeof getOrosyProductDetail>>>();
+  const candidates = new Map<string, { detail: NonNullable<Awaited<ReturnType<typeof getOrosyProductDetail>>>; variation: NonNullable<Awaited<ReturnType<typeof getOrosyProductDetail>>>["variations"][number] }>();
 
   for (const query of QUERIES) {
     if (Date.now() - started > 180_000 || candidates.size >= target) break;
@@ -102,7 +102,7 @@ export async function GET(request: Request) {
           // Require a real JAN before creating a canonical product/listing relationship.
           const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId && /^\d{8,14}$/.test(v.jan ?? ""));
           if (!variation || !variation.jan || variation.currency?.toUpperCase() !== "JPY") continue;
-          candidates.set(`${detail.id}:${variation.variationId}`, detail);
+          candidates.set(`${detail.id}:${variation.variationId}`, { detail, variation });
         } catch {
           // One bad product must not abort the batch.
         }
@@ -115,10 +115,9 @@ export async function GET(request: Request) {
   const accepted: string[] = [];
   const rejected: Array<{ id: string; reason: string }> = [];
 
-  for (const detail of candidates.values()) {
-    if (!detail) continue;
+  for (const candidate of candidates.values()) {
+    const { detail, variation } = candidate;
     if (Date.now() - started > 240_000 || accepted.length >= 200) break;
-    const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId && /^\d{8,14}$/.test(v.jan ?? ""));
     if (!variation || variation.buyerPrice === null || variation.stockQty === null || !variation.jan || !/^\d{8,14}$/.test(variation.jan) || variation.currency?.toUpperCase() !== "JPY") {
       rejected.push({ id: detail.id, reason: "canonical_jan_or_jpy_price_missing" });
       continue;
@@ -135,7 +134,7 @@ export async function GET(request: Request) {
       rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "shipping_quote_unavailable" });
       continue;
     }
-    if (shippingQuote.unresolved || shippingQuote.amount === null || shippingQuote.amount <= 0 || shippingQuote.currency?.toUpperCase() !== "JPY") {
+    if (shippingQuote.unresolved || shippingQuote.amount === null || shippingQuote.amount <= 0 || shippingQuote.currency?.toUpperCase() !== "JPY" || !shippingQuote.status || /fail|error|unavailable|unknown|unresolved|pending/i.test(shippingQuote.status)) {
       rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "shipping_quote_unresolved" });
       continue;
     }
