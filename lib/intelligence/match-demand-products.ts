@@ -378,6 +378,18 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     if (candidateObservationIds.has(String(demand.id))) continue;
 
     let intent = detectProductIntent(query);
+    // When Gemini is quota-blocked, exact-enough catalog-title overlap can still
+    // classify demand deterministically. productMatchesQuery requires all tokens
+    // for multi-token queries and unique CJK overlap for single CJK terms; this
+    // only enables weak title evidence and never bypasses identifier/variant gates.
+    if (!intent.isProduct && intent.reason === "no_product_signal") {
+      const catalogTitleSignal = productRows.some((product) =>
+        productMatchesQuery(query, product.normalized_title, allProductNames)
+      );
+      if (catalogTitleSignal) {
+        intent = { isProduct: true, category: null, reason: "catalog_title_overlap" };
+      }
+    }
     if (!intent.isProduct && intent.reason === "no_product_signal" && isGeminiConfigured()) {
       if (!geminiCircuitBreaker.canCall(geminiCalls, MAX_GEMINI_CLASSIFICATIONS_PER_RUN)) { intentDeferred += 1; continue; }
       geminiCalls += 1;
