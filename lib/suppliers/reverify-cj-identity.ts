@@ -117,7 +117,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
 
   const buildCandidateQuery = () => db
     .from("supplier_listings")
-    .select("id,product_id,title,cost,shipping_cost,shipping_status,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency")
+    .select("id,product_id,title,cost,shipping_cost,shipping_status,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency,price_confirmed,inventory_confirmed,configured,api_available,orderable,tracking_available,ship_to,verification_error")
     .eq("supplier", "cj")
     .in("verification_status", ["unverified", "retryable", "verified"])
     .in("identity_method", ["supply_discovered", "none"])
@@ -175,9 +175,11 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       // Recover missing evidence from the exact CJ product/variant instead of
       // recording a generic hold and waiting for the next patrol.
       const currency = String(row.currency ?? metadata.currency ?? metadata.source_currency ?? "").trim().toUpperCase();
-      const missingCost = cost === null;
+      let priceVerified = cost !== null && row.price_confirmed === true;
+      let inventoryVerified = inventory !== null && row.inventory_confirmed === true;
+      const missingCost = !priceVerified;
       const missingShipping = shippingCost === null || row.shipping_status !== "verified";
-      const missingInventory = inventory === null;
+      const missingInventory = !inventoryVerified;
       const missingImage = !imageUrl;
       let shippingQuoteVerified = row.shipping_status === "verified" && shippingCost !== null;
       let variantDetails: Awaited<ReturnType<typeof fetchCJVariantByVid>> = null;
@@ -190,8 +192,10 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
           const exactVariant = variantDetails?.vid === String(row.supplier_variant_id)
             && variantDetails.productId === String(row.supplier_product_id);
           const fetchedCost = exactVariant ? num(variantDetails?.sellPrice) : null;
-          if (fetchedCost !== null && fetchedCost > 0) cost = fetchedCost;
-          else if (!exactVariant) refreshErrors.push("cost:returned_variant_or_product_id_mismatch");
+          if (fetchedCost !== null && fetchedCost > 0) {
+            cost = fetchedCost;
+            priceVerified = true;
+          } else if (!exactVariant) refreshErrors.push("cost:returned_variant_or_product_id_mismatch");
         } catch (error) {
           if (isCJQuotaCircuitBlockingError(error)) throw error;
           refreshErrors.push("cost:" + (error instanceof Error ? error.message : String(error)));
@@ -212,7 +216,10 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       if (missingInventory) {
         try {
           const fetchedInventory = await fetchCJVariantStock(String(row.supplier_variant_id));
-          if (fetchedInventory !== null && Number.isFinite(fetchedInventory) && fetchedInventory >= 0) inventory = fetchedInventory;
+          if (fetchedInventory !== null && Number.isFinite(fetchedInventory) && fetchedInventory >= 0) {
+            inventory = fetchedInventory;
+            inventoryVerified = true;
+          }
         } catch (error) {
           if (isCJQuotaCircuitBlockingError(error)) throw error;
           refreshErrors.push("inventory:" + (error instanceof Error ? error.message : String(error)));
@@ -248,20 +255,39 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         last_identity_reverify_at: checkedAt.toISOString(),
       };
       const refreshedFields: Record<string, unknown> = { metadata: nextListingMetadata };
-      if (missingCost && cost !== null) refreshedFields.cost = cost;
+      if (priceVerified && cost !== null) {
+        refreshedFields.cost = cost;
+        refreshedFields.price_confirmed = true;
+      }
       if (shippingQuoteVerified && shippingCost !== null) {
         refreshedFields.shipping_cost = shippingCost;
         refreshedFields.shipping_status = "verified";
         refreshedFields.ship_to = "JP";
       }
-      if (missingInventory && inventory !== null) refreshedFields.inventory = inventory;
+      if (inventoryVerified && inventory !== null) {
+        refreshedFields.inventory = inventory;
+        refreshedFields.inventory_confirmed = true;
+      }
+      const canMarkFreshVerified = priceVerified && cost !== null && cost > 0
+        && shippingQuoteVerified && shippingCost !== null
+        && inventoryVerified && inventory !== null && inventory > 0
+        && row.configured === true && row.api_available === true
+        && row.orderable === true && row.tracking_available === true
+        && Boolean(String(row.supplier_product_id ?? "").trim())
+        && Boolean(String(row.supplier_variant_id ?? "").trim())
+        && String(row.ship_to ?? "").trim().toUpperCase() === "JP"
+        && (row.verification_error == null || row.verification_error === "");
+      if (canMarkFreshVerified) {
+        refreshedFields.verification_status = "verified";
+        refreshedFields.last_verified_at = checkedAt.toISOString();
+      }
       const { error: evidenceWriteError } = await db.from("supplier_listings").update(refreshedFields).eq("id", supplierListingId);
       if (evidenceWriteError) throw new Error("CJ recovered evidence persistence failed: " + evidenceWriteError.message);
 
       const missingFields = [
-        cost === null ? "cost" : null,
+        !priceVerified || cost === null ? "cost" : null,
         shippingCost === null || !shippingQuoteVerified ? "shipping" : null,
-        inventory === null ? "inventory" : null,
+        !inventoryVerified || inventory === null ? "inventory" : null,
         fxRate === null ? "fx_rate" : null,
         sellingPriceJpy === null ? "selling_price_jpy" : null,
         !imageUrl ? "image" : null,
@@ -294,7 +320,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       }
       // TypeScript cannot infer non-null values from the field-name array above.
       // Keep the persistence boundary explicit so only complete evidence reaches it.
-      if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) {
+      if (!priceVerified || cost === null || shippingCost === null || !shippingQuoteVerified || !inventoryVerified || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) {
         throw new Error("CJ evidence recovery invariant failed: required supply fields remain missing");
       }
       await persistCjSupplyIntelligence({ productId: identity?.productId ?? String(row.product_id), title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
