@@ -61,6 +61,7 @@ async function readCjIdentityProgressCounts(db: ReturnType<typeof createSupabase
   };
 }
 function num(value: unknown): number | null { const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN; return Number.isFinite(parsed) ? parsed : null; }
+function isHttpUrl(value: unknown): value is string { return typeof value === "string" && (value.trim().startsWith("https://") || value.trim().startsWith("http://")); }
 function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 async function readPersistableBarcode(supplierProductId: string, supplierVariantId: string, persistedBarcode: string | null): Promise<string | null> {
   const supplied = typeof persistedBarcode === "string" ? persistedBarcode.trim() : "";
@@ -164,9 +165,9 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       let cost = num(row.cost);
       let shippingCost = num(row.shipping_cost);
       let inventory = num(row.inventory);
-      let imageUrl = typeof intelligence?.image_url === "string" && /^https?:\\/\\//i.test(intelligence.image_url.trim()) ? intelligence.image_url.trim() : "";
+      let imageUrl = isHttpUrl(intelligence?.image_url) ? intelligence.image_url.trim() : "";
       if (!imageUrl) {
-        const listingImage = [listingMetadata.image_url, listingMetadata.product_image, listingMetadata.productImage, listingMetadata.image].find((value) => typeof value === "string" && /^https?:\\/\\//i.test(value.trim()));
+        const listingImage = [listingMetadata.image_url, listingMetadata.product_image, listingMetadata.productImage, listingMetadata.image].find(isHttpUrl);
         imageUrl = typeof listingImage === "string" ? listingImage.trim() : "";
       }
 
@@ -212,7 +213,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       if (missingImage) {
         try {
           productDetails = await getCJProductDetail(String(row.supplier_product_id));
-          if (typeof productDetails?.imageUrl === "string" && /^https?:\\/\\//i.test(productDetails.imageUrl.trim())) imageUrl = productDetails.imageUrl.trim();
+          if (isHttpUrl(productDetails?.imageUrl)) imageUrl = productDetails.imageUrl.trim();
         } catch (error) {
           if (isCJQuotaCircuitBlockingError(error)) throw error;
           refreshErrors.push("image:" + (error instanceof Error ? error.message : String(error)));
