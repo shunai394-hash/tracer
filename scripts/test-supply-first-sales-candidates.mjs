@@ -46,6 +46,8 @@ assert.match(selector, /resolveUnknownShippingAllowanceUsd\(process\.env\.TRACER
 assert.match(selector, /shipping_cost: num\(item\.listing\.shipping_cost\)/, "estimated freight must not be persisted as if it were an actual supplier quote");
 assert.match(selector, /shipping_allowance_estimated_usd_\$\{item\.shippingAllowanceUsd\}_not_supplier_quote/, "the selected listing must label its pricing allowance as an estimate");
 assert.match(selector, /calculateSupplySellingPriceJpy\(/, "missing selling prices must flow through the tested landed-price calculator");
+assert.match(selector, /supplierMetadata\.image_url/ , "use the verified supplier image stored in metadata when the product master has no image");
+assert.match(selector, /image_url: item\.imageUrl/, "the selected supplier image must be the image persisted to the storefront listing");
 assert.match(pricing, /const landedCostJpy = \(sourceCost \+ shippingCost\) \* sourceFxRateToSelling/, "landed price must use the shipping amount actually passed to profit simulation");
 assert.doesNotMatch(selector, /product_master_title_not_publishable|product_master_title_missing/, "a generic legacy product-master title must not block a concrete supplier title");
 assert.match(selector, /generic_non_merchandisable_title/, "true placeholder supplier titles must still be blocked");
