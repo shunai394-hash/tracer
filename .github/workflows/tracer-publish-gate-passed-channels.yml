@@ -1,5 +1,6 @@
 name: TRACER Publish Gate-Passed Channels
 # Re-run the existing guarded publication workflow to publish currently gate-passed products.
+# Triggered 2026-10-14 to prioritize real listings; publication remains supplier-gate controlled.
 
 on:
   push:
