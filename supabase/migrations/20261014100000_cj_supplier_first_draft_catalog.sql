@@ -47,10 +47,12 @@ begin
     return jsonb_build_object('ok', false, 'reason', 'not_active_cj_supply');
   end if;
 
-  if coalesce(v_product.fetched_at, v_product.updated_at) is null
-     or coalesce(v_variant.fetched_at, v_variant.updated_at) is null
-     or coalesce(v_product.fetched_at, v_product.updated_at) < now() - interval '24 hours'
-     or coalesce(v_variant.fetched_at, v_variant.updated_at) < now() - interval '24 hours' then
+  -- Only supplier fetch timestamps prove freshness. updated_at may be changed by
+  -- our own ingestion/audit writes and must never be used as supplier evidence.
+  if v_product.fetched_at is null
+     or v_variant.fetched_at is null
+     or v_product.fetched_at < now() - interval '24 hours'
+     or v_variant.fetched_at < now() - interval '24 hours' then
     return jsonb_build_object('ok', false, 'reason', 'supplier_evidence_stale');
   end if;
 
