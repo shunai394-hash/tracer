@@ -12,7 +12,7 @@ const locators = readFileSync("lib/catalog/supplier-locators.ts", "utf8");
 // standalone CJ catalog item can be sellable once its own exact variant and
 // current supplier/economic evidence pass the native-CJ gate.
 assert.match(pipeline, /\.eq\("verification_status",\s*"verified"\)/);
-assert.match(pipeline, /\.eq\("shipping_status",\s*"verified"\)/);
+assert.match(pipeline, /\.in\("shipping_status",\s*\["verified",\s*"estimated"\]\)/);
 assert.match(pipeline, /\.eq\("price_confirmed",\s*true\)/);
 assert.match(pipeline, /\.eq\("inventory_confirmed",\s*true\)/);
 assert.match(pipeline, /\.eq\("orderable",\s*true\)/);
@@ -26,7 +26,7 @@ assert.doesNotMatch(pipeline, /TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED/);
 assert.match(selector, /options\.allowNativeCjIdentity\s*===\s*true/);
 assert.match(selector, /isNativeCjSupplierListing\(candidate\)/);
 assert.match(identity, /row\.verification_status === "verified"/);
-assert.match(identity, /row\.shipping_status === "verified"/);
+assert.match(identity, /row\.shipping_status === "verified" \|\| estimatedShipping/);
 assert.match(identity, /row\.last_verified_at/);
 assert.match(identity, /row\.supplier_product_id/);
 assert.match(identity, /row\.supplier_variant_id/);
