@@ -39,8 +39,9 @@ assert.match(selector, /domesticShipping: nativeCjSupplyIdentity \? 0 : null/);
 assert.match(selector, /calculateSupplySellingPriceJpy\(/, "missing selling prices must flow through the tested landed-price calculator");
 assert.match(pricing, /const landedCostJpy = \(sourceCost \+ shippingCost\) \* sourceFxRateToSelling/, "landed price must use the shipping amount actually passed to profit simulation");
 assert.match(selector, /localizeProductDescription\(sourceTitle\)/);
-assert.match(selector, /isPublishableCatalogDescription\(localizedDescription\)/);
-assert.match(selector, /if \(!publishableDescription\)/);
+assert.match(selector, /isPublishableCatalogDescription\(candidate\)/);
+assert.match(selector, /safeJapaneseFallback/);
+assert.doesNotMatch(selector, /reasons\.push\("japanese_description_unavailable"\)/);
 assert.match(japaneseProduct, /knitted headband.*women/i);
 assert.match(japaneseProduct, /柔らかなニット素材のクロスヘアバンドです/);
 
