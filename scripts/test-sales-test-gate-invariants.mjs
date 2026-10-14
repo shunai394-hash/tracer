@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { verifySalesTestGateInvariants } from "../lib/market/sales-test-gate.ts";
+import { verifySalesTestGateInvariants, hasPassedSalesTestGate } from "../lib/market/sales-test-gate.ts";
 import { verifyWomenPriorityInvariants } from "../lib/intelligence/womens-priority.ts";
 import { isPublishableCatalogTitle } from "../lib/catalog/publishable-title.ts";
 
@@ -42,4 +42,18 @@ assert.match(publicationRoute, /\.slice\(0, dryRunLimit\)/);
 assert.match(diagnosticWorkflow, /sales-test-publication\?dryRun=true&limit=450/);
 assert.match(diagnosticWorkflow, /rejectedSample.*\[:25\]/);
 assert.match(diagnosticWorkflow, /rejectedSamples.*\[:25\]/);
-console.log("fully costed publication, product-master, and 450-candidate audit guards: 19 assertions passed");
+const gatePassedBeforeChannelFailure = {
+  published: true,
+  pipeline_stage: "BASE_PUBLICATION",
+  pipeline_status: "failed",
+  pipeline_reason: "base_publish_failed",
+  selection_reasons: ["sales_test_gate_passed", "sales_test_gate:supply"],
+  title: "低反発 トラベルネックピロー",
+};
+assert.equal(hasPassedSalesTestGate(gatePassedBeforeChannelFailure), true,
+  "a BASE failure must not erase durable Sales Test Gate provenance for NEWFIND");
+assert.equal(hasPassedSalesTestGate({ ...gatePassedBeforeChannelFailure, pipeline_stage: "BLOCKED" }), false,
+  "explicitly blocked listings must not be delivered");
+assert.ok(publicationRoute.indexOf("const newfind = await Promise.all") < publicationRoute.indexOf("const base = await publishPublishedListingsToBase"),
+  "NEWFIND delivery must happen before BASE can mutate the pipeline status");
+console.log("fully costed publication, product-master, and 450-candidate audit guards: 22 assertions passed");

@@ -40,11 +40,8 @@ async function promoteGatePassedListings(selectedListingIds: string[]) {
     error: error instanceof Error ? error.message : String(error),
   }));
   const publishedListingIds = shopify.listingIds;
-  const base = await publishPublishedListingsToBase(400, selectedListingIds).catch((error) => ({
-    ok: false,
-    results: [] as Array<{ ok: boolean; baseItemId?: string | null; listingId: string; error?: string }>,
-    error: error instanceof Error ? error.message : String(error),
-  }));
+  // Deliver to NEWFIND before BASE. A BASE image/API failure must not overwrite
+  // the durable Sales Test Gate provenance before another channel can use it.
   const newfind = await Promise.all(
     selectedListingIds.map((listingId) => promoteShopListingToNewfind(listingId).catch((error) => ({
       configured: true,
@@ -55,6 +52,11 @@ async function promoteGatePassedListings(selectedListingIds: string[]) {
       detail: error instanceof Error ? error.message : String(error),
     }))),
   );
+  const base = await publishPublishedListingsToBase(400, selectedListingIds).catch((error) => ({
+    ok: false,
+    results: [] as Array<{ ok: boolean; baseItemId?: string | null; listingId: string; error?: string }>,
+    error: error instanceof Error ? error.message : String(error),
+  }));
   return {
     shopify,
     publishedListingIds,
