@@ -42,6 +42,6 @@ includes(discovery, "quotaBlocked: cursor.quotaBlocked");
 includes(discovery, "const rejectedReasons = items.reduce");
 includes(discovery, "const status = cursor.quotaBlocked");
 includes(discovery, 'cursor.verified > 0 ? "partial" : "failed"');
-includes(discovery, "status,\n      started_at: now");
+includes(discovery, "status,\n    started_at: now");
 
 console.log("CJ supplier-first catalog draft contract: passed");
