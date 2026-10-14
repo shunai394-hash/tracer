@@ -117,3 +117,5 @@ jobs:
               print("Channel sync failures:", "; ".join(failures))
               sys.exit(1)
           PY
+
+# Retriggered 2026-10-15: run the guarded BASE + Shopify + Sales Test publication cycle after retry-gate fixes.
