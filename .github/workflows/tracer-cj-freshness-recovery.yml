@@ -1,0 +1,80 @@
+name: TRACER CJ Freshness Recovery
+
+on:
+  schedule:
+    # Run just after the current CJ quota reset window; the endpoint's circuit
+    # breaker remains authoritative if the provider extends its cooldown.
+    - cron: "56 23 * * *"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tracer-cj-supply-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Wait for the latest production deployment
+        run: sleep 60
+
+      - name: Reverify a bounded CJ batch and publish refreshed eligible listings
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token() {
+            curl -sSf --max-time 15 \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          call_get() {
+            local path="$1" max_time="$2" out="$3"
+            local t code
+            t="$(token)"
+            code="$(curl -sS -o "$out" -w "%{http_code}" --max-time "$max_time" \
+              -H "Authorization: Bearer $t" "$BASE/$path")"
+            echo "=== $path HTTP $code ==="
+            python3 - "$code" "$out" <<'PY'
+          import json,sys
+          code=int(sys.argv[1]) if sys.argv[1].isdigit() else 0
+          try:
+              with open(sys.argv[2], encoding="utf-8") as f:
+                  d=json.load(f)
+          except Exception as e:
+              print(f"Invalid JSON response: {e}")
+              raise SystemExit(1)
+          keys=("ok","phase","checked","supplierVerified","promoted","noUniqueBarcodeMatch","missingEconomics","quotaBlockedUntil","attempted","published","synced","failed","error")
+          print(json.dumps({k:d.get(k) for k in keys if k in d},ensure_ascii=False)[:2500])
+          if d.get("quotaBlockedUntil"):
+              print(f"CJ quota circuit is open until {d['quotaBlockedUntil']}; no external publication will be attempted.")
+              raise SystemExit(0)
+          if not 200 <= code < 300 or d.get("ok") is not True:
+              print("Endpoint did not explicitly confirm success")
+              raise SystemExit(1)
+          if "checked" in d and int(d.get("checked") or 0) <= 0:
+              print("CJ reverify made no progress; refusing to claim a successful refresh")
+              raise SystemExit(1)
+          PY
+          }
+          call_get "api/cron/cj-identity-reverify?force=1&limit=15" 170 cj-reverify.json
+          quota_blocked="$(python3 - cj-reverify.json <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding="utf-8"))
+          print("yes" if d.get("quotaBlockedUntil") else "no")
+          PY
+          )"
+          if [ "$quota_blocked" = "yes" ]; then
+            echo "CJ supplier refresh deferred by the provider quota circuit; next scheduled run will retry."
+            exit 0
+          fi
+          call_get "api/cron/sales-test-publication" 150 sales-test.json
+          call_get "api/cron/base-publish" 65 base-publish.json
+          call_get "api/cron/shopify-publish" 300 shopify-publish.json
+          echo "CJ freshness refresh and downstream publication checks completed."
