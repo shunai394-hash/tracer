@@ -4,6 +4,8 @@ name: TRACER Publish CJ Products Now
 # Retry trigger: publish verified, profitable CJ supply without marketplace barcode dependency.
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "56 23 14 10 *"
   push:
     branches: [main]
 
@@ -17,7 +19,7 @@ concurrency:
 
 jobs:
   publish-cj-now:
-    if: contains(github.event.head_commit.message, '[publish-cj-now]')
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[publish-cj-now]')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -56,12 +58,43 @@ jobs:
           print(json.dumps(d, ensure_ascii=False, indent=2)[:30000])
           PY
 
+          # This schedule is a one-time retry for the known CJ API cooldown on 2026-10-14 UTC.
+          # Keep later annual schedule matches as no-ops; the manual/push path remains usable.
+          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] && [ "$(date -u +%F)" != "2026-10-14" ]; then
+            echo "One-time cooldown retry window has passed; skipping."
+            exit 0
+          fi
+
           echo "=== SALES TEST PUBLICATION ==="
           curl -sSf --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/sales-test-publication" > sales.json
           python3 - <<'PY'
           import json
           d=json.load(open("sales.json"))
           print(json.dumps(d, ensure_ascii=False, indent=2)[:50000])
+          PY
+
+          echo "=== BASE RECONCILIATION ==="
+          curl -sSf --max-time 120 -H "Authorization: Bearer $(token)" "$BASE/api/cron/base-publish" > base.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open("base.json"))
+          print(json.dumps({k:d.get(k) for k in ("ok","phase","attempted","published","hidden","skipped","failed","configured","error")}, ensure_ascii=False, indent=2))
+          PY
+
+          echo "=== SHOPIFY RECONCILIATION ==="
+          curl -sSf --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/shopify-publish" > shopify.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open("shopify.json"))
+          print(json.dumps({k:d.get(k) for k in ("ok","phase","attempted","synced","failed","configured","error","storefrontContract")}, ensure_ascii=False, indent=2))
+          PY
+
+          echo "=== NEWFIND RETRY ==="
+          curl -sSf --max-time 120 -H "Authorization: Bearer $(token)" "$BASE/api/cron/newfind-retry" > newfind.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open("newfind.json"))
+          print(json.dumps({k:d.get(k) for k in ("ok","processed","sent","acknowledged","failed","pending","error")}, ensure_ascii=False, indent=2))
           PY
 
           echo "=== PRODUCTION PUBLISHED COUNT ==="
