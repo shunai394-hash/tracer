@@ -50,7 +50,7 @@ jobs:
           echo "=== Sync gate-passed listings to Shopify ==="
           call_get api/cron/shopify-publish 300 shopify-publish.json || true
           echo "=== Drain NEWFIND deliveries and rescue gate-passed listings ==="
-          for pass in $(seq 1 10); do
-            echo "=== NEWFIND retry pass $pass/10 ==="
+          for pass in $(seq 1 20); do
+            echo "=== NEWFIND retry pass $pass/20 ==="
             call_get api/cron/newfind-retry 65 "newfind-retry-$pass.json" || true
           done
