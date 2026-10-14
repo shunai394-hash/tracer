@@ -7,7 +7,7 @@ const checks = [
   ["stock refresh uses exact supplier variant", /fetchCJVariantStock\(String\(row\.supplier_variant_id\)\)/],
   ["shipping refresh requests Japan freight for exact supplier variant", /calculateCJFreight\(String\(row\.supplier_variant_id\), \{ startCountryCode: "CN", endCountryCode: "JP", quantity: 1 \}\)/],
   ["unknown freight uses a configurable JPY reserve instead of blocking the candidate", /TRACER_CJ_UNKNOWN_SHIPPING_RESERVE_JPY[\s\S]{0,1200}evidence_type: "configurable_conservative_reserve"/],
-  ["shipping reserve is included in landed-cost retail price recalculation", /const shippingReserveApplied = [\s\S]{0,1200}const calculatedRetailPriceJpy = [\s\S]{0,300}const sellingPriceJpy = shippingReserveApplied/],
+  ["shipping reserve is included in landed-cost retail price recalculation", /const shippingEstimated = shippingReserveApplied[\s\S]{0,1500}const calculatedRetailPriceJpy = [\s\S]{0,300}const sellingPriceJpy = shippingEstimated/],
   ["shipping estimate is explicitly recorded as estimated evidence", /estimated: true[\s\S]{0,200}checked_at: new Date\(\)\.toISOString\(\)/],
   ["shipping reserve policy is written to remediation metadata", /shipping_estimate_applied: true[\s\S]{0,200}shipping_estimate_policy: "TRACER_CJ_UNKNOWN_SHIPPING_RESERVE_JPY"/],
   ["estimated shipping status is persisted for the publication gate", /shipping_status: shippingEstimated \? "estimated" : "verified"/],
