@@ -10,7 +10,10 @@ const includes = (source, fragment, label = fragment) => assert.ok(source.includ
 const excludes = (source, fragment, label = fragment) => assert.ok(!source.includes(fragment), `unexpected contract: ${label}`);
 
 includes(migration, "stage_cj_supplier_first_catalog_draft");
-includes(migration, "v_product.source_name <> 'cj' or v_variant.source_name <> 'cj'");
+includes(migration, "v_product.source_name is distinct from 'cj'");
+includes(migration, "v_variant.source_name is distinct from 'cj'");
+excludes(migration, "v_product.source_name <> 'cj'");
+excludes(migration, "v_variant.source_name <> 'cj'");
 includes(migration, "supplier_evidence_stale");
 includes(migration, "Only supplier fetch timestamps prove freshness");
 includes(migration, "v_product.fetched_at is null");
