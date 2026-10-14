@@ -7,6 +7,7 @@ const route = await readFile(new URL("../app/api/cron/sales-test-publication/rou
 const workflow = await readFile(new URL("../.github/workflows/tracer-shopify-auth-check.yml", import.meta.url), "utf8");
 assert.ok(identity.includes('row.verification_status === "verified"'), "native CJ identity requires verified supplier evidence");
 assert.ok(identity.includes('row.shipping_status === "verified" || estimatedShipping'), "native CJ identity accepts verified freight or a documented estimate reserve");
+assert.ok(identity.includes("Number(row.cost) >= 0"), "zero-cost supplier items remain eligible when positive margin and all other evidence checks pass");
 assert.ok(source.includes('options.allowNativeCjIdentity === true && isNativeCjSupplierListing(candidate)'), "native CJ identity must be explicitly routed through the strict supplier-evidence helper");
 assert.ok(source.includes('if (!nativeCjSupplyIdentity && (num(listing.identity_confidence) === null'), "generic identity confidence must not block verified native CJ identity");
 assert.ok(source.includes('identityConfidence: nativeCjSupplyIdentity ? 1 : num(listing.identity_confidence)'), "native CJ evidence must be passed to the sales-test gate");
