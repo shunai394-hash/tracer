@@ -27,9 +27,10 @@ function tracerSiteOrigin(): string | null {
   }
 }
 
-async function resolveLiveTracerUrl(slug: string | null): Promise<string | null> {
+async function resolveLiveTracerUrl(slug: string | null): Promise<{ url: string | null; reason: string | null }> {
   const origin = tracerSiteOrigin();
-  if (!origin || !slug) return null;
+  if (!origin) return { url: null, reason: "tracer_sales_url_origin_missing" };
+  if (!slug) return { url: null, reason: "tracer_sales_url_slug_missing" };
   const url = `${origin}/shop/${encodeURIComponent(slug)}`;
   try {
     const response = await fetch(url, {
@@ -39,9 +40,14 @@ async function resolveLiveTracerUrl(slug: string | null): Promise<string | null>
       redirect: "follow",
       signal: AbortSignal.timeout(10_000),
     });
-    return response.ok ? url : null;
-  } catch {
-    return null;
+    return response.ok
+      ? { url, reason: null }
+      : { url: null, reason: `tracer_sales_url_http_${response.status}` };
+  } catch (error) {
+    const reason = error instanceof Error && error.name === "TimeoutError"
+      ? "tracer_sales_url_timeout"
+      : "tracer_sales_url_fetch_failed";
+    return { url: null, reason };
   }
 }
 
@@ -223,12 +229,13 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     brand = typeof bestseller?.brand === "string" ? bestseller.brand : null;
   }
 
-  const tracerUrl = await resolveLiveTracerUrl(typeof listing.slug === "string" ? listing.slug : null);
+  const tracerResolution = await resolveLiveTracerUrl(typeof listing.slug === "string" ? listing.slug : null);
+  const tracerUrl = tracerResolution.url;
   // NEWFIND validates that sales links originate from TRACER. Only publish a
   // TRACER URL after the actual product page passes its liveness check.
   const productUrl = tracerUrl;
   if (!productUrl) {
-    const reason = "tracer_sales_url_not_live";
+    const reason = tracerResolution.reason ?? "tracer_sales_url_not_live";
     await supabase.from("newfind_promotion_deliveries").update({ status: "failed", last_error: reason, last_attempt_at: new Date().toISOString(), lease_until: null, updated_at: new Date().toISOString() }).eq("listing_id", listingId).eq("status", "sending").eq("event_id", sendEventId);
     return { configured: true, sent: false, eventId: sendEventId, status: null, ackStatus: null, detail: reason };
   }
