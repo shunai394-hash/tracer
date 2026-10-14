@@ -1,4 +1,5 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/wooden door.*christmas door frame decoration|christmas door frame decoration.*santa claus/i, "クリスマス ドアフレーム飾り"],
   [/office 8.inch wind.driven fan|8.inch wind.driven fan/i, "卓上 8インチ送風ファン"],
   [/cup warmer pad.*3 temperatures adjustable|cup warmer pad.*electric heater mug pad/i, "USB給電 カップウォーマー 3段階温度調節"],
   [/diamond grinding head.*electric grinding accessories|grinding head electric grinding accessories/i, "ダイヤモンド研磨ヘッド 工具用アクセサリー"],
@@ -201,6 +202,7 @@ export function localizeProductDescription(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const source = value.normalize("NFKC");
   const rules: Array<[RegExp, string]> = [
+    [/wooden door.*christmas door frame decoration|christmas door frame decoration.*santa claus/i, "クリスマス向けのドアフレーム飾りです。寸法・素材・設置方法・付属品は販売元の仕様をご確認ください。"],
     [/office 8.inch wind.driven fan|8.inch wind.driven fan/i, "デスクや卓上で使う8インチ送風ファンです。寸法・風量・給電方式・安全上の注意は販売元の仕様をご確認ください。"],
     [/cup warmer pad.*3 temperatures adjustable|cup warmer pad.*electric heater mug pad/i, "カップを保温するUSB給電式ウォーマーです。対応カップ・温度設定・給電条件は販売元の仕様をご確認ください。"],
     [/diamond grinding head.*electric grinding accessories|grinding head electric grinding accessories/i, "電動工具に取り付けて使うダイヤモンド研磨ヘッドです。軸径・対応工具・使用条件は販売元の仕様をご確認ください。"],
