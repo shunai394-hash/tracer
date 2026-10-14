@@ -35,12 +35,12 @@ async function productById(id: string): Promise<Product | null> {
 }
 function chosen(p: Product, variantId?: string): Variant | null {
   const list = p.variants.nodes.filter(v => v.sku?.trim() &&
-    num(meta(v.metafields.nodes, "unit_cost")) !== null && num(meta(v.metafields.nodes, "shipping_cost")) !== null);
+    num(meta(v.metafields.nodes, "unit_cost")) !== null && num(meta(v.metafields.nodes, "shipping_cost")) !== null && Boolean(meta(v.metafields.nodes, "currency")?.trim()));
   return variantId ? list.find(v => v.id === variantId) ?? null : list.length === 1 ? list[0] : null;
 }
 function asProduct(p: Product, v: Variant): SupplierProduct {
   return { supplierProductId: p.id, supplierName: NAME, title: p.title,
-    currency: meta(v.metafields.nodes, "currency") ?? "JPY",
+    currency: meta(v.metafields.nodes, "currency")!,
     unitCost: num(meta(v.metafields.nodes, "unit_cost")), shippingCost: num(meta(v.metafields.nodes, "shipping_cost")),
     available: v.inventoryQuantity > 0, orderable: false, trackingAvailable: false };
 }
@@ -62,7 +62,7 @@ export const shopifyCollectiveSupplierAdapter: TracerSupplierAdapter = {
   async getVariant(pid: string, vid: string): Promise<SupplierVariant | null> {
     const x = await get(pid, vid); if (!x) return null;
     return { supplierProductId: pid, supplierVariantId: vid, sku: x.v.sku, title: x.v.title,
-      price: num(meta(x.v.metafields.nodes, "unit_cost")), currency: meta(x.v.metafields.nodes, "currency") ?? "JPY",
+      price: num(meta(x.v.metafields.nodes, "unit_cost")), currency: meta(x.v.metafields.nodes, "currency"),
       inventory: x.v.inventoryQuantity, orderable: false };
   },
   async getInventory(pid: string, vid?: string): Promise<SupplierInventory | null> {
