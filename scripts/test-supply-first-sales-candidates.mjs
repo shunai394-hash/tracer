@@ -28,6 +28,7 @@ assert.match(selector, /options\.allowNativeCjIdentity\s*===\s*true/);
 // Demand/opportunity intelligence is ranking-only, not a listing prerequisite.
 assert.match(selector, /const intelligence = intelligenceByProduct.get\(productId\) \?\?/);
 assert.doesNotMatch(selector, /if \(!intelligence\) reasons\.push\("opportunity_intelligence_missing"\)/);
+assert.doesNotMatch(selector, /sellability_not_ready|intelligence_filter_not_pass|intelligence_profit_not_ok|demand_evidence_missing|search_fit_evidence_missing|market_gap_evidence_missing|intelligence_confidence_low/, "AI demand scores must not suppress an otherwise profitable and fulfilment-ready product");
 assert.match(selector, /isNativeCjSupplierListing\(candidate\)/);
 assert.match(identity, /row\.verification_status === "verified"/);
 assert.match(identity, /row\.shipping_status === "verified"/);
