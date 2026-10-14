@@ -8,6 +8,7 @@ import {
   isSupplierDryRunEnabled,
 } from "@/lib/config/env";
 import { getSupplierAdapter, getSupplierCapabilities } from "@/lib/procurement/registry";
+import { isNativeCjSupplierListing } from "@/lib/catalog/canonical-supplier-identity";
 import type { SupplierOrderInput } from "@/lib/procurement/types";
 import { initializeProcurement } from "@/lib/procurement/init";
 import { persistOrderStateUpdate } from "@/lib/ordering/status-write";
@@ -129,7 +130,7 @@ export async function executeSupplierPurchaseOrder(
     }
     const { data: identityRows, error: identityError } = await supabase
       .from("supplier_listings")
-      .select("product_id,identity_status")
+      .select("*")
       .eq("supplier", "cj")
       .eq("supplier_product_id", externalProductId)
       .eq("supplier_variant_id", externalVariantId)
@@ -140,7 +141,10 @@ export async function executeSupplierPurchaseOrder(
         supplierOrderId: null, reason: "supplier_identity_lookup_failed", gate: null,
       };
     }
-    if (identityRows?.length !== 1 || identityRows?.[0]?.identity_status !== "linked" || String(identityRows?.[0]?.product_id ?? "") !== canonicalProductId) {
+    const exactListing = identityRows?.length === 1 ? identityRows[0] as Record<string, unknown> : null;
+    const identityIsVerified = exactListing?.identity_status === "linked"
+      || Boolean(exactListing && isNativeCjSupplierListing(exactListing));
+    if (!exactListing || !identityIsVerified || String(exactListing.product_id ?? "") !== canonicalProductId) {
       return {
         purchaseOrderId, supplierName, attempted: false, succeeded: false,
         supplierOrderId: null, reason: "supplier_identity_unlinked_or_ambiguous", gate: null,
