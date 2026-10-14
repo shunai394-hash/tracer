@@ -110,12 +110,19 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const sourceTitle = (typeof listing?.title === "string" && listing.title.trim()
       ? listing.title
       : typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
-    // A concrete supplier title must not mask a generic or workflow-derived
-    // product-master title (for example "トレンド・seeded_dueアイテム").
+    // Prefer a real, source-grounded Japanese supplier title when an older
+    // product-intelligence row contains only a generic workflow/category label.
+    // This does not waive supplier, shipping, identity, profit, or orderability gates.
     const masterTitle = (typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
-    if (base && !masterTitle) reasons.push("product_master_title_missing");
-    else if (base && !isPublishableCatalogTitle(masterTitle)) reasons.push("product_master_title_not_publishable");
     const sourceMetadata = base?.metadata && typeof base.metadata === 'object' && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
+    const localizedSourceTitle = localizeProductTitle(sourceTitle, metadataCategory(base?.metadata));
+    const publishableMasterTitle = isPublishableCatalogTitle(masterTitle)
+      ? masterTitle
+      : localizedSourceTitle && isPublishableCatalogTitle(localizedSourceTitle)
+        ? localizedSourceTitle
+        : masterTitle;
+    if (base && !publishableMasterTitle) reasons.push("product_master_title_missing");
+    else if (base && !isPublishableCatalogTitle(publishableMasterTitle)) reasons.push("product_master_title_not_publishable");
     const womenPriority = womenProductPriority({ title: sourceTitle, category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
     if (base && !womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
     if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
@@ -123,7 +130,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (reasons.length > 0) { rejected.push({ productId, reasons, title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
     if (!intelligence || !base || !listing) { rejected.push({ productId, reasons: ["required_supply_intelligence_missing"], title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
     if (!validHttpUrl(base.image_url)) reasons.push("image_url_invalid");
-    const localizedTitle = localizeProductTitle(sourceTitle, metadataCategory(base.metadata));
+    const localizedTitle = localizedSourceTitle;
     if (!isJapaneseProductTitle(localizedTitle)) reasons.push("japanese_title_unavailable");
     else if (!isPublishableCatalogTitle(localizedTitle)) reasons.push("catalog_title_not_publishable");
 

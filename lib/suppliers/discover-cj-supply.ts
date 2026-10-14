@@ -80,17 +80,25 @@ async function readCatalogCursor(db: ReturnType<typeof createSupabaseAdminClient
 
 async function writeCatalogCursor(
   db: ReturnType<typeof createSupabaseAdminClient>,
-  cursor: CatalogCursor & { verified: number; rejected: number },
+  cursor: CatalogCursor & { verified: number; rejected: number; rejectedReasons: Record<string, number>; quotaBlocked: boolean },
 ): Promise<void> {
   const now = new Date().toISOString();
+  // A persisted cursor is not proof that discovery succeeded. Reflect a
+  // quota-blocked or all-rejected run in cron_runs so monitoring cannot
+  // mistake an empty discovery cycle for a healthy run.
+  const status = cursor.quotaBlocked
+    ? (cursor.verified > 0 ? "partial" : "failed")
+    : cursor.rejected > 0
+      ? (cursor.verified > 0 ? "partial" : "failed")
+      : "succeeded";
   const { error } = await db.from("cron_runs").insert({
     job_name: CATALOG_CURSOR_JOB,
-    status: "succeeded",
+    status,
     started_at: now,
     finished_at: now,
     processed: cursor.verified,
     failed: cursor.rejected,
-    metadata: { queryIndex: cursor.queryIndex, page: cursor.page },
+    metadata: { queryIndex: cursor.queryIndex, page: cursor.page, rejectedReasons: cursor.rejectedReasons, quotaBlocked: cursor.quotaBlocked },
   });
   if (error) console.error("[supply-first] catalog cursor write failed", error.message);
 }
@@ -124,8 +132,16 @@ async function markVerification(
     verification_attempts: patch.status === "verified" ? 0 : attempts + 1,
     last_verified_at: patch.status === "verified" ? now.toISOString() : undefined,
     next_verification_at: new Date(now.getTime() + delayMs).toISOString(),
-    shipping_checked_at: patch.shippingStatus ? now.toISOString() : undefined,
-    inventory_checked_at: now.toISOString(),
+    // These timestamps are freshness evidence, not attempt timestamps. A retryable
+    // API failure must not make stale inventory or freight look recently verified.
+    shipping_checked_at:
+      patch.shippingStatus === "verified" || patch.shippingStatus === "unavailable"
+        ? now.toISOString()
+        : undefined,
+    inventory_checked_at:
+      patch.status === "verified" || patch.status === "unavailable"
+        ? now.toISOString()
+        : undefined,
   }).eq("id", id);
   // A failed write would leave the row at the head of the due queue and
   // stall traversal, so surface it instead of dropping it.
@@ -240,7 +256,7 @@ export async function discoverAndCreateCjSupply(
   // verified variants are valid publication candidates and are live rechecked.
   const { data: seededRows, error: seededError } = await db
     .from("supplier_listings")
-    .select("id,product_id,title,metadata,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,next_verification_at,verification_attempts")
+    .select("id,product_id,title,metadata,supplier_product_id,supplier_variant_id,cost,shipping_cost,currency,ship_to,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,shipping_checked_at,inventory_checked_at,fetched_at,next_verification_at,verification_attempts")
     .eq("supplier", "cj")
     .not("supplier_product_id", "is", null)
     .not("supplier_variant_id", "is", null)
@@ -280,6 +296,16 @@ export async function discoverAndCreateCjSupply(
     supplierListingId: String(row.id),
     existingProductId: row.product_id ? String(row.product_id) : null,
     attempts: Number(row.verification_attempts ?? 0),
+    shippingCost: Number(row.shipping_cost),
+    currency: String(row.currency ?? "USD"),
+    shipTo: String(row.ship_to ?? ""),
+    shippingStatus: String(row.shipping_status ?? "unknown"),
+    shippingCheckedAt: String(row.shipping_checked_at ?? ""),
+    inventoryCheckedAt: String(row.inventory_checked_at ?? ""),
+    fetchedAt: String(row.fetched_at ?? ""),
+    metadata: row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+      ? row.metadata as Record<string, unknown>
+      : {},
   }));
 
   // Reserve most of the invocation budget for NEW catalog discovery. A
@@ -316,9 +342,17 @@ export async function discoverAndCreateCjSupply(
       const cachedTitle = String(cachedProduct?.title ?? "").trim();
       const cachedImageUrl = String(cachedProduct?.image_url ?? "").trim();
       const cachedPrice = Number(cachedProduct?.price);
+      const listingImage = typeof seededCandidate.metadata.image_url === "string"
+        ? seededCandidate.metadata.image_url.trim()
+        : "";
+      const listingProductId = String(seededCandidate.metadata.supplier_product_id ?? "");
+      const listingVariantId = String(seededCandidate.metadata.supplier_variant_id ?? "");
+      const listingIdentityMatches = listingProductId === candidate.id && listingVariantId === candidate.variantId;
       let detail = cachedTitle && cachedImageUrl
         ? { title: cachedTitle, imageUrl: cachedImageUrl, price: Number.isFinite(cachedPrice) ? cachedPrice : null }
-        : await getCJProductDetail(candidate.id);
+        : listingIdentityMatches && listingImage && seededCandidate.seededTitle
+          ? { title: seededCandidate.seededTitle, imageUrl: listingImage, price: Number.isFinite(seededCandidate.cost) ? seededCandidate.cost : null }
+          : await getCJProductDetail(candidate.id);
 
       // Some CJ product-query responses are empty even though the product is
       // still discoverable through listV2. Do not discard an otherwise
@@ -363,7 +397,13 @@ export async function discoverAndCreateCjSupply(
       // and live Japan freight consume CJ requests for seeded rows.
       // Always re-check stock live: a persisted count may be days old and a
       // Every supply candidate must reflect current CJ stock.
-      const stock = await fetchCJVariantStock(candidate.variantId);
+      const inventoryAge = Date.now() - Date.parse(seededCandidate.inventoryCheckedAt);
+      const hasFreshInventory = seededCandidate.inventoryConfirmed
+        && Number.isFinite(inventoryAge) && inventoryAge >= 0 && inventoryAge <= 24 * 60 * 60 * 1000
+        && Number.isFinite(seededCandidate.inventory) && seededCandidate.inventory > 0;
+      const stock = hasFreshInventory
+        ? seededCandidate.inventory
+        : await fetchCJVariantStock(candidate.variantId);
 
       if (stock === null || stock <= 0) {
         rejected++;
@@ -382,7 +422,14 @@ export async function discoverAndCreateCjSupply(
         });
         continue;
       }
-      const freight = await calculateCJFreight(candidate.variantId, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1, zip: "1000001" });
+      const shippingAge = Date.now() - Date.parse(seededCandidate.shippingCheckedAt);
+      const hasFreshJapanFreight = seededCandidate.shippingStatus === "verified"
+        && seededCandidate.shipTo === "JP"
+        && Number.isFinite(shippingAge) && shippingAge >= 0 && shippingAge <= 24 * 60 * 60 * 1000
+        && Number.isFinite(seededCandidate.shippingCost) && seededCandidate.shippingCost > 0;
+      const freight = hasFreshJapanFreight
+        ? seededCandidate.shippingCost
+        : await calculateCJFreight(candidate.variantId, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1, zip: "1000001" });
       if (freight === null || freight <= 0) {
         rejected++;
         if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "unavailable", shippingStatus: "unavailable", error: "jp_freight_unavailable", attempts: seededCandidate.attempts });
@@ -417,8 +464,8 @@ export async function discoverAndCreateCjSupply(
         : await db.from("products").select("id").eq("identity_key", sourceRef).limit(1).maybeSingle();
       if (existingProduct.error) throw new Error(existingProduct.error.message);
       const productInsert = existingProduct.data?.id
-        ? await db.from("products").update({ canonical_name: detail.title }).eq("id", existingProduct.data.id).select("id").single()
-        : await db.from("products").insert({ canonical_name: detail.title, identity_key: sourceRef }).select("id").single();
+        ? await db.from("products").update({ canonical_name: displayTitle }).eq("id", existingProduct.data.id).select("id").single()
+        : await db.from("products").insert({ canonical_name: displayTitle, identity_key: sourceRef }).select("id").single();
       if (productInsert.error) throw new Error(productInsert.error.message);
       const productId = String(productInsert.data.id);
       const supplierInsert = await upsertSupplierListing(db, {
@@ -645,14 +692,14 @@ export async function discoverAndCreateCjSupply(
         const productInsert = existingProduct.data?.id
           ? await db
               .from("products")
-              .update({ canonical_name: detail.title })
+              .update({ canonical_name: displayTitle })
               .eq("id", existingProduct.data.id)
               .select("id")
               .single()
           : await db
               .from("products")
               .insert({
-                canonical_name: detail.title,
+                canonical_name: displayTitle,
                 identity_key: identityKey,
               })
               .select("id")
@@ -783,7 +830,12 @@ export async function discoverAndCreateCjSupply(
         : { queryIndex, page: page + 1 });
     }
   }
-  await writeCatalogCursor(db, { queryIndex, page, verified, rejected });
+  const rejectedReasons = items.reduce<Record<string, number>>((counts, item) => {
+    const stage = typeof item.rejectedStage === "string" ? item.rejectedStage : null;
+    if (stage) counts[stage] = (counts[stage] ?? 0) + 1;
+    return counts;
+  }, {});
+  await writeCatalogCursor(db, { queryIndex, page, verified, rejected, rejectedReasons, quotaBlocked: cjQuotaBlocked });
 
   return { discovered, published: 0, verified, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
 }
