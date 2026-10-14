@@ -213,10 +213,11 @@ export async function GET(request: Request) {
     // exact product+variant, JP shipping, current stock, API orderability,
     // tracking, Japanese content, image, and positive contribution profit pass.
     // Keep live writes deliberately small; repeated patrols advance the queue.
-    const allowNativeCjIdentity = dryRun || process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true";
+    // Native CJ catalog items are eligible for the strict evidence gate on live runs;
+    // do not require a separate feature flag unrelated to supplier evidence.
     const supplySelected = await selectAndPublishSupplySalesTests(candidateProductIds, dryRun ? 50 : 3, {
       dryRun,
-      allowNativeCjIdentity,
+      allowNativeCjIdentity: true,
     });
     if (dryRun) {
       return NextResponse.json({
@@ -225,7 +226,7 @@ export async function GET(request: Request) {
         noWrites: true,
         mode: "canonical_supply_fast_path",
         nativeCjIdentityUsesStrictEvidenceGate: true,
-        featureEnabledForLiveRuns: process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true",
+        nativeCjIdentityUsesStrictEvidenceGate: true,
         supplySelected,
       }, { headers: { "Cache-Control": "no-store" } });
     }
