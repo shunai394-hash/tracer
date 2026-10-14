@@ -1,7 +1,7 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { persistCjSupplyIntelligence, resolveMarketplaceIdentity } from "@/lib/intelligence/persist-cj-supply-intelligence";
-import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
+import { calculateCJFreight, fetchCJProductVariants, fetchCJVariantByVid, fetchCJVariantStock, getCJProductDetail } from "@/lib/sources/cj";
 import { isCJQuotaCircuitBlockingError, isCJQuotaExhaustedError } from "@/lib/sources/cj/client";
 import { getCJQuotaCooldownUntil } from "@/lib/sources/cj/rate-limit-policy";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
@@ -161,16 +161,109 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       if (!canonicalProductId) { await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), last_identity_reverify_at: new Date().toISOString() } }).eq("id", supplierListingId); return { kind: "no_match" as const, supplierListingId }; }
       const { data: intelligence } = await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle();
       const metadata = record(intelligence?.metadata);
-      const cost = num(row.cost); const shippingCost = num(row.shipping_cost); const inventory = num(row.inventory);
+      let cost = num(row.cost);
+      let shippingCost = num(row.shipping_cost);
+      let inventory = num(row.inventory);
+      let imageUrl = typeof intelligence?.image_url === "string" && /^https?:\\/\\//i.test(intelligence.image_url.trim()) ? intelligence.image_url.trim() : "";
+      if (!imageUrl) {
+        const listingImage = [listingMetadata.image_url, listingMetadata.product_image, listingMetadata.productImage, listingMetadata.image].find((value) => typeof value === "string" && /^https?:\\/\\//i.test(value.trim()));
+        imageUrl = typeof listingImage === "string" ? listingImage.trim() : "";
+      }
+
+      // Recover missing evidence from the exact CJ product/variant instead of
+      // recording a generic hold and waiting for the next patrol.
+      const currency = String(row.currency ?? "").trim().toUpperCase();
+      const missingCost = cost === null;
+      const missingShipping = shippingCost === null;
+      const missingInventory = inventory === null;
+      const missingImage = !imageUrl;
+      let variantDetails: Awaited<ReturnType<typeof fetchCJVariantByVid>> = null;
+      let productDetails: Awaited<ReturnType<typeof getCJProductDetail>> = null;
+      const refreshErrors: string[] = [];
+
+      if (missingCost && currency === "USD") {
+        try {
+          variantDetails = await fetchCJVariantByVid(String(row.supplier_variant_id));
+          const fetchedCost = num(variantDetails?.sellPrice);
+          if (fetchedCost !== null && fetchedCost > 0) cost = fetchedCost;
+        } catch (error) {
+          if (isCJQuotaCircuitBlockingError(error)) throw error;
+          refreshErrors.push("cost:" + (error instanceof Error ? error.message : String(error)));
+        }
+      }
+      if (missingShipping && currency === "USD") {
+        try {
+          const fetchedShipping = await calculateCJFreight(String(row.supplier_variant_id), { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 });
+          if (fetchedShipping !== null && Number.isFinite(fetchedShipping) && fetchedShipping > 0) shippingCost = fetchedShipping;
+        } catch (error) {
+          if (isCJQuotaCircuitBlockingError(error)) throw error;
+          refreshErrors.push("shipping:" + (error instanceof Error ? error.message : String(error)));
+        }
+      }
+      if (missingInventory) {
+        try {
+          const fetchedInventory = await fetchCJVariantStock(String(row.supplier_variant_id));
+          if (fetchedInventory !== null && Number.isFinite(fetchedInventory) && fetchedInventory >= 0) inventory = fetchedInventory;
+        } catch (error) {
+          if (isCJQuotaCircuitBlockingError(error)) throw error;
+          refreshErrors.push("inventory:" + (error instanceof Error ? error.message : String(error)));
+        }
+      }
+      if (missingImage) {
+        try {
+          productDetails = await getCJProductDetail(String(row.supplier_product_id));
+          if (typeof productDetails?.imageUrl === "string" && /^https?:\\/\\//i.test(productDetails.imageUrl.trim())) imageUrl = productDetails.imageUrl.trim();
+        } catch (error) {
+          if (isCJQuotaCircuitBlockingError(error)) throw error;
+          refreshErrors.push("image:" + (error instanceof Error ? error.message : String(error)));
+        }
+      }
+
       const storedFxRate = num(metadata.fx_rate);
-      const observedFx = storedFxRate === null && String(row.currency ?? "").toUpperCase() === "USD" ? await getObservedUsdToJpyRate() : null;
+      const observedFx = storedFxRate === null && currency === "USD" ? await getObservedUsdToJpyRate() : null;
       const fxRate = storedFxRate ?? observedFx?.rate ?? null;
       const storedSellingPriceJpy = num(metadata.selling_price_jpy);
       const landedCostJpy = cost !== null && shippingCost !== null && fxRate !== null ? (cost + shippingCost) * fxRate : null;
       const sellingPriceJpy = storedSellingPriceJpy ?? (landedCostJpy !== null && Number.isFinite(landedCostJpy) && landedCostJpy >= 0 ? Math.ceil(Math.max(1980, landedCostJpy * 2.5) / 100) * 100 : null);
-      const listingImage = [listingMetadata.image_url, listingMetadata.product_image, listingMetadata.productImage, listingMetadata.image].find((value) => typeof value === "string" && /^https?:\/\//i.test(value.trim()));
-      const imageUrl = typeof intelligence?.image_url === "string" && /^https?:\/\//i.test(intelligence.image_url.trim()) ? intelligence.image_url.trim() : typeof listingImage === "string" ? listingImage.trim() : "";
-      if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) { const checkedAt = new Date(); await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode, variant_barcode_raw: variantBarcode } : {}), ...supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null), last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + MISSING_DATA_RETRY_MS).toISOString(), identity_hold_reason: "missing_economics_or_image" } }).eq("id", supplierListingId); return { kind: "missing_economics" as const, supplierListingId }; }
+
+      const checkedAt = new Date();
+      const nextListingMetadata = {
+        ...listingMetadata,
+        ...(variantBarcode ? { variant_barcode: variantBarcode, variant_barcode_raw: variantBarcode } : {}),
+        ...(imageUrl ? { image_url: imageUrl } : {}),
+        ...(cost !== null ? { recovered_cost_at: missingCost ? checkedAt.toISOString() : listingMetadata.recovered_cost_at } : {}),
+        ...(shippingCost !== null ? { recovered_shipping_at: missingShipping ? checkedAt.toISOString() : listingMetadata.recovered_shipping_at } : {}),
+        ...(inventory !== null ? { recovered_inventory_at: missingInventory ? checkedAt.toISOString() : listingMetadata.recovered_inventory_at } : {}),
+        ...(productDetails?.imageUrl ? { recovered_image_source: "cj_product_detail" } : {}),
+        last_identity_reverify_at: checkedAt.toISOString(),
+      };
+      const refreshedFields: Record<string, unknown> = { metadata: nextListingMetadata };
+      if (missingCost && cost !== null) refreshedFields.cost = cost;
+      if (missingShipping && shippingCost !== null) refreshedFields.shipping_cost = shippingCost;
+      if (missingInventory && inventory !== null) refreshedFields.inventory = inventory;
+      const { error: evidenceWriteError } = await db.from("supplier_listings").update(refreshedFields).eq("id", supplierListingId);
+      if (evidenceWriteError) throw new Error("CJ recovered evidence persistence failed: " + evidenceWriteError.message);
+
+      const missingFields = [
+        cost === null ? "cost" : null,
+        shippingCost === null ? "shipping" : null,
+        inventory === null ? "inventory" : null,
+        fxRate === null ? "fx_rate" : null,
+        sellingPriceJpy === null ? "selling_price_jpy" : null,
+        !imageUrl ? "image" : null,
+      ].filter((field): field is string => field !== null);
+      if (missingFields.length > 0) {
+        await db.from("supplier_listings").update({
+          metadata: {
+            ...nextListingMetadata,
+            missing_supply_evidence: missingFields,
+            missing_supply_evidence_errors: refreshErrors.slice(0, 5),
+            next_identity_reverify_at: new Date(checkedAt.getTime() + MISSING_DATA_RETRY_MS).toISOString(),
+            identity_hold_reason: "missing_economics_or_image",
+          },
+        }).eq("id", supplierListingId);
+        return { kind: "missing_economics" as const, supplierListingId };
+      }
       await persistCjSupplyIntelligence({ productId: identity?.productId ?? String(row.product_id), title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
       if (!identity) {
         const { data: latest } = await db.from("supplier_listings").select("metadata").eq("id", supplierListingId).maybeSingle();
