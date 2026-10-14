@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, access } from "node:fs/promises";
 
-const route = await readFile(new URL("../app/api/intelligence/orosy-search/route.ts", import.meta.url), "utf8");
-assert.ok(route.includes('import { requireAutomationAuth } from "@/lib/security/cron-auth"'), "internal Orosy search must use the shared automation auth guard");
-assert.ok(route.indexOf("await requireAutomationAuth(request)") < route.indexOf("request.nextUrl.searchParams.get"), "authenticate before processing or searching a wholesale query");
-assert.ok(route.includes("if (authError) return authError"), "reject unauthorized requests before supplier API use");
-assert.ok(route.includes("searchOrosyProducts(query)"), "keep the existing Orosy search behavior after authentication");
-console.log("Orosy search auth policy: 4 assertions passed");
+const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+const procurementInit = await readFile(new URL("../lib/procurement/init.ts", import.meta.url), "utf8");
+
+assert.ok(!vercel.crons.some((cron) => cron.path === "/api/cron/orosy-bulk-import"), "Orosy import cron must be removed");
+assert.ok(!procurementInit.includes("orosySupplierAdapter"), "Orosy procurement adapter must not be registered");
+
+for (const path of [
+  "../app/api/cron/orosy-bulk-import/route.ts",
+  "../app/api/intelligence/orosy-search/route.ts",
+  "../app/api/intelligence/orosy-listing-inspect/route.ts",
+]) {
+  await assert.rejects(access(new URL(path, import.meta.url)), { code: "ENOENT" }, `Orosy endpoint must be removed: ${path}`);
+}
+console.log("Orosy ingress removal policy: 5 assertions passed");
