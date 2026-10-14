@@ -224,8 +224,19 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
 
   if (error) throw new Error(error.message);
   if (!data) return null;
-  const listings = (await loadLiveListings([data as Record<string, unknown>])).filter((listing) => hasJapaneseText(listing.title) && isPublishableCatalogTitle(listing.title));
-  return listings[0] ?? null;
+
+  const listing = mapListing(data as Record<string, unknown>);
+  if (!listing.supplierListingId || !listing.shopifyProductId || !listing.shopifyVariantId || !listing.shopifyHandle) return null;
+  if (!/^gid:\/\/shopify\/ProductVariant\/\d+$/.test(listing.shopifyVariantId)) return null;
+  if (!isPublishableCatalogTitle(listing.title) || !isPublishableCatalogDescription(listing.description) || !hasJapaneseText(listing.title)) return null;
+
+  // The public product page is a landing page that sends customers to the live
+  // Shopify product. Do not make the URL disappear because a separate live-stock
+  // batch for the internal TRACER cart failed; Shopify itself remains the
+  // purchase-time inventory source of truth.
+  const supplierStatuses = await getPublishableSupplierListingStatuses([listing.supplierListingId]);
+  if (!supplierStatuses.has(listing.supplierListingId)) return null;
+  return listing;
 }
 
 export async function recordShopFunnelEvent(args: {

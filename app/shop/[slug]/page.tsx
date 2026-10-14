@@ -2,6 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { AddToCartButton } from "@/components/add-to-cart-button";
+import { getShopifyConfig } from "@/lib/config/env";
 import { getShopListingBySlug, recordShopFunnelEvent } from "@/lib/shop/store";
 import { listEvidenceForProduct } from "@/lib/market/evidence-ledger";
 import { formatMoney } from "@/lib/intelligence/format-display";
@@ -60,6 +61,12 @@ export default async function ShopProductPage({
   }
 
   if (!listing) notFound();
+
+  const rawShopifyDomain = getShopifyConfig().storeDomain.trim();
+  const shopifyDomain = rawShopifyDomain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const shopifyProductUrl = listing.shopifySyncStatus === "synced" && listing.shopifyHandle && shopifyDomain
+    ? `https://${shopifyDomain}/products/${encodeURIComponent(listing.shopifyHandle)}`
+    : null;
 
   const productJsonLd = {
     "@context": "https://schema.org",
@@ -153,17 +160,28 @@ export default async function ShopProductPage({
             </div>
 
             <div className="mt-5">
-              <AddToCartButton
-                listingId={listing.id}
-                slug={listing.slug}
-                title={listing.title}
-                unitPrice={listing.sellingPrice}
-                currency={listing.currency}
-                imageUrl={listing.imageUrl}
-              />
+              {shopifyProductUrl ? (
+                <a
+                  href={shopifyProductUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex w-full items-center justify-center rounded-sm bg-cyan-300 px-5 py-4 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-100"
+                >
+                  Shopifyで購入する
+                </a>
+              ) : (
+                <AddToCartButton
+                  listingId={listing.id}
+                  slug={listing.slug}
+                  title={listing.title}
+                  unitPrice={listing.sellingPrice}
+                  currency={listing.currency}
+                  imageUrl={listing.imageUrl}
+                />
+              )}
             </div>
             <p className="mt-3 text-center text-[11px] leading-5 text-zinc-600">
-              購入手続きへ進む前に、カート内容と配送先をご確認ください。
+              在庫と購入手続きは販売先の最新情報をご確認ください。
             </p>
           </div>
 
