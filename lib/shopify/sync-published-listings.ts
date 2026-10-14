@@ -6,6 +6,7 @@ import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapanes
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
+import { toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 
 type Listing = {
   id: string;
@@ -436,7 +437,7 @@ async function syncListingRows(
       if (!variant?.id) throw new Error("shopify_variant_missing_for_inventory_sync");
       await setShopifyVariantInventory({
         variantId: variant.id,
-        quantity: Number(row.inventory),
+        quantity: toStorefrontStockQuantity(row.inventory, process.env.SHOPIFY_STOREFRONT_STOCK_CAP),
         reference: `tracer://shop-listing/${row.id}`,
       });
 
