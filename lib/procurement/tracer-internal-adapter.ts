@@ -33,8 +33,9 @@ async function syncInternalInventoryProjection(
   const { data: catalogVariants, error: variantError } = await supabase
     .from("tracer_supply_variants")
     .update({
+      // Inventory observation is not proof of supplier orderability or sale readiness.
+      // Preserve the existing gate; only the dedicated verification flow may promote it.
       inventory,
-      orderable: inventory > 0,
       updated_at: new Date().toISOString(),
     })
     .eq("internal_supply_variant_id", internalVariantId)
@@ -50,9 +51,8 @@ async function syncInternalInventoryProjection(
     const { error: catalogError } = await supabase
       .from("tracer_supply_catalog")
       .update({
+        // Stock refreshes must not promote a draft to ready/orderable.
         inventory,
-        orderable: inventory > 0,
-        status: inventory > 0 ? "ready" : "draft",
         updated_at: new Date().toISOString(),
       })
       .in("id", catalogIds);
@@ -63,8 +63,8 @@ async function syncInternalInventoryProjection(
   const { error: listingError } = await supabase
     .from("shop_listings")
     .update({
+      // Keep the publication/orderability gate independent from inventory refreshes.
       inventory,
-      orderable: inventory > 0,
       updated_at: new Date().toISOString(),
     })
     .eq("supplier_name", "TRACER_INTERNAL")
