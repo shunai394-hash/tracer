@@ -116,8 +116,8 @@ export async function selectAndPublishSalesTests(
     const bestseller = row as Record<string, unknown>;
     const reasons: string[] = [];
     const sourceTitle = String(bestseller.title ?? '').normalize('NFKC').trim();
-    const womenPriority = womenProductPriority({ title: sourceTitle, category: String(bestseller.category ?? '') });
-    if (!womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
+    // Women's relevance is used for ranking, not eligibility; profitable,
+    // correctly identified products from every category remain eligible.
     if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
     if (reasons.length > 0) {
       await markPipeline(String(bestseller.id), 'SALES_TEST', 'blocked', reasons.join(','));
