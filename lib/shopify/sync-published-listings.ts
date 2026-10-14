@@ -79,20 +79,25 @@ async function ensureJapaneseCopy(row: Listing): Promise<{ title: string; descri
   if (isSpecificJapaneseProductTitle(title) && isJapaneseProductDescription(description)) {
     return { title, description };
   }
+  // Prefer deterministic, source-grounded Japanese copy before calling Gemini.
+  // This avoids turning a free-tier quota outage into a hard block for products
+  // whose title and description are already covered by reviewed localization rules.
+  const sourceCopy = `${title}\n${description}`;
+  const deterministicTitle = localizeProductTitle(title, title);
+  const deterministicDescription = localizeProductDescription(sourceCopy);
+  if (
+    deterministicTitle
+    && isSpecificJapaneseProductTitle(deterministicTitle)
+    && deterministicDescription
+    && isJapaneseProductDescription(deterministicDescription)
+    && isPublishableCatalogTitle(deterministicTitle)
+    && isPublishableCatalogDescription(deterministicDescription)
+  ) {
+    await supabaseForCopyUpdate(row.id, deterministicTitle, deterministicDescription);
+    return { title: deterministicTitle, description: deterministicDescription };
+  }
   if (!isGeminiConfigured()) {
-    // Keep catalog synchronization available without a Gemini key. Use only
-    // deterministic title localization and a non-claiming Japanese description;
-    // never invent product specifications or benefits.
-    const sourceCopy = `${title}\n${description}`;
-    const fallbackTitle = localizeProductTitle(sourceCopy, title);
-    if (!fallbackTitle || !isJapaneseProductTitle(fallbackTitle)) {
-      throw new Error("japanese_catalog_title_localization_failed");
-    }
-    const fallbackDescription =
-      localizeProductDescription(sourceCopy) ??
-      "商品の仕様・サイズ・素材・使用方法は、販売元の掲載情報をご確認ください。";
-    await supabaseForCopyUpdate(row.id, fallbackTitle, fallbackDescription);
-    return { title: fallbackTitle, description: fallbackDescription };
+    throw new Error("japanese_catalog_copy_requires_reviewed_localization_or_gemini");
   }
   const result = await generateStructuredJson<{ title?: string; detail?: string }>({
     systemInstruction: "あなたは日本のEC商品編集者です。入力情報だけを使い、日本語の商品名と商品説明を作成してください。英語のブランド名・型番・規格は必要な場合だけ残してください。存在しない仕様や数値は追加しないでください。JSONのみ返してください。",
