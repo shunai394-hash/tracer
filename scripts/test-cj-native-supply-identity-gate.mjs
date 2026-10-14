@@ -6,6 +6,7 @@ const identity = await readFile(new URL("../lib/catalog/canonical-supplier-ident
 const route = await readFile(new URL("../app/api/cron/sales-test-publication/route.ts", import.meta.url), "utf8");
 const workflow = await readFile(new URL("../.github/workflows/tracer-shopify-auth-check.yml", import.meta.url), "utf8");
 assert.ok(identity.includes('row.verification_status === "verified"'), "native CJ identity requires verified supplier evidence");
+assert.ok(!identity.includes('row.identity_status === "supply_discovered"'), "administrative identity labels must not block fully verified native CJ supply");
 assert.ok(identity.includes('row.shipping_status === "verified"'), "native CJ identity requires verified shipping evidence");
 assert.ok(source.includes('options.allowNativeCjIdentity === true && isNativeCjSupplierListing(candidate)'), "native CJ identity is disabled by default and delegated to the strict supplier-evidence helper");
 assert.ok(source.includes('if (!nativeCjSupplyIdentity && (num(listing.identity_confidence) === null'), "generic identity confidence must not block verified native CJ identity");
