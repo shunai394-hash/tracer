@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 const pipeline = readFileSync("lib/intelligence/run-intelligence-pipeline.ts", "utf8");
 const selector = readFileSync("lib/market/select-supply-sales-tests.ts", "utf8");
 const identity = readFileSync("lib/catalog/canonical-supplier-identity.ts", "utf8");
+const japaneseProduct = readFileSync("lib/intelligence/japanese-product.ts", "utf8");
 
 // The supply-first queue must not require a marketplace identity link: a
 // standalone CJ catalog item can be sellable once its own exact variant and
@@ -30,5 +31,9 @@ assert.match(selector, /Boolean\(candidate\.supplier_product_id\)/);
 assert.match(selector, /Boolean\(candidate\.supplier_variant_id\)/);
 assert.match(selector, /domesticShipping: nativeCjSupplyIdentity \? 0 : null/);
 assert.match(selector, /!isPublishableCatalogTitle\(masterTitle\) && !nativeCjSupplyIdentity/);
+assert.match(selector, /localizeProductDescription\(sourceTitle\)/);
+assert.match(selector, /isPublishableCatalogDescription\(publishableDescription\)/);
+assert.match(japaneseProduct, /knitted headband.*women/i);
+assert.match(japaneseProduct, /柔らかなニット素材のクロスヘアバンドです/);
 
 console.log("Supply-first candidate selection contract passed.");
