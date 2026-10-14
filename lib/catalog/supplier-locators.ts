@@ -41,11 +41,12 @@ export function normalizeSupplierUrl(value: unknown): string | null {
     if (url.username || url.password) return null;
     url.hash = "";
     url.hostname = url.hostname.toLowerCase();
-    url.searchParams.forEach((_value, key) => {
-      if (/^(utm_.+|gclid|fbclid|ref|source|spm)$/i.test(key)) {
-        url.searchParams.delete(key);
-      }
-    });
+    // Snapshot keys before deleting: mutating URLSearchParams during forEach
+    // can skip adjacent tracking parameters, leaving unstable locator keys.
+    const trackingKeys = [...url.searchParams.keys()].filter((key) =>
+      /^(utm_.+|gclid|fbclid|ref|source|spm)$/i.test(key),
+    );
+    for (const key of trackingKeys) url.searchParams.delete(key);
     url.pathname = url.pathname.replace(/\/{2,}/g, "/").replace(/\/$/, "") || "/";
     url.searchParams.sort();
     return url.toString().replace(/\/$/, url.pathname === "/" ? "/" : "");
