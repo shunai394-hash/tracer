@@ -94,11 +94,29 @@ async function ensureJapaneseCopy(row: Listing): Promise<{ title: string; descri
     await supabaseForCopyUpdate(row.id, fallbackTitle, fallbackDescription);
     return { title: fallbackTitle, description: fallbackDescription };
   }
-  const result = await generateStructuredJson<{ title?: string; detail?: string }>({
-    systemInstruction: "あなたは日本のEC商品編集者です。入力情報だけを使い、日本語の商品名と商品説明を作成してください。英語のブランド名・型番・規格は必要な場合だけ残してください。存在しない仕様や数値は追加しないでください。JSONのみ返してください。",
-    prompt: JSON.stringify({ title, description }),
-    timeoutMs: 12000,
-  });
+  let result: { title?: string; detail?: string } | null = null;
+  try {
+    result = await generateStructuredJson<{ title?: string; detail?: string }>({
+      systemInstruction: "あなたは日本のEC商品編集者です。入力情報だけを使い、日本語の商品名と商品説明を作成してください。英語のブランド名・型番・規格は必要な場合だけ残してください。存在しない仕様や数値は追加しないでください。JSONのみ返してください。",
+      prompt: JSON.stringify({ title, description }),
+      timeoutMs: 12000,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // A configured but rate-limited Gemini key must not stop otherwise valid
+    // Japanese listings. Fall back to deterministic copy without inventing specs.
+    if (!/429|RESOURCE_EXHAUSTED|quota exceeded|rate limit|503|UNAVAILABLE|timeout/i.test(message)) throw error;
+    const sourceCopy = title + "\n" + description;
+    const fallbackTitle = localizeProductTitle(sourceCopy, title);
+    if (!fallbackTitle || !isJapaneseProductTitle(fallbackTitle)) {
+      throw new Error("japanese_catalog_title_localization_failed");
+    }
+    const fallbackDescription =
+      localizeProductDescription(sourceCopy) ??
+      "商品の仕様・サイズ・素材・使用方法は、販売元の掲載情報をご確認ください。";
+    await supabaseForCopyUpdate(row.id, fallbackTitle, fallbackDescription);
+    return { title: fallbackTitle, description: fallbackDescription };
+  }
   const translatedTitle = String(result?.title ?? "").trim();
   const translatedDescription = String(result?.detail ?? "").trim();
   if (!isJapaneseProductTitle(translatedTitle) || !/[ぁ-んァ-ヶ一-龯々〆ヵー]/.test(translatedDescription)) {
