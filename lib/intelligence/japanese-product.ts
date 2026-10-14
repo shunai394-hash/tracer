@@ -33,8 +33,6 @@ const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
   [/car decorations.*led ambient lights|interior led ambient lights/i, "車内LEDアンビエントライト"],
   [/three-dimensional piggy butt.*phone case|piggy butt phone case/i, "ぶたモチーフ シリコンスマホケース"],
   [/flowers.*phone case|flower.*phone case/i, "フラワーモチーフ スマホケース"],
-];
-
   [/^aroma filter$/i, "アロマディフューザー用 交換フィルター"],
   [/integrated frosted card case|frosted card case.*mobile phone shell/i, "カード収納付き マット仕上げスマホケース"],
   [/hand painted lotus.*mug|lotus.*office mug/i, "蓮モチーフ 手描きデザインのマグカップ"],
@@ -57,6 +55,8 @@ const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
   [/new cross-border iron art agave plant ornaments/i, "アガベモチーフ アイアンガーデンオーナメント"],
   [/fashion and nature phoera eyebrow cream|phoera eyebrow cream/i, "PHOERA アイブロウクリーム 6色展開"],
   [/stainless steel tongue scraper/i, "ステンレス製 舌クリーナー"],
+];
+
 
 const CATEGORY_ONLY_TITLES = new Set([
   "スマホ保護アクセサリー",
