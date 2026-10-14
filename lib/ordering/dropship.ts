@@ -5,6 +5,7 @@ import { isSupplierConfigured, isSupplierLiveOrderingEnabled } from "@/lib/confi
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { executeVerifiedSupplierPurchaseOrder } from "@/lib/ordering/verified-supplier-execution";
+import { isNativeCjSupplierListing } from "@/lib/catalog/canonical-supplier-identity";
 import {
   evaluateDropshipOrderGate,
   type DropshipOrderGateResult,
@@ -235,6 +236,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       supplierConfigured: isSupplierConfigured(String(shopListing.supplier_name ?? "").trim()),
       supplierName: String(shopListing.supplier_name ?? listingRow.supplier ?? "").trim(),
       supplierIdentityStatus: typeof listingRow.identity_status === "string" ? listingRow.identity_status : null,
+      supplierNativeVerified: isNativeCjSupplierListing(listingRow),
       cjConfigured: false,
       liveOrderingEnabled: isSupplierLiveOrderingEnabled(String(shopListing.supplier_name ?? "").trim()),
       inventoryQty: typeof listingRow.inventory === "number" ? listingRow.inventory : null,
