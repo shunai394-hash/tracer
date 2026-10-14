@@ -1,7 +1,5 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
-
 import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
@@ -170,11 +168,16 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
   if (existingListing.data?.metadata && typeof existingListing.data.metadata === "object" && !Array.isArray(existingListing.data.metadata)) existingListingMetadata = existingListing.data.metadata as Record<string, unknown>;
   // A CJ variant with no marketplace barcode match still needs a stable catalog candidate.
   // Keep it separate from marketplace identity, but do not discard it or leave it without a product row.
+  const existingProductId = typeof existingListing.data?.product_id === "string"
+    ? existingListing.data.product_id.trim()
+    : "";
+  const discoveredProductId = typeof args.productId === "string" ? args.productId.trim() : "";
   const nativeCandidateProductId = marketplaceIdentity
     ? null
-    : (typeof existingListing.data?.product_id === "string" && existingListing.data.product_id.trim()
-      ? existingListing.data.product_id
-      : randomUUID());
+    : (existingProductId || discoveredProductId);
+  if (!marketplaceIdentity && !nativeCandidateProductId) {
+    throw new Error("cj_native_candidate_product_id_missing");
+  }
 
   if (!marketplaceIdentity && nativeCandidateProductId) {
     const candidateIntelligence = await supabase.from("product_intelligence").upsert({
