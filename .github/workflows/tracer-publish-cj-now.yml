@@ -3,6 +3,7 @@ name: TRACER Publish CJ Products Now
 # Production publication trigger: verified supplier sales tests -> Shopify.
 # Retry trigger: publish verified, profitable CJ supply without marketplace barcode dependency.
 on:
+  workflow_dispatch:
   push:
     branches: [main]
 
@@ -72,5 +73,7 @@ jobs:
           PY
 
 # Production deploy is now handled by the deterministic Vercel CLI workflow.
+
+# Manual dispatch is available for a bounded CJ identity reverify + publication cycle.
 
 # final-publication-cycle
