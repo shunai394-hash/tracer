@@ -18,7 +18,7 @@ begin
   ) then
     raise exception 'shopify_line_item_idempotency_preflight_failed: duplicate (order_id, shopify_line_item_id) rows exist; reconcile them before retrying this migration';
   end if;
-end
+end;
 $$;
 
 create unique index if not exists shop_order_items_order_shopify_line_unique_idx
