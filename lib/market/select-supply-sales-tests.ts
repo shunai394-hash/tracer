@@ -116,7 +116,6 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // Their own exact supplier title is still required to pass the publishable-title gate below.
     const sourceMetadata = base?.metadata && typeof base.metadata === 'object' && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const womenPriority = womenProductPriority({ title: sourceTitle, category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
-    if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
     if (!base) reasons.push("product_intelligence_missing"); if (!listing) reasons.push("supplier_listing_missing");
     if (reasons.length > 0) { rejected.push({ productId, reasons, title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
     if (!base || !listing) { rejected.push({ productId, reasons: ["required_catalog_or_supplier_data_missing"], title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
