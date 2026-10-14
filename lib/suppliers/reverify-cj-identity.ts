@@ -42,7 +42,7 @@ export type CjIdentityProgressCounts = {
   linkedInStockCatalogVariants: number;
   publishedOrderableListings: number;
 };
-export type CjIdentityReverifyResult = { checked: number; promoted: number; supplierVerified: number; noUniqueBarcodeMatch: number; missingEconomics: number; errors: Array<{ supplierListingId: string; error: string }>; promotedListings: Array<{ supplierListingId: string; bestsellerId: string; method: string }>; nextCursor: string | null; quotaBlockedUntil: string | null; progress: { before: CjIdentityProgressCounts; after: CjIdentityProgressCounts } };
+export type CjIdentityReverifyResult = { checked: number; promoted: number; supplierVerified: number; noUniqueBarcodeMatch: number; missingEconomics: number; remediationQueued: Array<{ supplierListingId: string; missingFields: string[]; nextActions: string[] }>; errors: Array<{ supplierListingId: string; error: string }>; promotedListings: Array<{ supplierListingId: string; bestsellerId: string; method: string }>; nextCursor: string | null; quotaBlockedUntil: string | null; progress: { before: CjIdentityProgressCounts; after: CjIdentityProgressCounts } };
 
 async function readCjIdentityProgressCounts(db: ReturnType<typeof createSupabaseAdminClient>): Promise<CjIdentityProgressCounts> {
   const [linked, products, variants, published] = await Promise.all([
@@ -150,7 +150,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const remaining = Math.max(0, limit - selectedWomens.length);
   const selectedOther = remaining > 0 ? otherRows.slice(0, Math.min(remaining, otherRows.length)) : [];
   const selectedRows = [...selectedWomens, ...selectedOther];
-  const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, errors: [], promotedListings: [], nextCursor: scanCursor, quotaBlockedUntil: null, progress: { before: beforeCounts, after: beforeCounts } };
+  const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, remediationQueued: [], errors: [], promotedListings: [], nextCursor: scanCursor, quotaBlockedUntil: null, progress: { before: beforeCounts, after: beforeCounts } };
   const processRow = async (row: NonNullable<typeof rows>[number]) => {
     const supplierListingId = String(row.id);
     try {
@@ -254,16 +254,30 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         !imageUrl ? "image" : null,
       ].filter((field): field is string => field !== null);
       if (missingFields.length > 0) {
-        await db.from("supplier_listings").update({
+        const nextActions = missingFields.map((field) =>
+          field === "cost" ? (currency ? "refetch_exact_cj_variant_price" : "resolve_supplier_currency_then_refetch_price") :
+          field === "shipping" ? (currency ? "retry_japan_destination_freight_quote" : "resolve_supplier_currency_then_quote_freight") :
+          field === "inventory" ? "refresh_exact_variant_stock_evidence" :
+          field === "fx_rate" ? "refresh_supported_currency_exchange_rate" :
+          field === "selling_price_jpy" ? "recalculate_landed_cost_fees_and_margin" :
+          "refetch_supplier_product_image"
+        );
+        const nextRetryAt = new Date(checkedAt.getTime() + MISSING_DATA_RETRY_MS).toISOString();
+        const { error: remediationWriteError } = await db.from("supplier_listings").update({
           metadata: {
             ...nextListingMetadata,
             missing_supply_evidence: missingFields,
             missing_supply_evidence_errors: refreshErrors.slice(0, 5),
-            next_identity_reverify_at: new Date(checkedAt.getTime() + MISSING_DATA_RETRY_MS).toISOString(),
+            missing_supply_evidence_next_actions: nextActions,
+            missing_supply_evidence_attempts: Math.max(0, Number(listingMetadata.missing_supply_evidence_attempts ?? 0)) + 1,
+            missing_supply_evidence_last_checked_at: checkedAt.toISOString(),
+            next_identity_reverify_at: nextRetryAt,
+            remediation_status: "retry_scheduled",
             identity_hold_reason: "missing_economics_or_image",
           },
         }).eq("id", supplierListingId);
-        return { kind: "missing_economics" as const, supplierListingId };
+        if (remediationWriteError) throw new Error("CJ remediation state persistence failed: " + remediationWriteError.message);
+        return { kind: "missing_economics" as const, supplierListingId, missingFields, nextActions };
       }
       // TypeScript cannot infer non-null values from the field-name array above.
       // Keep the persistence boundary explicit so only complete evidence reaches it.
@@ -309,6 +323,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         result.noUniqueBarcodeMatch += 1;
       } else if (item.kind === "missing_economics") {
         result.missingEconomics += 1;
+        result.remediationQueued.push({ supplierListingId: item.supplierListingId, missingFields: item.missingFields, nextActions: item.nextActions });
       } else if (item.kind === "quota_exhausted") {
         quotaExhausted = true;
         result.quotaBlockedUntil = getCJQuotaCooldownUntil();
