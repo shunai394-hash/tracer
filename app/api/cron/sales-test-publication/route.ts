@@ -118,8 +118,9 @@ export async function GET(request: Request) {
 
     // CJ-native supply is its own evidence path: exact supplier product + variant,
     // verified shipping, price, stock, orderability, tracking and API availability.
-    // It does not need a marketplace ASIN/JAN match, but live publication remains
-    // disabled unless TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED=true.
+    // It does not need a marketplace ASIN/JAN match. Live publication is enabled
+    // by default when these evidence gates pass; the explicit "false" value is
+    // an emergency kill switch, not a required opt-in.
     const { data: nativeCjSupply, error: nativeCjSupplyError } = await supabase
       .from("supplier_listings")
       .select("product_id")
@@ -192,7 +193,7 @@ export async function GET(request: Request) {
         dryRun: true,
         noWrites: true,
         mode: "canonical_supply_fast_path",
-        featureEnabledForLiveRuns: process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true",
+        nativeCjPublicationEnabledForLiveRuns: allowNativeCjIdentity,
         supplySelected,
       }, { headers: { "Cache-Control": "no-store" } });
     }

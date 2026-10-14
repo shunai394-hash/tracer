@@ -16,7 +16,7 @@ assert.ok(source.includes("eligibleSamples: eligible.slice(0, 50)") && source.in
 assert.ok(route.includes('const dryRun = new URL(request.url).searchParams.get("dryRun") === "true"'), "dry-run mode must be explicit");
 assert.ok(route.includes('if (!dryRun) {\n      await recoverStaleCronRun'), "dry-run must not create cron lock records");
 assert.ok(route.includes('if (dryRun) {\n      return NextResponse.json({\n        ok: true,\n        dryRun: true,\n        noWrites: true'), "dry-run must return before downstream publication");
-assert.ok(route.includes('process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true"'), "live native CJ publication must be feature-flagged off by default");
+assert.ok(route.includes('process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED !== "false"') && route.includes("nativeCjPublicationEnabledForLiveRuns: allowNativeCjIdentity"), "live native CJ publication is default-enabled after strict evidence checks, with an explicit false kill switch");
 assert.ok(route.includes('const { data: nativeCjSupply, error: nativeCjSupplyError }'), "native CJ supply must be queried independently of marketplace identity");
 assert.ok(route.includes("const dryRunProductIds") && route.includes("])).slice(0, dryRunLimit)") && route.includes("Math.min(500, Math.floor(requestedDryRunLimit))") && route.includes("dryRun ? 50 : 400"), "dry-run selection must be bounded and prioritize native CJ evidence");
 assert.ok(route.includes("for (let i = 0; i < candidateProductIds.length; i += 100)") && route.includes("const missingOpportunityIds = candidateProductIds.filter("), "dry-run must bound intelligence reads as well as the final selector");
