@@ -121,18 +121,27 @@ export async function GET(request: Request) {
     // It does not need a marketplace ASIN/JAN match. Live publication is enabled
     // by default when these evidence gates pass; the explicit "false" value is
     // an emergency kill switch, not a required opt-in.
+    const nativeSupplyFreshCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const nativeSupplyFutureCutoff = new Date(Date.now() + 5 * 60 * 1000).toISOString();
     const { data: nativeCjSupply, error: nativeCjSupplyError } = await supabase
       .from("supplier_listings")
       .select("product_id")
       .in("supplier", ["cj", "cjdropshipping"])
+      .eq("identity_status", "supply_discovered")
       .eq("verification_status", "verified")
       .eq("shipping_status", "verified")
+      .eq("configured", true)
+      .eq("ship_to", "JP")
       .eq("price_confirmed", true)
       .eq("inventory_confirmed", true)
       .gt("inventory", 0)
+      .gt("cost", 0)
+      .gte("shipping_cost", 0)
       .eq("orderable", true)
       .eq("tracking_available", true)
       .eq("api_available", true)
+      .gte("last_verified_at", nativeSupplyFreshCutoff)
+      .lte("last_verified_at", nativeSupplyFutureCutoff)
       .not("supplier_product_id", "is", null)
       .not("supplier_variant_id", "is", null)
       .not("product_id", "is", null)
