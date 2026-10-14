@@ -72,6 +72,13 @@ test("URLs with credentials and non-http schemes are rejected", () => {
   assert.equal(normalizeSupplierUrl("https://user:pass@example.com/item"), null);
 });
 
+test("adjacent tracking parameters are all removed without dropping business query parameters", () => {
+  assert.equal(
+    normalizeSupplierUrl("https://cj.example/item/123?utm_source=a&utm_medium=b&gclid=c&variant=red&ref=feed"),
+    "https://cj.example/item/123?variant=red",
+  );
+});
+
 test("SKU is only a candidate locator, not exact identity", () => {
   const result = compareSupplierLocators(
     { supplier: "cj", sku: "sku-42" },
