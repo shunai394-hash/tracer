@@ -14,7 +14,7 @@ assert.ok(source.includes('identityConfidence: nativeCjSupplyIdentity ? 1 : num(
 assert.ok(source.includes('candidate.price_confirmed === true') && source.includes('candidate.inventory_confirmed === true') && source.includes('candidate.orderable === true') && source.includes('candidate.tracking_available === true') && source.includes('candidate.api_available === true'), "native identity must not bypass price, stock, orderability, tracking or API gates");
 assert.ok(source.includes('profitCalculable: profit.calculable') && source.includes('contributionProfit: profit.contributionProfit'), "contribution-profit gate must remain in the flow");
 assert.ok(source.includes("eligibleSamples: eligible.slice(0, 50)") && source.includes("contributionProfit: item.profit.contributionProfit"), "dry-run must expose eligible evidence for quality review");
-assert.ok(source.includes('if (!intelligence && !nativeCjSupplyIdentity) reasons.push("opportunity_intelligence_missing")'), "native CJ catalog products must not require unrelated marketplace opportunity intelligence");
+assert.ok(!source.includes('opportunity_intelligence_missing') && !source.includes('demand_evidence_missing'), "market demand intelligence must rank products, not block a verified profitable supplier listing");
 assert.ok(source.includes("nativeCjSupplyIdentity &&\n      supplierVerifiedIdentity &&") , "native CJ products must still require verified identity and positive calculated profit");
 assert.ok(route.includes('const dryRun = new URL(request.url).searchParams.get("dryRun") === "true"'), "dry-run mode must be explicit");
 assert.ok(route.includes('if (!dryRun) {\n      await recoverStaleCronRun'), "dry-run must not create cron lock records");
