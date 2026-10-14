@@ -108,6 +108,13 @@ const candidateTitles = [
   ["agave ornament", "New Cross-Border Iron Art Agave Plant Ornaments Agave Garden Ornaments", "アガベ風 アイアンガーデンオーナメント"],
   ["sports car phone case", "Compatible with Apple , Creative Sports Car Anti-Fall Mobile Phone Case For Protective Cover Silicone Soft Shell Trendy", "スポーツカー柄 耐衝撃スマートフォンケース"],
   ["generic phone case", "Compatible With Apple Mobile Phone Case For iPhone 13", "対応機種別 スマートフォンケース"],
+  ["tongue scraper", "Stainless Steel Tongue Scraper", "ステンレス製 舌クリーナー"],
+  ["sea lion pillowcase", "Plush Hug Pillowcase Cushion Office Sea Lion Velvet Pillowcase Amazon Home Custom Gift Cushion Cover", "アシカ柄 ベルベット調クッションカバー"],
+  ["bread baking mold", "Bread Baking Molds For Baking", "パン作り用 ベーキングモールド"],
+  ["mini office safe", "Mini office safe", "小型 オフィス用金庫"],
+  ["pink heart wall sticker", "Girly Heart Pink Watercolor Plant Flowers Baby Room Dormitory Bedroom Decoration Wall Stickers", "ピンクのハート柄 ウォールステッカー"],
+  ["living room wall sticker", "Wall Stickers Living Room Wall Decoration Creative TV Background Bedroom Self Adhesive Paper", "リビング向け 壁面デコレーションシール"],
+  ["soft toothbrush", "Micron Soft Toothbrush", "Micron ソフト歯ブラシ"],
   ["holiday door frame", "Wooden Door I Saw That Jesus Head Funny Home Decor Frame Ornament AND Merry Christmas Door Frame Decoration Santa Claus Elk", "クリスマス ドアフレーム飾り"],
 
 ];
