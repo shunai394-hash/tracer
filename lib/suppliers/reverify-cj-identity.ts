@@ -265,6 +265,11 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         }).eq("id", supplierListingId);
         return { kind: "missing_economics" as const, supplierListingId };
       }
+      // TypeScript cannot infer non-null values from the field-name array above.
+      // Keep the persistence boundary explicit so only complete evidence reaches it.
+      if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) {
+        throw new Error("CJ evidence recovery invariant failed: required supply fields remain missing");
+      }
       await persistCjSupplyIntelligence({ productId: identity?.productId ?? String(row.product_id), title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
       if (!identity) {
         const { data: latest } = await db.from("supplier_listings").select("metadata").eq("id", supplierListingId).maybeSingle();
