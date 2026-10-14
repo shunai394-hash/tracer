@@ -117,8 +117,8 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     try {
       await editBaseItem({
         itemId: String(listing.base_item_id),
-        title: "販売停止中の商品",
-        detail: "現在この商品は販売停止中です。",
+        title: String(listing.title ?? "").trim() || "商品情報確認中",
+        detail: String(listing.description ?? listing.title ?? "").trim() || "商品情報を確認しています。",
         price: Number(listing.selling_price),
         stock: 0,
         visible: false,
@@ -181,8 +181,8 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         try {
           await editBaseItem({
             itemId: String(listing.base_item_id),
-            title: "販売停止中の商品",
-            detail: "商品情報を再確認しているため、一時的に販売を停止しています。",
+            title: String(listing.title ?? "").trim() || "商品情報確認中",
+            detail: String(listing.description ?? listing.title ?? "").trim() || "商品情報を確認しています。",
             price: Number(listing.selling_price ?? 0),
             stock: 0,
             visible: false,
