@@ -42,12 +42,29 @@ function slug(title: string, productId: string, variationId: string): string {
   return `${base || "orosy-product"}-${productId}-${variationId}`.slice(0, 180);
 }
 
-async function upsertProduct(supabase: ReturnType<typeof createSupabaseAdminClient>, detail: Awaited<ReturnType<typeof getOrosyProductDetail>>, jan: string) {
-  if (!detail) return null;
+async function upsertProduct(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  detail: Awaited<ReturnType<typeof getOrosyProductDetail>>,
+  jan: string,
+): Promise<string | null> {
+  if (!detail || !/^\\d{8,14}$/.test(jan)) return null;
+
+  // Reuse an existing canonical record with the same JAN instead of creating a duplicate.
+  const canonical = await supabase.from("products").select("id").eq("jan", jan).maybeSingle();
+  if (canonical.error) throw new Error(canonical.error.message);
+  if (canonical.data?.id) return String(canonical.data.id);
+
   const identityKey = `orosy:${detail.id}`;
-  const existing = await supabase.from("products").select("id").eq("identity_key", identityKey).maybeSingle();
+  const existing = await supabase.from("products").select("id,jan").eq("identity_key", identityKey).maybeSingle();
   if (existing.error) throw new Error(existing.error.message);
-  if (existing.data?.id) return String(existing.data.id);
+  if (existing.data?.id) {
+    if (existing.data.jan && existing.data.jan !== jan) return null;
+    const updated = await supabase.from("products").update({ canonical_name: detail.title, jan })
+      .eq("id", existing.data.id).select("id").single();
+    if (updated.error) throw new Error(updated.error.message);
+    return String(updated.data.id);
+  }
+
   const inserted = await supabase.from("products").insert({
     canonical_name: detail.title,
     identity_key: identityKey,
@@ -122,7 +139,10 @@ export async function GET(request: Request) {
     }
 
     const productId = await upsertProduct(supabase, detail, variation.jan);
-    if (!productId) continue;
+    if (!productId) {
+      rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "canonical_identity_conflict" });
+      continue;
+    }
 
     const supplierExisting = await supabase.from("supplier_listings")
       .select("id").eq("supplier", "orosy").eq("supplier_product_id", detail.id)
