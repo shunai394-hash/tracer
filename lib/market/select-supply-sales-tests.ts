@@ -132,7 +132,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const localizedTitle = localizeProductTitle(sourceTitle, metadataCategory(base.metadata));
     if (!isJapaneseProductTitle(localizedTitle)) reasons.push("japanese_title_unavailable");
     else if (!isPublishableCatalogTitle(localizedTitle)) reasons.push("catalog_title_not_publishable");
-    const recommendationSummary = typeof intelligence.recommendation_summary === "string" ? intelligence.recommendation_summary.trim() : null;
+    const recommendationSummary = typeof rankingIntelligence.recommendation_summary === "string" ? rankingIntelligence.recommendation_summary.trim() : null;
     const localizedDescription = localizeProductDescription(sourceTitle);
     const publishableDescription = isPublishableCatalogDescription(localizedDescription)
       ? localizedDescription
