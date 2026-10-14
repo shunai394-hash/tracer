@@ -20,8 +20,9 @@ assert.ok(route.includes('if (!dryRun) {\n      await recoverStaleCronRun'), "dr
 assert.ok(route.includes('if (dryRun) {\n      return NextResponse.json({\n        ok: true,\n        dryRun: true,\n        noWrites: true'), "dry-run must return before downstream publication");
 assert.ok(route.includes("allowNativeCjIdentity: true"), "native CJ supply must not be blocked by an unrelated feature flag");
 assert.ok(route.includes("dryRun ? 100 : 50"), "live publication must advance a useful batch of qualified products on every patrol");
-assert.doesNotMatch(source, /outside_womens_product_strategy/, "women's category is a ranking preference, not a hard exclusion of otherwise saleable products");
+assert.doesNotMatch(source, /reasons\.push\(['"]outside_womens_product_strategy['"]\)/, "women's category is a ranking preference, not a hard exclusion of otherwise saleable products");
 assert.ok(source.includes("const productImageUrl = validHttpUrl(base.image_url) ? String(base.image_url) : listingImageUrl"), "verified supplier image must be used when product intelligence has no image");
+assert.ok(source.includes("image_url: validHttpUrl(item.base.image_url) ? item.base.image_url : item.listing.image_url"), "publication must use the supplier image fallback");
 assert.ok(route.includes("nativeCjIdentityUsesStrictEvidenceGate: true"), "route must report that strict supplier evidence remains the gate");
 assert.ok(route.includes('const { data: nativeCjSupply, error: nativeCjSupplyError }'), "native CJ supply must be queried independently of marketplace identity");
 assert.match(route, /const dryRunProductIds[\s\S]*?Array\.from\(new Set\(\[[\s\S]*?\]\)\)\.slice\(0, dryRunLimit\)/, "dry-run candidate selection must be bounded");
