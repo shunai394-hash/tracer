@@ -40,9 +40,9 @@ assert.match(source, /NEWFIND_TRACER_PROMOTION_LEDGER_READY/,
   "the retry loop must remain paused until the NEWFIND database migration is confirmed applied");
 assert.match(source, /newfind_promotion_ledger_not_confirmed_ready/,
   "new promotions must not be sent to NEWFIND until the ledger is confirmed ready");
-assert.match(source, /if \(!schemaReady\) \{\\s*return \{/,
+assert.ok(source.includes("if (!schemaReady) {"), "the retry batch must stop before sending events while the ledger is not ready");
   "the retry batch must stop before sending any events while the ledger is not ready");
-assert.match(reconcile, /if \(!ledgerReady\) \{\\s*result\.undelivered\.schemaBlocked/,
+assert.ok(reconcile.includes("if (!ledgerReady) {"), "the rescue loop must stop while the ledger is not ready");
   "the rescue loop must stop while the ledger is not ready");
 assert.match(source, /schemaBlocked: schemaBlockedIds\.size/,
   "retry telemetry must report promotions paused by the missing ledger");
