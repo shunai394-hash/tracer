@@ -12,6 +12,7 @@ import type { SupplierOrderInput } from "@/lib/procurement/types";
 import { initializeProcurement } from "@/lib/procurement/init";
 import { persistOrderStateUpdate } from "@/lib/ordering/status-write";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
+import { isNativeCjSupplierListing } from "@/lib/catalog/canonical-supplier-identity";
 import { getObservedFxRate } from "@/lib/intelligence/fx";
 import {
   evaluateDropshipOrderGate,
@@ -129,7 +130,7 @@ export async function executeSupplierPurchaseOrder(
     }
     const { data: identityRows, error: identityError } = await supabase
       .from("supplier_listings")
-      .select("product_id,identity_status")
+      .select("id,product_id,supplier,identity_status,verification_status,shipping_status,configured,price_confirmed,inventory_confirmed,api_available,orderable,tracking_available,inventory,cost,shipping_cost,ship_to,supplier_product_id,supplier_variant_id,verification_error,last_verified_at")
       .eq("supplier", "cj")
       .eq("supplier_product_id", externalProductId)
       .eq("supplier_variant_id", externalVariantId)
@@ -140,7 +141,17 @@ export async function executeSupplierPurchaseOrder(
         supplierOrderId: null, reason: "supplier_identity_lookup_failed", gate: null,
       };
     }
-    if (identityRows?.length !== 1 || identityRows?.[0]?.identity_status !== "linked" || String(identityRows?.[0]?.product_id ?? "") !== canonicalProductId) {
+    const uniqueExactVariant = identityRows?.length === 1
+      && String(identityRows[0]?.product_id ?? "") === canonicalProductId;
+    const linkedCanonicalIdentity = uniqueExactVariant
+      && identityRows?.[0]?.identity_status === "linked";
+    // Standalone CJ products do not have marketplace identity_status=linked.
+    // Permit them only when the exact supplier variant has fresh, verified
+    // JP shipping, cost, stock, API orderability and tracking evidence.
+    const verifiedNativeCjIdentity = uniqueExactVariant
+      && identityRows?.[0]?.identity_status === "supply_discovered"
+      && isNativeCjSupplierListing(identityRows[0] as Record<string, unknown>);
+    if (!linkedCanonicalIdentity && !verifiedNativeCjIdentity) {
       return {
         purchaseOrderId, supplierName, attempted: false, succeeded: false,
         supplierOrderId: null, reason: "supplier_identity_unlinked_or_ambiguous", gate: null,
