@@ -47,10 +47,15 @@ jobs:
             failed_count="$(jq -r '(.failed // []) | length' <<< "$response")"
             synced="$(jq -r '.synced // 0' <<< "$response")"
             attempted="$(jq -r '.attempted // 0' <<< "$response")"
-            if [[ "$configured" != "true" || "$failed_count" -gt 0 ]]; then failures=1; fi
-            if [[ "$failed_count" -eq 0 ]]; then
+            if [[ "$configured" != "true" ]]; then
+              failures=1
               break
             fi
+            if [[ "$failed_count" -eq 0 ]]; then
+              failures=0
+              break
+            fi
+            failures=1
             listing_ids="$(jq -c '[.failed[]?.listingId | select(type == "string")]' <<< "$response")"
             if [[ "$listing_ids" == "[]" ]]; then break; fi
             sleep 3
