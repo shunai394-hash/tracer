@@ -250,7 +250,7 @@ function blockReasons(row: Listing): string[] {
   if (row.tracking_available !== true) reasons.push("tracking_unavailable");
   if (!(Number(row.inventory) > 0)) reasons.push("inventory_zero_or_unknown");
   if (String(row.currency ?? "").trim().toUpperCase() !== "JPY") reasons.push("currency_not_jpy");
-  if (!/^CJ/i.test(String(row.supplier_name ?? ""))) reasons.push("supplier_not_cj");
+  if (!String(row.supplier_name ?? "").trim()) reasons.push("supplier_unknown");
   if (asNumber(row.shipping_cost) === null) reasons.push("shipping_cost_unknown");
   if (asNumber(row.source_cost) === null) reasons.push("source_cost_unknown");
   if (!((asNumber(row.contribution_profit) ?? 0) > 0)) reasons.push("profit_not_positive");
