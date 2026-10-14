@@ -217,14 +217,18 @@ export function isSupplierConfigured(supplierName: string): boolean {
 
 export function isSupplierLiveOrderingEnabled(supplierName: string): boolean {
   const key = supplierName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").toUpperCase();
-  if (key === "CJ" || key === "CJDROPSHIPPING") return false;
+  // CJ live execution remains opt-in: unset/0 is fail-closed.
+  if (key === "CJ" || key === "CJDROPSHIPPING") return isCJLiveOrderingEnabled();
   if (key === "TRACER_INTERNAL") return readEnv("TRACER_INTERNAL_LIVE_ORDERING") === "1";
   return readEnv(`${key}_LIVE_ORDERING`) === "1";
 }
 
 export function isSupplierAutoOrderingEnabled(supplierName: string): boolean {
   const key = supplierName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").toUpperCase();
-  if (key === "CJ" || key === "CJDROPSHIPPING") return false;
+  // CJ unattended purchasing remains opt-in separately from live ordering.
+  // Production still requires CJ_LIVE_ORDERING=1, CJ_AUTO_ORDERING=1, and
+  // SUPPLIER_DRY_RUN=0 before a supplier-order request can be sent.
+  if (key === "CJ" || key === "CJDROPSHIPPING") return isCJAutoOrderingEnabled();
   if (key === "TRACER_INTERNAL") return readEnv("TRACER_INTERNAL_AUTO_ORDERING") === "1";
   return readEnv(`${key}_AUTO_ORDERING`) === "1";
 }
