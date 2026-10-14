@@ -37,6 +37,12 @@ assert.equal(localizeProductTitle("Portable Cosmetic Bag Waterproof Divider Mult
 assert.equal(localizeProductTitle("Bohemian Beach Vacation Flower Hair Clip For Women Fashion Girl Accessories Gift"), "フラワーモチーフ ヘアクリップ");
 assert.equal(localizeProductTitle("Groin Electric Clippers Household Hair Clipper (Groin Electric Clippers Household Hair Clipper Black Cutter head)"), "デリケートゾーン用 電動トリマー");
 assert.equal(localizeProductTitle("Art Design Graffiti Art Hip Hop African Girl with Black Hair Big Earring with Modern Building Shower Curtain for Bathroom Decor"), "アフリカンアート柄 シャワーカーテン");
+const nativeHeadbandSource = "Acrylic Thick Wool Knitted Headband Diagonally Crossed Hair Accessories For Women";
+const nativeHeadbandTitle = localizeProductTitle(nativeHeadbandSource);
+assert.equal(nativeHeadbandTitle, "ニット編み クロスヘアバンド");
+assert.equal(isPublishableCatalogTitle(nativeHeadbandTitle), true, "verified native CJ product must have a concrete Japanese title");
+assert.equal(isPublishableCatalogDescription(localizeProductDescription(nativeHeadbandSource)), true, "verified native CJ product must have a specific Japanese description");
+assert.equal(womenProductPriority({ title: nativeHeadbandSource }).isWomenFocused, true);
 assert.equal(isPublishableCatalogTitle("トレンド・beautyアイテム"), false);
 assert.equal(isPublishableCatalogTitle("アフリカンアート柄 シャワーカーテン"), true);
 assert.equal(womenProductPriority({ title: "Groin Electric Clippers Household Hair Clipper" }).isWomenFocused, false, "hair clipper must not match the hair-clip accessory category");
