@@ -59,6 +59,16 @@ function asNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function validHttpUrl(value: unknown): boolean {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try {
+    const parsed = new URL(value.trim());
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function html(value: string | null): string {
   if (!value) return "<p>TRACER selected product.</p>";
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
@@ -203,6 +213,8 @@ function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
   if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
   if (!isPublishableCatalogDescription(row.description)) reasons.push("catalog_description_not_publishable");
+  // Products without a usable image must never be created or remain purchasable on Shopify.
+  if (!validHttpUrl(row.image_url)) reasons.push("image_url_missing_or_invalid");
   if (row.identity_status !== "linked") reasons.push("supplier_identity_unlinked");
   if (row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") reasons.push("pipeline_blocked");
   if (!hasGateProvenance(row)) reasons.push("sales_test_gate_not_passed");
@@ -256,7 +268,7 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
   const rows = ((data ?? []) as Array<Listing & { shopify_sync_error?: string | null }>).map((rawRow) => {
     const row = { ...rawRow, identity_status: rawRow.supplier_listing_id && linkedSupplierIds.has(rawRow.supplier_listing_id) ? "linked" : null };
     const reasons = blockReasons(row);
-    if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) reasons.push("image_url_invalid");
+    if (!validHttpUrl(row.image_url)) reasons.push("image_url_invalid");
     if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");
     if (!row.supplier_variant_id) reasons.push("supplier_variant_missing");
     for (const reason of reasons) reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1;
@@ -269,7 +281,7 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
       supplier: row.supplier_name,
       supplierProductId: row.supplier_product_id,
       supplierVariantId: row.supplier_variant_id,
-      imageOk: typeof row.image_url === "string" && /^https?:\/\//i.test(row.image_url),
+      imageOk: validHttpUrl(row.image_url),
       sellingPrice: asNumber(row.selling_price),
       inventory: asNumber(row.inventory),
       shopifyProductId: row.shopify_product_id,
