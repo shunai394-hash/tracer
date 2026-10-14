@@ -1,4 +1,5 @@
 name: One-time exact CJ identity link repair
+# Triggered to repair only exact, unique supplier identity matches before bulk publication.
 
 on:
   push:
