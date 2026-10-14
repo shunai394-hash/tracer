@@ -1,8 +1,23 @@
 -- Disposable PostgreSQL regression test for NULL-safe CJ source provenance.
 -- Executed only against the CI-only tracer_cj_stage_test database; never production.
-create role anon;
-create role authenticated;
-create role service_role;
+do $roles$
+begin
+  create role anon;
+exception when duplicate_object then null;
+end
+$roles$;
+do $roles$
+begin
+  create role authenticated;
+exception when duplicate_object then null;
+end
+$roles$;
+do $roles$
+begin
+  create role service_role;
+exception when duplicate_object then null;
+end
+$roles$;
 
 create table public.internal_supply_products (
   id uuid primary key, source_name text, active boolean, generation bigint,
