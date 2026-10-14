@@ -1,4 +1,5 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/fashion and nature phoera eyebrow cream 6 colors.*01blonde/i, "PHOERA アイブロウクリーム 01 ブロンド"],
   [/wooden door.*christmas door frame decoration|christmas door frame decoration.*santa claus/i, "クリスマス ドアフレーム飾り"],
   [/office 8.inch wind.driven fan|8.inch wind.driven fan/i, "卓上 8インチ送風ファン"],
   [/cup warmer pad.*3 temperatures adjustable|cup warmer pad.*electric heater mug pad/i, "USB給電 カップウォーマー 3段階温度調節"],
