@@ -167,8 +167,8 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const shippingAllowanceUsd = 15;
     const shippingEstimated = shippingCost === null && String(listing.supplier ?? "").trim().toLowerCase() === "cj" && Boolean(listing.supplier_product_id) && Boolean(listing.supplier_variant_id) && listing.orderable === true && sourceCurrency === "USD";
     const pricingShippingCost = shippingCost ?? (shippingEstimated ? shippingAllowanceUsd : null);
-    if (shippingEstimated && sourceCost !== null && sourceCost > 0 && sourceFxRateToSelling !== null && sourceFxRateToSelling > 0) {
-      const costJpy = (sourceCost + shippingAllowanceUsd) * sourceFxRateToSelling;
+    if (sellingPrice === null && pricingShippingCost !== null && sourceCost !== null && sourceCost > 0 && sourceFxRateToSelling !== null && sourceFxRateToSelling > 0) {
+      const costJpy = (sourceCost + pricingShippingCost) * sourceFxRateToSelling;
       const targetContributionMargin = 0.20;
       const retainedAfterFees = 1 - PROFIT_ASSUMPTIONS.platform_fee_rate - PROFIT_ASSUMPTIONS.payment_fee_rate - PROFIT_ASSUMPTIONS.advertising_allowance_rate - PROFIT_ASSUMPTIONS.return_refund_reserve_rate - PROFIT_ASSUMPTIONS.fx_reserve_rate;
       const denominator = retainedAfterFees - targetContributionMargin;
