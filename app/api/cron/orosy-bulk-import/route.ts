@@ -42,7 +42,7 @@ function slug(title: string, productId: string, variationId: string): string {
   return `${base || "orosy-product"}-${productId}-${variationId}`.slice(0, 180);
 }
 
-async function upsertProduct(supabase: ReturnType<typeof createSupabaseAdminClient>, detail: Awaited<ReturnType<typeof getOrosyProductDetail>>) {
+async function upsertProduct(supabase: ReturnType<typeof createSupabaseAdminClient>, detail: Awaited<ReturnType<typeof getOrosyProductDetail>>, jan: string) {
   if (!detail) return null;
   const identityKey = `orosy:${detail.id}`;
   const existing = await supabase.from("products").select("id").eq("identity_key", identityKey).maybeSingle();
@@ -51,7 +51,7 @@ async function upsertProduct(supabase: ReturnType<typeof createSupabaseAdminClie
   const inserted = await supabase.from("products").insert({
     canonical_name: detail.title,
     identity_key: identityKey,
-    jan: detail.barcode,
+    jan,
   }).select("id").single();
   if (inserted.error) throw new Error(inserted.error.message);
   return String(inserted.data.id);
@@ -81,7 +81,7 @@ export async function GET(request: Request) {
           if (!priority.isWomenFocused) continue;
           // A supplier variant ID is an order locator, not proof of canonical product identity.
           // Require a real JAN before creating a canonical product/listing relationship.
-          const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId && /^\\d{8,14}$/.test(v.jan ?? ""));
+          const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId && /^\d{8,14}$/.test(v.jan ?? ""));
           if (!variation || !variation.jan || variation.currency?.toUpperCase() !== "JPY") continue;
           candidates.set(`${detail.id}:${variation.variationId}`, detail);
         } catch {
@@ -99,8 +99,8 @@ export async function GET(request: Request) {
   for (const detail of candidates.values()) {
     if (!detail) continue;
     if (Date.now() - started > 240_000 || accepted.length >= 200) break;
-    const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId);
-    if (!variation || variation.buyerPrice === null || variation.stockQty === null || !variation.jan || !/^\\d{8,14}$/.test(variation.jan) || variation.currency?.toUpperCase() !== "JPY") {
+    const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId && /^\d{8,14}$/.test(v.jan ?? ""));
+    if (!variation || variation.buyerPrice === null || variation.stockQty === null || !variation.jan || !/^\d{8,14}$/.test(variation.jan) || variation.currency?.toUpperCase() !== "JPY") {
       rejected.push({ id: detail.id, reason: "canonical_jan_or_jpy_price_missing" });
       continue;
     }
@@ -121,7 +121,7 @@ export async function GET(request: Request) {
       continue;
     }
 
-    const productId = await upsertProduct(supabase, detail);
+    const productId = await upsertProduct(supabase, detail, variation.jan);
     if (!productId) continue;
 
     const supplierExisting = await supabase.from("supplier_listings")
