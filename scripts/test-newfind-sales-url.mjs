@@ -22,6 +22,10 @@ assert.match(reconcile, /\.select\("id, title, slug, bestseller_id, published, p
 
 assert.match(source, /const productUrl = tracerUrl/);
 assert.match(source, /const tracerResolution = await resolveLiveTracerUrl/);
+assert.match(source, /retryRejectedSchemaEvent/,
+  "a fixed receiver schema must be allowed to replay a previously rejected integer-type event once");
+assert.match(source, /:schema-retry/,
+  "schema-fix replay must use a fresh event id so the receiver does not short-circuit a rejected inbox row");
 assert.match(source, /resolveLiveTracerUrl\(typeof listing\.id === "string" \? listing\.id : null\)/,
   "NEWFIND must use a stable UUID product URL rather than an encoded Japanese slug");
 assert.match(source, /tracer_sales_url_http_\$\{response\.status\}/, "record the actual HTTP status when a product page is not live");
