@@ -20,9 +20,6 @@ jobs:
         uses: actions/checkout@v4
       - name: Publish eligible catalog to TRACER, BASE, Shopify and NEWFIND
         shell: bash
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
         run: |
           set -uo pipefail
           if [ ! -f ops/publish-3-sites-20261015.txt ] || [ "$(cat ops/publish-3-sites-20261015.txt)" != "RUN" ]; then
