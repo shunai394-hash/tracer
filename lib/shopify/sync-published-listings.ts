@@ -496,6 +496,9 @@ async function syncListingRows(
       await supabase.from("shop_listings").update({
         shopify_sync_status: "failed",
         shopify_sync_error: message.slice(0, 2000),
+        // Move failed rows behind untouched candidates so a transient API/AI failure
+        // cannot starve the rest of the bounded sync work pool on every retry.
+        pipeline_updated_at: new Date().toISOString(),
         shopify_synced_at: new Date().toISOString(),
       }).eq("id", row.id);
     }
