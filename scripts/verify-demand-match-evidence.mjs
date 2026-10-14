@@ -37,6 +37,14 @@ test("demand match bounds", "rotates a bounded observation page and scopes large
   assert.doesNotMatch(source, /readAll\(\(from, to\) => supabase\.from\("demand_product_candidates"/);
 });
 
+test("demand classification fallback", "uses strict catalog title overlap without depending on Gemini availability", async () => {
+  const source = await readFile(new URL("../lib/intelligence/match-demand-products.ts", import.meta.url), "utf8");
+  assert.match(source, /const catalogTitleSignal = productRows\.some/);
+  assert.match(source, /productMatchesQuery\(query, product\.normalized_title, allProductNames\)/);
+  assert.match(source, /reason: "catalog_title_overlap"/);
+  assert.match(source, /never bypasses identifier\/variant gates/);
+});
+
 test("Gemini demand classification failure", "provider failure is deferred instead of counted as a non-product result", async () => {
   const source = await readFile(new URL("../lib/intelligence/match-demand-products.ts", import.meta.url), "utf8");
   assert.match(source, /geminiCircuitBreaker\.recordFailure\(error\)/);
