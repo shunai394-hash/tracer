@@ -122,9 +122,13 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
       if (existingRowsError) throw new Error(existingRowsError.message);
       const existingIds = new Set((existingRows ?? []).map((row) => String(row.shopify_order_id)));
       for (const order of pageOrders) {
+        const isNewOrder = !existingIds.has(order.id);
+        // Enforce the requested cap inside the page loop too; otherwise one
+        // 100-order page can exceed a small maxNewOrders value such as 25.
+        if (isNewOrder && selectedNewOrders >= maxNewOrders) break;
         if (orders.length >= 500) break;
         orders.push(order);
-        if (!existingIds.has(order.id)) selectedNewOrders += 1;
+        if (isNewOrder) selectedNewOrders += 1;
       }
     }
 
