@@ -192,7 +192,7 @@ export async function GET(request: Request) {
         dryRun: true,
         noWrites: true,
         mode: "canonical_supply_fast_path",
-        featureEnabledForLiveRuns: process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED !== "false",
+        featureEnabledForLiveRuns: process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true",
         supplySelected,
       }, { headers: { "Cache-Control": "no-store" } });
     }
