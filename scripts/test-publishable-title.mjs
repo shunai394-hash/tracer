@@ -97,6 +97,19 @@ const candidateTitles = [
   ["panda desk ornament", "Creative Cute Panda Ornaments Office Desk Surface Panel", "パンダモチーフ デスクオーナメント"],
   ["foldable wireless charger", "Three-in-one Wireless Charger Electrical Foldable Double Wire Ambience Light Mobile Phone Wireless Charger", "3in1 折りたたみワイヤレス充電器"],
   ["rabbit blanket", "Double-sided Rabbit Plush Blanket Home Nap Office Blanket", "うさぎモチーフ 両面フランネルブランケット"],
+  ["desk fan", "Office 8-inch Wind-driven Fan", "卓上 8インチ送風ファン"],
+  ["cup warmer", "Cup Warmer Pad USB Charge Home Office 3 Temperatures Adjustable Heat Plate LED Display Electric Heater Mug Pad Winter Kitchen Gadgets", "USB給電 カップウォーマー 3段階温度調節"],
+  ["diamond grinding head", "Diamond Grinding Head Electric Grinding Accessories Sheet", "ダイヤモンド研磨ヘッド 工具用アクセサリー"],
+  ["coffee wall sticker", "Cup Coffee Removable Wall Sticker Decorative Painting", "コーヒーカップ柄 貼ってはがせるウォールステッカー"],
+  ["invitation card", "Sulfuric Acid Paper Invitation Card Bronzing Matte Varnish", "硫酸紙 箔押し招待状カード"],
+  ["hearing aid dryer", "Electric USB UV Drying Box Headphone Dehumidifier Moisture Proof Hearing Aid UV Dryer Case", "USB給電 補聴器・イヤホン乾燥ケース"],
+  ["interior art", "Home Decor Living Room Art Art Girl", "人物モチーフ インテリアアート"],
+  ["type-c cable", "Rogue Dog Data Cable Type C For Android Sport Dog Mobile Puppy Data Cable Phone Charging Cable", "犬モチーフ Type-C 充電ケーブル"],
+  ["agave ornament", "New Cross-Border Iron Art Agave Plant Ornaments Agave Garden Ornaments", "アガベ風 アイアンガーデンオーナメント"],
+  ["sports car phone case", "Compatible with Apple , Creative Sports Car Anti-Fall Mobile Phone Case For Protective Cover Silicone Soft Shell Trendy", "スポーツカー柄 耐衝撃スマートフォンケース"],
+  ["generic phone case", "Compatible With Apple Mobile Phone Case For iPhone 13", "対応機種別 スマートフォンケース"],
+  ["holiday door frame", "Wooden Door I Saw That Jesus Head Funny Home Decor Frame Ornament AND Merry Christmas Door Frame Decoration Santa Claus Elk", "クリスマス ドアフレーム飾り"],
+
 ];
 for (const [name, source, expected] of candidateTitles) {
   const title = localizeProductTitle(source);
