@@ -161,42 +161,35 @@ export function simulateContributionProfit(args: {
     });
   }
 
-  if (args.requireDomesticShipping === true && args.domesticShipping == null) {
-    return unknown("domestic_shipping_unknown");
-  }
-  if (args.internationalShipping == null) {
-    return unknown("international_shipping_unknown");
-  }
-
-  const shippingUnknown = false;
+  // Keep product discovery moving when a supplier quote is unavailable:
+  // price in a conservative freight reserve and re-quote asynchronously.
+  // These are explicit operating assumptions, never represented as observed quotes.
+  const shippingUnknown = args.internationalShipping == null ||
+    (args.requireDomesticShipping === true && args.domesticShipping == null);
   const shippingCurrency = args.shippingCurrency?.trim().toUpperCase() ?? null;
+  const shippingCurrenciesMatchSelling = shippingCurrency === sellingCurrency;
+  const shippingCurrenciesMatchSource = shippingCurrency === sourceCurrency;
+  const shippingFxRate = shippingCurrenciesMatchSelling
+    ? 1
+    : shippingCurrenciesMatchSource
+      ? (currenciesMatch ? 1 : fxRate)
+      : null;
 
-  if (!shippingUnknown && !shippingCurrency) {
+  if (args.internationalShipping != null && !shippingCurrency) {
     return unknown("shipping_currency_missing");
   }
-
-  const shippingCurrenciesMatchSelling =
-    shippingCurrency === sellingCurrency;
-  const shippingCurrenciesMatchSource =
-    shippingCurrency === sourceCurrency;
-  const shippingFxRate =
-    shippingCurrenciesMatchSelling
-      ? 1
-      : shippingCurrenciesMatchSource
-        ? currenciesMatch
-          ? 1
-          : fxRate
-        : null;
-
-  if (!shippingUnknown && shippingFxRate === null) {
+  if (args.internationalShipping != null && shippingFxRate === null) {
     return unknown("shipping_currency_mismatch_no_observed_fx");
   }
 
-  const convertedInternationalShipping =
-    args.internationalShipping == null
-      ? null
-      : args.internationalShipping * (shippingFxRate as number);
-  const convertedDomesticShipping = args.domesticShipping ?? 0;
+  const convertedInternationalShipping = args.internationalShipping == null
+    ? null
+    : args.internationalShipping * (shippingFxRate as number);
+  const minimumFreightReserve = sellingCurrency === "JPY" ? 800 : 8;
+  const internationalShipping = convertedInternationalShipping ??
+    Math.ceil(Math.max(minimumFreightReserve, convertedSourceCost * 0.35));
+  const domesticShipping = args.domesticShipping ??
+    (args.requireDomesticShipping === true ? (sellingCurrency === "JPY" ? 600 : 6) : 0);
 
   if (shippingFxRate && !shippingCurrenciesMatchSelling) {
     provenance.push({
@@ -207,9 +200,22 @@ export function simulateContributionProfit(args: {
       note: `${shippingCurrency}->${sellingCurrency}`,
     });
   }
-
-  const internationalShipping = convertedInternationalShipping ?? 0;
-  const domesticShipping = convertedDomesticShipping;
+  if (args.internationalShipping == null) {
+    provenance.push({
+      field: "international_shipping_reserve",
+      kind: "assumption",
+      value: internationalShipping,
+      note: "estimated_at_35_percent_of_supplier_cost_with_minimum_reserve; refresh_actual_quote_and_reprice",
+    });
+  }
+  if (args.requireDomesticShipping === true && args.domesticShipping == null) {
+    provenance.push({
+      field: "domestic_shipping_reserve",
+      kind: "assumption",
+      value: domesticShipping,
+      note: "temporary_domestic_delivery_reserve; refresh_actual_quote_and_reprice",
+    });
+  }
 
   const advertisingAllowance = roundMoney(
     args.sellingPrice * PROFIT_ASSUMPTIONS.advertising_allowance_rate,
@@ -296,8 +302,8 @@ export function simulateContributionProfit(args: {
     provenance.push({
       field: "shipping",
       kind: "derived",
-      value: null,
-      note: "shipping_not_observed_treated_as_unknown_not_zero_cost",
+      value: { internationalShippingReserve: internationalShipping, domesticShippingReserve: domesticShipping },
+      note: "shipping_quote_missing_but_conservative_reserve_included_in_profit; quote_refresh_required",
     });
   }
 
@@ -319,16 +325,18 @@ export function simulateContributionProfit(args: {
     {
       key: "international_shipping",
       label: "国際送料",
-      amount: shippingUnknown ? null : internationalShipping,
+      amount: internationalShipping,
       currency: sellingCurrency,
-      kind: shippingUnknown ? "unknown" : "observed",
+      kind: args.internationalShipping == null ? "assumption" : "observed",
+      note: args.internationalShipping == null ? "temporary_freight_reserve_quote_refresh_required" : undefined,
     },
     {
       key: "domestic_shipping",
       label: "国内送料",
-      amount: shippingUnknown ? null : domesticShipping,
+      amount: domesticShipping,
       currency: sellingCurrency,
-      kind: shippingUnknown ? "unknown" : "observed",
+      kind: args.domesticShipping == null && args.requireDomesticShipping === true ? "assumption" : "observed",
+      note: args.domesticShipping == null && args.requireDomesticShipping === true ? "temporary_delivery_reserve_quote_refresh_required" : undefined,
     },
     {
       key: "platform_fee",
@@ -384,7 +392,7 @@ export function simulateContributionProfit(args: {
       currency: sellingCurrency,
       kind: "assumption",
       note: shippingUnknown
-        ? "excludes_unknown_shipping"
+        ? "includes_conservative_shipping_reserve_quote_refresh_required"
         : fxRate && !currenciesMatch
           ? `includes_observed_fx_${sourceCurrency}_to_${sellingCurrency}`
           : "includes_assumed_fees",
@@ -404,8 +412,8 @@ export function simulateContributionProfit(args: {
     currencyConfidence: weaker,
     sellingPrice: args.sellingPrice,
     sourceCost: convertedSourceCost,
-    internationalShipping: shippingUnknown ? null : internationalShipping,
-    domesticShipping: shippingUnknown ? null : domesticShipping,
+    internationalShipping,
+    domesticShipping,
     platformFee,
     paymentFee,
     advertisingAllowance,
