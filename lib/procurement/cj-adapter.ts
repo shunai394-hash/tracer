@@ -60,9 +60,9 @@ function mapProduct(product: CJProductCandidate): SupplierProduct {
 }
 
 function countryName(countryCode: string, explicit?: string): string | null {
-  const supplied = explicit?.trim();
-  if (supplied) return supplied;
   const code = countryCode.trim().toUpperCase();
+  const supplied = explicit?.trim();
+  if (supplied && supplied.toUpperCase() !== code) return supplied;
   // TRACER's live dropship checkout currently targets Japan. Do not invent a
   // human-readable country name for destinations we have not verified.
   if (code === "JP") return "Japan";
@@ -132,12 +132,17 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
     shippingRequiresDestination: true,
     orderPreflight: true,
     orderCreation: true,
-    payment: true,
+    // CJ balance-payment completion has not yet passed a live or sandbox
+    // end-to-end test. Keep this capability false until that proof is recorded.
+    payment: process.env.CJ_PAYMENT_FLOW_VERIFIED?.trim() === "1",
     orderStatus: true,
     tracking: true,
-    // Keep automatic/live ordering disabled unless both explicit production
-    // flags are enabled and the CJ API key is configured.
-    liveOrdering: Boolean(getCJConfig().apiKey) && isCJLiveOrderingEnabled() && isCJAutoOrderingEnabled(),
+    // Keep automatic/live ordering disabled unless payment proof and both
+    // explicit production flags are enabled and the CJ API key is configured.
+    liveOrdering: Boolean(getCJConfig().apiKey) &&
+      process.env.CJ_PAYMENT_FLOW_VERIFIED?.trim() === "1" &&
+      isCJLiveOrderingEnabled() &&
+      isCJAutoOrderingEnabled(),
   },
 
   async getProduct(supplierProductId): Promise<SupplierProduct | null> {
@@ -237,6 +242,7 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
       ["shippingAddress", input.shippingAddress],
       ["shippingZip", input.shippingZip],
       ["shippingCustomerName", input.shippingCustomerName],
+      ["shippingPhone", input.shippingPhone],
     ];
     const missing = required.find(([, value]) => !value?.trim());
     if (missing) {
