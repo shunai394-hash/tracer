@@ -7,6 +7,9 @@ on:
     paths:
       - ".github/workflows/tracer-production-patrol-15m.yml"
       - "app/api/cron/patrol-ai/route.ts"
+      - "lib/ops/catalog-count-check.ts"
+      - "scripts/test-catalog-count-safety-check.mjs"
+      - "package.json"
       - "app/api/cron/cj-identity-reverify/route.ts"
       - "scripts/test-bounded-identity-stamping.mjs"
       - "vercel.json"
