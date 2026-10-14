@@ -25,8 +25,8 @@ const [profit, supplySelector, marketSelector, publicationRoute, diagnosticWorkf
 ]);
 assert.match(profit, /args\.domesticShipping \?\?\s*\(args\.requireDomesticShipping === true \? \(sellingCurrency === "JPY" \? 600 : 6\) : 0\)/);
 assert.match(profit, /field: "domestic_shipping_reserve"[\s\S]{0,250}temporary_domestic_delivery_reserve/);
-assert.match(supplySelector, /domesticShipping: nativeCjSupplyIdentity \? 0 : null/);
-assert.match(supplySelector, /requireDomesticShipping: !nativeCjSupplyIdentity/);
+assert.match(supplySelector, /domesticShipping: nativeSupplierSupplyIdentity \? 0 : null/);
+assert.match(supplySelector, /requireDomesticShipping: !nativeSupplierSupplyIdentity/);
 assert.equal(isPublishableCatalogTitle("トレンド・seeded_dueアイテム"), false);
 assert.equal(isPublishableCatalogTitle("Aroma Filter"), true);
 assert.match(supplySelector, /product_master_title_not_publishable/);
