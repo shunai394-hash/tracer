@@ -184,7 +184,7 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
 
   const { data: existingDelivery, error: deliveryReadError } = await supabase
     .from("newfind_promotion_deliveries")
-    .select("status, ack_status, http_status, attempts, lease_until, event_id")
+    .select("status, ack_status, http_status, attempts, lease_until, event_id, last_error")
     .eq("listing_id", listingId)
     .maybeSingle();
 
@@ -203,9 +203,14 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     return { configured: true, sent: false, eventId: id, status: null, ackStatus: "sending", detail: "newfind_delivery_in_progress" };
   }
 
+  const retryRejectedSchemaEvent = currentStatus === "failed"
+    && /invalid input syntax for type integer/i.test(String(existingDelivery?.last_error ?? ""))
+    && !String(existingDelivery?.event_id ?? "").includes(":schema-retry");
   const sendEventId = currentStatus === "withdrawn"
     ? `${eventId(listingId)}:republished:${now.getTime()}`
-    : typeof existingDelivery?.event_id === "string" && existingDelivery.event_id ? existingDelivery.event_id : id;
+    : retryRejectedSchemaEvent
+      ? `${eventId(listingId)}:schema-retry`
+      : typeof existingDelivery?.event_id === "string" && existingDelivery.event_id ? existingDelivery.event_id : id;
 
   let claimQuery = supabase
     .from("newfind_promotion_deliveries")
