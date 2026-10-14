@@ -132,8 +132,16 @@ async function markVerification(
     verification_attempts: patch.status === "verified" ? 0 : attempts + 1,
     last_verified_at: patch.status === "verified" ? now.toISOString() : undefined,
     next_verification_at: new Date(now.getTime() + delayMs).toISOString(),
-    shipping_checked_at: patch.shippingStatus ? now.toISOString() : undefined,
-    inventory_checked_at: now.toISOString(),
+    // These timestamps are freshness evidence, not attempt timestamps. A retryable
+    // API failure must not make stale inventory or freight look recently verified.
+    shipping_checked_at:
+      patch.shippingStatus === "verified" || patch.shippingStatus === "unavailable"
+        ? now.toISOString()
+        : undefined,
+    inventory_checked_at:
+      patch.status === "verified" || patch.status === "unavailable"
+        ? now.toISOString()
+        : undefined,
   }).eq("id", id);
   // A failed write would leave the row at the head of the due queue and
   // stall traversal, so surface it instead of dropping it.
