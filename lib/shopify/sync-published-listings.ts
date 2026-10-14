@@ -7,7 +7,6 @@ import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/clie
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
-import { getLiveShopifyStock } from "@/lib/shop/store";
 
 type Listing = {
   id: string;
@@ -64,6 +63,41 @@ function asNumber(value: unknown): number | null {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : null;
 }
+
+async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, number>> {
+  const requestedIds = [...new Set(variantIds)];
+  const ids = requestedIds.filter((id) => /^gid:\/\/shopify\/ProductVariant\/\d+$/.test(id));
+  if (ids.length !== requestedIds.length || ids.length === 0) {
+    throw new Error("shopify_live_stock_variant_ids_invalid");
+  }
+  const liveStock = new Map<string, number>();
+  const batchSize = 100;
+  for (let offset = 0; offset < ids.length; offset += batchSize) {
+    const batch = ids.slice(offset, offset + batchSize);
+    const data = await shopifyGraphQL<{ nodes: Array<{ id: string; inventoryQuantity: number | null } | null> }>(
+      `query LiveVariantInventory($ids: [ID!]!) {
+        nodes(ids: $ids) {
+          ... on ProductVariant {
+            id
+            inventoryQuantity
+          }
+        }
+      }`,
+      { ids: batch },
+    );
+    for (const node of data.nodes ?? []) {
+      if (!node?.id || !batch.includes(node.id)) continue;
+      const quantity = asNumber(node.inventoryQuantity);
+      if (quantity === null) throw new Error("shopify_live_stock_quantity_unknown");
+      liveStock.set(node.id, Math.max(0, Math.floor(quantity)));
+    }
+    if (batch.some((id) => !liveStock.has(id))) {
+      throw new Error("shopify_live_stock_response_incomplete");
+    }
+  }
+  return liveStock;
+}
+
 
 function html(value: string | null): string {
   if (!value) return "<p>TRACER selected product.</p>";
