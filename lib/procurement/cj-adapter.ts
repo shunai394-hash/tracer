@@ -290,6 +290,7 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
         supplierOrderId: null,
         responseCode: "CJ_LIVE_ORDERING_DISABLED",
         responseMessage: "CJ live and automatic ordering flags must both be explicitly enabled",
+        trackingNumber: null,
         raw: null,
       };
     }
@@ -297,10 +298,10 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
     try {
       const variant = await fetchCJVariantByVid(input.supplierVariantId);
       if (!variant || variant.productId !== input.supplierProductId) {
-        return { succeeded: false, supplierOrderId: null, responseCode: "CJ_VARIANT_MISMATCH", responseMessage: "CJ variant does not match the supplier product", raw: null };
+        return { succeeded: false, supplierOrderId: null, responseCode: "CJ_VARIANT_MISMATCH", responseMessage: "CJ variant does not match the supplier product", trackingNumber: null, raw: null };
       }
       if (variant.inventory === null || variant.inventory < input.quantity || !positiveNumber(variant.sellPrice)) {
-        return { succeeded: false, supplierOrderId: null, responseCode: "CJ_STOCK_OR_PRICE_UNVERIFIED", responseMessage: "Fresh verified stock and price are required", raw: null };
+        return { succeeded: false, supplierOrderId: null, responseCode: "CJ_STOCK_OR_PRICE_UNVERIFIED", responseMessage: "Fresh verified stock and price are required", trackingNumber: null, raw: null };
       }
       const freight = await chooseFreight(
         input.supplierProductId,
@@ -310,11 +311,11 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
         input.quantity,
       );
       if (!freight) {
-        return { succeeded: false, supplierOrderId: null, responseCode: "CJ_SHIPPING_UNAVAILABLE", responseMessage: "No verified CJ shipping route is available", raw: null };
+        return { succeeded: false, supplierOrderId: null, responseCode: "CJ_SHIPPING_UNAVAILABLE", responseMessage: "No verified CJ shipping route is available", trackingNumber: null, raw: null };
       }
       const shippingCountry = countryName(input.shippingCountryCode, input.shippingCountry);
       if (!shippingCountry) {
-        return { succeeded: false, supplierOrderId: null, responseCode: "CJ_COUNTRY_UNVERIFIED", responseMessage: "Destination country name is not verified", raw: null };
+        return { succeeded: false, supplierOrderId: null, responseCode: "CJ_COUNTRY_UNVERIFIED", responseMessage: "Destination country name is not verified", trackingNumber: null, raw: null };
       }
 
       const result = await createCJOrderV2({
