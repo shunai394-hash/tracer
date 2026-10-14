@@ -62,7 +62,7 @@ async function resolveLiveShopifyUrl(listing: {
   if (!isShopifyConfigured()) return null;
 
   const { storeDomain } = getShopifyConfig();
-  const domain = storeDomain.trim().replace(/^https?:\\/\\//, "").replace(/\\/$/, "");
+  const domain = storeDomain.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
   if (!domain) return null;
 
   try {
