@@ -5,7 +5,10 @@ const source = await readFile(new URL("../lib/shopify/sync-orders.ts", import.me
 
 // Outer order pagination: newest paid orders are scanned until new imports are found.
 assert.match(source, /orders\(first: \$first, after: \$after,[\s\S]*?reverse: true/);
-assert.match(source, /while \(hasNextOrdersPage && orders\.length < maxNewOrders\)/);
+assert.match(source, /while \(hasNextOrdersPage && selectedNewOrders < maxNewOrders && scannedOrders < 500\)/);
+assert.match(source, /if \(isNewOrder && selectedNewOrders >= maxNewOrders\) break/);
+assert.ok(source.indexOf("if (isNewOrder && selectedNewOrders >= maxNewOrders) break") < source.indexOf("orders.push(order)"),
+  "the new-order cap must be enforced before adding another new order from the same page");
 assert.match(source, /shopify_orders_cursor_not_advancing/);
 assert.match(source, /fetched: scannedOrders/);
 assert.ok(source.includes("if (!existingIds.has(order.id)"), "already-imported orders must be skipped while paging");
@@ -35,6 +38,6 @@ assert.ok(source.includes('.eq("shopify_order_id", order.id)'));
 
 // A Shopify variant may not silently map to the last of several internal listings.
 assert.match(source, /shopify_variant_mapping_ambiguous/);
-assert.ok(source.indexOf("shopify_variant_mapping_ambiguous") < source.indexOf("let insertedOrderId"),
+assert.ok(source.indexOf("shopify_variant_mapping_ambiguous") < source.indexOf("let targetOrderId"),
   "ambiguous variant mappings must fail before order insertion");
 console.log("Shopify order pagination and idempotency: 22 assertions passed");
