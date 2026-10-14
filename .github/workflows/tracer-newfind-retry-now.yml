@@ -69,12 +69,43 @@ jobs:
           echo "=== Sync gate-passed listings to Shopify ==="
           call_get api/cron/shopify-publish 300 shopify-publish.json || failures=1
           echo "=== Drain NEWFIND deliveries and rescue gate-passed listings ==="
+          stagnant=0
+          last_response=""
           for pass in $(seq 1 20); do
             echo "=== NEWFIND retry pass $pass/20 ==="
-            call_get api/cron/newfind-retry 65 "newfind-retry-$pass.json" || failures=1
+            last_response="newfind-retry-$pass.json"
+            if ! call_get api/cron/newfind-retry 65 "$last_response"; then
+              failures=1
+              stagnant=$((stagnant + 1))
+            else
+              progress="$(python3 - "$last_response" <<'PY'
+          import json,sys
+          try:
+              d=json.load(open(sys.argv[1], encoding="utf-8"))
+          except Exception:
+              print(0)
+              raise SystemExit(0)
+          rescue=d.get("rescue") if isinstance(d.get("rescue"),dict) else {}
+          try:
+              print(max(0,int(d.get("processed",0) or 0))+max(0,int(rescue.get("processed",0) or 0)))
+          except (TypeError,ValueError):
+              print(0)
+          PY
+          )"
+              if [ "$progress" -gt 0 ]; then
+                stagnant=0
+              else
+                stagnant=$((stagnant + 1))
+              fi
+            fi
+            if [ "$stagnant" -ge 2 ]; then
+              echo "::error::No successful NEWFIND acknowledgements in two consecutive passes; stopping repeated retries and preserving the reported blocker"
+              failures=1
+              break
+            fi
           done
-          if [ -f newfind-retry-20.json ]; then
-            python3 - newfind-retry-20.json <<'PY'
+          if [ -n "$last_response" ] && [ -f "$last_response" ]; then
+            python3 - "$last_response" <<'PY'
           import json,sys
           try:
               with open(sys.argv[1], encoding="utf-8") as f:
