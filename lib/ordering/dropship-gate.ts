@@ -65,7 +65,7 @@ export function evaluateDropshipOrderGate(input: DropshipOrderGateInput): Dropsh
 
   const supplierConfigured = input.supplierConfigured ?? input.cjConfigured;
   if (!supplierConfigured) blocked.push("supplier_not_configured");
-  if (isCjSupplierName(input.supplierName) && input.supplierIdentityStatus !== "linked") {
+  if (isCjSupplierName(input.supplierName) && !["linked", "native_cj_verified"].includes(input.supplierIdentityStatus ?? "")) {
     blocked.push("supplier_identity_unlinked");
   }
 
@@ -117,6 +117,7 @@ export function verifyDropshipOrderGateInvariants(): {
     { name: "unlinked_cj_identity_blocks_order", expected: true, actual: evaluateDropshipOrderGate({ ...base, supplierName: "CJ Dropshipping", supplierIdentityStatus: "supply_discovered" }).blocked.includes("supplier_identity_unlinked") },
     { name: "missing_cj_identity_blocks_order", expected: true, actual: evaluateDropshipOrderGate({ ...base, supplierName: "cj", supplierIdentityStatus: null }).blocked.includes("supplier_identity_unlinked") },
     { name: "linked_cj_identity_does_not_add_identity_blocker", expected: true, actual: !evaluateDropshipOrderGate({ ...base, supplierName: "cjdropshipping", supplierIdentityStatus: "linked" }).blocked.includes("supplier_identity_unlinked") },
+    { name: "verified_native_cj_identity_does_not_add_identity_blocker", expected: true, actual: !evaluateDropshipOrderGate({ ...base, supplierName: "cj", supplierIdentityStatus: "native_cj_verified" }).blocked.includes("supplier_identity_unlinked") },
     { name: "missing_variant_blocks_execution", expected: true, actual: !evaluateDropshipOrderGate({ ...base, vid: null }).canExecuteLive },
     { name: "live_ordering_disabled_blocks_execution_not_data", expected: true, actual: (() => { const r = evaluateDropshipOrderGate({ ...base, liveOrderingEnabled: false }); return !r.canExecuteLive && r.liveOrderingDisabled && r.missing.length === 0 && r.blocked.length === 0; })() },
     { name: "kill_switch_blocks_execution", expected: true, actual: evaluateDropshipOrderGate({ ...base, killSwitchBlocked: true }).blocked.includes("kill_switch_active") },
