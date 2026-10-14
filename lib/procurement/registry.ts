@@ -9,9 +9,10 @@ export function registerSupplierAdapter(
   adapter: TracerSupplierAdapter,
 ): void {
   const normalized = normalizeSupplierName(adapter.name);
-  // CJ/CJDropshipping is permanently excluded from TRACER procurement.
-  // Even if a stale module attempts to register it, the registry must fail closed.
-  if (normalized === "cj" || normalized === "superdelivery" || normalized === "super delivery") return;
+  // Superdelivery remains excluded until it has a verified adapter. CJ is
+  // registered through its fail-closed adapter; live ordering remains disabled
+  // unless explicit flags and payment-flow verification are present.
+  if (normalized === "superdelivery" || normalized === "super delivery") return;
   adapters.set(normalized, adapter);
 }
 
