@@ -236,9 +236,37 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const storedFxRate = num(metadata.fx_rate);
       const observedFx = storedFxRate === null && String(row.currency ?? "").toUpperCase() === "USD" ? await getObservedUsdToJpyRate() : null;
       const fxRate = storedFxRate ?? observedFx?.rate ?? null;
+      // A missing quote must not strand a discovered product. Use a configurable
+      // JPY shipping reserve, converted into supplier-listing currency and
+      // explicitly tagged as an estimate. It is included in landed cost and
+      // therefore in the automatically derived retail price.
+      const unknownShippingReserveJpy = (() => {
+        const configured = Number(process.env.TRACER_CJ_UNKNOWN_SHIPPING_RESERVE_JPY ?? "1500");
+        return Number.isFinite(configured) && configured > 0 ? Math.ceil(configured) : 1500;
+      })();
+      const shippingReserveApplied = shippingCost === null && fxRate !== null && fxRate > 0;
+      if (shippingReserveApplied) {
+        shippingCost = unknownShippingReserveJpy / fxRate!;
+        refreshedEvidence.japan_shipping = {
+          supplier_variant_id: String(row.supplier_variant_id),
+          destination_country: "JP",
+          quantity: 1,
+          amount_jpy: unknownShippingReserveJpy,
+          amount_listing_currency: shippingCost,
+          currency: String(row.currency ?? "USD").toUpperCase(),
+          evidence_type: "configurable_conservative_reserve",
+          estimated: true,
+          checked_at: new Date().toISOString(),
+        };
+      }
       const storedSellingPriceJpy = num(metadata.selling_price_jpy);
       const landedCostJpy = cost !== null && shippingCost !== null && fxRate !== null ? (cost + shippingCost) * fxRate : null;
-      const sellingPriceJpy = storedSellingPriceJpy ?? (landedCostJpy !== null && Number.isFinite(landedCostJpy) && landedCostJpy >= 0 ? Math.ceil(Math.max(1980, landedCostJpy * 2.5) / 100) * 100 : null);
+      const calculatedRetailPriceJpy = landedCostJpy !== null && Number.isFinite(landedCostJpy) && landedCostJpy >= 0
+        ? Math.ceil(Math.max(1980, landedCostJpy * 2.5) / 100) * 100
+        : null;
+      const sellingPriceJpy = shippingReserveApplied
+        ? calculatedRetailPriceJpy
+        : storedSellingPriceJpy ?? calculatedRetailPriceJpy;
       const listingImage = [listingMetadata.image_url, listingMetadata.product_image, listingMetadata.productImage, listingMetadata.image].find((value) => typeof value === "string" && /^https?:\/\//i.test(value.trim()));
       const imageUrl = typeof intelligence?.image_url === "string" && /^https?:\/\//i.test(intelligence.image_url.trim()) ? intelligence.image_url.trim() : typeof listingImage === "string" ? listingImage.trim() : recoveredImageUrl ?? "";
       const missingFields = [
@@ -264,8 +292,13 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
           ...supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null),
           last_identity_reverify_at: checkedAt.toISOString(),
           next_identity_reverify_at: new Date(checkedAt.getTime() + MISSING_DATA_RETRY_MS).toISOString(),
-          identity_hold_reason: "missing_economics_or_image",
+          identity_hold_reason: missingFields.length === 1 && missingFields[0] === "product_image" ? "missing_product_image" : "missing_economics_or_image",
           remediation_status: "retry_scheduled",
+          ...(shippingReserveApplied ? {
+            shipping_estimate_applied: true,
+            shipping_estimate_jpy: unknownShippingReserveJpy,
+            shipping_estimate_policy: "TRACER_CJ_UNKNOWN_SHIPPING_RESERVE_JPY",
+          } : {}),
           remediation_missing_fields: missingFields,
           remediation_attempts: Math.max(0, Number(listingMetadata.remediation_attempts ?? 0)) + 1,
           ...(liveVariantPriceRecovered ? { live_variant_price_recovered_at: checkedAt.toISOString() } : {}),
