@@ -3,11 +3,11 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../lib/integration/newfind.ts", import.meta.url), "utf8");
 
-assert.match(source, /async function resolveLiveShopifyUrl/);
-assert.match(source, /listing\.shopify_sync_status !== "synced"/);
-assert.match(source, /product\(id: \$id\) \{ id handle status \}/);
-assert.match(source, /product\.status !== "ACTIVE"/);
-assert.match(source, /const productUrl = shopifyUrl \?\? tracerUrl/);
-assert.match(source, /no_live_shopify_or_tracer_sales_url/);
+assert.match(source, /const productUrl = tracerUrl/);
+assert.match(source, /const tracerUrl = await resolveLiveTracerUrl/);
+assert.match(source, /tracer_sales_url_not_live/);
 assert.match(source, /sales_url: productUrl/);
-console.log("NEWFIND prefers a live, active Shopify sales URL and retains a checked TRACER fallback.");
+assert.match(source, /tracer_url: tracerUrl/);
+assert.doesNotMatch(source, /shopify\.myshopify\.com|resolveLiveShopifyUrl/,
+  "NEWFIND sales links must remain on the verified TRACER origin");
+console.log("NEWFIND uses only a liveness-checked TRACER-origin sales URL.");
