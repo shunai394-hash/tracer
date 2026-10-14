@@ -58,6 +58,12 @@ for (const [name, source, expected] of candidateTitles) {
 }
 assert.equal(womenProductPriority({ title: "Groin Electric Clippers Household Hair Clipper" }).isWomenFocused, false, "hair clipper must not match the hair-clip accessory category");
 assert.equal(womenProductPriority({ title: "Flower Hair Clip Accessory" }).isWomenFocused, true, "actual hair-clip accessories remain women-focused");
+const hairTiesSource = "Rubber Bands 15mm 250 Count Colored Elastic Hair Ties For Braids";
+const hairTiesTitle = localizeProductTitle(hairTiesSource);
+assert.equal(hairTiesTitle, "編み込み用 カラーヘアゴム 250本セット", "hair-tie candidates need a concrete Japanese product title");
+assert.equal(isPublishableCatalogTitle(hairTiesTitle), true, "hair-tie title must pass storefront quality gate");
+assert.equal(isPublishableCatalogDescription(localizeProductDescription(hairTiesSource)), true, "hair-tie description must pass storefront quality gate");
+assert.equal(womenProductPriority({ title: hairTiesSource }).categoryPriority, 3, "hair ties should rank with priority women's hair accessories");
 const supplySelector = await readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8");
 assert.match(supplySelector, /isPublishableCatalogTitle\(localizedTitle\)/, "supply publication must enforce buyer-facing title quality");
 assert.match(localizeProductDescription("Bohemian Beach Vacation Flower Hair Clip For Women"), /花モチーフのヘアクリップ/);
