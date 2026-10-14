@@ -206,7 +206,8 @@ export function getDropshipSupplierConfig() {
 
 export function isSupplierConfigured(supplierName: string): boolean {
   const name = supplierName.trim().toLowerCase();
-  if (name === "cj" || name === "cjdropshipping") return present(getCJConfig().apiKey);
+  const normalized = name.replace(/[^a-z0-9]+/g, "");
+  if (normalized === "cj" || normalized === "cjdropshipping") return present(getCJConfig().apiKey);
   if (name === "orosy") return present(getOrosyConfig().apiKey);
   if (name === "faire") return present(readEnv("FAIRE_ACCESS_TOKEN"));
   if (name === "dsers") return present(readEnv("DSERS_MCP_ACCESS_TOKEN"));
