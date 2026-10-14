@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
-import { calculateSupplySellingPriceJpy } from "../lib/market/supply-pricing.ts";
+import { calculateSupplySellingPriceJpy, resolveUnknownShippingAllowanceUsd } from "../lib/market/supply-pricing.ts";
+
+assert.equal(resolveUnknownShippingAllowanceUsd(undefined), 15, "unknown shipping defaults to a non-zero allowance");
+assert.equal(resolveUnknownShippingAllowanceUsd("22.5"), 22.5, "shipping allowance can be configured per business");
+assert.equal(resolveUnknownShippingAllowanceUsd("0"), 15, "zero cannot silently disable the shipping reserve");
+assert.equal(resolveUnknownShippingAllowanceUsd("9999"), 15, "unreasonable configured allowances fall back to the default");
 
 const fees = {
   platformFeeRate: 0.10,
