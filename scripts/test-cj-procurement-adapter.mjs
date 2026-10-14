@@ -12,6 +12,7 @@ const init = read("lib/procurement/init.ts");
 const env = read("lib/config/env.ts");
 const client = read("lib/sources/cj/client.ts");
 const order = read("lib/sources/cj/create-order.ts");
+const inventoryRefresh = read("app/api/cron/inventory-refresh/route.ts");
 
 assert.match(adapter, /name: "cj"/);
 assert.match(adapter, /inventoryByCountry/);
@@ -35,5 +36,8 @@ assert.match(client, /Number\(inventoryRow\.verifiedWarehouse\) !== 1/);
 assert.match(client, /Number\(inventoryRow\.cjInventory\)/);
 assert.match(order, /body\.payType = input\.payType \?\? 2/);
 assert.match(order, /required CJ createOrderV2 field is missing/);
+assert.doesNotMatch(inventoryRefresh, /getAutoProcurementEligibility/,
+  "missing auto-order/payment capability must not automatically unpublish products");
+assert.match(inventoryRefresh, /supplier_inventory_capability_missing/);
 
 console.log("CJ procurement adapter contract checks passed (live ordering remains fail-closed until payment proof and explicit flags).");
