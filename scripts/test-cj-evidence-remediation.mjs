@@ -20,6 +20,7 @@ const checks = [
   ["refreshed cost shipping and inventory persist to supplier listing", /\.update\(\{[\s\S]{0,180}cost, shipping_cost: shippingCost, shipping_status: shippingEstimated \? "estimated" : "verified", inventory,/],
   ["missing fields are enumerated and queued for remediation", /remediation_missing_fields: missingFields[\s\S]{0,500}remediation_next_actions:/],
   ["successful refresh clears remediation fields", /remediation_status: "evidence_refreshed",[\s\S]{0,120}remediation_missing_fields: \[\]/],
+  ["successful evidence remediation refreshes supplier freshness timestamp", /price_confirmed: true, stock_confirmed: true, last_verified_at: new Date\(\)\.toISOString\(\)/],
   ["identity still requires exact supplier product and variant identifiers", /variant\.vid === String\(row\.supplier_variant_id\)/],
 ];
 for (const [name, pattern] of checks) assert.match(source, pattern, name);
