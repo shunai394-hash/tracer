@@ -182,7 +182,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
     ...row,
     identity_status: row.supplier_listing_id ? supplierStatuses.get(row.supplier_listing_id) ?? null : null,
   }));
-  const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 15);
+  const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 25);
   const actionable = listingIds?.length
     ? rows.slice(0, safeLimit)
     : rows.filter((row) => {
