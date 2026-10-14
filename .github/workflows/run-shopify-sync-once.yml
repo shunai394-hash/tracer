@@ -1,0 +1,54 @@
+name: One-time guarded Shopify sync
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/run-shopify-sync-once.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  sync:
+    if: contains(github.event.head_commit.message, '[run-shopify-sync-now]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Run bounded production Shopify sync passes
+        env:
+          PRODUCTION_ORIGIN: https://tracer-pied-alpha.vercel.app
+        shell: bash
+        run: |
+          set -euo pipefail
+          failures=0
+          for pass in 1 2 3 4; do
+            token_response="$(curl -fsS \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app")"
+            token="$(jq -r '.value' <<< "$token_response")"
+            if [[ -z "$token" || "$token" == "null" ]]; then
+              echo "GitHub OIDC token was not issued."
+              exit 1
+            fi
+
+            response="$(curl -sS --max-time 240 \
+              -H "Authorization: Bearer $token" \
+              -H "Cache-Control: no-cache" \
+              "$PRODUCTION_ORIGIN/api/cron/shopify-publish")"
+            echo "$response" | jq '{ok, phase, considered, synced, failed, listingIds, errors}'
+            ok="$(jq -r '.ok // false' <<< "$response")"
+            considered="$(jq -r '.considered // 0' <<< "$response")"
+            if [[ "$ok" != "true" ]]; then failures=1; fi
+            if [[ "$considered" -eq 0 ]]; then
+              echo "No further eligible rows in the bounded sync pool."
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$failures" -ne 0 ]]; then
+            echo "At least one Shopify sync pass reported failures; inspect the JSON above."
+            exit 1
+          fi
