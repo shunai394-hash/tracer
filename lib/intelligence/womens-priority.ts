@@ -53,6 +53,7 @@ export function verifyWomenPriorityInvariants(): {
   const japaneseBag = womenProductPriority({ title: "レディース ショルダーバッグ", category: "バッグ" });
   const englishBackpack = womenProductPriority({ title: "Retro Cowhide Ladies Small Backpack" });
   const japaneseBeauty = womenProductPriority({ title: "美顔器・美容機器", category: "美容" });
+  const hairTies = womenProductPriority({ title: "Rubber Bands 15mm 250 Count Colored Elastic Hair Ties For Braids" });
 
   const cases = [
     { name: "beauty_is_prioritized", actual: beauty.isWomenFocused && beauty.bonus === 12 && beauty.tier === "core" },
@@ -61,6 +62,7 @@ export function verifyWomenPriorityInvariants(): {
     { name: "japanese_womens_bag_is_first_priority", actual: japaneseBag.isWomenFocused && japaneseBag.tier === "core" && japaneseBag.categoryPriority === 1 && japaneseBag.bonus === 20 },
     { name: "english_backpack_is_first_priority", actual: englishBackpack.isWomenFocused && englishBackpack.categoryPriority === 1 && englishBackpack.bonus === 20 },
     { name: "japanese_beauty_tool_is_second_priority", actual: japaneseBeauty.isWomenFocused && japaneseBeauty.categoryPriority === 2 && japaneseBeauty.bonus === 18 },
+    { name: "hair_ties_are_classified_as_womens_hair_accessories", actual: hairTies.isWomenFocused && hairTies.categoryPriority === 3 && hairTies.bonus === 16 },
     { name: "hair_ranks_after_bags_and_beauty_tools", actual: japaneseBag.bonus > japaneseBeauty.bonus && japaneseBeauty.bonus > hair.bonus },
   ];
 
