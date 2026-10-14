@@ -47,6 +47,7 @@ includes(discovery, "const rejectedReasons = items.reduce");
 includes(discovery, "const status = cursor.quotaBlocked");
 includes(discovery, 'cursor.verified > 0 ? "partial" : "failed"');
 includes(discovery, "status,\n    started_at: now");
+includes(discovery, "canonical_name: displayTitle", "product master must store the Japanese display title, not the raw supplier title");
 
 // Inventory synchronization must never infer sale/order readiness from stock alone.
 const projectionStart = internalAdapter.indexOf("async function syncInternalInventoryProjection(");
