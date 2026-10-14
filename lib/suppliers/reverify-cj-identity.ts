@@ -69,7 +69,7 @@ async function readPersistableBarcode(supplierProductId: string, supplierVariant
   try { const variants = await fetchCJProductVariants(supplierProductId, { countryCode: "JP" }); const found = variants.find((item) => item.vid === supplierVariantId); const barcode = typeof found?.barcode === "string" ? found.barcode.trim() : ""; if (barcode) return barcode; } catch (error) { if (isCJQuotaCircuitBlockingError(error)) throw error; console.warn("[cj-identity-reverify] variant barcode lookup failed", { supplierProductId, supplierVariantId, error: error instanceof Error ? error.message : String(error) }); }
   try { const variant = await fetchCJVariantByVid(supplierVariantId); const barcode = typeof variant?.barcode === "string" ? variant.barcode.trim() : ""; return barcode || null; } catch (error) { if (isCJQuotaCircuitBlockingError(error)) throw error; console.warn("[cj-identity-reverify] queryByVid barcode lookup failed", { supplierProductId, supplierVariantId, error: error instanceof Error ? error.message : String(error) }); return null; }
 }
-export async function reverifyCjSupplyIdentities(options: { limit?: number; deadlineAt?: number } = {}): Promise<CjIdentityReverifyResult> {
+export async function reverifyCjSupplyIdentities(options: { limit?: number; deadlineAt?: number; force?: boolean } = {}): Promise<CjIdentityReverifyResult> {
   const db = createSupabaseAdminClient();
   const { data: quotaRuns, error: quotaReadError } = await db
     .from("cron_runs")
@@ -98,6 +98,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   }
   const limit = Math.max(1, Math.min(options.limit ?? DEFAULT_LIMIT, MAX_LIMIT));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
+  const force = options.force === true;
   const candidateFilter = db.from("supplier_listings").select("id", { count: "exact", head: true }).eq("supplier", "cj").in("verification_status", ["unverified", "retryable", "verified"]).in("identity_method", ["supply_discovered", "none"]).not("supplier_variant_id", "is", null);
   const { count: candidateCount, error: countError } = await candidateFilter;
   if (countError) throw new Error(`identity reverify candidate count failed: ${countError.message}`);
