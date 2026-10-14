@@ -193,7 +193,7 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
       brand_name: existingIntelligence?.brand_name ?? null,
       category: existingIntelligence?.category ?? null,
       seller_name: "CJdropshipping",
-      source_url: existingIntelligence?.source_url ?? (typeof existingListingMetadata.source_ref === "string" && /^https?:\\/\\//i.test(existingListingMetadata.source_ref) ? existingListingMetadata.source_ref : null),
+      source_url: existingIntelligence?.source_url ?? (typeof existingListingMetadata.source_ref === "string" && /^https?:\/\//i.test(existingListingMetadata.source_ref) ? existingListingMetadata.source_ref : null),
       image_url: args.imageUrl,
       currency: "USD",
       current_price: args.cost,
