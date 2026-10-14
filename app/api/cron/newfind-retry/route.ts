@@ -12,12 +12,12 @@ export async function GET(request: Request) {
     const authError = await requireAutomationAuth(request);
     if (authError) return authError;
 
-    // Each delivery can perform multiple external requests and liveness checks.
-    // Keep one delivery per invocation so the 60s function ceiling cannot be
-    // consumed by a large retry batch. The workflow runs every 20 minutes and
-    // drains the queue incrementally.
+    // Each delivery can perform multiple external requests. Process a small pair
+    // concurrently, then reserve the remaining invocation budget for orphaned
+    // deliveries and withdrawal reconciliation. The cron drains the queue every
+    // five minutes; it must not leave a failed backlog dormant for a full day.
     const startedAt = Date.now();
-    const result = await retryPendingNewfindPromotions(1);
+    const result = await retryPendingNewfindPromotions(2);
     // Also rescue gate-passed (usually BASE-listed) listings that have no
     // delivery row at all, which the delivery-row retry above cannot see.
     const rescue = await rescueUndeliveredGatePassedListings({
