@@ -16,16 +16,24 @@ for (const [name, result] of checks) {
 
 // This script runs directly in Node before the Next build. Keep the profit
 // guard check static because simulate-profit.ts uses a Next/TS path alias.
-const [profit, supplySelector, marketSelector, publicationRoute, diagnosticWorkflow] = await Promise.all([
+const [profit, supplySelector, marketSelector, publicationRoute, diagnosticWorkflow, supplyPersistence, internalSupplyPersistence] = await Promise.all([
   readFile(new URL("../lib/intelligence/simulate-profit.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/market/select-sales-tests.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/cron/sales-test-publication/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../.github/workflows/tracer-shopify-auth-check.yml", import.meta.url), "utf8"),
+  readFile(new URL("../lib/intelligence/persist-cj-supply-intelligence.ts", import.meta.url), "utf8"),
+  readFile(new URL("../lib/suppliers/persist-cj-internal-supply.ts", import.meta.url), "utf8"),
 ]);
 assert.match(profit, /requireDomesticShipping === true && args\.domesticShipping == null/);
 assert.match(profit, /unknown\("domestic_shipping_unknown"\)/);
 assert.match(supplySelector, /requireDomesticShipping: true/);
+assert.match(supplySelector, /num\(metadata\.selling_price_jpy\)/, "only an explicitly confirmed selling_price_jpy can satisfy the publication selector");
+assert.match(supplyPersistence, /suggested_selling_price_jpy: args\.sellingPriceJpy/, "heuristic CJ price must be stored as a suggestion, not a confirmed sale price");
+assert.doesNotMatch(supplyPersistence, /selling_price_jpy: args\.sellingPriceJpy/, "CJ discovery must not write heuristic price as confirmed selling price");
+assert.match(supplyPersistence, /const \{ selling_price_jpy: _legacyIntelligenceSellingPrice, \.\.\.intelligenceMetadataWithoutUnverifiedPrice \}/, "legacy heuristic sale price must be removed on refresh");
+assert.match(internalSupplyPersistence, /suggested_selling_price_jpy: args\.sellingPriceJpy/, "internal supply price is also labeled as a suggestion");
+assert.doesNotMatch(internalSupplyPersistence, /selling_price_jpy: args\.sellingPriceJpy/, "internal supply discovery must not present the heuristic as confirmed sale price");
 assert.equal(isPublishableCatalogTitle("トレンド・seeded_dueアイテム"), false);
 assert.equal(isPublishableCatalogTitle("Aroma Filter"), true);
 assert.match(supplySelector, /product_master_title_not_publishable/);
@@ -40,4 +48,4 @@ assert.match(publicationRoute, /\.slice\(0, dryRunLimit\)/);
 assert.match(diagnosticWorkflow, /sales-test-publication\?dryRun=true&limit=450/);
 assert.match(diagnosticWorkflow, /rejectedSample.*\[:25\]/);
 assert.match(diagnosticWorkflow, /rejectedSamples.*\[:25\]/);
-console.log("fully costed publication, product-master, and 450-candidate audit guards: 19 assertions passed");
+console.log("fully costed publication, price provenance, product-master, and 450-candidate audit guards: 25 assertions passed");
