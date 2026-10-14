@@ -6,6 +6,7 @@ import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapanes
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
+import { toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 
 type Listing = {
   id: string;
@@ -62,6 +63,41 @@ function asNumber(value: unknown): number | null {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : null;
 }
+
+async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, number>> {
+  const requestedIds = [...new Set(variantIds)];
+  const ids = requestedIds.filter((id) => /^gid:\/\/shopify\/ProductVariant\/\d+$/.test(id));
+  if (ids.length !== requestedIds.length || ids.length === 0) {
+    throw new Error("shopify_live_stock_variant_ids_invalid");
+  }
+  const liveStock = new Map<string, number>();
+  const batchSize = 100;
+  for (let offset = 0; offset < ids.length; offset += batchSize) {
+    const batch = ids.slice(offset, offset + batchSize);
+    const data = await shopifyGraphQL<{ nodes: Array<{ id: string; inventoryQuantity: number | null } | null> }>(
+      `query LiveVariantInventory($ids: [ID!]!) {
+        nodes(ids: $ids) {
+          ... on ProductVariant {
+            id
+            inventoryQuantity
+          }
+        }
+      }`,
+      { ids: batch },
+    );
+    for (const node of data.nodes ?? []) {
+      if (!node?.id || !batch.includes(node.id)) continue;
+      const quantity = asNumber(node.inventoryQuantity);
+      if (quantity === null) throw new Error("shopify_live_stock_quantity_unknown");
+      liveStock.set(node.id, Math.max(0, Math.floor(quantity)));
+    }
+    if (batch.some((id) => !liveStock.has(id))) {
+      throw new Error("shopify_live_stock_response_incomplete");
+    }
+  }
+  return liveStock;
+}
+
 
 function html(value: string | null): string {
   if (!value) return "<p>TRACER selected product.</p>";
@@ -196,6 +232,22 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
     identity_status: row.supplier_listing_id ? supplierStatuses.get(row.supplier_listing_id) ?? null : null,
   }));
   const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 15);
+  let liveStockByVariantId = new Map<string, number>();
+  let liveStockReconciliationError: string | null = null;
+  if (!listingIds?.length) {
+    const alreadySyncedVariantIds = rows
+      .filter((row) => String(row.shopify_sync_status ?? "") === "synced" && Boolean(row.shopify_variant_id))
+      .map((row) => toShopifyGid("ProductVariant", row.shopify_variant_id))
+      .filter((id): id is string => typeof id === "string" && /^gid:\/\/shopify\/ProductVariant\/\d+$/.test(id));
+    if (alreadySyncedVariantIds.length > 0) {
+      try {
+        liveStockByVariantId = await getLiveShopifyStock(alreadySyncedVariantIds);
+      } catch (error) {
+        liveStockReconciliationError = error instanceof Error ? error.message : String(error);
+      }
+    }
+  }
+
   const actionable = listingIds?.length
     ? rows.slice(0, safeLimit)
     : rows.filter((row) => {
@@ -203,7 +255,12 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
         if (status === "syncing") return false;
         if (!hasPublishableSupplierIdentity(row.identity_status)) return Boolean(row.shopify_product_id) && status !== "blocked";
         if (row.published === true && (row.pipeline_stage === "PUBLISHED" || row.pipeline_stage === "BASE_PUBLISHED") && row.pipeline_status === "published") {
-          return status !== "synced";
+          if (status !== "synced") return true;
+          if (liveStockReconciliationError) return false;
+          const variantId = toShopifyGid("ProductVariant", row.shopify_variant_id);
+          const liveQuantity = variantId ? liveStockByVariantId.get(variantId) : undefined;
+          if (liveQuantity === undefined) return !variantId;
+          return liveQuantity !== toStorefrontStockQuantity(row.inventory, process.env.SHOPIFY_STOREFRONT_STOCK_CAP);
         }
         if (row.published === false && row.pipeline_stage === "SELECTED" && row.pipeline_status === "selected") {
           return status !== "synced";
@@ -214,7 +271,15 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
         return false;
       }).slice(0, safeLimit);
 
-  return syncListingRows(actionable, supabase);
+  const result = await syncListingRows(actionable, supabase);
+  if (liveStockReconciliationError) {
+    result.failed += 1;
+    result.errors.push({
+      listingId: "SYSTEM",
+      error: `shopify_live_stock_reconciliation_failed:${liveStockReconciliationError}`.slice(0, 2000),
+    });
+  }
+  return result;
 }
 
 /**
@@ -449,7 +514,7 @@ async function syncListingRows(
       if (!variant?.id) throw new Error("shopify_variant_missing_for_inventory_sync");
       await setShopifyVariantInventory({
         variantId: variant.id,
-        quantity: Number(row.inventory),
+        quantity: toStorefrontStockQuantity(row.inventory, process.env.SHOPIFY_STOREFRONT_STOCK_CAP),
         reference: `tracer://shop-listing/${row.id}`,
       });
 
