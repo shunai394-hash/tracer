@@ -17,10 +17,15 @@ export async function GET(request: Request) {
 
   const startedAt = Date.now();
   try {
+    const url = new URL(request.url);
+    const requestedLimit = Number(url.searchParams.get("limit") ?? 25);
+    const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(25, Math.floor(requestedLimit))) : 25;
+    const force = url.searchParams.get("force") === "1";
     const result = await reverifyCjSupplyIdentities({
       // Production telemetry showed 40 checks consuming ~182s and hitting a
       // CJ QPS 429. A 25-row cap leaves room for retries under the 150s budget.
-      limit: 25,
+      limit,
+      force,
       deadlineAt: startedAt + 150_000,
     });
 
