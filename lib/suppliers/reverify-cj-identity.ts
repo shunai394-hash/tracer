@@ -87,6 +87,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       supplierVerified: 0,
       noUniqueBarcodeMatch: 0,
       missingEconomics: 0,
+      remediationQueued: [],
       errors: [{ supplierListingId: "system", error: "CJ_API_QUOTA_EXHAUSTED_COOLDOWN" }],
       promotedListings: [],
       nextCursor: null,
@@ -277,6 +278,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         result.noUniqueBarcodeMatch += 1;
       } else if (item.kind === "missing_economics") {
         result.missingEconomics += 1;
+        result.remediationQueued.push({ supplierListingId: item.supplierListingId, missingFields: item.missingFields, nextActions: item.nextActions });
       } else if (item.kind === "quota_exhausted") {
         quotaExhausted = true;
         result.quotaBlockedUntil = getCJQuotaCooldownUntil();
