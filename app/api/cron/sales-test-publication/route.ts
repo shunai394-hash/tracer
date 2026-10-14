@@ -150,8 +150,9 @@ export async function GET(request: Request) {
 
     // CJ-native supply is its own evidence path: exact supplier product + variant,
     // verified shipping, price, stock, orderability, tracking and API availability.
-    // It does not need a marketplace ASIN/JAN match, but live publication remains
-    // disabled unless TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED=true.
+    // It does not need a marketplace ASIN/JAN match. The strict native-CJ
+    // evidence gate in isNativeCjSupplierListing is the eligibility control;
+    // a separate environment flag must not strand otherwise publishable supply.
     const { data: nativeCjSupply, error: nativeCjSupplyError } = await supabase
       .from("supplier_listings")
       .select("product_id")
@@ -208,10 +209,13 @@ export async function GET(request: Request) {
     if (missingOpportunityIds.length > 0 && !dryRun) {
       await buildOpportunityInBatches(missingOpportunityIds.slice(0, 30), 10);
     }
-    const allowNativeCjIdentity = dryRun || process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true";
-    const supplySelected = await selectAndPublishSupplySalesTests(candidateProductIds, dryRun ? 50 : 400, {
+    // Native CJ products can be listed as their own catalog identity once the
+    // exact product+variant, JP shipping, current stock, API orderability,
+    // tracking, Japanese content, image, and positive contribution profit pass.
+    // Keep live writes deliberately small; repeated patrols advance the queue.
+    const supplySelected = await selectAndPublishSupplySalesTests(candidateProductIds, dryRun ? 50 : 3, {
       dryRun,
-      allowNativeCjIdentity,
+      allowNativeCjIdentity: true,
     });
     if (dryRun) {
       return NextResponse.json({
@@ -219,7 +223,7 @@ export async function GET(request: Request) {
         dryRun: true,
         noWrites: true,
         mode: "canonical_supply_fast_path",
-        featureEnabledForLiveRuns: process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true",
+        nativeCjIdentityUsesStrictEvidenceGate: true,
         supplySelected,
       }, { headers: { "Cache-Control": "no-store" } });
     }
