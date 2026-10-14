@@ -4,6 +4,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const discovery = readFileSync("lib/suppliers/discover-cj-supply.ts", "utf8");
+assert.match(discovery, /supply-first catalog cursor write failed/, "catalog cursor persistence errors must fail the run");
+assert.match(discovery, /supply-first verification state write failed/, "verification-state persistence errors must fail the run");
+assert.match(discovery, /if \(existingListingsError\) throw new Error/, "listing lookup failures must not be treated as an empty catalog");
 const marketCollector = readFileSync("lib/market/collect-bestsellers.ts", "utf8");
 const ingest = readFileSync("lib/suppliers/persist-cj-internal-supply.ts", "utf8");
 const catalogSync = readFileSync("lib/suppliers/sync-tracer-catalog.ts", "utf8");
