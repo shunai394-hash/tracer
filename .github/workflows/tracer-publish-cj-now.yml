@@ -33,12 +33,14 @@ jobs:
         run: |
           set -euo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
+          schedule_date="$(date -u +%F)"
+          schedule_hour="$(date -u +%H)"
           token() {
             curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
 
           # Prevent later annual cron matches from calling CJ or publication endpoints.
-          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] && [ "$(date -u +%F)" != "2026-10-14" ]; then
+          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] && [ "$schedule_date" != "2026-10-14" ] && ! { [ "$schedule_date" = "2026-10-15" ] && [ "$schedule_hour" -lt 2 ]; }; then
             echo "One-time CJ quota-reset window has passed; skipping before API calls."
             exit 0
           fi
