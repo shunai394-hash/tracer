@@ -117,9 +117,8 @@ async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, nu
       if (quantity === null) throw new Error("shopify_live_stock_quantity_unknown");
       liveStock.set(node.id, Math.max(0, Math.floor(quantity)));
     }
-    if (batch.some((id) => !liveStock.has(id))) {
-      throw new Error("shopify_live_stock_response_incomplete");
-    }
+    // Missing/retired variants fail closed per listing below. Do not let one
+    // stale variant suppress every other healthy product from the storefront.
   }
   return liveStock;
 }
@@ -128,6 +127,10 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
   const mapped = rows.map(mapListing);
   const supplierStatuses = await getPublishableSupplierListingStatuses(mapped.map((listing) => listing.supplierListingId));
   const listings = mapped
+    // The TRACER storefront checkout uses Shopify. Unsynced listings must not
+    // be treated as purchasable, and must not poison the live-stock batch for
+    // products that are already synced and saleable.
+    .filter((listing) => listing.shopifySyncStatus === "synced" && Boolean(listing.shopifyVariantId))
     .filter((listing) => Boolean(listing.supplierListingId && supplierStatuses.has(listing.supplierListingId)))
     .filter((listing) => isPublishableCatalogTitle(listing.title) && isPublishableCatalogDescription(listing.description) && listing.inventory > 0 && listing.orderable && listing.trackingAvailable && listing.sellingPrice !== null && listing.sellingPrice > 0);
 
