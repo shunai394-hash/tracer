@@ -1,7 +1,8 @@
 import "server-only";
 
 import { createHmac } from "node:crypto";
-import { getNewfindConfig } from "@/lib/config/env";
+import { getNewfindConfig, getShopifyConfig } from "@/lib/config/env";
+import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
 import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 
 function buildUrl(base: string): string {
@@ -40,6 +41,42 @@ async function resolveLiveTracerUrl(slug: string | null): Promise<string | null>
       signal: AbortSignal.timeout(10_000),
     });
     return response.ok ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Prefer the actual public Shopify product URL for synced products. The TRACER
+ * storefront page also checks Shopify stock and supplier identity on every
+ * request, so using that page as the sole cross-post URL can reject products
+ * that are already live on Shopify because of an unrelated storefront check.
+ */
+async function resolveLiveShopifyUrl(listing: {
+  shopify_product_id?: unknown;
+  shopify_sync_status?: unknown;
+}): Promise<string | null> {
+  if (listing.shopify_sync_status !== "synced" || typeof listing.shopify_product_id !== "string" || !listing.shopify_product_id.trim()) {
+    return null;
+  }
+  if (!isShopifyConfigured()) return null;
+
+  const { storeDomain } = getShopifyConfig();
+  const domain = storeDomain.trim().replace(/^https?:\\/\\//, "").replace(/\\/$/, "");
+  if (!domain) return null;
+
+  try {
+    const result = await shopifyGraphQL<{
+      product: { id: string; handle: string; status: string | null } | null;
+    }>(
+      `query NewfindLiveSalesProduct($id: ID!) {
+        product(id: $id) { id handle status }
+      }`,
+      { id: listing.shopify_product_id },
+    );
+    const product = result.product;
+    if (!product || product.status !== "ACTIVE" || !product.handle) return null;
+    return `https://${domain}/products/${encodeURIComponent(product.handle)}`;
   } catch {
     return null;
   }
@@ -145,7 +182,7 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
 
   const { data: listing, error } = await supabase
     .from("shop_listings")
-    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, identity_confidence, supplier_name, base_item_id, contribution_margin, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
+    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, identity_confidence, supplier_name, base_item_id, contribution_margin, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_product_id, shopify_sync_status")
     .eq("id", listingId)
     .eq("published", true)
     .maybeSingle();
@@ -212,10 +249,13 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     brand = typeof bestseller?.brand === "string" ? bestseller.brand : null;
   }
 
-  const tracerUrl = await resolveLiveTracerUrl(typeof listing.slug === "string" ? listing.slug : null);
-  const productUrl = tracerUrl;
+  const [tracerUrl, shopifyUrl] = await Promise.all([
+    resolveLiveTracerUrl(typeof listing.slug === "string" ? listing.slug : null),
+    resolveLiveShopifyUrl(listing),
+  ]);
+  const productUrl = shopifyUrl ?? tracerUrl;
   if (!productUrl) {
-    const reason = "tracer_sales_url_not_live";
+    const reason = "no_live_shopify_or_tracer_sales_url";
     await supabase.from("newfind_promotion_deliveries").update({ status: "failed", last_error: reason, last_attempt_at: new Date().toISOString(), lease_until: null, updated_at: new Date().toISOString() }).eq("listing_id", listingId).eq("status", "sending").eq("event_id", sendEventId);
     return { configured: true, sent: false, eventId: sendEventId, status: null, ackStatus: null, detail: reason };
   }
@@ -239,8 +279,8 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
       brand: brand || undefined,
       category: category || "other",
       discovery_reason: discoveryReason(listing),
-      tracer_url: tracerUrl,
-      sales_url: tracerUrl,
+      tracer_url: tracerUrl ?? productUrl,
+      sales_url: productUrl,
       market_url: marketUrl ?? undefined,
       tracer_listing_id: listing.id,
       tracer_product_id: listing.product_id ?? undefined,
