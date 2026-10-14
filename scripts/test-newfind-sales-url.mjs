@@ -24,6 +24,8 @@ assert.match(reconcile, /\.select\("id, title, slug, bestseller_id, published, p
 
 assert.match(source, /const productUrl = tracerUrl/);
 assert.match(source, /const tracerResolution = await resolveLiveTracerUrl/);
+assert.doesNotMatch(source, /const vercel = process\\.env\\.VERCEL_PROJECT_PRODUCTION_URL/,
+  "NEWFIND liveness checks must use the canonical storefront origin, not a deployment-specific hostname");
 assert.match(source, /retryRejectedSchemaEvent/,
   "a fixed receiver schema must be allowed to replay a previously rejected integer-type event once");
 assert.match(source, /:schema-retry/,
