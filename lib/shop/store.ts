@@ -209,10 +209,12 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
 
 export async function getShopListingBySlug(slug: string): Promise<ShopListing | null> {
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
-    .from("shop_listings")
-    .select(STOREFRONT_SELECT)
-    .eq("slug", slug)
+  const baseQuery = supabase.from("shop_listings").select(STOREFRONT_SELECT);
+  // Stable UUID paths avoid URL-encoding ambiguity for Japanese product slugs
+  // when external channels validate a public sales link.
+  const isListingId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
+  const listingQuery = isListingId ? baseQuery.eq("id", slug) : baseQuery.eq("slug", slug);
+  const { data, error } = await listingQuery
     .eq("published", true)
     .not("shopify_product_id", "is", null)
     .eq("shopify_sync_status", "synced")
