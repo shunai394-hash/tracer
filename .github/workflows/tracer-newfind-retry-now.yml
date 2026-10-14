@@ -1,6 +1,7 @@
 name: TRACER Retry NEWFIND Queue Now
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
 
