@@ -263,7 +263,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
           checked_at: new Date().toISOString(),
         };
       }
-      const shippingEstimated = shippingReserveApplied || (!shippingQuoteObserved && priorShippingEstimated);
+      const shippingEstimated = shippingReserveApplied || (!shippingQuoteObserved && (priorShippingEstimated || row.shipping_status !== "verified"));
       if (shippingEstimated && shippingCost !== null && fxRate !== null && fxRate > 0 && !shippingReserveApplied) {
         // Keep a previously estimated freight amount as a floor until a live quote replaces it.
         shippingCost = Math.max(shippingCost, unknownShippingReserveJpy / fxRate);
