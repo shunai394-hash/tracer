@@ -51,5 +51,12 @@ assert.equal(calculateSupplySellingPriceJpy({
   shippingCost: 4,
   sourceFxRateToSelling: 150,
   ...fees,
-}), 2500, "a valid explicitly stored price is preserved");
-console.log("Supply landed-price calculation: 6 cases passed");
+}), 4900, "a stored price below the landed-cost margin floor is raised");
+assert.equal(calculateSupplySellingPriceJpy({
+  existingSellingPriceJpy: 5200,
+  sourceCost: 10,
+  shippingCost: 4,
+  sourceFxRateToSelling: 150,
+  ...fees,
+}), 5200, "a stored price above the margin floor is preserved");
+console.log("Supply landed-price calculation: 7 cases passed");
