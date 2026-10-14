@@ -233,6 +233,11 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         await db.from("supplier_listings").update({ ...(cost !== null ? { cost, price_confirmed: true } : {}), metadata: { ...listingMetadata, ...remediation } }).eq("id", supplierListingId);
         return { kind: "missing_economics" as const, supplierListingId };
       }
+      // Keep TypeScript's control-flow narrowing explicit after the field-list
+      // remediation branch above.
+      if (cost === null || shippingCost === null || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) {
+        throw new Error("supplier_remediation_invariant_failed");
+      }
       await persistCjSupplyIntelligence({ productId: identity?.productId ?? String(row.product_id), title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
       if (!identity) {
         const { data: latest } = await db.from("supplier_listings").select("metadata").eq("id", supplierListingId).maybeSingle();
