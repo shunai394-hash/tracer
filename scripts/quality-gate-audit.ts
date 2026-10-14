@@ -20,6 +20,7 @@ const checks = [
   ["Shopify canonical sync", "lib/shopify/sync-published-listings.ts", "hasPassedSalesTestGate"],
   ["Shopify sync includes BASE-published listings", "lib/shopify/sync-published-listings.ts", "pipeline_stage.eq.BASE_PUBLISHED"],
   ["Shopify sync treats BASE_PUBLISHED as actionable", "lib/shopify/sync-published-listings.ts", 'row.pipeline_stage === "BASE_PUBLISHED"'],
+  ["Shopify failed-sync retry fairness", "lib/shopify/sync-published-listings.ts", "cannot starve the rest of the bounded sync work pool"],
   ["Shopify sync live-stock guard", "lib/shopify/sync-published-listings.ts", "Number(row.inventory) > 0"],
   ["Shopify final CJ supplier safety boundary", "lib/shopify/sync-published-listings.ts", '!/^(cj|cjdropshipping)$/i.test(String(row.supplier_name ?? "").trim())'],
   ["Shopify Japanese title boundary", "lib/shopify/sync-published-listings.ts", "isJapaneseProductTitle(row.title)"],
