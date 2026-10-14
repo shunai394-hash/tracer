@@ -35,7 +35,7 @@ assert.match(supplySelector, /rejectedCount: rejected\.length/);
 assert.match(supplySelector, /rejectionCounts: summarizeRejections\(rejected\)/);
 assert.match(supplySelector, /title: sourceTitle/);
 assert.match(supplySelector, /contributionProfit: profit\.contributionProfit/);
-assert.match(supplySelector, /const rejectedSamples = \[\.\.\.rejected\]\.sort/);
+assert.match(supplySelector, /const rejectedSamples = rejected\.slice\(0, 50\)/, "rejection samples must not prioritize a removed women-only gate");
 assert.match(publicationRoute, /Math\.min\(500, Math\.floor\(requestedDryRunLimit\)\)/);
 assert.match(publicationRoute, /\.slice\(0, dryRunLimit\)/);
 assert.match(diagnosticWorkflow, /sales-test-publication\?dryRun=true&limit=450/);
