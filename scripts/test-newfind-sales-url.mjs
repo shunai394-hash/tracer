@@ -33,8 +33,10 @@ assert.doesNotMatch(source, /shopify\.myshopify\.com|resolveLiveShopifyUrl/,
 const productDetail = store.slice(store.indexOf("export async function getShopListingBySlug"), store.indexOf("export async function recordShopFunnelEvent"));
 assert.doesNotMatch(productDetail, /loadLiveListings/,
   "the public product landing page must not disappear when the separate live-stock batch fails");
-assert.match(productDetail, /getPublishableSupplierListingStatuses/,
-  "supplier identity and freshness must still be verified");
+assert.match(productDetail, /listing\.supplierListingId/,
+  "public landing pages must still have a supplier listing reference");
+assert.doesNotMatch(productDetail, /getPublishableSupplierListingStatuses/,
+  "supplier freshness checks belong to publication and order-time procurement, not the public landing page");
 assert.match(productDetail, /\.eq\("shopify_sync_status", "synced"\)/,
   "only Shopify-synced products may have public sales pages");
 assert.match(page, /href={shopifyProductUrl}/);
