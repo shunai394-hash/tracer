@@ -48,9 +48,11 @@ jobs:
             synced="$(jq -r '.synced // 0' <<< "$response")"
             attempted="$(jq -r '.attempted // 0' <<< "$response")"
             if [[ "$configured" != "true" || "$failed_count" -gt 0 ]]; then failures=1; fi
-            if [[ "$attempted" -eq 0 || "$failed_count" -eq 0 || "$synced" -eq 3 ]]; then
+            if [[ "$failed_count" -eq 0 ]]; then
               break
             fi
+            listing_ids="$(jq -c '[.failed[]?.listingId | select(type == "string")]' <<< "$response")"
+            if [[ "$listing_ids" == "[]" ]]; then break; fi
             sleep 3
           done
           if [[ "$failures" -ne 0 ]]; then
