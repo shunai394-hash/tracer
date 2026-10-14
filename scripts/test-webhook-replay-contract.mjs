@@ -17,6 +17,7 @@ assert.match(shopify, /shopify_line_item_id_duplicate/);
 assert.match(shopify, /onConflict: "order_id,shopify_line_item_id", ignoreDuplicates: true/);
 assert.match(migration, /create unique index if not exists shop_order_items_order_shopify_line_unique_idx/);
 assert.match(migration, /shopify_line_item_idempotency_preflight_failed/);
+assert.match(migration, /do \\$\\$\\s*begin[\\s\\S]*?end\\s*\\$\\$;/i, "migration DO block must use matching dollar-quote delimiters");
 assert.match(shopify, /insertedOrderId/);
 assert.doesNotMatch(shopify, /if \(existing\.data\) return NextResponse\.json\(\{ ok: true, duplicate: true/);
 
