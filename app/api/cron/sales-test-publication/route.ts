@@ -31,6 +31,23 @@ async function buildOpportunityInBatches(productIds: string[], batchSize = 15) {
   return { processed, upserted, testReady, rejected };
 }
 
+function channelDeliveryFailureCount(
+  selectedCount: number,
+  shopify: { configured: boolean; attempted: number; synced: number; failed: Array<unknown> },
+  base: { results: Array<{ ok: boolean; baseItemId?: string | null }> },
+): number {
+  if (selectedCount === 0) return 0;
+  const shopifyFailures = shopify.configured
+    ? Math.max(shopify.failed.length, selectedCount - shopify.synced)
+    : selectedCount;
+  const baseSuccesses = base.results.filter((item) => item.ok && Boolean(item.baseItemId)).length;
+  const baseFailures = Math.max(
+    base.results.filter((item) => !item.ok || !item.baseItemId).length,
+    selectedCount - baseSuccesses,
+  );
+  return shopifyFailures + baseFailures;
+}
+
 async function promoteGatePassedListings(selectedListingIds: string[]) {
   // Delivery channels are independent: a Shopify/BASE outage must not suppress
   // another channel. Persist whole-call failures so the next reconciliation run
@@ -225,12 +242,13 @@ export async function GET(request: Request) {
 
     if (supplySelected.published > 0) {
       const downstream = await promoteGatePassedListings(supplySelected.selectedListingIds);
+      const channelFailures = channelDeliveryFailureCount(supplySelected.selectedListingIds.length, downstream.shopify, downstream.base);
       if (cronRunId) await supabase.from("cron_runs").update({
-        status: "succeeded",
+        status: channelFailures === 0 ? "succeeded" : "failed",
         finished_at: new Date().toISOString(),
         duration_ms: Date.now() - startedAt,
         processed: supplySelected.considered,
-        failed: 0,
+        failed: channelFailures,
         metadata: {
           phase: "sales_test_publication",
           mode: "canonical_supply_fast_path",
@@ -247,13 +265,14 @@ export async function GET(request: Request) {
         },
       }).eq("id", cronRunId);
       return NextResponse.json({
-        ok: true,
+        ok: channelFailures === 0,
         phase: "sales_test_publication",
         elapsedMs: Date.now() - startedAt,
         mode: "canonical_supply_fast_path",
         supplySelected,
         downstream,
-      });
+        channelFailures,
+      }, { status: channelFailures === 0 ? 200 : 207 });
     }
 
     const { data: readyRows, error: readyError } = await supabase
@@ -270,17 +289,18 @@ export async function GET(request: Request) {
     if (marketProductIds.length > 0) await buildOpportunityInBatches(marketProductIds, 10);
     const decision = await selectAndPublishSalesTests(candidateIds, 400);
     const downstream = await promoteGatePassedListings(decision.selectedListingIds);
+    const channelFailures = channelDeliveryFailureCount(decision.selectedListingIds.length, downstream.shopify, downstream.base);
 
     if (cronRunId) await supabase.from("cron_runs").update({
-      status: "succeeded",
+      status: channelFailures === 0 ? "succeeded" : "failed",
       finished_at: new Date().toISOString(),
       duration_ms: Date.now() - startedAt,
       processed: supplySelected.considered + candidateIds.length,
-      failed: 0,
+      failed: channelFailures,
       metadata: { phase: "sales_test_publication", mode: "market_linked_sales_test", supplyConsidered: supplySelected.considered, supplyPublished: supplySelected.published, supplyRejected: supplySelected.rejected.length, supplyRejectedReasons: supplySelected.rejected.reduce<Record<string, number>>((counts, item) => { for (const reason of item.reasons) counts[reason] = (counts[reason] ?? 0) + 1; return counts; }, {}), supplyRejectedSample: supplySelected.rejected.slice(0, 20), considered: decision.considered, published: decision.published, shopify: downstream.shopify },
     }).eq("id", cronRunId);
 
-    return NextResponse.json({ ok: true, phase: "sales_test_publication", elapsedMs: Date.now() - startedAt, mode: "market_linked_sales_test", candidateCount: candidateIds.length, decision, downstream, nextPhase: "downstream_delivery" });
+    return NextResponse.json({ ok: channelFailures === 0, phase: "sales_test_publication", elapsedMs: Date.now() - startedAt, mode: "market_linked_sales_test", candidateCount: candidateIds.length, decision, downstream, channelFailures, nextPhase: "downstream_delivery" }, { status: channelFailures === 0 ? 200 : 207 });
   } catch (error) {
     if (cronRunId) {
       try { await supabase.from("cron_runs").update({ status: "failed", finished_at: new Date().toISOString(), duration_ms: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error) }).eq("id", cronRunId); } catch (recordError) { console.error("[TRACER CRON RUN RECORD ERROR]", recordError); }
