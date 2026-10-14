@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 const pipeline = readFileSync("lib/intelligence/run-intelligence-pipeline.ts", "utf8");
 const selector = readFileSync("lib/market/select-supply-sales-tests.ts", "utf8");
+const identity = readFileSync("lib/catalog/canonical-supplier-identity.ts", "utf8");
 
 // The supply-first queue must not require a marketplace identity link: a
 // standalone CJ catalog item can be sellable once its own exact variant and
@@ -19,9 +20,15 @@ assert.match(pipeline, /\.not\("supplier_variant_id",\s*"is",\s*null\)/);
 assert.match(pipeline, /\.gte\("last_verified_at",\s*freshSupplyCutoff\)/);
 assert.match(pipeline, /selectAndPublishSupplySalesTests\(supplyCandidateIds,\s*50,\s*\{\s*allowNativeCjIdentity:\s*true\s*\}\)/);
 assert.match(selector, /options\.allowNativeCjIdentity\s*===\s*true/);
-assert.match(selector, /candidate\.verification_status\s*===\s*"verified"/);
-assert.match(selector, /candidate\.shipping_status\s*===\s*"verified"/);
+assert.match(selector, /isNativeCjSupplierListing\(candidate\)/);
+assert.match(identity, /row\.verification_status === "verified"/);
+assert.match(identity, /row\.shipping_status === "verified"/);
+assert.match(identity, /row\.last_verified_at/);
+assert.match(identity, /row\.supplier_product_id/);
+assert.match(identity, /row\.supplier_variant_id/);
 assert.match(selector, /Boolean\(candidate\.supplier_product_id\)/);
 assert.match(selector, /Boolean\(candidate\.supplier_variant_id\)/);
+assert.match(selector, /domesticShipping: nativeCjSupplyIdentity \? 0 : null/);
+assert.match(selector, /!isPublishableCatalogTitle\(masterTitle\) && !nativeCjSupplyIdentity/);
 
 console.log("Supply-first candidate selection contract passed.");
