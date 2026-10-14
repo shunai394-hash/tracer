@@ -214,7 +214,7 @@ export async function GET(request: Request) {
     // Keep live writes deliberately small; repeated patrols advance the queue.
     // Native CJ catalog items are eligible for the strict evidence gate on live runs;
     // do not require a separate feature flag unrelated to supplier evidence.
-    const supplySelected = await selectAndPublishSupplySalesTests(candidateProductIds, dryRun ? 50 : 3, {
+    const supplySelected = await selectAndPublishSupplySalesTests(candidateProductIds, dryRun ? 100 : 50, {
       dryRun,
       allowNativeCjIdentity: true,
     });
