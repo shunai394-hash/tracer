@@ -24,7 +24,7 @@ assert.match(pipeline, /\.gte\("last_verified_at",\s*freshSupplyCutoff\)/);
 assert.match(pipeline, /selectAndPublishSupplySalesTests\(supplyCandidateIds,\s*50,\s*\{\s*allowNativeCjIdentity:\s*true\s*\}\)/, "native CJ publication must not depend on an unrelated feature flag");
 assert.doesNotMatch(pipeline, /TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED/);
 assert.match(selector, /options\.allowNativeCjIdentity\s*===\s*true/);
-assert.match(selector, /isNativeCjSupplierListing\(candidate\)/);
+assert.match(selector, /isNativeVerifiedSupplierListing\(candidate\)/);
 assert.match(identity, /row\.verification_status === "verified"/);
 assert.match(identity, /row\.shipping_status === "verified" \|\| estimatedShipping/);
 assert.match(identity, /row\.last_verified_at/);
