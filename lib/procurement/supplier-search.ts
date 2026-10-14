@@ -4,7 +4,7 @@ import { initializeProcurement } from "@/lib/procurement/init";
 import { getSupplierAdapter } from "@/lib/procurement/registry";
 import type { ProcurementProduct } from "@/lib/procurement/catalog";
 
-const DISCOVERY_SUPPLIERS = ["orosy", "faire", "dsers", "tracer_internal"] as const;
+const DISCOVERY_SUPPLIERS = ["shopify_collective", "orosy", "faire", "dsers", "tracer_internal"] as const;
 
 export async function searchSupplierProducts(
   query: string,
