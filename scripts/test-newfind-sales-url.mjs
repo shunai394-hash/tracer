@@ -27,6 +27,7 @@ assert.match(source, /resolveLiveTracerUrl\(typeof listing\.id === "string" \? l
 assert.match(source, /tracer_sales_url_http_\$\{response\.status\}/, "record the actual HTTP status when a product page is not live");
 assert.match(source, /tracer_sales_url_timeout/);
 assert.match(source, /tracer_sales_url_not_live/);
+assert.match(source, /return Math\.round\(Math\.max\(0, Math\.min\(100, Number\(match\[1\]\)\)\)\)/, "NEWFIND integer selection_score fields must never receive decimal values");
 assert.match(source, /sales_url: productUrl/);
 assert.match(source, /tracer_url: tracerUrl/);
 assert.doesNotMatch(source, /shopify\.myshopify\.com|resolveLiveShopifyUrl/,
