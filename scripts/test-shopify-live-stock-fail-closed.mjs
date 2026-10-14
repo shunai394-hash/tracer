@@ -15,7 +15,9 @@ assert.equal(hasVerifiedPositiveShopifyStock("SKU-123", 3), false, "non-Shopify 
 const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
 assert.match(store, /shopify_live_stock_unconfigured/, "missing Shopify credentials must fail closed");
 assert.match(store, /shopify_live_stock_variant_ids_empty/, "empty live-stock request must not use cached stock");
-assert.match(store, /shopify_live_stock_response_incomplete/, "partial Shopify responses must be rejected");
+assert.doesNotMatch(store, /shopify_live_stock_response_incomplete/, "one missing variant must not suppress every healthy storefront listing");
+assert.match(store, /Missing\/retired variants fail closed per listing below/);
+assert.match(store, /listing\.shopifySyncStatus === "synced" && Boolean\(listing\.shopifyVariantId\)/, "storefront must only load listings synced to Shopify");
 assert.match(store, /shopify_live_stock_quantity_unknown/, "unknown quantities must be rejected");
 assert.ok(store.includes('[shopify-live-stock-unavailable]') && store.includes("return [];"), "Shopify API failure must return no storefront listings");
 assert.ok(store.includes("hasVerifiedPositiveShopifyStock(listing.shopifyVariantId, live)"), "storefront must use the tested stock policy");
@@ -24,4 +26,4 @@ assert.match(store, /const liveStock = await getLiveShopifyStock/, "order creati
 assert.match(store, /shopify_live_stock_unverified/, "order creation must reject unverified stock");
 assert.match(store, /requested quantity exceeds verified live inventory/, "quantity checks must use live-verified stock");
 
-console.log("Shopify live-stock fail-closed checks: 18 passed (8 behavior cases + 10 source guards)");
+console.log("Shopify live-stock fail-closed checks: 20 passed (8 behavior cases + 12 source guards)");
