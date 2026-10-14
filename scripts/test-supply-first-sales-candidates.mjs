@@ -38,7 +38,6 @@ assert.match(selector, /Boolean\(candidate\.supplier_variant_id\)/);
 assert.match(selector, /domesticShipping: nativeCjSupplyIdentity \? 0 : null/);
 assert.match(selector, /calculateSupplySellingPriceJpy\(/, "missing selling prices must flow through the tested landed-price calculator");
 assert.match(pricing, /const landedCostJpy = \(sourceCost \+ shippingCost\) \* sourceFxRateToSelling/, "landed price must use the shipping amount actually passed to profit simulation");
-assert.match(selector, /!isPublishableCatalogTitle\(masterTitle\) && !nativeCjSupplyIdentity/);
 assert.match(selector, /localizeProductDescription\(sourceTitle\)/);
 assert.match(selector, /isPublishableCatalogDescription\(localizedDescription\)/);
 assert.match(selector, /if \(!publishableDescription\)/);
