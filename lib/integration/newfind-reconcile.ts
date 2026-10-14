@@ -38,7 +38,7 @@ export async function rescueUndeliveredGatePassedListings(options: { limit?: num
   const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
   const limit = Math.max(1, Math.min(options.limit ?? 5, 50));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
-  const columns = "id, title, base_item_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, updated_at";
+  const columns = "id, title, base_item_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, updated_at";
   const [byReason, byMarker] = await Promise.all([
     supabase.from("shop_listings").select(columns).eq("published", true).eq("pipeline_reason", SALES_TEST_GATE_PASSED).limit(500),
     supabase.from("shop_listings").select(columns).eq("published", true).filter("selection_reasons", "cs", JSON.stringify([SALES_TEST_GATE_PASSED])).limit(500),
@@ -47,7 +47,7 @@ export async function rescueUndeliveredGatePassedListings(options: { limit?: num
   if (byMarker.error) throw new Error(byMarker.error.message);
   const byId = new Map<string, Record<string, unknown>>();
   for (const row of [...(byReason.data ?? []), ...(byMarker.data ?? [])]) byId.set(String(row.id), row as Record<string, unknown>);
-  const listings = Array.from(byId.values()).sort((a, b) => Number(Boolean(b.base_item_id)) - Number(Boolean(a.base_item_id)) || String(a.updated_at ?? "").localeCompare(String(b.updated_at ?? "")));
+  const listings = Array.from(byId.values()).sort((a, b) => Number(b.shopify_sync_status === "synced") - Number(a.shopify_sync_status === "synced") || Number(Boolean(b.base_item_id)) - Number(Boolean(a.base_item_id)) || String(a.updated_at ?? "").localeCompare(String(b.updated_at ?? "")));
   const gated = listings.filter((row) => hasPassedSalesTestGate(row));
   const result: NewfindRescueResult = { candidates: gated.length, onBase: gated.filter((row) => row.base_item_id).length, alreadyProcessed: 0, undelivered: { missing: 0, pending: 0, failed: 0, sent: 0, sending: 0 }, attempted: 0, processed: 0, stillFailing: [] };
   if (gated.length === 0) return result;
