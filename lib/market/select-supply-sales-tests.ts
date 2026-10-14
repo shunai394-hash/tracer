@@ -112,10 +112,9 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // product-master title (for example "トレンド・seeded_dueアイテム").
     const masterTitle = (typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
     const nativeCjSupplyIdentity = Boolean(listing && options.allowNativeCjIdentity === true && isNativeCjSupplierListing(listing));
-    if (base && !masterTitle) reasons.push("product_master_title_missing");
-    // Native CJ products are their own supplier catalog identity, not a marketplace match.
-    // Their own exact supplier title is still required to pass the publishable-title gate below.
-    else if (base && !isPublishableCatalogTitle(masterTitle) && !nativeCjSupplyIdentity) reasons.push("product_master_title_not_publishable");
+    // The supplier's concrete title is the listing source of truth. A generic
+    // legacy product-master title must not suppress a verified supplier offer;
+    // the localized supplier title and placeholder checks below are authoritative.
     const sourceMetadata = base?.metadata && typeof base.metadata === 'object' && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const womenPriority = womenProductPriority({ title: sourceTitle, category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
     // Women's relevance is a ranking bonus, not an exclusion rule. All product
