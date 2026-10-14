@@ -191,7 +191,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
     const alreadySyncedVariantIds = rows
       .filter((row) => String(row.shopify_sync_status ?? "") === "synced" && Boolean(row.shopify_variant_id))
       .map((row) => toShopifyGid("ProductVariant", row.shopify_variant_id))
-      .filter((id): id is string => Boolean(id) && /^gid:\/\/shopify\/ProductVariant\/\d+$/.test(id));
+      .filter((id): id is string => typeof id === "string" && /^gid:\/\/shopify\/ProductVariant\/\d+$/.test(id));
     if (alreadySyncedVariantIds.length > 0) {
       try {
         liveStockByVariantId = await getLiveShopifyStock(alreadySyncedVariantIds);
