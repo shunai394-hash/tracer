@@ -111,10 +111,10 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // product-master title (for example "トレンド・seeded_dueアイテム").
     const masterTitle = (typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
     const nativeCjSupplyIdentity = Boolean(listing && options.allowNativeCjIdentity === true && isNativeCjSupplierListing(listing));
-    if (base && !masterTitle) reasons.push("product_master_title_missing");
-    // Native CJ products are their own supplier catalog identity, not a marketplace match.
-    // Their own exact supplier title is still required to pass the publishable-title gate below.
-    else if (base && !isPublishableCatalogTitle(masterTitle) && !nativeCjSupplyIdentity) reasons.push("product_master_title_not_publishable");
+    // The supplier's concrete source title is the primary product identity. A stale
+    // workflow-generated master title must not veto a valid supplier title; the localized
+    // source title is checked for Japanese quality immediately below. Empty/generic source
+    // titles are still rejected by the source-title and publishable-title gates.
     const sourceMetadata = base?.metadata && typeof base.metadata === 'object' && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const womenPriority = womenProductPriority({ title: sourceTitle, category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
     if (base && !womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
