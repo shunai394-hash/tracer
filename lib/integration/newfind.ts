@@ -129,8 +129,11 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
     if (listingError) throw new Error(listingError.message);
     for (const row of listings ?? []) {
       const id = String(row.id);
-      shopifyStatusById.set(id, String(row.shopify_sync_status ?? ""));
-      if (hasPassedSalesTestGate(row)) eligible.push(id);
+      const shopifyStatus = String(row.shopify_sync_status ?? "");
+      shopifyStatusById.set(id, shopifyStatus);
+      // The TRACER public sales page only exists for Shopify-synced listings.
+      // Do not create doomed NEWFIND deliveries for BASE-only or unsynced rows.
+      if (shopifyStatus === "synced" && hasPassedSalesTestGate(row)) eligible.push(id);
     }
   }
 
