@@ -3,7 +3,7 @@ import "server-only";
 import { createHmac } from "node:crypto";
 import { getNewfindConfig } from "@/lib/config/env";
 import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
-import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
+import { isNewfindPromotionLedgerSchemaBlocked, promoteShopListingToNewfind } from "@/lib/integration/newfind";
 
 function buildUrl(base: string): string {
   const trimmed = base.trim().replace(/\/$/, "");
@@ -28,7 +28,7 @@ export type NewfindRescueResult = {
   candidates: number;
   onBase: number;
   alreadyProcessed: number;
-  undelivered: { missing: number; pending: number; failed: number; sent: number; sending: number };
+  undelivered: { missing: number; pending: number; failed: number; sent: number; sending: number; schemaBlocked: number };
   attempted: number;
   processed: number;
   stillFailing: Array<{ listingId: string; detail: string }>;
@@ -49,23 +49,32 @@ export async function rescueUndeliveredGatePassedListings(options: { limit?: num
   for (const row of [...(byReason.data ?? []), ...(byMarker.data ?? [])]) byId.set(String(row.id), row as Record<string, unknown>);
   const listings = Array.from(byId.values()).sort((a, b) => Number(b.shopify_sync_status === "synced") - Number(a.shopify_sync_status === "synced") || Number(Boolean(b.base_item_id)) - Number(Boolean(a.base_item_id)) || String(a.updated_at ?? "").localeCompare(String(b.updated_at ?? "")));
   const gated = listings.filter((row) => hasPassedSalesTestGate(row));
-  const result: NewfindRescueResult = { candidates: gated.length, onBase: gated.filter((row) => row.base_item_id).length, alreadyProcessed: 0, undelivered: { missing: 0, pending: 0, failed: 0, sent: 0, sending: 0 }, attempted: 0, processed: 0, stillFailing: [] };
+  const result: NewfindRescueResult = { candidates: gated.length, onBase: gated.filter((row) => row.base_item_id).length, alreadyProcessed: 0, undelivered: { missing: 0, pending: 0, failed: 0, sent: 0, sending: 0, schemaBlocked: 0 }, attempted: 0, processed: 0, stillFailing: [] };
   if (gated.length === 0) return result;
 
   const ids = gated.map((row) => String(row.id));
-  const deliveries = new Map<string, string>();
+  const deliveries = new Map<string, { status: string; schemaBlocked: boolean }>();
+  const ledgerReady = process.env.NEWFIND_TRACER_PROMOTION_LEDGER_READY?.trim() === "1";
   for (let i = 0; i < ids.length; i += 100) {
-    const { data, error: deliveryError } = await supabase.from("newfind_promotion_deliveries").select("listing_id, status, ack_status").in("listing_id", ids.slice(i, i + 100));
+    const { data, error: deliveryError } = await supabase.from("newfind_promotion_deliveries").select("listing_id, status, ack_status, last_error").in("listing_id", ids.slice(i, i + 100));
     if (deliveryError) throw new Error(deliveryError.message);
     for (const row of data ?? []) {
       const processed = row.status === "processed" && (row.ack_status === "processed" || row.ack_status === "duplicate");
-      deliveries.set(String(row.listing_id), processed ? "processed" : String(row.status ?? "pending"));
+      deliveries.set(String(row.listing_id), {
+        status: processed ? "processed" : String(row.status ?? "pending"),
+        schemaBlocked: !ledgerReady && isNewfindPromotionLedgerSchemaBlocked(row.last_error),
+      });
     }
   }
 
   const targets: string[] = [];
   for (const id of ids) {
-    const status = deliveries.get(id) ?? "missing";
+    const delivery = deliveries.get(id);
+    if (delivery?.schemaBlocked) {
+      result.undelivered.schemaBlocked += 1;
+      continue;
+    }
+    const status = delivery?.status ?? "missing";
     if (status === "processed") { result.alreadyProcessed += 1; continue; }
     const bucket = status in result.undelivered ? status as keyof NewfindRescueResult["undelivered"] : "pending";
     result.undelivered[bucket] += 1;
