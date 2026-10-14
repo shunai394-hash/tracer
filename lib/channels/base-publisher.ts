@@ -6,7 +6,7 @@ import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sal
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
-import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -80,9 +80,9 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   const { data: listings, error } = await query.order("created_at", { ascending: true }).limit(safeLimit);
   if (error) throw new Error(error.message);
 
-  const linkedSupplierIds = await getLinkedSupplierListingIds((listings ?? []).map((listing) => listing.supplier_listing_id));
+  const supplierStatuses = await getPublishableSupplierListingStatuses((listings ?? []).map((listing) => listing.supplier_listing_id));
   const identityUnlinkedIds = new Set((listings ?? [])
-    .filter((listing) => !listing.supplier_listing_id || !linkedSupplierIds.has(String(listing.supplier_listing_id)))
+    .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.supplier_listing_id)))
     .map((listing) => String(listing.id)));
   const results: BasePublicationResult["results"] = [];
   let unpublishFailed = 0;
