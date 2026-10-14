@@ -32,7 +32,7 @@ assert.match(source, /Could not find the table .*tracer_promotions.*schema cache
   "a missing NEWFIND promotion ledger must be replayed with a fresh event ID after the migration is applied");
 assert.match(source, /NEWFIND_TRACER_PROMOTION_LEDGER_READY/,
   "the retry loop must remain paused until the NEWFIND database migration is confirmed applied");
-assert.match(source, /schemaBlocked: schemaBlockedIds\\.size/,
+assert.match(source, /schemaBlocked: schemaBlockedIds\.size/,
   "retry telemetry must report promotions paused by the missing ledger");
 assert.match(reconcile, /isNewfindPromotionLedgerSchemaBlocked/,
   "the rescue loop must not repeatedly retry schema-blocked promotions");
