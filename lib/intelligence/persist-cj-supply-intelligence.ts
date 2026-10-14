@@ -1,13 +1,11 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
-
 import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
 import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates, pickSupplierBarcodeIdentifier } from "@/lib/market/identifiers";
 import { hasUniqueMarketplaceIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
-import { normalizeSupplierLocator } from "@/lib/catalog/supplier-locators";
+import { normalizeSupplierLocator, resolveSupplierCandidateProductId } from "@/lib/catalog/supplier-locators";
 
 export type PersistCjSupplyIntelligenceArgs = {
   productId: string;
@@ -173,10 +171,12 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
   const priorIdentityStatus = typeof existingListingMetadata.identity_status === "string" ? existingListingMetadata.identity_status : "";
   // Keep one stable candidate ID on the supplier row so retries update the same product
   // instead of dropping the offer or creating a new candidate on every discovery pass.
-  const nativeCandidateProductId = !marketplaceIdentity && priorIdentityStatus === "supply_discovered" && priorProductId
-    ? priorProductId
-    : !marketplaceIdentity ? randomUUID() : marketplaceIdentity.productId;
-  const resolvedProductId = marketplaceIdentity?.productId ?? nativeCandidateProductId;
+  const resolvedProductId = resolveSupplierCandidateProductId({
+    marketplaceProductId: marketplaceIdentity?.productId ?? null,
+    existingProductId: priorProductId || null,
+    existingIdentityStatus: priorIdentityStatus || null,
+    discoveredProductId: args.productId,
+  });
   const supplierLocator = normalizeSupplierLocator({ supplier: "cj", supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, productUrl: existingListingMetadata.source_ref, sku: existingListingMetadata.supplier_sku, barcode: args.variantBarcode, title: args.title });
   const verifiedMetadata = { ...existingListingMetadata, source: "cj_supply_first", identity_source: marketplaceIdentity ? "fresh_exact_cj_variant_barcode_to_canonical_child_variant" : "supplier_native_locator_unresolved_marketplace_identity", identity_status: marketplaceIdentity ? "linked" : "supply_discovered", identity_rationale: marketplaceIdentity?.rationale ?? "Supplier-native product and variant are retained as a candidate; marketplace identity is not yet confirmed", supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: await readSupplierBarcode({ supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId }), canonical_variant_evidence_id: marketplaceIdentity?.canonicalVariantEvidenceId ?? null, canonical_source_variant_id: marketplaceIdentity?.sourceVariantId ?? null, supplier_locator: { ...supplierLocator, source_ref: existingListingMetadata.source_ref ?? null } };
   const { error: evidenceError } = await supabase.from("supplier_listings").update({ bestseller_id: marketplaceIdentity?.bestsellerId ?? null, product_id: resolvedProductId, identity_method: marketplaceIdentity?.method ?? "supply_discovered", identity_status: marketplaceIdentity ? "linked" : "supply_discovered", identity_confidence: marketplaceIdentity?.confidence ?? 0, cost: args.cost, shipping_cost: args.shippingCost, inventory: args.inventory, price_confirmed: Number.isFinite(args.cost) && args.cost >= 0, inventory_confirmed: Number.isFinite(args.inventory) && args.inventory >= 0, verification_status: marketplaceIdentity ? "verified" : "unverified", verification_error: marketplaceIdentity ? null : "marketplace_identity_unresolved_candidate_retained", last_verified_at: now, fetched_at: now, metadata: verifiedMetadata }).eq("id", args.supplierListingId);
