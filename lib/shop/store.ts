@@ -230,12 +230,10 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
   if (!/^gid:\/\/shopify\/ProductVariant\/\d+$/.test(listing.shopifyVariantId)) return null;
   if (!isPublishableCatalogTitle(listing.title) || !isPublishableCatalogDescription(listing.description) || !hasJapaneseText(listing.title)) return null;
 
-  // The public product page is a landing page that sends customers to the live
-  // Shopify product. Do not make the URL disappear because a separate live-stock
-  // batch for the internal TRACER cart failed; Shopify itself remains the
-  // purchase-time inventory source of truth.
-  const supplierStatuses = await getPublishableSupplierListingStatuses([listing.supplierListingId]);
-  if (!supplierStatuses.has(listing.supplierListingId)) return null;
+  // The public product page is a landing page that sends customers to the
+  // already-published Shopify product. Supplier identity and live-stock checks
+  // remain mandatory in publication and order-time procurement paths, but must
+  // not turn an existing public sales URL into a 404.
   return listing;
 }
 
