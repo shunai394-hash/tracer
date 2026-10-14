@@ -55,7 +55,7 @@ function hasGateProvenance(row: Listing): boolean {
 }
 
 function hasPublishableSupplierIdentity(status: string | null | undefined): boolean {
-  return status === "linked" || status === "native_cj_verified";
+  return status === "linked" || status === "native_cj_verified" || status === "native_supplier_verified";
 }
 
 function asNumber(value: unknown): number | null {
