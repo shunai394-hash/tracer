@@ -13,13 +13,13 @@ export type SupplyPriceInputs = {
 
 export function calculateSupplySellingPriceJpy(inputs: SupplyPriceInputs): number | null {
   const existing = inputs.existingSellingPriceJpy;
-  if (existing !== null && Number.isFinite(existing) && existing > 0) return Math.ceil(existing);
+  const existingValid = existing !== null && Number.isFinite(existing) && existing > 0;
   const { sourceCost, shippingCost, sourceFxRateToSelling } = inputs;
   if (
     sourceCost === null || !Number.isFinite(sourceCost) || sourceCost <= 0 ||
     shippingCost === null || !Number.isFinite(shippingCost) || shippingCost < 0 ||
     sourceFxRateToSelling === null || !Number.isFinite(sourceFxRateToSelling) || sourceFxRateToSelling <= 0
-  ) return null;
+  ) return existingValid ? Math.ceil(existing) : null;
 
   const retainedAfterFees = 1
     - inputs.platformFeeRate
@@ -31,5 +31,6 @@ export function calculateSupplySellingPriceJpy(inputs: SupplyPriceInputs): numbe
   const denominator = retainedAfterFees - targetMargin;
   const landedCostJpy = (sourceCost + shippingCost) * sourceFxRateToSelling;
   if (!Number.isFinite(landedCostJpy) || landedCostJpy <= 0 || !Number.isFinite(denominator) || denominator <= 0) return null;
-  return Math.ceil((landedCostJpy / denominator) / 100) * 100;
+  const minimumPrice = Math.ceil((landedCostJpy / denominator) / 100) * 100;
+  return existingValid ? Math.max(Math.ceil(existing), minimumPrice) : minimumPrice;
 }
