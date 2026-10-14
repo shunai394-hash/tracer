@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { hasVerifiedPositiveShopifyStock } from "../lib/shop/live-stock-policy.ts";
+import { toStorefrontStockQuantity } from "../lib/shopify/storefront-stock.ts";
 
 const validVariant = "gid://shopify/ProductVariant/123";
 assert.equal(hasVerifiedPositiveShopifyStock(validVariant, 2), true, "positive verified live quantity is saleable");
@@ -11,9 +12,18 @@ assert.equal(hasVerifiedPositiveShopifyStock(validVariant, Number.POSITIVE_INFIN
 assert.equal(hasVerifiedPositiveShopifyStock(validVariant, null), false, "unknown quantity is blocked");
 assert.equal(hasVerifiedPositiveShopifyStock(null, 3), false, "missing variant ID is blocked");
 assert.equal(hasVerifiedPositiveShopifyStock("SKU-123", 3), false, "non-Shopify variant ID is blocked");
+assert.equal(toStorefrontStockQuantity(38786), 10, "supplier warehouse counts must never be copied wholesale into Shopify stock");
+assert.equal(toStorefrontStockQuantity(8), 8, "small verified supplier counts remain conservative storefront stock");
+assert.equal(toStorefrontStockQuantity(38786, 3), 3, "explicit storefront cap must be honored");
+assert.equal(toStorefrontStockQuantity(38786, 500), 100, "configured storefront cap is itself bounded");
+assert.equal(toStorefrontStockQuantity(0), 0, "zero supplier stock must remain zero");
+assert.equal(toStorefrontStockQuantity("unknown"), 0, "unknown supplier stock must fail closed");
+
 
 const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
+const shopifySync = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
 assert.match(store, /shopify_live_stock_unconfigured/, "missing Shopify credentials must fail closed");
+assert.match(shopifySync, /toStorefrontStockQuantity\(row\.inventory, process\.env\.SHOPIFY_STOREFRONT_STOCK_CAP\)/, "supplier inventory must be projected through a bounded storefront cap before writing Shopify stock");
 assert.match(store, /shopify_live_stock_variant_ids_empty/, "empty live-stock request must not use cached stock");
 assert.match(store, /shopify_live_stock_response_incomplete/, "partial Shopify responses must be rejected");
 assert.match(store, /shopify_live_stock_quantity_unknown/, "unknown quantities must be rejected");
@@ -24,4 +34,4 @@ assert.match(store, /const liveStock = await getLiveShopifyStock/, "order creati
 assert.match(store, /shopify_live_stock_unverified/, "order creation must reject unverified stock");
 assert.match(store, /requested quantity exceeds verified live inventory/, "quantity checks must use live-verified stock");
 
-console.log("Shopify live-stock fail-closed checks: 18 passed (8 behavior cases + 10 source guards)");
+console.log("Shopify live-stock fail-closed checks: 25 passed (14 behavior cases + 11 source guards)");
