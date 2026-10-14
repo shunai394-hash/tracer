@@ -51,6 +51,10 @@ includes(discovery, "canonical_name: displayTitle", "product master must store t
 includes(discovery, "patch.shippingStatus === \"verified\" || patch.shippingStatus === \"unavailable\"", "only verified or confirmed-unavailable freight may refresh shipping freshness");
 includes(discovery, "patch.status === \"verified\" || patch.status === \"unavailable\"", "retryable supplier API failures must not refresh inventory freshness");
 includes(discovery, "A retryable API failure must not make stale inventory or freight look recently verified");
+includes(discovery, "shipping_checked_at,inventory_checked_at,fetched_at", "seeded candidates must load source freshness evidence");
+includes(discovery, "hasFreshInventory", "reuse inventory only while its source verification is fresh");
+includes(discovery, "hasFreshJapanFreight", "reuse Japan freight only while its source verification is fresh");
+includes(discovery, "listingIdentityMatches", "cached listing images must match exact supplier product and variant IDs");
 
 // Inventory synchronization must never infer sale/order readiness from stock alone.
 const projectionStart = internalAdapter.indexOf("async function syncInternalInventoryProjection(");
