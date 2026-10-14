@@ -176,7 +176,12 @@ export async function GET(request: Request) {
     if (missingOpportunityIds.length > 0 && !dryRun) {
       await buildOpportunityInBatches(missingOpportunityIds.slice(0, 30), 10);
     }
-    const allowNativeCjIdentity = dryRun || process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true";
+    // CJ-native catalog products are valid first-party supplier identities when the exact
+    // supplier product + variant, stock, price, JP delivery, tracking, orderability and
+    // positive contribution profit all pass the downstream gate. Do not require an
+    // unrelated marketplace-identity feature flag to publish them. Set the env var to
+    // "false" only as an emergency kill switch.
+    const allowNativeCjIdentity = dryRun || process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED !== "false";
     const supplySelected = await selectAndPublishSupplySalesTests(candidateProductIds, dryRun ? 50 : 400, {
       dryRun,
       allowNativeCjIdentity,
@@ -187,7 +192,7 @@ export async function GET(request: Request) {
         dryRun: true,
         noWrites: true,
         mode: "canonical_supply_fast_path",
-        featureEnabledForLiveRuns: process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true",
+        featureEnabledForLiveRuns: process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED !== "false",
         supplySelected,
       }, { headers: { "Cache-Control": "no-store" } });
     }
