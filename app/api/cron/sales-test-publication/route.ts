@@ -33,18 +33,48 @@ async function buildOpportunityInBatches(productIds: string[], batchSize = 15) {
 
 async function promoteGatePassedListings(selectedListingIds: string[]) {
   // Delivery channels are independent: a Shopify/BASE outage must not suppress
-  // NEWFIND promotion or change the canonical TRACER publication result.
-  const shopify = await syncPublishedListingsToShopify(selectedListingIds).catch((error) => ({
-    ok: false,
-    listingIds: [] as string[],
-    error: error instanceof Error ? error.message : String(error),
-  }));
+  // another channel. Persist whole-call failures so the next reconciliation run
+  // can retry the failed channel instead of leaving an apparently healthy row.
+  const supabase = createSupabaseAdminClient();
+  const shopify = await syncPublishedListingsToShopify(selectedListingIds).catch(async (error) => {
+    const message = (error instanceof Error ? error.message : String(error)).slice(0, 2000);
+    const { error: persistError } = await supabase.from("shop_listings").update({
+      shopify_sync_status: "failed",
+      shopify_sync_error: message,
+      shopify_last_error: message,
+      updated_at: new Date().toISOString(),
+    }).in("id", selectedListingIds);
+    return {
+      configured: true,
+      attempted: selectedListingIds.length,
+      synced: 0,
+      failed: selectedListingIds.map((listingId) => ({
+        listingId,
+        error: persistError ? `${message};shopify_failure_state_persist_failed:${persistError.message}`.slice(0, 2000) : message,
+      })),
+      listingIds: [] as string[],
+      error: message,
+    };
+  });
   const publishedListingIds = shopify.listingIds;
-  const base = await publishPublishedListingsToBase(400, selectedListingIds).catch((error) => ({
-    ok: false,
-    results: [] as Array<{ ok: boolean; baseItemId?: string | null; listingId: string; error?: string }>,
-    error: error instanceof Error ? error.message : String(error),
-  }));
+  const base = await publishPublishedListingsToBase(400, selectedListingIds).catch(async (error) => {
+    const message = (error instanceof Error ? error.message : String(error)).slice(0, 2000);
+    const { error: persistError } = await supabase.from("shop_listings").update({
+      base_publication_status: "failed",
+      base_publication_lease_until: null,
+      base_last_error: message,
+      updated_at: new Date().toISOString(),
+    }).in("id", selectedListingIds);
+    return {
+      ok: false,
+      results: selectedListingIds.map((listingId) => ({
+        ok: false,
+        listingId,
+        error: persistError ? `${message};base_failure_state_persist_failed:${persistError.message}`.slice(0, 2000) : message,
+      })),
+      error: message,
+    };
+  });
   const newfind = await Promise.all(
     selectedListingIds.map((listingId) => promoteShopListingToNewfind(listingId).catch((error) => ({
       configured: true,
