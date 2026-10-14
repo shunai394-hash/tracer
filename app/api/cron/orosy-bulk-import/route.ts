@@ -135,7 +135,7 @@ export async function GET(request: Request) {
       rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "shipping_quote_unavailable" });
       continue;
     }
-    if (shippingQuote.unresolved || shippingQuote.amount === null || shippingQuote.amount < 0 || shippingQuote.currency?.toUpperCase() !== "JPY") {
+    if (shippingQuote.unresolved || shippingQuote.amount === null || shippingQuote.amount <= 0 || shippingQuote.currency?.toUpperCase() !== "JPY") {
       rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "shipping_quote_unresolved" });
       continue;
     }
