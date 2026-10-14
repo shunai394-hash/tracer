@@ -148,14 +148,14 @@ export async function GET(request: Request) {
       .limit(1000);
     if (verifiedSupplyError) throw new Error(verifiedSupplyError.message);
 
-    // CJ-native supply is its own evidence path: exact supplier product + variant,
-    // verified shipping, price, stock, orderability, tracking and API availability.
-    // It does not need a marketplace ASIN/JAN match. The strict native-CJ
-    // evidence gate remains mandatory for both dry-run and live publication.
+    // Native supplier catalog items use their own evidence path: exact supplier product + variant,
+    // JP shipping, price, stock, orderability, tracking, API availability and fresh verification.
+    // A marketplace ASIN/JAN match is not required when the supplier identity itself is verified.
+    // The same strict evidence gate applies to every supported supplier, for dry-run and live.
     const { data: nativeCjSupply, error: nativeCjSupplyError } = await supabase
       .from("supplier_listings")
       .select("product_id")
-      .in("supplier", ["cj", "cjdropshipping"])
+      .in("supplier", ["cj", "cjdropshipping", "orosy", "faire", "dsers"])
       .eq("verification_status", "verified")
       .in("shipping_status", ["verified", "estimated"])
       .eq("price_confirmed", true)
@@ -178,9 +178,9 @@ export async function GET(request: Request) {
     ]));
     // The read-only audit is bounded before any intelligence queries, and
     // prioritizes verified native CJ evidence so it stays inside request limits.
-    const nativeCjProductIds = (nativeCjSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean);
+    const nativeSupplierProductIds = (nativeCjSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean);
     const dryRunProductIds = Array.from(new Set([
-      ...nativeCjProductIds,
+      ...nativeSupplierProductIds,
       ...(demandSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
       ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
     ])).slice(0, dryRunLimit);
@@ -208,11 +208,11 @@ export async function GET(request: Request) {
     if (missingOpportunityIds.length > 0 && !dryRun) {
       await buildOpportunityInBatches(missingOpportunityIds.slice(0, 30), 10);
     }
-    // Native CJ products can be listed as their own catalog identity once the
-    // exact product+variant, JP shipping, current stock, API orderability,
-    // tracking, Japanese content, image, and positive contribution profit pass.
+    // Any supported supplier can be listed under its own catalog identity once exact
+    // product+variant, JP shipping, current stock, API orderability, tracking,
+    // Japanese content, image, and positive contribution profit pass.
     // Keep live writes deliberately small; repeated patrols advance the queue.
-    // Native CJ catalog items are eligible for the strict evidence gate on live runs;
+    // Native supplier catalog items are eligible for the strict evidence gate on live runs;
     // do not require a separate feature flag unrelated to supplier evidence.
     const supplySelected = await selectAndPublishSupplySalesTests(candidateProductIds, dryRun ? 100 : 50, {
       dryRun,
