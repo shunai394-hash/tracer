@@ -3,8 +3,6 @@ import "server-only";
 import { collectGoogleTrendsDemand } from "@/lib/intelligence/collect-google-trends";
 import { matchDemandProductsByCategory } from "@/lib/intelligence/match-demand-products";
 import { normalizeProductIntelligence } from "@/lib/intelligence/normalize-products";
-import { persistDemandCJProducts } from "@/lib/intelligence/persist-demand-cj-products";
-import { recordCandidateResolutionEvidence, researchDemandCandidateWithCJ } from "@/lib/intelligence/research-demand-cj";
 import { scoreProductIntelligence } from "@/lib/intelligence/score-products";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { persistDemandIntelligence } from "@/lib/intelligence/persist-demand-intelligence";
@@ -183,57 +181,6 @@ async function runStep(
     };
   } finally {
     if (timer) clearTimeout(timer);
-  }
-}
-
-async function researchLimitedSupply(): Promise<unknown> {
-  const supabase = createSupabaseAdminClient();
-
-  const { data: candidates, error } = await supabase
-    .from("demand_product_candidates")
-    .select("id, status")
-    .in("status", ["new", "researching"])
-    .order("created_at", { ascending: false })
-    .limit(1);
-
-  if (error) throw new Error(error.message);
-  const candidate = candidates?.[0];
-  if (!candidate) return { skipped: true, reason: "no_new_candidates" };
-
-  try {
-    const researched = await researchDemandCandidateWithCJ(candidate.id);
-    const persisted = await persistDemandCJProducts(candidate.id, 3);
-    return { researched, persisted };
-  } catch (error) {
-    const classified = classifyFailure(error);
-    if (classified.skippable) {
-      await recordCandidateResolutionEvidence({
-        candidateId: String(candidate.id),
-        fieldName: "candidate_resolution_failed",
-        fieldValue: classified.category === "supplier_quota" ? "supplier_quota_cooldown" : "gemini_failed",
-        evidenceClass: "actual",
-        confidence: 1,
-        metadata: {
-          stage: classified.category === "supplier_quota" ? "cj_search" : "query_ideation",
-          failure_category: classified.category,
-          error_code: error && typeof error === "object" && "code" in error
-            ? String((error as { code?: unknown }).code ?? "")
-            : null,
-          retryable: classified.retryable,
-          error: classified.message,
-        },
-      });
-      return {
-        skipped: true,
-        retryable: classified.retryable,
-        reason: classified.category === "supplier_quota"
-          ? "supplier_quota_cooldown"
-          : "gemini_failed",
-        candidateId: candidate.id,
-        error: classified.message,
-      };
-    }
-    throw error;
   }
 }
 
@@ -482,7 +429,9 @@ export async function runIntelligencePipeline(options: {
   steps.push(await runStep("shopping_demand_sync", () => syncShoppingDemandObservations(), { budgetMs: 15_000 }));
   steps.push(await runStep("demand", () => inspectDemandObservations(), { budgetMs: 5_000 }));
   steps.push(await runStep("demand_analyze", () => persistDemandIntelligence(), { budgetMs: 25_000 }));
-  steps.push(await runStep("supply", () => researchLimitedSupply(), { budgetMs: 18_000 }));
+  // Do not run the legacy one-candidate CJ research call in the critical patrol.
+  // It repeatedly consumes its 18s budget and stops downstream publication. The
+  // bounded supply-first catalog route handles fresh CJ discovery independently.
 
   // Supply-first is discovery only. It creates canonical product/offer/intelligence
   // evidence; publication is deferred until the same Opportunity Intelligence
