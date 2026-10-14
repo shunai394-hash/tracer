@@ -507,9 +507,9 @@ export function verifyProfitInvariants(): {
         healthy.totalCost > 0,
     },
     {
-      name: "unknown_domestic_shipping_blocks_publication_profit",
+      name: "unknown_domestic_shipping_uses_explicit_reserve_and_marks_estimate",
       expected: true,
-      actual: !missingDomesticShipping.calculable && missingDomesticShipping.incalculableReason === "domestic_shipping_unknown" && missingDomesticShipping.shippingUnknown,
+      actual: missingDomesticShipping.calculable && missingDomesticShipping.shippingUnknown && missingDomesticShipping.provenance.some((item) => item.field === "domestic_shipping_reserve" && item.kind === "assumption"),
     },
     {
       name: "cross_currency_shipping_uses_source_fx",
