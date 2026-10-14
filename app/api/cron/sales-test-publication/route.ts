@@ -276,15 +276,15 @@ export async function GET(request: Request) {
     const channelHealth = evaluateChannelDeliveryHealth({ selectedCount: decision.selectedListingIds.length, shopify: { configured: downstream.shopify.configured, attempted: downstream.shopify.attempted, synced: downstream.shopify.synced, failedCount: downstream.shopify.failed.length }, base: downstream.base });
 
     if (cronRunId) await supabase.from("cron_runs").update({
-      status: channelFailures === 0 ? "succeeded" : "failed",
+      status: channelHealth.ok ? "succeeded" : "failed",
       finished_at: new Date().toISOString(),
       duration_ms: Date.now() - startedAt,
       processed: supplySelected.considered + candidateIds.length,
-      failed: channelFailures,
+      failed: channelHealth.failedCount,
       metadata: { phase: "sales_test_publication", mode: "market_linked_sales_test", supplyConsidered: supplySelected.considered, supplyPublished: supplySelected.published, supplyRejected: supplySelected.rejected.length, supplyRejectedReasons: supplySelected.rejected.reduce<Record<string, number>>((counts, item) => { for (const reason of item.reasons) counts[reason] = (counts[reason] ?? 0) + 1; return counts; }, {}), supplyRejectedSample: supplySelected.rejected.slice(0, 20), considered: decision.considered, published: decision.published, shopify: downstream.shopify },
     }).eq("id", cronRunId);
 
-    return NextResponse.json({ ok: channelFailures === 0, phase: "sales_test_publication", elapsedMs: Date.now() - startedAt, mode: "market_linked_sales_test", candidateCount: candidateIds.length, decision, downstream, channelHealth, nextPhase: "downstream_delivery" }, { status: channelFailures === 0 ? 200 : 207 });
+    return NextResponse.json({ ok: channelHealth.ok, phase: "sales_test_publication", elapsedMs: Date.now() - startedAt, mode: "market_linked_sales_test", candidateCount: candidateIds.length, decision, downstream, channelHealth, nextPhase: "downstream_delivery" }, { status: channelHealth.ok ? 200 : 207 });
   } catch (error) {
     if (cronRunId) {
       try { await supabase.from("cron_runs").update({ status: "failed", finished_at: new Date().toISOString(), duration_ms: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error) }).eq("id", cronRunId); } catch (recordError) { console.error("[TRACER CRON RUN RECORD ERROR]", recordError); }
