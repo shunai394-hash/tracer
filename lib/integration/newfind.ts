@@ -120,7 +120,7 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
   const batch = Math.max(1, Math.min(limit, 100));
   const { data, error } = await supabase
     .from("newfind_promotion_deliveries")
-    .select("listing_id")
+    .select("listing_id, last_error")
     .in("status", ["pending", "failed", "sent", "sending"])
     .order("updated_at", { ascending: true })
     .limit(500);
