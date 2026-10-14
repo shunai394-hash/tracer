@@ -13,8 +13,7 @@ function buildUrl(base: string): string {
 
 function tracerSiteOrigin(): string | null {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
-  const configured = explicit || (vercel ? `https://${vercel.replace(/^https?:\/\//, "")}` : "https://tracer-pied-alpha.vercel.app");
+  const configured = explicit || "https://tracer-pied-alpha.vercel.app";
   try {
     const parsed = new URL(configured);
     if (parsed.protocol !== "https:") return null;
@@ -48,7 +47,10 @@ export async function rescueUndeliveredGatePassedListings(options: { limit?: num
   const byId = new Map<string, Record<string, unknown>>();
   for (const row of [...(byReason.data ?? []), ...(byMarker.data ?? [])]) byId.set(String(row.id), row as Record<string, unknown>);
   const listings = Array.from(byId.values()).sort((a, b) => Number(b.shopify_sync_status === "synced") - Number(a.shopify_sync_status === "synced") || Number(Boolean(b.base_item_id)) - Number(Boolean(a.base_item_id)) || String(a.updated_at ?? "").localeCompare(String(b.updated_at ?? "")));
-  const gated = listings.filter((row) => hasPassedSalesTestGate(row));
+  // NEWFIND's sales URL is the TRACER product landing page, which requires a
+  // live Shopify product. BASE-only listings remain queued until Shopify sync
+  // succeeds; retrying them here only produces permanent HTTP 404 failures.
+  const gated = listings.filter((row) => hasPassedSalesTestGate(row) && row.shopify_sync_status === "synced");
   const result: NewfindRescueResult = { candidates: gated.length, onBase: gated.filter((row) => row.base_item_id).length, alreadyProcessed: 0, undelivered: { missing: 0, pending: 0, failed: 0, sent: 0, sending: 0 }, attempted: 0, processed: 0, stillFailing: [] };
   if (gated.length === 0) return result;
 
