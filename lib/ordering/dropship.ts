@@ -3,7 +3,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isSupplierConfigured, isSupplierLiveOrderingEnabled } from "@/lib/config/env";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
-import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
+import { assessCommercialTerms } from "@/lib/market/commercial-terms";
 import { executeVerifiedSupplierPurchaseOrder } from "@/lib/ordering/verified-supplier-execution";
 import {
   evaluateDropshipOrderGate,
@@ -82,9 +82,22 @@ export async function createDropshipPurchaseOrdersForShopOrder(
     // second purchase order for the same line item.
     const { data: existingPo } = await supabase
       .from("purchase_orders")
-      .select("id")
+      .select("id,supplier_order_id,status")
       .eq("idempotency_key", idempotencyKey)
       .maybeSingle();
+    const { data: existingAttempts, error: attemptLookupError } = await supabase
+      .from("supplier_order_attempts")
+      .select("id,purchase_order_id,state,supplier_order_id")
+      .eq("idempotency_key", idempotencyKey)
+      .limit(2);
+    if (attemptLookupError) {
+      skipped.push({ itemId: String(row.id), reason: "supplier_attempt_lookup_failed_manual_reconciliation_required" });
+      continue;
+    }
+    if ((existingAttempts ?? []).length > 1) {
+      skipped.push({ itemId: String(row.id), reason: "duplicate_order_ambiguous_manual_reconciliation_required" });
+      continue;
+    }
 
     const productId = row.product_id ? String(row.product_id) : null;
     if (!productId) {
@@ -160,7 +173,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
         supplier_variant_id: internalVariantId,
         cost: internalVariant.cost ?? (internalVariant.internal_supply_products as Record<string, unknown> | null)?.cost ?? null,
         shipping_cost: internalVariant.shipping_cost ?? (internalVariant.internal_supply_products as Record<string, unknown> | null)?.shipping_cost ?? 0,
-        currency: internalVariant.currency ?? (internalVariant.internal_supply_products as Record<string, unknown> | null)?.currency ?? "JPY",
+        currency: internalVariant.currency ?? (internalVariant.internal_supply_products as Record<string, unknown> | null)?.currency ?? null,
         inventory: internalVariant.inventory,
         inventory_confirmed: true,
         tracking_available: internalVariant.tracking_available === true || (internalVariant.internal_supply_products as Record<string, unknown> | null)?.tracking_available === true,
@@ -216,11 +229,23 @@ export async function createDropshipPurchaseOrdersForShopOrder(
 
     const sourceCurrency = typeof listingRow.currency === "string" ? listingRow.currency.toUpperCase() : null;
     const sellingCurrency = typeof row.currency === "string" ? row.currency.toUpperCase() : null;
-    const fxQuote = sourceCurrency === sellingCurrency
-      ? 1
-      : sourceCurrency === "USD" && sellingCurrency === "JPY"
-        ? (await getObservedUsdToJpyRate())?.rate ?? null
-        : null;
+    const metadata = listingRow.metadata;
+    const metadataRecord = metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? metadata as Record<string, unknown>
+      : null;
+    const commercial = assessCommercialTerms({
+      sellingCurrency,
+      sourceCurrency,
+      sourceCost: listingRow.cost,
+      shippingCost: listingRow.shipping_cost,
+      sellingPrice: row.unit_price,
+      fxRate: listingRow.fx_rate ?? metadataRecord?.fx_rate,
+      fxObservedAt: listingRow.fx_observed_at ?? metadataRecord?.fx_observed_at,
+    });
+    const observedRate = asNumber(listingRow.fx_rate ?? metadataRecord?.fx_rate);
+    const fxQuote = commercial.profitCalculable && !commercial.currencyMismatch
+      ? (sourceCurrency === sellingCurrency ? 1 : observedRate)
+      : null;
 
     const gate = evaluateDropshipOrderGate({
       vid: typeof listingRow.supplier_variant_id === "string" ? listingRow.supplier_variant_id : null,
@@ -238,7 +263,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
       cjConfigured: false,
       liveOrderingEnabled: isSupplierLiveOrderingEnabled(String(shopListing.supplier_name ?? "").trim()),
       inventoryQty: typeof listingRow.inventory === "number" ? listingRow.inventory : null,
-      duplicateOrderExists: false,
+      duplicateOrderExists: Boolean(existingPo) || (existingAttempts ?? []).length > 0,
     });
 
     const status =
@@ -246,7 +271,16 @@ export async function createDropshipPurchaseOrdersForShopOrder(
         ? "auto_blocked"
         : "pending_approval";
 
-    let purchaseOrderId = existingPo ? String(existingPo.id) : null;
+    const priorAttempt = (existingAttempts ?? [])[0] as { purchase_order_id?: unknown } | undefined;
+    let purchaseOrderId = existingPo
+      ? String(existingPo.id)
+      : priorAttempt?.purchase_order_id
+        ? String(priorAttempt.purchase_order_id)
+        : null;
+    if (!purchaseOrderId && (Boolean(existingPo) || (existingAttempts ?? []).length > 0)) {
+      skipped.push({ itemId: String(row.id), reason: "duplicate_order_unresolved_manual_reconciliation_required" });
+      continue;
+    }
 
     if (!purchaseOrderId) {
       const { data: po, error: poError } = await supabase
@@ -297,7 +331,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
         if (poError.code === "23505") {
           const { data: racedPo } = await supabase
             .from("purchase_orders")
-            .select("id")
+            .select("id,supplier_order_id")
             .eq("idempotency_key", idempotencyKey)
             .maybeSingle();
           purchaseOrderId = racedPo?.id ? String(racedPo.id) : null;

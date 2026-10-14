@@ -181,9 +181,8 @@ export async function discoverAndCreateCjSupply(
   // variant, stock, Japan freight and cost. Payment/order-creation gates stay
   // closed for procurement; they must never prevent finding valid supply.
   //
-  // CJ exposes live order-status/tracking APIs, so discovered offers can carry
-  // tracking capability without enabling automatic purchasing.
-  const cjTrackingAvailable = true;
+  // Catalog discovery does not observe a tracking number or an order acceptance.
+  // Those paths are not connected, so a stock count must not become orderable.
 
   const fx = await getObservedUsdToJpyRate();
   const fxRate = fx?.rate ?? null;

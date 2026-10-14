@@ -60,8 +60,15 @@ export default async function ProductsPage() {
       supabase
         .from("supplier_listings")
         .select("id", { count: "exact", head: true })
+        .eq("identity_status", "linked")
+        .eq("verification_status", "verified")
         .eq("orderable", true)
+        .eq("api_available", true)
+        .eq("tracking_available", true)
+        .eq("price_confirmed", true)
         .eq("inventory_confirmed", true)
+        .not("supplier_product_id", "is", null)
+        .not("supplier_variant_id", "is", null)
         .gt("inventory", 0),
       supabase
         .from("supplier_listings")

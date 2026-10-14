@@ -1,6 +1,7 @@
 // Demand match precision tests (pure logic, no DB, no network).
 // Run: node --experimental-strip-types scripts/verify-demand-match-evidence.mjs
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import {
   buildIdentifierIndex,
@@ -21,7 +22,10 @@ import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { matchProductIdentity, normalizeIdentifier, pickSupplierBarcodeIdentifier, EMPTY_IDENTIFIERS } from "../lib/market/identifiers.ts";
 import { inspectCanonicalMarketplaceVariantMarkup, parseAmazonVariationAsinMap, parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
 import { isAmazonChallengeHtml } from "../lib/market/amazon-response.ts";
-import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
+import { verifyDropshipOrderGateInvariants } from "../lib/ordering/dropship-gate.ts";
+import { verifySalesTestGateInvariants } from "../lib/market/sales-test-gate.ts";
+import { decideStorefrontStock } from "../lib/shop/live-stock-policy.ts";
+import { internalLinkRetryDelayMs, internalProductCandidateStatus, selectDueInternalLinkRetryIds, supplierListingStateForIdentity, verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
 const pending = [];
@@ -107,6 +111,46 @@ test("canonical marketplace variant evidence", "does not use the parent ASIN as 
   assert.equal(sameParentUrlVariants[0].asin, null, "explicitly repeated parent URL must not become child ASIN evidence");
 });
 
+test("canonical marketplace variant evidence", "reads Product.isVariantOf children and ignores barcodes nested on the parent reference", () => {
+  const html = '<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"ProductGroup","@id":"https://www.amazon.co.jp/dp/B0PARENT01","name":"Parent Bottle","gtin13":"4006381333931"},{"@type":"Product","name":"Bottle 500 ml","sku":"BOTTLE-500","url":"https://www.amazon.co.jp/dp/B0VARIANT1","gtin13":"4006381333931","isVariantOf":{"@id":"https://www.amazon.co.jp/dp/B0PARENT01"}},{"@type":"Product","name":"Bottle 1 L","sku":"BOTTLE-1000","url":"https://www.amazon.co.jp/dp/B0VARIANT2","isVariantOf":{"@type":"ProductGroup","gtin13":"4006381333931","productGroupID":"PARENT"}},{"@type":"Product","name":"Standalone parent product","sku":"PARENT-SKU","gtin13":"4006381333931","url":"https://www.amazon.co.jp/dp/B0PARENT01"}]}</script>';
+  const variants = parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01");
+  assert.deepEqual(variants.map((variant) => variant.sourceVariantId), ["B0VARIANT1", "B0VARIANT2"]);
+  assert.equal(variants[0].evidenceSource, "schema_org_product_is_variant_of");
+  assert.equal(variants[0].gtin, "4006381333931");
+  assert.equal(variants[0].asin, "B0VARIANT1");
+  assert.equal(variants[1].gtin, null, "GTIN declared only on isVariantOf must not be copied onto the child");
+  assert.equal(variants[1].asin, "B0VARIANT2");
+  assert.equal(variants.some((variant) => variant.sourceVariantId === "B0PARENT01" || variant.sourceVariantId === "PARENT-SKU"), false);
+});
+
+test("canonical marketplace variant evidence", "dedupes a child declared both as hasVariant and isVariantOf", () => {
+  const html = '<script type="application/ld+json">{"@graph":[{"@type":"ProductGroup","hasVariant":[{"@type":"Product","sku":"SAME-SKU","name":"Shared child","url":"https://www.amazon.co.jp/dp/B0VARIANT1"}]},{"@type":"Product","sku":"SAME-SKU","name":"Shared child","url":"https://www.amazon.co.jp/dp/B0VARIANT1","isVariantOf":{"@id":"#group"}}]}</script>';
+  const variants = parseCanonicalMarketplaceVariantEvidence(html, "https://www.amazon.co.jp/dp/B0PARENT01");
+  assert.equal(variants.length, 1);
+  assert.equal(variants[0].sourceVariantId, "B0VARIANT1");
+  assert.equal(variants[0].evidenceSource, "schema_org_product_group_has_variant");
+});
+
+test("dropship order gate", "blocks non-positive FX and non-positive profit before live execution", () => {
+  const result = verifyDropshipOrderGateInvariants();
+  assert.equal(result.ok, true, result.cases.filter((item) => item.actual !== item.expected).map((item) => item.name).join(", "));
+});
+
+test("sales test gate", "requires a japanese title and a known positive contribution profit", () => {
+  const result = verifySalesTestGateInvariants();
+  assert.equal(result.ok, true, result.cases.filter((item) => item.actual !== item.expected).map((item) => item.name).join(", "));
+  assert.equal(result.cases.length, 12);
+});
+
+test("storefront stock", "does not treat a failed or missing Shopify quantity as in stock", () => {
+  assert.deepEqual(decideStorefrontStock({ shopifyConfigured: true, liveCheckFailed: true, shopifyVariantId: "gid://shopify/ProductVariant/1", dbInventory: 8, liveQuantity: undefined }), { visible: false, reason: "live_stock_unavailable" });
+  assert.deepEqual(decideStorefrontStock({ shopifyConfigured: true, liveCheckFailed: false, shopifyVariantId: "gid://shopify/ProductVariant/1", dbInventory: 8, liveQuantity: undefined }), { visible: false, reason: "live_stock_unknown" });
+  assert.deepEqual(decideStorefrontStock({ shopifyConfigured: true, liveCheckFailed: false, shopifyVariantId: null, dbInventory: 8, liveQuantity: 4 }), { visible: false, reason: "shopify_variant_unknown" });
+  assert.deepEqual(decideStorefrontStock({ shopifyConfigured: true, liveCheckFailed: false, shopifyVariantId: "gid://shopify/ProductVariant/1", dbInventory: 8, liveQuantity: 0 }), { visible: false, reason: "live_stock_zero" });
+  assert.deepEqual(decideStorefrontStock({ shopifyConfigured: true, liveCheckFailed: false, shopifyVariantId: "gid://shopify/ProductVariant/1", dbInventory: 8, liveQuantity: 3 }), { visible: true, inventory: 3 });
+  assert.deepEqual(decideStorefrontStock({ shopifyConfigured: false, liveCheckFailed: false, shopifyVariantId: null, dbInventory: 8, liveQuantity: undefined }), { visible: true, inventory: 8 });
+});
+
 
 test("canonical marketplace variant evidence", "resolves ProductGroup hasVariant @id references within the same JSON-LD graph", () => {
   const html = '<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":["https://schema.org/ProductGroup"],"@id":"https://www.amazon.co.jp/group/PARENT01","hasVariant":[{"@id":"https://www.amazon.co.jp/dp/B0VARIANT3"}]},{"@type":"https://schema.org/Product","@id":"https://www.amazon.co.jp/dp/B0VARIANT3","name":"Bottle 250 ml","sku":"BOTTLE-250","gtin13":"4006381333931"}]}</script>';
@@ -146,6 +190,19 @@ function test(group, name, fn) {
   }
 }
 
+test("supplier listing identity activation gate", "keeps unverified listings non-orderable and activates only after canonical link verification", () => {
+  assert.deepEqual(supplierListingStateForIdentity(false), {
+    identity_status: "pending",
+    configured: false,
+    orderable: false,
+  });
+  assert.deepEqual(supplierListingStateForIdentity(true), {
+    identity_status: "linked",
+    configured: true,
+    orderable: true,
+  });
+});
+
 test("CJ supplier barcode selection", "MPN-only metadata does not suppress fresh barcode lookup", () => {
   assert.equal(pickSupplierBarcodeIdentifier({ jan: null, gtin: null, ean: null, upc: null, mpn: "MODEL-123" }), null);
   assert.equal(pickSupplierBarcodeIdentifier({ jan: null, gtin: null, ean: null, upc: null, mpn: "MODEL-123" }) ?? "fetch-from-CJ", "fetch-from-CJ");
@@ -171,6 +228,45 @@ test("CJ identity reverify policy", "retry intervals, candidate selection, raw G
   assert.equal(result.cases.length >= 15, true);
   assert.equal(normalizeIdentifier("gtin", "1598446591114"), null);
   assert.equal(normalizeIdentifier("gtin", "4006381333931"), "4006381333931");
+});
+
+test("durable internal link retry queue", "retry delay increases and caps at seven days", () => {
+  assert.equal(internalLinkRetryDelayMs(1), 15 * 60 * 1000);
+  assert.equal(internalLinkRetryDelayMs(2), 30 * 60 * 1000);
+  assert.equal(internalLinkRetryDelayMs(3), 60 * 60 * 1000);
+  assert.equal(internalLinkRetryDelayMs(100), 7 * 24 * 60 * 60 * 1000);
+});
+
+test("durable internal link retry queue", "failed candidate is deferred then reselected by the next due sweep", () => {
+  const start = Date.parse("2026-01-01T00:00:00.000Z");
+  const firstDue = start + internalLinkRetryDelayMs(1);
+  const firstFailureState = [{ bestseller_id: "same-candidate", next_attempt_at: new Date(firstDue).toISOString() }];
+  assert.deepEqual(selectDueInternalLinkRetryIds(firstFailureState, firstDue - 1, 50), []);
+  assert.deepEqual(selectDueInternalLinkRetryIds(firstFailureState, firstDue, 50), ["same-candidate"]);
+
+  const secondDue = firstDue + internalLinkRetryDelayMs(2);
+  const secondFailureState = [{ bestseller_id: "same-candidate", next_attempt_at: new Date(secondDue).toISOString() }];
+  assert.deepEqual(selectDueInternalLinkRetryIds(secondFailureState, secondDue - 1, 50), []);
+  assert.deepEqual(selectDueInternalLinkRetryIds(secondFailureState, secondDue, 50), ["same-candidate"]);
+});
+
+test("durable internal link retry queue", "route delegates cleanup to tested catalog-sync finalizer", () => {
+  const route = readFileSync(new URL("../app/api/cron/supplier-investigation/route.ts", import.meta.url), "utf8");
+  const lifecycle = readFileSync(new URL("../lib/suppliers/internal-link-retry-lifecycle.ts", import.meta.url), "utf8");
+  assert.ok(route.includes("finalizeInternalSupplyLinkRetry"), "route must use the retry finalizer");
+  const syncStart = lifecycle.indexOf("outcome = await args.syncCatalog()");
+  const failurePersist = lifecycle.indexOf("await args.persistFailure", syncStart);
+  const retryDelete = lifecycle.indexOf("await args.clearRetry()", syncStart);
+  assert.ok(syncStart >= 0, "finalizer must run catalog sync first");
+  assert.ok(failurePersist > syncStart, "failed sync must persist retry state");
+  assert.ok(retryDelete > syncStart, "retry cleanup must follow catalog sync");
+  assert.ok(lifecycle.indexOf("if (!outcome?.matched)", syncStart) < retryDelete, "unmatched catalog sync must never clear retry");
+  const finalizeCall = route.indexOf("const catalog = await finalizeInternalSupplyLinkRetry");
+  const matchedCount = route.indexOf("internalMatchedIds.push(candidateId)", finalizeCall);
+  const resultRecord = route.indexOf("internalResults.push({", finalizeCall);
+  assert.ok(finalizeCall >= 0, "route must invoke finalizer");
+  assert.ok(matchedCount > finalizeCall, "candidate must not count as fully matched before catalog sync finalizes");
+  assert.ok(resultRecord > matchedCount, "fully matched count must be recorded before result diagnostics");
 });
 
 // Market product fixtures (JANs carry valid check digits).

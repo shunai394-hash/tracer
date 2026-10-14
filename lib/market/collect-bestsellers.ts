@@ -6,9 +6,7 @@ import {
   isBrightDataConfigured,
 } from "@/lib/sources/brightdata/client";
 import {
-  parseAmazonBestsellersHtml,
   parseAmazonProductDetail,
-  parseRakutenRankingHtml,
   parseYahooProductDetail,
   parseYahooRankingHtml,
   type ParsedBestseller,
@@ -162,13 +160,6 @@ async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVar
 
   return directIsChallenge ? null : directHtml;
 }
-function enrichAmazon(item: ParsedBestseller): ParsedBestseller {
-  return {
-    ...item,
-    asin: item.asin ?? extractAsinFromUrl(item.productUrl),
-  };
-}
-
 export async function collectMarketplaceBestsellers(options: { sourceIndex?: number } = {}): Promise<{
   fetchedAt: string;
   marketplaces: CollectedMarketplace[];
@@ -189,13 +180,46 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
     return { fetchedAt, marketplaces: [], itemCount: 0, sourceIndex: requestedSourceIndex };
   }
 
+  // Marketplace ranking sites are not approved sourcing inputs. Keep source
+  // indices stable for old cursors, but never fetch or persist Yahoo, Rakuten,
+  // or Amazon data. Product discovery must use direct supplier evidence.
+  const enabledEntries: typeof sourceEntries = [];
+  for (const entry of sourceEntries) {
+    const selectedSource = entry.source;
+    const disabledMarketplace = ["yahoo_shopping", "rakuten", "amazon.co.jp"].includes(selectedSource.marketplace);
+    if (disabledMarketplace) {
+      marketplaces.push({
+        marketplace: selectedSource.marketplace,
+        source: selectedSource.source,
+        sourceUrl: selectedSource.url,
+        fetchedAt,
+        items: [],
+        skipped: true,
+        reason: "marketplace_source_removed_by_policy",
+      });
+      continue;
+    }
+    enabledEntries.push(entry);
+  }
+  if (enabledEntries.length === 0) {
+    // All configured marketplace ranking sources are disabled. Do not fetch
+    // any of them; preserve the cursor and let supplier-first discovery proceed.
+    const firstEnabledSourceIndex = MARKETPLACE_SOURCES.findIndex(
+      (source) => !["yahoo_shopping", "rakuten", "amazon.co.jp"].includes(source.marketplace),
+    );
+    const cursorBeforeFirstEnabled = firstEnabledSourceIndex >= 0
+      ? (firstEnabledSourceIndex + MARKETPLACE_SOURCES.length - 1) % MARKETPLACE_SOURCES.length
+      : requestedSourceIndex;
+    return { fetchedAt, marketplaces, itemCount: 0, sourceIndex: cursorBeforeFirstEnabled };
+  }
+
   // Probe up to three sources per patrol in priority order. A blocked or
   // layout-drifted ranking page must not burn an entire 15-minute cycle while
   // a later source (e.g. Rakuten) may still return usable products. Fetch the
   // bounded probe set concurrently, then select the first source with parsed
   // items so the persisted cursor resumes at the source that actually worked.
   const collectedSources = await Promise.all(
-    sourceEntries.map(async ({ source, sourceIndex }) => {
+    enabledEntries.map(async ({ source, sourceIndex }) => {
       try {
         const html = await fetchHtml(source.url);
         return { source, sourceIndex, html, error: null as unknown };
@@ -225,12 +249,9 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
         continue;
       }
 
-      const items: ParsedBestseller[] =
-        source.marketplace === "amazon.co.jp"
-          ? parseAmazonBestsellersHtml(html).map(enrichAmazon)
-          : source.marketplace === "rakuten"
-            ? parseRakutenRankingHtml(html)
-            : parseYahooRankingHtml(html);
+      // The policy gate above never fetches a disabled marketplace.
+      // Only Yahoo Shopping can reach this parsing path.
+      const items: ParsedBestseller[] = parseYahooRankingHtml(html);
 
       // Ranking/listing pages never carry a barcode themselves (Amazon,
       // Rakuten and Yahoo all omit JAN from the grid view), so identity
@@ -373,7 +394,19 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
         }
         if (item.jan || item.mpn) identifierFound += 1;
       } else {
+        // Yahoo Shopping is the remaining approved marketplace source after
+        // Amazon/Rakuten were removed by policy. Persist only explicit child
+        // variant relationships from its detail-page structured data; never
+        // infer a variant from title similarity or copy a parent identifier.
         const detail = parseYahooProductDetail(detailHtml);
+        const markup = inspectCanonicalMarketplaceVariantMarkup(detailHtml);
+        jsonLdNodeCount += markup.jsonLdNodeCount;
+        productGroupCount += markup.productGroupCount;
+        groupsWithVariantCount += markup.groupsWithVariantCount;
+        variantProductNodeCount += markup.variantProductNodeCount;
+        absoluteTypeIriCount += markup.absoluteTypeIriCount;
+        item.canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl);
+        canonicalVariantCount += item.canonicalVariants.length;
         item.jan = normalizeIdentifier("jan", detail.jan);
         item.gtin = normalizeIdentifier("gtin", detail.gtin);
         item.mpn = normalizeIdentifier("mpn", detail.mpn);

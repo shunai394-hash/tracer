@@ -930,9 +930,15 @@ async function queryCJDetailVariantRows(pid: string): Promise<CJVariantRow[]> {
       cache: "no-store",
     },
   );
-  if (!response.ok) return [];
-  const payload = (await response.json()) as { result?: boolean; data?: unknown };
-  if (payload.result === false) return [];
+  if (!response.ok) {
+    throw new CJRequestError(
+      `CJ product detail lookup failed with HTTP ${response.status}`,
+    );
+  }
+  const payload = (await response.json()) as { result?: boolean; message?: string; data?: unknown };
+  if (payload.result === false) {
+    throw new CJRequestError(payload.message || "CJ product detail lookup failed");
+  }
   const data = Array.isArray(payload.data) ? payload.data[0] : payload.data;
   if (!data || typeof data !== "object") return [];
   const variants = (data as Record<string, unknown>).variants;

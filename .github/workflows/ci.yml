@@ -5,7 +5,9 @@ on:
     branches:
       - main
       - feat/chrome-extension-ec-pulse
+      - fix/issue-484-commerce-source-of-truth
   pull_request:
+  workflow_dispatch:
 
 jobs:
   verify:
@@ -44,6 +46,26 @@ jobs:
         run: npm run test:bounded-reorder-recommendations
       - name: Test bounded demand identity stamping
         run: npm run test:bounded-identity-stamping
+      - name: Test Issue 484 shared commerce gate and order identity
+        run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-issue-484-commerce.mjs
+      - name: Test channel safety
+        run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-channel-safety.mjs
+      - name: Test cron failure propagation
+        run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-cron-failure-propagation.mjs
+      - name: Test storefront publication gate
+        run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-storefront-gate.mjs
+      - name: Test supplier order safety
+        run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-supplier-order-safety.mjs
+      - name: Test CJ order adapter contract (mocked CJ HTTP, no real orders)
+        run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-cj-order-adapter.mjs
+      - name: Test CJ-native identity proof (mocked CJ reads, no writes to CJ)
+        run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-cj-native-identity.mjs
+      - name: Test Shopify order id canonicalization (no double import)
+        run: node --experimental-strip-types --no-warnings scripts/test-shopify-order-id.mjs
+      - name: Test TRACER-BASE-Shopify correspondence table
+        run: node --experimental-strip-types --no-warnings scripts/test-three-site-correspondence.mjs
+      - name: Test internal supply retry lifecycle
+        run: node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/register-test-hooks.mjs ./scripts/test-internal-link-retry-lifecycle.mjs
       - name: Set up disposable local PostgreSQL for integration tests
         run: |
           sudo apt-get update
@@ -100,3 +122,17 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f scripts/test-canonical-supplier-variant-links.sql
       - run: npm run lint
       - run: npm run build
+      - name: Test BASE external-ID reconciliation logic
+        run: node scripts/test-base-reconciliation-core.mjs
+      - name: Test Amazon and Rakuten source removal policy
+        run: node scripts/test-marketplace-source-removal.mjs
+      - name: Test Shopify listing reconciliation
+        run: node scripts/test-shopify-reconciliation-core.mjs
+      - name: Verify demand match evidence
+        run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npm run build

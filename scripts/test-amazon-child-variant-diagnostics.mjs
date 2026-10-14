@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
-const cron = await readFile(new URL("../app/api/cron/market-sourcing/route.ts", import.meta.url), "utf8");
+// The route delegates to the shared market-sourcing cron executor.
+const cron = await readFile(new URL("../app/api/cron/market-sourcing/route.ts", import.meta.url), "utf8")
+  + await readFile(new URL("../lib/ops/market-sourcing-cron.ts", import.meta.url), "utf8");
 const requiredSignals = ["variationAsinsFound","childDetailAttempted","childDetailFetched","childBarcodeFound"];
 for (const signal of requiredSignals) assert.ok(source.includes(signal), `missing diagnostic signal: ${signal}`);
 assert.ok(source.indexOf("if (!jan && !gtin && !ean && !upc) return null;") < source.indexOf("childBarcodeFound += 1;"), "barcode count must follow concrete barcode validation");

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { verifySalesTestGateInvariants } from "../lib/market/sales-test-gate.ts";
 import { verifyWomenPriorityInvariants } from "../lib/intelligence/womens-priority.ts";
 import { isPublishableCatalogTitle } from "../lib/catalog/publishable-title.ts";
+import { resolveSupplyShippingPolicy } from "../lib/market/supply-shipping-policy.ts";
 
 const checks = [
   ["sales test gate", verifySalesTestGateInvariants()],
@@ -25,11 +26,30 @@ const [profit, supplySelector, marketSelector, publicationRoute, diagnosticWorkf
 ]);
 assert.match(profit, /requireDomesticShipping === true && args\.domesticShipping == null/);
 assert.match(profit, /unknown\("domestic_shipping_unknown"\)/);
-assert.match(supplySelector, /requireDomesticShipping: true/);
+// Domestic shipping stays mandatory except for the approved CJ direct-to-Japan
+// route (supplier=cj, ship_to=JP, positive freight, supplier and shipping verified).
+assert.match(supplySelector, /requireDomesticShipping: shippingPolicy\.requireDomesticShipping/);
+assert.match(supplySelector, /domesticShipping: shippingPolicy\.domesticShipping/);
+const verifiedCj = { supplier: "cj", shipTo: "JP", shippingCost: 4.18, verificationStatus: "verified", shippingStatus: "verified" };
+assert.deepEqual(resolveSupplyShippingPolicy(verifiedCj), { domesticShipping: 0, requireDomesticShipping: false, directToJapanShippingConfirmed: true });
+for (const blocked of [
+  { ...verifiedCj, supplier: "orosy" },
+  { ...verifiedCj, shipTo: "US" },
+  { ...verifiedCj, shippingCost: 0 },
+  { ...verifiedCj, shippingCost: null },
+  { ...verifiedCj, verificationStatus: "unverified" },
+  { ...verifiedCj, shippingStatus: "unknown" },
+]) {
+  assert.deepEqual(resolveSupplyShippingPolicy(blocked), { domesticShipping: null, requireDomesticShipping: true, directToJapanShippingConfirmed: false });
+}
 assert.equal(isPublishableCatalogTitle("トレンド・seeded_dueアイテム"), false);
 assert.equal(isPublishableCatalogTitle("Aroma Filter"), true);
 assert.match(supplySelector, /product_master_title_not_publishable/);
-assert.match(marketSelector, /requireDomesticShipping: true/);
+assert.match(marketSelector, /resolveSupplyShippingPolicy/);
+assert.match(marketSelector, /requireDomesticShipping: shippingPolicy[.]requireDomesticShipping/);
+assert.match(marketSelector, /domesticShipping: shippingPolicy[.]domesticShipping/);
+assert.match(marketSelector, /shipTo: listing[.]ship_to/);
+assert.match(marketSelector, /shippingStatus: listing[.]shipping_status/);
 assert.match(supplySelector, /rejectedCount: rejected\.length/);
 assert.match(supplySelector, /rejectionCounts: summarizeRejections\(rejected\)/);
 assert.match(supplySelector, /title: sourceTitle/);
@@ -40,4 +60,4 @@ assert.match(publicationRoute, /\.slice\(0, dryRunLimit\)/);
 assert.match(diagnosticWorkflow, /sales-test-publication\?dryRun=true&limit=450/);
 assert.match(diagnosticWorkflow, /rejectedSample.*\[:25\]/);
 assert.match(diagnosticWorkflow, /rejectedSamples.*\[:25\]/);
-console.log("fully costed publication, product-master, and 450-candidate audit guards: 19 assertions passed");
+console.log("fully costed publication, product-master, and 450-candidate audit guards: 27 assertions passed");

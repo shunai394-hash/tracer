@@ -18,7 +18,9 @@ assert.match(pipeline, /runStep\("score", \(\) => scoreProductIntelligence\(\), 
 assert.match(pipeline, /runStep\("shopping_demand_sync", \(\) => syncShoppingDemandObservations\(\), \{ budgetMs: 15_000 \}\)/);
 assert.match(pipeline, /runStep\("demand", \(\) => inspectDemandObservations\(\), \{ budgetMs: 5_000 \}\)/);
 assert.match(pipeline, /runStep\("demand_analyze", \(\) => persistDemandIntelligence\(\), \{ budgetMs: 25_000 \}\)/);
-assert.match(pipeline, /const bestsellerStep = await runStep\("bestsellers", [\s\S]*?\{ budgetMs: 40_000 \}\)/);
+// Marketplace ranking intake is disabled by policy; it must not consume a 40s pipeline stage budget.
+assert.match(pipeline, /reason: "marketplace_ranking_sources_disabled_by_policy"/);
+assert.doesNotMatch(pipeline, /runStep\("bestsellers", [\s\S]{0,300}budgetMs: 40_000/);
 assert.match(pipeline, /runStep\("ordering", \(\) => persistReorderRecommendations\(\), \{ downstream: true, budgetMs: 15_000 \}\)/);
 
 // Persist provider quota exhaustion across patrol invocations so the five-minute

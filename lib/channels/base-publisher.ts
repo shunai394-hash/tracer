@@ -2,7 +2,10 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createBaseItem, editBaseItem, addBaseItemImage, isBaseConfigured } from "@/lib/channels/base";
-import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { evaluateShopListingRecord } from "@/lib/market/listing-commercial-gate";
+import { attachSupplierCommercialEvidence } from "@/lib/market/supplier-commercial-evidence";
+import { probeListingImage } from "@/lib/market/probe-listing-image";
+import { channelVisibilityForSalesGate, hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
@@ -49,16 +52,43 @@ function hasUsableJapaneseCopy(value: unknown): boolean {
   return latin <= Math.max(12, japanese * 1.5);
 }
 
+type BasePublishDeps = {
+  supabase?: ReturnType<typeof createSupabaseAdminClient>;
+  editBaseItem?: typeof editBaseItem;
+  createBaseItem?: typeof createBaseItem;
+  addBaseItemImage?: typeof addBaseItemImage;
+  probeImage?: (url: string) => Promise<boolean>;
+  linkedSupplierListingIds?: (values: unknown[]) => Promise<Set<string>>;
+  forceConfigured?: boolean;
+};
+
+async function recordBaseRetry(supabase: ReturnType<typeof createSupabaseAdminClient>, listingId: string, reason: string, message: string) {
+  const { error } = await supabase.from("shop_listings").update({
+    base_last_error: message.slice(0, 2000),
+    base_publication_status: "failed",
+    pipeline_stage: "BASE_RECONCILIATION",
+    pipeline_status: "failed",
+    pipeline_reason: reason,
+    pipeline_error: message.slice(0, 2000),
+    pipeline_updated_at: new Date().toISOString(),
+  }).eq("id", listingId);
+  return error;
+}
+
 function validHttpUrl(value: unknown): boolean {
   if (typeof value !== "string" || !value.trim()) return false;
   try { const parsed = new URL(value); return parsed.protocol === "http:" || parsed.protocol === "https:"; } catch { return false; }
 }
 
-export async function publishPublishedListingsToBase(limit = 10, listingIds?: string[]): Promise<BasePublicationResult> {
-  if (!isBaseConfigured()) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
+export async function publishPublishedListingsToBase(limit = 10, listingIds?: string[], deps?: BasePublishDeps): Promise<BasePublicationResult> {
+  if (!deps?.forceConfigured && !isBaseConfigured()) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
   if (listingIds !== undefined && listingIds.length === 0) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
-  const supabase = createSupabaseAdminClient();
-  let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons");
+  const supabase = deps?.supabase ?? createSupabaseAdminClient();
+  const editItem = deps?.editBaseItem ?? editBaseItem;
+  const createItem = deps?.createBaseItem ?? createBaseItem;
+  const addImage = deps?.addBaseItemImage ?? addBaseItemImage;
+  const probeImage = deps?.probeImage ?? probeListingImage;
+  let query = supabase.from("shop_listings").select("id,title,description,selling_price,currency,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,source_cost,contribution_profit,identity_method,identity_confidence,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons");
   if (listingIds && listingIds.length > 0) {
     // Explicit admin retries can target an exact listing regardless of its
     // current publication status.
@@ -79,8 +109,9 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   const safeLimit = Math.min(15, Math.max(1, Math.floor(Number.isFinite(limit) ? limit : 10)));
   const { data: listings, error } = await query.order("created_at", { ascending: true }).limit(safeLimit);
   if (error) throw new Error(error.message);
+  const evidencedListings = await attachSupplierCommercialEvidence(supabase, listings ?? []);
 
-  const linkedSupplierIds = await getLinkedSupplierListingIds((listings ?? []).map((listing) => listing.supplier_listing_id));
+  const linkedSupplierIds = await (deps?.linkedSupplierListingIds ?? getLinkedSupplierListingIds)((listings ?? []).map((listing) => listing.supplier_listing_id));
   const identityUnlinkedIds = new Set((listings ?? [])
     .filter((listing) => !listing.supplier_listing_id || !linkedSupplierIds.has(String(listing.supplier_listing_id)))
     .map((listing) => String(listing.id)));
@@ -105,17 +136,18 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
 
   // Hide stale BASE items immediately. Do not spend Gemini time translating
   // listings that TRACER has already blocked/unpublished.
-  for (const listing of listings ?? []) {
+  for (const listing of evidencedListings) {
     const isIdentityUnlinked = identityUnlinkedIds.has(String(listing.id));
     if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked)) continue;
     if (listing.published !== true && ["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
-    if (listing.selling_price === null) {
+    if (listing.selling_price === null || !Number.isFinite(Number(listing.selling_price)) || Number(listing.selling_price) <= 0) {
       unpublishFailed += 1;
-      results.push({ listingId: String(listing.id), ok: false, skipped: true, error: "base_hide_price_unknown" });
+      const retryError = await recordBaseRetry(supabase, String(listing.id), "base_hide_price_unknown", "base_hide_price_unknown");
+      results.push({ listingId: String(listing.id), ok: false, error: retryError ? "base_hide_price_unknown_db_update_failed" : "base_hide_price_unknown" });
       continue;
     }
     try {
-      await editBaseItem({
+      await editItem({
         itemId: String(listing.base_item_id),
         title: "販売停止中の商品",
         detail: "現在この商品は販売停止中です。",
@@ -123,7 +155,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         stock: 0,
         visible: false,
       });
-      await supabase.from("shop_listings").update({
+      const hidden = await supabase.from("shop_listings").update({
         published: false,
         orderable: false,
         published_at: null,
@@ -136,17 +168,23 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         pipeline_updated_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", String(listing.id));
+      if (hidden.error) {
+        await recordBaseRetry(supabase, String(listing.id), "base_hide_succeeded_db_update_failed", hidden.error.message);
+        results.push({ listingId: String(listing.id), ok: false, error: "base_hide_succeeded_db_update_failed" });
+        continue;
+      }
       results.push({ listingId: String(listing.id), ok: true, baseItemId: String(listing.base_item_id), hidden: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      results.push({ listingId: String(listing.id), ok: false, error: message });
+      const retryError = await recordBaseRetry(supabase, String(listing.id), "base_hide_failed", message);
+      results.push({ listingId: String(listing.id), ok: false, error: retryError ? "base_hide_failed_db_update_failed" : message });
       // A rejected/expired BASE token will fail every item in this batch; stop
       // immediately to avoid hammering the API while credentials are repaired.
       if (/アクセストークンが無効|invalid_request|BASE OAuth refresh HTTP 4\d\d/i.test(message)) break;
     }
   }
 
-  const activeListings = (listings ?? []).filter((listing) => !identityUnlinkedIds.has(String(listing.id)) && !["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? "")) && (!listing.base_item_id || listing.published === true));
+  const activeListings = evidencedListings.filter((listing) => !identityUnlinkedIds.has(String(listing.id)) && !["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? "")) && (!listing.base_item_id || listing.published === true));
   // Generate Japanese copy concurrently only for listings that can remain visible.
   // spend the full serverless timeout waiting on Gemini one listing at a time.
   const copyResults = await Promise.all(activeListings.map(async (listing) => {
@@ -167,7 +205,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   }));
   const copyByListingId = new Map(copyResults.map((item) => [item.listingId, item]));
 
-  for (const listing of listings ?? []) {
+  for (const listing of evidencedListings) {
     const listingId = String(listing.id);
     // Already-hidden BASE items were reconciled above; do not process them a
     // second time as missing-copy failures or overwrite their reconciliation reason.
@@ -179,7 +217,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       // must not leave a previously visible product available for purchase.
       if (listing.base_item_id) {
         try {
-          await editBaseItem({
+          await editItem({
             itemId: String(listing.base_item_id),
             title: "販売停止中の商品",
             detail: "商品情報を再確認しているため、一時的に販売を停止しています。",
@@ -222,13 +260,53 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     if (catalogCopy.title !== String(listing.title ?? "").trim() || catalogCopy.detail !== String(listing.description ?? listing.title ?? "").trim()) {
       await supabase.from("shop_listings").update({ title: catalogCopy.title, description: catalogCopy.detail, pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
     }
+    const selection = Array.isArray(listing.selection_reasons) ? listing.selection_reasons.map(String) : [];
     const hasSelectedGate = listing.pipeline_status === "selected"
       && listing.pipeline_reason === SALES_TEST_GATE_PASSED
-      && Array.isArray(listing.selection_reasons)
-      && listing.selection_reasons.includes(SALES_TEST_GATE_PASSED);
-    const hasSalesTestGate = hasPassedSalesTestGate({ ...listing, title: catalogCopy.title, normalized_title: catalogCopy.title } as Parameters<typeof hasPassedSalesTestGate>[0]) || hasSelectedGate;
-
-    if (!listing.base_item_id && !hasSalesTestGate) { results.push({ listingId, ok: false, skipped: true, error: "sales_test_gate_not_passed" }); continue; }
+      && selection.includes(SALES_TEST_GATE_PASSED)
+      && isJapaneseProductTitle(catalogCopy.title);
+    const salesToken = hasPassedSalesTestGate({ ...listing, title: catalogCopy.title, normalized_title: catalogCopy.title } as Parameters<typeof hasPassedSalesTestGate>[0]) || hasSelectedGate;
+    const imageReachable = await probeImage(String(listing.image_url ?? ""));
+    const channel = evaluateShopListingRecord(listing as unknown as Record<string, unknown>, imageReachable, {
+      title: catalogCopy.title,
+      description: catalogCopy.detail,
+      salesTestPassed: salesToken,
+    });
+    const visibility = channelVisibilityForSalesGate(listing.base_item_id ? String(listing.base_item_id) : null, channel.eligible);
+    if (visibility !== "publish") {
+      if (visibility === "hide") {
+        const hidePrice = Number(listing.selling_price);
+        if (!Number.isFinite(hidePrice) || hidePrice <= 0) {
+          const retryError = await recordBaseRetry(supabase, listingId, "base_hide_price_unknown", "base_hide_price_unknown");
+          results.push({ listingId, ok: false, error: retryError ? "base_hide_price_unknown_db_update_failed" : "base_hide_price_unknown" });
+          continue;
+        }
+        try {
+          await editItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price: hidePrice, stock: 0, visible: false });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const retryError = await recordBaseRetry(supabase, listingId, "base_hide_failed", message);
+          results.push({ listingId, ok: false, error: retryError ? "base_hide_failed_db_update_failed" : message });
+          continue;
+        }
+        const hidden = await supabase.from("shop_listings").update({
+          published: false,
+          orderable: false,
+          base_publication_status: "published",
+          pipeline_stage: "BASE_PUBLICATION",
+          pipeline_status: "blocked",
+          pipeline_reason: channel.reasons[0] ?? "sales_test_gate_not_passed",
+          pipeline_updated_at: new Date().toISOString(),
+        }).eq("id", listingId);
+        if (hidden.error) {
+          await recordBaseRetry(supabase, listingId, "base_hide_succeeded_db_update_failed", hidden.error.message);
+          results.push({ listingId, ok: false, error: "base_hide_succeeded_db_update_failed" });
+          continue;
+        }
+      }
+      results.push({ listingId, ok: false, skipped: true, error: "sales_test_gate_not_passed" });
+      continue;
+    }
 
     // BASE publication is a sales-channel operation, not procurement authorization.
     // A listing may be sold on BASE only when the canonical Sales Test Gate has
@@ -247,7 +325,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       }).eq("id", listingId);
       if (listing.base_item_id) {
         try {
-          await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price: Number(listing.selling_price ?? 0), stock: 0, visible: false });
+          await editItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price: Number(listing.selling_price ?? 0), stock: 0, visible: false });
         } catch (error) {
           results.push({ listingId, ok: false, error: error instanceof Error ? error.message : String(error) });
           continue;
@@ -286,7 +364,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const shippingCost = listing.shipping_cost === null || listing.shipping_cost === undefined ? null : Number(listing.shipping_cost);
     if (shippingCost === null || !Number.isFinite(shippingCost) || shippingCost <= 0) {
       if (listing.base_item_id) {
-        try { await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price, stock: 0, visible: false }); }
+        try { await editItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price, stock: 0, visible: false }); }
         catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           await supabase.from("shop_listings").update({ base_last_error: message, pipeline_stage: "BASE_RECONCILIATION", pipeline_status: "failed", pipeline_reason: "base_hide_shipping_unknown_failed", pipeline_error: message, pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
@@ -300,7 +378,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const availableInventory = typeof listing.inventory === "number" ? Math.floor(listing.inventory) : typeof listing.inventory === "string" && listing.inventory.trim() !== "" ? Math.floor(Number(listing.inventory)) : null;
     if (availableInventory === null || !Number.isFinite(availableInventory) || availableInventory <= 0 || listing.orderable !== true) {
       if (listing.base_item_id) {
-        try { await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price, stock: 0, visible: false }); }
+        try { await editItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price, stock: 0, visible: false }); }
         catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           await supabase.from("shop_listings").update({ base_last_error: message, pipeline_stage: "BASE_RECONCILIATION", pipeline_status: "failed", pipeline_reason: "base_hide_failed", pipeline_error: message, pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
@@ -356,15 +434,15 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         if (recoveryError) throw new Error(`base_create_id_recovery_failed:${recoveryError.message}`);
       }
       if (baseItemId) {
-        await editBaseItem({ itemId: baseItemId, title: catalogCopy.title, detail: catalogCopy.detail, price, stock: availableInventory, visible: true });
+        await editItem({ itemId: baseItemId, title: catalogCopy.title, detail: catalogCopy.detail, price, stock: availableInventory, visible: true });
       } else {
-        const created = await createBaseItem({ title: catalogCopy.title, identifier: `TRC-${listingId}`, detail: catalogCopy.detail, price, stock: availableInventory, visible: true });
+        const created = await createItem({ title: catalogCopy.title, identifier: `TRC-${listingId}`, detail: catalogCopy.detail, price, stock: availableInventory, visible: true });
         baseItemId = String(created.item_id ?? created.item?.item_id ?? "");
         if (!baseItemId) throw new Error("BASE create response missing item_id");
         const { error: persistIdError } = await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_publication_status: "creating", base_publication_lease_until: leaseUntil }).eq("id", listingId);
         if (persistIdError) throw new Error(`base_create_id_persist_failed:${baseItemId}:${persistIdError.message}`);
       }
-      if (listing.image_url) await addBaseItemImage({ itemId: baseItemId, imageNo: 1, imageUrl: listing.image_url });
+      if (listing.image_url) await addImage({ itemId: baseItemId, imageNo: 1, imageUrl: listing.image_url });
       const { error: finalizeError } = await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_published_at: new Date().toISOString(), base_publication_status: "published", base_publication_lease_until: null, base_last_error: null, pipeline_stage: "BASE_PUBLISHED", pipeline_status: "published", pipeline_reason: "sales_test_gate_passed", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
       if (finalizeError) throw new Error(`base_publication_finalize_failed: ${finalizeError.message}`);
       results.push({ listingId, ok: true, baseItemId });

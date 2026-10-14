@@ -1,5 +1,10 @@
 import { extractAsinFromUrl, normalizeIdentifier } from "./identifiers.ts";
 
+export type CanonicalVariantEvidenceSource =
+  | "schema_org_product_group_has_variant"
+  | "schema_org_product_is_variant_of"
+  | "amazon_variation_asin_map";
+
 export type CanonicalMarketplaceVariantEvidence = {
   sourceVariantId: string;
   sku: string | null;
@@ -11,7 +16,7 @@ export type CanonicalMarketplaceVariantEvidence = {
   upc: string | null;
   mpn: string | null;
   productUrl: string | null;
-  evidenceSource: "schema_org_product_group_has_variant" | "amazon_variation_asin_map";
+  evidenceSource: CanonicalVariantEvidenceSource;
   rawEvidence: Record<string, unknown>;
 };
 
@@ -156,10 +161,74 @@ function variantUrl(record: Record<string, unknown>, fallbackUrl: string | null)
   return null;
 }
 
+function hasIsVariantOf(record: Record<string, unknown>): boolean {
+  const value = record.isVariantOf;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return asRecord(value) !== null;
+}
+
+function childEvidence(
+  variant: Record<string, unknown>,
+  parentProductUrl: string | null,
+  evidenceSource: CanonicalVariantEvidenceSource,
+): CanonicalMarketplaceVariantEvidence | null {
+  const url = variantUrl(variant, parentProductUrl);
+  const asin = extractAsinFromUrl(url);
+  const parentAsin = extractAsinFromUrl(parentProductUrl);
+  const sku = asString(variant.sku);
+  const productId = asString(variant.productID);
+
+  // Identifiers are read only from this child node. A parent GTIN, ASIN, or
+  // product ID living on ProductGroup / isVariantOf is not evidence for the
+  // concrete size, color, or pack.
+  const urlAsinIsVariantSpecific = Boolean(asin && asin !== parentAsin);
+  const sourceVariantId = (urlAsinIsVariantSpecific ? asin : null) ?? productId ?? sku;
+  if (!sourceVariantId) return null;
+
+  const gtinRaw =
+    asString(variant.gtin14) ??
+    asString(variant.gtin13) ??
+    asString(variant.gtin12) ??
+    asString(variant.gtin8) ??
+    asString(variant.gtin);
+  const janRaw = asString(variant.jan);
+  const eanRaw = asString(variant.ean);
+  const upcRaw = asString(variant.upc);
+
+  return {
+    sourceVariantId,
+    sku,
+    title: asString(variant.name),
+    asin: urlAsinIsVariantSpecific ? asin : null,
+    jan: normalizeIdentifier("jan", janRaw),
+    gtin: normalizeIdentifier("gtin", gtinRaw),
+    ean: normalizeIdentifier("ean", eanRaw),
+    upc: normalizeIdentifier("upc", upcRaw),
+    mpn: normalizeIdentifier("mpn", asString(variant.mpn)),
+    productUrl: url,
+    evidenceSource,
+    rawEvidence: {
+      source_variant_id: sourceVariantId,
+      url,
+      sku,
+      name: asString(variant.name),
+      productID: productId,
+      gtinRaw,
+      janRaw,
+      eanRaw,
+      upcRaw,
+      mpn: asString(variant.mpn),
+      parent_product_url: parentProductUrl,
+      evidence_source: evidenceSource,
+    },
+  };
+}
+
 /**
- * Extract only explicit ProductGroup.hasVariant Product nodes. Parent Product
- * identifiers are deliberately not copied onto child variants: a parent GTIN
- * cannot prove the identity of a concrete size/color/pack variant.
+ * Extract explicit child variants from ProductGroup.hasVariant and from
+ * Product.isVariantOf. Parent identifiers are never copied onto a child:
+ * a parent GTIN cannot prove a concrete size, color, or pack.
  */
 export function parseCanonicalMarketplaceVariantEvidence(
   html: string,
@@ -174,6 +243,12 @@ export function parseCanonicalMarketplaceVariantEvidence(
     if (id) nodesById.set(id, node);
   }
 
+  const push = (evidence: CanonicalMarketplaceVariantEvidence | null) => {
+    if (!evidence || seen.has(evidence.sourceVariantId)) return;
+    seen.add(evidence.sourceVariantId);
+    output.push(evidence);
+  };
+
   for (const group of nodes) {
     if (!isType(group, "ProductGroup")) continue;
     for (const rawVariant of nodeList(group.hasVariant)) {
@@ -187,64 +262,13 @@ export function parseCanonicalMarketplaceVariantEvidence(
           ? nodesById.get(asString(reference["@id"]) as string) ?? null
           : null;
       if (!variant || !isType(variant, "Product")) continue;
-
-      const url = variantUrl(variant, parentProductUrl);
-      const asin = extractAsinFromUrl(url);
-      const parentAsin = extractAsinFromUrl(parentProductUrl);
-      const sku = asString(variant.sku);
-      const productId = asString(variant.productID);
-
-      // A fallback to the parent page URL is useful for context, but its ASIN
-      // is not a child-variant identifier. Prefer identifiers declared on the
-      // child node; accept a URL-derived ASIN only when it differs from parent.
-      const urlAsinIsVariantSpecific = Boolean(asin && asin !== parentAsin);
-      const sourceVariantId = (urlAsinIsVariantSpecific ? asin : null) ?? productId ?? sku;
-      if (!sourceVariantId || seen.has(sourceVariantId)) continue;
-
-      const gtinRaw =
-        asString(variant.gtin14) ??
-        asString(variant.gtin13) ??
-        asString(variant.gtin12) ??
-        asString(variant.gtin8) ??
-        asString(variant.gtin);
-      const janRaw = asString(variant.jan);
-      const eanRaw = asString(variant.ean);
-      const upcRaw = asString(variant.upc);
-      const gtin = normalizeIdentifier("gtin", gtinRaw);
-      const jan = normalizeIdentifier("jan", janRaw);
-      const ean = normalizeIdentifier("ean", eanRaw);
-      const upc = normalizeIdentifier("upc", upcRaw);
-
-      seen.add(sourceVariantId);
-      output.push({
-        sourceVariantId,
-        sku,
-        title: asString(variant.name),
-        // Never expose the parent page ASIN as a child variant identifier,
-        // even when the child node explicitly repeats the parent URL.
-        asin: urlAsinIsVariantSpecific ? asin : null,
-        jan,
-        gtin,
-        ean,
-        upc,
-        mpn: normalizeIdentifier("mpn", asString(variant.mpn)),
-        productUrl: url,
-        evidenceSource: "schema_org_product_group_has_variant",
-        rawEvidence: {
-          source_variant_id: sourceVariantId,
-          url,
-          sku,
-          name: asString(variant.name),
-          productID: productId,
-          gtinRaw,
-          janRaw,
-          eanRaw,
-          upcRaw,
-          mpn: asString(variant.mpn),
-          parent_product_url: parentProductUrl,
-        },
-      });
+      push(childEvidence(variant, parentProductUrl, "schema_org_product_group_has_variant"));
     }
+  }
+
+  for (const node of nodes) {
+    if (!isType(node, "Product") || !hasIsVariantOf(node)) continue;
+    push(childEvidence(node, parentProductUrl, "schema_org_product_is_variant_of"));
   }
 
   return output;

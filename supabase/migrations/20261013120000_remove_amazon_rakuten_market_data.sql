@@ -1,0 +1,6 @@
+-- TRACER sourcing policy: marketplace ranking sites are not approved supplier sources.
+-- The collector skips Amazon, Rakuten, and Yahoo Shopping without fetching them.
+-- Do not delete historical observations, identifiers, or evidence here: disabling a
+-- discovery source is not proof that records have no independent value. Any future
+-- data-retention cleanup must be separately audited and explicitly approved.
+-- Intentionally no-op migration. Runtime source selection is enforced in code.

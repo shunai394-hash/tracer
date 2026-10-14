@@ -7,6 +7,7 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
+import { assessPublicationDownstream, type PublicationChannelResult } from "@/lib/ops/publication-cron-report";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync";
 
 export const runtime = "nodejs";
@@ -79,14 +80,17 @@ export async function GET(request: Request) {
 
   try {
     if (!dryRun) {
-      await recoverStaleCronRun(supabase, "sales-test-publication", maxDuration);
+      const recovery = await recoverStaleCronRun(supabase, "sales-test-publication", maxDuration);
+      if (!recovery.ok) {
+        return NextResponse.json({ ok: false, reason: "cron_lock_recovery_failed", error: recovery.error, job: "sales-test-publication" }, { status: 500 });
+      }
       const { data: cronRun, error: claimError } = await supabase
         .from("cron_runs")
         .insert({ job_name: "sales-test-publication", status: "running", metadata: { phase: "sales_test_publication" } })
         .select("id")
         .single();
       if (claimError) {
-        if (claimError.code === "23505") return NextResponse.json({ ok: true, skipped: true, reason: "cron_already_running", job: "sales-test-publication" }, { status: 409 });
+        if (claimError.code === "23505") return NextResponse.json({ ok: false, skipped: true, reason: "cron_already_running", job: "sales-test-publication" }, { status: 409 });
         throw new Error(claimError.message);
       }
       cronRunId = cronRun?.id ? String(cronRun.id) : null;
@@ -194,35 +198,47 @@ export async function GET(request: Request) {
 
     if (supplySelected.published > 0) {
       const downstream = await promoteGatePassedListings(supplySelected.selectedListingIds);
-      if (cronRunId) await supabase.from("cron_runs").update({
-        status: "succeeded",
-        finished_at: new Date().toISOString(),
-        duration_ms: Date.now() - startedAt,
-        processed: supplySelected.considered,
-        failed: 0,
-        metadata: {
-          phase: "sales_test_publication",
-          mode: "canonical_supply_fast_path",
-          considered: supplySelected.considered,
-          published: supplySelected.published,
-          downstream: {
-            selected: supplySelected.selectedListingIds.length,
-            shopifyOk: !("error" in downstream.shopify),
-            shopifyError: "error" in downstream.shopify ? downstream.shopify.error : null,
-            baseOk: !("error" in downstream.base),
-            baseError: "error" in downstream.base ? downstream.base.error : null,
-            newfindSent: downstream.newfind.filter((item) => item.sent).length,
+      const report = assessPublicationDownstream({
+        shopify: downstream.shopify as PublicationChannelResult,
+        base: downstream.base as PublicationChannelResult,
+      });
+      let ledgerUpdateFailed = false;
+      if (cronRunId) {
+        const ledger = await supabase.from("cron_runs").update({
+          status: report.cronStatus,
+          finished_at: new Date().toISOString(),
+          duration_ms: Date.now() - startedAt,
+          processed: supplySelected.considered,
+          failed: report.failed,
+          metadata: {
+            phase: "sales_test_publication",
+            mode: "canonical_supply_fast_path",
+            considered: supplySelected.considered,
+            published: supplySelected.published,
+            reasons: report.reasons,
+            downstream: {
+              selected: supplySelected.selectedListingIds.length,
+              shopifyFailures: report.shopifyFailures,
+              baseFailures: report.baseFailures,
+              newfindSent: downstream.newfind.filter((item) => item.sent).length,
+            },
           },
-        },
-      }).eq("id", cronRunId);
+        }).eq("id", cronRunId);
+        ledgerUpdateFailed = Boolean(ledger.error);
+      } else {
+        ledgerUpdateFailed = true;
+      }
+      const finalReport = ledgerUpdateFailed ? assessPublicationDownstream({ shopify: downstream.shopify as PublicationChannelResult, base: downstream.base as PublicationChannelResult, ledgerUpdateFailed: true }) : report;
       return NextResponse.json({
-        ok: true,
+        ok: finalReport.ok,
         phase: "sales_test_publication",
         elapsedMs: Date.now() - startedAt,
         mode: "canonical_supply_fast_path",
+        failed: finalReport.failed,
+        reasons: finalReport.reasons,
         supplySelected,
         downstream,
-      });
+      }, { status: finalReport.httpStatus });
     }
 
     const { data: readyRows, error: readyError } = await supabase
@@ -239,22 +255,34 @@ export async function GET(request: Request) {
     if (marketProductIds.length > 0) await buildOpportunityInBatches(marketProductIds, 10);
     const decision = await selectAndPublishSalesTests(candidateIds, 400);
     const downstream = await promoteGatePassedListings(decision.selectedListingIds);
-
-    if (cronRunId) await supabase.from("cron_runs").update({
-      status: "succeeded",
-      finished_at: new Date().toISOString(),
-      duration_ms: Date.now() - startedAt,
-      processed: supplySelected.considered + candidateIds.length,
-      failed: 0,
-      metadata: { phase: "sales_test_publication", mode: "market_linked_sales_test", supplyConsidered: supplySelected.considered, supplyPublished: supplySelected.published, supplyRejected: supplySelected.rejected.length, supplyRejectedReasons: supplySelected.rejected.reduce<Record<string, number>>((counts, item) => { for (const reason of item.reasons) counts[reason] = (counts[reason] ?? 0) + 1; return counts; }, {}), supplyRejectedSample: supplySelected.rejected.slice(0, 20), considered: decision.considered, published: decision.published, shopify: downstream.shopify },
-    }).eq("id", cronRunId);
-
-    return NextResponse.json({ ok: true, phase: "sales_test_publication", elapsedMs: Date.now() - startedAt, mode: "market_linked_sales_test", candidateCount: candidateIds.length, decision, downstream, nextPhase: "downstream_delivery" });
-  } catch (error) {
+    const report = assessPublicationDownstream({
+      shopify: downstream.shopify as PublicationChannelResult,
+      base: downstream.base as PublicationChannelResult,
+    });
+    let ledgerUpdateFailed = false;
     if (cronRunId) {
-      try { await supabase.from("cron_runs").update({ status: "failed", finished_at: new Date().toISOString(), duration_ms: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error) }).eq("id", cronRunId); } catch (recordError) { console.error("[TRACER CRON RUN RECORD ERROR]", recordError); }
+      const ledger = await supabase.from("cron_runs").update({
+        status: report.cronStatus,
+        finished_at: new Date().toISOString(),
+        duration_ms: Date.now() - startedAt,
+        processed: supplySelected.considered + candidateIds.length,
+        failed: report.failed,
+        metadata: { phase: "sales_test_publication", mode: "market_linked_sales_test", reasons: report.reasons, failed: report.failed, supplyConsidered: supplySelected.considered, supplyPublished: supplySelected.published, considered: decision.considered, published: decision.published },
+      }).eq("id", cronRunId);
+      ledgerUpdateFailed = Boolean(ledger.error);
+    } else {
+      ledgerUpdateFailed = true;
+    }
+    const finalReport = ledgerUpdateFailed ? assessPublicationDownstream({ shopify: downstream.shopify as PublicationChannelResult, base: downstream.base as PublicationChannelResult, ledgerUpdateFailed: true }) : report;
+    return NextResponse.json({ ok: finalReport.ok, phase: "sales_test_publication", elapsedMs: Date.now() - startedAt, mode: "market_linked_sales_test", failed: finalReport.failed, reasons: finalReport.reasons, candidateCount: candidateIds.length, decision, downstream, nextPhase: "downstream_delivery" }, { status: finalReport.httpStatus });
+  } catch (error) {
+    let ledgerUpdateFailed = false;
+    if (cronRunId) {
+      try { await supabase.from("cron_runs").update({ status: "failed", finished_at: new Date().toISOString(), duration_ms: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error) }).eq("id", cronRunId); } catch (recordError) { ledgerUpdateFailed = true; console.error("[TRACER CRON RUN RECORD ERROR]", recordError); }
+    } else {
+      ledgerUpdateFailed = true;
     }
     console.error("[TRACER SALES TEST PUBLICATION CRON ERROR]", error);
-    return NextResponse.json({ ok: false, phase: "sales_test_publication", error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    return NextResponse.json({ ok: false, phase: "sales_test_publication", error: error instanceof Error ? error.message : "Unknown error", ledgerUpdateFailed }, { status: 500 });
   }
 }

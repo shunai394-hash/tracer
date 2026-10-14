@@ -3,6 +3,10 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
 import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { evaluateShopListingRecord } from "@/lib/market/listing-commercial-gate";
+import { mayRestoreChannelVisibility } from "@/lib/market/sales-test-gate";
+import { attachSupplierCommercialEvidence } from "@/lib/market/supplier-commercial-evidence";
+import { probeListingImage } from "@/lib/market/probe-listing-image";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
@@ -21,10 +25,10 @@ type Listing = {
   pipeline_status: string | null;
   pipeline_reason: string | null;
   selection_reasons: unknown;
-  supplier_listing_id: string | null;
-  identity_status?: string | null;
   supplier_product_id: string | null;
   supplier_variant_id: string | null;
+  identity_method?: string | null;
+  identity_confidence?: number | string | null;
   inventory: number | null;
   orderable: boolean;
   tracking_available: boolean;
@@ -32,9 +36,14 @@ type Listing = {
   shopify_product_id: string | null;
   shopify_variant_id: string | null;
   shopify_handle: string | null;
-  shopify_sync_status: string | null;
   shipping_cost?: number | string | null;
   source_cost?: number | string | null;
+  source_currency?: string | null;
+  fx_rate?: number | null;
+  fx_observed_at?: string | null;
+  supplier_listing_id?: string | null;
+  identity_status?: string | null;
+  shopify_sync_status?: string | null;
   contribution_profit?: number | string | null;
   contribution_margin?: number | string | null;
 };
@@ -49,11 +58,6 @@ type ShopifyProductNode = {
   media?: { nodes: Array<{ mediaContentType: string; preview?: { image?: { url: string } | null } | null }> };
 };
 
-function hasGateProvenance(row: Listing): boolean {
-  return Array.isArray(row.selection_reasons)
-    && row.selection_reasons.some((reason) => String(reason) === "sales_test_gate_passed");
-}
-
 function asNumber(value: unknown): number | null {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : null;
@@ -65,9 +69,57 @@ function html(value: string | null): string {
 }
 
 function sku(listing: Listing): string {
-  const source = listing.supplier_variant_id || listing.supplier_product_id || listing.id;
+  const source = (listing.supplier_variant_id ?? "").trim() || (listing.supplier_product_id ?? "").trim() || listing.id;
   return `TRC-${source}`.slice(0, 100);
 }
+
+export function selectShopifyVariantForSku(
+  nodes: Array<{ id: string; sku: string | null }>,
+  expectedSku: string,
+): { variantId: string } | { error: string } {
+  const expected = expectedSku.trim();
+  if (!expected) return { error: "shopify_sku_missing" };
+  const matches = nodes.filter((node) => (node.sku ?? "").trim() === expected);
+  if (nodes.length > 1) {
+    if (matches.length !== 1) return { error: matches.length === 0 ? "shopify_variant_sku_unmatched" : "shopify_variant_sku_ambiguous" };
+    return { variantId: matches[0].id };
+  }
+  if (nodes.length === 1) {
+    const remote = (nodes[0].sku ?? "").trim();
+    if (remote && remote !== expected) return { error: "shopify_variant_sku_mismatch" };
+    if (!nodes[0].id) return { error: "shopify_variant_missing" };
+    return { variantId: nodes[0].id };
+  }
+  return { error: "shopify_variant_missing" };
+}
+
+function listingBlockReasons(row: Listing, imageReachable: boolean | null): string[] {
+  // Inventory holds are intentionally recoverable when the durable Sales Test
+  // token is still present. Re-check the same commercial gate against live
+  // stock instead of treating the prior BLOCKED state as a permanent failure.
+  const recoverableInventoryHold = mayRestoreChannelVisibility(row);
+  const decision = evaluateShopListingRecord(
+    row as unknown as Record<string, unknown>,
+    imageReachable,
+    { salesTestPassed: recoverableInventoryHold },
+  );
+  const reasons = [...decision.reasons];
+  if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
+  if (!isPublishableCatalogDescription(row.description)) reasons.push("catalog_description_not_publishable");
+  if (row.identity_status !== "linked") reasons.push("supplier_identity_unlinked");
+  if ((row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") && !recoverableInventoryHold) {
+    reasons.unshift("pipeline_blocked");
+  }
+  return Array.from(new Set(reasons));
+}
+
+const SHOPIFY_VARIANT_MAPPING_ERRORS = new Set([
+  "shopify_sku_missing",
+  "shopify_variant_missing",
+  "shopify_variant_sku_unmatched",
+  "shopify_variant_sku_ambiguous",
+  "shopify_variant_sku_mismatch",
+]);
 
 async function ensureJapaneseCopy(row: Listing): Promise<{ title: string; description: string }> {
   const title = String(row.title ?? "").trim();
@@ -114,8 +166,8 @@ async function supabaseForCopyUpdate(listingId: string, title: string, descripti
   if (error) throw new Error(error.message);
 }
 
-async function findByHandle(handle: string): Promise<ShopifyProductNode | null> {
-  const data = await shopifyGraphQL<{ products: { nodes: ShopifyProductNode[] } }>(
+async function findByHandle(handle: string, graphql: typeof shopifyGraphQL = shopifyGraphQL): Promise<ShopifyProductNode | null> {
+  const data = await graphql<{ products: { nodes: ShopifyProductNode[] } }>(
     `query ProductByHandle($query: String!) { products(first: 5, query: $query) { nodes { id handle status vendor tags variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType preview { image { url } } } } } } }`,
     { query: `handle:${handle}` },
   );
@@ -124,6 +176,18 @@ async function findByHandle(handle: string): Promise<ShopifyProductNode | null> 
 }
 
 export type ShopifySyncResult = { configured: boolean; considered: number; synced: number; failed: number; listingIds: string[]; errors: Array<{ listingId: string; error: string }> };
+
+export type ShopifyListingSyncDeps = {
+  supabase?: ReturnType<typeof createSupabaseAdminClient>;
+  probeImage?: (url: string) => Promise<boolean>;
+  linkedSupplierListingIds?: (values: unknown[]) => Promise<Set<string>>;
+  shopifyGraphQL?: typeof shopifyGraphQL;
+  unpublishShopifyProduct?: typeof unpublishShopifyProduct;
+  updateShopifyProduct?: typeof updateShopifyProduct;
+  createShopifyProduct?: typeof createShopifyProduct;
+  ensureShopifyProductPublished?: typeof ensureShopifyProductPublished;
+  setShopifyVariantInventory?: typeof setShopifyVariantInventory;
+};
 
 /** Shopify is downstream-only: canonical Sales Test Gate plus live fulfillment evidence are mandatory. */
 export async function syncPublishedListingsToShopify(limit = 10, listingIds?: string[]): Promise<ShopifySyncResult> {
@@ -150,19 +214,20 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
   }
 
   const supabase = createSupabaseAdminClient();
-  const baseSelect = "id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_status";
+  const baseSelect = "id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,supplier_product_id,supplier_variant_id,identity_method,identity_confidence,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_status";
   let query = supabase
     .from("shop_listings")
     .select(baseSelect)
     .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
-    .order("pipeline_updated_at", { ascending: true });
+    .or("shopify_sync_status.is.null,shopify_sync_status.neq.syncing")
+    .order("shopify_product_id", { ascending: true, nullsFirst: true })
+    .order("pipeline_updated_at", { ascending: false });
 
   if (listingIds?.length) {
     query = query.in("id", listingIds).limit(Math.min(listingIds.length, Math.min(Math.max(limit, 1), 15)));
   } else {
     // Fetch a bounded work pool, then exclude already-synced/blocked rows before
-    // applying the per-run cap. Applying the cap in SQL first used to starve
-    // later listings by repeatedly selecting the same first 150 synced rows.
+    // applying the per-run cap so the same first rows cannot starve later listings.
     query = query.limit(1000);
   }
 
@@ -196,26 +261,12 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
 }
 
 /**
- * Why a listing may not be written to Shopify. Empty means it passes the same
- * gate, supplier, inventory and economics checks the sync applies.
+ * Preview and sync both call listingBlockReasons. Image reachability is probed
+ * here so a preview rejection cannot be published by the sync.
  */
-function blockReasons(row: Listing): string[] {
-  const reasons: string[] = [];
-  if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
-  if (!isPublishableCatalogDescription(row.description)) reasons.push("catalog_description_not_publishable");
-  if (row.identity_status !== "linked") reasons.push("supplier_identity_unlinked");
-  if (row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") reasons.push("pipeline_blocked");
-  if (!hasGateProvenance(row)) reasons.push("sales_test_gate_not_passed");
-  if (row.orderable !== true) reasons.push("not_orderable");
-  if (row.tracking_available !== true) reasons.push("tracking_unavailable");
-  if (!(Number(row.inventory) > 0)) reasons.push("inventory_zero_or_unknown");
-  if (String(row.currency ?? "").trim().toUpperCase() !== "JPY") reasons.push("currency_not_jpy");
-  if (!/^CJ/i.test(String(row.supplier_name ?? ""))) reasons.push("supplier_not_cj");
-  if (asNumber(row.shipping_cost) === null) reasons.push("shipping_cost_unknown");
-  if (asNumber(row.source_cost) === null) reasons.push("source_cost_unknown");
-  if (!((asNumber(row.contribution_profit) ?? 0) > 0)) reasons.push("profit_not_positive");
-  if (!((asNumber(row.contribution_margin) ?? 0) > 0)) reasons.push("margin_not_positive");
-  return reasons;
+async function blockReasons(row: Listing, probeImage: (url: string) => Promise<boolean>): Promise<string[]> {
+  const imageReachable = typeof row.image_url === "string" && row.image_url.trim() ? await probeImage(row.image_url) : false;
+  return listingBlockReasons(row, imageReachable);
 }
 
 export type ShopifySyncPreviewRow = {
@@ -240,27 +291,29 @@ export type ShopifySyncPreviewRow = {
  * that will be sent (SKU, supplier product/variant, price, image, inventory).
  * Same query and the same checks as syncPublishedListingsToShopify.
  */
-export async function previewShopifySync(limit = 150): Promise<{ considered: number; eligible: number; rows: ShopifySyncPreviewRow[]; reasonCounts: Record<string, number> }> {
-  const supabase = createSupabaseAdminClient();
+export async function previewShopifySync(limit = 150, deps?: ShopifyListingSyncDeps): Promise<{ considered: number; eligible: number; rows: ShopifySyncPreviewRow[]; reasonCounts: Record<string, number> }> {
+  const supabase = deps?.supabase ?? createSupabaseAdminClient();
+  const probeImage = deps?.probeImage ?? probeListingImage;
   const { data, error } = await supabase
     .from("shop_listings")
-    .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_error")
+    .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,supplier_product_id,supplier_variant_id,identity_method,identity_confidence,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_error")
     .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
     .or("shopify_sync_status.is.null,shopify_sync_status.neq.syncing")
     .order("shopify_product_id", { ascending: true, nullsFirst: true })
     .order("pipeline_updated_at", { ascending: false })
     .limit(Math.min(Math.max(limit, 1), 1000));
   if (error) throw new Error(error.message);
-  const linkedSupplierIds = await getLinkedSupplierListingIds((data ?? []).map((row) => row.supplier_listing_id));
+  const linkedSupplierIds = await (deps?.linkedSupplierListingIds ?? getLinkedSupplierListingIds)((data ?? []).map((row) => row.supplier_listing_id));
+  const enriched = (await attachSupplierCommercialEvidence(supabase, (data ?? []) as Listing[])).map((row) => ({
+    ...row,
+    identity_status: row.supplier_listing_id && linkedSupplierIds.has(row.supplier_listing_id) ? "linked" : null,
+  }));
   const reasonCounts: Record<string, number> = {};
-  const rows = ((data ?? []) as Array<Listing & { shopify_sync_error?: string | null }>).map((rawRow) => {
-    const row = { ...rawRow, identity_status: rawRow.supplier_listing_id && linkedSupplierIds.has(rawRow.supplier_listing_id) ? "linked" : null };
-    const reasons = blockReasons(row);
-    if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) reasons.push("image_url_invalid");
-    if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");
-    if (!row.supplier_variant_id) reasons.push("supplier_variant_missing");
+  const rows: ShopifySyncPreviewRow[] = [];
+  for (const row of enriched as Array<Listing & { shopify_sync_error?: string | null }>) {
+    const reasons = await blockReasons(row, probeImage);
     for (const reason of reasons) reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1;
-    return {
+    rows.push({
       listingId: row.id,
       productId: row.product_id,
       eligible: reasons.length === 0,
@@ -269,27 +322,41 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
       supplier: row.supplier_name,
       supplierProductId: row.supplier_product_id,
       supplierVariantId: row.supplier_variant_id,
-      imageOk: typeof row.image_url === "string" && /^https?:\/\//i.test(row.image_url),
+      imageOk: reasons.includes("image_url_invalid") === false && reasons.includes("image_fetch_failed") === false && reasons.includes("image_not_confirmed") === false,
       sellingPrice: asNumber(row.selling_price),
       inventory: asNumber(row.inventory),
       shopifyProductId: row.shopify_product_id,
       shopifyVariantId: row.shopify_variant_id,
       lastError: row.shopify_sync_error ? String(row.shopify_sync_error).slice(0, 120) : null,
-    };
-  });
+    });
+  }
   return { considered: rows.length, eligible: rows.filter((row) => row.eligible).length, rows, reasonCounts };
 }
 
-async function syncListingRows(
+export async function syncListingRows(
   rawRows: Listing[],
   supabase: ReturnType<typeof createSupabaseAdminClient>,
+  deps?: ShopifyListingSyncDeps,
 ): Promise<ShopifySyncResult> {
-  const rows = rawRows.map((row) => ({
+  const probeImage = deps?.probeImage ?? probeListingImage;
+  const graphql = deps?.shopifyGraphQL ?? shopifyGraphQL;
+  const unpublish = deps?.unpublishShopifyProduct ?? unpublishShopifyProduct;
+  const updateProduct = deps?.updateShopifyProduct ?? updateShopifyProduct;
+  const createProduct = deps?.createShopifyProduct ?? createShopifyProduct;
+  const ensurePublished = deps?.ensureShopifyProductPublished ?? ensureShopifyProductPublished;
+  const setInventory = deps?.setShopifyVariantInventory ?? setShopifyVariantInventory;
+  const evidenced = await attachSupplierCommercialEvidence(deps?.supabase ?? supabase, rawRows);
+  // Re-derive canonical supplier identity here so every caller is gated the same way.
+  const linkedSupplierIds = await (deps?.linkedSupplierListingIds ?? getLinkedSupplierListingIds)(evidenced.map((row) => row.supplier_listing_id));
+  const rows = evidenced.map((row) => ({
     ...row,
+    identity_status: row.supplier_listing_id && linkedSupplierIds.has(row.supplier_listing_id) ? "linked" : null,
     shopify_product_id: toShopifyGid("Product", row.shopify_product_id),
     shopify_variant_id: toShopifyGid("ProductVariant", row.shopify_variant_id),
   }));
-  const candidates = rows.filter((row) => blockReasons(row).length === 0);
+  const reasonById = new Map<string, string[]>();
+  for (const row of rows) reasonById.set(row.id, await blockReasons(row, probeImage));
+  const candidates = rows.filter((row) => (reasonById.get(row.id) ?? ["sales_test_gate_not_passed"]).length === 0);
   const blocked = rows.filter((row) => !candidates.includes(row));
   const results: ShopifySyncResult = {
     configured: true,
@@ -301,27 +368,44 @@ async function syncListingRows(
   };
 
   for (const row of blocked) {
+    const reasons = reasonById.get(row.id) ?? ["sales_test_gate_not_passed"];
+    const primaryReason = reasons[0] ?? "sales_test_gate_not_passed";
     if (!row.shopify_product_id) {
       await supabase.from("shop_listings").update({
         published: false,
         pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
-        pipeline_reason: "sales_test_gate_not_passed",
+        pipeline_reason: primaryReason,
         pipeline_updated_at: new Date().toISOString(),
         published_at: null,
         shopify_sync_status: "blocked",
-        shopify_sync_error: "sales_test_or_supply_or_japanese_gate_not_passed",
+        shopify_sync_error: reasons.join(",").slice(0, 500) || "sales_test_or_supply_or_japanese_gate_not_passed",
         shopify_synced_at: new Date().toISOString(),
       }).eq("id", row.id);
       continue;
     }
     try {
-      await unpublishShopifyProduct(String(row.shopify_product_id));
-      await supabase.from("shop_listings").update({
+      await unpublish(String(row.shopify_product_id));
+      const hidden = await supabase.from("shop_listings").update({
+        published: false,
+        pipeline_stage: "BLOCKED",
+        pipeline_status: "blocked",
+        pipeline_reason: primaryReason,
+        pipeline_updated_at: new Date().toISOString(),
+        published_at: null,
         shopify_sync_status: "blocked",
-        shopify_sync_error: "sales_test_or_supply_gate_not_passed",
+        shopify_sync_error: reasons.join(",").slice(0, 500) || "sales_test_or_supply_gate_not_passed",
         shopify_synced_at: new Date().toISOString(),
       }).eq("id", row.id);
+      if (hidden.error) {
+        const reconciliation = await supabase.from("shop_listings").update({
+          shopify_sync_status: "reconciliation_required",
+          shopify_sync_error: `unpublish_succeeded_db_update_failed:${hidden.error.message}`.slice(0, 2000),
+          shopify_synced_at: new Date().toISOString(),
+        }).eq("id", row.id);
+        results.failed += 1;
+        results.errors.push({ listingId: row.id, error: reconciliation.error ? "unpublish_succeeded_db_update_failed" : "unpublish_succeeded_reconciliation_recorded" });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message === "shopify_product_not_found_for_unpublication_check") {
@@ -335,13 +419,8 @@ async function syncListingRows(
       }
       results.failed += 1;
       results.errors.push({ listingId: row.id, error: `unpublish_failed:${message}` });
+      // Keep the listing selected. published stays unchanged until Shopify confirms the hide.
       await supabase.from("shop_listings").update({
-        published: false,
-        pipeline_stage: "BLOCKED",
-        pipeline_status: "blocked",
-        pipeline_reason: "sales_test_gate_unpublish_failed",
-        pipeline_updated_at: new Date().toISOString(),
-        published_at: null,
         shopify_sync_status: "failed",
         shopify_sync_error: `unpublish_failed:${message}`.slice(0, 2000),
         shopify_synced_at: new Date().toISOString(),
@@ -364,6 +443,8 @@ async function syncListingRows(
     }
     if (!claim.data) continue;
 
+    let remoteProductIdForSafety: string | null = row.shopify_product_id;
+    let remoteProductHandleForSafety: string | null = row.shopify_handle;
     try {
       const copy = await ensureJapaneseCopy(row);
       const price = asNumber(row.selling_price);
@@ -379,7 +460,7 @@ async function syncListingRows(
         sku: sku(row),
       };
       const existingById = row.shopify_product_id
-        ? await shopifyGraphQL<{ product: ShopifyProductNode | null }>(
+        ? await graphql<{ product: ShopifyProductNode | null }>(
             `query ProductById($id: ID!) {
               product(id: $id) {
                 id handle status vendor tags
@@ -392,7 +473,7 @@ async function syncListingRows(
         : null;
       // A stored id whose product no longer exists in Shopify is stale: fall
       // back to an exact handle match, otherwise create the product afresh.
-      let existing = existingById ?? (await findByHandle(productInput.handle));
+      let existing = existingById ?? (await findByHandle(productInput.handle, graphql));
 
       // Never overwrite a product owned by another vendor. Recover from a
       // stale/colliding handle by choosing a deterministic TRACER-owned handle.
@@ -404,37 +485,45 @@ async function syncListingRows(
           .replace(/^-|-$/g, "")
           .slice(0, 240);
         productInput = { ...productInput, handle: safeHandle };
-        existing = await findByHandle(safeHandle);
+        existing = await findByHandle(safeHandle, graphql);
         if (existing && existing.vendor !== "TRACER" && !existing.tags.includes("TRACER")) {
           throw new Error("shopify_fallback_handle_owned_by_non_tracer_product");
         }
       }
+      if (existing) {
+        remoteProductIdForSafety = existing.id;
+        remoteProductHandleForSafety = existing.handle;
+      }
 
+      const selectedVariant = existing ? selectShopifyVariantForSku(existing.variants?.nodes ?? [], productInput.sku) : null;
+      if (selectedVariant && "error" in selectedVariant) throw new Error(selectedVariant.error);
       const product = existing
-        ? await updateShopifyProduct({
+        ? await updateProduct({
             productId: existing.id,
             title: productInput.title,
             descriptionHtml: productInput.descriptionHtml,
             handle: productInput.handle,
             price: productInput.price,
-            variantId: existing.variants.nodes[0]?.id || null,
+            variantId: selectedVariant && "variantId" in selectedVariant ? selectedVariant.variantId : null,
             sku: productInput.sku,
             imageUrl: existing.media?.nodes?.length ? null : row.image_url,
           })
-        : await createShopifyProduct({ ...productInput, imageUrl: row.image_url });
+        : await createProduct({ ...productInput, imageUrl: row.image_url });
+      remoteProductIdForSafety = product.id;
+      remoteProductHandleForSafety = product.handle;
 
-      const variant = product.variants?.nodes?.[0];
-      if (!variant?.id) throw new Error("shopify_variant_missing_for_inventory_sync");
-      await setShopifyVariantInventory({
-        variantId: variant.id,
+      const createdVariant = selectShopifyVariantForSku(product.variants?.nodes ?? [], productInput.sku);
+      if ("error" in createdVariant) throw new Error(createdVariant.error);
+      await setInventory({
+        variantId: createdVariant.variantId,
         quantity: Number(row.inventory),
         reference: `tracer://shop-listing/${row.id}`,
       });
 
-      const publication = await ensureShopifyProductPublished(product.id);
+      const publication = await ensurePublished(product.id);
       const { error: updateError } = await supabase.from("shop_listings").update({
         shopify_product_id: product.id,
-        shopify_variant_id: variant?.id ?? null,
+        shopify_variant_id: createdVariant.variantId,
         shopify_handle: product.handle,
         shopify_synced_at: new Date().toISOString(),
         shopify_sync_status: "synced",
@@ -454,8 +543,52 @@ async function syncListingRows(
       results.listingIds.push(row.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (SHOPIFY_VARIANT_MAPPING_ERRORS.has(message)) {
+        const now = new Date().toISOString();
+        let unpublishError: string | null = null;
+        if (remoteProductIdForSafety) {
+          try {
+            await unpublish(String(remoteProductIdForSafety));
+          } catch (hideError) {
+            unpublishError = hideError instanceof Error ? hideError.message : String(hideError);
+          }
+        }
+        const { error: blockedStateError } = await supabase.from("shop_listings").update({
+          ...(remoteProductIdForSafety ? { shopify_product_id: remoteProductIdForSafety } : {}),
+          ...(remoteProductHandleForSafety ? { shopify_handle: remoteProductHandleForSafety } : {}),
+          published: false,
+          orderable: false,
+          pipeline_stage: "BLOCKED",
+          pipeline_status: "blocked",
+          pipeline_reason: "shopify_variant_mapping_mismatch",
+          pipeline_updated_at: now,
+          published_at: null,
+          shopify_sync_status: unpublishError ? "reconciliation_required" : "blocked",
+          shopify_sync_error: unpublishError
+            ? `${message};unpublish_failed:${unpublishError}`.slice(0, 2000)
+            : message,
+          shopify_synced_at: now,
+        }).eq("id", row.id);
+        results.failed += 1;
+        results.errors.push({
+          listingId: row.id,
+          error: blockedStateError
+            ? `variant_mapping_blocked_state_write_failed:${blockedStateError.message}`
+            : unpublishError
+              ? `variant_mapping_unpublish_failed:${unpublishError}`
+              : message,
+        });
+        if (blockedStateError) {
+          await supabase.from("shop_listings").update({
+            shopify_sync_status: "reconciliation_required",
+            shopify_sync_error: `variant_mapping_blocked_state_write_failed:${blockedStateError.message}`.slice(0, 2000),
+            shopify_synced_at: now,
+          }).eq("id", row.id);
+        }
+        continue;
+      }
       if (message === "japanese_catalog_title_localization_failed" || message === "japanese_catalog_copy_invalid") {
-        if (row.shopify_product_id) await unpublishShopifyProduct(String(row.shopify_product_id));
+        if (row.shopify_product_id) await unpublish(String(row.shopify_product_id));
         await supabase.from("shop_listings").update({
           published: false,
           pipeline_stage: "BLOCKED",

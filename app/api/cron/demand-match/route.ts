@@ -16,7 +16,10 @@ export async function GET(request: Request) {
   let cronId: string | null = null;
 
   try {
-    await recoverStaleCronRun(db, "demand-match", 180);
+    const recovery = await recoverStaleCronRun(db, "demand-match", 180);
+    if (!recovery.ok) {
+      return NextResponse.json({ ok: false, reason: "cron_lock_recovery_failed", error: recovery.error, job: "demand-match" }, { status: 500 });
+    }
 
     const running = await db
       .from("cron_runs")
@@ -30,10 +33,10 @@ export async function GET(request: Request) {
     if (running.error) throw new Error(running.error.message);
     if (running.data?.id) {
       return NextResponse.json({
-        ok: true,
+        ok: false,
         status: "already_running",
         cronId: String(running.data.id),
-      });
+      }, { status: 409 });
     }
 
     const created = await db
@@ -49,10 +52,10 @@ export async function GET(request: Request) {
     if (created.error) {
       if (created.error.code === "23505") {
         return NextResponse.json({
-          ok: true,
+          ok: false,
           status: "already_running",
           cronId: null,
-        });
+        }, { status: 409 });
       }
       throw new Error(created.error.message);
     }
@@ -60,34 +63,57 @@ export async function GET(request: Request) {
     cronId = String(created.data.id);
     const result = await matchDemandProductsByCategory();
 
-    const status = result.persistErrors.length === 0 ? "succeeded" : "failed";
+    // A cron invocation can finish without throwing while doing no useful
+    // matching work (for example, every ambiguous query is deferred because
+    // the intent provider is in quota cooldown). Do not report that as a
+    // successful automation cycle when nothing was matched or persisted.
+    const noProgressWithDeferredDemand =
+      result.intentDeferred > 0 &&
+      result.persisted === 0 &&
+      result.candidatesCreated === 0 &&
+      result.matched === 0;
+    const completionIssue = noProgressWithDeferredDemand
+      ? "no_progress_all_outputs_empty_with_deferred_demand"
+      : null;
+    const status = result.persistErrors.length > 0 || noProgressWithDeferredDemand
+      ? "failed"
+      : "succeeded";
+    const errorMessage = [
+      ...result.persistErrors,
+      ...(completionIssue ? [completionIssue] : []),
+    ].join("; ") || null;
     const report = {
       ok: status === "succeeded",
       status,
+      completionIssue,
       durationMs: Date.now() - startedAt,
       job: "demand-match",
       result,
     };
 
-    await db
+    const ledger = await db
       .from("cron_runs")
       .update({
         status,
         finished_at: new Date().toISOString(),
         duration_ms: report.durationMs,
         processed: result.processed,
-        failed: result.persistErrors.length,
-        error: result.persistErrors.length ? result.persistErrors.join("; ") : null,
+        failed: result.persistErrors.length + (completionIssue ? 1 : 0),
+        error: errorMessage,
         metadata: report,
       })
       .eq("id", cronId);
+    if (ledger.error) {
+      return NextResponse.json({ ok: false, reason: "cron_ledger_update_failed", error: ledger.error.message, status }, { status: 500 });
+    }
 
     return NextResponse.json(report, { status: status === "succeeded" ? 200 : 500 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
+    let ledgerUpdateFailed = !cronId;
     if (cronId) {
-      await db
+      const ledger = await db
         .from("cron_runs")
         .update({
           status: "failed",
@@ -97,9 +123,10 @@ export async function GET(request: Request) {
           metadata: { actor: "demand-match-cron", fatal: true },
         })
         .eq("id", cronId);
+      ledgerUpdateFailed = Boolean(ledger.error);
     }
 
     console.error("[TRACER DEMAND MATCH CRON ERROR]", error);
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    return NextResponse.json({ ok: false, error: message, ledgerUpdateFailed }, { status: 500 });
   }
 }

@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getBaseOrderDetail, listBaseOrders, isBaseConfigured } from "@/lib/channels/base";
 import { createDropshipPurchaseOrdersForShopOrder } from "@/lib/ordering/dropship";
+import { uniqueRowsByKey } from "@/lib/ordering/channel-listing-match";
 
 export type BaseOrderSyncResult = {
   configured: boolean;
@@ -21,6 +22,12 @@ export type BaseOrderSyncResult = {
     error?: string;
   }>;
 };
+
+function recordedCurrency(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(text) ? text : null;
+}
 
 function paymentMethod(payment: string | undefined): "cash_on_delivery" | "bank_transfer" | "card" {
   if (payment === "base_bt") return "bank_transfer";
@@ -82,9 +89,10 @@ async function repairBaseOrderItems(
     .in("base_item_id", itemIds);
   if (listingError) throw new Error(listingError.message);
 
-  const listingByBaseItem = new Map(
-    (listings ?? []).map((listing) => [String(listing.base_item_id), listing]),
-  );
+  const matchedListings = uniqueRowsByKey(listings ?? [], (listing) => listing.base_item_id ? String(listing.base_item_id) : null);
+  const ambiguousItems = itemIds.filter((id) => matchedListings.ambiguousKeys.includes(id));
+  if (ambiguousItems.length > 0) throw new Error(`base_item_ambiguous:${ambiguousItems.join(",")}`);
+  const listingByBaseItem = matchedListings.unique;
 
   for (const baseItem of baseItems) {
     const listing = listingByBaseItem.get(String(baseItem.item_id));
@@ -105,7 +113,7 @@ async function repairBaseOrderItems(
         title: listing.title,
         qty: Number(baseItem.amount ?? 1),
         unit_price: Number(baseItem.price ?? listing.selling_price ?? 0),
-        currency: listing.currency ?? "JPY",
+        currency: recordedCurrency(listing.currency),
       }, { onConflict: "base_order_item_key" });
 
     if (itemError) throw new Error(itemError.message);
@@ -224,9 +232,18 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
 
       if (listingError) throw new Error(listingError.message);
 
-      const listingByBaseItem = new Map(
-        (listings ?? []).map((listing) => [String(listing.base_item_id), listing]),
-      );
+      const matchedListings = uniqueRowsByKey(listings ?? [], (listing) => listing.base_item_id ? String(listing.base_item_id) : null);
+      const ambiguousItems = itemIds.filter((id) => matchedListings.ambiguousKeys.includes(id));
+      if (ambiguousItems.length > 0) {
+        results.push({
+          baseOrderKey,
+          ok: false,
+          imported: false,
+          error: `base_item_ambiguous:${ambiguousItems.join(",")}`,
+        });
+        continue;
+      }
+      const listingByBaseItem = matchedListings.unique;
       const unresolved = itemIds.filter((id) => !listingByBaseItem.has(id));
       if (unresolved.length > 0) {
         results.push({
@@ -269,7 +286,7 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
           subtotal: Number(order.total ?? 0),
           shipping_cost: Number(order.shipping_fee ?? 0),
           total: Number(order.total ?? 0),
-          currency: firstListing.currency ?? "JPY",
+          currency: recordedCurrency(firstListing.currency),
           notes: order.remark ?? null,
           payment_status: isBaseOrderPaid(order) ? "paid" : "pending",
           order_status: isBaseOrderPaid(order) ? "fulfillment_pending" : "pending_payment",
@@ -321,7 +338,7 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
           title: listing.title,
           qty: Number(baseItem.amount ?? 1),
           unit_price: Number(baseItem.price ?? listing.selling_price ?? 0),
-          currency: listing.currency ?? "JPY",
+          currency: recordedCurrency(listing.currency),
         }, { onConflict: "base_order_item_key" });
         if (itemError) throw new Error(itemError.message);
       }

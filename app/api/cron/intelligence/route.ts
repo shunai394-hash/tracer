@@ -55,13 +55,20 @@ export async function GET(request: Request) {
     const recovery = await canonicalSupplyRecovery();
     const result = await runIntelligencePipeline({ deadlineAt: Date.now() + 210_000 });
 
+    const shopifyFailed = Array.isArray(recovery.shopifyFailed)
+      ? recovery.shopifyFailed.length
+      : typeof recovery.shopifyFailed === "number" && Number.isFinite(recovery.shopifyFailed)
+        ? recovery.shopifyFailed
+        : 0;
+    const ok = result.ok === true && result.complete === true && shopifyFailed === 0;
     return NextResponse.json({
-      ok: true,
+      ok,
       complete: result.complete,
       isolated: result.ok,
+      failed: shopifyFailed,
       canonicalSupplyRecovery: recovery,
       steps: result.steps,
-    });
+    }, { status: ok ? 200 : 207 });
   } catch (error) {
     console.error("[TRACER INTELLIGENCE CRON ERROR]", error);
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });

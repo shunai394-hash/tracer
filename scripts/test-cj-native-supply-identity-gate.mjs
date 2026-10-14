@@ -13,7 +13,7 @@ assert.ok(source.includes('candidate.price_confirmed === true') && source.includ
 assert.ok(source.includes('profitCalculable: profit.calculable') && source.includes('contributionProfit: profit.contributionProfit'), "contribution-profit gate must remain in the flow");
 assert.ok(source.includes("eligibleSamples: eligible.slice(0, 50)") && source.includes("contributionProfit: item.profit.contributionProfit"), "dry-run must expose eligible evidence for quality review");
 assert.ok(route.includes('const dryRun = new URL(request.url).searchParams.get("dryRun") === "true"'), "dry-run mode must be explicit");
-assert.ok(route.includes('if (!dryRun) {\n      await recoverStaleCronRun'), "dry-run must not create cron lock records");
+assert.ok(route.includes('if (!dryRun) {\n      const recovery = await recoverStaleCronRun'), "dry-run must not create cron lock records");
 assert.ok(route.includes('if (dryRun) {\n      return NextResponse.json({\n        ok: true,\n        dryRun: true,\n        noWrites: true'), "dry-run must return before downstream publication");
 assert.ok(route.includes('process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true"'), "live native CJ publication must be feature-flagged off by default");
 assert.ok(route.includes('const { data: nativeCjSupply, error: nativeCjSupplyError }'), "native CJ supply must be queried independently of marketplace identity");

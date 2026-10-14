@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSupplier, unpublishWorkflow, patrolWorkflow, patrolRoute, discoverCJ, directGate, salesPublicationRoute, e2eFunnel, intelligencePipeline, baseRepair] = await Promise.all([
+const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSupplier, unpublishWorkflow, patrolWorkflow, patrolRoute, discoverCJ, directGate, salesPublicationRoute, e2eFunnel, intelligencePipeline, baseRepair, productsPage] = await Promise.all([
   readFile(new URL("../lib/catalog/canonical-supplier-identity.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8"),
@@ -20,8 +20,11 @@ const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSup
   readFile(new URL("../app/api/intelligence/e2e-funnel/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/channels/base/identity-repair/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/products/page.tsx", import.meta.url), "utf8"),
 ]);
-assert.match(helper, /identity_status === "linked"/);
+assert.match(productsPage, /\.eq\("identity_status", "linked"\)[\s\S]*?\.eq\("verification_status", "verified"\)[\s\S]*?\.eq\("orderable", true\)[\s\S]*?\.eq\("api_available", true\)[\s\S]*?\.eq\("tracking_available", true\)[\s\S]*?\.eq\("price_confirmed", true\)[\s\S]*?\.eq\("inventory_confirmed", true\)/, "verified supply dashboard count must require linked identity and complete order evidence");
+assert.match(helper, /if \(row\.identity_status !== "linked"\) continue;/);
+assert.match(helper, /isCjNativeIdentityFresh\(row\.cj_native_observed_at, nowMs\)/, "a CJ-native proof must stop counting as linked once it is stale");
 assert.match(persist, /verification_error: marketplaceIdentity \? null : "no_unique_canonical_child_variant_match"/, "unmatched CJ identity must persist an explicit reason rather than retaining stale verification state");
 assert.match(discoverCJ, /identity_status: "supply_discovered", identity_confidence: 0/, "supply discovery without canonical identity must not claim perfect identity confidence");
 assert.match(discoverCJ, /title: detail\.title, product_id: null/, "CJ supply discovery must not provisionally attach a canonical product ID before identity is resolved");
@@ -55,7 +58,7 @@ assert.match(persist, /last_verified_at: now/, "CJ verification must refresh its
 assert.match(persist, /bestseller_id: marketplaceIdentity\?\.bestsellerId \?\? null/, "unmatched or ambiguous CJ identity must clear any stale canonical parent link");
 assert.match(persist, /identity_status: marketplaceIdentity \? "linked" : "supply_discovered"/, "CJ discovery alone must not promote supplier identity to linked");
 assert.doesNotMatch(persist, /orderable: false, tracking_available: false, api_available: false/, "identity recheck must not erase existing supplier order-path evidence");
-assert.match(persist, /if \(!marketplaceIdentity\) return \{ offerId: null, intelligenceId: null, identity: null \}/, "unmatched or ambiguous CJ identity must not create product-linked offer/intelligence rows");
+assert.match(persist, /if \(!marketplaceIdentity\) return \{ offerId: null, intelligenceId: null, identity: null[ ,]/, "unmatched or ambiguous CJ identity must not create product-linked offer/intelligence rows");
 assert.ok(persist.indexOf("if (!marketplaceIdentity)") < persist.indexOf("const offerPayload = {"), "no-match exit must happen before any product_offers write");
 assert.match(persist, /offerId: string \| null; intelligenceId: string \| null/, "supply-only discovery must explicitly return absent canonical record IDs");
 assert.doesNotMatch(demandCJ, /assessCanonicalIdentity|CANONICAL_LINK_THRESHOLD/, "CJ demand relevance must not link to a different existing canonical product");

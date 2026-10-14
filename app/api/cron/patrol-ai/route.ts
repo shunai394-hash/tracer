@@ -140,15 +140,18 @@ export async function GET(request: Request) {
     // could start a second patrol while the first is still doing live supplier
     // checks, creating duplicate writes and competing publication decisions.
     // Keep the recovery threshold above maxDuration with a safety margin.
-    await recoverStaleCronRun(db, "patrol-ai", 360);
+    const recovery = await recoverStaleCronRun(db, "patrol-ai", 360);
+    if (!recovery.ok) {
+      return NextResponse.json({ ok: false, reason: "cron_lock_recovery_failed", error: recovery.error, job: "patrol-ai" }, { status: 500 });
+    }
     const runState = await runPatrol(db);
     if (runState.alreadyRunning) {
       return NextResponse.json({
-        ok: true,
+        ok: false,
         status: "already_running",
         message: "別のAI巡回が実行中のため、この重複起動は処理せず終了しました。",
         cronId: runState.cronId,
-      });
+      }, { status: 409 });
     }
     cronId = runState.cronId;
 
@@ -372,8 +375,9 @@ export async function GET(request: Request) {
     // Keep full detail in the run ledger; production logs contain only bounded counts and stage summaries.
     console.log("[TRACER PATROL AI REPORT]", JSON.stringify(safeReport));
 
+    let ledgerUpdateFailed = !cronId;
     if (cronId) {
-      await db.from("cron_runs").update({
+      const ledger = await db.from("cron_runs").update({
         finished_at: new Date().toISOString(),
         duration_ms: Date.now() - startedAt,
         processed: after.publishedListings,
@@ -382,22 +386,28 @@ export async function GET(request: Request) {
         error: errors.length ? errors.join("; ") : null,
         metadata: report,
       }).eq("id", cronId);
+      ledgerUpdateFailed = Boolean(ledger.error);
+    }
+    if (ledgerUpdateFailed) {
+      return NextResponse.json({ ...report, ok: false, status: "failed", reason: "cron_ledger_update_failed" }, { status: 500 });
     }
 
     return NextResponse.json(report, { status: errors.length ? 500 : 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[TRACER PATROL AI FATAL]", message);
+    let ledgerUpdateFailed = !cronId;
     if (cronId) {
-      await db.from("cron_runs").update({
+      const ledger = await db.from("cron_runs").update({
         finished_at: new Date().toISOString(),
         duration_ms: Date.now() - startedAt,
         status: "failed",
         error: message,
         metadata: { actor: "patrol-ai", fatal: true },
       }).eq("id", cronId);
+      ledgerUpdateFailed = Boolean(ledger.error);
     }
-    return NextResponse.json({ ok: false, status: "failed", error: message }, { status: 500 });
+    return NextResponse.json({ ok: false, status: "failed", error: message, ledgerUpdateFailed }, { status: 500 });
   }
 }
 // Production deployment sync marker: patrol implementation follows main.

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyShopifyWebhookHmac } from "@/lib/shopify/admin";
 import { getOrderSkuLookup, resolveShopifyOrderSkus } from "@/lib/shopify/order-sku-mapping";
+import { createDropshipPurchaseOrdersForShopOrder } from "@/lib/ordering/dropship";
+import { canonicalShopifyOrderId, shopifyOrderIdForms } from "@/lib/shopify/order-id";
 
 export const runtime = "nodejs";
 
@@ -17,13 +19,66 @@ export async function POST(request: Request) {
   }
   try {
     const order = JSON.parse(raw) as Record<string, unknown>;
-    const externalId = String(order.id ?? "");
+    // Store the GraphQL GID, the same form the order poller writes, and match
+    // the legacy numeric form too so one order is never imported twice.
+    const externalId = canonicalShopifyOrderId(order.admin_graphql_api_id) ?? canonicalShopifyOrderId(order.id);
     if (!externalId) return NextResponse.json({ ok: false, error: "shopify_order_id_missing" }, { status: 400 });
 
     const db = createSupabaseAdminClient();
-    const existing = await db.from("shop_orders").select("id").eq("shopify_order_id", externalId).maybeSingle();
-    if (existing.error) throw new Error(existing.error.message);
-    if (existing.data) return NextResponse.json({ ok: true, duplicate: true, orderId: String(existing.data.id) });
+    const existingRows = await db
+      .from("shop_orders")
+      .select("id,payment_status,order_status,shopify_order_id")
+      .in("shopify_order_id", shopifyOrderIdForms(externalId))
+      .limit(2);
+    if (existingRows.error) throw new Error(existingRows.error.message);
+    const existing = {
+      data: (existingRows.data ?? []).find((row) => row.shopify_order_id === externalId) ?? existingRows.data?.[0] ?? null,
+    };
+    if (existing.data) {
+      const financial = String(order.financial_status ?? "pending");
+      const paid = financial === "paid";
+      const cancelled = Boolean(order.cancelled_at) || financial === "voided";
+      const refunded = financial === "refunded";
+      let paymentStatus = String(existing.data.payment_status ?? "");
+      const existingOrderStatus = String(existing.data.order_status ?? "");
+      if (cancelled || refunded) {
+        const { error: terminalUpdateError } = await db
+          .from("shop_orders")
+          .update({
+            payment_status: refunded ? "refunded" : paymentStatus,
+            order_status: refunded ? "refunded" : "cancelled",
+            shopify_financial_status: financial,
+            shopify_fulfillment_status: order.fulfillment_status ? String(order.fulfillment_status) : null,
+          })
+          .eq("id", existing.data.id)
+          .not("order_status", "in", '("cancelled","refunded")');
+        if (terminalUpdateError) throw new Error(terminalUpdateError.message);
+        return NextResponse.json({ ok: true, duplicate: true, terminal: true, orderId: String(existing.data.id) });
+      }
+      if (paid && paymentStatus !== "paid") {
+        const { error: paymentUpdateError } = await db
+          .from("shop_orders")
+          .update({
+            payment_status: "paid",
+            order_status: ["cancelled", "refunded", "cancellation_requested", "refund_pending"].includes(existingOrderStatus)
+              ? existingOrderStatus
+              : "fulfillment_pending",
+            paid_at: new Date().toISOString(),
+            shopify_financial_status: financial,
+            shopify_fulfillment_status: order.fulfillment_status ? String(order.fulfillment_status) : null,
+          })
+          .eq("id", existing.data.id)
+          .neq("payment_status", "paid");
+        if (paymentUpdateError) throw new Error(paymentUpdateError.message);
+        paymentStatus = "paid";
+      }
+      // Shopify may deliver a later paid/update event for the same order ID.
+      // Retry idempotent PO snapshots only when the order has not been cancelled/refunded.
+      if ((paid || paymentStatus === "paid") && !["cancelled", "refunded", "cancellation_requested", "refund_pending"].includes(existingOrderStatus)) {
+        await createDropshipPurchaseOrdersForShopOrder(String(existing.data.id));
+      }
+      return NextResponse.json({ ok: true, duplicate: true, orderId: String(existing.data.id), paid: paid || paymentStatus === "paid" });
+    }
 
     const items = Array.isArray(order.line_items) ? order.line_items as Array<Record<string, unknown>> : [];
     const skus = items.map((item) => String(item.sku ?? "").trim());
@@ -79,6 +134,78 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, blocked: true, reason: "listing_not_orderable" });
     }
 
+    // Re-check the canonical supplier row at order ingestion. A stale shop_listings
+    // orderable flag is not sufficient proof that this variant is safe to procure.
+    const resolvedListings = skus.map((sku) => bySku.get(sku)!);
+    const supplierListingIds = [...new Set(resolvedListings.map((listing) => listing.supplier_listing_id).filter((id): id is string => Boolean(id)))];
+    if (supplierListingIds.length !== new Set(resolvedListings.map((listing) => listing.id)).size) {
+      return NextResponse.json({ ok: true, blocked: true, reason: "supplier_identity_missing" });
+    }
+    const { data: supplierRows, error: supplierRowsError } = await db
+      .from("supplier_listings")
+      .select("id,product_id,supplier,supplier_product_id,supplier_variant_id,identity_status,verification_status,orderable,api_available,tracking_available,price_confirmed,inventory_confirmed,inventory,cost,shipping_cost")
+      .in("id", supplierListingIds);
+    if (supplierRowsError) throw new Error(supplierRowsError.message);
+    const supplierById = new Map((supplierRows ?? []).map((row) => [String(row.id), row]));
+    const requestedBySupplierListing = new Map<string, number>();
+    for (const [index, item] of items.entries()) {
+      const listing = bySku.get(skus[index]);
+      const supplier = listing?.supplier_listing_id ? supplierById.get(listing.supplier_listing_id) : null;
+      const quantity = n(item.quantity);
+      const inventory = n(supplier?.inventory);
+      const sourceCost = n(supplier?.cost);
+      const shippingCost = n(supplier?.shipping_cost);
+      const valid =
+        Boolean(listing && supplier) &&
+        supplier?.identity_status === "linked" &&
+        supplier?.verification_status === "verified" &&
+        supplier?.orderable === true &&
+        supplier?.api_available === true &&
+        supplier?.tracking_available === true &&
+        supplier?.price_confirmed === true &&
+        supplier?.inventory_confirmed === true &&
+        Boolean(supplier?.supplier_product_id) &&
+        Boolean(supplier?.supplier_variant_id) &&
+        String(supplier?.supplier_product_id) === String(listing?.supplier_product_id) &&
+        String(supplier?.supplier_variant_id) === String(listing?.supplier_variant_id) &&
+        String(supplier?.product_id ?? "") === String(listing?.product_id ?? "") &&
+        Number.isFinite(quantity) && quantity! > 0 &&
+        Number.isFinite(inventory) && inventory! > 0 &&
+        Number.isFinite(sourceCost) && sourceCost! > 0 &&
+        Number.isFinite(shippingCost) && shippingCost! >= 0;
+      if (!valid) {
+        return NextResponse.json({
+          ok: true,
+          blocked: true,
+          reason: "supplier_fulfillment_gate_failed",
+          sku: skus[index],
+        });
+      }
+      const supplierListingId = String(listing!.supplier_listing_id);
+      requestedBySupplierListing.set(
+        supplierListingId,
+        (requestedBySupplierListing.get(supplierListingId) ?? 0) + quantity!,
+      );
+    }
+    // Aggregate duplicate lines for the same canonical supplier row. Checking
+    // each line separately would let two quantities individually pass while
+    // their combined quantity oversells the confirmed inventory.
+    for (const [supplierListingId, requestedQuantity] of requestedBySupplierListing) {
+      const supplier = supplierById.get(supplierListingId);
+      const inventory = n(supplier?.inventory);
+      if (inventory === null || requestedQuantity > inventory) {
+        const sku = resolvedListings.find((listing) => listing.supplier_listing_id === supplierListingId)
+          ? skus[resolvedListings.findIndex((listing) => listing.supplier_listing_id === supplierListingId)]
+          : undefined;
+        return NextResponse.json({
+          ok: true,
+          blocked: true,
+          reason: "supplier_inventory_insufficient",
+          ...(sku ? { sku } : {}),
+        });
+      }
+    }
+
     const financial = String(order.financial_status ?? "pending");
     const paid = financial === "paid";
     const shipping = (order.shipping_address ?? {}) as Record<string, unknown>;
@@ -113,12 +240,12 @@ export async function POST(request: Request) {
     }).select("id").single();
     if (inserted.error) throw new Error(inserted.error.message);
 
-    for (const [index, item] of items.entries()) {
+    const itemRows = items.map((item, index) => {
       // Use the same normalized SKU used during resolution; Shopify payloads may
       // contain surrounding whitespace even though lookup keys are trimmed.
       const listing = bySku.get(skus[index]);
       if (!listing) throw new Error("listing mapping missing during item insert");
-      const row = await db.from("shop_order_items").insert({
+      return {
         order_id: inserted.data.id,
         listing_id: listing.id,
         product_id: listing.product_id,
@@ -131,8 +258,21 @@ export async function POST(request: Request) {
         unit_price: n(item.price) ?? n(listing.selling_price),
         currency,
         shopify_line_item_id: item.id == null ? null : String(item.id),
-      });
-      if (row.error) throw new Error(row.error.message);
+      };
+    });
+    const itemInsert = await db.from("shop_order_items").insert(itemRows);
+    if (itemInsert.error) {
+      // Do not leave a parent order that causes webhook retries to be treated
+      // as complete when its line items were not persisted.
+      const { error: cleanupError } = await db.from("shop_orders").delete().eq("id", inserted.data.id).eq("shopify_order_id", externalId);
+      if (cleanupError) console.error("[TRACER SHOPIFY ORDER CLEANUP ERROR]", cleanupError.message);
+      throw new Error(`shop_order_items_insert_failed:${itemInsert.error.message}`);
+    }
+
+    if (paid) {
+      // This creates idempotent internal purchase-order snapshots only; actual
+      // supplier execution remains separately gated and disabled unless enabled.
+      await createDropshipPurchaseOrdersForShopOrder(String(inserted.data.id));
     }
 
     return NextResponse.json({ ok: true, orderId: String(inserted.data.id), paid });

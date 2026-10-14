@@ -120,7 +120,8 @@ export function simulateContributionProfit(args: {
     totalCost: null,
     roi: null,
     shippingUnknown:
-      args.internationalShipping == null || (args.requireDomesticShipping === true && args.domesticShipping == null),
+      args.internationalShipping == null ||
+      (args.requireDomesticShipping === true && args.domesticShipping == null),
     lines: [],
     provenance,
     incalculableReason: reason,

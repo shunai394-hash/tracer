@@ -2,6 +2,9 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
+import { uniqueRowsByKey } from "@/lib/ordering/channel-listing-match";
+import { createDropshipPurchaseOrdersForShopOrder } from "@/lib/ordering/dropship";
+import { shopifyOrderIdForms, shopifyOrderNumericId } from "@/lib/shopify/order-id";
 
 type ShopifyOrder = {
   id: string;
@@ -116,11 +119,12 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
       const { data: existingRows, error: existingRowsError } = await supabase
         .from("shop_orders")
         .select("shopify_order_id")
-        .in("shopify_order_id", pageOrders.map((order) => order.id));
+        .in("shopify_order_id", pageOrders.flatMap((order) => shopifyOrderIdForms(order.id)));
       if (existingRowsError) throw new Error(existingRowsError.message);
-      const existingIds = new Set((existingRows ?? []).map((row) => String(row.shopify_order_id)));
+      // Compare numeric tails: the REST webhook once stored numeric ids.
+      const existingIds = new Set((existingRows ?? []).map((row) => shopifyOrderNumericId(row.shopify_order_id)));
       for (const order of pageOrders) {
-        if (!existingIds.has(order.id) && orders.length < maxNewOrders) orders.push(order);
+        if (!existingIds.has(shopifyOrderNumericId(order.id)) && orders.length < maxNewOrders) orders.push(order);
       }
     }
 
@@ -195,23 +199,14 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
   const { data: listings, error: listingError } = variantIds.length
     ? await supabase
         .from("shop_listings")
-        .select("id,product_id,title,shopify_product_id,shopify_variant_id,supplier_variant_id,supplier_product_id")
+        .select("id,product_id,title,shopify_product_id,shopify_variant_id,supplier_listing_id,supplier_name,supplier_variant_id,supplier_product_id")
         .in("shopify_variant_id", variantIds)
     : { data: [], error: null };
   if (listingError) throw new Error(listingError.message);
 
-  const listingByVariant = new Map<string, Record<string, unknown>>();
-  for (const row of listings ?? []) {
-    const variantId = String(row.shopify_variant_id ?? "").trim();
-    if (!variantId) continue;
-    const existing = listingByVariant.get(variantId);
-    if (existing && String(existing.id) !== String(row.id)) {
-      // A Shopify variant must resolve to exactly one internal listing. Picking
-      // the last duplicate silently attaches a paid order to the wrong product.
-      throw new Error(`shopify_variant_mapping_ambiguous:${variantId}`);
-    }
-    listingByVariant.set(variantId, row as Record<string, unknown>);
-  }
+  const matchedListings = uniqueRowsByKey(listings ?? [], (row) => row.shopify_variant_id ? String(row.shopify_variant_id) : null);
+  const ambiguousVariants = new Set(matchedListings.ambiguousKeys);
+  const listingByVariant = matchedListings.unique;
 
   for (const order of orders) {
     let insertedOrderId: string | null = null;
@@ -235,12 +230,14 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
       const { data: existing, error: existingError } = await supabase
         .from("shop_orders")
         .select("id")
-        .eq("shopify_order_id", order.id)
+        .in("shopify_order_id", shopifyOrderIdForms(order.id))
+        .limit(1)
         .maybeSingle();
       if (existingError) throw new Error(existingError.message);
       if (existing) {
         result.skipped += 1;
         result.orderIds.push(String(existing.id));
+        await createDropshipPurchaseOrdersForShopOrder(String(existing.id));
         continue;
       }
 
@@ -253,6 +250,10 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
       if (!address) throw new Error("shopify_shipping_address_missing");
       if (!order.lineItems.nodes.length) throw new Error("shopify_line_items_missing");
 
+      const ambiguousItems = order.lineItems.nodes.filter((item) => item.variant?.id && ambiguousVariants.has(item.variant.id));
+      if (ambiguousItems.length) {
+        throw new Error(`shopify_variant_mapping_ambiguous:${ambiguousItems.map((item) => item.variant?.id).join(",")}`);
+      }
       const mappedItems = order.lineItems.nodes.map((item) => {
         const listing = item.variant?.id ? listingByVariant.get(item.variant.id) : undefined;
         return { item, listing };
@@ -291,6 +292,12 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
           shipping_cost: 0,
           total,
           currency: order.totalPriceSet.shopMoney.currencyCode,
+          shipping_country_code: order.shippingAddress?.countryCodeV2 ?? null,
+          shipping_province: order.shippingAddress?.province ?? null,
+          shipping_city: order.shippingAddress?.city ?? null,
+          shipping_line1: order.shippingAddress?.address1 ?? null,
+          shipping_line2: order.shippingAddress?.address2 ?? null,
+          shipping_zip: order.shippingAddress?.zip ?? null,
           notes: `Shopify ${order.name}`,
           shopify_order_id: order.id,
           shopify_order_name: order.name,
@@ -307,19 +314,16 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         .select("id")
         .single();
       if (inserted.error?.code === "23505") {
-        // Another sync worker may have inserted the same external order after
-        // our earlier lookup. Reconcile the winner instead of retrying blindly.
         const { data: racedOrder, error: racedOrderError } = await supabase
           .from("shop_orders")
           .select("id")
           .eq("shopify_order_id", order.id)
           .maybeSingle();
         if (racedOrderError) throw new Error(racedOrderError.message);
-        if (racedOrder?.id) {
-          result.skipped += 1;
-          result.orderIds.push(String(racedOrder.id));
-          continue;
-        }
+        if (!racedOrder?.id) throw new Error(inserted.error.message);
+        result.skipped += 1;
+        result.orderIds.push(String(racedOrder.id));
+        continue;
       }
       if (inserted.error || !inserted.data) throw new Error(inserted.error?.message ?? "shop_order_insert_failed");
       insertedOrderId = String(inserted.data.id);
@@ -329,6 +333,10 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         listing_id: listing?.id ?? null,
         product_id: listing?.product_id ?? null,
         title: item.title,
+        supplier_listing_id: listing?.supplier_listing_id ?? null,
+        supplier_name: listing?.supplier_name ?? null,
+        supplier_product_id: listing?.supplier_product_id ?? null,
+        supplier_variant_id: listing?.supplier_variant_id ?? null,
         qty: item.quantity,
         unit_price: Number(item.originalUnitPriceSet.shopMoney.amount),
         currency: item.originalUnitPriceSet.shopMoney.currencyCode,
@@ -340,6 +348,8 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         throw new Error(`shop_order_items_insert_failed:${itemInsert.error.message}`);
       }
 
+      insertedOrderId = null;
+      await createDropshipPurchaseOrdersForShopOrder(String(inserted.data.id));
       result.imported += 1;
       result.orderIds.push(inserted.data.id);
     } catch (error) {

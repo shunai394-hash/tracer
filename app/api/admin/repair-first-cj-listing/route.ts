@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { calculateCJFreight, fetchCJProductInventory, fetchCJVariantStock } from "@/lib/sources/cj/client";
 import { editBaseItem, isBaseConfigured } from "@/lib/channels/base";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
+import { isClosedSupplierFulfillment } from "@/lib/procurement/cj-fulfillment-gate";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -125,8 +126,7 @@ export async function GET(request: Request) {
       .update({
         inventory,
         shipping_cost: shippingCost,
-        orderable,
-        tracking_available: true,
+        orderable: isClosedSupplierFulfillment(listing.supplier_name) ? false : orderable,
       })
       .eq("id", String(listing.id));
     if (shopError) throw new Error(shopError.message);
