@@ -7,7 +7,7 @@ alter table public.shop_order_items
 -- Enforce idempotency for Shopify line items during concurrent webhook delivery.
 -- Preflight duplicate rows before creating the unique index. If legacy duplicates
 -- exist, fail the migration with an actionable error rather than deleting data.
-do $
+do $$
 begin
   if exists (
     select 1
