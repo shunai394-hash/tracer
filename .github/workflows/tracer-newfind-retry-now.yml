@@ -11,7 +11,8 @@ permissions:
 
 concurrency:
   group: tracer-newfind-retry-now
-  cancel-in-progress: true
+  # A normal push that skips this job must not cancel an active bounded retry.
+  cancel-in-progress: false
 
 jobs:
   retry:
