@@ -118,7 +118,9 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     else if (base && !isPublishableCatalogTitle(masterTitle) && !nativeCjSupplyIdentity) reasons.push("product_master_title_not_publishable");
     const sourceMetadata = base?.metadata && typeof base.metadata === 'object' && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const womenPriority = womenProductPriority({ title: sourceTitle, category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
-    if (base && !womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
+    // Women's relevance is a ranking bonus, not an exclusion rule. All product
+    // categories may be sold when Japanese copy, exact supplier identity,
+    // fulfilment evidence, and positive contribution profit pass.
     if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
     if (!base) reasons.push("product_intelligence_missing"); if (!listing) reasons.push("supplier_listing_missing");
     if (reasons.length > 0) { rejected.push({ productId, reasons, title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
