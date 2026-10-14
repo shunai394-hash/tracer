@@ -28,10 +28,20 @@ export async function GET(request: Request) {
     const withdraw = Date.now() < startedAt + 45_000
       ? await withdrawUnpublishedNewfindPromotions({ limit: 5 })
       : { enabled: false, skipped: "time_budget" };
+    // Report the durable queue state, not just this invocation's batch.
+    // The workflow's final gate must not assume the queue is empty when the
+    // endpoint omits a remaining-count field.
+    const queue = await (await import("@/lib/supabase/admin")).createSupabaseAdminClient()
+      .from("newfind_promotion_deliveries")
+      .select("listing_id", { count: "exact", head: true })
+      .in("status", ["pending", "failed", "sent", "sending"]);
+    if (queue.error) throw new Error(`NEWFIND retry queue count failed: ${queue.error.message}`);
+    const stillFailing = queue.count ?? 0;
     return NextResponse.json({
       ok: true,
       phase: "newfind_retry",
       ...result,
+      stillFailing,
       rescue,
       withdraw,
     });
