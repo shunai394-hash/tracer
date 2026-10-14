@@ -67,15 +67,18 @@ export async function GET(request: Request) {
 
     cronRunId = cronRun?.id ? String(cronRun.id) : null;
 
-    // Do not leave candidates with no usable identity fields in the pending queue forever.
-    // Quarantine them immediately; this is reversible (status/reason only), and
-    // prevents repeated discovery runs from treating impossible-to-match rows as work.
+    // Do not permanently block identifier-less demand rows: they may still be useful
+    // as demand signals, but they cannot enter marketplace identity matching. Keep
+    // them explicitly queued for the supplier-native discovery path instead. A
+    // supplier-native listing must later prove its own product+variant, JP shipping,
+    // stock, tracking, API order path and positive contribution profit.
     const { data: identitylessRows, error: identitylessError } = await supabase
       .from("marketplace_bestsellers")
       .update({
-        pipeline_status: "blocked",
-        pipeline_stage: "SUPPLIER_INVESTIGATION",
-        pipeline_reason: "supplier_search_identifier_missing",
+        pipeline_status: "pending",
+        pipeline_stage: "SUPPLIER_NATIVE_DISCOVERY",
+        pipeline_reason: "supplier_native_locator_discovery_required",
+        pipeline_error: null,
         pipeline_updated_at: new Date().toISOString(),
       })
       .in("pipeline_status", ["pending", "failed"])
@@ -92,7 +95,7 @@ export async function GET(request: Request) {
     // Pull a wider queue, then spend the limited supplier-call budget on the
     // strongest strict identity evidence first. ASIN/MPN are intentionally
     // retained because investigate-dropship can enrich them before matching.
-    console.info("[TRACER SUPPLIER INVESTIGATION] identityless candidates quarantined", { count: identitylessRows?.length ?? 0 });
+    console.info("[TRACER SUPPLIER INVESTIGATION] identifier-less demand retained for supplier-native discovery", { count: identitylessRows?.length ?? 0 });
 
     const queuePoolSize = Math.max(BESTSELLER_CANDIDATE_BATCH_SIZE * 5, 50);
     const { data: freshRows, error: freshError } = await supabase
