@@ -104,14 +104,19 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     query = query.or([
       "and(published.eq.true,base_publication_status.is.null)",
       "and(published.eq.true,base_publication_status.neq.published)",
-      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.is.null)",
-      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.neq.published)",
+      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.is.null,base_last_error.is.null)",
+      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.neq.published,base_last_error.is.null)",
+      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.is.null,base_last_error.neq.supplier_identity_unlinked_hidden,base_last_error.neq.tracer_unpublished_hidden)",
+      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.neq.published,base_last_error.neq.supplier_identity_unlinked_hidden,base_last_error.neq.tracer_unpublished_hidden)",
       "and(pipeline_status.eq.selected,base_item_id.is.null)",
       "and(base_item_id.is.null,base_last_error.like.base_create_id_persist_failed:*)",
     ].join(","));
   }
   const safeLimit = Math.min(15, Math.max(1, Math.floor(Number.isFinite(limit) ? limit : 10)));
-  const { data: listings, error } = await query.order("created_at", { ascending: true }).limit(safeLimit);
+  // Prefer the newest gate-passed, never-published listings. Already-hidden
+  // stale BASE items are excluded above so they cannot consume every bounded
+  // batch and starve fresh products waiting for their first BASE item.
+  const { data: listings, error } = await query.order("created_at", { ascending: false }).limit(safeLimit);
   if (error) throw new Error(error.message);
 
   const supplierStatuses = await getPublishableSupplierListingStatuses((listings ?? []).map((listing) => listing.supplier_listing_id));
