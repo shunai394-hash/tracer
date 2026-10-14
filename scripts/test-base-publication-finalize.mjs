@@ -9,4 +9,7 @@ assert.match(publisher, /identifier: `TRC-\$\{listingId\}`/, "new BASE items mus
 assert.match(publisher, /if \(finalizeError\) throw new Error\(\`base_publication_finalize_failed: \$\{finalizeError\.message\}\`\);/);
 const successPush = publisher.indexOf('results.push({ listingId, ok: true, baseItemId });');
 assert.ok(successPush > publisher.indexOf("if (finalizeError)"), "success must be recorded only after final DB update succeeds");
-console.log("BASE publication finalization failure contract: 4 assertions passed");
+assert.match(publisher, /addBaseItemImageWithFallback/, "BASE image format failures must have a compatible image fallback");
+assert.match(publisher, /product\(id: \$id\) \{ featuredImage \{ url \} \}/, "the fallback must use Shopify's accepted CDN image");
+assert.match(publisher, /このファイル形式はご利用できません/, "the fallback should be limited to BASE format-rejection errors");
+console.log("BASE publication finalization and image fallback contract: 7 assertions passed");
