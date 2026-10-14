@@ -63,6 +63,7 @@ jobs:
         run: node scripts/test-amazon-child-identifier-retry.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-base-auth-retry-circuit.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-publishable-title.mjs
+      - run: node scripts/test-shopify-copy-quota-fallback.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-cj-query-fallback.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-canonical-supplier-identity-gate.mjs
       - run: node scripts/verify-cj-internal-supply-wiring.mjs
