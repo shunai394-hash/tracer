@@ -100,8 +100,17 @@ export async function GET(request: Request) {
           if (!priority.isWomenFocused) continue;
           // A supplier variant ID is an order locator, not proof of canonical product identity.
           // Require a real JAN before creating a canonical product/listing relationship.
-          const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId && /^\d{8,14}$/.test(v.jan ?? ""));
-          if (!variation || !variation.jan || variation.currency?.toUpperCase() !== "JPY") continue;
+          const shippableVariations = detail.variations.filter(v =>
+            (v.stockQty ?? 0) > 0 &&
+            (v.buyerPrice ?? 0) > 0 &&
+            Boolean(v.variationId) &&
+            /^\d{8,14}$/.test(v.jan ?? "") &&
+            v.currency?.toUpperCase() === "JPY",
+          );
+          // The shipping quote endpoint accepts product ID, not variation ID.
+          // Only accept products where exactly one purchasable JAN/JPY variant exists.
+          if (shippableVariations.length !== 1) continue;
+          const variation = shippableVariations[0];
           candidates.set(`${detail.id}:${variation.variationId}`, { detail, variation });
         } catch {
           // One bad product must not abort the batch.
@@ -118,6 +127,17 @@ export async function GET(request: Request) {
   for (const candidate of candidates.values()) {
     const { detail, variation } = candidate;
     if (Date.now() - started > 240_000 || accepted.length >= 200) break;
+    const currentShippableVariations = detail.variations.filter(v =>
+      (v.stockQty ?? 0) > 0 &&
+      (v.buyerPrice ?? 0) > 0 &&
+      Boolean(v.variationId) &&
+      /^\d{8,14}$/.test(v.jan ?? "") &&
+      v.currency?.toUpperCase() === "JPY",
+    );
+    if (currentShippableVariations.length !== 1 || currentShippableVariations[0].variationId !== variation.variationId) {
+      rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "variant_shipping_ambiguity" });
+      continue;
+    }
     if (!variation || variation.buyerPrice === null || variation.stockQty === null || !variation.jan || !/^\d{8,14}$/.test(variation.jan) || variation.currency?.toUpperCase() !== "JPY") {
       rejected.push({ id: detail.id, reason: "canonical_jan_or_jpy_price_missing" });
       continue;
