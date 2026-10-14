@@ -226,7 +226,6 @@ export async function GET(request: Request) {
         noWrites: true,
         mode: "canonical_supply_fast_path",
         nativeCjIdentityUsesStrictEvidenceGate: true,
-        nativeCjIdentityUsesStrictEvidenceGate: true,
         supplySelected,
       }, { headers: { "Cache-Control": "no-store" } });
     }
