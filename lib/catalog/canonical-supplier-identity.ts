@@ -13,10 +13,19 @@ export function isNativeCjSupplierListing(row: Record<string, unknown>, nowMs = 
   const supplier = String(row.supplier ?? "").trim().toLowerCase();
   const verifiedAt = typeof row.last_verified_at === "string" ? Date.parse(row.last_verified_at) : NaN;
   const verificationError = row.verification_error;
+  const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+    ? row.metadata as Record<string, unknown>
+    : {};
+  const shippingEvidence = metadata.japan_shipping && typeof metadata.japan_shipping === "object" && !Array.isArray(metadata.japan_shipping)
+    ? metadata.japan_shipping as Record<string, unknown>
+    : {};
+  const estimatedShipping = row.shipping_status === "estimated"
+    && (metadata.shipping_estimate_applied === true || shippingEvidence.estimated === true)
+    && Number(metadata.shipping_estimate_jpy ?? shippingEvidence.amount_jpy) > 0;
   return ["cj", "cjdropshipping"].includes(supplier)
     && row.identity_status === "supply_discovered"
     && row.verification_status === "verified"
-    && row.shipping_status === "verified"
+    && (row.shipping_status === "verified" || estimatedShipping)
     && row.configured === true
     && row.price_confirmed === true
     && row.inventory_confirmed === true
@@ -46,7 +55,7 @@ export async function getPublishableSupplierListingStatuses(values: unknown[]): 
     const batch = ids.slice(offset, offset + 100);
     const { data, error } = await supabase
       .from("supplier_listings")
-      .select("id,supplier,identity_status,verification_status,shipping_status,configured,price_confirmed,inventory_confirmed,api_available,orderable,tracking_available,inventory,cost,shipping_cost,ship_to,supplier_product_id,supplier_variant_id,verification_error,last_verified_at")
+      .select("id,supplier,identity_status,verification_status,shipping_status,configured,price_confirmed,inventory_confirmed,api_available,orderable,tracking_available,inventory,cost,shipping_cost,ship_to,supplier_product_id,supplier_variant_id,verification_error,last_verified_at,metadata")
       .in("id", batch);
     if (error) throw new Error(`supplier_publication_identity_lookup_failed:${error.message}`);
     for (const row of data ?? []) {
