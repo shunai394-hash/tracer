@@ -7,6 +7,7 @@ import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
+import { isNativeCjSupplierListing } from "@/lib/catalog/canonical-supplier-identity";
 
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -79,11 +80,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // already satisfy the live supply/identity prerequisites, then rank those.
     const verifiedCandidates = candidates.filter((candidate) => {
       const supplier = String(candidate.supplier ?? "").trim().toLowerCase();
-      const nativeSupplierIdentity = options.allowNativeCjIdentity === true && ["cj", "cjdropshipping"].includes(supplier)
-        && Boolean(candidate.supplier_product_id)
-        && Boolean(candidate.supplier_variant_id)
-        && candidate.verification_status === "verified"
-        && candidate.shipping_status === "verified";
+      const nativeSupplierIdentity = options.allowNativeCjIdentity === true && isNativeCjSupplierListing(candidate);
       const canonicalIdentity = candidate.identity_status === "linked"
         && identifierGradeMethods.has(String(candidate.identity_method ?? "").trim().toLowerCase())
         && (num(candidate.identity_confidence) ?? 0) >= 0.88;
@@ -113,8 +110,11 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // A concrete supplier title must not mask a generic or workflow-derived
     // product-master title (for example "トレンド・seeded_dueアイテム").
     const masterTitle = (typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
+    const nativeCjSupplyIdentity = Boolean(listing && options.allowNativeCjIdentity === true && isNativeCjSupplierListing(listing));
     if (base && !masterTitle) reasons.push("product_master_title_missing");
-    else if (base && !isPublishableCatalogTitle(masterTitle)) reasons.push("product_master_title_not_publishable");
+    // Native CJ products are their own supplier catalog identity, not a marketplace match.
+    // Their own exact supplier title is still required to pass the publishable-title gate below.
+    else if (base && !isPublishableCatalogTitle(masterTitle) && !nativeCjSupplyIdentity) reasons.push("product_master_title_not_publishable");
     const sourceMetadata = base?.metadata && typeof base.metadata === 'object' && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const womenPriority = womenProductPriority({ title: sourceTitle, category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
     if (base && !womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
@@ -133,11 +133,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // it does not prove that it is the same item as the marketplace demand product.
     // Only an explicit server-side identity link with identifier-grade evidence may
     // pass this gate. Never infer marketplace identity from verification_status.
-    const nativeCjSupplyIdentity = options.allowNativeCjIdentity === true && ["cj", "cjdropshipping"].includes(String(listing.supplier ?? "").trim().toLowerCase())
-      && Boolean(listing.supplier_product_id)
-      && Boolean(listing.supplier_variant_id)
-      && listing.verification_status === "verified"
-      && listing.shipping_status === "verified";
+    
     const supplierVerifiedIdentity = nativeCjSupplyIdentity || (
       listing.identity_status === "linked"
       && identifierGradeMethods.has(rawIdentityMethod)
@@ -167,8 +163,10 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
       sourceCurrency: typeof listing.currency === "string" ? listing.currency : "USD",
       sourceProvider: String(listing.supplier ?? "unknown"),
       internationalShipping: shippingCost,
-      domesticShipping: null,
-      requireDomesticShipping: true,
+      // CJ freight is quoted for direct delivery to the Japanese customer; there is no separate seller-paid domestic leg.
+      // Other supplier routes remain blocked until their domestic delivery cost is known.
+      domesticShipping: nativeCjSupplyIdentity ? 0 : null,
+      requireDomesticShipping: !nativeCjSupplyIdentity,
       shippingCurrency: typeof listing.currency === "string" ? listing.currency : "USD",
       sourceFxRateToSelling,
       sourceFxRateSource: sourceFxRateSource ?? undefined,
@@ -191,7 +189,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
       if (num(intelligence.market_gap_score) === null) reasons.push("market_gap_evidence_missing");
       if (num(intelligence.overall_confidence) === null || (num(intelligence.overall_confidence) ?? 0) < 0.6) reasons.push("intelligence_confidence_low");
     }
-    if (reasons.length) { rejected.push({ productId, reasons: Array.from(new Set(reasons)), title: sourceTitle, masterTitle, category: metadataCategory(base.metadata), supplier: String(listing.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority, sellingPrice, sourceCost, internationalShipping: shippingCost, domesticShippingKnown: false, contributionProfit: profit.contributionProfit, contributionMargin: profit.contributionMargin }); continue; }
+    if (reasons.length) { rejected.push({ productId, reasons: Array.from(new Set(reasons)), title: sourceTitle, masterTitle, category: metadataCategory(base.metadata), supplier: String(listing.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority, sellingPrice, sourceCost, internationalShipping: shippingCost, domesticShippingKnown: nativeCjSupplyIdentity, contributionProfit: profit.contributionProfit, contributionMargin: profit.contributionMargin }); continue; }
 
     const womenBonus = womenProductPriority({ title: typeof base.normalized_title === "string" ? base.normalized_title : "", category: typeof metadata.category === "string" ? metadata.category : null }).bonus;
     const quality = (num(intelligence.selection_score) ?? 0) * 0.45 + (num(intelligence.demand_score) ?? 0) * 0.2 + (num(intelligence.search_fit_score) ?? 0) * 0.1 + (num(intelligence.market_gap_score) ?? 0) * 0.1 + (num(intelligence.competition_score) ?? 0) * 0.05 + (num(intelligence.creative_score) ?? 0) * 0.05 + (num(intelligence.overall_confidence) ?? 0) * 100 * 0.05 + womenBonus;
@@ -247,7 +245,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   for (const item of chosen) {
     const title = localizeProductTitle(String(item.listing.title ?? item.base.normalized_title ?? ""), metadataCategory(item.base.metadata)) ?? String(item.base.normalized_title ?? ("TRACER product " + item.productId)); const slug = slugify(title, item.productId); const now = new Date().toISOString();
     const metadata = item.base.metadata && typeof item.base.metadata === "object" && !Array.isArray(item.base.metadata) ? item.base.metadata as Record<string, unknown> : {};
-    const payload = { product_id: item.productId, bestseller_id: null, supplier_listing_id: item.listing.id, slug, title, description: typeof item.intelligence.recommendation_summary === "string" && item.intelligence.recommendation_summary.trim() ? item.intelligence.recommendation_summary.trim().slice(0, 700) : "需要・供給・利益・公開条件を確認したTRACERセレクト商品です。", image_url: item.base.image_url, selling_price: num(metadata.selling_price_jpy), currency: "JPY", supplier_name: String(item.listing.supplier ?? "unknown"), supplier_product_id: item.listing.supplier_product_id, supplier_variant_id: item.listing.supplier_variant_id, source_cost: item.profit.sourceCost, shipping_cost: item.profit.internationalShipping, inventory: num(item.listing.inventory), orderable: item.listing.orderable === true, tracking_available: item.listing.tracking_available === true, identity_method: typeof item.listing.identity_method === "string" ? item.listing.identity_method : null, identity_confidence: ["cj", "cjdropshipping"].includes(String(item.listing.supplier ?? "").trim().toLowerCase()) && item.listing.verification_status === "verified" && item.listing.shipping_status === "verified" && item.listing.supplier_product_id && item.listing.supplier_variant_id ? 1 : num(item.listing.identity_confidence), contribution_profit: item.profit.contributionProfit, contribution_margin: item.profit.contributionMargin, published: true, selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:supply", "supply_intelligence_gate_passed", "selection_score_" + (num(item.intelligence.selection_score)?.toFixed(1) ?? "0")], missing: [], published_at: now, pipeline_stage: "PUBLISHED", pipeline_status: "published", pipeline_reason: SALES_TEST_GATE_PASSED, pipeline_error: null, pipeline_updated_at: now, updated_at: now };
+    const payload = { product_id: item.productId, bestseller_id: null, supplier_listing_id: item.listing.id, slug, title, description: typeof item.intelligence.recommendation_summary === "string" && item.intelligence.recommendation_summary.trim() ? item.intelligence.recommendation_summary.trim().slice(0, 700) : "需要・供給・利益・公開条件を確認したTRACERセレクト商品です。", image_url: item.base.image_url, selling_price: num(metadata.selling_price_jpy), currency: "JPY", supplier_name: String(item.listing.supplier ?? "unknown"), supplier_product_id: item.listing.supplier_product_id, supplier_variant_id: item.listing.supplier_variant_id, source_cost: item.profit.sourceCost, shipping_cost: item.profit.internationalShipping, inventory: num(item.listing.inventory), orderable: item.listing.orderable === true, tracking_available: item.listing.tracking_available === true, identity_method: isNativeCjSupplierListing(item.listing) ? "cj_supplier_variant" : (typeof item.listing.identity_method === "string" ? item.listing.identity_method : null), identity_confidence: isNativeCjSupplierListing(item.listing) ? 1 : num(item.listing.identity_confidence), contribution_profit: item.profit.contributionProfit, contribution_margin: item.profit.contributionMargin, published: true, selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:supply", "supply_intelligence_gate_passed", "selection_score_" + (num(item.intelligence.selection_score)?.toFixed(1) ?? "0")], missing: [], published_at: now, pipeline_stage: "PUBLISHED", pipeline_status: "published", pipeline_reason: SALES_TEST_GATE_PASSED, pipeline_error: null, pipeline_updated_at: now, updated_at: now };
     const existing = await supabase.from("shop_listings").select("id").eq("slug", slug).maybeSingle();
     if (existing.error) throw new Error(existing.error.message);
     let existingId = existing.data?.id ? String(existing.data.id) : null; let keepSlug = false;
