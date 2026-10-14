@@ -13,6 +13,8 @@ assert.match(retryGate, /\.select\("id, title, published, pipeline_stage, pipeli
   "retry gate checks must fetch the Japanese title and channel state they validate");
 assert.match(retryGate, /shopifyStatusById\.get\(b\) === "synced"/,
   "NEWFIND retries must prioritize products already live on Shopify");
+assert.match(retryGate, /\.in\("status", \["pending", "failed", "sent", "sending"\]\)/,
+  "NEWFIND retry scan must include expired sending leases so crashed attempts can be reclaimed");
 assert.match(reconcile, /shopify_sync_status === "synced"/,
   "rescue must prioritize Shopify-synced products before unsynced rows");
 assert.match(reconcile, /const columns = "id, title, base_item_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, updated_at"/,
