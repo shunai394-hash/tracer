@@ -92,6 +92,16 @@ function eventId(listingId: string): string {
   return `tracer-shop-listing:${listingId}`;
 }
 
+export function isNewfindPromotionLedgerSchemaBlocked(value: unknown): boolean {
+  const message = String(value ?? "");
+  return /Could not find the table ['"]public[.]tracer_promotions['"] in the schema cache/i.test(message)
+    || /promotion ledger (?:insert|update) failed:.*tracer_promotions/i.test(message);
+}
+
+function isNewfindPromotionLedgerReady(): boolean {
+  return process.env.NEWFIND_TRACER_PROMOTION_LEDGER_READY?.trim() === "1";
+}
+
 export type NewfindPromotionResult = {
   configured: boolean;
   sent: boolean;
@@ -106,19 +116,27 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
   processed: number;
   failed: number;
   windowSize: number;
+  schemaBlocked: number;
 }> {
   const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
   const batch = Math.max(1, Math.min(limit, 100));
   const { data, error } = await supabase
     .from("newfind_promotion_deliveries")
-    .select("listing_id")
+    .select("listing_id, last_error")
     .in("status", ["pending", "failed", "sent"])
     .order("updated_at", { ascending: true })
     .limit(500);
 
   if (error) throw new Error(error.message);
 
-  const listingIds = Array.from(new Set((data ?? []).map((row) => String(row.listing_id))));
+  const schemaReady = isNewfindPromotionLedgerReady();
+  const schemaBlockedIds = new Set(
+    (data ?? [])
+      .filter((row) => !schemaReady && isNewfindPromotionLedgerSchemaBlocked(row.last_error))
+      .map((row) => String(row.listing_id)),
+  );
+  const listingIds = Array.from(new Set((data ?? []).map((row) => String(row.listing_id))))
+    .filter((id) => !schemaBlockedIds.has(id));
   const eligible: string[] = [];
   const shopifyStatusById = new Map<string, string>();
   for (let i = 0; i < listingIds.length; i += 100) {
@@ -152,7 +170,7 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
     else if (!result.sent) failed += 1;
   }
 
-  return { attempted: selected.length, processed, failed, windowSize: listingIds.length };
+  return { attempted: selected.length, processed, failed, windowSize: listingIds.length, schemaBlocked: schemaBlockedIds.size };
 }
 
 export async function promoteShopListingToNewfind(listingId: string): Promise<NewfindPromotionResult> {
@@ -190,6 +208,10 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
 
   if (deliveryReadError) throw new Error(deliveryReadError.message);
 
+  if (!isNewfindPromotionLedgerReady() && isNewfindPromotionLedgerSchemaBlocked(existingDelivery?.last_error)) {
+    return { configured: true, sent: false, eventId: id, status: null, ackStatus: null, detail: "newfind_promotion_ledger_schema_blocked" };
+  }
+
   if (existingDelivery?.status === "processed" && (existingDelivery.ack_status === "processed" || existingDelivery.ack_status === "duplicate")) {
     return { configured: true, sent: true, eventId: id, status: typeof existingDelivery.http_status === "number" ? existingDelivery.http_status : 200, ackStatus: "processed", detail: "already_processed" };
   }
@@ -203,17 +225,18 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     return { configured: true, sent: false, eventId: id, status: null, ackStatus: "sending", detail: "newfind_delivery_in_progress" };
   }
 
-  const retryRejectedSchemaEvent = currentStatus === "failed"
-    && (
-      /invalid input syntax for type integer/i.test(String(existingDelivery?.last_error ?? ""))
-      || /Could not find the table ['"]public\\.tracer_promotions['"] in the schema cache/i.test(String(existingDelivery?.last_error ?? ""))
-      || /promotion ledger (?:insert|update) failed:.*tracer_promotions/i.test(String(existingDelivery?.last_error ?? ""))
-    )
+  const previousError = String(existingDelivery?.last_error ?? "");
+  const integerSchemaRetry = currentStatus === "failed"
+    && /invalid input syntax for type integer/i.test(previousError)
     && !String(existingDelivery?.event_id ?? "").includes(":schema-retry");
+  const ledgerSchemaRetry = currentStatus === "failed"
+    && isNewfindPromotionLedgerReady()
+    && isNewfindPromotionLedgerSchemaBlocked(previousError);
+  const retryRejectedSchemaEvent = integerSchemaRetry || ledgerSchemaRetry;
   const sendEventId = currentStatus === "withdrawn"
     ? `${eventId(listingId)}:republished:${now.getTime()}`
     : retryRejectedSchemaEvent
-      ? `${eventId(listingId)}:schema-retry`
+      ? `${eventId(listingId)}:schema-retry:${(typeof existingDelivery?.attempts === "number" ? existingDelivery.attempts : 0) + 1}`
       : typeof existingDelivery?.event_id === "string" && existingDelivery.event_id ? existingDelivery.event_id : id;
 
   let claimQuery = supabase
