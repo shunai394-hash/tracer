@@ -211,10 +211,7 @@ export function localizeProductDescription(value: unknown): string | null {
     [/rogue dog data cable type c|dog.*mobile puppy data cable.*charging cable/i, "犬モチーフのType-C充電ケーブルです。対応機種・ケーブル長・充電規格は販売元の仕様をご確認ください。"],
     [/iron art agave plant ornaments|agave garden ornaments/i, "アガベをモチーフにしたアイアン製ガーデンオーナメントです。寸法・素材・設置条件は販売元の仕様をご確認ください。"],
     [/creative sports car anti.fall mobile phone case|sports car.*phone case/i, "スポーツカー柄の耐衝撃スマートフォンケースです。対応機種・素材・保護性能は販売元の仕様をご確認ください。"],
-    [/compatible with apple.*mobile phone case|mobile phone case.*compatible with apple|mobile phone case.*iphone|iphone.*mobile phone case/i, "対応機種別のスマートフォンケースです。対応モデル・素材・付属品は商品バリエーションと販売元の仕様をご確認ください。"],
     [/usb.*type.c.*charging cable|type.c.*phone charging cable|data cable.*android/i, "USB Type-C対応の充電ケーブルです。長さ・対応規格・最大出力は販売元の仕様をご確認ください。"],
-    [/wind chimes.*wall pendant|wall pendant.*dream catcher/i, "装飾ビーズをあしらったウィンドチャイムです。寸法・素材・屋内外の設置条件は販売元の仕様をご確認ください。"],
-    [/wireless charger.*foldable|foldable.*wireless charger/i, "折りたたみ式のワイヤレス充電器です。対応機種・出力・給電方式は販売元の仕様をご確認ください。"],
     [/^aroma filter$/i, "アロマ製品向けの交換用フィルターです。対応機種・材質・交換方法は販売元の仕様をご確認ください。"],
     [/integrated frosted card case.*mobile phone shell|card case.*phone case|phone.*card case/i, "カードを収納できるスマートフォンケースです。対応機種・素材・カード収納枚数は販売元の仕様をご確認ください。"],
     [/hand painted lotus.*(mug|cup)|lotus office mug/i, "蓮のモチーフを手描きしたマグカップです。容量・素材・食洗機や電子レンジへの対応は販売元の仕様をご確認ください。"],
@@ -291,6 +288,10 @@ export function localizeProductDescription(value: unknown): string | null {
     [/cosmetic jewelry rack.*three grids|cosmetic jewelry rack/i, "コスメやアクセサリーをまとめて収納するスタンドです。寸法・収納段数・素材・組み立て方法は販売元の仕様をご確認ください。"],
     [/14.inch makeup.*storage box|makeup.*portable storage box/i, "メイク用品向けの収納ケースです。外寸・内寸・仕切り・素材は販売元の仕様をご確認ください。"],
     [/crystal jade chakra combination set.*bracelet|chakra combination set.*bracelet/i, "クリスタル調デザインのブレスレットセットです。石材の種類・サイズ・セット内容は販売元の仕様をご確認ください。"],
+    // Broad fallbacks come after motif/material-specific descriptions.
+    [/compatible with apple.*mobile phone case|mobile phone case.*compatible with apple|mobile phone case.*iphone|iphone.*mobile phone case/i, "対応機種別のスマートフォンケースです。対応モデル・素材・付属品は商品バリエーションと販売元の仕様をご確認ください。"],
+    [/wind chimes.*wall pendant|wall pendant.*dream catcher/i, "装飾ビーズをあしらったウィンドチャイムです。寸法・素材・屋内外の設置条件は販売元の仕様をご確認ください。"],
+    [/wireless charger.*foldable|foldable.*wireless charger/i, "折りたたみ式のワイヤレス充電器です。対応機種・出力・給電方式は販売元の仕様をご確認ください。"],
   ];
   return rules.find(([pattern]) => pattern.test(source))?.[1] ?? null;
 }
