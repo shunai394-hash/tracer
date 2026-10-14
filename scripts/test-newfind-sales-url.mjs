@@ -15,8 +15,12 @@ assert.match(retryGate, /shopifyStatusById\.get\(b\) === "synced"/,
   "NEWFIND retries must prioritize products already live on Shopify");
 assert.match(retryGate, /\.in\("status", \["pending", "failed", "sent", "sending"\]\)/,
   "NEWFIND retry scan must include expired sending leases so crashed attempts can be reclaimed");
+assert.match(retryGate, /shopifyStatus === "synced" && hasPassedSalesTestGate\(row\)/,
+  "NEWFIND must not retry listings whose TRACER sales page is not live");
 assert.match(reconcile, /shopify_sync_status === "synced"/,
   "rescue must prioritize Shopify-synced products before unsynced rows");
+assert.match(reconcile, /hasPassedSalesTestGate\(row\) && row\.shopify_sync_status === "synced"/,
+  "rescue must exclude BASE-only listings until Shopify sync makes the sales URL live");
 assert.match(reconcile, /const columns = "id, title, base_item_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, updated_at"/,
   "rescue gate checks must fetch the Japanese title they validate");
 assert.match(reconcile, /\.select\("id, title, slug, bestseller_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons"\)/,
