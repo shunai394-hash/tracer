@@ -538,16 +538,30 @@ export async function runIntelligencePipeline(options: {
   // Reconsider supply verified by earlier patrols too, so a deferred or
   // timed-out patrol does not strand verified supply before the gate.
   const supplyProductIds = supplyItems.map((item) => String(item.productId ?? "")).filter(Boolean);
+  // Supply-first CJ products are standalone catalog items, not matches to a
+  // marketplace bestseller. Requiring identity_status=linked here silently
+  // excluded hundreds of verified, orderable variants marked supply_discovered.
+  // Native CJ identity is permitted downstream only when the selector rechecks
+  // verified product+variant IDs, shipping, price, inventory, API and orderability.
+  const freshSupplyCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data: verifiedSupply } = await db
     .from("supplier_listings")
     .select("product_id")
     .eq("supplier", "cj")
-    .eq("identity_status", "linked")
     .eq("verification_status", "verified")
+    .eq("shipping_status", "verified")
+    .eq("price_confirmed", true)
+    .eq("inventory_confirmed", true)
     .eq("orderable", true)
+    .eq("tracking_available", true)
+    .eq("api_available", true)
+    .gt("inventory", 0)
+    .not("supplier_product_id", "is", null)
+    .not("supplier_variant_id", "is", null)
     .not("product_id", "is", null)
+    .gte("last_verified_at", freshSupplyCutoff)
     .order("last_verified_at", { ascending: false, nullsFirst: false })
-    .limit(50);
+    .limit(100);
   const supplyCandidateIds = Array.from(new Set([
     ...listedProductIds,
     ...supplyProductIds,
@@ -555,7 +569,7 @@ export async function runIntelligencePipeline(options: {
   ]));
   const supplySalesStep = await runStep(
     "supply_sales_test_select",
-    () => selectAndPublishSupplySalesTests(supplyCandidateIds, 50),
+    () => selectAndPublishSupplySalesTests(supplyCandidateIds, 50, { allowNativeCjIdentity: true }),
     { downstream: true, budgetMs: 20_000 },
   );
   steps.push(supplySalesStep);
