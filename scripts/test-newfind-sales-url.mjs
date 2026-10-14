@@ -70,6 +70,13 @@ assert.doesNotMatch(productDetail, /getPublishableSupplierListingStatuses/,
   "supplier freshness checks belong to publication and order-time procurement, not the public landing page");
 assert.match(productDetail, /\.eq\("shopify_sync_status", "synced"\)/,
   "only Shopify-synced products may have public sales pages");
+assert.match(productDetail, /\.eq\("currency", "JPY"\)/,
+  "public product detail must exclude non-JPY listings");
+const orderPlacement = store.slice(store.indexOf("export async function placeShopOrder"), store.indexOf("export async function attachStripeCheckoutSession"));
+assert.match(orderPlacement, /\.eq\("currency", "JPY"\)/,
+  "checkout must only load JPY listings");
+assert.match(orderPlacement, /currency must be JPY/,
+  "checkout must revalidate currency before calculating totals");
 assert.match(page, /href={shopifyProductUrl}/);
 assert.match(page, /Shopifyで購入する/,
   "the TRACER landing page must direct customers to the live Shopify checkout");
