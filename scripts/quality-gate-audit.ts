@@ -47,7 +47,7 @@ const checks = [
   ["BASE publisher idempotent claim", "lib/channels/base-publisher.ts", "base_publication_claim_lost"],
   ["BASE publisher image contract", "lib/channels/base-publisher.ts", "imageNo: 1"],
   ["Supply sales selector", "lib/market/select-supply-sales-tests.ts", "evaluateSalesTestGate"],
-  ["Supply sales selector requires domestic shipping", "lib/market/select-supply-sales-tests.ts", "requireDomesticShipping: true"],
+  ["Supply sales selector accounts for direct CJ shipping", "lib/market/select-supply-sales-tests.ts", "domesticShipping: nativeCjSupplyIdentity ? 0 : null"],
   ["Market sales selector requires domestic shipping", "lib/market/select-sales-tests.ts", "requireDomesticShipping: true"],
   ["Market sales selector", "lib/market/select-sales-tests.ts", "SALES_TEST_GATE_PASSED"],
   ["CJ identity reverify", "lib/suppliers/reverify-cj-identity.ts", "variantBarcode"],
