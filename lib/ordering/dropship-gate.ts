@@ -13,6 +13,8 @@ export type DropshipOrderGateInput = {
   supplierConfigured?: boolean;
   supplierName?: string | null;
   supplierIdentityStatus?: string | null;
+  /** True only when the exact native CJ product+variant passes current supplier evidence checks. */
+  supplierNativeVerified?: boolean;
   cjConfigured: boolean;
   liveOrderingEnabled: boolean;
   /** null = inventory level unknown (unknown is never treated as "in stock"). */
@@ -65,7 +67,9 @@ export function evaluateDropshipOrderGate(input: DropshipOrderGateInput): Dropsh
 
   const supplierConfigured = input.supplierConfigured ?? input.cjConfigured;
   if (!supplierConfigured) blocked.push("supplier_not_configured");
-  if (isCjSupplierName(input.supplierName) && input.supplierIdentityStatus !== "linked") {
+  if (isCjSupplierName(input.supplierName)
+    && input.supplierIdentityStatus !== "linked"
+    && input.supplierNativeVerified !== true) {
     blocked.push("supplier_identity_unlinked");
   }
 
@@ -117,6 +121,8 @@ export function verifyDropshipOrderGateInvariants(): {
     { name: "unlinked_cj_identity_blocks_order", expected: true, actual: evaluateDropshipOrderGate({ ...base, supplierName: "CJ Dropshipping", supplierIdentityStatus: "supply_discovered" }).blocked.includes("supplier_identity_unlinked") },
     { name: "missing_cj_identity_blocks_order", expected: true, actual: evaluateDropshipOrderGate({ ...base, supplierName: "cj", supplierIdentityStatus: null }).blocked.includes("supplier_identity_unlinked") },
     { name: "linked_cj_identity_does_not_add_identity_blocker", expected: true, actual: !evaluateDropshipOrderGate({ ...base, supplierName: "cjdropshipping", supplierIdentityStatus: "linked" }).blocked.includes("supplier_identity_unlinked") },
+    { name: "verified_native_cj_variant_does_not_need_marketplace_identity", expected: true, actual: !evaluateDropshipOrderGate({ ...base, supplierName: "CJ Dropshipping", supplierIdentityStatus: "supply_discovered", supplierNativeVerified: true }).blocked.includes("supplier_identity_unlinked") },
+    { name: "unverified_native_cj_variant_still_blocks", expected: true, actual: evaluateDropshipOrderGate({ ...base, supplierName: "CJ Dropshipping", supplierIdentityStatus: "supply_discovered", supplierNativeVerified: false }).blocked.includes("supplier_identity_unlinked") },
     { name: "missing_variant_blocks_execution", expected: true, actual: !evaluateDropshipOrderGate({ ...base, vid: null }).canExecuteLive },
     { name: "live_ordering_disabled_blocks_execution_not_data", expected: true, actual: (() => { const r = evaluateDropshipOrderGate({ ...base, liveOrderingEnabled: false }); return !r.canExecuteLive && r.liveOrderingDisabled && r.missing.length === 0 && r.blocked.length === 0; })() },
     { name: "kill_switch_blocks_execution", expected: true, actual: evaluateDropshipOrderGate({ ...base, killSwitchBlocked: true }).blocked.includes("kill_switch_active") },
