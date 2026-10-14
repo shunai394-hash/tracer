@@ -31,25 +31,31 @@ export function resolveProductIdentity(
   return { status: "matched", internalProductId: ids[0], evidence: supplierEvidence ? "supplier_variant" : "channel_product" };
 }
 
+/**
+ * Listing eligibility is intentionally separate from order execution.
+ * A product does not need to pass a sales experiment or have live inventory
+ * confirmed merely to be listed. It does need a Japanese listing and a
+ * verified supplier variant, with known positive unit economics.
+ */
 export type PublicationEvidence = {
-  salesTestPassed: boolean; japaneseTitleValid: boolean; descriptionValid: boolean; imageVerified: boolean;
-  supplierIdentityVerified: boolean; supplierVariantVerified: boolean; inventoryKnown: boolean;
-  inventoryAvailable: number | null; orderable: boolean; trackingAvailable: boolean;
-  sellingPrice: number | null; landedCost: number | null; channelFees: number | null; shippingCost: number | null;
+  japaneseTitleValid: boolean;
+  descriptionValid: boolean;
+  imageVerified: boolean;
+  supplierIdentityVerified: boolean;
+  supplierVariantVerified: boolean;
+  sellingPrice: number | null;
+  landedCost: number | null;
+  channelFees: number | null;
+  shippingCost: number | null;
 };
 export type PublicationDecision = { eligible: boolean; blockers: string[]; expectedUnitMargin: number | null };
 export function evaluatePublication(e: PublicationEvidence): PublicationDecision {
   const blockers: string[] = [];
-  if (!e.salesTestPassed) blockers.push("sales_test_not_passed");
   if (!e.japaneseTitleValid) blockers.push("japanese_title_invalid");
   if (!e.descriptionValid) blockers.push("description_invalid");
   if (!e.imageVerified) blockers.push("image_not_verified");
   if (!e.supplierIdentityVerified) blockers.push("supplier_identity_unverified");
   if (!e.supplierVariantVerified) blockers.push("supplier_variant_unverified");
-  if (!e.inventoryKnown || e.inventoryAvailable === null || !Number.isFinite(e.inventoryAvailable)) blockers.push("inventory_unknown");
-  else if (e.inventoryAvailable <= 0) blockers.push("inventory_unavailable");
-  if (!e.orderable) blockers.push("supplier_not_orderable");
-  if (!e.trackingAvailable) blockers.push("tracking_unavailable");
   const values = [e.sellingPrice, e.landedCost, e.channelFees, e.shippingCost];
   if (values.some((v) => v === null || !Number.isFinite(v))) blockers.push("cost_or_price_unknown");
   else if ((e.sellingPrice as number) <= 0 || (e.landedCost as number) < 0 || (e.channelFees as number) < 0 || (e.shippingCost as number) < 0) blockers.push("cost_or_price_invalid");
@@ -59,6 +65,27 @@ export function evaluatePublication(e: PublicationEvidence): PublicationDecision
   if (expectedUnitMargin !== null && expectedUnitMargin <= 0) blockers.push("non_positive_unit_margin");
   return { eligible: blockers.length === 0, blockers, expectedUnitMargin };
 }
+
+export type OrderExecutionEvidence = {
+  supplierIdentityVerified: boolean;
+  supplierVariantVerified: boolean;
+  inventoryKnown: boolean;
+  inventoryAvailable: number | null;
+  orderable: boolean;
+  trackingAvailable: boolean;
+};
+export type OrderExecutionDecision = { eligible: boolean; blockers: string[] };
+export function evaluateOrderExecution(e: OrderExecutionEvidence): OrderExecutionDecision {
+  const blockers: string[] = [];
+  if (!e.supplierIdentityVerified) blockers.push("supplier_identity_unverified");
+  if (!e.supplierVariantVerified) blockers.push("supplier_variant_unverified");
+  if (!e.inventoryKnown || e.inventoryAvailable === null || !Number.isFinite(e.inventoryAvailable)) blockers.push("inventory_unknown");
+  else if (e.inventoryAvailable <= 0) blockers.push("inventory_unavailable");
+  if (!e.orderable) blockers.push("supplier_not_orderable");
+  if (!e.trackingAvailable) blockers.push("tracking_unavailable");
+  return { eligible: blockers.length === 0, blockers };
+}
+
 export type OrderAttemptState = "none" | "received" | "processing" | "submitted" | "confirmed" | "failed" | "unknown";
 export type OrderDisposition =
   | { action: "process"; reason: "new_order" }
