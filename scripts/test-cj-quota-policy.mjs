@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { getCJQuotaCooldownUntil, isCJQuotaExhausted } from "../lib/sources/cj/rate-limit-policy.ts";
 
 assert.equal(isCJQuotaExhausted({
@@ -17,4 +18,13 @@ assert.equal(
   getCJQuotaCooldownUntil(Date.parse("2026-10-12T00:00:00.000Z")),
   "2026-10-13T00:00:00.000Z",
 );
-console.log("CJ quota policy: 5 assertions passed");
+const identityPersistence = await readFile(new URL("../lib/intelligence/persist-cj-supply-intelligence.ts", import.meta.url), "utf8");
+const supplyDiscovery = await readFile(new URL("../lib/suppliers/discover-cj-supply.ts", import.meta.url), "utf8");
+const circuitRethrows = identityPersistence.match(/catch \(error\) \{ if \(isCJQuotaCircuitBlockingError\(error\)\) throw error;/g) ?? [];
+assert.equal(circuitRethrows.length, 2, "both variant-list and direct-VID lookup catches must propagate quota-circuit blocking errors");
+assert.match(identityPersistence, /import \{ isCJQuotaCircuitBlockingError \} from "@\/lib\/sources\/cj\/client";/, "identity persistence must use the shared quota-circuit classifier");
+const persistBody = identityPersistence.slice(identityPersistence.indexOf("export async function persistCjSupplyIntelligence"));
+assert.ok(persistBody.indexOf("await resolveMarketplaceIdentity") < persistBody.indexOf('from("supplier_listings").update'), "quota-blocking identity resolution must complete before supplier evidence is written");
+assert.match(supplyDiscovery, /catch \(error\) \{\s*\/\/ Quota\/circuit blocks are invocation-wide; never fall through to more CJ requests\.\s*if \(isCJQuotaCircuitBlockingError\(error\)\) throw error;/, "seeded fallback search must propagate quota-circuit blocks");
+assert.match(supplyDiscovery, /console\.warn\("\[supply-first\] candidate rejected", \{[\s\S]*?quotaBlocked: cjQuotaBlocked,[\s\S]*?\}\);\s*if \(cjQuotaBlocked\) break;/, "catalog candidate loop must stop after quota-circuit blocks");
+console.log("CJ quota policy, identity propagation, and discovery stop conditions: 10 assertions passed");

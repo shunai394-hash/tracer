@@ -341,7 +341,9 @@ export async function discoverAndCreateCjSupply(
                 price: Number.isFinite(Number(matched.price)) ? Number(matched.price) : null,
               };
             }
-          } catch {
+          } catch (error) {
+            // Quota/circuit blocks are invocation-wide; never fall through to more CJ requests.
+            if (isCJQuotaCircuitBlockingError(error)) throw error;
             // The original detail failure remains the durable retry reason.
           }
         }
@@ -773,11 +775,15 @@ export async function discoverAndCreateCjSupply(
           identityLink: internalSupply?.identityLink ?? null,
         });
       } catch (error) {
-        reject("error", { error: error instanceof Error ? error.message : String(error) });
+        const message = error instanceof Error ? error.message : String(error);
+        cjQuotaBlocked = isCJQuotaCircuitBlockingError(error);
+        reject(cjQuotaBlocked ? "supplier_quota_cooldown" : "error", { error: message });
         console.warn("[supply-first] candidate rejected", {
           productId: candidate.id,
-          error: error instanceof Error ? error.message : String(error),
+          error: message,
+          quotaBlocked: cjQuotaBlocked,
         });
+        if (cjQuotaBlocked) break;
       }
     }
     if (pageCompleted) {
