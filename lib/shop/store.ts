@@ -83,7 +83,7 @@ type ShopifyVariantStock = {
   inventoryQuantity: number | null;
 };
 
-export async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, number>> {
+async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, number>> {
   if (!isShopifyConfigured()) throw new Error("shopify_live_stock_unconfigured");
   if (variantIds.length === 0) throw new Error("shopify_live_stock_variant_ids_empty");
 
