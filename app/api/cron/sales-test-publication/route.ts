@@ -247,6 +247,7 @@ export async function GET(request: Request) {
       .select("id,product_id")
       .eq("pipeline_stage", "VARIANT_VERIFIED")
       .eq("pipeline_status", "ready")
+      .not("marketplace", "in", '("amazon.co.jp","rakuten","yahoo_shopping")')
       .not("product_id", "is", null)
       .order("fetched_at", { ascending: false })
       .limit(400);

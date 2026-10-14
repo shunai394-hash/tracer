@@ -97,6 +97,7 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
       const { data, error } = await args.db
         .from("marketplace_bestsellers")
         .select("id,product_id,source_item_key,asin,jan,gtin,ean,upc")
+        .not("marketplace", "in", '("amazon.co.jp","rakuten","yahoo_shopping")')
         .or(clauses.join(","))
         .limit(51);
       if (error) throw new Error(`CJ exact-barcode marketplace lookup failed: ${error.message}`);
@@ -141,6 +142,7 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
     .from("marketplace_bestsellers")
     .select("id,product_id")
     .eq("id", bestsellerId)
+    .not("marketplace", "in", '("amazon.co.jp","rakuten","yahoo_shopping")')
     .maybeSingle();
   if (parentError) throw new Error(`CJ canonical parent lookup failed: ${parentError.message}`);
   if (!parent || typeof parent.product_id !== "string" || !parent.product_id.trim()) return null;

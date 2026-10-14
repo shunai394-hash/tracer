@@ -61,7 +61,8 @@ export async function selectAndPublishSalesTests(
     : await supabase
         .from("marketplace_bestsellers")
         .select("*")
-        .in("id", bestsellerIds);
+        .in("id", bestsellerIds)
+        .not("marketplace", "in", '("amazon.co.jp","rakuten","yahoo_shopping")');
 
   if (error) throw new Error(error.message);
 

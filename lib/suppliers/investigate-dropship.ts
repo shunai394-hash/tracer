@@ -320,7 +320,7 @@ export async function investigateDropshipForBestsellers(
   const fetchedAt = new Date().toISOString();
   const { data: rows, error } = bestsellerIds.length === 0
     ? { data: [], error: null }
-    : await supabase.from("marketplace_bestsellers").select("*").in("id", bestsellerIds);
+    : await supabase.from("marketplace_bestsellers").select("*").in("id", bestsellerIds).not("marketplace", "in", '("amazon.co.jp","rakuten","yahoo_shopping")');
   if (error) throw new Error(error.message);
   await enrichAsinOnlyRows((rows ?? []) as Record<string, unknown>[]);
 

@@ -8,6 +8,15 @@ const marketCollector = readFileSync("lib/market/collect-bestsellers.ts", "utf8"
 const ingest = readFileSync("lib/suppliers/persist-cj-internal-supply.ts", "utf8");
 const catalogSync = readFileSync("lib/suppliers/sync-tracer-catalog.ts", "utf8");
 const identity = readFileSync("lib/market/identifiers.ts", "utf8");
+const salesSelector = readFileSync("lib/market/select-sales-tests.ts", "utf8");
+const salesRoute = readFileSync("app/api/cron/sales-test-publication/route.ts", "utf8");
+const coreEngine = readFileSync("app/api/cron/core-engine/route.ts", "utf8");
+const intelligencePipeline = readFileSync("lib/intelligence/run-intelligence-pipeline.ts", "utf8");
+const supplierInvestigation = readFileSync("app/api/cron/supplier-investigation/route.ts", "utf8");
+const superdeliveryDiscovery = readFileSync("lib/suppliers/discover-superdelivery-supply.ts", "utf8");
+const demandMatcher = readFileSync("lib/intelligence/match-demand-products.ts", "utf8");
+const dropshipInvestigation = readFileSync("lib/suppliers/investigate-dropship.ts", "utf8");
+const cjIdentityPersistence = readFileSync("lib/intelligence/persist-cj-supply-intelligence.ts", "utf8");
 const auditMigration = readFileSync("supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql", "utf8");
 
 assert.match(discovery, /import \{ persistCjInternalSupplyCandidate \} from "@\/lib\/suppliers\/persist-cj-internal-supply"/);
@@ -16,11 +25,13 @@ assert.equal((discovery.match(/persistCjInternalSupplyCandidate\(/g) ?? []).leng
 assert.match(discovery, /internalSupplyIngested: Boolean\(internalSupply\)/);
 assert.match(discovery, /"women handbag", "women crossbody bag", "women shoulder bag", "women tote bag"/,
   "new supply discovery must prioritize women's bags before beauty tools and hair accessories");
-assert.match(discovery, /"beauty tools", "facial cleansing brush", "makeup brush cleaner", "makeup organizer"/,
+assert.match(discovery, /"women makeup bag", "beauty tool set", "facial cleansing brush"/,
   "beauty tools must follow women's bags in the supply query priority");
-assert.match(discovery, /"hair styling tools", "hair clip women", "claw clip women"/,
+assert.match(discovery, /"hair clip women", "claw clip women", "flower hair clip"/,
   "hair accessories must be an explicit high-priority catalog segment");
-assert.match(discovery, /supply-first-catalog-cursor-v2/,
+assert.match(discovery, /Avoid broad unrelated searches that dilute the/,
+  "catalog queries must stay focused on the requested women's product categories");
+assert.match(discovery, /supply-first-catalog-cursor-v3/,
   "query-order changes must not reinterpret an old cursor index");
 assert.match(discovery, /next_verification_at\.is\.null,next_verification_at\.lte/,
   "supplier verification queue must select only rows whose next verification is due");
@@ -30,10 +41,29 @@ assert.match(discovery, /let seededChecked = 0/,
   "failed seeded refreshes must count as attempts and not starve fresh catalog discovery");
 assert.match(discovery, /seededChecked >= seededVerificationLimit/,
   "seeded verification must have a hard per-run attempt budget");
-assert.match(marketCollector, /retryBrightDataWhenCanonicalVariantsMissing/,
-  "Amazon detail fetches must retry Bright Data when direct HTML lacks JSON-LD");
-assert.match(marketCollector, /hasAmazonVariantEvidence\(directHtml\)/,
-  "a non-empty Amazon page without canonical child variants or an explicit variation-ASIN map must not suppress the Bright Data fallback");
+assert.match(marketCollector, /MARKETPLACE_SOURCES:\s*Array<\{[^}]+\}>\s*=\s*\[\]/,
+  "Amazon, Rakuten and Yahoo marketplace ranking intake must remain disabled");
+assert.match(marketCollector, /Marketplace ranking collection is intentionally disabled/,
+  "the collector must document the new demand-signal and direct-supplier policy");
+const legacySourceFilter = /\.not\("marketplace", "in", '\("amazon\.co\.jp","rakuten","yahoo_shopping"\)/;
+assert.match(salesSelector, legacySourceFilter,
+  "the final sales selector must reject historical Amazon, Rakuten, and Yahoo Shopping rows even when passed explicit IDs");
+assert.match(salesRoute, legacySourceFilter,
+  "the publication cron must exclude legacy marketplace rows before candidate selection");
+assert.match(coreEngine, legacySourceFilter,
+  "the core engine must not seed new candidates from historical marketplace ranking rows");
+assert.match(intelligencePipeline, legacySourceFilter,
+  "the supplier investigation backlog must exclude historical marketplace ranking rows");
+assert.ok((supplierInvestigation.match(new RegExp(legacySourceFilter.source, "g")) ?? []).length >= 3,
+  "supplier investigation fresh/retry/quarantine paths must exclude historical marketplace ranking rows");
+assert.match(superdeliveryDiscovery, legacySourceFilter,
+  "direct supplier discovery must not use historical marketplace ranking rows as its demand seed");
+assert.match(demandMatcher, legacySourceFilter,
+  "demand-product matching must not treat historical marketplace ranking rows as demand evidence");
+assert.match(dropshipInvestigation, legacySourceFilter,
+  "explicit-ID supplier investigation must reject legacy marketplace ranking rows");
+assert.ok((cjIdentityPersistence.match(new RegExp(legacySourceFilter.source, "g")) ?? []).length >= 2,
+  "CJ barcode identity lookup and canonical parent lookup must reject legacy marketplace ranking rows");
 assert.match(ingest, /sourceRef = `cj:\$\{args\.supplierProductId\}:\$\{args\.supplierVariantId\}`/,
   "source reference must be deterministic for the concrete supplier product+variant");
 assert.match(ingest, /onConflict: "source_name,source_ref"/,

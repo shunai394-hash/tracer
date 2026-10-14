@@ -18,16 +18,10 @@ import { inspectCanonicalMarketplaceVariantMarkup, parseAmazonVariationAsinMap, 
 import { decodeHtmlBytes } from "@/lib/market/charset";
 import { isAmazonChallengeHtml } from "@/lib/market/amazon-response";
 
-export const MARKETPLACE_SOURCES = [
-  { marketplace: "yahoo_shopping", url: "https://shopping.yahoo.co.jp/ranking/", source: "yahoo_shopping_ranking" },
-  { marketplace: "rakuten", url: "https://ranking.rakuten.co.jp/", source: "rakuten_ranking" },
-  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/beauty/", source: "amazon_bestsellers_beauty" },
-  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/", source: "amazon_bestsellers" },
-  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/electronics/", source: "amazon_bestsellers_electronics" },
-  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/kitchen/", source: "amazon_bestsellers_kitchen" },
-  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/home/", source: "amazon_bestsellers_home" },
-  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/sports/", source: "amazon_bestsellers_sports" },
-] as const;
+// Marketplace ranking collection is intentionally disabled. Demand discovery
+// must come from first-party trend signals and supplier-verifiable products,
+// not Amazon, Rakuten, or Yahoo Shopping marketplace listings.
+export const MARKETPLACE_SOURCES: Array<{ marketplace: string; url: string; source: string }> = [];
 
 /**
  * How many collected items per marketplace get a detail-page fetch for
@@ -225,10 +219,13 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
         continue;
       }
 
+      // Keep the narrowed source-list type separate from legacy parser branches.
+      // Only Yahoo Shopping is configured for collection in this branch.
+      const sourceMarketplace: string = source.marketplace;
       const items: ParsedBestseller[] =
-        source.marketplace === "amazon.co.jp"
+        sourceMarketplace === "amazon.co.jp"
           ? parseAmazonBestsellersHtml(html).map(enrichAmazon)
-          : source.marketplace === "rakuten"
+          : sourceMarketplace === "rakuten"
             ? parseRakutenRankingHtml(html)
             : parseYahooRankingHtml(html);
 
