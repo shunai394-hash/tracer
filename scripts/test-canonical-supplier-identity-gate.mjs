@@ -22,12 +22,12 @@ const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSup
   readFile(new URL("../app/api/channels/base/identity-repair/route.ts", import.meta.url), "utf8"),
 ]);
 assert.match(helper, /identity_status === "linked"/);
-assert.ok(persist.includes('verification_error: marketplaceIdentity ? null : "marketplace_identity_unresolved_candidate_retained"'), "unmatched CJ identity must retain the supplier candidate while explicitly marking marketplace identity unresolved");
+assert.doesNotMatch(persist, /verification_error:\s*marketplaceIdentity/, "marketplace identity uncertainty must not be recorded as supplier verification failure");
 assert.match(discoverCJ, /identity_status: "supply_discovered", identity_confidence: 0/, "supply discovery without canonical identity must not claim perfect identity confidence");
 assert.match(discoverCJ, /title: detail\.title, product_id: null/, "CJ supply discovery must not provisionally attach a canonical product ID before identity is resolved");
-assert.match(discoverCJ, /api_available: false, verification_status: "unverified"/, "unresolved CJ supply must not be marked verified or API-orderable before canonical identity is resolved");
-assert.match(discoverCJ, /orderable: false, price_confirmed: true, inventory_confirmed: true, tracking_available: false/, "unresolved CJ supply must remain blocked from ordering even when price and stock observations exist");
-assert.doesNotMatch(discoverCJ, /markVerification\(db, String\(supplierInsert\.data\.id\), \{ status: "verified"/, "discovery must not overwrite the unresolved identity gate with a verified status");
+assert.match(discoverCJ, /api_available: true, verification_status: "verified"/, "live-verified CJ supply must record supplier API and verification state independently of marketplace identity");
+assert.match(discoverCJ, /orderable: true, price_confirmed: true, inventory_confirmed: true, tracking_available: cjTrackingAvailable/, "a live exact CJ variant with positive stock and verified Japan freight must retain its supplier order path");
+assert.match(discoverCJ, /identity_status: "supply_discovered"/, "supplier verification must not falsely promote marketplace identity");
 
 const supplierUpserts = [...discoverCJ.matchAll(/const supplierInsert = await upsertSupplierListing/g)].map((match) => {
   const end = discoverCJ.indexOf("if (supplierInsert.error)", match.index);
@@ -39,10 +39,10 @@ for (const upsert of supplierUpserts) {
   assert.match(upsert, /product_id: null/, "unresolved CJ supply must not attach a provisional canonical product");
   assert.match(upsert, /identity_status: "supply_discovered"/);
   assert.match(upsert, /identity_confidence: 0/, "unresolved CJ supply must have zero identity confidence");
-  assert.match(upsert, /api_available: false/);
-  assert.match(upsert, /orderable: false/);
-  assert.match(upsert, /tracking_available: false/);
-  assert.doesNotMatch(upsert, /identity_confidence: 1|api_available: true|orderable: true|tracking_available: cjTrackingAvailable/, "discovery must not claim identity or order-path verification");
+  assert.match(upsert, /api_available: true/);
+  assert.match(upsert, /orderable: true/);
+  assert.match(upsert, /tracking_available: cjTrackingAvailable/);
+  assert.doesNotMatch(upsert, /identity_confidence: 1/, "native CJ orderability must not imply marketplace identity");
 }
 
 assert.match(directGate, /\.eq\("identity_status", "linked"\)/, "direct sales-test gate must require canonical supplier identity");
