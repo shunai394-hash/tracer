@@ -60,7 +60,7 @@ assert.match(persist, /bestseller_id: marketplaceIdentity\?\.bestsellerId \?\? n
 assert.match(persist, /identity_status: marketplaceIdentity \? "linked" : "supply_discovered"/, "CJ discovery alone must not promote supplier identity to linked");
 assert.doesNotMatch(persist, /orderable: false, tracking_available: false, api_available: false/, "identity recheck must not erase existing supplier order-path evidence");
 assert.match(persist, /catalog_stage: "candidate"/, "unmatched supplier supply must be retained as a catalog candidate");
-assert.match(persist, /purchasable: false/, "unmatched supply must remain non-purchasable until native evidence passes");
+assert.match(persist, /purchasable: nativeEvidenceFresh/, "unmatched supply becomes purchasable only when fresh native supplier evidence passes");
 assert.match(persist, /if \(!marketplaceIdentity\) return \{ offerId: null, intelligenceId: candidateIntelligenceId, identity: null \}/, "unmatched CJ identity must retain candidate intelligence without creating a marketplace offer");
 assert.ok(persist.indexOf("if (!marketplaceIdentity)") < persist.indexOf("const offerPayload = {"), "no-match exit must happen before any product_offers write");
 assert.match(persist, /offerId: string \| null; intelligenceId: string \| null/, "supply-only discovery must explicitly return absent canonical record IDs");
