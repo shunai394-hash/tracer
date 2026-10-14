@@ -29,6 +29,8 @@ assert.match(supplySelector, /requireDomesticShipping: true/);
 assert.equal(isPublishableCatalogTitle("トレンド・seeded_dueアイテム"), false);
 assert.equal(isPublishableCatalogTitle("Aroma Filter"), true);
 assert.match(supplySelector, /product_master_title_not_publishable/);
+assert.match(supplySelector, /const publishableMasterTitle = isPublishableCatalogTitle\(masterTitle\)/);
+assert.match(supplySelector, /const localizedTitle = localizedSourceTitle/);
 assert.match(marketSelector, /requireDomesticShipping: true/);
 assert.match(supplySelector, /rejectedCount: rejected\.length/);
 assert.match(supplySelector, /rejectionCounts: summarizeRejections\(rejected\)/);
