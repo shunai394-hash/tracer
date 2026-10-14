@@ -430,6 +430,23 @@ for (const key of ["identityConfirmed", "supplyAvailable", "demandSufficient", "
   test("gate", `missing ${key} -> not TEST_READY`, () => assert.notEqual(classifySellability({ ...allTrue, [key]: false }).state, "TEST_READY"));
 }
 
+// Remediation loop contract: recover exact-variant price when missing and
+// persist field-level next actions instead of collapsing every hold to a generic
+// unverified state.
+const reverifySource = await readFile(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
+test("supplier remediation", "missing price is refreshed from the exact live CJ variant", () => {
+  assert.match(reverifySource, /liveVariants\.find\(\(variant\) => variant\.vid === String\(row\.supplier_variant_id\)\)/);
+  assert.match(reverifySource, /liveVariantPriceRecovered = true/);
+  assert.match(reverifySource, /price_confirmed: true/);
+});
+test("supplier remediation", "missing fields receive specific remediation actions and a retry time", () => {
+  assert.match(reverifySource, /remediation_missing_fields: missingFields/);
+  assert.match(reverifySource, /remediation_next_actions: missingFields\.map/);
+  assert.match(reverifySource, /next_identity_reverify_at: new Date\(checkedAt\.getTime\(\) \+ MISSING_DATA_RETRY_MS\)/);
+  assert.match(reverifySource, /retry_destination_specific_cj_shipping_quote/);
+  assert.match(reverifySource, /refresh_exact_variant_stock_evidence/);
+});
+
 await Promise.all(pending);
 let group = "";
 for (const r of results.sort((a, b) => a.group.localeCompare(b.group))) {
