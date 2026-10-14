@@ -176,7 +176,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
   let query = supabase
     .from("shop_listings")
     .select(baseSelect)
-    .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
+    .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.true,pipeline_stage.eq.BASE_PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
     .order("pipeline_updated_at", { ascending: true });
 
   if (listingIds?.length) {
@@ -202,7 +202,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
         const status = String(row.shopify_sync_status ?? "");
         if (status === "syncing") return false;
         if (!hasPublishableSupplierIdentity(row.identity_status)) return Boolean(row.shopify_product_id) && status !== "blocked";
-        if (row.published === true && row.pipeline_stage === "PUBLISHED" && row.pipeline_status === "published") {
+        if (row.published === true && (row.pipeline_stage === "PUBLISHED" || row.pipeline_stage === "BASE_PUBLISHED") && row.pipeline_status === "published") {
           return status !== "synced";
         }
         if (row.published === false && row.pipeline_stage === "SELECTED" && row.pipeline_status === "selected") {
