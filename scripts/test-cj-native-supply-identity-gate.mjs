@@ -16,9 +16,9 @@ assert.ok(source.includes("eligibleSamples: eligible.slice(0, 50)") && source.in
 assert.ok(route.includes('const dryRun = new URL(request.url).searchParams.get("dryRun") === "true"'), "dry-run mode must be explicit");
 assert.ok(route.includes('if (!dryRun) {\n      await recoverStaleCronRun'), "dry-run must not create cron lock records");
 assert.ok(route.includes('if (dryRun) {\n      return NextResponse.json({\n        ok: true,\n        dryRun: true,\n        noWrites: true'), "dry-run must return before downstream publication");
-assert.ok(route.includes("allowNativeCjIdentity: true"), "verified native CJ supply must reach the same strict sales gate without an unrelated environment flag");
+assert.ok(route.includes('const allowNativeCjIdentity = dryRun || process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true"') && route.includes("allowNativeCjIdentity,"), "live native CJ publication must use an explicit opt-in while dry-run remains available");
 assert.ok(route.includes("dryRun ? 50 : 3"), "live publication must be bounded per patrol while eligible products advance on later patrols");
-assert.ok(!route.includes("TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED"), "a separate feature flag must not strand otherwise eligible native CJ supply");
+assert.ok(route.includes('featureEnabledForLiveRuns: process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true"'), "dry-run must report whether the live native CJ feature gate is enabled");
 assert.ok(route.includes('const { data: nativeCjSupply, error: nativeCjSupplyError }'), "native CJ supply must be queried independently of marketplace identity");
 assert.ok(route.includes("const dryRunProductIds") && route.includes("]).slice(0, dryRunLimit)") && route.includes("Math.max(1, Math.min(500, Math.floor(requestedDryRunLimit)))") && route.includes("selectAndPublishSupplySalesTests(candidateProductIds, dryRun ? 50 : 3"), "dry-run selection and live publication must be bounded and prioritize native CJ evidence");
 assert.ok(route.includes("for (let i = 0; i < candidateProductIds.length; i += 100)") && route.includes("const missingOpportunityIds = candidateProductIds.filter("), "dry-run must bound intelligence reads as well as the final selector");
