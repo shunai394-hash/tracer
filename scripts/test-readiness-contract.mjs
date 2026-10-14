@@ -5,6 +5,10 @@ const source = await readFile(new URL("../app/api/ready/route.ts", import.meta.u
 
 assert.match(source, /if \(!status\.supabasePublic\) missingRequired\.push\("supabase_public"\)/);
 assert.match(source, /if \(!status\.supabaseServiceRole\) missingRequired\.push\("supabase_service_role"\)/);
+assert.match(source, /createSupabaseAdminClient\(\)/);
+assert.match(source, /\.from\("shop_listings"\)[\s\S]*?\.select\("id"\)[\s\S]*?\.limit\(1\)/);
+assert.match(source, /AbortSignal\.timeout\(5000\)/);
+assert.match(source, /missingRequired\.push\("supabase_query_failed"\)/);
 assert.match(source, /status: ready \? 200 : 503/);
 assert.match(source, /headers: \{ "Cache-Control": "no-store" \}/);
 assert.doesNotMatch(source, /SUPABASE_SERVICE_ROLE_KEY\s*:/);
