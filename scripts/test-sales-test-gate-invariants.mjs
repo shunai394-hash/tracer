@@ -29,7 +29,7 @@ assert.match(supplySelector, /domesticShipping: nativeCjSupplyIdentity \? 0 : nu
 assert.match(supplySelector, /requireDomesticShipping: !nativeCjSupplyIdentity/);
 assert.equal(isPublishableCatalogTitle("トレンド・seeded_dueアイテム"), false);
 assert.equal(isPublishableCatalogTitle("Aroma Filter"), true);
-assert.match(supplySelector, /product_master_title_not_publishable/);
+assert.doesNotMatch(supplySelector, /product_master_title_not_publishable/);
 assert.match(marketSelector, /requireDomesticShipping: true/);
 assert.match(supplySelector, /rejectedCount: rejected\.length/);
 assert.match(supplySelector, /rejectionCounts: summarizeRejections\(rejected\)/);
