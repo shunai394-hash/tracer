@@ -4,7 +4,7 @@ const WOMEN_FOCUSED_PATTERNS = [
   { pattern: /hair care|haircare|hair brush|scalp massager|hair oil|heatless curls|hair dryer|hair curler|curling iron|hair straightener|hair clips?(?!per)\b|hair claw|hair removal|ヘアケア|ヘアブラシ|頭皮|ヘアオイル|ヘアドライヤー|ヘアアイロン|ヘアクリップ|バンスクリップ|ヘアアクセ|脱毛/i, tier: "core" as const, priority: 3 },
   { pattern: /beauty|skincare|skin care|serum|moisturizer|sunscreen|cosmetic|makeup|lipstick|lip gloss|blush|mascara|eyelash|eyeliner|化粧水|美容液|乳液|日焼け止め|コスメ|メイク|リップ|マスカラ|アイライナー/i, tier: "core" as const, priority: 4 },
   { pattern: /women'?s|womens|ladies|female|sports bra|bralette|shapewear|dress|skirt|blouse|leggings|activewear|レディース|婦人|女性用|女性向け|ワンピース|スカート|ブラウス|レギンス|スポーツブラ/i, tier: "core" as const, priority: 4 },
-  { pattern: /jewelry|earrings?|necklace|bracelet|hair accessory|anklet|ring jewelry|ジュエリー|アクセサリー|ピアス|イヤリング|ネックレス|ブレスレット|アンクレット|指輪/i, tier: "core" as const, priority: 4 },
+  { pattern: /jewelry|earrings?|necklace|bracelet|hair accessories?|headbands?|hairbands?|anklet|ring jewelry|ジュエリー|アクセサリー|ピアス|イヤリング|ネックレス|ブレスレット|アンクレット|指輪/i, tier: "core" as const, priority: 4 },
   { pattern: /period|menstrual|menstrual cup|period underwear|ovulation|pregnancy test|pelvic floor|intimate care|生理|月経|妊活|妊娠検査|デリケートゾーン/i, tier: "core" as const, priority: 4 },
   { pattern: /makeup organizer|cosmetic bag|jewelry organizer|closet organizer|shoe organizer|garment steamer|bathroom organization|コスメポーチ|化粧ポーチ|アクセサリー収納|衣類スチーマー/i, tier: "adjacent" as const, priority: 5 },
   { pattern: /wellness|self care|self-care|massage|sleep|posture|aromatherapy|ウェルネス|セルフケア|マッサージ|睡眠|姿勢|アロマ/i, tier: "adjacent" as const, priority: 5 },
