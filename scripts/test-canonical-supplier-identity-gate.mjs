@@ -73,6 +73,10 @@ assert.match(shopify, /supplier_identity_unlinked/);
 assert.match(shopify, /hasPublishableSupplierIdentity/);
 assert.match(shopify, /native_cj_verified/);
 assert.match(base, /identityUnlinkedIds/);
+assert.match(base, /base_last_error\.neq\.supplier_identity_unlinked_hidden/);
+assert.match(base, /base_last_error\.neq\.tracer_unpublished_hidden/);
+assert.match(base, /query\.order\("created_at", \{ ascending: false \}\)/,
+  "BASE batches must prioritize new gate-passed listings instead of starving them behind old hidden rows");
 assert.match(base, /base_last_error: isIdentityUnlinked \? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden"/);
 assert.match(store, /supplierListingId && supplierStatuses\.has/);
 assert.match(store, /supplier_identity_unlinked/);
