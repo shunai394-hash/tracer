@@ -19,10 +19,12 @@ assert.ok(route.includes('const dryRun = new URL(request.url).searchParams.get("
 assert.ok(route.includes('if (!dryRun) {\n      await recoverStaleCronRun'), "dry-run must not create cron lock records");
 assert.ok(route.includes('if (dryRun) {\n      return NextResponse.json({\n        ok: true,\n        dryRun: true,\n        noWrites: true'), "dry-run must return before downstream publication");
 assert.ok(route.includes("allowNativeCjIdentity: true"), "native CJ supply must not be blocked by an unrelated feature flag");
-assert.ok(route.includes("dryRun ? 50 : 3"), "live publication must be bounded per patrol while eligible products advance on later patrols");
+assert.ok(route.includes("dryRun ? 100 : 50"), "live publication must advance a useful batch of qualified products on every patrol");
+assert.doesNotMatch(source, /outside_womens_product_strategy/, "women's category is a ranking preference, not a hard exclusion of otherwise saleable products");
+assert.ok(source.includes("const productImageUrl = validHttpUrl(base.image_url) ? String(base.image_url) : listingImageUrl"), "verified supplier image must be used when product intelligence has no image");
 assert.ok(route.includes("nativeCjIdentityUsesStrictEvidenceGate: true"), "route must report that strict supplier evidence remains the gate");
 assert.ok(route.includes('const { data: nativeCjSupply, error: nativeCjSupplyError }'), "native CJ supply must be queried independently of marketplace identity");
-assert.ok(route.includes("const dryRunProductIds") && route.includes("])).slice(0, dryRunLimit)") && route.includes("Math.max(1, Math.min(500, Math.floor(requestedDryRunLimit)))") && route.includes("selectAndPublishSupplySalesTests(candidateProductIds, dryRun ? 50 : 3"), "dry-run selection and live publication must be bounded and prioritize native CJ evidence");
+assert.ok(route.includes("const dryRunProductIds") && route.includes("])).slice(0, dryRunLimit)") && route.includes("Math.max(1, Math.min(500, Math.floor(requestedDryRunLimit)))") && route.includes("selectAndPublishSupplySalesTests(candidateProductIds, dryRun ? 100 : 50"), "dry-run selection and live publication must be bounded and prioritize native CJ evidence");
 assert.ok(route.includes("for (let i = 0; i < candidateProductIds.length; i += 100)") && route.includes("const missingOpportunityIds = candidateProductIds.filter("), "dry-run must bound intelligence reads as well as the final selector");
 assert.ok(workflow.includes("--max-time 90") && workflow.includes("request_timeout_or_no_response"), "workflow must report dry-run timeouts without dropping the auth report");
 assert.ok(route.includes('.eq("shipping_status", "verified")') && route.includes('.eq("price_confirmed", true)') && route.includes('.eq("api_available", true)'), "native CJ query requires verified shipping, price and API evidence");
