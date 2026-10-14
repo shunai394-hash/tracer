@@ -70,6 +70,7 @@ async function promoteGatePassedListings(selectedListingIds: string[]) {
       results: selectedListingIds.map((listingId) => ({
         ok: false,
         listingId,
+        baseItemId: null,
         error: persistError ? `${message};base_failure_state_persist_failed:${persistError.message}`.slice(0, 2000) : message,
       })),
       error: message,
