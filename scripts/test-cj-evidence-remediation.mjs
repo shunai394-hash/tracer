@@ -9,7 +9,7 @@ const checks = [
   ["Japan-specific freight is requested for the exact variant", /calculateCJFreight\(String\(row\.supplier_variant_id\), \{ startCountryCode: "CN", endCountryCode: "JP", quantity: 1 \}\)/],
   ["variant stock is refreshed from the exact variant endpoint", /fetchCJVariantStock\(String\(row\.supplier_variant_id\)\)/],
   ["image recovery uses the supplier product detail endpoint", /getCJProductDetail\(String\(row\.supplier_product_id\)\)/],
-  ["recovered values are persisted and write errors are checked", /supplier listing\.update\(refreshedFields\)/],
+  ["recovered values are persisted and write errors are checked", /from\("supplier_listings"\)\.update\(refreshedFields\)/],
   ["missing fields receive explicit repair actions and retry timestamps", /missing_supply_evidence_next_actions: nextActions[\s\S]{0,400}next_identity_reverify_at: nextRetryAt/],
   ["remediation is included in the cron response", /result\.remediationQueued\.push\(\{ supplierListingId: item\.supplierListingId, missingFields: item\.missingFields, nextActions: item\.nextActions \}\)/],
   ["incomplete evidence cannot flow into the canonical persistence step", /if \(cost === null \|\| shippingCost === null \|\| inventory === null \|\| fxRate === null \|\| sellingPriceJpy === null \|\| !imageUrl\)/],
