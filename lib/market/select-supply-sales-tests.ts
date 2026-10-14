@@ -225,7 +225,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (womenB.bonus !== womenA.bonus) return womenB.bonus - womenA.bonus;
     return b.quality - a.quality;
   });
-  const rejectedSamples = [...rejected].sort((a, b) => Number(a.reasons.includes("outside_womens_product_strategy")) - Number(b.reasons.includes("outside_womens_product_strategy"))).slice(0, 50);
+  const rejectedSamples = rejected.slice(0, 50);
   if (options.dryRun) return {
     published: 0,
     publishedListingIds: [],
