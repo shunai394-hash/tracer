@@ -48,6 +48,9 @@ includes(discovery, "const status = cursor.quotaBlocked");
 includes(discovery, 'cursor.verified > 0 ? "partial" : "failed"');
 includes(discovery, "status,\n    started_at: now");
 includes(discovery, "canonical_name: displayTitle", "product master must store the Japanese display title, not the raw supplier title");
+includes(discovery, "patch.shippingStatus === \"verified\" || patch.shippingStatus === \"unavailable\"", "only verified or confirmed-unavailable freight may refresh shipping freshness");
+includes(discovery, "patch.status === \"verified\" || patch.status === \"unavailable\"", "retryable supplier API failures must not refresh inventory freshness");
+includes(discovery, "A retryable API failure must not make stale inventory or freight look recently verified");
 
 // Inventory synchronization must never infer sale/order readiness from stock alone.
 const projectionStart = internalAdapter.indexOf("async function syncInternalInventoryProjection(");
