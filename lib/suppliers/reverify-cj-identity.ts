@@ -88,6 +88,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       supplierVerified: 0,
       noUniqueBarcodeMatch: 0,
       missingEconomics: 0,
+      remediationQueued: [],
       errors: [{ supplierListingId: "system", error: "CJ_API_QUOTA_EXHAUSTED_COOLDOWN" }],
       promotedListings: [],
       nextCursor: null,
