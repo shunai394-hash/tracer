@@ -4,14 +4,13 @@ import {
   isCJLiveOrderingEnabled,
   isSupplierDryRunEnabled,
 } from "@/lib/config/env";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
 /**
- * Readiness means the app has the core database configuration needed to serve
- * authenticated, data-backed workflows. Optional supplier/AI/channel adapters
- * are reported separately so a missing integration is visible without
- * incorrectly declaring the entire app ready for automated commerce.
+ * Readiness checks both required configuration and a bounded, read-only query.
+ * Optional adapters are reported separately and never imply commerce readiness.
  */
 export async function GET() {
   const status = getFoundationStatus();
@@ -19,6 +18,24 @@ export async function GET() {
 
   if (!status.supabasePublic) missingRequired.push("supabase_public");
   if (!status.supabaseServiceRole) missingRequired.push("supabase_service_role");
+
+  let databaseReachable = false;
+  if (missingRequired.length === 0) {
+    try {
+      const { error } = await createSupabaseAdminClient()
+        .from("shop_listings")
+        .select("id")
+        .limit(1)
+        .abortSignal(AbortSignal.timeout(5000));
+      databaseReachable = !error;
+    } catch {
+      databaseReachable = false;
+    }
+  }
+
+  if (missingRequired.length === 0 && !databaseReachable) {
+    missingRequired.push("supabase_query_failed");
+  }
 
   const ready = missingRequired.length === 0;
 
@@ -28,6 +45,11 @@ export async function GET() {
       ready,
       service: "tracer",
       missingRequired,
+      database: {
+        configured: status.supabasePublic && status.supabaseServiceRole,
+        reachable: databaseReachable,
+        check: "read_only_shop_listings_query",
+      },
       connections: {
         supabase: status.supabasePublic && status.supabaseServiceRole,
         supabasePublic: status.supabasePublic,
