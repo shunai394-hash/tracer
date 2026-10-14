@@ -96,6 +96,7 @@ export async function GET(request: Request) {
   const started = Date.now();
   const target = 240;
   const candidates = new Map<string, { detail: NonNullable<Awaited<ReturnType<typeof getOrosyProductDetail>>>; variation: NonNullable<Awaited<ReturnType<typeof getOrosyProductDetail>>>["variations"][number] }>();
+  const candidateProductIds = new Set<string>();
 
   for (const query of QUERIES) {
     if (Date.now() - started > 180_000 || candidates.size >= target) break;
@@ -104,7 +105,7 @@ export async function GET(request: Request) {
       for (const item of results) {
         if (candidates.size >= target) break;
         if (!japaneseTitle(item.title) || !item.orderable || !item.imageUrl || !item.imageUrl.startsWith("https://")) continue;
-        if (candidates.has(item.id)) continue;
+        if (candidateProductIds.has(item.id)) continue;
         try {
           const detail = await getOrosyProductDetail(item.id);
           if (!detail || !japaneseTitle(detail.title) || !detail.orderable || !detail.imageUrl || !detail.imageUrl.startsWith("https://")) continue;
@@ -124,6 +125,7 @@ export async function GET(request: Request) {
           if (shippableVariations.length !== 1) continue;
           const variation = shippableVariations[0];
           candidates.set(`${detail.id}:${variation.variationId}`, { detail, variation });
+          candidateProductIds.add(detail.id);
         } catch {
           // One bad product must not abort the batch.
         }
@@ -210,6 +212,8 @@ export async function GET(request: Request) {
     const supplierPayload = {
       supplier: "orosy",
       external_id: detail.id,
+      supplier_product_id: detail.id,
+      supplier_variant_id: variation.variationId,
       title: detail.title,
       product_id: productId,
       jan: variation.jan,
