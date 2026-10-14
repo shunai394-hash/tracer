@@ -1,4 +1,5 @@
 name: TRACER Publish Gate-Passed Channels
+# Re-run the existing guarded publication workflow to publish currently gate-passed products.
 
 on:
   push:
