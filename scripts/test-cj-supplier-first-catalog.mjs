@@ -36,3 +36,6 @@ console.log("CJ supplier-first catalog draft contract: passed");
 assert.match(discovery, /rejectedReasons: cursor\.rejectedReasons/);
 assert.match(discovery, /quotaBlocked: cursor\.quotaBlocked/);
 assert.match(discovery, /const rejectedReasons = items\.reduce/);
+assert.match(discovery, /const status = cursor\.quotaBlocked/);
+assert.match(discovery, /cursor\.verified > 0 \? "partial" : "failed"/);
+assert.match(discovery, /status,\s+started_at: now/);
