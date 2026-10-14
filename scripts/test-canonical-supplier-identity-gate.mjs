@@ -25,6 +25,8 @@ assert.match(helper, /identity_status === "linked"/);
 assert.match(helper, /isNativeVerifiedSupplierListing/ , "publication identity must be shared by all supported suppliers with the same strict evidence contract");
 assert.match(helper, /native_supplier_verified/, "verified non-CJ supplier identities must survive publication-status lookup");
 assert.match(shopify, /native_supplier_verified/, "Shopify sync must accept a strict verified native supplier identity");
+assert.doesNotMatch(shopify, /supplier_not_cj/, "verified non-CJ suppliers must not be excluded by a stale hardcoded channel gate");
+assert.match(shopify, /supplier_unknown/, "supplier identity still requires an explicit supplier name");
 
 assert.match(helper, /row\.shipping_status === "estimated"[\s\S]{0,300}metadata\.shipping_estimate_applied === true/, "an explicit conservative freight reserve may enter the native CJ sale path");
 assert.match(helper, /shipping_status,configured,price_confirmed[\s\S]{0,200}metadata/, "publication identity lookup must include reserve evidence");
