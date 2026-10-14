@@ -18,6 +18,8 @@ assert.match(pipeline, /runStep\("score", \(\) => scoreProductIntelligence\(\), 
 assert.match(pipeline, /runStep\("shopping_demand_sync", \(\) => syncShoppingDemandObservations\(\), \{ budgetMs: 15_000 \}\)/);
 assert.match(pipeline, /runStep\("demand", \(\) => inspectDemandObservations\(\), \{ budgetMs: 5_000 \}\)/);
 assert.match(pipeline, /runStep\("demand_analyze", \(\) => persistDemandIntelligence\(\), \{ budgetMs: 25_000 \}\)/);
+assert.doesNotMatch(pipeline, /researchLimitedSupply/, "legacy CJ research must not block the patrol pipeline");
+assert.match(pipeline, /discoverAndCreateCjSupply\(3/);
 assert.match(pipeline, /const bestsellerStep = await runStep\("bestsellers", [\s\S]*?\{ budgetMs: 40_000 \}\)/);
 assert.match(pipeline, /runStep\("ordering", \(\) => persistReorderRecommendations\(\), \{ downstream: true, budgetMs: 15_000 \}\)/);
 
