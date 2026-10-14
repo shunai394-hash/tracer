@@ -135,6 +135,15 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
   );
   const listingIds = Array.from(new Set((data ?? []).map((row) => String(row.listing_id))))
     .filter((id) => !schemaBlockedIds.has(id));
+  if (!schemaReady) {
+    return {
+      attempted: 0,
+      processed: 0,
+      failed: 0,
+      windowSize: listingIds.length + schemaBlockedIds.size,
+      schemaBlocked: schemaBlockedIds.size,
+    };
+  }
   const eligible: string[] = [];
   const shopifyStatusById = new Map<string, string>();
   for (let i = 0; i < listingIds.length; i += 100) {
@@ -177,6 +186,16 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
 export async function promoteShopListingToNewfind(listingId: string): Promise<NewfindPromotionResult> {
   const cfg = getNewfindConfig();
   const id = eventId(listingId);
+  if (!isNewfindPromotionLedgerReady()) {
+    return {
+      configured: Boolean(cfg.apiUrl && cfg.webhookSecret),
+      sent: false,
+      eventId: id,
+      status: null,
+      ackStatus: null,
+      detail: "newfind_promotion_ledger_not_confirmed_ready",
+    };
+  }
   const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
 
   const { data: listing, error } = await supabase
