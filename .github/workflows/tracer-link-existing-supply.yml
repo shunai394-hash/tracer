@@ -1,4 +1,5 @@
 name: TRACER Link Existing Verified Supply
+# Prioritize bounded linkage of existing verified supply so more real products can pass publication gates.
 
 on:
   push:
