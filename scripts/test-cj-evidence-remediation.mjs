@@ -4,6 +4,9 @@ import { readFile } from "node:fs/promises";
 const source = await readFile(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
 const checks = [
   ["exact CJ variant price is refreshed by variant ID", /fetchCJVariantByVid\(String\(row\.supplier_variant_id\)\)/],
+  ["recovered price requires both returned supplier IDs to match", /variantDetails\?\.vid === String\(row\.supplier_variant_id\)[\s\S]{0,180}variantDetails\.productId === String\(row\.supplier_product_id\)/],
+  ["currency is recovered only from an explicit stored source", /row\.currency \?\? metadata\.currency \?\? metadata\.source_currency/],
+  ["recovered image must belong to the exact supplier product", /productDetails\?\.id === String\(row\.supplier_product_id\)/],
   ["price recovery refuses to assume an unknown currency is USD", /if \(missingCost && currency === "USD"\)/],
   ["shipping recovery refuses to assume an unknown currency is USD", /if \(missingShipping && currency === "USD"\)/],
   ["Japan-specific freight is requested for the exact variant", /calculateCJFreight\(String\(row\.supplier_variant_id\), \{ startCountryCode: "CN", endCountryCode: "JP", quantity: 1 \}\)/],
