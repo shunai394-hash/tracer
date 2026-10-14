@@ -56,8 +56,11 @@ jobs:
           if not 200 <= code < 300:
               print(f"HTTP failure: {code}")
               raise SystemExit(1)
-          if d.get("ok") is False or d.get("success") is False or d.get("error"):
-              print("API reported a failed operation")
+          if d.get("ok") is not True and d.get("success") is not True:
+              print("API did not explicitly confirm success")
+              raise SystemExit(1)
+          if d.get("error"):
+              print("API reported an error")
               raise SystemExit(1)
           PY
           }
@@ -74,14 +77,16 @@ jobs:
             python3 - newfind-retry-20.json <<'PY'
           import json,sys
           try:
-              d=json.load(open(sys.argv[1], encoding="utf-8"))
-          except Exception:
-              raise SystemExit("Final NEWFIND retry response is not valid JSON")
-          remaining=d.get("stillFailing", 0)
+              with open(sys.argv[1], encoding="utf-8") as f:
+                  d=json.load(f)
+          except Exception as e:
+              raise SystemExit(f"Final NEWFIND retry response is not valid JSON: {e}")
+          if "stillFailing" not in d:
+              raise SystemExit("Final NEWFIND retry response lacks stillFailing; queue status cannot be verified")
           try:
-              remaining=int(remaining or 0)
+              remaining=int(d["stillFailing"])
           except (TypeError, ValueError):
-              raise SystemExit(f"Cannot verify remaining NEWFIND failures: {remaining!r}")
+              raise SystemExit(f"Cannot verify remaining NEWFIND failures: {d.get('stillFailing')!r}")
           if remaining > 0:
               raise SystemExit(f"NEWFIND queue still has {remaining} failing deliveries after 20 passes")
           PY
@@ -94,4 +99,4 @@ jobs:
             echo "::error::One or more publishing/retry operations failed; workflow must not report success"
             exit 1
           fi
-          echo "All endpoints returned successful responses and NEWFIND reported no remaining failures."
+          echo "All endpoints explicitly confirmed success and NEWFIND reported no remaining failures."
