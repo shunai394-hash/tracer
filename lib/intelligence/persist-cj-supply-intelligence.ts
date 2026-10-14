@@ -3,6 +3,7 @@ import "server-only";
 import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
+import { isCJQuotaCircuitBlockingError } from "@/lib/sources/cj/client";
 import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates, pickSupplierBarcodeIdentifier } from "@/lib/market/identifiers";
 import { hasUniqueMarketplaceIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
 
@@ -33,11 +34,11 @@ async function readSupplierBarcode(args: { supplierProductId: string; supplierVa
     const variants = await fetchCJProductVariants(args.supplierProductId, { countryCode: "JP" });
     const direct = normalizeBarcode(variants.find((item) => item.vid === args.supplierVariantId)?.barcode);
     if (direct) return direct;
-  } catch (error) { console.warn("[cj-supply-identity] variant barcode lookup failed", { error: error instanceof Error ? error.message : String(error) }); }
+  } catch (error) { if (isCJQuotaCircuitBlockingError(error)) throw error; console.warn("[cj-supply-identity] variant barcode lookup failed", { error: error instanceof Error ? error.message : String(error) }); }
   try {
     const detailVariant = await fetchCJVariantByVid(args.supplierVariantId);
     if (detailVariant?.vid === args.supplierVariantId) return normalizeBarcode(detailVariant.barcode);
-  } catch (error) { console.warn("[cj-supply-identity] queryByVid barcode lookup failed", { error: error instanceof Error ? error.message : String(error) }); }
+  } catch (error) { if (isCJQuotaCircuitBlockingError(error)) throw error; console.warn("[cj-supply-identity] queryByVid barcode lookup failed", { error: error instanceof Error ? error.message : String(error) }); }
   return "";
 }
 
