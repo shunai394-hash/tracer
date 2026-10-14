@@ -82,6 +82,9 @@ assert.match(demandSupplier, /Missing stable supplier name or product ID; canoni
 assert.match(helper, /offset \+= 100/, "identity lookups must batch large supplier ID sets");
 assert.match(shopify, /supplier_identity_unlinked/);
 assert.match(shopify, /hasPublishableSupplierIdentity/);
+assert.match(shopify, /pipeline_stage\.eq\.BASE_PUBLISHED/, "BASE_PUBLISHED rows must remain eligible for downstream Shopify reconciliation");
+assert.match(shopify, /\["PUBLISHED", "BASE_PUBLISHED"\]\.includes\(String\(row\.pipeline_stage\)\)/, "published BASE listings must not be starved from Shopify sync merely because their pipeline stage records the BASE result");
+
 assert.match(shopify, /native_cj_verified/);
 assert.match(base, /identityUnlinkedIds/);
 assert.match(base, /base_last_error: isIdentityUnlinked \? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden"/);
