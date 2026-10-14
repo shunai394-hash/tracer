@@ -118,7 +118,7 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
     const chunk = listingIds.slice(i, i + 100);
     const { data: listings, error: listingError } = await supabase
       .from("shop_listings")
-      .select("id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
+      .select("id, title, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
       .in("id", chunk)
       .eq("published", true);
     if (listingError) throw new Error(listingError.message);
