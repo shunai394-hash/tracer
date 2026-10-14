@@ -11,7 +11,8 @@ assert.ok(source.indexOf("if (isNewOrder && selectedNewOrders >= maxNewOrders) b
   "the new-order cap must be enforced before adding another new order from the same page");
 assert.match(source, /shopify_orders_cursor_not_advancing/);
 assert.match(source, /fetched: scannedOrders/);
-assert.ok(source.includes("if (!existingIds.has(order.id)"), "already-imported orders must be skipped while paging");
+assert.ok(source.includes("const isNewOrder = !existingIds.has(order.id)"), "existing-order lookup must classify each fetched order");
+assert.ok(source.includes("orders.push(order)"), "orders selected for reconciliation must be retained for line-item repair");
 assert.match(source, /financial_status:paid status:open fulfillment_status:unfulfilled/);
 assert.match(source, /cancelledAt: string \| null/);
 assert.match(source, /if \(order\.cancelledAt\)/);
