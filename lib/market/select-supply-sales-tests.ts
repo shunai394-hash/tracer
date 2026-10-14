@@ -125,10 +125,17 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     else if (!isPublishableCatalogTitle(localizedTitle)) reasons.push("catalog_title_not_publishable");
     const recommendationSummary = typeof intelligence.recommendation_summary === "string" ? intelligence.recommendation_summary.trim() : null;
     const localizedDescription = localizeProductDescription(sourceTitle);
-    const publishableDescription = isPublishableCatalogDescription(localizedDescription)
-      ? localizedDescription
-      : isPublishableCatalogDescription(recommendationSummary) ? recommendationSummary : null;
-    if (!publishableDescription) reasons.push("japanese_description_unavailable");
+    // Missing AI/supplier-written Japanese copy must not zero out an otherwise
+    // saleable item. Use a restrained Japanese description based only on the
+    // localized title; do not invent dimensions, materials, certifications, or features.
+    const safeJapaneseFallback = localizedTitle
+      ? `${localizedTitle}です。商品画像と選択中のバリエーションをご確認ください。素材・寸法・付属品などの詳細は、仕入先が公開している商品仕様に基づいてご確認ください。`
+      : null;
+    const publishableDescription = [
+      localizedDescription,
+      recommendationSummary,
+      safeJapaneseFallback,
+    ].find((candidate) => isPublishableCatalogDescription(candidate)) ?? null;
 
     const rawIdentityMethod = String(listing.identity_method ?? "").trim().toLowerCase();
     const identifierGradeMethods = new Set(["asin", "jan", "gtin", "ean", "upc", "mpn", "brand_mpn", "tracer_catalog"]);
