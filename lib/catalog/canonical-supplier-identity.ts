@@ -14,7 +14,6 @@ export function isNativeCjSupplierListing(row: Record<string, unknown>, nowMs = 
   const verifiedAt = typeof row.last_verified_at === "string" ? Date.parse(row.last_verified_at) : NaN;
   const verificationError = row.verification_error;
   return ["cj", "cjdropshipping"].includes(supplier)
-    && row.identity_status === "supply_discovered"
     && row.verification_status === "verified"
     && row.shipping_status === "verified"
     && row.configured === true
@@ -29,6 +28,8 @@ export function isNativeCjSupplierListing(row: Record<string, unknown>, nowMs = 
     && String(row.ship_to ?? "").trim().toUpperCase() === "JP"
     && Boolean(typeof row.supplier_product_id === "string" && row.supplier_product_id.trim())
     && Boolean(typeof row.supplier_variant_id === "string" && row.supplier_variant_id.trim())
+    // Administrative workflow labels are not supplier identity evidence. Exact product/variant IDs
+    // plus fresh verified Japan shipping, price, stock, API, orderability and tracking are authoritative.
     && (verificationError == null || verificationError === "")
     && Number.isFinite(verifiedAt)
     && verifiedAt >= nowMs - 7 * 24 * 60 * 60 * 1000
