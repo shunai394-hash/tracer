@@ -174,7 +174,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
 
       // Recover missing evidence from the exact CJ product/variant instead of
       // recording a generic hold and waiting for the next patrol.
-      const currency = String(row.currency ?? "").trim().toUpperCase();
+      const currency = String(row.currency ?? metadata.currency ?? metadata.source_currency ?? "").trim().toUpperCase();
       const missingCost = cost === null;
       const missingShipping = shippingCost === null;
       const missingInventory = inventory === null;
@@ -186,8 +186,11 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       if (missingCost && currency === "USD") {
         try {
           variantDetails = await fetchCJVariantByVid(String(row.supplier_variant_id));
-          const fetchedCost = num(variantDetails?.sellPrice);
+          const exactVariant = variantDetails?.vid === String(row.supplier_variant_id)
+            && variantDetails.productId === String(row.supplier_product_id);
+          const fetchedCost = exactVariant ? num(variantDetails?.sellPrice) : null;
           if (fetchedCost !== null && fetchedCost > 0) cost = fetchedCost;
+          else if (!exactVariant) refreshErrors.push("cost:returned_variant_or_product_id_mismatch");
         } catch (error) {
           if (isCJQuotaCircuitBlockingError(error)) throw error;
           refreshErrors.push("cost:" + (error instanceof Error ? error.message : String(error)));
@@ -214,7 +217,8 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       if (missingImage) {
         try {
           productDetails = await getCJProductDetail(String(row.supplier_product_id));
-          if (isHttpUrl(productDetails?.imageUrl)) imageUrl = productDetails.imageUrl.trim();
+          if (productDetails?.id === String(row.supplier_product_id) && isHttpUrl(productDetails.imageUrl)) imageUrl = productDetails.imageUrl.trim();
+          else if (productDetails && productDetails.id !== String(row.supplier_product_id)) refreshErrors.push("image:returned_product_id_mismatch");
         } catch (error) {
           if (isCJQuotaCircuitBlockingError(error)) throw error;
           refreshErrors.push("image:" + (error instanceof Error ? error.message : String(error)));
