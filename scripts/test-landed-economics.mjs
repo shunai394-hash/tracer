@@ -23,7 +23,7 @@ assert.equal(unknownShipping.reason, "japan_shipping_missing_or_invalid");
 assert.equal(unknownShipping.contributionProfitJpy, null);
 
 const negativeProfit = calculateLandedEconomics({
-  ...base, sellingPriceJpy: 900, supplierCostJpy: 400, japanShippingJpy: 300,
+  ...base, sellingPriceJpy: 900, supplierCostJpy: 400, japanShippingJpy: 500,
 });
 assert.equal(negativeProfit.ready, true);
 assert.ok((negativeProfit.contributionProfitJpy ?? 0) <= 0);
