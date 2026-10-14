@@ -3,12 +3,16 @@ import { getShopifyConfig } from "@/lib/config/env";
 import type { SupplierInventory, SupplierOrder, SupplierOrderInput, SupplierOrderResult, SupplierPrice, SupplierProduct, SupplierShipping, SupplierTracking, SupplierVariant, TracerSupplierAdapter } from "@/lib/procurement/types";
 
 const NAME = "shopify_collective";
-const TAG = "tracer-collective-approved";
+const COLLECTIVE_TAG = "Shopify Collective";
+const APPROVED_TAG = "tracer-collective-approved";
 type Meta = { namespace: string; key: string; value: string };
 type Variant = { id: string; sku: string | null; title: string; inventoryQuantity: number; metafields: { nodes: Meta[] } };
 type Product = { id: string; title: string; tags: string[]; metafields: { nodes: Meta[] }; variants: { nodes: Variant[] } };
 const meta = (nodes: Meta[], key: string) => nodes.find(x => x.namespace === "tracer" && x.key === key)?.value ?? null;
 const num = (value: string | null): number | null => { if (value === null || !value.trim()) return null; const n = Number(value); return Number.isFinite(n) && n >= 0 ? n : null; };
+function supplierName(p: Product): string | null {
+  return p.tags.find(tag => tag !== COLLECTIVE_TAG && tag !== APPROVED_TAG && !tag.startsWith("tracer-")) ?? null;
+}
 async function query<T>(queryText: string, variables: Record<string, unknown> = {}): Promise<T> {
   const c = getShopifyConfig();
   if (!c.storeDomain || !c.adminAccessToken) throw new Error("SHOPIFY_COLLECTIVE_CONFIG_REQUIRED");
@@ -27,10 +31,10 @@ variants(first: 100) { nodes { id sku title inventoryQuantity metafields(first: 
 async function productById(id: string): Promise<Product | null> {
   const d = await query<{ product: Product | null }>(`query($id: ID!) { product(id: $id) { ${FIELDS} } }`, { id });
   const p = d.product;
-  return p && p.tags.includes(TAG) && meta(p.metafields.nodes, "supplier_product_id") ? p : null;
+  return p && p.tags.includes(COLLECTIVE_TAG) && p.tags.includes(APPROVED_TAG) && supplierName(p) ? p : null;
 }
 function chosen(p: Product, variantId?: string): Variant | null {
-  const list = p.variants.nodes.filter(v => meta(v.metafields.nodes, "supplier_variant_id") &&
+  const list = p.variants.nodes.filter(v => v.sku?.trim() &&
     num(meta(v.metafields.nodes, "unit_cost")) !== null && num(meta(v.metafields.nodes, "shipping_cost")) !== null);
   return variantId ? list.find(v => v.id === variantId) ?? null : list.length === 1 ? list[0] : null;
 }
@@ -49,9 +53,9 @@ export const shopifyCollectiveSupplierAdapter: TracerSupplierAdapter = {
   async search(term: string): Promise<SupplierProduct[]> {
     const safe = term.trim().replace(/["']/g, " ").slice(0, 60);
     const d = await query<{ products: { nodes: Product[] } }>(
-      `query($q: String!) { products(first: 50, query: $q) { nodes { ${FIELDS} } } }`,
-      { q: `tag:${TAG} ${safe}` });
-    return d.products.nodes.filter(p => p.tags.includes(TAG) && meta(p.metafields.nodes, "supplier_product_id"))
+      `query($q: String!) { products(first: 100, query: $q) { nodes { ${FIELDS} } } }`,
+      { q: `tag:"${COLLECTIVE_TAG}" tag:${APPROVED_TAG} ${safe}` });
+    return d.products.nodes.filter(p => p.tags.includes(COLLECTIVE_TAG) && p.tags.includes(APPROVED_TAG) && supplierName(p))
       .flatMap(p => { const v = p.variants.nodes.find(x => chosen(p, x.id)); return v ? [asProduct(p, v)] : []; });
   },
   async getProduct(id: string) { const p = await productById(id); if (!p) return null; const v = chosen(p); return v ? asProduct(p, v) : null; },
