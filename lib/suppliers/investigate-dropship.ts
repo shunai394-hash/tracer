@@ -354,11 +354,14 @@ export async function investigateDropshipForBestsellers(
     );
     if (!hasMarketplaceIdentifier) {
       skippedNoIdentifier += 1;
+      // Keep the demand signal, but route it away from marketplace identity
+      // matching. Supplier-native discovery must identify its own exact product
+      // and variant before economics or publication can be evaluated.
       await markPipelineState({
         bestsellerId: String(record.id),
-        stage: "SUPPLIER_INVESTIGATION",
-        status: "blocked",
-        reason: "supplier_search_identifier_missing",
+        stage: "SUPPLIER_NATIVE_DISCOVERY",
+        status: "pending",
+        reason: "supplier_native_locator_discovery_required",
       });
       await writeEvidence({
         productId: typeof record.product_id === "string" ? record.product_id : null,
@@ -369,7 +372,7 @@ export async function investigateDropshipForBestsellers(
         fieldValue: null,
         evidenceClass: "unknown",
         confidence: 0,
-        metadata: { note: "no_identifier_title_search_forbidden" },
+        metadata: { note: "marketplace_identity_unavailable; supplier_native_discovery_required" },
       });
       continue;
     }

@@ -569,7 +569,7 @@ export async function runIntelligencePipeline(options: {
   ]));
   const supplySalesStep = await runStep(
     "supply_sales_test_select",
-    () => selectAndPublishSupplySalesTests(supplyCandidateIds, 50, { allowNativeCjIdentity: true }),
+    () => selectAndPublishSupplySalesTests(supplyCandidateIds, 50, { allowNativeCjIdentity: process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true" }),
     { downstream: true, budgetMs: 20_000 },
   );
   steps.push(supplySalesStep);

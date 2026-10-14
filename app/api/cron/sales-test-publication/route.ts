@@ -8,6 +8,7 @@ import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync";
+import { evaluateChannelDeliveryHealth } from "@/lib/market/channel-delivery-health";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -33,18 +34,49 @@ async function buildOpportunityInBatches(productIds: string[], batchSize = 15) {
 
 async function promoteGatePassedListings(selectedListingIds: string[]) {
   // Delivery channels are independent: a Shopify/BASE outage must not suppress
-  // NEWFIND promotion or change the canonical TRACER publication result.
-  const shopify = await syncPublishedListingsToShopify(selectedListingIds).catch((error) => ({
-    ok: false,
-    listingIds: [] as string[],
-    error: error instanceof Error ? error.message : String(error),
-  }));
+  // another channel. Persist whole-call failures so the next reconciliation run
+  // can retry the failed channel instead of leaving an apparently healthy row.
+  const supabase = createSupabaseAdminClient();
+  const shopify = await syncPublishedListingsToShopify(selectedListingIds).catch(async (error) => {
+    const message = (error instanceof Error ? error.message : String(error)).slice(0, 2000);
+    const { error: persistError } = await supabase.from("shop_listings").update({
+      shopify_sync_status: "failed",
+      shopify_sync_error: message,
+      shopify_last_error: message,
+      updated_at: new Date().toISOString(),
+    }).in("id", selectedListingIds);
+    return {
+      configured: true,
+      attempted: selectedListingIds.length,
+      synced: 0,
+      failed: selectedListingIds.map((listingId) => ({
+        listingId,
+        error: persistError ? `${message};shopify_failure_state_persist_failed:${persistError.message}`.slice(0, 2000) : message,
+      })),
+      listingIds: [] as string[],
+      error: message,
+    };
+  });
   const publishedListingIds = shopify.listingIds;
-  const base = await publishPublishedListingsToBase(400, selectedListingIds).catch((error) => ({
-    ok: false,
-    results: [] as Array<{ ok: boolean; baseItemId?: string | null; listingId: string; error?: string }>,
-    error: error instanceof Error ? error.message : String(error),
-  }));
+  const base = await publishPublishedListingsToBase(400, selectedListingIds).catch(async (error) => {
+    const message = (error instanceof Error ? error.message : String(error)).slice(0, 2000);
+    const { error: persistError } = await supabase.from("shop_listings").update({
+      base_publication_status: "failed",
+      base_publication_lease_until: null,
+      base_last_error: message,
+      updated_at: new Date().toISOString(),
+    }).in("id", selectedListingIds);
+    return {
+      ok: false,
+      results: selectedListingIds.map((listingId) => ({
+        ok: false,
+        listingId,
+        baseItemId: null,
+        error: persistError ? `${message};base_failure_state_persist_failed:${persistError.message}`.slice(0, 2000) : message,
+      })),
+      error: message,
+    };
+  });
   const newfind = await Promise.all(
     selectedListingIds.map((listingId) => promoteShopListingToNewfind(listingId).catch((error) => ({
       configured: true,
@@ -118,8 +150,9 @@ export async function GET(request: Request) {
 
     // CJ-native supply is its own evidence path: exact supplier product + variant,
     // verified shipping, price, stock, orderability, tracking and API availability.
-    // It does not need a marketplace ASIN/JAN match, but live publication remains
-    // disabled unless TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED=true.
+    // It does not need a marketplace ASIN/JAN match. The strict native-CJ
+    // evidence gate in isNativeCjSupplierListing is the eligibility control;
+    // a separate environment flag must not strand otherwise publishable supply.
     const { data: nativeCjSupply, error: nativeCjSupplyError } = await supabase
       .from("supplier_listings")
       .select("product_id")
@@ -176,10 +209,13 @@ export async function GET(request: Request) {
     if (missingOpportunityIds.length > 0 && !dryRun) {
       await buildOpportunityInBatches(missingOpportunityIds.slice(0, 30), 10);
     }
-    const allowNativeCjIdentity = dryRun || process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true";
-    const supplySelected = await selectAndPublishSupplySalesTests(candidateProductIds, dryRun ? 50 : 400, {
+    // Native CJ products can be listed as their own catalog identity once the
+    // exact product+variant, JP shipping, current stock, API orderability,
+    // tracking, Japanese content, image, and positive contribution profit pass.
+    // Keep live writes deliberately small; repeated patrols advance the queue.
+    const supplySelected = await selectAndPublishSupplySalesTests(candidateProductIds, dryRun ? 50 : 3, {
       dryRun,
-      allowNativeCjIdentity,
+      allowNativeCjIdentity: true,
     });
     if (dryRun) {
       return NextResponse.json({
@@ -187,19 +223,20 @@ export async function GET(request: Request) {
         dryRun: true,
         noWrites: true,
         mode: "canonical_supply_fast_path",
-        featureEnabledForLiveRuns: process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true",
+        nativeCjIdentityUsesStrictEvidenceGate: true,
         supplySelected,
       }, { headers: { "Cache-Control": "no-store" } });
     }
 
     if (supplySelected.published > 0) {
       const downstream = await promoteGatePassedListings(supplySelected.selectedListingIds);
+      const channelHealth = evaluateChannelDeliveryHealth({ selectedCount: supplySelected.selectedListingIds.length, shopify: { configured: downstream.shopify.configured, attempted: downstream.shopify.attempted, synced: downstream.shopify.synced, failedCount: downstream.shopify.failed.length }, base: downstream.base });
       if (cronRunId) await supabase.from("cron_runs").update({
-        status: "succeeded",
+        status: channelHealth.ok ? "succeeded" : "failed",
         finished_at: new Date().toISOString(),
         duration_ms: Date.now() - startedAt,
         processed: supplySelected.considered,
-        failed: 0,
+        failed: channelHealth.failedCount,
         metadata: {
           phase: "sales_test_publication",
           mode: "canonical_supply_fast_path",
@@ -207,22 +244,23 @@ export async function GET(request: Request) {
           published: supplySelected.published,
           downstream: {
             selected: supplySelected.selectedListingIds.length,
-            shopifyOk: !("error" in downstream.shopify),
-            shopifyError: "error" in downstream.shopify ? downstream.shopify.error : null,
-            baseOk: !("error" in downstream.base),
-            baseError: "error" in downstream.base ? downstream.base.error : null,
+            shopifyOk: downstream.shopify.configured === true && downstream.shopify.failed.length === 0,
+            shopifyError: "error" in downstream.shopify ? downstream.shopify.error : downstream.shopify.failed.map((item) => item.error).slice(0, 10),
+            baseOk: downstream.base.results.length === supplySelected.selectedListingIds.length && downstream.base.results.every((item) => item.ok && Boolean(item.baseItemId)),
+            baseError: "error" in downstream.base ? downstream.base.error : downstream.base.results.filter((item) => !item.ok).slice(0, 10),
             newfindSent: downstream.newfind.filter((item) => item.sent).length,
           },
         },
       }).eq("id", cronRunId);
       return NextResponse.json({
-        ok: true,
+        ok: channelHealth.ok,
         phase: "sales_test_publication",
         elapsedMs: Date.now() - startedAt,
         mode: "canonical_supply_fast_path",
         supplySelected,
         downstream,
-      });
+        channelHealth,
+      }, { status: channelHealth.ok ? 200 : 207 });
     }
 
     const { data: readyRows, error: readyError } = await supabase
@@ -239,17 +277,18 @@ export async function GET(request: Request) {
     if (marketProductIds.length > 0) await buildOpportunityInBatches(marketProductIds, 10);
     const decision = await selectAndPublishSalesTests(candidateIds, 400);
     const downstream = await promoteGatePassedListings(decision.selectedListingIds);
+    const channelHealth = evaluateChannelDeliveryHealth({ selectedCount: decision.selectedListingIds.length, shopify: { configured: downstream.shopify.configured, attempted: downstream.shopify.attempted, synced: downstream.shopify.synced, failedCount: downstream.shopify.failed.length }, base: downstream.base });
 
     if (cronRunId) await supabase.from("cron_runs").update({
-      status: "succeeded",
+      status: channelHealth.ok ? "succeeded" : "failed",
       finished_at: new Date().toISOString(),
       duration_ms: Date.now() - startedAt,
       processed: supplySelected.considered + candidateIds.length,
-      failed: 0,
+      failed: channelHealth.failedCount,
       metadata: { phase: "sales_test_publication", mode: "market_linked_sales_test", supplyConsidered: supplySelected.considered, supplyPublished: supplySelected.published, supplyRejected: supplySelected.rejected.length, supplyRejectedReasons: supplySelected.rejected.reduce<Record<string, number>>((counts, item) => { for (const reason of item.reasons) counts[reason] = (counts[reason] ?? 0) + 1; return counts; }, {}), supplyRejectedSample: supplySelected.rejected.slice(0, 20), considered: decision.considered, published: decision.published, shopify: downstream.shopify },
     }).eq("id", cronRunId);
 
-    return NextResponse.json({ ok: true, phase: "sales_test_publication", elapsedMs: Date.now() - startedAt, mode: "market_linked_sales_test", candidateCount: candidateIds.length, decision, downstream, nextPhase: "downstream_delivery" });
+    return NextResponse.json({ ok: channelHealth.ok, phase: "sales_test_publication", elapsedMs: Date.now() - startedAt, mode: "market_linked_sales_test", candidateCount: candidateIds.length, decision, downstream, channelHealth, nextPhase: "downstream_delivery" }, { status: channelHealth.ok ? 200 : 207 });
   } catch (error) {
     if (cronRunId) {
       try { await supabase.from("cron_runs").update({ status: "failed", finished_at: new Date().toISOString(), duration_ms: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error) }).eq("id", cronRunId); } catch (recordError) { console.error("[TRACER CRON RUN RECORD ERROR]", recordError); }

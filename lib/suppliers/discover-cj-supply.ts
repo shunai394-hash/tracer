@@ -427,11 +427,12 @@ export async function discoverAndCreateCjSupply(
       const supplierInsert = await upsertSupplierListing(db, {
         supplier: "cj", external_id: candidate.variantId, sku: null, title: detail.title, product_id: null,
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
-        order_method: "cj_api", api_available: false, verification_status: "unverified", shipping_status: "verified", identity_method: "supply_discovered",
+        order_method: "cj_api", api_available: true, verification_status: "verified", verification_error: null, shipping_status: "verified", identity_method: "supply_discovered",
         identity_status: "supply_discovered", identity_confidence: 0, configured: true,
         supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
         gtin: normalizeIdentifier("gtin", variantBarcode),
-        orderable: false, price_confirmed: true, inventory_confirmed: true, tracking_available: false,
+        orderable: true, price_confirmed: true, inventory_confirmed: true, tracking_available: cjTrackingAvailable,
+        last_verified_at: new Date().toISOString(), shipping_checked_at: new Date().toISOString(), inventory_checked_at: new Date().toISOString(),
         fetched_at: new Date().toISOString(), metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate }
       }, seededCandidate.supplierListingId);
       if (supplierInsert.error) throw new Error(supplierInsert.error.message);
@@ -678,8 +679,10 @@ export async function discoverAndCreateCjSupply(
               inventory: Math.floor(stock),
               ship_to: "JP",
               order_method: "cj_api",
-              api_available: false,
-              verification_status: "unverified",
+              api_available: true,
+              verification_status: "verified",
+              verification_error: null,
+              shipping_status: "verified",
               identity_method: "supply_discovered",
               identity_status: "supply_discovered",
               identity_confidence: 0,
@@ -688,10 +691,13 @@ export async function discoverAndCreateCjSupply(
               supplier_variant_id: variant.vid,
               cj_variant_id: variant.vid,
               gtin: normalizeIdentifier("gtin", variantBarcode),
-              orderable: false,
+              orderable: true,
               price_confirmed: true,
               inventory_confirmed: true,
-              tracking_available: false,
+              tracking_available: cjTrackingAvailable,
+              last_verified_at: now,
+              shipping_checked_at: now,
+              inventory_checked_at: now,
               fetched_at: now,
               metadata: {
                 source: "cj_supply_first",
