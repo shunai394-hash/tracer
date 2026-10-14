@@ -7,7 +7,7 @@ import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { isJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
-import { isNativeCjSupplierListing } from "@/lib/catalog/canonical-supplier-identity";
+import { isNativeVerifiedSupplierListing } from "@/lib/catalog/canonical-supplier-identity";
 
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -80,7 +80,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // already satisfy the live supply/identity prerequisites, then rank those.
     const verifiedCandidates = candidates.filter((candidate) => {
       const supplier = String(candidate.supplier ?? "").trim().toLowerCase();
-      const nativeSupplierIdentity = options.allowNativeCjIdentity === true && isNativeCjSupplierListing(candidate);
+      const nativeSupplierIdentity = options.allowNativeCjIdentity === true && isNativeVerifiedSupplierListing(candidate);
       const canonicalIdentity = candidate.identity_status === "linked"
         && identifierGradeMethods.has(String(candidate.identity_method ?? "").trim().toLowerCase())
         && (num(candidate.identity_confidence) ?? 0) >= 0.88;
@@ -104,7 +104,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   const eligible: Array<{ productId: string; listing: Record<string, unknown>; base: Record<string, unknown>; intelligence: Record<string, unknown>; profit: ReturnType<typeof simulateContributionProfit>; quality: number; description: string }> = [];
   for (const productId of uniqueProductIds) {
     const reasons: string[] = []; const intelligence = intelligenceByProduct.get(productId); const base = baseByProduct.get(productId); const listing = listingByProduct.get(productId);
-    const nativeCjSupplyIdentity = Boolean(listing && options.allowNativeCjIdentity === true && isNativeCjSupplierListing(listing));
+    const nativeSupplierSupplyIdentity = Boolean(listing && options.allowNativeCjIdentity === true && isNativeVerifiedSupplierListing(listing));
     const sourceTitle = (typeof listing?.title === "string" && listing.title.trim()
       ? listing.title
       : typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
@@ -112,9 +112,9 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // product-master title (for example "トレンド・seeded_dueアイテム").
     const masterTitle = (typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
     if (base && !masterTitle) reasons.push("product_master_title_missing");
-    // Native CJ products are their own supplier catalog identity, not a marketplace match.
+    // Native supplier products are their own supplier catalog identity, not a marketplace match.
     // Their own exact supplier title is still required to pass the publishable-title gate below.
-    else if (base && !isPublishableCatalogTitle(masterTitle) && !nativeCjSupplyIdentity) reasons.push("product_master_title_not_publishable");
+    else if (base && !isPublishableCatalogTitle(masterTitle) && !nativeSupplierSupplyIdentity) reasons.push("product_master_title_not_publishable");
     const sourceMetadata = base?.metadata && typeof base.metadata === 'object' && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const womenPriority = womenProductPriority({ title: sourceTitle, category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
     if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
