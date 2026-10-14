@@ -6,6 +6,8 @@ import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapanes
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
+import { toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
+import { getLiveShopifyStock } from "@/lib/shop/store";
 
 type Listing = {
   id: string;
@@ -195,7 +197,23 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
     ...row,
     identity_status: row.supplier_listing_id ? supplierStatuses.get(row.supplier_listing_id) ?? null : null,
   }));
-  const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 15);
+  const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 25);
+  let liveStockByVariantId = new Map<string, number>();
+  let liveStockReconciliationError: string | null = null;
+  if (!listingIds?.length) {
+    const alreadySyncedVariantIds = rows
+      .filter((row) => String(row.shopify_sync_status ?? "") === "synced" && Boolean(row.shopify_variant_id))
+      .map((row) => toShopifyGid("ProductVariant", row.shopify_variant_id))
+      .filter((id): id is string => typeof id === "string" && /^gid:\/\/shopify\/ProductVariant\/\d+$/.test(id));
+    if (alreadySyncedVariantIds.length > 0) {
+      try {
+        liveStockByVariantId = await getLiveShopifyStock(alreadySyncedVariantIds);
+      } catch (error) {
+        liveStockReconciliationError = error instanceof Error ? error.message : String(error);
+      }
+    }
+  }
+
   const actionable = listingIds?.length
     ? rows.slice(0, safeLimit)
     : rows.filter((row) => {
@@ -203,7 +221,12 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
         if (status === "syncing") return false;
         if (!hasPublishableSupplierIdentity(row.identity_status)) return Boolean(row.shopify_product_id) && status !== "blocked";
         if (row.published === true && (row.pipeline_stage === "PUBLISHED" || row.pipeline_stage === "BASE_PUBLISHED") && row.pipeline_status === "published") {
-          return status !== "synced";
+          if (status !== "synced") return true;
+          if (liveStockReconciliationError) return false;
+          const variantId = toShopifyGid("ProductVariant", row.shopify_variant_id);
+          if (!variantId) return true;
+          const liveQuantity = liveStockByVariantId.get(variantId);
+          return liveQuantity === undefined || liveQuantity !== toStorefrontStockQuantity(row.inventory, process.env.SHOPIFY_STOREFRONT_STOCK_CAP);
         }
         if (row.published === false && row.pipeline_stage === "SELECTED" && row.pipeline_status === "selected") {
           return status !== "synced";
@@ -214,7 +237,15 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
         return false;
       }).slice(0, safeLimit);
 
-  return syncListingRows(actionable, supabase);
+  const result = await syncListingRows(actionable, supabase);
+  if (liveStockReconciliationError) {
+    result.failed += 1;
+    result.errors.push({
+      listingId: "SYSTEM",
+      error: `shopify_live_stock_reconciliation_failed:${liveStockReconciliationError}`.slice(0, 2000),
+    });
+  }
+  return result;
 }
 
 /**
@@ -449,7 +480,7 @@ async function syncListingRows(
       if (!variant?.id) throw new Error("shopify_variant_missing_for_inventory_sync");
       await setShopifyVariantInventory({
         variantId: variant.id,
-        quantity: Number(row.inventory),
+        quantity: toStorefrontStockQuantity(row.inventory, process.env.SHOPIFY_STOREFRONT_STOCK_CAP),
         reference: `tracer://shop-listing/${row.id}`,
       });
 
