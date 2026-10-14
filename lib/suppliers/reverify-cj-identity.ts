@@ -116,7 +116,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
 
   const buildCandidateQuery = () => db
     .from("supplier_listings")
-    .select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency")
+    .select("id,product_id,title,cost,shipping_cost,shipping_status,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency")
     .eq("supplier", "cj")
     .in("verification_status", ["unverified", "retryable", "verified"])
     .in("identity_method", ["supply_discovered", "none"])
@@ -165,6 +165,9 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       let cost = num(row.cost);
       let shippingCost = num(row.shipping_cost);
       let inventory = num(row.inventory);
+      const storedShippingEvidence = record(listingMetadata.japan_shipping);
+      const priorShippingEstimated = listingMetadata.shipping_estimate_applied === true || storedShippingEvidence.estimated === true;
+      let shippingQuoteObserved = false;
       let recoveredImageUrl: string | null = null;
       const refreshedEvidence: Record<string, unknown> = {};
       // Refresh each missing field from its native source. Every response is
@@ -181,12 +184,13 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
           console.warn("[cj-identity-reverify] exact variant inventory refresh failed", { supplierListingId, error: refreshError instanceof Error ? refreshError.message : String(refreshError) });
         }
       }
-      if (shippingCost === null) {
+      if (shippingCost === null || priorShippingEstimated || row.shipping_status !== "verified") {
         try {
           const freight = await calculateCJFreight(String(row.supplier_variant_id), { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 });
           if (freight !== null && Number.isFinite(freight) && freight > 0) {
             shippingCost = freight;
-            refreshedEvidence.japan_shipping = { supplier_variant_id: String(row.supplier_variant_id), destination_country: "JP", quantity: 1, amount: freight, checked_at: new Date().toISOString() };
+            shippingQuoteObserved = true;
+            refreshedEvidence.japan_shipping = { supplier_variant_id: String(row.supplier_variant_id), destination_country: "JP", quantity: 1, amount: freight, estimated: false, checked_at: new Date().toISOString() };
           }
         } catch (refreshError) {
           if (isCJQuotaCircuitBlockingError(refreshError) || isCJQuotaExhaustedError(refreshError)) throw refreshError;
@@ -259,12 +263,17 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
           checked_at: new Date().toISOString(),
         };
       }
+      const shippingEstimated = shippingReserveApplied || (!shippingQuoteObserved && priorShippingEstimated);
+      if (shippingEstimated && shippingCost !== null && fxRate !== null && fxRate > 0 && !shippingReserveApplied) {
+        // Keep a previously estimated freight amount as a floor until a live quote replaces it.
+        shippingCost = Math.max(shippingCost, unknownShippingReserveJpy / fxRate);
+      }
       const storedSellingPriceJpy = num(metadata.selling_price_jpy);
       const landedCostJpy = cost !== null && shippingCost !== null && fxRate !== null ? (cost + shippingCost) * fxRate : null;
       const calculatedRetailPriceJpy = landedCostJpy !== null && Number.isFinite(landedCostJpy) && landedCostJpy >= 0
         ? Math.ceil(Math.max(1980, landedCostJpy * 2.5) / 100) * 100
         : null;
-      const sellingPriceJpy = shippingReserveApplied
+      const sellingPriceJpy = shippingEstimated
         ? calculatedRetailPriceJpy
         : storedSellingPriceJpy ?? calculatedRetailPriceJpy;
       const listingImage = [listingMetadata.image_url, listingMetadata.product_image, listingMetadata.productImage, listingMetadata.image].find((value) => typeof value === "string" && /^https?:\/\//i.test(value.trim()));
@@ -294,7 +303,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
           next_identity_reverify_at: new Date(checkedAt.getTime() + MISSING_DATA_RETRY_MS).toISOString(),
           identity_hold_reason: missingFields.length === 1 && missingFields[0] === "product_image" ? "missing_product_image" : "missing_economics_or_image",
           remediation_status: "retry_scheduled",
-          ...(shippingReserveApplied ? {
+          ...(shippingEstimated ? {
             shipping_estimate_applied: true,
             shipping_estimate_jpy: unknownShippingReserveJpy,
             shipping_estimate_policy: "TRACER_CJ_UNKNOWN_SHIPPING_RESERVE_JPY",
@@ -320,9 +329,17 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       }
       await persistCjSupplyIntelligence({ productId: identity?.productId ?? String(row.product_id), title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
       const { error: refreshedEvidenceWriteError } = await db.from("supplier_listings").update({
-        cost, shipping_cost: shippingCost, inventory,
+        cost, shipping_cost: shippingCost, shipping_status: shippingEstimated ? "estimated" : "verified", inventory,
         price_confirmed: true, stock_confirmed: true, fetched_at: new Date().toISOString(),
-        metadata: { ...listingMetadata, ...refreshedEvidence, ...(imageUrl ? { image_url: imageUrl } : {}), remediation_status: "evidence_refreshed", remediation_missing_fields: [], last_identity_reverify_at: new Date().toISOString() },
+        metadata: {
+          ...listingMetadata,
+          ...refreshedEvidence,
+          ...(imageUrl ? { image_url: imageUrl } : {}),
+          ...(shippingEstimated ? { shipping_estimate_applied: true, shipping_estimate_jpy: unknownShippingReserveJpy, shipping_estimate_policy: "TRACER_CJ_UNKNOWN_SHIPPING_RESERVE_JPY" } : { shipping_estimate_applied: false }),
+          remediation_status: "evidence_refreshed",
+          remediation_missing_fields: [],
+          last_identity_reverify_at: new Date().toISOString(),
+        },
       }).eq("id", supplierListingId);
       if (refreshedEvidenceWriteError) throw new Error("supplier_refreshed_evidence_write_failed: " + refreshedEvidenceWriteError.message);
       if (!identity) {
