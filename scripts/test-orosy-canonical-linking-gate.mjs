@@ -5,6 +5,9 @@ const route = await readFile(new URL("../app/api/cron/orosy-bulk-import/route.ts
 const profit = await readFile(new URL("../lib/intelligence/simulate-profit.ts", import.meta.url), "utf8");
 
 assert.match(route, /womenProductPriority/);
+assert.match(route, /candidateProductIds\.has\(item\.id\)/, "deduplicate supplier search results by product id");
+assert.match(route, /supplier_product_id: detail\.id/);
+assert.match(route, /supplier_variant_id: variation\.variationId/);
 assert.match(route, /shippableVariations\.length !== 1/, "ambiguous product-level shipping quotes must fail closed");
 assert.match(route, /shippingQuote\.unresolved/);
 assert.match(route, /shippingQuote\.amount === null/);
@@ -27,4 +30,4 @@ assert.match(profit, /advertising_allowance_rate/);
 assert.match(profit, /return_refund_reserve_rate/);
 assert.match(profit, /fx_reserve_rate/);
 
-console.log("Orosy canonical identity, shipping ambiguity, fully costed margin and no-side-effect invariants: 22 assertions passed");
+console.log("Orosy canonical identity, shipping ambiguity, fully costed margin and no-side-effect invariants: 25 assertions passed");
