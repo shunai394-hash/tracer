@@ -59,7 +59,7 @@ function readSelectionReasons(listing: { selection_reasons?: unknown }): string[
 function selectionScore(listing: { selection_reasons?: unknown }): number {
   for (const reason of readSelectionReasons(listing)) {
     const match = /^(?:selection|quality)_score_(\d+(?:\.\d+)?)$/.exec(reason);
-    if (match) return Math.max(0, Math.min(100, Number(match[1])));
+    if (match) return Math.round(Math.max(0, Math.min(100, Number(match[1]))));
   }
   return 0;
 }
