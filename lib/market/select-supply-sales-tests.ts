@@ -104,7 +104,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   const rejected: SupplySalesTestResult["rejected"] = [];
   const eligible: Array<{ productId: string; listing: Record<string, unknown>; base: Record<string, unknown>; intelligence: Record<string, unknown>; profit: ReturnType<typeof simulateContributionProfit>; quality: number; description: string }> = [];
   for (const productId of uniqueProductIds) {
-    const reasons: string[] = []; const intelligence = intelligenceByProduct.get(productId); const base = baseByProduct.get(productId); const listing = listingByProduct.get(productId);
+    const reasons: string[] = []; const intelligence = intelligenceByProduct.get(productId) ?? { product_id: productId, demand_score: null, search_fit_score: null, market_gap_score: null, competition_score: null, creative_score: null, selection_score: null, overall_confidence: null, selection_eligible: false, sellability_state: null, filter_state: null, profit_state: null, recommendation_summary: null, why_now: null }; const base = baseByProduct.get(productId); const listing = listingByProduct.get(productId);
     const sourceTitle = (typeof listing?.title === "string" && listing.title.trim()
       ? listing.title
       : typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
@@ -120,9 +120,9 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const womenPriority = womenProductPriority({ title: sourceTitle, category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
     if (base && !womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
     if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
-    if (!intelligence) reasons.push("opportunity_intelligence_missing"); if (!base) reasons.push("product_intelligence_missing"); if (!listing) reasons.push("supplier_listing_missing");
+    if (!base) reasons.push("product_intelligence_missing"); if (!listing) reasons.push("supplier_listing_missing");
     if (reasons.length > 0) { rejected.push({ productId, reasons, title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
-    if (!intelligence || !base || !listing) { rejected.push({ productId, reasons: ["required_supply_intelligence_missing"], title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
+    if (!base || !listing) { rejected.push({ productId, reasons: ["required_catalog_or_supplier_data_missing"], title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
     if (!validHttpUrl(base.image_url)) reasons.push("image_url_invalid");
     const localizedTitle = localizeProductTitle(sourceTitle, metadataCategory(base.metadata));
     if (!isJapaneseProductTitle(localizedTitle)) reasons.push("japanese_title_unavailable");
