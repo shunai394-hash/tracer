@@ -112,19 +112,16 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // product-master title (for example "トレンド・seeded_dueアイテム").
     const masterTitle = (typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
     const nativeCjSupplyIdentity = Boolean(listing && options.allowNativeCjIdentity === true && isNativeCjSupplierListing(listing));
-    if (base && !masterTitle) reasons.push("product_master_title_missing");
     // Native CJ products are their own supplier catalog identity, not a marketplace match.
     // Their own exact supplier title is still required to pass the publishable-title gate below.
-    else if (base && !isPublishableCatalogTitle(masterTitle) && !nativeCjSupplyIdentity) reasons.push("product_master_title_not_publishable");
     const sourceMetadata = base?.metadata && typeof base.metadata === 'object' && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const womenPriority = womenProductPriority({ title: sourceTitle, category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
-    if (base && !womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
     if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
     if (!base) reasons.push("product_intelligence_missing"); if (!listing) reasons.push("supplier_listing_missing");
     if (reasons.length > 0) { rejected.push({ productId, reasons, title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
     if (!base || !listing) { rejected.push({ productId, reasons: ["required_catalog_or_supplier_data_missing"], title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
     if (!validHttpUrl(base.image_url)) reasons.push("image_url_invalid");
-    const localizedTitle = localizeProductTitle(sourceTitle, metadataCategory(base.metadata));
+    const localizedTitle = localizeProductTitle(sourceTitle || masterTitle, metadataCategory(base.metadata));
     if (!isJapaneseProductTitle(localizedTitle)) reasons.push("japanese_title_unavailable");
     else if (!isPublishableCatalogTitle(localizedTitle)) reasons.push("catalog_title_not_publishable");
     const recommendationSummary = typeof intelligence.recommendation_summary === "string" ? intelligence.recommendation_summary.trim() : null;
