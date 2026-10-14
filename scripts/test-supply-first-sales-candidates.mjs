@@ -45,7 +45,7 @@ assert.match(persistence, /purchasable:\s*false/);
 assert.match(persistence, /supplier_product_id:\s*args\.supplierProductId/);
 assert.match(persistence, /supplier_variant_id:\s*args\.supplierVariantId/);
 assert.match(persistence, /identity_status:\s*"supply_discovered"/);
-assert.match(persistence, /marketplace identity and automated-order eligibility remain unverified/);
+assert.match(persistence, /marketplace identity is not confirmed, and order creation remains subject to order-time payment and fulfillment gates/);
 assert.match(locators, /resolveSupplierCandidateProductId/);
 assert.match(locators, /existingIdentityStatus === "supply_discovered" && existingProductId/);
 assert.match(japaneseProduct, /knitted headband.*women/i);
