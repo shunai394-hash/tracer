@@ -38,6 +38,10 @@ assert.equal(invalidFee.reason, "platform_fee_rate_missing_or_invalid");
 const simulation = await readFile(new URL("../lib/intelligence/simulate-profit.ts", import.meta.url), "utf8");
 assert.match(simulation, /import \{ calculateLandedEconomics \} from "@\/lib\/suppliers\/landed-economics"/, "contribution-profit simulation must use the shared landed-economics calculator");
 assert.match(simulation, /const economics = calculateLandedEconomics\(/, "the production profit path must route through the shared landed-economics calculator");
-assert.match(simulation, /if \(!economics\.ready\) return unknown\(/, "invalid or unknown landed economics must fail closed");
+assert.match(simulation, /if \(!economics\.ready\) return unknown\(/, "invalid landed economics must fail closed");
+assert.match(simulation, /const minimumFreightReserve = sellingCurrency === "JPY" \? 800 : 8/, "unknown shipping must be covered by a minimum reserve rather than blocking the product");
+assert.match(simulation, /convertedSourceCost \* 0\.35/, "unknown international freight must include a cost-relative reserve");
+assert.match(simulation, /shipping_quote_missing_but_conservative_reserve_included_in_profit/, "shipping estimates must be visible in the audit trail");
+assert.doesNotMatch(simulation, /return unknown\("international_shipping_unknown"\)/, "missing shipping quote must not stop the sales calculation");
 
-console.log("landed economics policy: 4 scenarios + shared production wiring passed");
+console.log("landed economics policy: 4 scenarios + production reserve wiring passed");
