@@ -11,13 +11,11 @@ function buildUrl(base: string): string {
 }
 
 // Public origin of the TRACER storefront. Prefer explicit configuration, then
-// Vercel's production URL. The final fallback is the canonical TRACER Vercel
-// production alias; this prevents a missing deployment-only env from silently
-// starving an otherwise gate-passed NEWFIND delivery.
+// the stable production alias. VERCEL_PROJECT_PRODUCTION_URL can resolve to a
+// deployment-specific hostname that does not serve the public /shop route.
 function tracerSiteOrigin(): string | null {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
-  const configured = explicit || (vercel ? `https://${vercel.replace(/^https?:\/\//, "")}` : "https://tracer-pied-alpha.vercel.app");
+  const configured = explicit || "https://tracer-pied-alpha.vercel.app";
   try {
     const parsed = new URL(configured);
     if (parsed.protocol !== "https:") return null;
