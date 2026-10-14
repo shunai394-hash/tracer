@@ -20,6 +20,8 @@ assert.match(discovery, /"beauty tools", "facial cleansing brush", "makeup brush
   "beauty tools must follow women's bags in the supply query priority");
 assert.match(discovery, /"hair styling tools", "hair clip women", "claw clip women"/,
   "hair accessories must be an explicit high-priority catalog segment");
+assert.doesNotMatch(discovery, /return priorityWomenSupplyCategory\(row\.title, row\.metadata\) < 99/,
+  "category priority must sort candidates, not exclude non-women's categories");
 assert.match(discovery, /supply-first-catalog-cursor-v2/,
   "query-order changes must not reinterpret an old cursor index");
 assert.match(discovery, /next_verification_at\.is\.null,next_verification_at\.lte/,
