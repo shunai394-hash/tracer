@@ -22,6 +22,9 @@ const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSup
   readFile(new URL("../app/api/channels/base/identity-repair/route.ts", import.meta.url), "utf8"),
 ]);
 assert.match(helper, /identity_status === "linked"/);
+assert.match(helper, /row\.shipping_status === "estimated"[\s\S]{0,300}metadata\.shipping_estimate_applied === true/, "an explicit conservative freight reserve may enter the native CJ sale path");
+assert.match(helper, /shipping_status,configured,price_confirmed[\s\S]{0,200}metadata/, "publication identity lookup must include reserve evidence");
+
 assert.doesNotMatch(persist, /verification_error:\s*marketplaceIdentity/, "marketplace identity uncertainty must not be recorded as supplier verification failure");
 assert.doesNotMatch(persist, /verification_status:\s*marketplaceIdentity\s*\?\s*"verified"\s*:\s*"unverified"/, "identity persistence must not overwrite the independent supplier verification state");
 assert.match(discoverCJ, /identity_status: "supply_discovered", identity_confidence: 0/, "supply discovery without canonical identity must not claim perfect identity confidence");
