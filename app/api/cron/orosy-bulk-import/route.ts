@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
-import { getOrosyProductDetail, searchOrosyProducts } from "@/lib/sources/orosy";
+import { getOrosyProductDetail, getOrosyShippingQuote, searchOrosyProducts } from "@/lib/sources/orosy";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-listings";
 
 export const runtime = "nodejs";
@@ -64,7 +64,7 @@ export async function GET(request: Request) {
   const supabase = createSupabaseAdminClient();
   const started = Date.now();
   const target = 240;
-  const candidates = new Map<string, Awaited<ReturnType<typeof getOrosyProductDetail>>>();
+  const candidates = new Map<string, { detail: Awaited<ReturnType<typeof getOrosyProductDetail>>; variationId: string }>();
 
   for (const query of QUERIES) {
     if (Date.now() - started > 180_000 || candidates.size >= target) break;
@@ -79,7 +79,7 @@ export async function GET(request: Request) {
           if (!detail || !japaneseTitle(detail.title) || !detail.orderable || !detail.imageUrl || !detail.imageUrl.startsWith("https://")) continue;
           const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId);
           if (!variation) continue;
-          candidates.set(`${detail.id}:${variation.variationId}`, detail);
+          candidates.set(`${detail.id}:${variation.variationId}`, { detail, variationId: variation.variationId });
         } catch {
           // One bad product must not abort the batch.
         }
@@ -92,11 +92,23 @@ export async function GET(request: Request) {
   const accepted: string[] = [];
   const rejected: Array<{ id: string; reason: string }> = [];
 
-  for (const detail of candidates.values()) {
+  for (const candidate of candidates.values()) {
+    const detail = candidate.detail;
     if (!detail) continue;
     if (Date.now() - started > 240_000 || accepted.length >= 200) break;
-    const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId);
+    const variation = detail.variations.find(v => v.variationId === candidate.variationId && (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0);
     if (!variation || variation.buyerPrice === null || variation.stockQty === null) continue;
+    let shippingQuote: Awaited<ReturnType<typeof getOrosyShippingQuote>>;
+    try {
+      shippingQuote = await getOrosyShippingQuote(detail.id);
+    } catch {
+      rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "shipping_quote_failed" });
+      continue;
+    }
+    if (shippingQuote.unresolved || shippingQuote.amount === null || shippingQuote.currency !== "JPY" || shippingQuote.amount < 0) {
+      rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "shipping_quote_unresolved" });
+      continue;
+    }
 
     const productId = await upsertProduct(supabase, detail);
     if (!productId) continue;
@@ -110,11 +122,14 @@ export async function GET(request: Request) {
     const supplierPayload = {
       supplier: "orosy",
       external_id: detail.id,
+      supplier_product_id: detail.id,
+      supplier_variant_id: variation.variationId,
       title: detail.title,
       product_id: productId,
       jan: variation.jan,
       mpn: detail.productNumber,
       cost: variation.buyerPrice,
+      shipping_cost: shippingQuote.amount,
       currency: variation.currency ?? "JPY",
       inventory: variation.stockQty,
       ship_to: "JP",
@@ -173,14 +188,14 @@ export async function GET(request: Request) {
       supplier_product_id: detail.id,
       supplier_variant_id: variation.variationId,
       source_cost: variation.buyerPrice,
-      shipping_cost: null,
+      shipping_cost: shippingQuote.amount,
       inventory: variation.stockQty,
       orderable: true,
       tracking_available: true,
       identity_method: variation.jan ? "jan" : "orosy_supplier_variant",
       identity_confidence: variation.jan ? 1 : 0.98,
-      contribution_profit: sellingPrice - variation.buyerPrice,
-      contribution_margin: ((sellingPrice - variation.buyerPrice) / sellingPrice) * 100,
+      contribution_profit: sellingPrice - variation.buyerPrice - shippingQuote.amount,
+      contribution_margin: ((sellingPrice - variation.buyerPrice - shippingQuote.amount) / sellingPrice) * 100,
       updated_at: now,
     };
 
