@@ -1,4 +1,5 @@
 import type { CurrencyConfidence, ProvenanceEntry } from "@/lib/domain/types";
+import { calculateLandedEconomics } from "@/lib/suppliers/landed-economics";
 import {
   assessCurrencyConfidence,
   isCurrencyReliable,
@@ -210,12 +211,6 @@ export function simulateContributionProfit(args: {
   const internationalShipping = convertedInternationalShipping ?? 0;
   const domesticShipping = convertedDomesticShipping;
 
-  const platformFee = roundMoney(
-    args.sellingPrice * PROFIT_ASSUMPTIONS.platform_fee_rate,
-  );
-  const paymentFee = roundMoney(
-    args.sellingPrice * PROFIT_ASSUMPTIONS.payment_fee_rate,
-  );
   const advertisingAllowance = roundMoney(
     args.sellingPrice * PROFIT_ASSUMPTIONS.advertising_allowance_rate,
   );
@@ -226,32 +221,25 @@ export function simulateContributionProfit(args: {
     args.sellingPrice * PROFIT_ASSUMPTIONS.fx_reserve_rate,
   );
 
-  const contributionProfit = roundMoney(
-    args.sellingPrice -
-      convertedSourceCost -
-      internationalShipping -
-      domesticShipping -
-      platformFee -
-      paymentFee -
-      advertisingAllowance -
-      returnRefundReserve -
-      fxReserve,
-  );
+  // One shared JPY economics calculator now owns landed cost, platform/payment
+  // fees, and contribution profit. Currency conversion and shipping evidence
+  // are resolved above; unknown costs still fail closed before reaching here.
+  const economics = calculateLandedEconomics({
+    sellingPriceJpy: args.sellingPrice,
+    supplierCostJpy: convertedSourceCost,
+    japanShippingJpy: internationalShipping + domesticShipping,
+    platformFeeRate: PROFIT_ASSUMPTIONS.platform_fee_rate,
+    paymentFeeRate: PROFIT_ASSUMPTIONS.payment_fee_rate,
+    fixedFeesJpy: 0,
+    otherKnownCostsJpy: advertisingAllowance + returnRefundReserve + fxReserve,
+  });
+  if (!economics.ready) return unknown(economics.reason ?? "landed_economics_not_ready");
 
-  const contributionMargin = roundMoney(
-    (contributionProfit / args.sellingPrice) * 100,
-  );
-
-  const totalCost = roundMoney(
-    convertedSourceCost +
-      internationalShipping +
-      domesticShipping +
-      platformFee +
-      paymentFee +
-      advertisingAllowance +
-      returnRefundReserve +
-      fxReserve,
-  );
+  const platformFee = economics.platformFeeJpy!;
+  const paymentFee = economics.paymentFeeJpy!;
+  const contributionProfit = roundMoney(economics.contributionProfitJpy!);
+  const contributionMargin = roundMoney((economics.contributionMargin ?? 0) * 100);
+  const totalCost = roundMoney(args.sellingPrice - contributionProfit);
   const roi = totalCost > 0 ? Number((contributionProfit / totalCost).toFixed(4)) : null;
 
   const weaker =
