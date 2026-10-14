@@ -36,6 +36,12 @@ export function calculateSupplySellingPriceJpy(inputs: SupplyPriceInputs): numbe
 }
 
 
+export function resolveUnknownShippingAllowanceUsd(configured: string | null | undefined): number {
+  if (configured == null || configured.trim() === "") return 15;
+  const parsed = Number(configured);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 500 ? Math.ceil(parsed * 100) / 100 : 15;
+}
+
 export function resolveSupplierFxRateToJpy(args: {
   sourceCurrency: string | null;
   metadataFxRate: number | null;

@@ -8,7 +8,7 @@ import { isJapaneseProductTitle, localizeProductDescription, localizeProductTitl
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { isNativeCjSupplierListing } from "@/lib/catalog/canonical-supplier-identity";
-import { calculateSupplySellingPriceJpy, resolveSupplierFxRateToJpy } from "@/lib/market/supply-pricing";
+import { calculateSupplySellingPriceJpy, resolveSupplierFxRateToJpy, resolveUnknownShippingAllowanceUsd } from "@/lib/market/supply-pricing";
 
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -102,7 +102,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   }
 
   const rejected: SupplySalesTestResult["rejected"] = [];
-  const eligible: Array<{ productId: string; listing: Record<string, unknown>; base: Record<string, unknown>; intelligence: Record<string, unknown>; profit: ReturnType<typeof simulateContributionProfit>; quality: number; description: string }> = [];
+  const eligible: Array<{ productId: string; listing: Record<string, unknown>; base: Record<string, unknown>; intelligence: Record<string, unknown>; profit: ReturnType<typeof simulateContributionProfit>; quality: number; description: string; shippingAllowanceUsd: number }> = [];
   for (const productId of uniqueProductIds) {
     const reasons: string[] = []; const intelligence = intelligenceByProduct.get(productId) ?? { product_id: productId, demand_score: null, search_fit_score: null, market_gap_score: null, competition_score: null, creative_score: null, selection_score: null, overall_confidence: null, selection_eligible: false, sellability_state: null, filter_state: null, profit_state: null, recommendation_summary: null, why_now: null }; const base = baseByProduct.get(productId); const listing = listingByProduct.get(productId);
     const sourceTitle = (typeof listing?.title === "string" && listing.title.trim()
@@ -172,7 +172,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // Missing CJ freight is a pricing uncertainty, not an automatic publication veto.
     // Keep supplier_listings.shipping_cost untouched; use a separately labelled
     // USD allowance for price/profit simulation and expose the assumption in selection_reasons.
-    const shippingAllowanceUsd = 15;
+    const shippingAllowanceUsd = resolveUnknownShippingAllowanceUsd(process.env.TRACER_CJ_UNKNOWN_SHIPPING_ALLOWANCE_USD);
     const shippingEstimated = shippingCost === null && String(listing.supplier ?? "").trim().toLowerCase() === "cj" && Boolean(listing.supplier_product_id) && Boolean(listing.supplier_variant_id) && listing.orderable === true && sourceCurrency === "USD";
     const pricingShippingCost = shippingCost ?? (shippingEstimated ? shippingAllowanceUsd : null);
     sellingPrice = calculateSupplySellingPriceJpy({
@@ -226,7 +226,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
 
     const womenBonus = womenProductPriority({ title: typeof base.normalized_title === "string" ? base.normalized_title : "", category: typeof metadata.category === "string" ? metadata.category : null }).bonus;
     const quality = (num(intelligence.selection_score) ?? 0) * 0.45 + (num(intelligence.demand_score) ?? 0) * 0.2 + (num(intelligence.search_fit_score) ?? 0) * 0.1 + (num(intelligence.market_gap_score) ?? 0) * 0.1 + (num(intelligence.competition_score) ?? 0) * 0.05 + (num(intelligence.creative_score) ?? 0) * 0.05 + (num(intelligence.overall_confidence) ?? 0) * 100 * 0.05 + womenBonus;
-    eligible.push({ productId, listing, base, intelligence, profit, quality, description: publishableDescription! });
+    eligible.push({ productId, listing, base, intelligence, profit, quality, description: publishableDescription!, shippingAllowanceUsd });
   }
 
   eligible.sort((a, b) => {
@@ -279,7 +279,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   for (const item of chosen) {
     const title = localizeProductTitle(String(item.listing.title ?? item.base.normalized_title ?? ""), metadataCategory(item.base.metadata)) ?? String(item.base.normalized_title ?? ("TRACER product " + item.productId)); const slug = slugify(title, item.productId); const now = new Date().toISOString();
     const metadata = item.base.metadata && typeof item.base.metadata === "object" && !Array.isArray(item.base.metadata) ? item.base.metadata as Record<string, unknown> : {};
-    const payload = { product_id: item.productId, bestseller_id: null, supplier_listing_id: item.listing.id, slug, title, description: item.description.slice(0, 700), image_url: item.base.image_url, selling_price: item.profit.sellingPrice, currency: "JPY", supplier_name: String(item.listing.supplier ?? "unknown"), supplier_product_id: item.listing.supplier_product_id, supplier_variant_id: item.listing.supplier_variant_id, source_cost: item.profit.sourceCost, shipping_cost: item.profit.internationalShipping, inventory: num(item.listing.inventory), orderable: item.listing.orderable === true, tracking_available: item.listing.tracking_available === true, identity_method: isNativeCjSupplierListing(item.listing) ? "cj_supplier_variant" : (typeof item.listing.identity_method === "string" ? item.listing.identity_method : null), identity_confidence: isNativeCjSupplierListing(item.listing) ? 1 : num(item.listing.identity_confidence), contribution_profit: item.profit.contributionProfit, contribution_margin: item.profit.contributionMargin, published: true, selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:supply", "supply_intelligence_gate_passed", ...(item.listing.shipping_cost == null && String(item.listing.supplier ?? "").trim().toLowerCase() === "cj" && item.listing.supplier_product_id && item.listing.supplier_variant_id ? ["shipping_allowance_estimated_usd_15_not_supplier_quote"] : []), "selection_score_" + (num(item.intelligence.selection_score)?.toFixed(1) ?? "0")], missing: [], published_at: now, pipeline_stage: "PUBLISHED", pipeline_status: "published", pipeline_reason: SALES_TEST_GATE_PASSED, pipeline_error: null, pipeline_updated_at: now, updated_at: now };
+    const payload = { product_id: item.productId, bestseller_id: null, supplier_listing_id: item.listing.id, slug, title, description: item.description.slice(0, 700), image_url: item.base.image_url, selling_price: item.profit.sellingPrice, currency: "JPY", supplier_name: String(item.listing.supplier ?? "unknown"), supplier_product_id: item.listing.supplier_product_id, supplier_variant_id: item.listing.supplier_variant_id, source_cost: item.profit.sourceCost, shipping_cost: num(item.listing.shipping_cost), inventory: num(item.listing.inventory), orderable: item.listing.orderable === true, tracking_available: item.listing.tracking_available === true, identity_method: isNativeCjSupplierListing(item.listing) ? "cj_supplier_variant" : (typeof item.listing.identity_method === "string" ? item.listing.identity_method : null), identity_confidence: isNativeCjSupplierListing(item.listing) ? 1 : num(item.listing.identity_confidence), contribution_profit: item.profit.contributionProfit, contribution_margin: item.profit.contributionMargin, published: true, selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:supply", "supply_intelligence_gate_passed", ...(item.listing.shipping_cost == null && String(item.listing.supplier ?? "").trim().toLowerCase() === "cj" && item.listing.supplier_product_id && item.listing.supplier_variant_id ? [`shipping_allowance_estimated_usd_${item.shippingAllowanceUsd}_not_supplier_quote`] : []), "selection_score_" + (num(item.intelligence.selection_score)?.toFixed(1) ?? "0")], missing: [], published_at: now, pipeline_stage: "PUBLISHED", pipeline_status: "published", pipeline_reason: SALES_TEST_GATE_PASSED, pipeline_error: null, pipeline_updated_at: now, updated_at: now };
     const existing = await supabase.from("shop_listings").select("id").eq("slug", slug).maybeSingle();
     if (existing.error) throw new Error(existing.error.message);
     let existingId = existing.data?.id ? String(existing.data.id) : null; let keepSlug = false;
