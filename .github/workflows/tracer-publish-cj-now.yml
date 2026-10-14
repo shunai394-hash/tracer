@@ -37,6 +37,12 @@ jobs:
             curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
 
+          # Prevent later annual cron matches from calling CJ or publication endpoints.
+          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] && [ "$(date -u +%F)" != "2026-10-14" ]; then
+            echo "One-time CJ quota-reset window has passed; skipping before API calls."
+            exit 0
+          fi
+
           echo "=== CJ IDENTITY RECOVERY ==="
           for i in 1 2 3 4 5 6; do
             echo "--- reverify batch $i/6 ---"
