@@ -1,4 +1,7 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/50ml aromatherapy machine|timed automatic spraying fragrance|automatic spraying fragrance.*diffuser/i, "タイマー付き 自動噴霧アロマディフューザー"],
+  [/sun protection clothing.*strappy skirt|beach seaside resort strappy skirt/i, "リゾートデザイン ストラップスカート"],
+  [/beauty dechlorinating dual filter shower head|dual filter shower head.*kdf filter/i, "二重フィルター付き シャワーヘッド"],
   [/acrylic.*knitted headband|knitted headband.*women|crossed hair accessories.*women/i, "ニット編み クロスヘアバンド"],
   [/padded canvas belt backpack.*women|women.*padded canvas belt backpack/i, "レディース キャンバス ベルト付きリュック"],
   [/silicone shampoo brush|shampoo brush.*scalp/i, "シリコン製 頭皮ケアブラシ"],
@@ -133,6 +136,9 @@ export function localizeProductDescription(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const source = value.normalize("NFKC");
   const rules: Array<[RegExp, string]> = [
+    [/50ml aromatherapy machine|timed automatic spraying fragrance|automatic spraying fragrance.*diffuser/i, "香りを噴霧する家庭用アロマディフューザーです。容量・噴霧間隔・給電方式・対応する香料は販売元の仕様をご確認ください。"],
+    [/sun protection clothing.*strappy skirt|beach seaside resort strappy skirt/i, "リゾートスタイルのストラップスカートです。素材・サイズ・着用感・洗濯方法は販売元の仕様をご確認ください。"],
+    [/beauty dechlorinating dual filter shower head|dual filter shower head.*kdf filter/i, "フィルターを備えたシャワーヘッドです。対応フィルター・取付規格・性能については販売元の仕様をご確認ください。"],
     [/acrylic.*knitted headband|knitted headband.*women|crossed hair accessories.*women/i, "柔らかなニット素材のクロスヘアバンドです。サイズ・素材・カラー・着用感は販売元の仕様をご確認ください。"],
     [/padded canvas belt backpack.*women|women.*padded canvas belt backpack/i, "キャンバス素材のベルト付きリュックです。寸法・収納部・ベルト仕様・素材は販売元の仕様をご確認ください。"],
     [/silicone shampoo brush|shampoo brush.*scalp/i, "シリコン製の頭皮ケアブラシです。素材・サイズ・使用方法・お手入れ方法は販売元の仕様をご確認ください。"],
