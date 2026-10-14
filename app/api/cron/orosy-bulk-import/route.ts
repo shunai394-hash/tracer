@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { getOrosyProductDetail, getOrosyShippingQuote, searchOrosyProducts } from "@/lib/sources/orosy";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
+import { PROFIT_ASSUMPTIONS, simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -31,9 +32,20 @@ function japaneseTitle(title: string): boolean {
   return jp >= 3 && latin <= jp * 2;
 }
 
+const DOMESTIC_SHIPPING_ESTIMATE_JPY = 500;
+const TARGET_CONTRIBUTION_MARGIN = 0.20;
+
 function priceFor(cost: number, shipping: number, retail: number | null): number {
-  const landedCost = cost + shipping;
-  const floor = Math.ceil((landedCost / 0.62) / 100) * 100;
+  const landedCost = cost + shipping + DOMESTIC_SHIPPING_ESTIMATE_JPY;
+  const variableCostRate =
+    PROFIT_ASSUMPTIONS.platform_fee_rate +
+    PROFIT_ASSUMPTIONS.payment_fee_rate +
+    PROFIT_ASSUMPTIONS.advertising_allowance_rate +
+    PROFIT_ASSUMPTIONS.return_refund_reserve_rate +
+    PROFIT_ASSUMPTIONS.fx_reserve_rate;
+  const retainedRate = 1 - variableCostRate - TARGET_CONTRIBUTION_MARGIN;
+  if (!Number.isFinite(landedCost) || landedCost <= 0 || retainedRate <= 0) return 0;
+  const floor = Math.ceil((landedCost / retainedRate) / 100) * 100;
   const retailFloor = retail && retail > landedCost ? Math.ceil(retail / 100) * 100 : 0;
   return Math.max(floor, retailFloor);
 }
@@ -161,10 +173,26 @@ export async function GET(request: Request) {
 
     // Apply the landed-cost and margin gate before writing canonical or supplier records.
     const sellingPrice = priceFor(variation.buyerPrice, shippingQuote.amount, variation.retailPrice);
-    const contributionProfit = sellingPrice - variation.buyerPrice - shippingQuote.amount;
-    const contributionMargin = (contributionProfit / sellingPrice) * 100;
-    if (!Number.isFinite(sellingPrice) || sellingPrice <= 0 || !Number.isFinite(contributionProfit) || contributionProfit <= 0 || !Number.isFinite(contributionMargin) || contributionMargin < 20) {
-      rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "insufficient_landed_margin" });
+    const profit = simulateContributionProfit({
+      sellingPrice,
+      sellingCurrency: "JPY",
+      sellingCurrencyConfidence: "high",
+      sellingProvider: "tracer",
+      sourceCost: variation.buyerPrice,
+      sourceCurrency: "JPY",
+      sourceCurrencyConfidence: "high",
+      sourceProvider: "orosy",
+      internationalShipping: shippingQuote.amount,
+      domesticShipping: DOMESTIC_SHIPPING_ESTIMATE_JPY,
+      shippingCurrency: "JPY",
+      requireDomesticShipping: true,
+    });
+    const contributionProfit = profit.contributionProfit;
+    const contributionMargin = profit.contributionMargin;
+    if (!profit.calculable || !Number.isFinite(sellingPrice) || sellingPrice <= 0 ||
+        contributionProfit === null || contributionProfit <= 0 ||
+        contributionMargin === null || contributionMargin < TARGET_CONTRIBUTION_MARGIN * 100) {
+      rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: profit.incalculableReason ?? "insufficient_fully_costed_margin" });
       continue;
     }
     const productId = await upsertProduct(supabase, detail, variation.jan);
@@ -207,7 +235,7 @@ export async function GET(request: Request) {
       inventory_checked_at: now,
       last_verified_at: now,
       fetched_at: now,
-      metadata: { source: "orosy_bulk_import", delivery_group: detail.deliveryGroup, category: detail.category },
+      metadata: { source: "orosy_bulk_import", delivery_group: detail.deliveryGroup, category: detail.category, domestic_shipping_estimate_jpy: DOMESTIC_SHIPPING_ESTIMATE_JPY, profit_assumptions: PROFIT_ASSUMPTIONS },
     };
 
     let supplierListingId: string;
