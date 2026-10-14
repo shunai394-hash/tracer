@@ -1,0 +1,56 @@
+name: TRACER Retry NEWFIND Queue Now
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tracer-newfind-retry-now
+  cancel-in-progress: true
+
+jobs:
+  retry:
+    if: contains(github.event.head_commit.message, '[run-newfind-retry-now]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Wait for production deployment
+        run: sleep 60
+      - name: Reconcile BASE and Shopify, then drain NEWFIND retries
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token() {
+            curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          call_get() {
+            local path="$1" max_time="$2" out="$3"
+            local t code
+            t="$(token)" || { echo "OIDC token failed for $path"; return 1; }
+            code="$(curl -sS -o "$out" -w "%{http_code}" --max-time "$max_time" -H "Authorization: Bearer $t" "$BASE/$path" || true)"
+            echo "=== $path HTTP $code ==="
+            python3 - "$out" <<'PY'
+          import json,sys
+          try:
+              d=json.load(open(sys.argv[1]))
+              keys=("ok","phase","attempted","published","synced","failed","processed","stillFailing","rescue","error")
+              print(json.dumps({k:d.get(k) for k in keys if k in d},ensure_ascii=False)[:2500])
+          except Exception:
+              print(open(sys.argv[1]).read()[:1000])
+          PY
+          }
+          echo "=== Retry failed BASE publication without creating duplicate items ==="
+          call_get api/cron/base-publish 65 base-publish.json || true
+          echo "=== Sync gate-passed listings to Shopify ==="
+          call_get api/cron/shopify-publish 300 shopify-publish.json || true
+          echo "=== Drain NEWFIND deliveries and rescue gate-passed listings ==="
+          for pass in $(seq 1 10); do
+            echo "=== NEWFIND retry pass $pass/10 ==="
+            call_get api/cron/newfind-retry 65 "newfind-retry-$pass.json" || true
+          done
