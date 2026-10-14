@@ -102,30 +102,47 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
 }> {
   const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
   const batch = Math.max(1, Math.min(limit, 100));
-  const { data, error } = await supabase
-    .from("newfind_promotion_deliveries")
-    .select("listing_id")
-    .in("status", ["pending", "failed", "sent"])
+
+  // Backfill gate-passed listings even if an earlier code path never created a
+  // delivery row. Looking only at newfind_promotion_deliveries permanently
+  // starved such listings because no retry record existed for them.
+  const { data: listingRows, error: listingError } = await supabase
+    .from("shop_listings")
+    .select("id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
+    .eq("published", true)
+    .in("pipeline_stage", ["PUBLISHED", "BASE_PUBLISHED"])
+    .eq("pipeline_status", "published")
     .order("updated_at", { ascending: true })
     .limit(500);
+  if (listingError) throw new Error(listingError.message);
 
-  if (error) throw new Error(error.message);
+  const passedIds = Array.from(new Set((listingRows ?? [])
+    .filter((row) => hasPassedSalesTestGate(row))
+    .map((row) => String(row.id))));
+  if (passedIds.length === 0) return { attempted: 0, processed: 0, failed: 0, windowSize: 0 };
 
-  const listingIds = Array.from(new Set((data ?? []).map((row) => String(row.listing_id))));
-  const eligible: string[] = [];
-  for (let i = 0; i < listingIds.length && eligible.length < batch; i += 100) {
-    const chunk = listingIds.slice(i, i + 100);
-    const { data: listings, error: listingError } = await supabase
-      .from("shop_listings")
-      .select("id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
-      .in("id", chunk)
-      .eq("published", true);
-    if (listingError) throw new Error(listingError.message);
-    const passed = new Set((listings ?? []).filter((row) => hasPassedSalesTestGate(row)).map((row) => String(row.id)));
-    for (const id of chunk) {
-      if (passed.has(id) && eligible.length < batch) eligible.push(id);
+  const { data: deliveries, error: deliveryError } = await supabase
+    .from("newfind_promotion_deliveries")
+    .select("listing_id, status, ack_status, lease_until")
+    .in("listing_id", passedIds)
+    .limit(500);
+  if (deliveryError) throw new Error(deliveryError.message);
+
+  const deliveryByListing = new Map((deliveries ?? []).map((row) => [String(row.listing_id), row]));
+  const nowMs = Date.now();
+  const eligible = passedIds.filter((id) => {
+    const delivery = deliveryByListing.get(id);
+    if (!delivery) return true;
+    const status = String(delivery.status ?? "");
+    if (["pending", "failed", "sent", "withdrawn"].includes(status)) return true;
+    if (status === "sending") {
+      const leaseUntil = delivery.lease_until ? Date.parse(String(delivery.lease_until)) : NaN;
+      return !Number.isFinite(leaseUntil) || leaseUntil <= nowMs;
     }
-  }
+    // Processed/duplicate deliveries are terminal until a withdrawal is followed
+    // by a new publication event; never resend them on every patrol.
+    return false;
+  }).slice(0, batch);
 
   let processed = 0;
   let failed = 0;
@@ -135,7 +152,7 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
     else if (!result.sent) failed += 1;
   }
 
-  return { attempted: eligible.length, processed, failed, windowSize: listingIds.length };
+  return { attempted: eligible.length, processed, failed, windowSize: passedIds.length };
 }
 
 export async function promoteShopListingToNewfind(listingId: string): Promise<NewfindPromotionResult> {
