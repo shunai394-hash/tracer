@@ -7,6 +7,7 @@ export {
   fetchCJProductVariants,
   fetchCJVariantByVid,
   fetchCJVariantStock,
+  getCJFreightOptions,
   selectUnambiguousVariant,
 } from "@/lib/sources/cj/client";
 
