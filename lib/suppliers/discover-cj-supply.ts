@@ -260,7 +260,11 @@ export async function discoverAndCreateCjSupply(
       const key = `${String(row.supplier_product_id)}:${String(row.supplier_variant_id)}`;
       if (existingVariants.has(key) || seenSeedKeys.has(key)) return false;
       seenSeedKeys.add(key);
-      return priorityWomenSupplyCategory(row.title, row.metadata) < 99;
+      // Include every due supplier category. Women-focused categories remain
+      // first in the sort order, but category priority must never exclude the
+      // rest of the catalog from discovery. Live stock, freight, cost and
+      // Japanese-title checks below remain the actual candidate requirements.
+      return true;
     })
     .sort((a, b) =>
       priorityWomenSupplyCategory(a.title, a.metadata) - priorityWomenSupplyCategory(b.title, b.metadata) ||
