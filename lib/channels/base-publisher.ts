@@ -111,7 +111,10 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     ].join(","));
   }
   const safeLimit = Math.min(15, Math.max(1, Math.floor(Number.isFinite(limit) ? limit : 10)));
-  const { data: listings, error } = await query.order("created_at", { ascending: true }).limit(safeLimit);
+  const { data: listings, error } = await query
+    .order("base_item_id", { ascending: true, nullsFirst: true })
+    .order("created_at", { ascending: true })
+    .limit(safeLimit);
   if (error) throw new Error(error.message);
 
   const supplierStatuses = await getPublishableSupplierListingStatuses((listings ?? []).map((listing) => listing.supplier_listing_id));
