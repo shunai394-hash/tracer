@@ -151,8 +151,8 @@ export async function GET(request: Request) {
     // CJ-native supply is its own evidence path: exact supplier product + variant,
     // verified shipping, price, stock, orderability, tracking and API availability.
     // It does not need a marketplace ASIN/JAN match. The strict native-CJ
-    // evidence gate in isNativeCjSupplierListing is the eligibility control;
-    // a separate environment flag must not strand otherwise publishable supply.
+    // evidence gate remains mandatory; live publication additionally requires
+    // the explicit production feature flag, while dry-run can inspect candidates.
     const { data: nativeCjSupply, error: nativeCjSupplyError } = await supabase
       .from("supplier_listings")
       .select("product_id")
@@ -213,9 +213,10 @@ export async function GET(request: Request) {
     // exact product+variant, JP shipping, current stock, API orderability,
     // tracking, Japanese content, image, and positive contribution profit pass.
     // Keep live writes deliberately small; repeated patrols advance the queue.
+    const allowNativeCjIdentity = dryRun || process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true";
     const supplySelected = await selectAndPublishSupplySalesTests(candidateProductIds, dryRun ? 50 : 3, {
       dryRun,
-      allowNativeCjIdentity: true,
+      allowNativeCjIdentity,
     });
     if (dryRun) {
       return NextResponse.json({
@@ -224,6 +225,7 @@ export async function GET(request: Request) {
         noWrites: true,
         mode: "canonical_supply_fast_path",
         nativeCjIdentityUsesStrictEvidenceGate: true,
+        featureEnabledForLiveRuns: process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED === "true",
         supplySelected,
       }, { headers: { "Cache-Control": "no-store" } });
     }
