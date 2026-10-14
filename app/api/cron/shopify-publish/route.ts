@@ -25,7 +25,7 @@ export async function GET(request: Request) {
       phase: "shopify_channel_sync",
       ...result,
       storefrontContract: "published + gate-passed + synced + in-stock + orderable + trackable",
-      note: "Only TRACER Sales Test Gate-passed PUBLISHED listings with live fulfillment evidence are synchronized.",
+      note: "Only TRACER Sales Test Gate-passed PUBLISHED or BASE_PUBLISHED listings with live fulfillment evidence are synchronized.",
     }, { status: result.failed === 0 ? 200 : 207, headers });
   } catch (error) {
     return NextResponse.json(
