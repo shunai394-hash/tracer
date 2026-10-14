@@ -161,7 +161,11 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
         };
 
         if (canceled) {
-          update.payment_status = "failed";
+          // Cancellation changes fulfillment state, but must not rewrite a
+          // previously confirmed payment as failed without a refund signal.
+          if (String(existing.payment_status) !== "paid") {
+            update.payment_status = "failed";
+          }
           update.order_status = "cancelled";
         } else if (paid) {
           update.payment_status = "paid";
@@ -171,7 +175,10 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
           ) {
             update.order_status = "fulfillment_pending";
           }
-        } else {
+        } else if (String(existing.payment_status) !== "paid") {
+          // BASE can temporarily return an unpaid/pending snapshot after a
+          // successful payment was already observed. Payment confirmation is
+          // monotonic here: never downgrade paid without an explicit refund.
           update.payment_status = "pending";
           update.order_status = "pending_payment";
         }
