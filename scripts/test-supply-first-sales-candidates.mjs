@@ -30,6 +30,8 @@ assert.match(identity, /row\.supplier_variant_id/);
 assert.match(selector, /Boolean\(candidate\.supplier_product_id\)/);
 assert.match(selector, /Boolean\(candidate\.supplier_variant_id\)/);
 assert.match(selector, /domesticShipping: nativeCjSupplyIdentity \? 0 : null/);
+assert.match(selector, /if \(sellingPrice === null && pricingShippingCost !== null && sourceCost !== null && sourceCost > 0 && sourceFxRateToSelling !== null && sourceFxRateToSelling > 0\)/, "missing selling prices must be calculated from actual freight or an explicitly labelled fallback allowance");
+assert.match(selector, /const costJpy = \(sourceCost \+ pricingShippingCost\) \* sourceFxRateToSelling/, "landed price must use the shipping amount actually passed to profit simulation");
 assert.match(selector, /!isPublishableCatalogTitle\(masterTitle\) && !nativeCjSupplyIdentity/);
 assert.match(selector, /localizeProductDescription\(sourceTitle\)/);
 assert.match(selector, /isPublishableCatalogDescription\(localizedDescription\)/);
