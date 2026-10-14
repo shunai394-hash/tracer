@@ -17,7 +17,7 @@ assert.doesNotMatch(orderControl, /\.in\("order_status", \[[^\]]*fulfilled/);
 assert.match(dropship, /supplierIdentityStatus: typeof listingRow\.identity_status === "string" \? listingRow\.identity_status : null/, "PO intent must pass the actual supplier identity state into the gate");
 assert.match(dropship, /supplierNativeVerified: isNativeCjSupplierListing\(listingRow\)/, "native CJ order intent must verify exact supplier evidence independently of marketplace identity");
 assert.match(supplierExecution, /if \(isCjSupplierName\(supplierName\)\)/, "live CJ execution must re-check canonical identity");
-assert.match(supplierExecution, /identityRows\?\.length !== 1/, "live CJ execution must require exactly one supplier product+variant row");
+assert.match(supplierExecution, /identityRows\?\.length === 1 \? identityRows\[0\]/, "live CJ execution must require exactly one supplier product+variant row");
 assert.match(supplierExecution, /isNativeCjSupplierListing\(exactListing\)/, "live CJ execution may accept native supplier identity only when exact current evidence passes");
 assert.match(supplierExecution, /String\(exactListing\.product_id \?\? ""\) !== canonicalProductId/, "live CJ execution must still bind the exact supplier variant to the selected catalog product");
 assert.match(supplierExecution, /supplier_identity_lookup_failed/);
