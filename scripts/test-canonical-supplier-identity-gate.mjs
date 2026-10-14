@@ -24,7 +24,7 @@ const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSup
 assert.match(helper, /identity_status === "linked"/);
 assert.match(helper, /verificationError === "CJdropshipping is not configured"/, "only the stale CJ configuration error may be ignored when the same row is currently configured and API-available");
 assert.match(helper, /row.configured === true && row.api_available === true/);
-assert.match(persist, /verification_error: marketplaceIdentity \? null : "no_unique_canonical_child_variant_match"/, "unmatched CJ identity must persist an explicit reason rather than retaining stale verification state");
+assert.match(persist, /verification_error: marketplaceIdentity \\|\\| nativeEvidenceFresh \\? null : \\(priorVerificationError \\|\\| "no_unique_canonical_child_variant_match"\\)/, "only fresh, fully verified native supply evidence may clear the old configuration error");
 assert.match(discoverCJ, /identity_status: "supply_discovered", identity_confidence: 0/, "supply discovery without canonical identity must not claim perfect identity confidence");
 assert.match(discoverCJ, /title: detail\.title, product_id: null/, "CJ supply discovery must not provisionally attach a canonical product ID before identity is resolved");
 assert.match(discoverCJ, /api_available: false, verification_status: "unverified"/, "unresolved CJ supply must not be marked verified or API-orderable before canonical identity is resolved");
