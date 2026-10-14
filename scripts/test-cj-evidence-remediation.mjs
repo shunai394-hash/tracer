@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
+const [source, migration] = await Promise.all([
+  readFile(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8"),
+  readFile(new URL("../supabase/migrations/20261014110000_cj_estimated_shipping_status.sql", import.meta.url), "utf8"),
+]);
 const checks = [
   ["supplier cost refresh uses exact variant ID", /fetchCJProductVariants\(String\(row\.supplier_product_id\), \{ countryCode: "JP" \}\)[\s\S]{0,300}variant\.vid === String\(row\.supplier_variant_id\)/],
   ["stock refresh uses exact supplier variant", /fetchCJVariantStock\(String\(row\.supplier_variant_id\)\)/],
@@ -13,6 +16,7 @@ const checks = [
   ["estimated shipping status is persisted for the publication gate", /shipping_status: shippingEstimated \? "estimated" : "verified"/],
   ["a retry re-requests freight when previous shipping was estimated", /if \(shippingCost === null \|\| priorShippingEstimated \|\| row\.shipping_status !== "verified"\)[\s\S]{0,450}shippingQuoteObserved = true/],
   ["retail price is recalculated while freight is estimated", /const sellingPriceJpy = shippingEstimated[\s\S]{0,80}calculatedRetailPriceJpy/],
+  ["database accepts estimated shipping as a distinct state", /shipping_status IN \([\s\S]{0,100}estimated/.test(migration) ? /estimated/ : /impossible/],
   ["image refresh reads supplier product detail", /getCJProductDetail\(String\(row\.supplier_product_id\)\)/],
   ["refreshed cost shipping and inventory persist to supplier listing", /\.update\(\{[\s\S]{0,180}cost, shipping_cost: shippingCost, shipping_status: shippingEstimated \? "estimated" : "verified", inventory,/],
   ["missing fields are enumerated and queued for remediation", /remediation_missing_fields: missingFields[\s\S]{0,500}remediation_next_actions:/],
