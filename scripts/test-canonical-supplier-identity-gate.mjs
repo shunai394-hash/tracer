@@ -83,6 +83,7 @@ assert.match(helper, /offset \+= 100/, "identity lookups must batch large suppli
 assert.match(shopify, /supplier_identity_unlinked/);
 assert.match(shopify, /hasPublishableSupplierIdentity/);
 assert.match(shopify, /pipeline_stage\.eq\.BASE_PUBLISHED/, "BASE_PUBLISHED rows must remain eligible for downstream Shopify reconciliation");
+assert.match(shopify, /Math\.min\(Math\.max\(Math\.floor\(limit\), 1\), 25\)/, "Shopify reconciliation should process a useful bounded batch without unbounded API pressure");
 assert.match(shopify, /\["PUBLISHED", "BASE_PUBLISHED"\]\.includes\(String\(row\.pipeline_stage\)\)/, "published BASE listings must not be starved from Shopify sync merely because their pipeline stage records the BASE result");
 
 assert.match(shopify, /native_cj_verified/);
