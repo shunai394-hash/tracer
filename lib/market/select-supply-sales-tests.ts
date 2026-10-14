@@ -8,7 +8,7 @@ import { isJapaneseProductTitle, localizeProductDescription, localizeProductTitl
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { isNativeCjSupplierListing } from "@/lib/catalog/canonical-supplier-identity";
-import { calculateSupplySellingPriceJpy } from "@/lib/market/supply-pricing";
+import { calculateSupplySellingPriceJpy, resolveSupplierFxRateToJpy } from "@/lib/market/supply-pricing";
 
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -159,9 +159,16 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (sourceCost !== null && sourceCost < 0) reasons.push("source_cost_invalid");
     if (shippingCost !== null && shippingCost < 0) reasons.push("shipping_cost_invalid");
 
-    const sourceCurrency = typeof listing.currency === "string" ? listing.currency.trim().toUpperCase() : "USD";
-    const sourceFxRateToSelling = num(metadata.fx_rate) ?? observedFx?.rate ?? null;
-    const sourceFxRateSource = num(metadata.fx_rate) !== null ? "supplier_listing_metadata" : (observedFx?.source ?? null);
+    const sourceCurrency = typeof listing.currency === "string" && listing.currency.trim() ? listing.currency.trim().toUpperCase() : null;
+    const metadataFxRate = num(metadata.fx_rate);
+    const sourceFxRateToSelling = resolveSupplierFxRateToJpy({
+      sourceCurrency,
+      metadataFxRate,
+      metadataFxSourceCurrency: typeof metadata.fx_rate_source_currency === "string" ? metadata.fx_rate_source_currency : typeof metadata.source_currency === "string" ? metadata.source_currency : null,
+      metadataFxTargetCurrency: typeof metadata.fx_rate_target_currency === "string" ? metadata.fx_rate_target_currency : null,
+      observedUsdToJpyRate: observedFx?.rate ?? null,
+    });
+    const sourceFxRateSource = sourceCurrency === "JPY" ? "same_currency" : metadataFxRate !== null && (sourceCurrency === "USD" || String(metadata.fx_rate_source_currency ?? metadata.source_currency ?? "").trim().toUpperCase() === sourceCurrency) ? "supplier_listing_metadata" : (sourceCurrency === "USD" ? observedFx?.source ?? null : null);
     // Missing CJ freight is a pricing uncertainty, not an automatic publication veto.
     // Keep supplier_listings.shipping_cost untouched; use a separately labelled
     // USD allowance for price/profit simulation and expose the assumption in selection_reasons.
