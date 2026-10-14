@@ -46,7 +46,8 @@ assert.match(selector, /shipping_cost: num\(item\.listing\.shipping_cost\)/, "es
 assert.match(selector, /shipping_allowance_estimated_usd_\$\{item\.shippingAllowanceUsd\}_not_supplier_quote/, "the selected listing must label its pricing allowance as an estimate");
 assert.match(selector, /calculateSupplySellingPriceJpy\(/, "missing selling prices must flow through the tested landed-price calculator");
 assert.match(pricing, /const landedCostJpy = \(sourceCost \+ shippingCost\) \* sourceFxRateToSelling/, "landed price must use the shipping amount actually passed to profit simulation");
-assert.match(selector, /!isPublishableCatalogTitle\(masterTitle\) && !nativeCjSupplyIdentity/);
+assert.doesNotMatch(selector, /product_master_title_not_publishable|product_master_title_missing/, "a generic legacy product-master title must not block a concrete supplier title");
+assert.match(selector, /generic_non_merchandisable_title/, "true placeholder supplier titles must still be blocked");
 assert.match(selector, /localizeProductDescription\(sourceTitle\)/);
 assert.match(selector, /isPublishableCatalogDescription\(localizedDescription\)/);
 assert.match(selector, /if \(!publishableDescription\)/);
