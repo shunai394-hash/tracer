@@ -25,7 +25,8 @@ const [profit, supplySelector, marketSelector, publicationRoute, diagnosticWorkf
 ]);
 assert.match(profit, /requireDomesticShipping === true && args\.domesticShipping == null/);
 assert.match(profit, /unknown\("domestic_shipping_unknown"\)/);
-assert.match(supplySelector, /requireDomesticShipping: true/);
+assert.match(supplySelector, /domesticShipping: nativeCjSupplyIdentity \? 0 : null/);
+assert.match(supplySelector, /requireDomesticShipping: !nativeCjSupplyIdentity/);
 assert.equal(isPublishableCatalogTitle("トレンド・seeded_dueアイテム"), false);
 assert.equal(isPublishableCatalogTitle("Aroma Filter"), true);
 assert.match(supplySelector, /product_master_title_not_publishable/);
