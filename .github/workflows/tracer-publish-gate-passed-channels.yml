@@ -121,3 +121,4 @@ jobs:
 # Retriggered 2026-10-15: run the guarded BASE + Shopify + Sales Test publication cycle after retry-gate fixes.
 
 # Triggered again after the seven new sales-test listings were confirmed Shopify-synced; finish BASE linkage.
+# Re-run 2026-10-15 after excluding already-hidden BASE items from publication batches.
