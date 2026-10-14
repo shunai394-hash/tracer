@@ -34,14 +34,15 @@ async function productById(id: string): Promise<Product | null> {
   return p && p.tags.includes(COLLECTIVE_TAG) && p.tags.includes(APPROVED_TAG) && supplierName(p) ? p : null;
 }
 function chosen(p: Product, variantId?: string): Variant | null {
-  const list = p.variants.nodes.filter(v => v.sku?.trim() &&
-    num(meta(v.metafields.nodes, "unit_cost")) !== null && num(meta(v.metafields.nodes, "shipping_cost")) !== null && Boolean(meta(v.metafields.nodes, "currency")?.trim()));
+  const list = p.variants.nodes.filter(v => v.sku?.trim() && v.inventoryItem?.unitCost &&
+    num(v.inventoryItem.unitCost.amount) !== null && num(meta(v.metafields.nodes, "shipping_cost")) !== null &&
+    (meta(v.metafields.nodes, "shipping_currency") ?? meta(v.metafields.nodes, "currency")) === v.inventoryItem.unitCost.currencyCode);
   return variantId ? list.find(v => v.id === variantId) ?? null : list.length === 1 ? list[0] : null;
 }
 function asProduct(p: Product, v: Variant): SupplierProduct {
   return { supplierProductId: p.id, supplierName: NAME, title: p.title,
-    currency: meta(v.metafields.nodes, "currency")!,
-    unitCost: num(meta(v.metafields.nodes, "unit_cost")), shippingCost: num(meta(v.metafields.nodes, "shipping_cost")),
+    currency: v.inventoryItem!.unitCost!.currencyCode,
+    unitCost: num(v.inventoryItem!.unitCost!.amount), shippingCost: num(meta(v.metafields.nodes, "shipping_cost")),
     available: v.inventoryQuantity > 0, orderable: false, trackingAvailable: false };
 }
 async function get(pId: string, vId?: string) { const p = await productById(pId); if (!p) return null; const v = chosen(p, vId); return v ? { p, v } : null; }
@@ -71,12 +72,12 @@ export const shopifyCollectiveSupplierAdapter: TracerSupplierAdapter = {
   },
   async getPrice(pid: string, vid?: string): Promise<SupplierPrice | null> {
     const x = await get(pid, vid); return x ? { supplierProductId: pid, supplierVariantId: x.v.id,
-      amount: num(meta(x.v.metafields.nodes, "unit_cost")), currency: meta(x.v.metafields.nodes, "currency") ?? "JPY",
+      amount: num(x.v.inventoryItem?.unitCost?.amount ?? null), currency: x.v.inventoryItem?.unitCost?.currencyCode ?? null,
       observedAt: new Date().toISOString() } : null;
   },
   async getShipping(pid: string, vid?: string): Promise<SupplierShipping | null> {
     const x = await get(pid, vid); if (!x) return null; const amount = num(meta(x.v.metafields.nodes, "shipping_cost"));
-    return { supplierProductId: pid, supplierVariantId: x.v.id, amount, currency: meta(x.v.metafields.nodes, "currency") ?? "JPY",
+    return { supplierProductId: pid, supplierVariantId: x.v.id, amount, currency: meta(x.v.metafields.nodes, "shipping_currency") ?? meta(x.v.metafields.nodes, "currency"),
       available: amount !== null, observedAt: new Date().toISOString() };
   },
   async createOrder(input: SupplierOrderInput): Promise<SupplierOrderResult> {
