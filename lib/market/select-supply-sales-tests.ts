@@ -112,13 +112,14 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // product-master title (for example "トレンド・seeded_dueアイテム").
     const masterTitle = (typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
     const nativeCjSupplyIdentity = Boolean(listing && options.allowNativeCjIdentity === true && isNativeCjSupplierListing(listing));
-    if (base && !masterTitle) reasons.push("product_master_title_missing");
-    // Native CJ products are their own supplier catalog identity, not a marketplace match.
-    // Their own exact supplier title is still required to pass the publishable-title gate below.
-    else if (base && !isPublishableCatalogTitle(masterTitle) && !nativeCjSupplyIdentity) reasons.push("product_master_title_not_publishable");
+    // The supplier's concrete title is the listing source of truth. A generic
+    // legacy product-master title must not suppress a verified supplier offer;
+    // the localized supplier title and placeholder checks below are authoritative.
     const sourceMetadata = base?.metadata && typeof base.metadata === 'object' && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const womenPriority = womenProductPriority({ title: sourceTitle, category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
-    if (base && !womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
+    // Women's relevance is a ranking bonus, not an exclusion rule. All product
+    // categories may be sold when Japanese copy, exact supplier identity,
+    // fulfilment evidence, and positive contribution profit pass.
     if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
     if (!base) reasons.push("product_intelligence_missing"); if (!listing) reasons.push("supplier_listing_missing");
     if (reasons.length > 0) { rejected.push({ productId, reasons, title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
@@ -223,7 +224,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (womenB.bonus !== womenA.bonus) return womenB.bonus - womenA.bonus;
     return b.quality - a.quality;
   });
-  const rejectedSamples = [...rejected].sort((a, b) => Number(a.reasons.includes("outside_womens_product_strategy")) - Number(b.reasons.includes("outside_womens_product_strategy"))).slice(0, 50);
+  const rejectedSamples = rejected.slice(0, 50);
   if (options.dryRun) return {
     published: 0,
     publishedListingIds: [],

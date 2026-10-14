@@ -29,13 +29,14 @@ assert.match(supplySelector, /domesticShipping: nativeCjSupplyIdentity \? 0 : nu
 assert.match(supplySelector, /requireDomesticShipping: !nativeCjSupplyIdentity/);
 assert.equal(isPublishableCatalogTitle("トレンド・seeded_dueアイテム"), false);
 assert.equal(isPublishableCatalogTitle("Aroma Filter"), true);
-assert.match(supplySelector, /product_master_title_not_publishable/);
+assert.match(supplySelector, /generic_non_merchandisable_title/);
+assert.doesNotMatch(supplySelector, /product_master_title_not_publishable|product_master_title_missing/);
 assert.match(marketSelector, /requireDomesticShipping: true/);
 assert.match(supplySelector, /rejectedCount: rejected\.length/);
 assert.match(supplySelector, /rejectionCounts: summarizeRejections\(rejected\)/);
 assert.match(supplySelector, /title: sourceTitle/);
 assert.match(supplySelector, /contributionProfit: profit\.contributionProfit/);
-assert.match(supplySelector, /const rejectedSamples = \[\.\.\.rejected\]\.sort/);
+assert.match(supplySelector, /const rejectedSamples = rejected\.slice\(0, 50\)/, "rejection samples must not prioritize a removed women-only gate");
 assert.match(publicationRoute, /Math\.min\(500, Math\.floor\(requestedDryRunLimit\)\)/);
 assert.match(publicationRoute, /\.slice\(0, dryRunLimit\)/);
 assert.match(diagnosticWorkflow, /sales-test-publication\?dryRun=true&limit=450/);

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 const pipeline = readFileSync("lib/intelligence/run-intelligence-pipeline.ts", "utf8");
 const selector = readFileSync("lib/market/select-supply-sales-tests.ts", "utf8");
+const marketSelector = readFileSync("lib/market/select-sales-tests.ts", "utf8");
 const pricing = readFileSync("lib/market/supply-pricing.ts", "utf8");
 const identity = readFileSync("lib/catalog/canonical-supplier-identity.ts", "utf8");
 const japaneseProduct = readFileSync("lib/intelligence/japanese-product.ts", "utf8");
@@ -29,6 +30,8 @@ assert.match(selector, /options\.allowNativeCjIdentity\s*===\s*true/);
 assert.match(selector, /const intelligence = intelligenceByProduct.get\(productId\) \?\?/);
 assert.doesNotMatch(selector, /if \(!intelligence\) reasons\.push\("opportunity_intelligence_missing"\)/);
 assert.doesNotMatch(selector, /sellability_not_ready|intelligence_filter_not_pass|intelligence_profit_not_ok|demand_evidence_missing|search_fit_evidence_missing|market_gap_evidence_missing|intelligence_confidence_low/, "AI demand scores must not suppress an otherwise profitable and fulfilment-ready product");
+assert.doesNotMatch(selector, /outside_womens_product_strategy/, "women-focused priority must not exclude other profitable categories");
+assert.doesNotMatch(marketSelector, /outside_womens_product_strategy/, "market-linked publication must not exclude other profitable categories either");
 assert.match(selector, /isNativeCjSupplierListing\(candidate\)/);
 assert.match(identity, /row\.verification_status === "verified"/);
 assert.match(identity, /row\.shipping_status === "verified"/);
@@ -43,7 +46,8 @@ assert.match(selector, /shipping_cost: num\(item\.listing\.shipping_cost\)/, "es
 assert.match(selector, /shipping_allowance_estimated_usd_\$\{item\.shippingAllowanceUsd\}_not_supplier_quote/, "the selected listing must label its pricing allowance as an estimate");
 assert.match(selector, /calculateSupplySellingPriceJpy\(/, "missing selling prices must flow through the tested landed-price calculator");
 assert.match(pricing, /const landedCostJpy = \(sourceCost \+ shippingCost\) \* sourceFxRateToSelling/, "landed price must use the shipping amount actually passed to profit simulation");
-assert.match(selector, /!isPublishableCatalogTitle\(masterTitle\) && !nativeCjSupplyIdentity/);
+assert.doesNotMatch(selector, /product_master_title_not_publishable|product_master_title_missing/, "a generic legacy product-master title must not block a concrete supplier title");
+assert.match(selector, /generic_non_merchandisable_title/, "true placeholder supplier titles must still be blocked");
 assert.match(selector, /localizeProductDescription\(sourceTitle\)/);
 assert.match(selector, /isPublishableCatalogDescription\(localizedDescription\)/);
 assert.match(selector, /if \(!publishableDescription\)/);
