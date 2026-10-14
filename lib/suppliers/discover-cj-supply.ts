@@ -80,7 +80,7 @@ async function readCatalogCursor(db: ReturnType<typeof createSupabaseAdminClient
 
 async function writeCatalogCursor(
   db: ReturnType<typeof createSupabaseAdminClient>,
-  cursor: CatalogCursor & { verified: number; rejected: number },
+  cursor: CatalogCursor & { verified: number; rejected: number; rejectedReasons: Record<string, number>; quotaBlocked: boolean },
 ): Promise<void> {
   const now = new Date().toISOString();
   const { error } = await db.from("cron_runs").insert({
@@ -90,7 +90,7 @@ async function writeCatalogCursor(
     finished_at: now,
     processed: cursor.verified,
     failed: cursor.rejected,
-    metadata: { queryIndex: cursor.queryIndex, page: cursor.page },
+    metadata: { queryIndex: cursor.queryIndex, page: cursor.page, rejectedReasons: cursor.rejectedReasons, quotaBlocked: cursor.quotaBlocked },
   });
   if (error) console.error("[supply-first] catalog cursor write failed", error.message);
 }
@@ -783,7 +783,12 @@ export async function discoverAndCreateCjSupply(
         : { queryIndex, page: page + 1 });
     }
   }
-  await writeCatalogCursor(db, { queryIndex, page, verified, rejected });
+  const rejectedReasons = items.reduce<Record<string, number>>((counts, item) => {
+    const stage = typeof item.rejectedStage === "string" ? item.rejectedStage : null;
+    if (stage) counts[stage] = (counts[stage] ?? 0) + 1;
+    return counts;
+  }, {});
+  await writeCatalogCursor(db, { queryIndex, page, verified, rejected, rejectedReasons, quotaBlocked: cjQuotaBlocked });
 
   return { discovered, published: 0, verified, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
 }
