@@ -425,8 +425,8 @@ export async function discoverAndCreateCjSupply(
         : await db.from("products").select("id").eq("identity_key", sourceRef).limit(1).maybeSingle();
       if (existingProduct.error) throw new Error(existingProduct.error.message);
       const productInsert = existingProduct.data?.id
-        ? await db.from("products").update({ canonical_name: detail.title }).eq("id", existingProduct.data.id).select("id").single()
-        : await db.from("products").insert({ canonical_name: detail.title, identity_key: sourceRef }).select("id").single();
+        ? await db.from("products").update({ canonical_name: displayTitle }).eq("id", existingProduct.data.id).select("id").single()
+        : await db.from("products").insert({ canonical_name: displayTitle, identity_key: sourceRef }).select("id").single();
       if (productInsert.error) throw new Error(productInsert.error.message);
       const productId = String(productInsert.data.id);
       const supplierInsert = await upsertSupplierListing(db, {
@@ -653,14 +653,14 @@ export async function discoverAndCreateCjSupply(
         const productInsert = existingProduct.data?.id
           ? await db
               .from("products")
-              .update({ canonical_name: detail.title })
+              .update({ canonical_name: displayTitle })
               .eq("id", existingProduct.data.id)
               .select("id")
               .single()
           : await db
               .from("products")
               .insert({
-                canonical_name: detail.title,
+                canonical_name: displayTitle,
                 identity_key: identityKey,
               })
               .select("id")
