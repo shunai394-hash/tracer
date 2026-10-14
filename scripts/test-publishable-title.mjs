@@ -49,6 +49,17 @@ const candidateTitles = [
   ["aroma diffuser", "50ml Aromatherapy Machine Timed Automatic Spraying Fragrance Household Perfume Machine Toilet Deodorizing Air Purifying Diffuser", "タイマー付き 自動噴霧アロマディフューザー"],
   ["resort skirt", "Sun Protection Clothing Beach Seaside Resort Strappy Skirt", "リゾートデザイン ストラップスカート"],
   ["filtered shower head", "Beauty Dechlorinating Dual Filter Shower Head (Beauty Dechlorinating Dual Filter Shower Head Kdf Filter Element)", "二重フィルター付き シャワーヘッド"],
+  ["leather backpack", "Retro First Layer Cowhide Backpack Crazy Horse Cowhide Ladies Small Backpack", "レトロデザイン レザー調レディースリュック"],
+  ["inner height shoes", "Shoes Women's Inner Height Increase Women's Shoes", "インヒール レディースシューズ"],
+  ["memory foam neck pillow", "Soft Memory Foam Travel Neck Pillow U Shape Adjustable Support Comfortably Sleeping On Plane Car Office Noon Break", "低反発 トラベルネックピロー"],
+  ["non-slip bathroom mat", "Square Non-slip Bathroom Mat With Suction Cup And Round Hole Design Shower Anti-fall Household Shower Massage Quick Drainage Mat", "吸盤付き 滑り止めバスマット"],
+  ["beauty salon towel", "White Beauty Salon Floor Towel Flat Woven Hotel Floor Mat", "美容サロン用 フロアタオル"],
+  ["heat resistant tea cup", "High-value Water Cup Female Cute Heat-resistant Glass Flower Tea Cup Home Ins Style Office Drinking Cup With Lid Spoon", "花柄 耐熱ガラスティーカップ"],
+  ["microcurrent eye device", "The New Beauty Eye Micro-current Massager Color Light Iontophoresis Instrument", "目元用 マイクロカレント美顔器"],
+  ["eye care pad", "Eye Beauty Instrument Home Hot Compress (Eye patch A pair)", "目元用 温熱ケアパッド"],
+  ["cosmetic jewelry rack", "Cosmetic jewelry rack (Cosmetic jewelry rack Three grids)", "コスメ・アクセサリー収納スタンド"],
+  ["makeup storage case", "14-inch Makeup Ultra-light Hard Case Portable Storage Box", "14インチ対応 メイク収納ケース"],
+  ["crystal bracelet set", "Crystal Jade Chakra Combination Set Love Hexagon Pillar Bracelet", "クリスタル調デザイン ブレスレットセット"],
 ];
 for (const [name, source, expected] of candidateTitles) {
   const title = localizeProductTitle(source);

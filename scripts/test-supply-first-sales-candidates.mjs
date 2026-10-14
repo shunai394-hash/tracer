@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 const pipeline = readFileSync("lib/intelligence/run-intelligence-pipeline.ts", "utf8");
 const selector = readFileSync("lib/market/select-supply-sales-tests.ts", "utf8");
+const pricing = readFileSync("lib/market/supply-pricing.ts", "utf8");
 const identity = readFileSync("lib/catalog/canonical-supplier-identity.ts", "utf8");
 const japaneseProduct = readFileSync("lib/intelligence/japanese-product.ts", "utf8");
 
@@ -21,6 +22,9 @@ assert.match(pipeline, /\.not\("supplier_variant_id",\s*"is",\s*null\)/);
 assert.match(pipeline, /\.gte\("last_verified_at",\s*freshSupplyCutoff\)/);
 assert.match(pipeline, /selectAndPublishSupplySalesTests\(supplyCandidateIds,\s*50,\s*\{\s*allowNativeCjIdentity:\s*true\s*\}\)/);
 assert.match(selector, /options\.allowNativeCjIdentity\s*===\s*true/);
+// Demand/opportunity intelligence is ranking-only, not a listing prerequisite.
+assert.match(selector, /const intelligence = intelligenceByProduct.get\(productId\) \?\?/);
+assert.doesNotMatch(selector, /if \(!intelligence\) reasons\.push\("opportunity_intelligence_missing"\)/);
 assert.match(selector, /isNativeCjSupplierListing\(candidate\)/);
 assert.match(identity, /row\.verification_status === "verified"/);
 assert.match(identity, /row\.shipping_status === "verified"/);
@@ -30,6 +34,8 @@ assert.match(identity, /row\.supplier_variant_id/);
 assert.match(selector, /Boolean\(candidate\.supplier_product_id\)/);
 assert.match(selector, /Boolean\(candidate\.supplier_variant_id\)/);
 assert.match(selector, /domesticShipping: nativeCjSupplyIdentity \? 0 : null/);
+assert.match(selector, /calculateSupplySellingPriceJpy\(/, "missing selling prices must flow through the tested landed-price calculator");
+assert.match(pricing, /const landedCostJpy = \(sourceCost \+ shippingCost\) \* sourceFxRateToSelling/, "landed price must use the shipping amount actually passed to profit simulation");
 assert.match(selector, /!isPublishableCatalogTitle\(masterTitle\) && !nativeCjSupplyIdentity/);
 assert.match(selector, /localizeProductDescription\(sourceTitle\)/);
 assert.match(selector, /isPublishableCatalogDescription\(localizedDescription\)/);

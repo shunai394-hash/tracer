@@ -32,6 +32,18 @@ const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
   [/car decorations.*led ambient lights|interior led ambient lights/i, "車内LEDアンビエントライト"],
   [/three-dimensional piggy butt.*phone case|piggy butt phone case/i, "ぶたモチーフ シリコンスマホケース"],
   [/flowers.*phone case|flower.*phone case/i, "フラワーモチーフ スマホケース"],
+  [/retro.*cowhide backpack|crazy horse cowhide.*backpack/i, "レトロデザイン レザー調レディースリュック"],
+  [/shoes.*women.*inner height increase|inner height increase.*women.*shoes/i, "インヒール レディースシューズ"],
+  [/soft memory foam travel neck pillow|travel neck pillow.*memory foam/i, "低反発 トラベルネックピロー"],
+  [/hooded travel pillow.*inflatable neck pillow|inflatable neck pillow/i, "空気注入式 トラベルネックピロー"],
+  [/square non.slip bathroom mat.*suction cup|bathroom mat.*suction cup/i, "吸盤付き 滑り止めバスマット"],
+  [/beauty salon floor towel|floor towel.*floor mat/i, "美容サロン用 フロアタオル"],
+  [/high.value water cup.*heat.resistant glass.*flower tea cup|heat.resistant glass flower tea cup/i, "花柄 耐熱ガラスティーカップ"],
+  [/micro.current massager.*eye|eye.*micro.current massager/i, "目元用 マイクロカレント美顔器"],
+  [/eye beauty instrument home hot compress|eye patch.*pair/i, "目元用 温熱ケアパッド"],
+  [/cosmetic jewelry rack.*three grids|cosmetic jewelry rack/i, "コスメ・アクセサリー収納スタンド"],
+  [/14.inch makeup.*storage box|makeup.*portable storage box/i, "14インチ対応 メイク収納ケース"],
+  [/crystal jade chakra combination set.*bracelet|chakra combination set.*bracelet/i, "クリスタル調デザイン ブレスレットセット"],
 ];
 
 const CATEGORY_ONLY_TITLES = new Set([
@@ -162,6 +174,18 @@ export function localizeProductDescription(value: unknown): string | null {
     [/hd large mirror.*magnifying glass|magnifying glass.*stand/i, "スタンド付きの拡大鏡です。レンズ径・倍率・固定方法は販売元の仕様をご確認ください。"],
     [/car decorations.*led ambient lights|interior led ambient lights/i, "車内用のLEDアンビエントライトです。電源方式・車種との適合・配線方法は販売元の仕様をご確認ください。"],
     [/three-dimensional piggy butt.*phone case|piggy butt phone case|flowers.*phone case|flower.*phone case/i, "スマートフォン用ケースです。対応機種・素材・付属品は商品バリエーションと販売元の仕様をご確認ください。"],
+    [/retro.*cowhide backpack|crazy horse cowhide.*backpack/i, "レトロデザインのレディースリュックです。素材表記・寸法・収納部・ベルト仕様は販売元の最新仕様をご確認ください。"],
+    [/shoes.*women.*inner height increase|inner height increase.*women.*shoes/i, "インヒール仕様のレディースシューズです。ヒール高・対応サイズ・素材・サイズ感は販売元の仕様をご確認ください。"],
+    [/soft memory foam travel neck pillow|travel neck pillow.*memory foam/i, "移動中に首元を支える低反発ネックピローです。形状・素材・寸法・付属品は販売元の仕様をご確認ください。"],
+    [/hooded travel pillow.*inflatable neck pillow|inflatable neck pillow/i, "旅行や移動中に使う空気注入式ネックピローです。寸法・素材・空気注入方式・付属品は販売元の仕様をご確認ください。"],
+    [/square non.slip bathroom mat.*suction cup|bathroom mat.*suction cup/i, "吸盤付きの滑り止めバスマットです。対応する床面・寸法・材質・お手入れ方法は販売元の仕様をご確認ください。"],
+    [/beauty salon floor towel|floor towel.*floor mat/i, "美容サロン向けのフロアタオルです。寸法・素材・厚み・洗濯方法は販売元の仕様をご確認ください。"],
+    [/high.value water cup.*heat.resistant glass.*flower tea cup|heat.resistant glass flower tea cup/i, "花柄の耐熱ガラスティーカップです。容量・耐熱温度・電子レンジ対応・付属品は販売元の仕様をご確認ください。"],
+    [/micro.current massager.*eye|eye.*micro.current massager/i, "目元用のマイクロカレント美顔器です。機能・給電方式・使用上の注意・付属品は販売元の仕様をご確認ください。"],
+    [/eye beauty instrument home hot compress|eye patch.*pair/i, "目元用の温熱ケアパッドです。温度・使用時間・素材・使用上の注意は販売元の仕様をご確認ください。"],
+    [/cosmetic jewelry rack.*three grids|cosmetic jewelry rack/i, "コスメやアクセサリーをまとめて収納するスタンドです。寸法・収納段数・素材・組み立て方法は販売元の仕様をご確認ください。"],
+    [/14.inch makeup.*storage box|makeup.*portable storage box/i, "メイク用品向けの収納ケースです。外寸・内寸・仕切り・素材は販売元の仕様をご確認ください。"],
+    [/crystal jade chakra combination set.*bracelet|chakra combination set.*bracelet/i, "クリスタル調デザインのブレスレットセットです。石材の種類・サイズ・セット内容は販売元の仕様をご確認ください。"],
   ];
   return rules.find(([pattern]) => pattern.test(source))?.[1] ?? null;
 }
