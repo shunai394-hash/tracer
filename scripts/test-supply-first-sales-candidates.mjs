@@ -32,7 +32,8 @@ assert.match(selector, /Boolean\(candidate\.supplier_variant_id\)/);
 assert.match(selector, /domesticShipping: nativeCjSupplyIdentity \? 0 : null/);
 assert.match(selector, /!isPublishableCatalogTitle\(masterTitle\) && !nativeCjSupplyIdentity/);
 assert.match(selector, /localizeProductDescription\(sourceTitle\)/);
-assert.match(selector, /isPublishableCatalogDescription\(publishableDescription\)/);
+assert.match(selector, /isPublishableCatalogDescription\(localizedDescription\)/);
+assert.match(selector, /if \(!publishableDescription\)/);
 assert.match(japaneseProduct, /knitted headband.*women/i);
 assert.match(japaneseProduct, /柔らかなニット素材のクロスヘアバンドです/);
 
