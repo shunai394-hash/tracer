@@ -68,7 +68,7 @@ jobs:
 
           # This schedule is a one-time retry for the known CJ API cooldown on 2026-10-14 UTC.
           # Keep later annual schedule matches as no-ops; the manual/push path remains usable.
-          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] && [ "$(date -u +%F)" != "2026-10-14" ]; then
+          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] && [ "$schedule_date" != "2026-10-14" ] && ! { [ "$schedule_date" = "2026-10-15" ] && [ "$schedule_hour" -lt 2 ]; }; then
             echo "One-time cooldown retry window has passed; skipping."
             exit 0
           fi
