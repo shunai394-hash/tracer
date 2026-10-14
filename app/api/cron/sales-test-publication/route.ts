@@ -157,7 +157,7 @@ export async function GET(request: Request) {
       .select("product_id")
       .in("supplier", ["cj", "cjdropshipping"])
       .eq("verification_status", "verified")
-      .eq("shipping_status", "verified")
+      .in("shipping_status", ["verified", "estimated"])
       .eq("price_confirmed", true)
       .eq("inventory_confirmed", true)
       .gt("inventory", 0)
