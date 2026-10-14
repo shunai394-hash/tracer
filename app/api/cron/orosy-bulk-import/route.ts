@@ -31,9 +31,10 @@ function japaneseTitle(title: string): boolean {
   return jp >= 3 && latin <= jp * 2;
 }
 
-function priceFor(cost: number, retail: number | null): number {
-  const floor = Math.ceil((cost / 0.62) / 100) * 100;
-  const retailFloor = retail && retail > cost ? Math.ceil(retail / 100) * 100 : 0;
+function priceFor(cost: number, shipping: number, retail: number | null): number {
+  const landedCost = cost + shipping;
+  const floor = Math.ceil((landedCost / 0.62) / 100) * 100;
+  const retailFloor = retail && retail > landedCost ? Math.ceil(retail / 100) * 100 : 0;
   return Math.max(floor, retailFloor);
 }
 
@@ -50,9 +51,10 @@ async function upsertProduct(
   if (!detail || !/^\\d{8,14}$/.test(jan)) return null;
 
   // Reuse an existing canonical record with the same JAN instead of creating a duplicate.
-  const canonical = await supabase.from("products").select("id").eq("jan", jan).maybeSingle();
+  const canonical = await supabase.from("products").select("id").eq("jan", jan).limit(2);
   if (canonical.error) throw new Error(canonical.error.message);
-  if (canonical.data?.id) return String(canonical.data.id);
+  if ((canonical.data ?? []).length > 1) return null;
+  if (canonical.data?.[0]?.id) return String(canonical.data[0].id);
 
   const identityKey = `orosy:${detail.id}`;
   const existing = await supabase.from("products").select("id,jan").eq("identity_key", identityKey).maybeSingle();
@@ -193,7 +195,13 @@ export async function GET(request: Request) {
       supplierListingId = String(inserted.data.id);
     }
 
-    const sellingPrice = priceFor(variation.buyerPrice, variation.retailPrice);
+    const sellingPrice = priceFor(variation.buyerPrice, shippingQuote.amount, variation.retailPrice);
+    const contributionProfit = sellingPrice - variation.buyerPrice - shippingQuote.amount;
+    const contributionMargin = (contributionProfit / sellingPrice) * 100;
+    if (!Number.isFinite(sellingPrice) || sellingPrice <= 0 || contributionProfit <= 0 || contributionMargin < 20) {
+      rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: "insufficient_landed_margin" });
+      continue;
+    }
     const listingSlug = slug(detail.title, detail.id, variation.variationId);
     const listingPayload = {
       product_id: productId,
@@ -223,8 +231,8 @@ export async function GET(request: Request) {
       tracking_available: true,
       identity_method: "jan",
       identity_confidence: 1,
-      contribution_profit: sellingPrice - variation.buyerPrice - shippingQuote.amount,
-      contribution_margin: ((sellingPrice - variation.buyerPrice - shippingQuote.amount) / sellingPrice) * 100,
+      contribution_profit: contributionProfit,
+      contribution_margin: contributionMargin,
       updated_at: now,
     };
 
