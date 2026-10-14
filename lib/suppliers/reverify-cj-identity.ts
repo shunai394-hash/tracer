@@ -334,7 +334,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       await persistCjSupplyIntelligence({ productId: identity?.productId ?? String(row.product_id), title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } }, { identity });
       const { error: refreshedEvidenceWriteError } = await db.from("supplier_listings").update({
         cost, shipping_cost: shippingCost, shipping_status: shippingEstimated ? "estimated" : "verified", inventory,
-        price_confirmed: true, stock_confirmed: true, fetched_at: new Date().toISOString(),
+        price_confirmed: true, stock_confirmed: true, last_verified_at: new Date().toISOString(), fetched_at: new Date().toISOString(),
         metadata: {
           ...listingMetadata,
           ...refreshedEvidence,
