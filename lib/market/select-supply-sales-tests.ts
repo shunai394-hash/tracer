@@ -8,6 +8,7 @@ import { isJapaneseProductTitle, localizeProductDescription, localizeProductTitl
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { isNativeCjSupplierListing } from "@/lib/catalog/canonical-supplier-identity";
+import { calculateSupplySellingPriceJpy } from "@/lib/market/supply-pricing";
 
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -167,13 +168,18 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const shippingAllowanceUsd = 15;
     const shippingEstimated = shippingCost === null && String(listing.supplier ?? "").trim().toLowerCase() === "cj" && Boolean(listing.supplier_product_id) && Boolean(listing.supplier_variant_id) && listing.orderable === true && sourceCurrency === "USD";
     const pricingShippingCost = shippingCost ?? (shippingEstimated ? shippingAllowanceUsd : null);
-    if ((sellingPrice === null || sellingPrice <= 0) && pricingShippingCost !== null && sourceCost !== null && sourceCost > 0 && sourceFxRateToSelling !== null && sourceFxRateToSelling > 0) {
-      const costJpy = (sourceCost + pricingShippingCost) * sourceFxRateToSelling;
-      const targetContributionMargin = 0.20;
-      const retainedAfterFees = 1 - PROFIT_ASSUMPTIONS.platform_fee_rate - PROFIT_ASSUMPTIONS.payment_fee_rate - PROFIT_ASSUMPTIONS.advertising_allowance_rate - PROFIT_ASSUMPTIONS.return_refund_reserve_rate - PROFIT_ASSUMPTIONS.fx_reserve_rate;
-      const denominator = retainedAfterFees - targetContributionMargin;
-      if (Number.isFinite(costJpy) && denominator > 0) sellingPrice = Math.ceil((costJpy / denominator) / 100) * 100;
-    }
+    sellingPrice = calculateSupplySellingPriceJpy({
+      existingSellingPriceJpy: sellingPrice,
+      sourceCost,
+      shippingCost: pricingShippingCost,
+      sourceFxRateToSelling,
+      platformFeeRate: PROFIT_ASSUMPTIONS.platform_fee_rate,
+      paymentFeeRate: PROFIT_ASSUMPTIONS.payment_fee_rate,
+      advertisingAllowanceRate: PROFIT_ASSUMPTIONS.advertising_allowance_rate,
+      returnRefundReserveRate: PROFIT_ASSUMPTIONS.return_refund_reserve_rate,
+      fxReserveRate: PROFIT_ASSUMPTIONS.fx_reserve_rate,
+      targetContributionMargin: 0.20,
+    });
     if (sellingPrice === null || sellingPrice <= 0) reasons.push("selling_price_unknown");
     const profit = simulateContributionProfit({
       sellingPrice,
