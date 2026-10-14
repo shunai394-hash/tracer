@@ -151,8 +151,7 @@ export async function GET(request: Request) {
     // CJ-native supply is its own evidence path: exact supplier product + variant,
     // verified shipping, price, stock, orderability, tracking and API availability.
     // It does not need a marketplace ASIN/JAN match. The strict native-CJ
-    // evidence gate remains mandatory; live publication additionally requires
-    // the explicit production feature flag, while dry-run can inspect candidates.
+    // evidence gate remains mandatory for both dry-run and live publication.
     const { data: nativeCjSupply, error: nativeCjSupplyError } = await supabase
       .from("supplier_listings")
       .select("product_id")
