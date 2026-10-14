@@ -27,4 +27,4 @@ assert.match(profit, /advertising_allowance_rate/);
 assert.match(profit, /return_refund_reserve_rate/);
 assert.match(profit, /fx_reserve_rate/);
 
-console.log("Orosy canonical identity, shipping ambiguity, fully costed margin and no-side-effect invariants: 18 assertions passed");
+console.log("Orosy canonical identity, shipping ambiguity, fully costed margin and no-side-effect invariants: 22 assertions passed");
