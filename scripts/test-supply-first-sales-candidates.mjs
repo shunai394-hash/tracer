@@ -25,6 +25,8 @@ assert.match(selector, /options\.allowNativeCjIdentity\s*===\s*true/);
 // Demand/opportunity intelligence is ranking-only, not a listing prerequisite.
 assert.match(selector, /const intelligence = intelligenceByProduct.get\(productId\) \?\?/);
 assert.doesNotMatch(selector, /if \(!intelligence\) reasons\.push\("opportunity_intelligence_missing"\)/);
+assert.doesNotMatch(selector, /reasons\.push\(['"]outside_womens_product_strategy['"]\)/);
+assert.doesNotMatch(selector, /reasons\.push\(["']product_master_title_(missing|not_publishable)["']\)/);
 assert.match(selector, /isNativeCjSupplierListing\(candidate\)/);
 assert.match(identity, /row\.verification_status === "verified"/);
 assert.match(identity, /row\.shipping_status === "verified"/);
