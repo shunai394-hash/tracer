@@ -25,6 +25,8 @@ assert.match(source, /const tracerResolution = await resolveLiveTracerUrl/);
 assert.match(source, /resolveLiveTracerUrl\(typeof listing\.id === "string" \? listing\.id : null\)/,
   "NEWFIND must use a stable UUID product URL rather than an encoded Japanese slug");
 assert.match(source, /tracer_sales_url_http_\$\{response\.status\}/, "record the actual HTTP status when a product page is not live");
+assert.match(source, /Math\.round\(Math\.max\(0, Math\.min\(100, Number\(match\[1\]\)\)\)\)/,
+  "selection scores must be integral before sending to NEWFIND integer columns");
 assert.match(source, /tracer_sales_url_timeout/);
 assert.match(source, /tracer_sales_url_not_live/);
 assert.match(source, /sales_url: productUrl/);
