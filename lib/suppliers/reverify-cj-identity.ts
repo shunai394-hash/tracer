@@ -140,7 +140,16 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const rows = rowsResult.data ?? [];
   const scanCursor = rows.length > 0 ? String(rows[rows.length - 1].id) : priorCursor;
   const nowMs = Date.now();
-  const allRows = rows.filter((row) => isCjIdentityReverifyCandidate({ verificationStatus: row.verification_status, identityMethod: row.identity_method, supplierVariantId: row.supplier_variant_id }) && isCjIdentityReverifyDue(row.metadata, nowMs));
+  // Force bypasses only the per-row identity retry backoff. The CJ API quota
+  // circuit, exact supplier identity checks, and verification invariants remain
+  // enforced, so scheduled freshness recovery cannot bypass provider limits.
+  const allRows = rows.filter((row) =>
+    isCjIdentityReverifyCandidate({
+      verificationStatus: row.verification_status,
+      identityMethod: row.identity_method,
+      supplierVariantId: row.supplier_variant_id,
+    }) && (force || isCjIdentityReverifyDue(row.metadata, nowMs))
+  );
   const womensRows = allRows.filter((row) => isWomensProductTitle(row.title, row.metadata));
   const otherRows = allRows.filter((row) => !isWomensProductTitle(row.title, row.metadata));
   const priority = (row: typeof allRows[number]) => row.verification_status === "unverified" ? 0 : 1;
