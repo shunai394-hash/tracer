@@ -42,7 +42,7 @@ export type CjIdentityProgressCounts = {
   linkedInStockCatalogVariants: number;
   publishedOrderableListings: number;
 };
-export type CjIdentityReverifyResult = { checked: number; promoted: number; supplierVerified: number; noUniqueBarcodeMatch: number; missingEconomics: number; errors: Array<{ supplierListingId: string; error: string }>; promotedListings: Array<{ supplierListingId: string; bestsellerId: string; method: string }>; nextCursor: string | null; quotaBlockedUntil: string | null; progress: { before: CjIdentityProgressCounts; after: CjIdentityProgressCounts } };
+export type CjIdentityReverifyResult = { checked: number; promoted: number; supplierVerified: number; noUniqueBarcodeMatch: number; missingEconomics: number; remediationQueued: Array<{ supplierListingId: string; missingFields: string[]; nextActions: string[] }>; errors: Array<{ supplierListingId: string; error: string }>; promotedListings: Array<{ supplierListingId: string; bestsellerId: string; method: string }>; nextCursor: string | null; quotaBlockedUntil: string | null; progress: { before: CjIdentityProgressCounts; after: CjIdentityProgressCounts } };
 
 async function readCjIdentityProgressCounts(db: ReturnType<typeof createSupabaseAdminClient>): Promise<CjIdentityProgressCounts> {
   const [linked, products, variants, published] = await Promise.all([
@@ -149,7 +149,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const remaining = Math.max(0, limit - selectedWomens.length);
   const selectedOther = remaining > 0 ? otherRows.slice(0, Math.min(remaining, otherRows.length)) : [];
   const selectedRows = [...selectedWomens, ...selectedOther];
-  const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, errors: [], promotedListings: [], nextCursor: scanCursor, quotaBlockedUntil: null, progress: { before: beforeCounts, after: beforeCounts } };
+  const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, remediationQueued: [], errors: [], promotedListings: [], nextCursor: scanCursor, quotaBlockedUntil: null, progress: { before: beforeCounts, after: beforeCounts } };
   const processRow = async (row: NonNullable<typeof rows>[number]) => {
     const supplierListingId = String(row.id);
     try {
@@ -210,6 +210,14 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       ];
       if (missingFields.length > 0) {
         const checkedAt = new Date();
+        const nextActions = missingFields.map((field) =>
+          field === "supplier_cost" ? "refetch_exact_cj_variant_price" :
+            field === "japan_shipping" ? "retry_destination_specific_cj_shipping_quote" :
+            field === "variant_inventory" ? "refresh_exact_variant_stock_evidence" :
+            field === "usd_jpy_rate" ? "refresh_fx_rate" :
+            field === "selling_price_jpy" ? "recalculate_from_verified_landed_cost_and_fees" :
+            "refetch_supplier_or_product_image"
+        );
         const remediation = {
           ...(variantBarcode ? { variant_barcode: variantBarcode, variant_barcode_raw: variantBarcode } : {}),
           ...supplierBarcodeAudit(variantBarcode, normalizeIdentifier("gtin", variantBarcode ?? "") !== null),
@@ -220,18 +228,10 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
           remediation_missing_fields: missingFields,
           remediation_attempts: Math.max(0, Number(listingMetadata.remediation_attempts ?? 0)) + 1,
           ...(liveVariantPriceRecovered ? { live_variant_price_recovered_at: checkedAt.toISOString() } : {}),
-          remediation_next_actions: missingFields.map((field) => ({
-            field,
-            action: field === "supplier_cost" ? "refetch_exact_cj_variant_price" :
-              field === "japan_shipping" ? "retry_destination_specific_cj_shipping_quote" :
-              field === "variant_inventory" ? "refresh_exact_variant_stock_evidence" :
-              field === "usd_jpy_rate" ? "refresh_fx_rate" :
-              field === "selling_price_jpy" ? "recalculate_from_verified_landed_cost_and_fees" :
-              "refetch_supplier_or_product_image",
-          })),
+          remediation_next_actions: missingFields.map((field, index) => ({ field, action: nextActions[index] })),
         };
         await db.from("supplier_listings").update({ ...(cost !== null ? { cost, price_confirmed: true } : {}), metadata: { ...listingMetadata, ...remediation } }).eq("id", supplierListingId);
-        return { kind: "missing_economics" as const, supplierListingId };
+        return { kind: "missing_economics" as const, supplierListingId, missingFields, nextActions };
       }
       // Keep TypeScript's control-flow narrowing explicit after the field-list
       // remediation branch above.
