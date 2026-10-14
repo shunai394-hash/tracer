@@ -7,6 +7,24 @@ import {
   resolveSupplierCandidateProductId,
 } from "../lib/catalog/supplier-locators.ts";
 
+test("supplier locator normalization preserves supplier-native identifiers and a stable key", () => {
+  const locator = normalizeSupplierLocator({
+    supplier: " CJ ",
+    supplierProductId: " P-100 ",
+    supplierVariantId: " V-RED ",
+    productUrl: "https://CJ.example/item/123?utm_source=feed",
+    sku: " cj-red-1 ",
+    barcode: " 123 456 ",
+  });
+  assert.equal(locator.supplier, "cj");
+  assert.equal(locator.supplierProductId, "P-100");
+  assert.equal(locator.supplierVariantId, "V-RED");
+  assert.equal(locator.productUrl, "https://cj.example/item/123");
+  assert.equal(locator.sku, "CJ-RED-1");
+  assert.equal(locator.barcode, "123456");
+  assert.equal(locator.locatorKey, "cj:P-100:V-RED");
+});
+
 test("supplier product + variant IDs locate an offer without a marketplace barcode", () => {
   const result = compareSupplierLocators(
     { supplier: "CJ", supplierProductId: "P-100", supplierVariantId: "V-RED" },
