@@ -137,7 +137,7 @@ export async function syncShopifyFulfillments(limit = 25): Promise<ShopifyFulfil
       }
       if (!fulfillment.fulfillmentCreate.fulfillment) throw new Error("shopify_fulfillment_missing");
 
-      await supabase
+      const { error: persistError } = await supabase
         .from("shop_orders")
         .update({
           order_status: "delivered" === order.order_status ? "delivered" : "shipping",
@@ -145,6 +145,9 @@ export async function syncShopifyFulfillments(limit = 25): Promise<ShopifyFulfil
           shopify_synced_at: new Date().toISOString(),
         })
         .eq("id", order.id);
+      if (persistError) {
+        throw new Error(`shopify_fulfillment_created_local_persist_failed:${persistError.message}`);
+      }
       result.synced += 1;
     } catch (error) {
       result.failed += 1;
