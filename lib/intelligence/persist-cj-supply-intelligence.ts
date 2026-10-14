@@ -4,7 +4,6 @@ import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchCJProductVariants, fetchCJVariantByVid } from "@/lib/sources/cj";
 import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates, pickSupplierBarcodeIdentifier } from "@/lib/market/identifiers";
-import { hasUniqueMarketplaceIdentity } from "@/lib/suppliers/cj-identity-reverify-policy";
 import { normalizeSupplierLocator, resolveSupplierCandidateProductId } from "@/lib/catalog/supplier-locators";
 
 export type PersistCjSupplyIntelligenceArgs = {
