@@ -21,6 +21,9 @@ assert.match(pipeline, /\.not\("supplier_product_id",\s*"is",\s*null\)/);
 assert.match(pipeline, /\.not\("supplier_variant_id",\s*"is",\s*null\)/);
 assert.match(pipeline, /\.gte\("last_verified_at",\s*freshSupplyCutoff\)/);
 assert.match(pipeline, /selectAndPublishSupplySalesTests\(supplyCandidateIds,\s*50,\s*\{\s*allowNativeCjIdentity:\s*true\s*\}\)/);
+const salesRoute = readFileSync("app/api/cron/sales-test-publication/route.ts", "utf8");
+assert.match(salesRoute, /mode: "canonical_supply_fast_path"/, "cron telemetry must name the supply-first path it actually runs");
+assert.doesNotMatch(salesRoute, /mode: "market_linked_sales_test"/, "cron telemetry must not mislabel supply-first runs as market-linked-only");
 assert.match(selector, /options\.allowNativeCjIdentity\s*===\s*true/);
 // Demand/opportunity intelligence is ranking-only, not a listing prerequisite.
 assert.match(selector, /const intelligence = intelligenceByProduct.get\(productId\) \?\?/);
