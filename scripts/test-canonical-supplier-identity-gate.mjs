@@ -23,6 +23,7 @@ const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSup
 ]);
 assert.match(helper, /identity_status === "linked"/);
 assert.doesNotMatch(persist, /verification_error:\s*marketplaceIdentity/, "marketplace identity uncertainty must not be recorded as supplier verification failure");
+assert.doesNotMatch(persist, /verification_status:\s*marketplaceIdentity\s*\?\s*"verified"\s*:\s*"unverified"/, "identity persistence must not overwrite the independent supplier verification state");
 assert.match(discoverCJ, /identity_status: "supply_discovered", identity_confidence: 0/, "supply discovery without canonical identity must not claim perfect identity confidence");
 assert.match(discoverCJ, /title: detail\.title, product_id: null/, "CJ supply discovery must not provisionally attach a canonical product ID before identity is resolved");
 assert.match(discoverCJ, /api_available: true, verification_status: "verified"/, "live-verified CJ supply must record supplier API and verification state independently of marketplace identity");
@@ -42,6 +43,9 @@ for (const upsert of supplierUpserts) {
   assert.match(upsert, /api_available: true/);
   assert.match(upsert, /orderable: true/);
   assert.match(upsert, /tracking_available: cjTrackingAvailable/);
+  assert.match(upsert, /verification_error: null/);
+  assert.match(upsert, /shipping_status: "verified"/);
+  assert.match(upsert, /last_verified_at:/);
   assert.doesNotMatch(upsert, /identity_confidence: 1/, "native CJ orderability must not imply marketplace identity");
 }
 
