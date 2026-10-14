@@ -238,10 +238,9 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     brand = typeof bestseller?.brand === "string" ? bestseller.brand : null;
   }
 
-  // The storefront route is keyed by the product slug, not the listing UUID.
-  // Passing listing.id made every otherwise-live product resolve to /shop/<uuid>
-  // and return HTTP 404, permanently blocking NEWFIND promotions.
-  const tracerResolution = await resolveLiveTracerUrl(typeof listing.slug === "string" ? listing.slug : null);
+  // The storefront route explicitly resolves stable listing UUIDs, avoiding
+  // URL-encoding ambiguity for Japanese slugs used by external integrations.
+  const tracerResolution = await resolveLiveTracerUrl(typeof listing.id === "string" ? listing.id : null);
   const tracerUrl = tracerResolution.url;
   // NEWFIND validates that sales links originate from TRACER. Only publish a
   // TRACER URL after the actual product page passes its liveness check.
