@@ -400,7 +400,7 @@ export async function fetchCJVariantByVid(vid: string): Promise<CJProductVariant
   if (!normalizedVid) throw new CJRequestError("CJ variant id is empty");
 
   const token = await getAccessToken();
-  const params = new URLSearchParams({ vid: normalizedVid });
+  const params = new URLSearchParams({ vid: normalizedVid, features: "enable_inventory" });
   const response = await fetchCJWithRateLimit(
     `https://developers.cjdropshipping.com/api2.0/v1/product/variant/queryByVid?${params.toString()}`,
     {
@@ -427,6 +427,30 @@ export async function fetchCJVariantByVid(vid: string): Promise<CJProductVariant
   const id = row.vid?.trim() || row.variantId?.trim();
   if (!id) return null;
 
+  const verifiedByCountry = new Map<string, { quantity: number; storageId: string | null }>();
+  for (const inventoryRow of row.inventories ?? []) {
+    const countryCode = String(inventoryRow.countryCode ?? "").trim().toUpperCase();
+    const quantity = Number(inventoryRow.cjInventory);
+    if (
+      !/^[A-Z]{2}$/.test(countryCode) ||
+      Number(inventoryRow.verifiedWarehouse) !== 1 ||
+      !Number.isFinite(quantity) ||
+      quantity <= 0
+    ) continue;
+    const current = verifiedByCountry.get(countryCode);
+    const storageId = inventoryRow.storageId === undefined || inventoryRow.storageId === null
+      ? null
+      : String(inventoryRow.storageId);
+    verifiedByCountry.set(countryCode, {
+      quantity: (current?.quantity ?? 0) + Math.floor(quantity),
+      storageId: current?.storageId === storageId ? storageId : null,
+    });
+  }
+  const inventoryByCountry = [...verifiedByCountry.entries()]
+    .map(([countryCode, value]) => ({ countryCode, quantity: value.quantity, storageId: value.storageId }))
+    .sort((a, b) => b.quantity - a.quantity);
+  const verifiedInventory = inventoryByCountry.reduce((sum, row) => sum + row.quantity, 0);
+
   return {
     vid: id,
     productId: row.pid?.trim() || row.productId?.trim() || "",
@@ -444,7 +468,8 @@ export async function fetchCJVariantByVid(vid: string): Promise<CJProductVariant
               .find((value) => value !== undefined && value !== null && String(value).trim()),
           ).replace(/\D/g, "") || null
         : null,
-    inventory: null,
+    inventory: inventoryByCountry.length ? verifiedInventory : null,
+    inventoryByCountry,
   };
 }
 
@@ -818,22 +843,21 @@ export async function getCJProductDetail(
 }
 
 /**
- * UNVERIFIED FIELD MAPPING — read this before trusting this function.
- *
- * developers.cjdropshipping.com and developers.cjdropshipping.cn are both
- * blocked by this environment's network egress proxy (EGRESS_BLOCKED), so
- * the primary "CJ Docs > API v2.0 > product.html" page could not be fetched
- * and read directly. The endpoint path and field names below come from
- * search-engine-indexed secondary sources only (an AI-summarized web search,
- * not a page this code read itself) — they are a best-effort reconstruction,
- * not a confirmed official contract. Field names that could not be
- * corroborated at all (notably any per-variant inventory/stock field) are
- * deliberately left unmapped below and surfaced as null, not guessed.
- *
- * Before CJ_LIVE_ORDERING is ever set to 1 against a real account, a human
- * must open the live CJ developer docs, compare this against the real
- * response shape, and correct anything that differs.
+ * CJ variant detail mapping follows the official API v2.0 variant query
+ * contract. Inventory is requested explicitly with features=enable_inventory.
+ * Only cjInventory from verified warehouses (verifiedWarehouse=1) is usable
+ * for live order preflight; factory inventory and unverified warehouses are
+ * deliberately excluded. The first production response must still be checked
+ * against these documented fields before enabling live ordering.
  */
+type CJVariantInventoryRow = {
+  countryCode?: string;
+  cjInventory?: number | string;
+  totalInventory?: number | string;
+  verifiedWarehouse?: number | string | boolean;
+  storageId?: string | number;
+};
+
 type CJVariantRow = {
   vid?: string;
   variantId?: string;
@@ -848,6 +872,7 @@ type CJVariantRow = {
   variantBarcode?: string | number;
   variantBarCode?: string | number;
   productBarCode?: string | number;
+  inventories?: CJVariantInventoryRow[];
 };
 
 type CJVariantQueryResponse = {
