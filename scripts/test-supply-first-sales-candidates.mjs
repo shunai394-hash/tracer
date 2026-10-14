@@ -52,4 +52,7 @@ assert.match(locators, /existingIdentityStatus === "supply_discovered" && existi
 assert.match(japaneseProduct, /knitted headband.*women/i);
 assert.match(japaneseProduct, /柔らかなニット素材のクロスヘアバンドです/);
 
+// AI demand/selection scores are ranking signals, not hard publication gates.
+assert.doesNotMatch(selector, /opportunity_intelligence_missing|sellability_not_ready|intelligence_filter_not_pass|intelligence_profit_not_ok|demand_evidence_missing|search_fit_evidence_missing|market_gap_evidence_missing|intelligence_confidence_low/);
+
 console.log("Supply-first candidate selection contract passed.");
