@@ -199,7 +199,7 @@ export function getDropshipSupplierConfig() {
     dsers: present(readEnv("DSERS_API_KEY")),
     zendrop: present(readEnv("ZENDROP_API_KEY")),
     syncee: present(readEnv("SYNCEE_API_KEY")),
-    orosy: present(readEnv("OROSY_API_KEY")) || present(readEnv("OROSY_DEMO_API_KEY")),
+    orosy: false, // Orosy is disabled by explicit product decision.
     faire: present(readEnv("FAIRE_ACCESS_TOKEN")),
   };
 }
