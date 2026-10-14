@@ -53,6 +53,7 @@ jobs:
           sudo -u postgres createdb tracer_test
           sudo -u postgres createdb tracer_ingestion_test
           sudo -u postgres createdb tracer_variant_link_test
+          sudo -u postgres createdb tracer_cj_stage_test
       - run: npx tsc --noEmit
       - run: node --experimental-strip-types --no-warnings scripts/verify-demand-match-evidence.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-deferred-bestseller-gate.mjs
@@ -66,6 +67,14 @@ jobs:
       - run: node --experimental-strip-types --no-warnings scripts/test-cj-query-fallback.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-canonical-supplier-identity-gate.mjs
       - run: node scripts/verify-cj-internal-supply-wiring.mjs
+      - name: Run CJ supplier-first NULL provenance PostgreSQL regression test (disposable CI database only)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: ci-postgres-password
+          PGDATABASE: tracer_cj_stage_test
+        run: psql -v ON_ERROR_STOP=1 -f scripts/test-cj-supplier-first-catalog.sql
       - name: Run atomic catalog sync PostgreSQL integration tests (disposable CI database only)
         env:
           PGHOST: 127.0.0.1
