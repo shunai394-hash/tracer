@@ -23,8 +23,8 @@ const [profit, supplySelector, marketSelector, publicationRoute, diagnosticWorkf
   readFile(new URL("../app/api/cron/sales-test-publication/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../.github/workflows/tracer-shopify-auth-check.yml", import.meta.url), "utf8"),
 ]);
-assert.match(profit, /requireDomesticShipping === true && args\.domesticShipping == null/);
-assert.match(profit, /unknown\("domestic_shipping_unknown"\)/);
+assert.match(profit, /args\.domesticShipping \?\?\s*\(args\.requireDomesticShipping === true \? \(sellingCurrency === "JPY" \? 600 : 6\) : 0\)/);
+assert.match(profit, /field: "domestic_shipping_reserve"[\s\S]{0,250}temporary_domestic_delivery_reserve/);
 assert.match(supplySelector, /domesticShipping: nativeCjSupplyIdentity \? 0 : null/);
 assert.match(supplySelector, /requireDomesticShipping: !nativeCjSupplyIdentity/);
 assert.equal(isPublishableCatalogTitle("トレンド・seeded_dueアイテム"), false);
