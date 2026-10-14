@@ -56,6 +56,19 @@ for (const [name, source, expected] of candidateTitles) {
   assert.equal(isPublishableCatalogTitle(title), true, name + " title must pass storefront quality gate");
   assert.equal(isPublishableCatalogDescription(localizeProductDescription(source)), true, name + " description must pass storefront quality gate");
 }
+const expandedCandidateTitles = [
+  ["eyebrow cream", "Fashion And Nature Phoera Eyebrow Cream 6 Colors", "PHOERA アイブロウクリーム 6色展開"],
+  ["frosted card case", "Compatible with Apple, Cross Border Suitable For Iphone12 Integrated Frosted Card Case Mobile Phone Shell", "カード収納付き マット仕上げスマホケース"],
+  ["lotus mug", "Hand Painted Lotus Office Mug (Hand Painted Lotus Office Mug Water Cup)", "蓮モチーフ 手描きデザインのマグカップ"],
+  ["corduroy chair cushion", "Winter thickened office corduroy chair cushion (Winter thickened office corduroy chair cushion Color mixing 40x40CM)", "コーデュロイ調 チェアクッション 40×40cm"],
+  ["usb cup warmer", "Cup Warmer Pad USB Charge Home Office 3 Temperatures Adjustable Heat Plate", "USB給電式 カップウォーマー 3段階温度調節"],
+];
+for (const [name, source, expected] of expandedCandidateTitles) {
+  const title = localizeProductTitle(source);
+  assert.equal(title, expected, name + " must produce a concrete Japanese title");
+  assert.equal(isPublishableCatalogTitle(title), true, name + " title must pass storefront quality gate");
+  assert.equal(isPublishableCatalogDescription(localizeProductDescription(source)), true, name + " description must pass storefront quality gate");
+}
 assert.equal(womenProductPriority({ title: "Groin Electric Clippers Household Hair Clipper" }).isWomenFocused, false, "hair clipper must not match the hair-clip accessory category");
 assert.equal(womenProductPriority({ title: "Flower Hair Clip Accessory" }).isWomenFocused, true, "actual hair-clip accessories remain women-focused");
 const hairTiesSource = "Rubber Bands 15mm 250 Count Colored Elastic Hair Ties For Braids";
