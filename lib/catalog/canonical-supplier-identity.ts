@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
-export type SupplierPublicationIdentity = "linked" | "native_cj_verified";
+export type SupplierPublicationIdentity = "linked" | "native_cj_verified" | "native_supplier_verified";
 
 /**
  * Standalone CJ supply is not a marketplace identity match. It may nevertheless
@@ -72,7 +72,7 @@ export async function getPublishableSupplierListingStatuses(values: unknown[]): 
     for (const row of data ?? []) {
       const id = String(row.id);
       if (row.identity_status === "linked") statuses.set(id, "linked");
-      else if (isNativeCjSupplierListing(row as Record<string, unknown>)) statuses.set(id, "native_cj_verified");
+      else if (isNativeVerifiedSupplierListing(row as Record<string, unknown>)) statuses.set(id, ["cj", "cjdropshipping"].includes(String(row.supplier ?? "").trim().toLowerCase()) ? "native_cj_verified" : "native_supplier_verified");
     }
   }
   return statuses;
