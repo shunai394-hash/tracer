@@ -33,7 +33,7 @@ export function isNativeCjSupplierListing(row: Record<string, unknown>, nowMs = 
     && row.orderable === true
     && row.tracking_available === true
     && Number(row.inventory) > 0
-    && Number(row.cost) > 0
+    && Number(row.cost) >= 0
     && Number(row.shipping_cost) >= 0
     && String(row.ship_to ?? "").trim().toUpperCase() === "JP"
     && Boolean(typeof row.supplier_product_id === "string" && row.supplier_product_id.trim())
