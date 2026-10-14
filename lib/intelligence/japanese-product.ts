@@ -9,10 +9,7 @@ const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
   [/rogue dog data cable type c|dog.*mobile puppy data cable.*charging cable/i, "犬モチーフ Type-C 充電ケーブル"],
   [/iron art agave plant ornaments|agave garden ornaments/i, "アガベ風 アイアンガーデンオーナメント"],
   [/creative sports car anti.fall mobile phone case|sports car.*phone case/i, "スポーツカー柄 耐衝撃スマートフォンケース"],
-  [/compatible with apple.*mobile phone case|mobile phone case.*compatible with apple|mobile phone case.*iphone|iphone.*mobile phone case/i, "対応機種別 スマートフォンケース"],
   [/usb.*type.c.*charging cable|type.c.*phone charging cable|data cable.*android/i, "USB Type-C 充電ケーブル"],
-  [/wind chimes.*wall pendant|wall pendant.*dream catcher/i, "装飾ビーズ付き ウィンドチャイム"],
-  [/wireless charger.*foldable|foldable.*wireless charger/i, "折りたたみ式 ワイヤレス充電器"],
   [/^aroma filter$/i, "アロマ用 交換フィルター"],
   [/integrated frosted card case.*mobile phone shell|card case.*phone case|phone.*card case/i, "カード収納付き スマートフォンケース"],
   [/hand painted lotus.*(mug|cup)|lotus office mug/i, "蓮柄 手描きマグカップ"],
@@ -96,6 +93,10 @@ const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
   [/cosmetic jewelry rack.*three grids|cosmetic jewelry rack/i, "コスメ・アクセサリー収納スタンド"],
   [/14.inch makeup.*storage box|makeup.*portable storage box/i, "14インチ対応 メイク収納ケース"],
   [/crystal jade chakra combination set.*bracelet|chakra combination set.*bracelet/i, "クリスタル調デザイン ブレスレットセット"],
+  // Broad fallbacks come after motif/material-specific cases so they cannot shadow them.
+  [/compatible with apple.*mobile phone case|mobile phone case.*compatible with apple|mobile phone case.*iphone|iphone.*mobile phone case/i, "対応機種別 スマートフォンケース"],
+  [/wind chimes.*wall pendant|wall pendant.*dream catcher/i, "装飾ビーズ付き ウィンドチャイム"],
+  [/wireless charger.*foldable|foldable.*wireless charger/i, "折りたたみ式 ワイヤレス充電器"],
 ];
 
 const CATEGORY_ONLY_TITLES = new Set([
