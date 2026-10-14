@@ -83,9 +83,17 @@ async function writeCatalogCursor(
   cursor: CatalogCursor & { verified: number; rejected: number; rejectedReasons: Record<string, number>; quotaBlocked: boolean },
 ): Promise<void> {
   const now = new Date().toISOString();
+  // A persisted cursor is not proof that discovery succeeded. Reflect a
+  // quota-blocked or all-rejected run in cron_runs so monitoring cannot
+  // mistake an empty discovery cycle for a healthy run.
+  const status = cursor.quotaBlocked
+    ? (cursor.verified > 0 ? "partial" : "failed")
+    : cursor.rejected > 0
+      ? (cursor.verified > 0 ? "partial" : "failed")
+      : "succeeded";
   const { error } = await db.from("cron_runs").insert({
     job_name: CATALOG_CURSOR_JOB,
-    status: "succeeded",
+    status,
     started_at: now,
     finished_at: now,
     processed: cursor.verified,
