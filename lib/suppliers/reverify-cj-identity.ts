@@ -117,7 +117,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
 
   const buildCandidateQuery = () => db
     .from("supplier_listings")
-    .select("id,product_id,title,cost,shipping_cost,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency")
+    .select("id,product_id,title,cost,shipping_cost,shipping_status,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency")
     .eq("supplier", "cj")
     .in("verification_status", ["unverified", "retryable", "verified"])
     .in("identity_method", ["supply_discovered", "none"])
@@ -176,9 +176,10 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       // recording a generic hold and waiting for the next patrol.
       const currency = String(row.currency ?? metadata.currency ?? metadata.source_currency ?? "").trim().toUpperCase();
       const missingCost = cost === null;
-      const missingShipping = shippingCost === null;
+      const missingShipping = shippingCost === null || row.shipping_status !== "verified";
       const missingInventory = inventory === null;
       const missingImage = !imageUrl;
+      let shippingQuoteVerified = row.shipping_status === "verified" && shippingCost !== null;
       let variantDetails: Awaited<ReturnType<typeof fetchCJVariantByVid>> = null;
       let productDetails: Awaited<ReturnType<typeof getCJProductDetail>> = null;
       const refreshErrors: string[] = [];
@@ -199,7 +200,10 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       if (missingShipping && currency === "USD") {
         try {
           const fetchedShipping = await calculateCJFreight(String(row.supplier_variant_id), { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 });
-          if (fetchedShipping !== null && Number.isFinite(fetchedShipping) && fetchedShipping > 0) shippingCost = fetchedShipping;
+          if (fetchedShipping !== null && Number.isFinite(fetchedShipping) && fetchedShipping > 0) {
+            shippingCost = fetchedShipping;
+            shippingQuoteVerified = true;
+          }
         } catch (error) {
           if (isCJQuotaCircuitBlockingError(error)) throw error;
           refreshErrors.push("shipping:" + (error instanceof Error ? error.message : String(error)));
@@ -229,7 +233,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const observedFx = storedFxRate === null && currency === "USD" ? await getObservedUsdToJpyRate() : null;
       const fxRate = storedFxRate ?? observedFx?.rate ?? null;
       const storedSellingPriceJpy = num(metadata.selling_price_jpy);
-      const landedCostJpy = cost !== null && shippingCost !== null && fxRate !== null ? (cost + shippingCost) * fxRate : null;
+      const landedCostJpy = cost !== null && shippingCost !== null && shippingQuoteVerified && fxRate !== null ? (cost + shippingCost) * fxRate : null;
       const sellingPriceJpy = storedSellingPriceJpy ?? (landedCostJpy !== null && Number.isFinite(landedCostJpy) && landedCostJpy >= 0 ? Math.ceil(Math.max(1980, landedCostJpy * 2.5) / 100) * 100 : null);
 
       const checkedAt = new Date();
@@ -238,21 +242,25 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         ...(variantBarcode ? { variant_barcode: variantBarcode, variant_barcode_raw: variantBarcode } : {}),
         ...(imageUrl ? { image_url: imageUrl } : {}),
         ...(cost !== null ? { recovered_cost_at: missingCost ? checkedAt.toISOString() : listingMetadata.recovered_cost_at } : {}),
-        ...(shippingCost !== null ? { recovered_shipping_at: missingShipping ? checkedAt.toISOString() : listingMetadata.recovered_shipping_at } : {}),
+        ...(shippingQuoteVerified && shippingCost !== null ? { recovered_shipping_at: missingShipping ? checkedAt.toISOString() : listingMetadata.recovered_shipping_at, shipping_quote_source: "cj_freight_calculate", shipping_quote_destination: "JP" } : {}),
         ...(inventory !== null ? { recovered_inventory_at: missingInventory ? checkedAt.toISOString() : listingMetadata.recovered_inventory_at } : {}),
         ...(productDetails?.imageUrl ? { recovered_image_source: "cj_product_detail" } : {}),
         last_identity_reverify_at: checkedAt.toISOString(),
       };
       const refreshedFields: Record<string, unknown> = { metadata: nextListingMetadata };
       if (missingCost && cost !== null) refreshedFields.cost = cost;
-      if (missingShipping && shippingCost !== null) refreshedFields.shipping_cost = shippingCost;
+      if (shippingQuoteVerified && shippingCost !== null) {
+        refreshedFields.shipping_cost = shippingCost;
+        refreshedFields.shipping_status = "verified";
+        refreshedFields.ship_to = "JP";
+      }
       if (missingInventory && inventory !== null) refreshedFields.inventory = inventory;
       const { error: evidenceWriteError } = await db.from("supplier_listings").update(refreshedFields).eq("id", supplierListingId);
       if (evidenceWriteError) throw new Error("CJ recovered evidence persistence failed: " + evidenceWriteError.message);
 
       const missingFields = [
         cost === null ? "cost" : null,
-        shippingCost === null ? "shipping" : null,
+        shippingCost === null || !shippingQuoteVerified ? "shipping" : null,
         inventory === null ? "inventory" : null,
         fxRate === null ? "fx_rate" : null,
         sellingPriceJpy === null ? "selling_price_jpy" : null,
