@@ -22,6 +22,8 @@ assert.match(reconcile, /\.select\("id, title, slug, bestseller_id, published, p
 
 assert.match(source, /const productUrl = tracerUrl/);
 assert.match(source, /const tracerResolution = await resolveLiveTracerUrl/);
+assert.match(source, /resolveLiveTracerUrl\(typeof listing\.id === "string" \? listing\.id : null\)/,
+  "NEWFIND must use a stable UUID product URL rather than an encoded Japanese slug");
 assert.match(source, /tracer_sales_url_http_\$\{response\.status\}/, "record the actual HTTP status when a product page is not live");
 assert.match(source, /tracer_sales_url_timeout/);
 assert.match(source, /tracer_sales_url_not_live/);
@@ -31,6 +33,8 @@ assert.doesNotMatch(source, /shopify\.myshopify\.com|resolveLiveShopifyUrl/,
   "NEWFIND sales links must remain on the verified TRACER origin");
 
 const productDetail = store.slice(store.indexOf("export async function getShopListingBySlug"), store.indexOf("export async function recordShopFunnelEvent"));
+assert.match(productDetail, /const isListingId = \/\^\[0-9a-f\]/,
+  "the product page route must resolve stable UUID URLs");
 assert.doesNotMatch(productDetail, /loadLiveListings/,
   "the public product landing page must not disappear when the separate live-stock batch fails");
 assert.match(productDetail, /listing\.supplierListingId/,
