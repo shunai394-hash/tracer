@@ -40,7 +40,7 @@ jobs:
           echo "=== CJ IDENTITY RECOVERY ==="
           for i in 1 2 3 4 5 6; do
             echo "--- reverify batch $i/6 ---"
-            curl -sSf --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/cj-identity-reverify" > "reverify-$i.json"
+            curl -sSf --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/cj-identity-reverify?force=1&limit=15" > "reverify-$i.json"
             python3 - <<PY
           import json
           d=json.load(open("reverify-$i.json"))
