@@ -23,7 +23,7 @@ assert.match(pipeline, /\.gte\("last_verified_at",\s*freshSupplyCutoff\)/);
 assert.match(pipeline, /selectAndPublishSupplySalesTests\(supplyCandidateIds,\s*50,\s*\{\s*allowNativeCjIdentity:\s*true\s*\}\)/);
 assert.match(selector, /options\.allowNativeCjIdentity\s*===\s*true/);
 // Demand/opportunity intelligence is ranking-only, not a listing prerequisite.
-assert.match(selector, /opportunity_intelligence_missing/ === false ? /never/ : /const intelligence = intelligenceByProduct\.get\(productId\) \?\?/);
+assert.match(selector, /const intelligence = intelligenceByProduct.get\(productId\) \?\?/);
 assert.doesNotMatch(selector, /if \(!intelligence\) reasons\.push\("opportunity_intelligence_missing"\)/);
 assert.match(selector, /isNativeCjSupplierListing\(candidate\)/);
 assert.match(identity, /row\.verification_status === "verified"/);
