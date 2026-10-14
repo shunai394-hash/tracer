@@ -229,7 +229,7 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     brand = typeof bestseller?.brand === "string" ? bestseller.brand : null;
   }
 
-  const tracerResolution = await resolveLiveTracerUrl(typeof listing.slug === "string" ? listing.slug : null);
+  const tracerResolution = await resolveLiveTracerUrl(typeof listing.id === "string" ? listing.id : null);
   const tracerUrl = tracerResolution.url;
   // NEWFIND validates that sales links originate from TRACER. Only publish a
   // TRACER URL after the actual product page passes its liveness check.
