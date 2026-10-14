@@ -63,10 +63,29 @@ export async function GET(request: Request) {
     cronId = String(created.data.id);
     const result = await matchDemandProductsByCategory();
 
-    const status = result.persistErrors.length === 0 ? "succeeded" : "failed";
+    // A cron invocation can finish without throwing while doing no useful
+    // matching work (for example, every ambiguous query is deferred because
+    // the intent provider is in quota cooldown). Do not report that as a
+    // successful automation cycle when nothing was matched or persisted.
+    const noProgressWithDeferredDemand =
+      result.intentDeferred > 0 &&
+      result.persisted === 0 &&
+      result.candidatesCreated === 0 &&
+      result.matched === 0;
+    const completionIssue = noProgressWithDeferredDemand
+      ? "no_progress_all_outputs_empty_with_deferred_demand"
+      : null;
+    const status = result.persistErrors.length > 0 || noProgressWithDeferredDemand
+      ? "failed"
+      : "succeeded";
+    const errorMessage = [
+      ...result.persistErrors,
+      ...(completionIssue ? [completionIssue] : []),
+    ].join("; ") || null;
     const report = {
       ok: status === "succeeded",
       status,
+      completionIssue,
       durationMs: Date.now() - startedAt,
       job: "demand-match",
       result,
@@ -79,8 +98,8 @@ export async function GET(request: Request) {
         finished_at: new Date().toISOString(),
         duration_ms: report.durationMs,
         processed: result.processed,
-        failed: result.persistErrors.length,
-        error: result.persistErrors.length ? result.persistErrors.join("; ") : null,
+        failed: result.persistErrors.length + (completionIssue ? 1 : 0),
+        error: errorMessage,
         metadata: report,
       })
       .eq("id", cronId);
