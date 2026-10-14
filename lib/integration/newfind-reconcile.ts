@@ -69,6 +69,11 @@ export async function rescueUndeliveredGatePassedListings(options: { limit?: num
     }
   }
 
+  if (!ledgerReady) {
+    result.undelivered.schemaBlocked = Array.from(deliveries.values()).filter((delivery) => delivery.schemaBlocked).length;
+    return result;
+  }
+
   const targets: string[] = [];
   for (const id of ids) {
     const delivery = deliveries.get(id);
