@@ -163,15 +163,103 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
   const marketplaceIdentity = options.identity !== undefined ? options.identity : await resolveMarketplaceIdentity({ db: supabase, supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, variantBarcode: args.variantBarcode, supplierIdentifiers: args.supplierIdentifiers });
   const canonicalProductId = marketplaceIdentity?.productId ?? args.productId;
   let existingListingMetadata: Record<string, unknown> = {};
-  const existingListing = await supabase.from("supplier_listings").select("metadata").eq("id", args.supplierListingId).maybeSingle();
+  const existingListing = await supabase.from("supplier_listings").select("metadata,product_id,verification_status,shipping_status,configured,price_confirmed,inventory_confirmed,api_available,orderable,tracking_available,inventory,cost,shipping_cost,ship_to,supplier_product_id,supplier_variant_id,verification_error,last_verified_at").eq("id", args.supplierListingId).maybeSingle();
   if (existingListing.error) throw new Error(`CJ supplier listing read failed: ${existingListing.error.message}`);
   if (existingListing.data?.metadata && typeof existingListing.data.metadata === "object" && !Array.isArray(existingListing.data.metadata)) existingListingMetadata = existingListing.data.metadata as Record<string, unknown>;
-  const verifiedMetadata = { ...existingListingMetadata, source: "cj_supply_first", identity_source: marketplaceIdentity ? "fresh_exact_cj_variant_barcode_to_canonical_child_variant" : "exact_variant_identity_unresolved", identity_rationale: marketplaceIdentity?.rationale ?? "No unique canonical child-variant evidence for the live CJ variant barcode", supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: await readSupplierBarcode({ supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId }), canonical_variant_evidence_id: marketplaceIdentity?.canonicalVariantEvidenceId ?? null, canonical_source_variant_id: marketplaceIdentity?.sourceVariantId ?? null };
-  const { error: evidenceError } = await supabase.from("supplier_listings").update({ bestseller_id: marketplaceIdentity?.bestsellerId ?? null, product_id: marketplaceIdentity?.productId ?? null, identity_method: marketplaceIdentity?.method ?? "supply_discovered", identity_status: marketplaceIdentity ? "linked" : "supply_discovered", identity_confidence: marketplaceIdentity?.confidence ?? 0, cost: args.cost, shipping_cost: args.shippingCost, inventory: args.inventory, price_confirmed: Number.isFinite(args.cost) && args.cost >= 0, inventory_confirmed: Number.isFinite(args.inventory) && args.inventory >= 0, verification_status: marketplaceIdentity ? "verified" : "unverified", verification_error: marketplaceIdentity ? null : "no_unique_canonical_child_variant_match", last_verified_at: now, fetched_at: now, metadata: verifiedMetadata }).eq("id", args.supplierListingId);
+  const existingProductId = typeof existingListing.data?.product_id === "string" ? existingListing.data.product_id.trim() : "";
+  const discoveredProductId = typeof args.productId === "string" ? args.productId.trim() : "";
+  const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  const nativeCandidateProductId = marketplaceIdentity ? null : ([existingProductId, discoveredProductId].find((value) => isUuid(value)) ?? null);
+  if (!marketplaceIdentity && !nativeCandidateProductId) throw new Error("cj_native_candidate_product_id_missing");
+
+  const priorVerificationError = String(existingListing.data?.verification_error ?? "").trim();
+  const priorVerifiedAt = typeof existingListing.data?.last_verified_at === "string" ? Date.parse(existingListing.data.last_verified_at) : NaN;
+  const nativeEvidenceFresh = !marketplaceIdentity
+    && existingListing.data?.verification_status === "verified"
+    && existingListing.data?.shipping_status === "verified"
+    && existingListing.data?.configured === true
+    && existingListing.data?.price_confirmed === true
+    && existingListing.data?.inventory_confirmed === true
+    && existingListing.data?.api_available === true
+    && existingListing.data?.orderable === true
+    && existingListing.data?.tracking_available === true
+    && String(existingListing.data?.ship_to ?? "").trim().toUpperCase() === "JP"
+    && String(existingListing.data?.supplier_product_id ?? "") === args.supplierProductId
+    && String(existingListing.data?.supplier_variant_id ?? "") === args.supplierVariantId
+    && Number(args.cost) > 0 && Number(args.shippingCost) >= 0 && Number(args.inventory) > 0
+    && Number.isFinite(priorVerifiedAt) && priorVerifiedAt >= Date.now() - 7 * 24 * 60 * 60 * 1000 && priorVerifiedAt <= Date.now() + 5 * 60 * 1000
+    && (priorVerificationError === "" || priorVerificationError === "CJdropshipping is not configured" || priorVerificationError === "no_unique_canonical_child_variant_match");
+
+  let candidateIntelligenceId: string | null = null;
+  if (!marketplaceIdentity && nativeCandidateProductId) {
+    const existingCandidate = await supabase.from("product_intelligence").select("id,normalized_title,brand_name,category,source_url,demand_signal,metadata").eq("product_id", nativeCandidateProductId).maybeSingle();
+    if (existingCandidate.error) throw new Error(`CJ native candidate read failed: ${existingCandidate.error.message}`);
+    const candidateMetadata = existingCandidate.data?.metadata && typeof existingCandidate.data.metadata === "object" && !Array.isArray(existingCandidate.data.metadata)
+      ? existingCandidate.data.metadata as Record<string, unknown>
+      : {};
+    const candidate = await supabase.from("product_intelligence").upsert({
+      product_id: nativeCandidateProductId,
+      normalized_title: existingCandidate.data?.normalized_title ?? args.title,
+      brand_name: existingCandidate.data?.brand_name ?? null,
+      category: existingCandidate.data?.category ?? null,
+      seller_name: "CJdropshipping",
+      source_url: existingCandidate.data?.source_url ?? null,
+      image_url: args.imageUrl,
+      currency: "USD",
+      current_price: args.cost,
+      price_confidence: currencyAssessment.confidence === "high" ? 0.9 : currencyAssessment.confidence === "medium" ? 0.6 : 0.2,
+      identity_confidence: 0,
+      demand_signal: existingCandidate.data?.demand_signal ?? null,
+      supply_signal: 1,
+      metadata: {
+        ...candidateMetadata,
+        provider: "cj",
+        source: "cj_supply_first",
+        catalog_stage: "candidate",
+        purchasable: nativeEvidenceFresh,
+        identity_status: "supply_discovered",
+        identity_method: "supply_discovered",
+        supplier_listing_id: args.supplierListingId,
+        supplier_product_id: args.supplierProductId,
+        supplier_variant_id: args.supplierVariantId,
+        variant_barcode: args.variantBarcode ?? null,
+        inventory: args.inventory,
+        query: args.query,
+        fx_rate: args.fxRate,
+        selling_price_jpy: args.sellingPriceJpy,
+        shipping_cost_usd: args.shippingCost,
+        demand_evidence_status: "not_observed",
+        identity_rationale: "Supplier candidate retained; marketplace identity has not been confirmed.",
+      },
+      last_seen_at: now,
+      updated_at: now,
+    }, { onConflict: "product_id" }).select("id").single();
+    if (candidate.error) throw new Error(`CJ native candidate intelligence persistence failed: ${candidate.error.message}`);
+    candidateIntelligenceId = String(candidate.data.id);
+  }
+
+  const verifiedMetadata = { ...existingListingMetadata, source: "cj_supply_first", identity_source: marketplaceIdentity ? "fresh_exact_cj_variant_barcode_to_canonical_child_variant" : "exact_variant_identity_unresolved", identity_rationale: marketplaceIdentity?.rationale ?? "Supplier candidate retained without claiming a marketplace identity match", supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: await readSupplierBarcode({ supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId }), canonical_variant_evidence_id: marketplaceIdentity?.canonicalVariantEvidenceId ?? null, canonical_source_variant_id: marketplaceIdentity?.sourceVariantId ?? null };
+  const { error: evidenceError } = await supabase.from("supplier_listings").update({
+    bestseller_id: marketplaceIdentity?.bestsellerId ?? null,
+    product_id: marketplaceIdentity?.productId ?? nativeCandidateProductId,
+    identity_method: marketplaceIdentity?.method ?? "supply_discovered",
+    identity_status: marketplaceIdentity ? "linked" : "supply_discovered",
+    identity_confidence: marketplaceIdentity?.confidence ?? 0,
+    cost: args.cost,
+    shipping_cost: args.shippingCost,
+    inventory: args.inventory,
+    price_confirmed: Number.isFinite(args.cost) && args.cost >= 0,
+    inventory_confirmed: Number.isFinite(args.inventory) && args.inventory >= 0,
+    verification_status: marketplaceIdentity || nativeEvidenceFresh ? "verified" : "unverified",
+    verification_error: marketplaceIdentity || nativeEvidenceFresh ? null : (priorVerificationError || "no_unique_canonical_child_variant_match"),
+    last_verified_at: marketplaceIdentity ? now : existingListing.data?.last_verified_at ?? null,
+    fetched_at: now,
+    metadata: verifiedMetadata,
+  }).eq("id", args.supplierListingId);
   if (evidenceError) throw new Error(`CJ supplier evidence persistence failed: ${evidenceError.message}`);
-  // Supply discovery is not canonical product identity. Preserve the supplier evidence above,
-  // but never attach it to the caller-supplied fallback product ID when identity is unresolved.
-  if (!marketplaceIdentity) return { offerId: null, intelligenceId: null, identity: null };
+  // Retain unmatched supplier candidates for discovery, but do not create a product offer or
+  // claim marketplace identity. Purchasability remains false until the native supply gate passes.
+  if (!marketplaceIdentity) return { offerId: null, intelligenceId: candidateIntelligenceId, identity: null };
   const offerPayload = { product_id: canonicalProductId, seller_name: "CJdropshipping", offer_url: null, image_url: args.imageUrl, currency: "USD", price: args.cost, currency_confidence: currencyAssessment.confidence, availability: args.inventory > 0 ? "available" : "unavailable", shipping_price: args.shippingCost, observed_at: now, metadata: { provider: "cj", source: "cj_supply_first", supplier_listing_id: args.supplierListingId, supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: args.variantBarcode ?? null, inventory: args.inventory, query: args.query, fx_rate: args.fxRate, selling_price_jpy: args.sellingPriceJpy, currency_confidence: currencyAssessment.confidence, currency_confidence_reasons: currencyAssessment.reasons, identity_confidence: marketplaceIdentity?.confidence ?? 0, identity_status: marketplaceIdentity ? "linked" : "supply_discovered", identity_method: marketplaceIdentity?.method ?? "supply_discovered", identity_rationale: marketplaceIdentity?.rationale ?? "CJ supply discovered; marketplace identity not confirmed", demand_evidence_status: "not_observed" } };
   const existingOffer = await supabase.from("product_offers").select("id").eq("product_id", canonicalProductId).eq("seller_name", "CJdropshipping").order("observed_at", { ascending: false }).limit(1).maybeSingle();
   if (existingOffer.error) throw new Error(existingOffer.error.message);
