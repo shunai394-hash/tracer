@@ -6,7 +6,7 @@ const NAME = "shopify_collective";
 const COLLECTIVE_TAG = "Shopify Collective";
 const APPROVED_TAG = "tracer-collective-approved";
 type Meta = { namespace: string; key: string; value: string };
-type Variant = { id: string; sku: string | null; title: string; inventoryQuantity: number; metafields: { nodes: Meta[] } };
+type Variant = { id: string; sku: string | null; title: string; inventoryQuantity: number; inventoryItem: { unitCost: { amount: string; currencyCode: string } | null } | null; metafields: { nodes: Meta[] } };
 type Product = { id: string; title: string; tags: string[]; metafields: { nodes: Meta[] }; variants: { nodes: Variant[] } };
 const meta = (nodes: Meta[], key: string) => nodes.find(x => x.namespace === "tracer" && x.key === key)?.value ?? null;
 const num = (value: string | null): number | null => { if (value === null || !value.trim()) return null; const n = Number(value); return Number.isFinite(n) && n >= 0 ? n : null; };
@@ -27,7 +27,7 @@ async function query<T>(queryText: string, variables: Record<string, unknown> = 
   return body.data;
 }
 const FIELDS = `id title tags metafields(first: 30, namespace: "tracer") { nodes { namespace key value } }
-variants(first: 100) { nodes { id sku title inventoryQuantity metafields(first: 20, namespace: "tracer") { nodes { namespace key value } } } }`;
+variants(first: 100) { nodes { id sku title inventoryQuantity inventoryItem { unitCost { amount currencyCode } } metafields(first: 20, namespace: "tracer") { nodes { namespace key value } } } }`;
 async function productById(id: string): Promise<Product | null> {
   const d = await query<{ product: Product | null }>(`query($id: ID!) { product(id: $id) { ${FIELDS} } }`, { id });
   const p = d.product;
@@ -62,7 +62,7 @@ export const shopifyCollectiveSupplierAdapter: TracerSupplierAdapter = {
   async getVariant(pid: string, vid: string): Promise<SupplierVariant | null> {
     const x = await get(pid, vid); if (!x) return null;
     return { supplierProductId: pid, supplierVariantId: vid, sku: x.v.sku, title: x.v.title,
-      price: num(meta(x.v.metafields.nodes, "unit_cost")), currency: meta(x.v.metafields.nodes, "currency"),
+      price: num(x.v.inventoryItem?.unitCost?.amount ?? null), currency: x.v.inventoryItem?.unitCost?.currencyCode ?? null,
       inventory: x.v.inventoryQuantity, orderable: false };
   },
   async getInventory(pid: string, vid?: string): Promise<SupplierInventory | null> {
