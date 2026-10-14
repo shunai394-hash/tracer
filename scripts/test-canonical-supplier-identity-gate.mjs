@@ -22,7 +22,9 @@ const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSup
   readFile(new URL("../app/api/channels/base/identity-repair/route.ts", import.meta.url), "utf8"),
 ]);
 assert.match(helper, /identity_status === "linked"/);
-assert.match(persist, /verification_error: marketplaceIdentity \? null : "no_unique_canonical_child_variant_match"/, "unmatched CJ identity must persist an explicit reason rather than retaining stale verification state");
+assert.match(helper, /verificationError === "CJdropshipping is not configured"/, "only the stale CJ configuration error may be ignored when the same row is currently configured and API-available");
+assert.match(helper, /row.configured === true && row.api_available === true/);
+assert.match(persist, /verification_error: marketplaceIdentity \|\| nativeEvidenceFresh \? null : \(priorVerificationError \|\| "no_unique_canonical_child_variant_match"\)/, "only fresh, fully verified native supply evidence may clear the old configuration error");
 assert.match(discoverCJ, /identity_status: "supply_discovered", identity_confidence: 0/, "supply discovery without canonical identity must not claim perfect identity confidence");
 assert.match(discoverCJ, /title: detail\.title, product_id: null/, "CJ supply discovery must not provisionally attach a canonical product ID before identity is resolved");
 assert.match(discoverCJ, /api_available: false, verification_status: "unverified"/, "unresolved CJ supply must not be marked verified or API-orderable before canonical identity is resolved");
@@ -53,11 +55,13 @@ assert.doesNotMatch(salesPublicationRoute, /identity_status\.eq\.supply_discover
 assert.match(e2eFunnel, /eq\("identity_status", "linked"\).*eq\("verification_status", "verified"\).*eq\("orderable", true\)/, "readiness funnel must not count unresolved supply as verified and orderable");
 assert.match(intelligencePipeline, /\.eq\("verification_status", "verified"\)[\s\S]*?\.eq\("orderable", true\)/, "supply selection must still require verified, orderable supplier evidence");
 assert.match(intelligencePipeline, /allowNativeCjIdentity:\s*true/, "standalone CJ supply must use the selector’s explicit native-supplier gate rather than pretending marketplace identity is linked");
-assert.match(persist, /last_verified_at: now/, "CJ verification must refresh its timestamp");
+assert.match(persist, /last_verified_at: marketplaceIdentity \? now : existingListing\.data\?\.last_verified_at \?\? null/, "unmatched identity must preserve the existing verification timestamp rather than making stale data look fresh");
 assert.match(persist, /bestseller_id: marketplaceIdentity\?\.bestsellerId \?\? null/, "unmatched or ambiguous CJ identity must clear any stale canonical parent link");
 assert.match(persist, /identity_status: marketplaceIdentity \? "linked" : "supply_discovered"/, "CJ discovery alone must not promote supplier identity to linked");
 assert.doesNotMatch(persist, /orderable: false, tracking_available: false, api_available: false/, "identity recheck must not erase existing supplier order-path evidence");
-assert.match(persist, /if \(!marketplaceIdentity\) return \{ offerId: null, intelligenceId: null, identity: null \}/, "unmatched or ambiguous CJ identity must not create product-linked offer/intelligence rows");
+assert.match(persist, /catalog_stage: "candidate"/, "unmatched supplier supply must be retained as a catalog candidate");
+assert.match(persist, /purchasable: nativeEvidenceFresh/, "unmatched supply becomes purchasable only when fresh native supplier evidence passes");
+assert.match(persist, /if \(!marketplaceIdentity\) return \{ offerId: null, intelligenceId: candidateIntelligenceId, identity: null \}/, "unmatched CJ identity must retain candidate intelligence without creating a marketplace offer");
 assert.ok(persist.indexOf("if (!marketplaceIdentity)") < persist.indexOf("const offerPayload = {"), "no-match exit must happen before any product_offers write");
 assert.match(persist, /offerId: string \| null; intelligenceId: string \| null/, "supply-only discovery must explicitly return absent canonical record IDs");
 assert.doesNotMatch(demandCJ, /assessCanonicalIdentity|CANONICAL_LINK_THRESHOLD/, "CJ demand relevance must not link to a different existing canonical product");
