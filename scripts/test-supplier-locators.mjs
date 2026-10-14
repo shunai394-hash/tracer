@@ -4,6 +4,7 @@ import {
   normalizeSupplierUrl,
   normalizeSupplierLocator,
   compareSupplierLocators,
+  resolveSupplierCandidateProductId,
 } from "../lib/catalog/supplier-locators.ts";
 
 test("supplier product + variant IDs locate an offer without a marketplace barcode", () => {
@@ -68,4 +69,29 @@ test("locators from different suppliers never cross-match", () => {
     { supplier: "other", supplierProductId: "P-100", supplierVariantId: "V-RED" },
   );
   assert.equal(result.matched, false);
+});
+
+test("first supplier discovery keeps the existing product row instead of inventing an orphan ID", () => {
+  assert.equal(resolveSupplierCandidateProductId({
+    discoveredProductId: "product-row-1",
+    existingProductId: null,
+    existingIdentityStatus: null,
+  }), "product-row-1");
+});
+
+test("retry reuses a retained supply-discovered product ID", () => {
+  assert.equal(resolveSupplierCandidateProductId({
+    discoveredProductId: "new-fallback-row",
+    existingProductId: "stable-candidate-row",
+    existingIdentityStatus: "supply_discovered",
+  }), "stable-candidate-row");
+});
+
+test("a proven marketplace identity takes precedence over the supplier candidate row", () => {
+  assert.equal(resolveSupplierCandidateProductId({
+    marketplaceProductId: "canonical-market-row",
+    discoveredProductId: "supplier-candidate-row",
+    existingProductId: "prior-candidate-row",
+    existingIdentityStatus: "supply_discovered",
+  }), "canonical-market-row");
 });
