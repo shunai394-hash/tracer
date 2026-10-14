@@ -645,9 +645,16 @@ export async function runIntelligencePipeline(options: {
   const blockingFailed = steps.some((step) => !step.ok && !step.skipped);
   const deferredStep = steps.find((step) => {
     if (!step.skipped) return false;
-    // Canonical identity re-verification is a bounded background enrichment step.
-    // If CJ is slow, its cursor resumes on a later patrol; unresolved identities
-    // remain blocked by the sales-test gate and must never be force-linked.
+    // Market discovery and supplier discovery are enrichment inputs, not
+    // prerequisites for processing already-persisted supply candidates. If a
+    // marketplace source lacks child-variant evidence or CJ is in quota cooldown,
+    // record the coverage gap and retry on a later patrol; do not mark the core
+    // supply-first sales cycle incomplete when its downstream steps ran.
+    const optionalDiscoverySteps = new Set(["bestsellers", "auxiliary_trends", "supply", "dropship"]);
+    if (optionalDiscoverySteps.has(step.name) && step.retryable === true) return false;
+    // Identity re-verification is also a bounded background enrichment step.
+    // The cursor resumes on a later patrol; unresolved identity must still pass
+    // the independent native-supplier or canonical-identity sales gate.
     if (step.name === "identity_reverify") return false;
     if (step.retryable === true) return true;
     const reason =
