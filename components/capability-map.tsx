@@ -3,7 +3,7 @@ const layers = [
     id: "bestsellers",
     label: "Bestsellers",
     stage: "01",
-    copy: "最初に Amazon / 楽天 / Yahoo の売れ筋を観測します。未取得なら空です。",
+    copy: "Amazon・楽天・Yahoo!ショッピングのランキング取込は停止。仕入先の実在商品・在庫・価格・バリエーション証拠から候補を作ります。",
   },
   {
     id: "identity",

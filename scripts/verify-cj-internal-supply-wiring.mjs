@@ -30,10 +30,23 @@ assert.match(discovery, /let seededChecked = 0/,
   "failed seeded refreshes must count as attempts and not starve fresh catalog discovery");
 assert.match(discovery, /seededChecked >= seededVerificationLimit/,
   "seeded verification must have a hard per-run attempt budget");
-assert.match(marketCollector, /retryBrightDataWhenCanonicalVariantsMissing/,
-  "Amazon detail fetches must retry Bright Data when direct HTML lacks JSON-LD");
-assert.match(marketCollector, /hasAmazonVariantEvidence\(directHtml\)/,
-  "a non-empty Amazon page without canonical child variants or an explicit variation-ASIN map must not suppress the Bright Data fallback");
+// Marketplace ranking acquisition is intentionally disabled. Preserve the
+// supplier-ingestion checks below, but do not require retired Amazon fetch logic.
+assert.match(marketCollector, /marketplaces: \[\]/,
+  "disabled marketplace collector must return no marketplace rows");
+assert.match(marketCollector, /itemCount: 0/,
+  "disabled marketplace collector must report zero items");
+for (const forbidden of [
+  "amazon.co.jp",
+  "ranking.rakuten.co.jp",
+  "shopping.yahoo.co.jp",
+  "retryBrightDataWhenCanonicalVariantsMissing",
+  "hasAmazonVariantEvidence",
+  "fetch(",
+]) {
+  assert.equal(marketCollector.includes(forbidden), false,
+    `disabled marketplace collector must not contain ${forbidden}`);
+}
 assert.match(ingest, /sourceRef = `cj:\$\{args\.supplierProductId\}:\$\{args\.supplierVariantId\}`/,
   "source reference must be deterministic for the concrete supplier product+variant");
 assert.match(ingest, /onConflict: "source_name,source_ref"/,

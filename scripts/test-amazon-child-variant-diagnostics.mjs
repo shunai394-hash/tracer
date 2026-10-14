@@ -2,17 +2,24 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
-const cron = await readFile(new URL("../app/api/cron/market-sourcing/route.ts", import.meta.url), "utf8");
-const requiredSignals = ["variationAsinsFound","childDetailAttempted","childDetailFetched","childBarcodeFound"];
-for (const signal of requiredSignals) assert.ok(source.includes(signal), `missing diagnostic signal: ${signal}`);
-assert.ok(source.indexOf("if (!jan && !gtin && !ean && !upc) return null;") < source.indexOf("childBarcodeFound += 1;"), "barcode count must follow concrete barcode validation");
-assert.ok(source.includes("childDetailAttempted += childAsins.length;"), "count child attempts before fetch");
-assert.ok(source.includes("childDetailFetched += 1;"), "count successful detail fetches");
-assert.ok(source.includes("parseAmazonVariationAsinMap(html, url).length > 0"), "Bright Data HTML with an explicit child-ASIN map must count as variant evidence");
-assert.ok(source.includes("hasAmazonVariantEvidence(page.html)"), "retain Bright Data page when it improves child-variant evidence");
-for (const signal of ["canonicalVariantEvidenceParsed", "canonicalVariantEvidenceWritten", "canonicalVariantEvidenceWriteFailures", "canonicalVariantEvidenceStatus"]) {
-  assert.ok(cron.includes(signal), `market-sourcing cron must expose ${signal}`);
+const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
+
+// Amazon-specific child-variant diagnostics are obsolete after marketplace-ranking
+// sourcing was disabled. Protect the new policy boundary instead of requiring
+// collector internals that were intentionally removed.
+for (const forbidden of [
+  "amazon.co.jp",
+  "ranking.rakuten.co.jp",
+  "shopping.yahoo.co.jp",
+  "fetch(",
+  "fetchBrightDataPage",
+  "parseAmazon",
+]) {
+  assert.equal(source.includes(forbidden), false, `disabled collector must not contain ${forbidden}`);
 }
-assert.ok(cron.includes('"no_canonical_variant_evidence"'), "zero parsed variants must be reported as no evidence, never success");
-assert.ok(cron.includes('"write_failed"'), "evidence persistence failures must be reported separately");
-console.log("Amazon child variant diagnostics: extraction, persistence and cron reporting assertions passed");
+assert.ok(source.includes("marketplaces: []"), "compatibility collector must return no marketplace results");
+assert.ok(source.includes("itemCount: 0"), "compatibility collector must report zero results");
+assert.ok(pipeline.includes("marketplace_ranking_sources_disabled_by_policy"), "pipeline must explicitly skip marketplace ranking");
+assert.ok(pipeline.includes("const bestsellerCanFeedSalesGate = false"), "marketplace rankings must not enter the sales gate");
+
+console.log("PASS: retired marketplace diagnostics cannot re-enable marketplace sourcing");
