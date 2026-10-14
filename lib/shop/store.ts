@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
-import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { hasVerifiedPositiveShopifyStock } from "@/lib/shop/live-stock-policy";
 
 function asNumber(value: unknown): number | null {
@@ -126,9 +126,9 @@ async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, nu
 
 async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopListing[]> {
   const mapped = rows.map(mapListing);
-  const linkedSupplierIds = await getLinkedSupplierListingIds(mapped.map((listing) => listing.supplierListingId));
+  const supplierStatuses = await getPublishableSupplierListingStatuses(mapped.map((listing) => listing.supplierListingId));
   const listings = mapped
-    .filter((listing) => Boolean(listing.supplierListingId && linkedSupplierIds.has(listing.supplierListingId)))
+    .filter((listing) => Boolean(listing.supplierListingId && supplierStatuses.has(listing.supplierListingId)))
     .filter((listing) => isPublishableCatalogTitle(listing.title) && isPublishableCatalogDescription(listing.description) && listing.inventory > 0 && listing.orderable && listing.trackingAvailable && listing.sellingPrice !== null && listing.sellingPrice > 0);
 
   if (listings.length === 0) return [];
@@ -271,8 +271,8 @@ export async function placeShopOrder(args: {
 
   if (error) throw new Error(error.message);
   if (!listings || listings.length !== new Set(listingIds).size) throw new Error("published Shopify listing not found");
-  const linkedSupplierIds = await getLinkedSupplierListingIds(listings.map((listing) => listing.supplier_listing_id));
-  if (listings.some((listing) => !listing.supplier_listing_id || !linkedSupplierIds.has(String(listing.supplier_listing_id)))) {
+  const supplierStatuses = await getPublishableSupplierListingStatuses(listings.map((listing) => listing.supplier_listing_id));
+  if (listings.some((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.supplier_listing_id)))) {
     throw new Error("supplier_identity_unlinked");
   }
 

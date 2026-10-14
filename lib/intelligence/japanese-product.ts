@@ -1,4 +1,9 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/acrylic.*knitted headband|knitted headband.*women|crossed hair accessories.*women/i, "ニット編み クロスヘアバンド"],
+  [/padded canvas belt backpack.*women|women.*padded canvas belt backpack/i, "レディース キャンバス ベルト付きリュック"],
+  [/silicone shampoo brush|shampoo brush.*scalp/i, "シリコン製 頭皮ケアブラシ"],
+  [/butterfly.*phone case|phone case.*butterfly/i, "バタフライ柄 スマホケース"],
+  [/flannel nightgown.*pineapple plaid|pineapple plaid.*flannel nightgown/i, "チェック柄 フランネル ロングルームウェア"],
   [/groin electric clippers|groin hair clipper|pubic hair trimmer/i, "デリケートゾーン用 電動トリマー"],
   [/graffiti art.*african girl.*shower curtain|african girl.*shower curtain/i, "アフリカンアート柄 シャワーカーテン"],
   [/portable cosmetic bag.*(divider|multi.grid|pockets)|cosmetic bag.*(divider|multi.grid|pockets)/i, "仕切り付き コスメポーチ"],
@@ -128,6 +133,11 @@ export function localizeProductDescription(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const source = value.normalize("NFKC");
   const rules: Array<[RegExp, string]> = [
+    [/acrylic.*knitted headband|knitted headband.*women|crossed hair accessories.*women/i, "柔らかなニット素材のクロスヘアバンドです。サイズ・素材・カラー・着用感は販売元の仕様をご確認ください。"],
+    [/padded canvas belt backpack.*women|women.*padded canvas belt backpack/i, "キャンバス素材のベルト付きリュックです。寸法・収納部・ベルト仕様・素材は販売元の仕様をご確認ください。"],
+    [/silicone shampoo brush|shampoo brush.*scalp/i, "シリコン製の頭皮ケアブラシです。素材・サイズ・使用方法・お手入れ方法は販売元の仕様をご確認ください。"],
+    [/butterfly.*phone case|phone case.*butterfly/i, "バタフライ柄のスマートフォンケースです。対応機種・素材・付属品は商品バリエーションと販売元の仕様をご確認ください。"],
+    [/flannel nightgown.*pineapple plaid|pineapple plaid.*flannel nightgown/i, "チェック柄のフランネル素材を使ったロング丈ルームウェアです。素材構成・サイズ・洗濯方法は販売元の仕様をご確認ください。"],
     [/women.{0,60}(crossbody|shoulder|tote|handbag).{0,40}bag|((crossbody|shoulder|tote|handbag).{0,40}bag).{0,60}women/i, "日常のお出かけに使うバッグです。寸法・素材・収納部・ストラップ仕様は販売元の情報をご確認ください。"],
     [/portable cosmetic bag.*(divider|multi.grid|pockets)|cosmetic bag.*(divider|multi.grid|pockets)/i, "小物を分けて収納できるコスメポーチです。寸法・仕切り構成・素材・防水性は販売元の仕様をご確認ください。"],
     [/flower.*hair clip|hair clip.*flower|bohemian.*hair clip/i, "花モチーフのヘアクリップです。サイズ・材質・留め具の仕様は販売元の情報をご確認ください。"],

@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8");
+const identity = await readFile(new URL("../lib/catalog/canonical-supplier-identity.ts", import.meta.url), "utf8");
 const route = await readFile(new URL("../app/api/cron/sales-test-publication/route.ts", import.meta.url), "utf8");
 const workflow = await readFile(new URL("../.github/workflows/tracer-shopify-auth-check.yml", import.meta.url), "utf8");
-assert.ok(source.includes('candidate.verification_status === "verified"'), "native CJ identity requires verified supplier evidence");
-assert.ok(source.includes('candidate.shipping_status === "verified"'), "native CJ identity requires verified shipping evidence");
-assert.ok(source.includes('options.allowNativeCjIdentity === true && ["cj", "cjdropshipping"].includes(supplier)'), "native CJ identity is disabled by default");
+assert.ok(identity.includes('row.verification_status === "verified"'), "native CJ identity requires verified supplier evidence");
+assert.ok(identity.includes('row.shipping_status === "verified"'), "native CJ identity requires verified shipping evidence");
+assert.ok(source.includes('options.allowNativeCjIdentity === true && isNativeCjSupplierListing(candidate)'), "native CJ identity is disabled by default and delegated to the strict supplier-evidence helper");
 assert.ok(source.includes('if (!nativeCjSupplyIdentity && (num(listing.identity_confidence) === null'), "generic identity confidence must not block verified native CJ identity");
 assert.ok(source.includes('identityConfidence: nativeCjSupplyIdentity ? 1 : num(listing.identity_confidence)'), "native CJ evidence must be passed to the sales-test gate");
 assert.ok(source.includes('candidate.price_confirmed === true') && source.includes('candidate.inventory_confirmed === true') && source.includes('candidate.orderable === true') && source.includes('candidate.tracking_available === true') && source.includes('candidate.api_available === true'), "native identity must not bypass price, stock, orderability, tracking or API gates");

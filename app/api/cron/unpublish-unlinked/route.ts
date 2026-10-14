@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
-import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-listings";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { BASE_AUTH_REAUTH_REQUIRED, isBaseAuthenticationFailure } from "@/lib/channels/base-auth-failure";
@@ -22,8 +22,8 @@ export async function GET(request: Request) {
     .limit(1000);
   if (error) return NextResponse.json({ ok: false, stage: "read", error: error.message }, { status: 500 });
 
-  const linkedIds = await getLinkedSupplierListingIds((data ?? []).map((row) => row.supplier_listing_id));
-  const unlinked = (data ?? []).filter((row) => !row.supplier_listing_id || !linkedIds.has(String(row.supplier_listing_id)));
+  const supplierStatuses = await getPublishableSupplierListingStatuses((data ?? []).map((row) => row.supplier_listing_id));
+  const unlinked = (data ?? []).filter((row) => !row.supplier_listing_id || !supplierStatuses.has(String(row.supplier_listing_id)));
   const needsBlock = unlinked.filter((row) => row.published === true || row.orderable !== false || row.pipeline_reason !== "supplier_identity_unlinked");
   if (needsBlock.length > 0) {
     const now = new Date().toISOString();

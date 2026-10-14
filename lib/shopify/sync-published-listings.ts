@@ -5,7 +5,7 @@ import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigure
 import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
-import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 
 type Listing = {
   id: string;
@@ -52,6 +52,10 @@ type ShopifyProductNode = {
 function hasGateProvenance(row: Listing): boolean {
   return Array.isArray(row.selection_reasons)
     && row.selection_reasons.some((reason) => String(reason) === "sales_test_gate_passed");
+}
+
+function hasPublishableSupplierIdentity(status: string | null | undefined): boolean {
+  return status === "linked" || status === "native_cj_verified";
 }
 
 function asNumber(value: unknown): number | null {
@@ -168,10 +172,10 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  const linkedSupplierIds = await getLinkedSupplierListingIds((data ?? []).map((row) => row.supplier_listing_id));
+  const supplierStatuses = await getPublishableSupplierListingStatuses((data ?? []).map((row) => row.supplier_listing_id));
   const rows = ((data ?? []) as Listing[]).map((row) => ({
     ...row,
-    identity_status: row.supplier_listing_id && linkedSupplierIds.has(row.supplier_listing_id) ? "linked" : null,
+    identity_status: row.supplier_listing_id ? supplierStatuses.get(row.supplier_listing_id) ?? null : null,
   }));
   const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 15);
   const actionable = listingIds?.length
@@ -179,7 +183,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
     : rows.filter((row) => {
         const status = String(row.shopify_sync_status ?? "");
         if (status === "syncing") return false;
-        if (row.identity_status !== "linked") return Boolean(row.shopify_product_id) && status !== "blocked";
+        if (!hasPublishableSupplierIdentity(row.identity_status)) return Boolean(row.shopify_product_id) && status !== "blocked";
         if (row.published === true && row.pipeline_stage === "PUBLISHED" && row.pipeline_status === "published") {
           return status !== "synced";
         }
@@ -203,7 +207,7 @@ function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
   if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
   if (!isPublishableCatalogDescription(row.description)) reasons.push("catalog_description_not_publishable");
-  if (row.identity_status !== "linked") reasons.push("supplier_identity_unlinked");
+  if (!hasPublishableSupplierIdentity(row.identity_status)) reasons.push("supplier_identity_unlinked");
   if (row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") reasons.push("pipeline_blocked");
   if (!hasGateProvenance(row)) reasons.push("sales_test_gate_not_passed");
   if (row.orderable !== true) reasons.push("not_orderable");
@@ -251,10 +255,10 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
     .order("pipeline_updated_at", { ascending: false })
     .limit(Math.min(Math.max(limit, 1), 1000));
   if (error) throw new Error(error.message);
-  const linkedSupplierIds = await getLinkedSupplierListingIds((data ?? []).map((row) => row.supplier_listing_id));
+  const supplierStatuses = await getPublishableSupplierListingStatuses((data ?? []).map((row) => row.supplier_listing_id));
   const reasonCounts: Record<string, number> = {};
   const rows = ((data ?? []) as Array<Listing & { shopify_sync_error?: string | null }>).map((rawRow) => {
-    const row = { ...rawRow, identity_status: rawRow.supplier_listing_id && linkedSupplierIds.has(rawRow.supplier_listing_id) ? "linked" : null };
+    const row = { ...rawRow, identity_status: rawRow.supplier_listing_id ? supplierStatuses.get(rawRow.supplier_listing_id) ?? null : null };
     const reasons = blockReasons(row);
     if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) reasons.push("image_url_invalid");
     if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");

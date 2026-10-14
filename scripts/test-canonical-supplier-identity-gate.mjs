@@ -69,10 +69,11 @@ assert.ok(demandSupplier.includes('.eq("identity_key", identityKey)'), "supplier
 assert.match(demandSupplier, /Missing stable supplier name or product ID; canonical offer persistence blocked/);
 assert.match(helper, /offset \+= 100/, "identity lookups must batch large supplier ID sets");
 assert.match(shopify, /supplier_identity_unlinked/);
-assert.match(shopify, /identity_status !== "linked"/);
+assert.match(shopify, /hasPublishableSupplierIdentity/);
+assert.match(shopify, /native_cj_verified/);
 assert.match(base, /identityUnlinkedIds/);
 assert.match(base, /base_last_error: isIdentityUnlinked \? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden"/);
-assert.match(store, /supplierListingId && linkedSupplierIds\.has/);
+assert.match(store, /supplierListingId && supplierStatuses\.has/);
 assert.match(store, /supplier_identity_unlinked/);
 assert.match(route, /requireAutomationAuth/);
 assert.match(route, /TRACER UNLINKED RECONCILIATION/, "production cleanup progress must be observable with count-only telemetry");
