@@ -204,7 +204,11 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
   }
 
   const retryRejectedSchemaEvent = currentStatus === "failed"
-    && /invalid input syntax for type integer/i.test(String(existingDelivery?.last_error ?? ""))
+    && (
+      /invalid input syntax for type integer/i.test(String(existingDelivery?.last_error ?? ""))
+      || /Could not find the table ['"]public\\.tracer_promotions['"] in the schema cache/i.test(String(existingDelivery?.last_error ?? ""))
+      || /promotion ledger (?:insert|update) failed:.*tracer_promotions/i.test(String(existingDelivery?.last_error ?? ""))
+    )
     && !String(existingDelivery?.event_id ?? "").includes(":schema-retry");
   const sendEventId = currentStatus === "withdrawn"
     ? `${eventId(listingId)}:republished:${now.getTime()}`
