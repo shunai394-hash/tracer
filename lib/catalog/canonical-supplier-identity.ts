@@ -9,8 +9,13 @@ export type SupplierPublicationIdentity = "linked" | "native_cj_verified";
  * be published as its own catalog product when the exact CJ product+variant,
  * live Japan shipping, stock, price, API order path, and tracking are verified.
  */
-export function isNativeCjSupplierListing(row: Record<string, unknown>, nowMs = Date.now()): boolean {
+export function isNativeVerifiedSupplierListing(row: Record<string, unknown>, nowMs = Date.now()): boolean {
   const supplier = String(row.supplier ?? "").trim().toLowerCase();
+  // Only suppliers with an explicit API-backed fulfilment path may use native
+  // catalog identity. The remaining evidence requirements below are identical
+  // for every supplier; a marketplace ASIN/JAN match is not required to sell a
+  // supplier's own product as its own product.
+  const supportedSuppliers = ["cj", "cjdropshipping", "orosy", "faire", "dsers"];
   const verifiedAt = typeof row.last_verified_at === "string" ? Date.parse(row.last_verified_at) : NaN;
   const verificationError = row.verification_error;
   const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
@@ -22,7 +27,7 @@ export function isNativeCjSupplierListing(row: Record<string, unknown>, nowMs = 
   const estimatedShipping = row.shipping_status === "estimated"
     && (metadata.shipping_estimate_applied === true || shippingEvidence.estimated === true)
     && Number(metadata.shipping_estimate_jpy ?? shippingEvidence.amount_jpy) > 0;
-  return ["cj", "cjdropshipping"].includes(supplier)
+  return supportedSuppliers.includes(supplier)
     && row.identity_status === "supply_discovered"
     && row.verification_status === "verified"
     && (row.shipping_status === "verified" || estimatedShipping)
@@ -42,6 +47,12 @@ export function isNativeCjSupplierListing(row: Record<string, unknown>, nowMs = 
     && Number.isFinite(verifiedAt)
     && verifiedAt >= nowMs - 7 * 24 * 60 * 60 * 1000
     && verifiedAt <= nowMs + 5 * 60 * 1000;
+}
+
+/** Backwards-compatible CJ-only predicate for callers/tests that specifically require CJ. */
+export function isNativeCjSupplierListing(row: Record<string, unknown>, nowMs = Date.now()): boolean {
+  return ["cj", "cjdropshipping"].includes(String(row.supplier ?? "").trim().toLowerCase())
+    && isNativeVerifiedSupplierListing(row, nowMs);
 }
 
 /** Returns publication-safe supplier identity states; native CJ supply is kept distinct from canonical links. */
