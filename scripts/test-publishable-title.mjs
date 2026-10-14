@@ -45,6 +45,17 @@ assert.equal(isPublishableCatalogDescription(localizeProductDescription(nativeHe
 assert.equal(womenProductPriority({ title: nativeHeadbandSource }).isWomenFocused, true);
 assert.equal(isPublishableCatalogTitle("トレンド・beautyアイテム"), false);
 assert.equal(isPublishableCatalogTitle("アフリカンアート柄 シャワーカーテン"), true);
+const candidateTitles = [
+  ["aroma diffuser", "50ml Aromatherapy Machine Timed Automatic Spraying Fragrance Household Perfume Machine Toilet Deodorizing Air Purifying Diffuser", "タイマー付き 自動噴霧アロマディフューザー"],
+  ["resort skirt", "Sun Protection Clothing Beach Seaside Resort Strappy Skirt", "リゾートデザイン ストラップスカート"],
+  ["filtered shower head", "Beauty Dechlorinating Dual Filter Shower Head (Beauty Dechlorinating Dual Filter Shower Head Kdf Filter Element)", "二重フィルター付き シャワーヘッド"],
+];
+for (const [name, source, expected] of candidateTitles) {
+  const title = localizeProductTitle(source);
+  assert.equal(title, expected, name + " must produce a concrete Japanese title");
+  assert.equal(isPublishableCatalogTitle(title), true, name + " title must pass storefront quality gate");
+  assert.equal(isPublishableCatalogDescription(localizeProductDescription(source)), true, name + " description must pass storefront quality gate");
+}
 assert.equal(womenProductPriority({ title: "Groin Electric Clippers Household Hair Clipper" }).isWomenFocused, false, "hair clipper must not match the hair-clip accessory category");
 assert.equal(womenProductPriority({ title: "Flower Hair Clip Accessory" }).isWomenFocused, true, "actual hair-clip accessories remain women-focused");
 const supplySelector = await readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8");
