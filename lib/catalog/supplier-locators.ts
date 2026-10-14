@@ -117,3 +117,28 @@ export function compareSupplierLocators(
   }
   return { matched: false, confidence: "none", method: "none", reason: "no_shared_supplier_locator" };
 }
+
+
+/**
+ * Preserve the caller's real canonical candidate row when supplier identity is
+ * unresolved. Never synthesize a UUID here: product_intelligence and supplier
+ * listings must refer to an existing product record.
+ */
+export function resolveSupplierCandidateProductId(input: {
+  marketplaceProductId?: string | null;
+  existingProductId?: string | null;
+  existingIdentityStatus?: string | null;
+  discoveredProductId: string;
+}): string {
+  const marketplaceProductId = input.marketplaceProductId?.trim();
+  if (marketplaceProductId) return marketplaceProductId;
+
+  const existingProductId = input.existingProductId?.trim();
+  if (input.existingIdentityStatus === "supply_discovered" && existingProductId) {
+    return existingProductId;
+  }
+
+  const discoveredProductId = input.discoveredProductId.trim();
+  if (!discoveredProductId) throw new Error("supplier_candidate_product_id_missing");
+  return discoveredProductId;
+}
