@@ -549,7 +549,7 @@ export async function runIntelligencePipeline(options: {
     .select("product_id")
     .eq("supplier", "cj")
     .eq("verification_status", "verified")
-    .eq("shipping_status", "verified")
+    .in("shipping_status", ["verified", "estimated"])
     .eq("price_confirmed", true)
     .eq("inventory_confirmed", true)
     .eq("orderable", true)
