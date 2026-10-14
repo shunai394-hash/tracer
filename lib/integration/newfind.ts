@@ -229,7 +229,7 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
   const integerSchemaRetry = currentStatus === "failed"
     && /invalid input syntax for type integer/i.test(previousError)
     && !String(existingDelivery?.event_id ?? "").includes(":schema-retry");
-  const ledgerSchemaRetry = currentStatus === "failed"
+  const ledgerSchemaRetry = (currentStatus === "failed" || currentStatus === "sending")
     && isNewfindPromotionLedgerReady()
     && isNewfindPromotionLedgerSchemaBlocked(previousError);
   const retryRejectedSchemaEvent = integerSchemaRetry || ledgerSchemaRetry;
