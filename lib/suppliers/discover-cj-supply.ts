@@ -95,7 +95,7 @@ async function writeCatalogCursor(
     failed: cursor.rejected,
     metadata: { queryIndex: cursor.queryIndex, page: cursor.page },
   });
-  if (error) console.error("[supply-first] catalog cursor write failed", error.message);
+  if (error) throw new Error(`supply-first catalog cursor write failed: ${error.message}`);
 }
 
 function selectSupplyFirstVariant(variants: CJProductVariant[]): CJProductVariant | null {
@@ -132,7 +132,7 @@ async function markVerification(
   }).eq("id", id);
   // A failed write would leave the row at the head of the due queue and
   // stall traversal, so surface it instead of dropping it.
-  if (error) console.error("[supply-first] verification state write failed", { id, error: error.message });
+  if (error) throw new Error(`supply-first verification state write failed for ${id}: ${error.message}`);
 }
 
 async function upsertSupplierListing(
@@ -213,10 +213,11 @@ export async function discoverAndCreateCjSupply(
   // for revalidation) still need live verification, offers and
   // product_intelligence, otherwise Opportunity Intelligence can never
   // evaluate them. Verification never publishes.
-  const { data: existingListings } = await db
+  const { data: existingListings, error: existingListingsError } = await db
     .from("shop_listings")
     .select("supplier_product_id,supplier_variant_id,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons")
     .not("supplier_variant_id", "is", null);
+  if (existingListingsError) throw new Error(`supply-first existing listing lookup failed: ${existingListingsError.message}`);
   const gatePassedListings = (existingListings ?? []).filter((row) => hasPassedSalesTestGate(row));
 
   // Live catalog discovery (new products) still skips every listed CJ
