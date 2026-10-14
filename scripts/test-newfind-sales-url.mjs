@@ -21,7 +21,9 @@ assert.match(reconcile, /\.select\("id, title, slug, bestseller_id, published, p
   "withdraw gate checks must fetch the Japanese title they validate");
 
 assert.match(source, /const productUrl = tracerUrl/);
-assert.match(source, /const tracerUrl = await resolveLiveTracerUrl/);
+assert.match(source, /const tracerResolution = await resolveLiveTracerUrl/);
+assert.match(source, /tracer_sales_url_http_\$\{response\.status\}/, "record the actual HTTP status when a product page is not live");
+assert.match(source, /tracer_sales_url_timeout/);
 assert.match(source, /tracer_sales_url_not_live/);
 assert.match(source, /sales_url: productUrl/);
 assert.match(source, /tracer_url: tracerUrl/);
