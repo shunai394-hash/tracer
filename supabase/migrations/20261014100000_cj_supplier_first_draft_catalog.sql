@@ -42,7 +42,8 @@ begin
     return jsonb_build_object('ok', false, 'reason', 'generation_conflict');
   end if;
 
-  if v_product.source_name <> 'cj' or v_variant.source_name <> 'cj'
+  if v_product.source_name is distinct from 'cj'
+     or v_variant.source_name is distinct from 'cj'
      or v_product.active is distinct from true or v_variant.active is distinct from true then
     return jsonb_build_object('ok', false, 'reason', 'not_active_cj_supply');
   end if;
