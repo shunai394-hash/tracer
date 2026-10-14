@@ -34,3 +34,30 @@ export function calculateSupplySellingPriceJpy(inputs: SupplyPriceInputs): numbe
   const minimumPrice = Math.ceil((landedCostJpy / denominator) / 100) * 100;
   return existingValid ? Math.max(Math.ceil(existing), minimumPrice) : minimumPrice;
 }
+
+
+export function resolveSupplierFxRateToJpy(args: {
+  sourceCurrency: string | null;
+  metadataFxRate: number | null;
+  metadataFxSourceCurrency?: string | null;
+  metadataFxTargetCurrency?: string | null;
+  observedUsdToJpyRate: number | null;
+}): number | null {
+  const currency = args.sourceCurrency?.trim().toUpperCase() ?? "";
+  if (!currency) return null;
+  if (currency === "JPY") return 1;
+  if (currency === "USD") {
+    const explicit = args.metadataFxRate;
+    if (explicit !== null && Number.isFinite(explicit) && explicit > 0) return explicit;
+    const observed = args.observedUsdToJpyRate;
+    return observed !== null && Number.isFinite(observed) && observed > 0 ? observed : null;
+  }
+  const metadataSource = args.metadataFxSourceCurrency?.trim().toUpperCase() ?? "";
+  const metadataTarget = args.metadataFxTargetCurrency?.trim().toUpperCase() ?? "";
+  const explicit = args.metadataFxRate;
+  if (
+    metadataSource === currency && metadataTarget === "JPY" &&
+    explicit !== null && Number.isFinite(explicit) && explicit > 0
+  ) return explicit;
+  return null;
+}
