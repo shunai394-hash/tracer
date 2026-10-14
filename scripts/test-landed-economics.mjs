@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { calculateLandedEconomics } from "../lib/suppliers/landed-economics.ts";
 
 const base = {
@@ -34,4 +35,9 @@ const invalidFee = calculateLandedEconomics({ ...base, platformFeeRate: 1 });
 assert.equal(invalidFee.ready, false);
 assert.equal(invalidFee.reason, "platform_fee_rate_missing_or_invalid");
 
-console.log("landed economics policy: 4 scenarios passed");
+const simulation = await readFile(new URL("../lib/intelligence/simulate-profit.ts", import.meta.url), "utf8");
+assert.match(simulation, /import \{ calculateLandedEconomics \} from "@\/lib\/suppliers\/landed-economics"/, "contribution-profit simulation must use the shared landed-economics calculator");
+assert.match(simulation, /const economics = calculateLandedEconomics\(/, "the production profit path must route through the shared landed-economics calculator");
+assert.match(simulation, /if \(!economics\.ready\) return unknown\(/, "invalid or unknown landed economics must fail closed");
+
+console.log("landed economics policy: 4 scenarios + shared production wiring passed");
