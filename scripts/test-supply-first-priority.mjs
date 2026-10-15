@@ -5,10 +5,10 @@ const source = fs.readFileSync(new URL("../lib/intelligence/run-intelligence-pip
 const discovery = fs.readFileSync(new URL("../lib/suppliers/discover-cj-supply.ts", import.meta.url), "utf8");
 const cronRoute = fs.readFileSync(new URL("../app/api/cron/supply-first/route.ts", import.meta.url), "utf8");
 const supplyFirst = source.indexOf('const supplyFirstStep');
-const marketplace = source.indexOf('runStep("bestsellers"');
+const marketplace = source.indexOf("marketplace_sourcing_disabled_supplier_native_only");
 assert.ok(supplyFirst >= 0, "supply-first discovery step must exist");
-assert.ok(marketplace >= 0, "marketplace collection step must exist");
-assert.ok(supplyFirst < marketplace, "supply-first stage marker must remain before slower marketplace collection");
+assert.ok(marketplace >= 0, "marketplace sourcing must be explicitly disabled");
+assert.ok(supplyFirst < marketplace, "supplier-native discovery must remain before the disabled marketplace stage");
 assert.match(source, /dedicated_supply_first_cron_owns_live_cj_discovery/);
 assert.doesNotMatch(source, /discoverAndCreateCjSupply\(/, "short patrol must not duplicate live CJ requests");
 assert.match(source, /discoveryCron: "\/api\/cron\/supply-first"/);
