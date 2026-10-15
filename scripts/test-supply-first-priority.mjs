@@ -24,6 +24,7 @@ assert.match(discovery, /next_verification_at: new Date\(Date\.now\(\) \+ 24 \* 
 assert.match(discovery, /seededVerificationLimit = Math\.min\(5, Math\.max\(0, limit\)\)/, "a bounded batch of existing due suppliers must be refreshed before new-catalog discovery");
 assert.match(discovery, /catalogDiscoveryLimit = Math\.max\(0, limit - seededChecked\)/, "seeded refresh attempts must consume the same bounded run budget instead of multiplying provider calls");
 assert.match(discovery, /catalogDiscovered < catalogDiscoveryLimit/, "new catalog discovery must use only the remaining per-run candidate budget");
+assert.match(discovery, /let catalogAttempted = 0;[\s\S]*?if \(catalogAttempted >= catalogDiscoveryLimit[\s\S]*?catalogAttempted \+= 1;/, "rejected or unavailable new candidates must still consume the bounded attempt budget");
 
 assert.match(discovery, /api_available: preserveVerifiedOrderPath[\s\S]*?orderable: preserveVerifiedOrderPath[\s\S]*?tracking_available: preserveVerifiedOrderPath/, "new candidates must not inherit an existing supplier order path");
 assert.match(cronRoute, /job_name: "supply-first"/, "the dedicated supplier cron must write an auditable run record");
