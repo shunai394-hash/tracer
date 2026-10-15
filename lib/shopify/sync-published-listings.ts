@@ -5,7 +5,6 @@ import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigure
 import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
-import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 
 type Listing = {
@@ -23,7 +22,6 @@ type Listing = {
   pipeline_reason: string | null;
   selection_reasons: unknown;
   supplier_listing_id: string | null;
-  identity_status?: string | null;
   supplier_product_id: string | null;
   supplier_variant_id: string | null;
   inventory: number | null;
@@ -50,15 +48,6 @@ type ShopifyProductNode = {
   variants: { nodes: Array<{ id: string; sku: string | null; price: string | null }> };
   media?: { nodes: Array<{ mediaContentType: string; preview?: { image?: { url: string } | null } | null }> };
 };
-
-function hasGateProvenance(row: Listing): boolean {
-  return Array.isArray(row.selection_reasons)
-    && row.selection_reasons.some((reason) => String(reason) === "sales_test_gate_passed");
-}
-
-function hasPublishableSupplierIdentity(status: string | null | undefined): boolean {
-  return status === "linked" || status === "native_cj_verified";
-}
 
 function asNumber(value: unknown): number | null {
   const n = typeof value === "number" ? value : Number(value);
@@ -213,7 +202,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
   let query = supabase
     .from("shop_listings")
     .select(baseSelect)
-    .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.true,pipeline_stage.eq.BASE_PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
+    .or("published.eq.true,and(published.eq.false,supplier_product_id.not.is.null,supplier_variant_id.not.is.null)")
     .order("pipeline_updated_at", { ascending: true });
 
   if (listingIds?.length) {
@@ -227,11 +216,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  const supplierStatuses = await getPublishableSupplierListingStatuses((data ?? []).map((row) => row.supplier_listing_id));
-  const rows = ((data ?? []) as Listing[]).map((row) => ({
-    ...row,
-    identity_status: row.supplier_listing_id ? supplierStatuses.get(row.supplier_listing_id) ?? null : null,
-  }));
+  const rows = (data ?? []) as Listing[];
   const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 15);
   let liveStockByVariantId = new Map<string, number>();
   let liveStockReconciliationError: string | null = null;
@@ -297,12 +282,19 @@ function blockReasons(row: Listing): string[] {
   // linked product merely because live procurement verification is pending.
   // Order-time fulfillment remains responsible for current stock and API checks.
   if (String(row.currency ?? "").trim().toUpperCase() !== "JPY") reasons.push("currency_not_jpy");
-  if (!/^CJ/i.test(String(row.supplier_name ?? ""))) reasons.push("supplier_not_cj");
   if (asNumber(row.shipping_cost) === null) reasons.push("shipping_cost_unknown");
   if (asNumber(row.source_cost) === null) reasons.push("source_cost_unknown");
-  const contributionProfit = asNumber(row.contribution_profit);
+  const sellingPrice = asNumber(row.selling_price);
+  const sourceCost = asNumber(row.source_cost);
+  const shippingCost = asNumber(row.shipping_cost);
+  const recordedProfit = asNumber(row.contribution_profit);
+  const contributionProfit = recordedProfit ?? (sellingPrice !== null && sourceCost !== null && shippingCost !== null
+    ? sellingPrice - sourceCost - shippingCost
+    : null);
   if (contributionProfit === null) reasons.push("profit_unknown");
   else if (contributionProfit <= 0) reasons.push("profit_not_positive");
+  const inventory = asNumber(row.inventory);
+  if (inventory === null || inventory <= 0) reasons.push("inventory_not_positive");
   return reasons;
 }
 
@@ -339,10 +331,9 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
     .order("pipeline_updated_at", { ascending: false })
     .limit(Math.min(Math.max(limit, 1), 1000));
   if (error) throw new Error(error.message);
-  const supplierStatuses = await getPublishableSupplierListingStatuses((data ?? []).map((row) => row.supplier_listing_id));
   const reasonCounts: Record<string, number> = {};
   const rows = ((data ?? []) as Array<Listing & { shopify_sync_error?: string | null }>).map((rawRow) => {
-    const row = { ...rawRow, identity_status: rawRow.supplier_listing_id ? supplierStatuses.get(rawRow.supplier_listing_id) ?? null : null };
+    const row = rawRow;
     const reasons = blockReasons(row);
     if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) reasons.push("image_url_invalid");
     if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");
@@ -458,7 +449,7 @@ async function syncListingRows(
       if (price === null || price <= 0) throw new Error("selling_price_invalid");
       if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) throw new Error("image_url_invalid");
 
-      const shippingText = `日本向け配送：${asNumber(row.shipping_cost) === 0 ? "送料無料" : "送料別（仕入先確認済み）"}。配送状況は追跡可能です。`;
+      const shippingText = `日本向け配送：${asNumber(row.shipping_cost) === 0 ? "送料無料" : "送料別（仕入先条件に従います）"}。配送条件は仕入先の最新情報をご確認ください。`;
       let productInput = {
         title: copy.title,
         descriptionHtml: html(`${copy.description}\n\n${shippingText}`),
