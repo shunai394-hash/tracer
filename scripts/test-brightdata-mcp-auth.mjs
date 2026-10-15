@@ -23,7 +23,7 @@ assert.match(collector, /provider: "brightdata_mcp"/, "ingest results must ident
 assert.ok(collector.includes('const preferred = ["scrape_as_markdown", "search_engine"];'), "search results must use tools that accept query/search URLs, not a product-detail scraper on a search URL");
 assert.ok(collector.includes("const lines = unwrapped.split(/\\r?\\n/);"), "Markdown product cards must be parsed from Bright Data results");
 assert.ok(collector.includes("if (!priceMatch) continue;"), "generic navigation links without a price must not become product candidates");
-assert.ok(collector.includes("Continue to the next supported MCP tool before API fallback"), "one unavailable MCP tool must not abort the remaining tool attempts");
+assert.ok(collector.includes("Continue to the next supported MCP tool"), "one unavailable MCP tool must not abort the remaining tool attempts");
 assert.match(collector, /export function isBrightDataFetchConfigured\(\): boolean/);
 assert.match(collector, /function normalizeCurrency\(/, "Google Shopping currency must be preserved rather than inferred as USD");
 assert.match(collector, /currency: string \| null/);
