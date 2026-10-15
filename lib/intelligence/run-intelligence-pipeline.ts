@@ -6,21 +6,14 @@ import { scoreProductIntelligence } from "@/lib/intelligence/score-products";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { persistDemandIntelligence } from "@/lib/intelligence/persist-demand-intelligence";
 import { persistReorderRecommendations } from "@/lib/ordering/persist-reorder";
-import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
-import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
-import {
-  promoteShopListingToNewfind,
-} from "@/lib/integration/newfind";
 import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { readMarketCursor, writeMarketCursor } from "@/lib/market/market-cursor";
 import {
   GeminiConfigError,
   GeminiRequestError,
   GeminiTimeoutError,
 } from "@/lib/ai/gemini/errors";
-import { canFeedSalesGate } from "@/lib/intelligence/bestseller-sales-gate";
 
 export type PipelineStepResult = {
   name: string;
@@ -363,65 +356,18 @@ export async function runIntelligencePipeline(options: {
   // Demand matching runs in its own five-minute cron. Keep broad catalog reads
   // out of this pipeline so slow data reads cannot starve product publication.
 
-  // Resume market discovery from the persisted cursor instead of re-reading
-  // marketplace 0 / item 0 on every patrol, and advance it afterwards.
-  const bestsellerStep = await runStep("bestsellers", async () => {
-    const cursor = await readMarketCursor(db);
-    const observation = await persistMarketplaceBestsellers({
-      sourceIndex: cursor.sourceIndex,
-      startIndex: cursor.startIndex,
-      batchSize: 10,
-    });
-    const next = await writeMarketCursor(db, observation, "patrol-ai");
-    // A non-empty ranking batch is not enough to unblock canonical identity.
-    // If no child-variant evidence was parsed (or all parsed evidence writes failed),
-    // defer the pipeline so publication/procurement never treats source coverage as identity proof.
-    const emptyCollection = observation.itemCount === 0;
-    const emptyVariantEvidence = observation.canonicalVariantEvidenceParsed === 0;
-    const amazonProxyUnavailable = observation.enrichment.some(
-      (item) => item.marketplace === "amazon.co.jp" && !item.brightDataConfigured,
-    );
-    // Yahoo Shopping (0) and Rakuten (1) are useful demand-observation sources,
-    // but this exact-variant sales gate only accepts Amazon child-variant
-    // evidence. Do not stall the entire intelligence loop while rotating through
-    // those sources; their rows remain ineligible for downstream sales matching.
-    const sourceDoesNotProvideCanonicalChildVariants = observation.sourceIndex < 2;
-    const evidencePersistenceFailed = observation.canonicalVariantEvidenceParsed > 0
-      && observation.canonicalVariantEvidenceWritten === 0
-      && observation.canonicalVariantEvidenceWriteFailures > 0;
-    if (emptyCollection || emptyVariantEvidence || evidencePersistenceFailed) {
-      const nonBlockingSourceCoverageSkip =
-        !emptyCollection && emptyVariantEvidence && sourceDoesNotProvideCanonicalChildVariants;
-      return {
-        ...observation,
-        cursor,
-        nextCursor: next,
-        skipped: true,
-        retryable: !nonBlockingSourceCoverageSkip,
-        reason: emptyCollection
-          ? "marketplace_collection_empty"
-          : evidencePersistenceFailed
-            ? "canonical_variant_evidence_write_failed"
-            : nonBlockingSourceCoverageSkip
-              ? "source_has_no_canonical_child_variant_contract"
-              : emptyVariantEvidence && amazonProxyUnavailable
-                ? "canonical_variant_evidence_empty_brightdata_not_configured"
-                : "canonical_variant_evidence_empty",
-      };
-    }
-    return { ...observation, cursor, nextCursor: next };
-  }, { budgetMs: 40_000 });
+  // TRACER sources products from supplier-native records only.
+  // Marketplace-derived rankings are intentionally disabled: they are not supplier
+  // identity, stock, cost, shipping, or orderability evidence and must not block
+  // or feed sales publication.
+  const bestsellerStep: PipelineStepResult = {
+    name: "bestsellers",
+    ok: true,
+    skipped: true,
+    retryable: false,
+    result: { skipped: true, reason: "marketplace_sourcing_disabled_supplier_native_only" },
+  };
   steps.push(bestsellerStep);
-
-  // A deferred/retryable stage can still carry raw candidate IDs. Only
-  // canonical evidence persisted by a completed stage may feed downstream gates.
-  const bestsellerCanFeedSalesGate = canFeedSalesGate(bestsellerStep);
-
-  const bestsellerIds =
-    bestsellerCanFeedSalesGate && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { bestsellerIds?: unknown }).bestsellerIds)
-      ? ((bestsellerStep.result as { bestsellerIds: string[] }).bestsellerIds)
-      : [];
-
   steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand(), { budgetMs: 5_000 }));
 
   // CJ identity re-verification runs through its dedicated cron endpoint only.
@@ -548,24 +494,17 @@ export async function runIntelligencePipeline(options: {
   );
   steps.push(supplySalesStep);
 
-  const salesTestStep = await runStep("sales_test_select", () => selectAndPublishSalesTests(bestsellerIds, 50), { downstream: true, budgetMs: 20_000 });
+  // Only supplier-native CJ offers may enter the sale-selection path.
+  // Marketplace bestseller sales tests and NEWFIND delivery are out of scope;
+  // this pipeline owns TRACER, BASE, and Shopify only.
+  const salesTestStep: PipelineStepResult = {
+    name: "sales_test_select",
+    ok: true,
+    skipped: true,
+    retryable: false,
+    result: { skipped: true, reason: "marketplace_sourcing_disabled_supplier_native_only" },
+  };
   steps.push(salesTestStep);
-
-  // Both Sales Test Gate paths deliver to NEWFIND (previously only the
-  // market path did). promoteShopListingToNewfind re-checks the gate.
-  steps.push(await runStep("newfind_promotion", async () => {
-    const ids = [salesTestStep, supplySalesStep].flatMap((step) => {
-      const result = step.result as { publishedListingIds?: unknown } | undefined;
-      return Array.isArray(result?.publishedListingIds)
-        ? result.publishedListingIds.filter((id): id is string => typeof id === "string")
-        : [];
-    });
-    return Promise.all(ids.map((id) => promoteShopListingToNewfind(id)));
-  }, { downstream: true, budgetMs: 6_000 }));
-  // NEWFIND has its own scheduled retry worker. Keep patrol delivery bounded so
-  // one slow downstream destination cannot consume the entire patrol timeout.
-  // Pending delivery retries run in the dedicated five-minute newfind-retry cron.
-  // Do not let downstream schema/cache delays block scoring and channel reconciliation.
 
   steps.push(await runStep("ordering", () => persistReorderRecommendations(), { downstream: true, budgetMs: 15_000 }));
   steps.push(await runStep("test_ready", async () => {

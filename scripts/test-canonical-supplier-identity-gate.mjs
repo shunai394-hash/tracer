@@ -103,6 +103,9 @@ assert.match(route, /requireAutomationAuth/);
 assert.match(route, /TRACER UNLINKED RECONCILIATION/, "production cleanup progress must be observable with count-only telemetry");
 assert.match(route, /published: false/);
 assert.match(route, /row\.orderable !== true \|\| row\.tracking_available !== true/, "unlinked-channel reconciliation must include supplier offers without an order path or tracking");
+assert.match(route, /fetchBaseItemsSnapshot/, "BASE reconciliation must inspect the complete external item catalog");
+assert.match(route, /eligibleIdentifiers\.has\(identifier\)/, "BASE must retain only exact TRC identifiers for currently publishable listings");
+assert.match(route, /editBaseItem\([\s\S]*?visible: false/, "unmatched BASE items must be hidden, not physically deleted");
 assert.match(route, /base_unpublish_failed/);
 assert.match(route, /shopify_unpublish_failed/);
 assert.match(base, /invalid_request.*break/s, "BASE auth failures must stop the current hide batch");
@@ -116,7 +119,11 @@ assert.match(baseRepair, /snapshot\.complete/, "incomplete BASE snapshots must n
 assert.match(baseRepair, /\.is\("base_item_id", null\)/, "BASE identity repair must compare-and-set only missing links");
 assert.doesNotMatch(baseRepair, /\.update\(\{[^}]*published\s*:/, "BASE identity repair must not change publication state");
 // Keep Vercel Cron disabled; guarded 15-minute reconciliation runs through GitHub Actions OIDC.
-assert.doesNotMatch(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/);
+assert.doesNotMatch(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/, "use the guarded GitHub Actions reconciliation schedule without a duplicate Vercel cron");
+assert.doesNotMatch(vercel, /"path": "\/api\/cron\/(market-sourcing|supplier-investigation|demand-match)"/, "marketplace-derived collection and matching must not run as sourcing jobs");
+assert.match(intelligencePipeline, /marketplace_sourcing_disabled_supplier_native_only/, "patrol must not read marketplace-derived sourcing data");
+assert.doesNotMatch(vercel, /"path": "\/api\/cron\/newfind-retry"/, "out-of-scope NEWFIND retries must not run in the three-site workflow");
+assert.match(intelligencePipeline, /marketplace_sourcing_disabled_supplier_native_only/, "marketplace candidates must not feed publication");
 assert.match(unpublishWorkflow, /cron: "\*\/15 \* \* \* \*"/, "guarded unlinked listing reconciliation must retry every 15 minutes via GitHub Actions");
 assert.match(unpublishWorkflow, /api\/cron\/unpublish-unlinked/);
 assert.match(unpublishWorkflow, /id-token: write/);

@@ -1,39 +1,16 @@
 import { NextResponse } from "next/server";
-import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
 import { requireCronAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 10;
 
-/**
- * Market observation only.
- * This endpoint never investigates suppliers and never publishes/unpublishes shop listings.
- */
+/** Out-of-scope workflow disabled: current operational scope is TRACER, BASE, and Shopify. */
 export async function POST(request: Request) {
   const authError = requireCronAuth(request);
   if (authError) return authError;
-
-  try {
-    const startedAt = Date.now();
-    const observation = await persistMarketplaceBestsellers();
-
-    return NextResponse.json({
-      ok: true,
-      phase: "market_observation",
-      elapsedMs: Date.now() - startedAt,
-      observation,
-      sourcingDecision: "not_run",
-      publication: "not_run",
-    });
-  } catch (error) {
-    console.error("[TRACER MARKET OBSERVATION ERROR]", error);
-    return NextResponse.json(
-      {
-        ok: false,
-        phase: "market_observation",
-        error: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 },
-    );
-  }
+  return NextResponse.json({
+    ok: true,
+    skipped: true,
+    reason: "marketplace_sourcing_disabled_supplier_native_only",
+  });
 }
