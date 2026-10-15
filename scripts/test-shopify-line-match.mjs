@@ -21,10 +21,11 @@ assert.equal(resolve([{ sku: "", variant_id: "gid://shopify/ProductVariant/46341
 assert.equal(resolve([{ sku: B.id }]).listings[0].id, B.id);
 // Generated-SKU fallback to supplier_product_id when no variant id exists.
 assert.equal(resolve([{ sku: "TRC-P-C" }], [{ id: "33333333-3333-4333-8333-333333333333", supplier_variant_id: null, supplier_product_id: "P-C" }]).listings[0].id, "33333333-3333-4333-8333-333333333333");
-// Missing: unknown SKU, prefix-only guess (CJ-) is not accepted.
+// Missing: unknown SKU. Legacy CJ-prefixed SKU resolves only by exact supplier variant ID.
 r = resolve([{ sku: "TRC-missing" }]);
 assert.deepEqual([r.ok, r.reason], [false, "listing_mapping_missing"]);
-assert.equal(resolve([{ sku: "CJ-2406171151571623500" }]).reason, "listing_mapping_missing");
+assert.equal(resolve([{ sku: "CJ-2406171151571623500" }]).listings[0].id, A.id);
+assert.equal(resolve([{ sku: "CJ-missing" }]).reason, "listing_mapping_missing");
 // Ambiguous: SKU points to A, Shopify variant id belongs to B.
 r = resolve([{ sku: "TRC-2406171151571623500", variant_id: 1 }]);
 assert.deepEqual([r.ok, r.reason], [false, "listing_mapping_ambiguous"]);
