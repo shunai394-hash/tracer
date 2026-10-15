@@ -366,11 +366,13 @@ export function parseAmazonVariationAsinMap(
   // These are explicit ASIN-keyed variation maps only; any discovered ASIN
   // remains discovery evidence until its own detail page supplies a barcode.
   const mapNames = [
+    "dimensionToAsinMap",
     "dimensionValuesDisplayData",
     "asinVariationValues",
     "variationValues",
     "variationDisplayValues",
     "variationDisplayData",
+    "asinToVariationValues",
   ];
   const patterns = mapNames.flatMap((name) => [
     new RegExp(`(?:var|let|const)\\s+${name}\\s*=`, "gi"),
@@ -386,8 +388,26 @@ export function parseAmazonVariationAsinMap(
       pattern.lastIndex = extracted.end;
       const record = asRecord(extracted.value);
       if (!record) continue;
-      for (const [rawAsin, rawValues] of Object.entries(record)) {
-        const asin = normalizeIdentifier("asin", rawAsin);
+      for (const [rawKey, rawValues] of Object.entries(record)) {
+        if (name === "dimensionToAsinMap") {
+          // Amazon commonly maps a dimension tuple to a child ASIN instead of
+          // mapping an ASIN to its dimensions. Treat only explicit map values
+          // as child identities; never infer an ASIN from arbitrary page text.
+          const mappedValues = collectDimensionStrings(rawValues);
+          for (const mappedValue of mappedValues) {
+            const asin = normalizeIdentifier("asin", mappedValue);
+            if (!asin || asin === parentAsin || seen.has(asin)) continue;
+            const variationValues = [
+              rawKey,
+              ...mappedValues.filter((value) => !normalizeIdentifier("asin", value)),
+            ].filter(Boolean);
+            seen.add(asin);
+            output.push({ asin, variationValues });
+          }
+          continue;
+        }
+
+        const asin = normalizeIdentifier("asin", rawKey);
         if (!asin || asin === parentAsin || seen.has(asin)) continue;
         const variationValues = collectDimensionStrings(rawValues);
         seen.add(asin);
