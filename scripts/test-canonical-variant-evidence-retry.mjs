@@ -19,3 +19,16 @@ assert.ok(persistence.includes('.from("marketplace_bestseller_variants")'), "can
 assert.ok(persistence.includes("canonicalVariantEvidenceWriteFailures"), "variant write failures must be counted and returned");
 assert.ok(persistence.includes("canonicalVariantEvidenceWritten"), "only confirmed database writes may count as persisted variants");
 console.log("PASS: market-sourcing exposes canonical variant parse/write status and remains observation-only");
+
+
+// Preserve persistence/write-failure checks above while asserting the new observation-only boundary.
+const [pipelineForBrightData, bestsellerRouteForBrightData, vercelForBrightData] = await Promise.all([
+  readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/intelligence/bestsellers/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../vercel.json", import.meta.url), "utf8"),
+]);
+assert.match(pipelineForBrightData, /marketplace_sourcing_disabled_supplier_native_only/);
+assert.doesNotMatch(pipelineForBrightData, /writeMarketCursor|persistMarketplaceBestsellers/);
+assert.match(vercelForBrightData, /"path": "\/api\/cron\/market-sourcing"/);
+assert.match(bestsellerRouteForBrightData, /marketplace_sourcing_disabled_supplier_native_only/);
+assert.doesNotMatch(bestsellerRouteForBrightData, /persistMarketplaceBestsellers|canonicalVariantEvidenceParsed/);

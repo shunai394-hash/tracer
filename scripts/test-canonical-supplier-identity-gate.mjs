@@ -160,3 +160,9 @@ assert.match(unpublishWorkflow, /fetch-depth: 0/);
 assert.match(unpublishWorkflow, /git merge-base --is-ancestor/, "initial reconciliation must accept a newer deployed descendant");
 assert.match(unpublishWorkflow, /result\.get\("ok"\) is not True/, "HTTP 207 partial reconciliation results must fail the scheduled job");
 console.log("Canonical supplier identity publication and reconciliation checks passed");
+
+
+// Bright Data's market research remains observation-only; it cannot establish supplier identity or publication eligibility.
+const marketSourcingRouteForBrightData = await readFile(new URL("../app/api/cron/market-sourcing/route.ts", import.meta.url), "utf8");
+assert.match(marketSourcingRouteForBrightData, /reason: "observation_only"/);
+assert.doesNotMatch(marketSourcingRouteForBrightData, /selectAndPublishSalesTests|promoteShopListingToNewfind/);

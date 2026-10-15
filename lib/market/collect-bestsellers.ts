@@ -22,6 +22,8 @@ export const MARKETPLACE_SOURCES = [
   // Amazon detail pages provide canonical child-ASIN evidence needed for exact
   // supplier-variant matching, so process these sources before broad rankings.
   { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/beauty/", source: "amazon_bestsellers_beauty" },
+  // Fashion is demand/variant research only (bags and hair accessories), never a supplier source.
+  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/fashion/", source: "amazon_bestsellers_fashion" },
   { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/", source: "amazon_bestsellers" },
   { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/electronics/", source: "amazon_bestsellers_electronics" },
   { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/kitchen/", source: "amazon_bestsellers_kitchen" },
@@ -69,6 +71,11 @@ export type CollectedMarketplace = {
     inProductGroupWithIdCount: number;
     childProductsWithExplicitParentRelation: number;
     absoluteTypeIriCount: number;
+    jsonLdScriptTagCount: number;
+    jsonLdParseFailureCount: number;
+    variationMapMarkerCount: number;
+    dimensionToAsinMapMarkerCount: number;
+    twisterDataMarkerCount: number;
     /** Aggregate-only child-variant recovery counters; never log child identifiers or raw HTML. */
     variationAsinsFound: number;
     childDetailAttempted: number;
@@ -304,6 +311,11 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
   let inProductGroupWithIdCount = 0;
   let childProductsWithExplicitParentRelation = 0;
   let absoluteTypeIriCount = 0;
+  let jsonLdScriptTagCount = 0;
+  let jsonLdParseFailureCount = 0;
+  let variationMapMarkerCount = 0;
+  let dimensionToAsinMapMarkerCount = 0;
+  let twisterDataMarkerCount = 0;
   let variationAsinsFound = 0;
   let childDetailAttempted = 0;
   let childDetailFetched = 0;
@@ -329,6 +341,11 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
       inProductGroupWithIdCount += markup.inProductGroupWithIdCount;
       childProductsWithExplicitParentRelation += markup.childProductsWithExplicitParentRelation;
       absoluteTypeIriCount += markup.absoluteTypeIriCount;
+      jsonLdScriptTagCount += markup.jsonLdScriptTagCount;
+      jsonLdParseFailureCount += markup.jsonLdParseFailureCount;
+      variationMapMarkerCount += markup.variationMapMarkerCount;
+      dimensionToAsinMapMarkerCount += markup.dimensionToAsinMapMarkerCount;
+      twisterDataMarkerCount += markup.twisterDataMarkerCount;
       item.canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl);
 
       if (marketplace.marketplace === "amazon.co.jp") {
@@ -350,15 +367,19 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
         const recovered = await Promise.all(childAsinsToFetch.map(async (child) => {
           const childUrl = `https://www.amazon.co.jp/dp/${child.asin}`;
           const childHtml = await fetchHtml(childUrl, { retryBrightDataWhenAmazonIdentifierMissing: true });
-          if (!childHtml) return null;
-          childDetailFetched += 1;
-          const childDetail = parseAmazonProductDetail(childHtml);
-          const jan = normalizeIdentifier("jan", childDetail.jan);
-          const gtin = normalizeIdentifier("gtin", childDetail.gtin);
-          const ean = normalizeIdentifier("ean", childDetail.ean);
-          const upc = normalizeIdentifier("upc", childDetail.upc);
-          if (!jan && !gtin && !ean && !upc) return null;
-          childBarcodeFound += 1;
+          if (childHtml) childDetailFetched += 1;
+          const childDetail = childHtml ? parseAmazonProductDetail(childHtml) : null;
+          const jan = normalizeIdentifier("jan", childDetail?.jan ?? null);
+          const gtin = normalizeIdentifier("gtin", childDetail?.gtin ?? null);
+          const ean = normalizeIdentifier("ean", childDetail?.ean ?? null);
+          const upc = normalizeIdentifier("upc", childDetail?.upc ?? null);
+          const hasBarcode = Boolean(jan || gtin || ean || upc);
+          if (hasBarcode) childBarcodeFound += 1;
+          const childModel = normalizeIdentifier("mpn", childDetail?.model ?? null);
+          const parentModel = normalizeIdentifier("mpn", item.model);
+          // Save explicit child-ASIN/dimension evidence even if the child page
+          // is unavailable or exposes no barcode. Such rows are discovery-only;
+          // they cannot pass supplier identity or sales eligibility on ASIN alone.
           return {
             sourceVariantId: child.asin,
             sku: null,
@@ -368,7 +389,7 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
             gtin,
             ean,
             upc,
-            mpn: normalizeIdentifier("mpn", childDetail.model),
+            mpn: childModel && childModel !== parentModel ? childModel : null,
             productUrl: childUrl,
             evidenceSource: "amazon_variation_asin_map" as const,
             rawEvidence: {
@@ -380,7 +401,9 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
               child_gtin: gtin,
               child_ean: ean,
               child_upc: upc,
-              extraction: "child_detail_page",
+              child_detail_fetched: Boolean(childHtml),
+              child_detail_has_barcode: hasBarcode,
+              extraction: !childHtml ? "variation_map_only_child_fetch_failed" : hasBarcode ? "child_detail_page" : "child_detail_page_barcode_missing",
             },
           };
         }));
@@ -459,6 +482,11 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
       inProductGroupWithIdCount,
       childProductsWithExplicitParentRelation,
       absoluteTypeIriCount,
+      jsonLdScriptTagCount,
+      jsonLdParseFailureCount,
+      variationMapMarkerCount,
+      dimensionToAsinMapMarkerCount,
+      twisterDataMarkerCount,
       variationAsinsFound,
       childDetailAttempted,
       childDetailFetched,

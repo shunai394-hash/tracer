@@ -40,9 +40,8 @@ function collectDimensionStrings(value: unknown): string[] {
 }
 
 function extractBalancedJsonObject(source: string, start: number): { value: unknown; end: number } | null {
-  // Some Amazon templates serialize the variation map as a JSON string rather
-  // than an object literal. Parse the quoted value first, then let the caller
-  // decode the embedded JSON object; never infer child IDs from arbitrary text.
+  // Some Amazon templates serialize a variation map as a JSON string instead
+  // of an object literal. Parse the quoted value, then decode its JSON payload.
   if (source[start] === '"') {
     let escaped = false;
     for (let i = start + 1; i < source.length; i += 1) {
@@ -129,11 +128,36 @@ export type CanonicalVariantMarkupDiagnostics = {
   inProductGroupWithIdCount: number;
   childProductsWithExplicitParentRelation: number;
   absoluteTypeIriCount: number;
+  jsonLdScriptTagCount: number;
+  jsonLdParseFailureCount: number;
+  variationMapMarkerCount: number;
+  dimensionToAsinMapMarkerCount: number;
+  twisterDataMarkerCount: number;
 };
 
 /** Aggregate-only diagnostics; never returns source HTML or product/customer payloads. */
 export function inspectCanonicalMarketplaceVariantMarkup(html: string): CanonicalVariantMarkupDiagnostics {
   const nodes = jsonLdNodes(html);
+  const jsonLdScriptMatches = [...html.matchAll(/<script\b[^>]*type\s*=\s*["'][^"']*ld\+json[^"']*["'][^>]*>([\s\S]*?)<\/script>/gi)];
+  const jsonLdParseFailureCount = jsonLdScriptMatches.filter((match) => {
+    const raw = match[1].trim().replace(/^<!--/, "").replace(/-->$/, "").trim();
+    try { JSON.parse(raw); return false; } catch { return true; }
+  }).length;
+  const variationMapNames = [
+    "dimensionToAsinMap",
+    "dimensionValuesDisplayData",
+    "asinVariationValues",
+    "variationValues",
+    "variationDisplayValues",
+    "variationDisplayData",
+    "asinToVariationValues",
+  ];
+  const variationMapMarkerCount = variationMapNames.reduce((count, name) => {
+    const matches = html.match(new RegExp(name, "gi"));
+    return count + (matches?.length ?? 0);
+  }, 0);
+  const dimensionToAsinMapMarkerCount = (html.match(/dimensionToAsinMap/gi) ?? []).length;
+  const twisterDataMarkerCount = (html.match(/twister-js-init-dpx-data|twisterJsInitData/gi) ?? []).length;
   const groups = nodes.filter((node) => isType(node, "ProductGroup"));
   let groupsWithVariantCount = 0;
   let variantProductNodeCount = 0;
@@ -172,6 +196,11 @@ export function inspectCanonicalMarketplaceVariantMarkup(html: string): Canonica
     inProductGroupWithIdCount,
     childProductsWithExplicitParentRelation,
     absoluteTypeIriCount,
+    jsonLdScriptTagCount: jsonLdScriptMatches.length,
+    jsonLdParseFailureCount,
+    variationMapMarkerCount,
+    dimensionToAsinMapMarkerCount,
+    twisterDataMarkerCount,
   };
 }
 
@@ -382,17 +411,19 @@ export function parseAmazonVariationAsinMap(
   // These are explicit ASIN-keyed variation maps only; any discovered ASIN
   // remains discovery evidence until its own detail page supplies a barcode.
   const mapNames = [
+    "dimensionToAsinMap",
     "dimensionValuesDisplayData",
     "asinVariationValues",
     "variationValues",
     "variationDisplayValues",
     "variationDisplayData",
+    "asinToVariationValues",
   ];
   const patterns = mapNames.flatMap((name) => [
-    new RegExp(`(?:var|let|const)\\s+${name}\\s*=`, "gi"),
-    new RegExp(`${name}\\s*:`, "gi"),
+    { name, pattern: new RegExp(`(?:var|let|const)\\s+${name}\\s*=`, "gi") },
+    { name, pattern: new RegExp(`${name}\\s*:`, "gi") },
   ]);
-  for (const pattern of patterns) {
+  for (const { name, pattern } of patterns) {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(html))) {
       let start = pattern.lastIndex;
@@ -402,14 +433,32 @@ export function parseAmazonVariationAsinMap(
       pattern.lastIndex = extracted.end;
       let decodedValue: unknown = extracted.value;
       // Double-encoded variation maps occur on some localized Amazon templates.
-      // Decode at most twice and accept only a JSON object with explicit ASIN keys.
+      // Decode at most twice and accept only explicit JSON maps.
       for (let decodeAttempt = 0; decodeAttempt < 2 && typeof decodedValue === "string"; decodeAttempt += 1) {
         try { decodedValue = JSON.parse(decodedValue) as unknown; } catch { break; }
       }
       const record = asRecord(decodedValue);
       if (!record) continue;
-      for (const [rawAsin, rawValues] of Object.entries(record)) {
-        const asin = normalizeIdentifier("asin", rawAsin);
+      for (const [rawKey, rawValues] of Object.entries(record)) {
+        if (name === "dimensionToAsinMap") {
+          // Amazon commonly maps a dimension tuple to a child ASIN instead of
+          // mapping an ASIN to its dimensions. Treat only explicit map values
+          // as child identities; never infer an ASIN from arbitrary page text.
+          const mappedValues = collectDimensionStrings(rawValues);
+          for (const mappedValue of mappedValues) {
+            const asin = normalizeIdentifier("asin", mappedValue);
+            if (!asin || asin === parentAsin || seen.has(asin)) continue;
+            const variationValues = [
+              rawKey,
+              ...mappedValues.filter((value) => !normalizeIdentifier("asin", value)),
+            ].filter(Boolean);
+            seen.add(asin);
+            output.push({ asin, variationValues });
+          }
+          continue;
+        }
+
+        const asin = normalizeIdentifier("asin", rawKey);
         if (!asin || asin === parentAsin || seen.has(asin)) continue;
         const variationValues = collectDimensionStrings(rawValues);
         seen.add(asin);

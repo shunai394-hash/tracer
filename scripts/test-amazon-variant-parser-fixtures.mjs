@@ -174,4 +174,30 @@ assert.deepEqual(
   "recognize the alternate explicit asinVariationValues map without weakening child barcode verification",
 );
 
+const dimensionToAsinHtml = `
+<script>
+var dimensionToAsinMap = {"[\\"Color=Black\\",\\"Size=M\\"]":"B0CHILD007","[\\"Color=Blue\\",\\"Size=L\\"]":"B0CHILD008"};
+</script>`;
+assert.deepEqual(
+  parseAmazonVariationAsinMap(dimensionToAsinHtml, parentUrl),
+  [
+    { asin: "B0CHILD007", variationValues: ['["Color=Black","Size=M"]'] },
+    { asin: "B0CHILD008", variationValues: ['["Color=Blue","Size=L"]'] },
+  ],
+  "parse Amazon dimension-to-ASIN maps where the dimension tuple is the key",
+);
+
+const serializedMapHtml = String.raw`
+<script>
+var dimensionValuesDisplayData = "{\"B0CHILD009\":[\"Red\",\"Large\"],\"B0CHILD010\":[\"Blue\"]}";
+</script>`;
+assert.deepEqual(
+  parseAmazonVariationAsinMap(serializedMapHtml, parentUrl),
+  [
+    { asin: "B0CHILD009", variationValues: ["Red", "Large"] },
+    { asin: "B0CHILD010", variationValues: ["Blue"] },
+  ],
+  "decode a JSON-string-encoded Amazon variation map",
+);
+
 console.log("Amazon variant parser fixtures: passed");
