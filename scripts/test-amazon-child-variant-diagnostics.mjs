@@ -7,26 +7,19 @@ const sourceDecision = await readFile(new URL("../app/api/intelligence/source-de
 const marketObserve = await readFile(new URL("../app/api/intelligence/market-observe/route.ts", import.meta.url), "utf8");
 const supplierInvestigation = await readFile(new URL("../app/api/cron/supplier-investigation/route.ts", import.meta.url), "utf8");
 const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
-const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
-
-assert.ok(cron.includes("persistMarketplaceBestsellers"), "dedicated observation cron must invoke the marketplace collector");
-assert.ok(cron.includes("canonicalVariantEvidenceParsed"), "cron must report parsed child-variant evidence");
-assert.ok(cron.includes("canonicalVariantEvidenceWritten"), "cron must report persisted child-variant evidence");
-assert.ok(cron.includes('reason: "observation_only"'), "marketplace collection must not publish ranking products or place orders");
-assert.ok(vercel.crons.some((entry) => entry.path === "/api/cron/market-sourcing" && entry.schedule === "*/15 * * * *"),
-  "market-sourcing must run on a schedule instead of remaining an unreachable route");
 
 for (const [name, source] of [
+  ["market-sourcing cron", cron],
   ["bestsellers API", bestsellerApi],
   ["source-decision API", sourceDecision],
   ["market-observe API", marketObserve],
   ["supplier-investigation cron", supplierInvestigation],
 ]) {
-  assert.ok(source.includes("marketplace_sourcing_disabled_supplier_native_only"), `${name} must remain supplier-native-only`);
+  assert.ok(source.includes("marketplace_sourcing_disabled_supplier_native_only"), `${name} must be disabled`);
   assert.doesNotMatch(source, /persistMarketplaceBestsellers|investigateDropshipForBestsellers|matchDemandProductsByCategory/,
     `${name} must not read marketplace-derived sourcing data`);
 }
-assert.ok(pipeline.includes("marketplace_sourcing_disabled_supplier_native_only"), "patrol must leave market observation to its dedicated cron");
+assert.ok(pipeline.includes("marketplace_sourcing_disabled_supplier_native_only"), "patrol must skip marketplace collection");
 assert.doesNotMatch(pipeline, /persistMarketplaceBestsellers|selectAndPublishSalesTests|promoteShopListingToNewfind/,
-  "TRACER patrol must not publish marketplace-derived products or promote to out-of-scope NEWFIND");
-console.log("Dedicated market observation cron and supplier-native publication boundaries passed");
+  "TRACER patrol must not source from marketplaces or publish to out-of-scope NEWFIND");
+console.log("Marketplace sourcing disabled; supplier-native-only workflow assertions passed");
