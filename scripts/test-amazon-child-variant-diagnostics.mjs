@@ -28,6 +28,11 @@ const genericParserIndex = source.indexOf("item.canonicalVariants = parseCanonic
 const amazonBranchIndex = source.indexOf('if (marketplace.marketplace === "amazon.co.jp")');
 assert.ok(genericParserIndex >= 0 && genericParserIndex < amazonBranchIndex, "Schema.org child variants must be parsed for all enriched marketplaces, not only Amazon");
 assert.ok(source.includes("canonicalVariantCount += item.canonicalVariants.length;"), "non-Amazon child evidence must contribute to persisted evidence telemetry");
+for (const signal of ["productModelCount", "isVariantOfProductCount", "inProductGroupWithIdCount", "childProductsWithExplicitParentRelation"]) {
+  assert.ok(source.includes(`${signal} += markup.${signal};`), `enrichment must aggregate ${signal}`);
+  assert.ok(source.includes(`${signal},`), `enrichment response must expose ${signal}`);
+}
+
 assert.ok(source.includes('marketplace.marketplace === "yahoo_shopping" || marketplace.marketplace === "rakuten"'), "Yahoo and Rakuten detail pages must remain in the bounded enrichment path for canonical child extraction");
 
 
