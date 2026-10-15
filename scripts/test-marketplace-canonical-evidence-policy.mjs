@@ -9,6 +9,7 @@ assert.ok(pipeline.includes("retryable: !nonBlockingSourceCoverageSkip"), "unsup
 assert.ok(pipeline.includes('"source_has_no_canonical_child_variant_contract"'), "report the exact non-blocking source limitation");
 assert.ok(gate.includes("stage.ok && stage.skipped !== true && stage.retryable !== true"), "skipped source rows must never feed the sales gate");
 assert.ok(pipeline.includes("const bestsellerCanFeedSalesGate = canFeedSalesGate(bestsellerStep)"), "downstream sales matching must use the strict gate helper");
-assert.ok(pipeline.includes("retryable: bestsellerStep.retryable === true"), "dropship must inherit the source stage retryability instead of always deferring");
-assert.ok(pipeline.includes('"bestseller_source_has_no_canonical_child_variant_contract"'), "dropship must distinguish observation-only sources from retryable Amazon evidence");
-console.log("Marketplace canonical evidence policy: 7 assertions passed");
+assert.ok(pipeline.includes('reason: "marketplace_rankings_not_used_for_supplier_procurement"'), "ranking observations must not be treated as supplier procurement inputs");
+assert.ok(pipeline.includes('discoveryCron: "/api/cron/supply-first"'), "supplier procurement must be routed to the dedicated supply-first cron");
+assert.doesNotMatch(pipeline, /investigateDropshipForBestsellers/, "legacy ranking-driven supplier investigation must not run in the intelligence pipeline");
+console.log("Marketplace canonical evidence policy: 8 assertions passed");
