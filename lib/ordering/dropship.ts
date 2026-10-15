@@ -367,8 +367,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
 
 /**
  * Explicit, per-order human sign-off required before a live supplier order
- * call fires (executeLivePurchaseOrder for CJ, executeLiveOrosyOrder for
- * orosy — see lib/ordering/orosy-order.ts). Supplier-agnostic; intended to
+ * call fires (executeLivePurchaseOrder for CJ). Supplier-agnostic; intended to
  * be called only from an authenticated admin action.
  */
 export async function confirmPurchaseOrderForLiveExecution(args: {

@@ -19,7 +19,6 @@ export async function GET() {
       gemini: status.gemini,
       brightData: status.brightData,
       cj: Boolean(process.env.CJ_API_KEY),
-      orosy: status.orosy,
       faire: status.faire,
       dsersMcp: status.dsersMcp,
       ecPulse: status.ecPulse,

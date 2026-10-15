@@ -9,11 +9,6 @@ import {
   calculateCJFreight,
 } from "@/lib/sources/cj";
 import {
-  getOrosyProductDetail,
-  getOrosyShippingQuote,
-  searchOrosyProducts,
-} from "@/lib/sources/orosy";
-import {
   identifiersFromRecord,
   matchProductIdentity,
   type ProductIdentifiers,
@@ -33,7 +28,7 @@ export type ProductIntelligenceInput = {
 };
 
 export type ProductIntelligenceOffer = {
-  supplier: "cj" | "orosy";
+  supplier: "cj";
   productId: string;
   variantId: string | null;
   title: string;
@@ -64,7 +59,6 @@ export type ProductIntelligenceResult = {
   offers: ProductIntelligenceOffer[];
   suppliers: {
     cj: "available" | "not_configured" | "error";
-    orosy: "available" | "not_configured" | "error";
   };
   sellability: {
     eligible: boolean;
@@ -217,117 +211,14 @@ async function investigateCJ(
   }
 }
 
-async function investigateOrosy(
-  market: ProductIntelligenceInput,
-  ids: ProductIdentifiers,
-): Promise<{ status: ProductIntelligenceResult["suppliers"]["orosy"]; offers: ProductIntelligenceOffer[] }> {
-  const hasConfig = Boolean(process.env.OROSY_API_URL && process.env.OROSY_API_KEY);
-  if (!hasConfig) return { status: "not_configured", offers: [] };
-
-  const offers: ProductIntelligenceOffer[] = [];
-  try {
-    for (const query of searchQueries(ids).slice(0, 3)) {
-      const products = await searchOrosyProducts(query);
-      for (const product of products.slice(0, 5)) {
-        const detail = await getOrosyProductDetail(product.id);
-        if (!detail) continue;
-
-        const variationOffers = detail.variations.filter((variation) => {
-          const variationIds = identifiersFromRecord({
-            jan: variation.jan,
-            gtin: variation.jan,
-          });
-          return matchProductIdentity({
-            market: {
-              ...ids,
-              brand: market.brand ?? null,
-              title: market.title ?? null,
-              imageUrl: market.imageUrl ?? null,
-            },
-            supply: {
-              ...variationIds,
-              mpn: detail.productNumber,
-              title: detail.title,
-              brand: detail.brand,
-              imageUrl: detail.imageUrl,
-            },
-          }).salesEligible;
-        });
-
-        const variation = variationOffers.length === 1 ? variationOffers[0] : null;
-        if (!variation) continue;
-
-        const identity = matchProductIdentity({
-          market: {
-            ...ids,
-            brand: market.brand ?? null,
-            title: market.title ?? null,
-            imageUrl: market.imageUrl ?? null,
-          },
-          supply: {
-            ...identifiersFromRecord({ jan: variation.jan }),
-            mpn: detail.productNumber,
-            title: detail.title,
-            brand: detail.brand,
-            imageUrl: detail.imageUrl,
-          },
-        });
-        const shipping = await getOrosyShippingQuote(detail.id);
-        const orderable = Boolean(
-          detail.orderable === true &&
-          variation.stockQty !== null &&
-          variation.stockQty > 0 &&
-          !shipping.unresolved,
-        );
-
-        offers.push({
-          supplier: "orosy",
-          productId: detail.id,
-          variantId: variation.variationId,
-          title: detail.title,
-          brand: detail.brand,
-          imageUrl: detail.imageUrl,
-          identity: {
-            confirmed: true,
-            method: identity.method,
-            confidence: identity.confidence,
-            rationale: identity.rationale,
-          },
-          price: variation.buyerPrice,
-          shippingCost: shipping.amount,
-          inventory: variation.stockQty,
-          orderable,
-          trackingAvailable: null,
-          searchable: true,
-          evidence: [
-            "supplier product matched by identifier-grade identity",
-            "variation uniquely confirmed",
-          ],
-        });
-
-        if (offers.length >= 5) return { status: "available", offers };
-      }
-    }
-    return { status: "available", offers };
-  } catch (error) {
-    console.warn("[product-intelligence] Orosy provider failed", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return { status: "error", offers };
-  }
-}
-
 export async function runProductIntelligence(
   input: ProductIntelligenceInput,
 ): Promise<ProductIntelligenceResult> {
   const ids = identifiersFromRecord(marketRecord(input));
 
-  const [cj, orosy] = await Promise.all([
-    investigateCJ(input, ids),
-    investigateOrosy(input, ids),
-  ]);
+  const cj = await investigateCJ(input, ids);
 
-  const offers = [...cj.offers, ...orosy.offers];
+  const offers = [...cj.offers];
   const confirmed = offers.filter((offer) => offer.identity.confirmed);
   const orderable = confirmed.filter((offer) => offer.orderable);
   const inStock = orderable.filter(
@@ -349,7 +240,6 @@ export async function runProductIntelligence(
     offers,
     suppliers: {
       cj: cj.status,
-      orosy: orosy.status,
     },
     sellability: {
       eligible: reason === "eligible",

@@ -1,7 +1,6 @@
 ﻿import "server-only";
 
 import { registerSupplierAdapter } from "@/lib/procurement/registry";
-import { orosySupplierAdapter } from "@/lib/procurement/orosy-adapter";
 import { tracerTestSupplier } from "@/lib/procurement/test-supplier";
 import { faireSupplierAdapter } from "@/lib/procurement/faire-adapter";
 import { dsersSupplierAdapter } from "@/lib/procurement/dsers-adapter";
@@ -17,7 +16,6 @@ export function initializeProcurement(): void {
   }
 
   registerSupplierAdapter(tracerTestSupplier);
-  registerSupplierAdapter(orosySupplierAdapter);
   registerSupplierAdapter(faireSupplierAdapter);
   registerSupplierAdapter(dsersSupplierAdapter);
   registerSupplierAdapter(tracerInternalSupplierAdapter);
