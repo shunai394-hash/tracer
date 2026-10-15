@@ -73,6 +73,16 @@ export async function POST(request: Request) {
       shippingCustomerName: "TRACER SANDBOX TEST",
       email: "sandbox-test@example.invalid",
     });
+    console.info("[TRACER CJ SANDBOX ORDER TEST COMPLETE]", JSON.stringify({
+      supplierListingId,
+      supplierOrderId: result.supplierOrderId,
+      status: result.status,
+      paymentConfirmed: result.paymentConfirmed,
+      sandbox: result.sandbox,
+      charged: result.charged,
+      realFulfillment: result.realFulfillment,
+      trackingNumberPresent: Boolean(result.trackingNumber.trim()),
+    }));
     return NextResponse.json({
       ok: true,
       phase: "cj_sandbox_order_lifecycle",
