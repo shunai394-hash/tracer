@@ -25,6 +25,8 @@ export function isCjIdentityReverifyDue(metadata: unknown, nowMs = Date.now()): 
 }
 
 export type SupplierListingIdentityTuple = {
+  id?: string | null;
+  supplier_listing_id?: string | null;
   product_id: string | null;
   supplier_product_id: string | null;
   supplier_variant_id: string | null;
@@ -45,11 +47,16 @@ export function partitionByExactShopListing<T extends SupplierListingIdentityTup
   shopListings: SupplierListingIdentityTuple[],
 ): { matched: T[]; unmatched: T[] } {
   const shopKeys = new Set(shopListings.map(supplierTupleKey).filter((key): key is string => key !== null));
+  // Prefer the stable FK when a shop listing explicitly points at this supplier
+  // row. Tuple matching remains a fallback for legacy rows without that FK.
+  const linkedSupplierIds = new Set(
+    shopListings.map((listing) => listing.supplier_listing_id?.trim()).filter((id): id is string => Boolean(id)),
+  );
   const matched: T[] = [];
   const unmatched: T[] = [];
   for (const row of supplierRows) {
     const key = supplierTupleKey(row);
-    if (key !== null && shopKeys.has(key)) matched.push(row);
+    if ((row.id && linkedSupplierIds.has(row.id)) || (key !== null && shopKeys.has(key))) matched.push(row);
     else unmatched.push(row);
   }
   return { matched, unmatched };
@@ -129,7 +136,8 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
     { name: "one_millisecond_before_1_hour_boundary_is_deferred", expected: false, actual: isCjIdentityReverifyDue({ next_identity_reverify_at: new Date(now + CJ_IDENTITY_RETRY_DELAYS_MS.processingError).toISOString() }, now + CJ_IDENTITY_RETRY_DELAYS_MS.processingError - 1) },
     { name: "at_1_hour_boundary_is_due", expected: true, actual: isCjIdentityReverifyDue({ next_identity_reverify_at: new Date(now + CJ_IDENTITY_RETRY_DELAYS_MS.processingError).toISOString() }, now + CJ_IDENTITY_RETRY_DELAYS_MS.processingError) },
     { name: "exact_shop_listing_tuple_is_prioritized", expected: true, actual: (() => { const rows = [{ id: "matched", product_id: "p1", supplier_product_id: "sp1", supplier_variant_id: "sv1" }, { id: "unmatched", product_id: "p2", supplier_product_id: "sp2", supplier_variant_id: "sv2" }]; const result = partitionByExactShopListing(rows, [{ product_id: "p1", supplier_product_id: "sp1", supplier_variant_id: "sv1" }]); return result.matched.map((row) => row.id).join(",") === "matched" && result.unmatched.map((row) => row.id).join(",") === "unmatched"; })() },
-    { name: "same_supplier_ids_on_different_tracer_product_do_not_match", expected: true, actual: (() => { const rows = [{ id: "wrong-product", product_id: "p2", supplier_product_id: "sp1", supplier_variant_id: "sv1" }]; const result = partitionByExactShopListing(rows, [{ product_id: "p1", supplier_product_id: "sp1", supplier_variant_id: "sv1" }]); return result.matched.length === 0 && result.unmatched.length === 1; })() },
+    { name: "same_supplier_ids_on_different_tracer_product_do_not_match_without_fk", expected: true, actual: (() => { const rows = [{ id: "wrong-product", product_id: "p2", supplier_product_id: "sp1", supplier_variant_id: "sv1" }]; const result = partitionByExactShopListing(rows, [{ product_id: "p1", supplier_product_id: "sp1", supplier_variant_id: "sv1" }]); return result.matched.length === 0 && result.unmatched.length === 1; })() },
+    { name: "stable_supplier_listing_fk_prioritizes_linked_row_even_when_legacy_product_ids_differ", expected: true, actual: (() => { const rows = [{ id: "supplier-row-1", product_id: "p2", supplier_product_id: "sp1", supplier_variant_id: "sv1" }]; const result = partitionByExactShopListing(rows, [{ supplier_listing_id: "supplier-row-1", product_id: "p1", supplier_product_id: "old-sp", supplier_variant_id: "old-sv" }]); return result.matched.length === 1 && result.matched[0].id === "supplier-row-1"; })() },
     { name: "missing_supplier_variant_never_matches_shop_listing", expected: true, actual: (() => { const rows = [{ id: "missing-variant", product_id: "p1", supplier_product_id: "sp1", supplier_variant_id: null }]; const result = partitionByExactShopListing(rows, [{ product_id: "p1", supplier_product_id: "sp1", supplier_variant_id: "sv1" }]); return result.matched.length === 0; })() },
     { name: "invalid_gtin_is_rejected_but_raw_value_is_retained", expected: true, actual: (() => { const raw = "1598446591114"; const audit = supplierBarcodeAudit(raw, false); return audit.variant_barcode_raw === raw && audit.variant_barcode_validation === "invalid_format_or_check_digit"; })() },
     { name: "valid_gtin_is_classified_but_not_itself_linked", expected: true, actual: (() => { const audit = supplierBarcodeAudit("4006381333931", true); return audit.variant_barcode_validation === "valid_gs1_check_digit" && !hasUniqueMarketplaceIdentity(0); })() },
