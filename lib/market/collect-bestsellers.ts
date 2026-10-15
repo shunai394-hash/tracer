@@ -5,6 +5,7 @@ import {
   fetchBrightDataPage,
   isBrightDataConfigured,
 } from "@/lib/sources/brightdata/client";
+import { fetchBrightDataMcpPage, isMcpConfigured } from "@/lib/sources/mcp/client";
 import {
   parseAmazonBestsellersHtml,
   parseAmazonProductDetail,
@@ -18,15 +19,11 @@ import { inspectCanonicalMarketplaceVariantMarkup, parseAmazonVariationAsinMap, 
 import { decodeHtmlBytes } from "@/lib/market/charset";
 import { isAmazonChallengeHtml } from "@/lib/market/amazon-response";
 
+// Yahoo! Shopping is used only as a Japanese demand signal. Supplier identity,
+ // costs, stock, shipping, and orderability must come from the supplier API.
+ // Amazon/Rakuten are intentionally excluded from this collection pipeline.
 export const MARKETPLACE_SOURCES = [
   { marketplace: "yahoo_shopping", url: "https://shopping.yahoo.co.jp/ranking/", source: "yahoo_shopping_ranking" },
-  { marketplace: "rakuten", url: "https://ranking.rakuten.co.jp/", source: "rakuten_ranking" },
-  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/beauty/", source: "amazon_bestsellers_beauty" },
-  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/", source: "amazon_bestsellers" },
-  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/electronics/", source: "amazon_bestsellers_electronics" },
-  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/kitchen/", source: "amazon_bestsellers_kitchen" },
-  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/home/", source: "amazon_bestsellers_home" },
-  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/sports/", source: "amazon_bestsellers_sports" },
 ] as const;
 
 /**
@@ -151,16 +148,36 @@ async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVar
         !isAmazonChallengeHtml(page.html, url) &&
         (!options.retryBrightDataWhenCanonicalVariantsMissing || hasAmazonVariantEvidence(page.html)) &&
         (!options.retryBrightDataWhenAmazonIdentifierMissing || hasAmazonProductIdentifier(page.html));
-      if (page.html && brightDataHasRequiredEvidence) {
-        return page.html;
-      }
-      // If Bright Data did not improve the response, retain a usable direct
-      // response for ordinary parsing/diagnostics. It still cannot create
-      // canonical evidence unless the strict JSON-LD parser finds child nodes.
+      if (page.html && brightDataHasRequiredEvidence) return page.html;
       if (directHtml && !directIsChallenge) return directHtml;
       if (page.html && !isAmazonChallengeHtml(page.html, url)) return page.html;
     } catch {
-      // Fall through to the direct response if one exists.
+      // Try the MCP transport below; do not silently stop at the API fallback.
+    }
+  }
+
+  // Bright Data Remote MCP is the actual fallback path for collection when the
+  // legacy Web Unlocker API token/zone are not configured or fail. Call only a
+  // URL-capable scrape tool discovered from tools/list; never guess tool names.
+  if (isMcpConfigured()) {
+    try {
+      const mcpHtml = await fetchBrightDataMcpPage(url);
+      const mcpHasRequiredEvidence =
+        Boolean(mcpHtml) &&
+        !isAmazonChallengeHtml(mcpHtml, url) &&
+        (!options.retryBrightDataWhenCanonicalVariantsMissing || hasAmazonVariantEvidence(mcpHtml)) &&
+        (!options.retryBrightDataWhenAmazonIdentifierMissing || hasAmazonProductIdentifier(mcpHtml));
+      if (mcpHtml && mcpHasRequiredEvidence) return mcpHtml;
+      // Retain a direct response for diagnostics, but never treat MCP markdown
+      // or a challenge page as canonical child-variant evidence.
+      if (directHtml && !directIsChallenge) return directHtml;
+      if (mcpHtml && !isAmazonChallengeHtml(mcpHtml, url) && !directHtml) return mcpHtml;
+    } catch (error) {
+      console.warn("[TRACER BRIGHT DATA MCP COLLECTION FALLBACK FAILED]", {
+        code: error && typeof error === "object" && "code" in error
+          ? String((error as { code?: unknown }).code ?? "MCP_REQUEST_FAILED")
+          : "MCP_REQUEST_FAILED",
+      });
     }
   }
 
@@ -310,7 +327,7 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
   await Promise.all(details.map(async (item) => {
     if (!item.productUrl) return;
     try {
-      const detailHtml = await fetchHtml(item.productUrl, { retryBrightDataWhenCanonicalVariantsMissing: marketplace.marketplace === "amazon.co.jp" });
+      const detailHtml = await fetchHtml(item.productUrl, { retryBrightDataWhenCanonicalVariantsMissing: true });
       if (!detailHtml) return;
       htmlFetched += 1;
 
