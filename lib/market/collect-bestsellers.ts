@@ -60,8 +60,12 @@ export type CollectedMarketplace = {
     canonicalVariantCount: number;
     jsonLdNodeCount: number;
     productGroupCount: number;
+    productModelCount: number;
     groupsWithVariantCount: number;
     variantProductNodeCount: number;
+    isVariantOfProductCount: number;
+    inProductGroupWithIdCount: number;
+    childProductsWithExplicitParentRelation: number;
     absoluteTypeIriCount: number;
     /** Aggregate-only child-variant recovery counters; never log child identifiers or raw HTML. */
     variationAsinsFound: number;
@@ -291,8 +295,12 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
   let canonicalVariantCount = 0;
   let jsonLdNodeCount = 0;
   let productGroupCount = 0;
+  let productModelCount = 0;
   let groupsWithVariantCount = 0;
   let variantProductNodeCount = 0;
+  let isVariantOfProductCount = 0;
+  let inProductGroupWithIdCount = 0;
+  let childProductsWithExplicitParentRelation = 0;
   let absoluteTypeIriCount = 0;
   let variationAsinsFound = 0;
   let childDetailAttempted = 0;
@@ -312,8 +320,12 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
       const markup = inspectCanonicalMarketplaceVariantMarkup(detailHtml);
       jsonLdNodeCount += markup.jsonLdNodeCount;
       productGroupCount += markup.productGroupCount;
+      productModelCount += markup.productModelCount;
       groupsWithVariantCount += markup.groupsWithVariantCount;
       variantProductNodeCount += markup.variantProductNodeCount;
+      isVariantOfProductCount += markup.isVariantOfProductCount;
+      inProductGroupWithIdCount += markup.inProductGroupWithIdCount;
+      childProductsWithExplicitParentRelation += markup.childProductsWithExplicitParentRelation;
       absoluteTypeIriCount += markup.absoluteTypeIriCount;
       item.canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl);
 
@@ -438,8 +450,12 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
       canonicalVariantCount,
       jsonLdNodeCount,
       productGroupCount,
+      productModelCount,
       groupsWithVariantCount,
       variantProductNodeCount,
+      isVariantOfProductCount,
+      inProductGroupWithIdCount,
+      childProductsWithExplicitParentRelation,
       absoluteTypeIriCount,
       variationAsinsFound,
       childDetailAttempted,
