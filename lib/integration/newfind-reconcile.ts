@@ -85,6 +85,10 @@ export async function rescueUndeliveredGatePassedListings(options: { limit?: num
     if (status === "processed") { result.alreadyProcessed += 1; continue; }
     const bucket = status in result.undelivered ? status as keyof NewfindRescueResult["undelivered"] : "pending";
     result.undelivered[bucket] += 1;
+    // retryPendingNewfindPromotions already handles every durable delivery
+    // status. Rescue only listings with no delivery row, avoiding a second
+    // send of the same failed item in the same five-minute cron invocation.
+    if (status !== "missing") continue;
     targets.push(id);
   }
 
