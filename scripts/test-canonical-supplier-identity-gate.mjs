@@ -82,15 +82,17 @@ assert.ok(demandSupplier.includes("const identityKey = `${sourceSupplierName}::$
 assert.ok(demandSupplier.includes('.eq("identity_key", identityKey)'), "supplier canonical products may only be reused by exact source identity key");
 assert.match(demandSupplier, /Missing stable supplier name or product ID; canonical offer persistence blocked/);
 assert.match(helper, /offset \+= 100/, "identity lookups must batch large supplier ID sets");
-assert.doesNotMatch(shopify, /hasPublishableSupplierIdentity/, "supplier verification state must not gate storefront publication");
+assert.match(shopify, /getPublishableSupplierListingStatuses/, "Shopify publication must require a linked or freshly verified native supplier listing");
+assert.match(shopify, /supplierStatuses\.has\(String\(row\.supplier_listing_id\)\)/, "Shopify must reject supplier listings without eligible identity evidence");
 assert.doesNotMatch(shopify, /supplier_not_cj/, "profitable linked products from any supplier may be listed");
 assert.match(shopify, /supplier_variant_missing/, "exact supplier product and variant IDs remain required");
 assert.match(shopify, /inventory_not_positive/, "storefront inventory must be positive");
 assert.match(shopify, /profit_not_positive/, "catalog publication requires positive contribution profit");
 assert.match(base, /identityUnlinkedIds/);
 assert.match(base, /supplier_product_id.not.is.null,supplier_variant_id.not.is.null/, "BASE retries linked catalog rows regardless of old hidden error markers");
-assert.doesNotMatch(base, /if \(listing\.tracking_available !== true\)/, "tracking availability is not a publication gate");
-assert.doesNotMatch(base, /listing\.orderable !== true/, "order-time supplier readiness is not a publication gate");
+assert.match(base, /getPublishableSupplierListingStatuses/, "BASE publication must require a linked or freshly verified native supplier listing");
+assert.match(base, /listing\.orderable !== true/, "BASE publication requires supplier orderability");
+assert.match(base, /listing\.tracking_available !== true/, "BASE publication requires tracking capability");
 assert.match(base, /profit_not_positive/, "BASE publication requires positive contribution profit");
 assert.match(base, /query\.order\("created_at", \{ ascending: false \}\)/,
   "BASE batches must prioritize new gate-passed listings instead of starving them behind old hidden rows");
@@ -100,6 +102,7 @@ assert.match(store, /supplier_identity_unlinked/);
 assert.match(route, /requireAutomationAuth/);
 assert.match(route, /TRACER UNLINKED RECONCILIATION/, "production cleanup progress must be observable with count-only telemetry");
 assert.match(route, /published: false/);
+assert.match(route, /row\.orderable !== true \|\| row\.tracking_available !== true/, "unlinked-channel reconciliation must include supplier offers without an order path or tracking");
 assert.match(route, /base_unpublish_failed/);
 assert.match(route, /shopify_unpublish_failed/);
 assert.match(base, /invalid_request.*break/s, "BASE auth failures must stop the current hide batch");

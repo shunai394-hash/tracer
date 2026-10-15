@@ -6,6 +6,7 @@ import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapanes
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
+import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 
 type Listing = {
   id: string;
@@ -235,13 +236,18 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
     }
   }
 
+  const supplierStatuses = await getPublishableSupplierListingStatuses(rows.map((row) => row.supplier_listing_id));
   const actionable = listingIds?.length
     ? rows.slice(0, safeLimit)
     : rows.filter((row) => {
         const status = String(row.shopify_sync_status ?? "");
         if (status === "syncing") return false;
-        // Supplier verification/orderability must not suppress catalog publication; exact IDs are checked by blockReasons and order-time fulfillment revalidates availability.
+        const supplierEligible = Boolean(row.supplier_listing_id && supplierStatuses.has(String(row.supplier_listing_id)));
+        const listingEligible = supplierEligible && blockReasons(row).length === 0;
         if (row.published === true) {
+          // Reconcile already-synced products when supplier evidence/orderability expires,
+          // even if Shopify's current inventory still matches the stale TRACER quantity.
+          if (!listingEligible) return true;
           if (status !== "synced") return true;
           if (liveStockReconciliationError) return false;
           const variantId = toShopifyGid("ProductVariant", row.shopify_variant_id);
@@ -250,8 +256,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
           return liveQuantity !== toStorefrontStockQuantity(row.inventory, process.env.SHOPIFY_STOREFRONT_STOCK_CAP);
         }
         if (row.published === false) {
-          // Retry any catalog-eligible row, including products hidden by an obsolete workflow gate.
-          return blockReasons(row).length === 0;
+          return listingEligible;
         }
         return false;
       }).slice(0, safeLimit);
@@ -274,6 +279,8 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
 function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
   if (!row.supplier_product_id || !row.supplier_variant_id) reasons.push("supplier_variant_missing");
+  if (row.orderable !== true) reasons.push("supplier_not_orderable");
+  if (row.tracking_available !== true) reasons.push("supplier_tracking_unavailable");
   if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
   if (!isPublishableCatalogDescription(row.description)) reasons.push("catalog_description_not_publishable");
   // Publication is a catalog operation. Do not hide a profitable, precisely
@@ -366,7 +373,11 @@ async function syncListingRows(
     shopify_product_id: toShopifyGid("Product", row.shopify_product_id),
     shopify_variant_id: toShopifyGid("ProductVariant", row.shopify_variant_id),
   }));
-  const candidates = rows.filter((row) => blockReasons(row).length === 0);
+  const supplierStatuses = await getPublishableSupplierListingStatuses(rows.map((row) => row.supplier_listing_id));
+  const candidates = rows.filter((row) =>
+    Boolean(row.supplier_listing_id && supplierStatuses.has(String(row.supplier_listing_id)))
+    && blockReasons(row).length === 0
+  );
   const blocked = rows.filter((row) => !candidates.includes(row));
   const results: ShopifySyncResult = {
     configured: true,
@@ -383,11 +394,11 @@ async function syncListingRows(
         published: false,
         pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
-        pipeline_reason: "sales_test_gate_not_passed",
+        pipeline_reason: "supplier_or_sales_gate_not_passed",
         pipeline_updated_at: new Date().toISOString(),
         published_at: null,
         shopify_sync_status: "blocked",
-        shopify_sync_error: "sales_test_or_supply_or_japanese_gate_not_passed",
+        shopify_sync_error: "supplier_verification_or_sales_gate_not_passed",
         shopify_synced_at: new Date().toISOString(),
       }).eq("id", row.id);
       continue;
@@ -416,7 +427,7 @@ async function syncListingRows(
         published: false,
         pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
-        pipeline_reason: "sales_test_gate_unpublish_failed",
+        pipeline_reason: "supplier_or_sales_gate_unpublish_failed",
         pipeline_updated_at: new Date().toISOString(),
         published_at: null,
         shopify_sync_status: "failed",
