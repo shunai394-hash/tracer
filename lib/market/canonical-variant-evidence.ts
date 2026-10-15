@@ -113,11 +113,36 @@ export type CanonicalVariantMarkupDiagnostics = {
   inProductGroupWithIdCount: number;
   childProductsWithExplicitParentRelation: number;
   absoluteTypeIriCount: number;
+  jsonLdScriptTagCount: number;
+  jsonLdParseFailureCount: number;
+  variationMapMarkerCount: number;
+  dimensionToAsinMapMarkerCount: number;
+  twisterDataMarkerCount: number;
 };
 
 /** Aggregate-only diagnostics; never returns source HTML or product/customer payloads. */
 export function inspectCanonicalMarketplaceVariantMarkup(html: string): CanonicalVariantMarkupDiagnostics {
   const nodes = jsonLdNodes(html);
+  const jsonLdScriptMatches = [...html.matchAll(/<script\\b[^>]*type\\s*=\\s*["'][^"']*ld\\+json[^"']*["'][^>]*>([\\s\\S]*?)<\\/script>/gi)];
+  const jsonLdParseFailureCount = jsonLdScriptMatches.filter((match) => {
+    const raw = match[1].trim().replace(/^<!--/, "").replace(/-->$/, "").trim();
+    try { JSON.parse(raw); return false; } catch { return true; }
+  }).length;
+  const variationMapNames = [
+    "dimensionToAsinMap",
+    "dimensionValuesDisplayData",
+    "asinVariationValues",
+    "variationValues",
+    "variationDisplayValues",
+    "variationDisplayData",
+    "asinToVariationValues",
+  ];
+  const variationMapMarkerCount = variationMapNames.reduce((count, name) => {
+    const matches = html.match(new RegExp(name, "gi"));
+    return count + (matches?.length ?? 0);
+  }, 0);
+  const dimensionToAsinMapMarkerCount = (html.match(/dimensionToAsinMap/gi) ?? []).length;
+  const twisterDataMarkerCount = (html.match(/twister-js-init-dpx-data|twisterJsInitData/gi) ?? []).length;
   const groups = nodes.filter((node) => isType(node, "ProductGroup"));
   let groupsWithVariantCount = 0;
   let variantProductNodeCount = 0;
@@ -156,6 +181,11 @@ export function inspectCanonicalMarketplaceVariantMarkup(html: string): Canonica
     inProductGroupWithIdCount,
     childProductsWithExplicitParentRelation,
     absoluteTypeIriCount,
+    jsonLdScriptTagCount: jsonLdScriptMatches.length,
+    jsonLdParseFailureCount,
+    variationMapMarkerCount,
+    dimensionToAsinMapMarkerCount,
+    twisterDataMarkerCount,
   };
 }
 
