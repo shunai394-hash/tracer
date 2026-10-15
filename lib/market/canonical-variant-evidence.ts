@@ -322,7 +322,6 @@ export function parseCanonicalMarketplaceVariantEvidence(
         upcRaw,
         mpn: asString(variant.mpn),
         parent_product_url: parentProductUrl,
-        relation: "Product.isVariantOf",
       },
     });
   }
