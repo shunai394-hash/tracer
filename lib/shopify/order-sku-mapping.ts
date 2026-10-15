@@ -20,7 +20,7 @@ export function tracerSkuForListing(listing: OrderSkuListing): string {
 function legacyTracerSkusForListing(listing: OrderSkuListing): string[] {
   return [...new Set([listing.supplier_variant_id, listing.supplier_product_id]
     .filter((source): source is string => Boolean(source && source.trim()))
-    .map((source) => `TRC-${source}`.slice(0, 100))];
+    .map((source) => `TRC-${source}`.slice(0, 100)))];
 }
 
 export function getOrderSkuLookup(skus: string[]): OrderSkuLookup {
