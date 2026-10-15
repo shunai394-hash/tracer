@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [source, reconcile, store, page] = await Promise.all([
+const [source, reconcile, store, page, shopIndex] = await Promise.all([
   readFile(new URL("../lib/integration/newfind.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/integration/newfind-reconcile.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/shop/[slug]/page.tsx", import.meta.url), "utf8"),
+  readFile(new URL("../app/shop/page.tsx", import.meta.url), "utf8"),
 ]);
 
 const retryGate = source.slice(source.indexOf("export async function retryPendingNewfindPromotions"), source.indexOf("export async function promoteShopListingToNewfind"));
@@ -70,6 +71,7 @@ assert.doesNotMatch(productDetail, /getPublishableSupplierListingStatuses/,
   "supplier freshness checks belong to publication and order-time procurement, not the public landing page");
 assert.match(productDetail, /\.eq\("shopify_sync_status", "synced"\)/,
   "only Shopify-synced products may have public sales pages");
+assert.match(shopIndex, /href={`\/shop\/\$\{listing\.id\}`}/, "storefront product cards must link by stable listing UUID so Japanese slugs cannot break detail routing");
 assert.match(page, /href={shopifyProductUrl}/);
 assert.match(page, /Shopifyで購入する/,
   "the TRACER landing page must direct customers to the live Shopify checkout");
