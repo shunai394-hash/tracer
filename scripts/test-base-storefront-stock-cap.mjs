@@ -11,7 +11,9 @@ assert.equal(toStorefrontStockQuantity(40000, 3), 3, "BASE-specific cap is honor
 assert.equal(toStorefrontStockQuantity(40000, 500), 100, "configured cap is bounded");
 
 const source = await readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8");
+const patrol = await readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8");
 assert.match(source, /BASE_STOREFRONT_STOCK_CAP/);
 assert.match(source, /stock: storefrontInventory, visible: true/);
 assert.doesNotMatch(source, /stock: availableInventory, visible: true/);
-console.log("BASE storefront stock cap: 10 assertions passed");
+assert.match(patrol, /publishPublishedListingsToBase\(15\)/, "the five-minute patrol should reconcile full safe BASE batches, not only three listings");
+console.log("BASE storefront stock cap: 11 assertions passed");
