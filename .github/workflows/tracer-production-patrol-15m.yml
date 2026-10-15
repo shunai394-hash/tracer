@@ -23,8 +23,6 @@ on:
       - "lib/suppliers/discover-cj-supply.ts"
       - "lib/suppliers/cj-identity-reverify-policy.ts"
   workflow_dispatch:
-  schedule:
-    - cron: "*/5 * * * *" # continuous patrol every 5 minutes; times are UTC
 
 permissions:
   id-token: write
@@ -67,7 +65,10 @@ jobs:
           echo "Production does not include this commit; refusing to patrol a stale deployment."
           exit 1
 
+      # Vercel Cron is the single continuous patrol owner. Avoid a second
+      # scheduled GitHub Actions caller racing the same production lock.
       - name: Measure, repair, and report
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
