@@ -23,7 +23,10 @@ assert.equal(toStorefrontStockQuantity("unknown"), 0, "unknown supplier stock mu
 const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
 const shopifySync = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
 const unlinkedRoute = await readFile(new URL("../app/api/cron/unpublish-unlinked/route.ts", import.meta.url), "utf8");
+const shopifyReconcile = await readFile(new URL("../app/api/admin/shopify/reconcile/route.ts", import.meta.url), "utf8");
 assert.match(store, /shopify_live_stock_unconfigured/, "missing Shopify credentials must fail closed");
+assert.match(shopifyReconcile, /const expectedSku = `TRC-\\$\\{row\.id\\}`/, "read-only reconciliation must compare Shopify SKU to the shared BASE/TRACER listing ID");
+assert.doesNotMatch(shopifyReconcile, /const expectedSku = `TRC-\\$\\{row\.supplier_variant_id/, "supplier IDs must not redefine the channel-neutral listing SKU");
 assert.match(shopifySync, /toStorefrontStockQuantity\(row\.inventory, process\.env\.SHOPIFY_STOREFRONT_STOCK_CAP\)/, "supplier inventory must be projected through a bounded storefront cap before writing Shopify stock");
 assert.match(shopifySync, /if \(row\.published === false\)/, "unpublished catalog-eligible supplier-linked rows must be retried regardless of the legacy pipeline stage");
 assert.match(shopifySync, /shopify_sync_error: "shopify_unpublished_verified"/, "a blocked listing is marked verified only after Shopify unpublish verification succeeds");
