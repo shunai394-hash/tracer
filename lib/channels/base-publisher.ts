@@ -113,7 +113,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       "and(base_item_id.is.null,base_last_error.like.base_create_id_persist_failed:*)",
     ].join(","));
   }
-  const safeLimit = Math.min(15, Math.max(1, Math.floor(Number.isFinite(limit) ? limit : 10)));
+  const safeLimit = Math.min(100, Math.max(1, Math.floor(Number.isFinite(limit) ? limit : 10)));
   // Prefer the newest gate-passed, never-published listings. Already-hidden
   // stale BASE items are excluded above so they cannot consume every bounded
   // batch and starve fresh products waiting for their first BASE item.
