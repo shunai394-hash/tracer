@@ -49,8 +49,9 @@ export function resolveShopifyOrderLines<T extends ShopifyListingIdentity>(
   const resolved: T[] = [];
   for (const [lineIndex, line] of lines.entries()) {
     const variantIds = new Set(line.shopifyVariantIds);
+    const hasSku = line.sku.length > 0;
     const hits = listings.filter((listing) =>
-      (line.sku !== "" && (
+      (hasSku && (
         tracerSkuForListing(listing) === line.sku
         || listing.id === line.sku
         || legacyTracerSkusForListing(listing).includes(line.sku)
