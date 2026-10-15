@@ -101,22 +101,22 @@ function extractShoppingProducts(payload: unknown): BrightDataProductCandidate[]
     return [];
   }
   if (typeof unwrapped === "string") {
-    const lines = unwrapped.split(/\\r?\\n/);
+    const lines = unwrapped.split(/\r?\n/);
     const products: BrightDataProductCandidate[] = [];
     const seen = new Set<string>();
     for (let index = 0; index < lines.length; index += 1) {
-      const match = lines[index].match(/\\[([^\\]]{3,200})\\]\\((https?:\\/\\/[^)\\s]+)\\)/);
+      const match = lines[index].match(/\[([^\]]{3,200})\]\((https?:\/\/[^)\s]+)\)/);
       if (!match) continue;
       const title = normalizeText(match[1]);
       const productUrl = normalizeUrl(match[2]);
       if (!title || !productUrl || seen.has(title)) continue;
       const context = lines.slice(index, index + 4).join(" ");
-      const priceMatch = context.match(/(?:¥|￥|JPY|US\\$|\\$)\\s*[\\d,]+(?:\\.\\d{1,2})?/i);
-      const sellerMatch = context.match(/(?:from|by|販売元|ショップ)\\s+([^|•]{2,80})/i);
+      const priceMatch = context.match(/(?:¥|￥|JPY|US\$|\$)\s*[\d,]+(?:\.\d{1,2})?/i);
+      const sellerMatch = context.match(/(?:from|by|販売元|ショップ)\s+([^|•]{2,80})/i);
       seen.add(title);
       products.push({
         title,
-        price: priceMatch?.[0]?.replace(/\\s+/g, " ").trim() ?? null,
+        price: priceMatch?.[0]?.replace(/\s+/g, " ").trim() ?? null,
         seller: sellerMatch ? normalizeText(sellerMatch[1]) : null,
         productUrl,
         imageUrl: null,
