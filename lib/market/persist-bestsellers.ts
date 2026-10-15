@@ -178,6 +178,7 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
       }));
       canonicalVariantEvidenceParsed += variantEvidenceRows.length;
       let variantEvidenceWriteVerified = false;
+      let variantEvidenceWriteCount = 0;
       if (variantEvidenceRows.length > 0) {
         const { data: writtenVariants, error: variantWriteError } = await supabase
           .from("marketplace_bestseller_variants")
@@ -197,6 +198,7 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
           // response with no representation is not proof that every row was stored.
           const writtenCount = writtenVariants?.length ?? 0;
           canonicalVariantEvidenceWritten += writtenCount;
+          variantEvidenceWriteCount = writtenCount;
           variantEvidenceWriteVerified = writtenCount === variantEvidenceRows.length;
           if (writtenCount < variantEvidenceRows.length) {
             canonicalVariantEvidenceWriteFailures += variantEvidenceRows.length - writtenCount;
@@ -224,7 +226,7 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
           : null,
         evidence: {
           parsed: variantEvidenceRows.length,
-          written: variantEvidenceRows.length > 0 ? canonicalVariantEvidenceWritten : 0,
+          written: variantEvidenceWriteCount,
           marketplace: marketplace.marketplace,
           source: marketplace.source,
         },
