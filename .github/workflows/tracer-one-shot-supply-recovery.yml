@@ -41,6 +41,8 @@ jobs:
           }
           echo "=== Market recovery (CJ cooldown-safe) ==="
           call_get api/cron/market-sourcing 90 market-sourcing.json || true
+          # Run the dedicated collector so child-ASIN evidence and displayable variation labels are written before the sales gate.
+          call_get api/cron/market-sourcing-observation 300 market-observation.json || true
           # Re-verify the existing bounded CJ batch early so later discovery calls cannot consume the full job budget first.
           call_get "api/cron/cj-identity-reverify?limit=25&force=1" 300 cj-identity-reverify.json || true
           call_get api/cron/supplier-investigation 240 supplier-investigation.json || true
