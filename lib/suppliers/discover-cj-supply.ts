@@ -32,21 +32,27 @@ function priorityWomenSupplyCategory(title: unknown, metadata: unknown): number 
     typeof record.query === "string" ? record.query : "",
     typeof record.category === "string" ? record.category : "",
   ].join(" ").toLowerCase();
-  if (/handbag|crossbody bag|shoulder bag|tote bag|mini bag|women'?s bag|womens bag|ladies bag/.test(searchable)) return 0;
-  if (/makeup|cosmetic|skincare|skin care|gua sha|face roller|beauty tool|nail lamp|facial brush/.test(searchable)) return 1;
-  if (/hair clip|claw clip|hairpin|hair accessory|hair accessories|heatless curl/.test(searchable)) return 2;
+  if (/handbag|crossbody bag|shoulder bag|tote bag|mini bag|hobo bag|bucket bag|satchel|clutch bag|purse|wallet|women'?s bag|womens bag|ladies bag|work bag|travel bag/.test(searchable)) return 0;
+  if (/makeup|cosmetic|skincare|skin care|gua sha|face roller|beauty tool|nail lamp|facial brush|facial cleansing|pore cleaner|makeup organizer|makeup brush cleaner|beauty device|led beauty|manicure|pedicure/.test(searchable)) return 1;
+  if (/hair clip|claw clip|hairpin|hair accessory|hair accessories|heatless curl|hair curler|hair straightener|hair dryer|scalp massager|hair brush/.test(searchable)) return 2;
   return 99;
 }
 
 // Commercial priority: women's bags first, then practical beauty tools,
  // then hair accessories. Specific intent queries beat broad category searches.
 const CATALOG_QUERIES = [
+  // Prioritize women's bags first, then practical beauty tools, then hair accessories.
   "women handbag", "women crossbody bag", "women shoulder bag", "women tote bag",
-  "women mini bag", "women work bag", "women cosmetic bag", "travel makeup bag",
-  "beauty tools", "facial cleansing brush", "makeup brush cleaner", "makeup organizer",
+  "women mini bag", "women work bag", "women hobo bag", "women bucket bag",
+  "women satchel bag", "women clutch bag", "women purse", "women travel bag",
+  "women cosmetic bag", "travel makeup bag", "makeup pouch women", "everyday handbag women",
+  "beauty tools", "facial cleansing brush", "electric face cleansing brush", "gua sha tool",
+  "face roller", "makeup brush cleaner", "makeup organizer", "makeup brush set",
+  "nail lamp", "nail drill", "beauty device", "skincare tools", "pore cleaner",
   "hair styling tools", "hair clip women", "claw clip women", "flower hair clip",
-  "hair accessories women", "heatless curling rod", "skincare tools", "beauty",
-  "makeup", "hair care", "hair tools", "women fashion", "women accessories",
+  "hair accessories women", "heatless curling rod", "hair curler", "hair straightener",
+  "scalp massager", "hair brush women", "headband women", "hair pins women",
+  "beauty", "makeup", "hair care", "hair tools", "women fashion", "women accessories",
   "jewelry", "period care", "wellness", "self care", "beauty organizer",
   "cosmetic organizer", "jewelry organizer", "closet organizer", "garment steamer",
   "bathroom organization", "home organization", "kitchen", "pet", "phone accessories",
@@ -55,7 +61,7 @@ const CATALOG_QUERIES = [
 const MAX_CATALOG_PAGES = 50;
 // Version the cursor because query order changed; don't reinterpret an old
 // index as a different category and silently skip the highest-priority searches.
-const CATALOG_CURSOR_JOB = "supply-first-catalog-cursor-v2";
+const CATALOG_CURSOR_JOB = "supply-first-catalog-cursor-v3";
 
 type CatalogCursor = { queryIndex: number; page: number };
 

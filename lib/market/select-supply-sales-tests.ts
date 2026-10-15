@@ -138,7 +138,11 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // legacy product-master title must not suppress a verified supplier offer;
     // the localized supplier title and placeholder checks below are authoritative.
     const sourceMetadata = base?.metadata && typeof base.metadata === 'object' && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
-    const womenPriority = womenProductPriority({ title: sourceTitle, category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
+    const womenPriority = womenProductPriority({
+      title: sourceTitle,
+      category: typeof sourceMetadata.category === "string" ? sourceMetadata.category : null,
+      query: typeof sourceMetadata.query === "string" ? sourceMetadata.query : null,
+    });
     // Women's relevance is a ranking bonus, not an exclusion rule. Margin is
     // reported for the merchant's pricing decision, not used as a publication veto.
     // Product identity, Japanese copy and fulfillment evidence remain required.
@@ -250,8 +254,18 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   }
 
   eligible.sort((a, b) => {
-    const womenA = womenProductPriority({ title: typeof a.base.normalized_title === "string" ? a.base.normalized_title : "", category: a.base.metadata && typeof a.base.metadata === "object" && !Array.isArray(a.base.metadata) && typeof (a.base.metadata as Record<string, unknown>).category === "string" ? String((a.base.metadata as Record<string, unknown>).category) : null });
-    const womenB = womenProductPriority({ title: typeof b.base.normalized_title === "string" ? b.base.normalized_title : "", category: b.base.metadata && typeof b.base.metadata === "object" && !Array.isArray(b.base.metadata) && typeof (b.base.metadata as Record<string, unknown>).category === "string" ? String((b.base.metadata as Record<string, unknown>).category) : null });
+    const metadataA = a.base.metadata && typeof a.base.metadata === "object" && !Array.isArray(a.base.metadata) ? a.base.metadata as Record<string, unknown> : {};
+    const metadataB = b.base.metadata && typeof b.base.metadata === "object" && !Array.isArray(b.base.metadata) ? b.base.metadata as Record<string, unknown> : {};
+    const womenA = womenProductPriority({
+      title: typeof a.base.normalized_title === "string" ? a.base.normalized_title : "",
+      category: typeof metadataA.category === "string" ? metadataA.category : null,
+      query: typeof metadataA.query === "string" ? metadataA.query : null,
+    });
+    const womenB = womenProductPriority({
+      title: typeof b.base.normalized_title === "string" ? b.base.normalized_title : "",
+      category: typeof metadataB.category === "string" ? metadataB.category : null,
+      query: typeof metadataB.query === "string" ? metadataB.query : null,
+    });
     if (womenB.bonus !== womenA.bonus) return womenB.bonus - womenA.bonus;
     return b.quality - a.quality;
   });
