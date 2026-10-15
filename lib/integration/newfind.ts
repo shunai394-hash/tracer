@@ -96,8 +96,8 @@ export function isNewfindPromotionLedgerSchemaBlocked(value: unknown): boolean {
     || /promotion ledger (?:insert|update) failed:.*tracer_promotions/i.test(message);
 }
 
-function isNewfindPromotionLedgerReady(): boolean {
-  return process.env.NEWFIND_TRACER_PROMOTION_LEDGER_READY?.trim() === "1";
+function isNewfindPromotionReceiverReady(): boolean {
+  return process.env.NEWFIND_TRACER_PROMOTION_RECEIVER_READY?.trim() === "1";
 }
 
 export type NewfindPromotionResult = {
@@ -127,7 +127,7 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
 
   if (error) throw new Error(error.message);
 
-  const schemaReady = isNewfindPromotionLedgerReady();
+  const schemaReady = isNewfindPromotionReceiverReady();
   const schemaBlockedIds = new Set(
     (data ?? [])
       .filter((row) => !schemaReady && isNewfindPromotionLedgerSchemaBlocked(row.last_error))
@@ -195,14 +195,14 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
 export async function promoteShopListingToNewfind(listingId: string): Promise<NewfindPromotionResult> {
   const cfg = getNewfindConfig();
   const id = eventId(listingId);
-  if (!isNewfindPromotionLedgerReady()) {
+  if (!isNewfindPromotionReceiverReady()) {
     return {
       configured: Boolean(cfg.apiUrl && cfg.webhookSecret),
       sent: false,
       eventId: id,
       status: null,
       ackStatus: null,
-      detail: "newfind_promotion_ledger_not_confirmed_ready",
+      detail: "newfind_promotion_receiver_not_confirmed_ready",
     };
   }
   const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
@@ -242,7 +242,7 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
 
   if (deliveryReadError) throw new Error(deliveryReadError.message);
 
-  if (!isNewfindPromotionLedgerReady() && isNewfindPromotionLedgerSchemaBlocked(existingDelivery?.last_error)) {
+  if (!isNewfindPromotionReceiverReady() && isNewfindPromotionLedgerSchemaBlocked(existingDelivery?.last_error)) {
     return { configured: true, sent: false, eventId: id, status: null, ackStatus: null, detail: "newfind_promotion_ledger_schema_blocked" };
   }
 
@@ -264,7 +264,7 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     && /invalid input syntax for type integer/i.test(previousError)
     && !String(existingDelivery?.event_id ?? "").includes(":schema-retry");
   const ledgerSchemaRetry = (currentStatus === "failed" || currentStatus === "sending")
-    && isNewfindPromotionLedgerReady()
+    && isNewfindPromotionReceiverReady()
     && isNewfindPromotionLedgerSchemaBlocked(previousError);
   const retryRejectedSchemaEvent = integerSchemaRetry || ledgerSchemaRetry;
   const sendEventId = currentStatus === "withdrawn"
