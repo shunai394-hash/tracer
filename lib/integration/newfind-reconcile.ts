@@ -56,7 +56,7 @@ export async function rescueUndeliveredGatePassedListings(options: { limit?: num
 
   const ids = gated.map((row) => String(row.id));
   const deliveries = new Map<string, { status: string; schemaBlocked: boolean }>();
-  const ledgerReady = process.env.NEWFIND_TRACER_PROMOTION_LEDGER_READY?.trim() === "1";
+  const receiverReady = process.env.NEWFIND_TRACER_PROMOTION_RECEIVER_READY?.trim() === "1";
   for (let i = 0; i < ids.length; i += 100) {
     const { data, error: deliveryError } = await supabase.from("newfind_promotion_deliveries").select("listing_id, status, ack_status, last_error").in("listing_id", ids.slice(i, i + 100));
     if (deliveryError) throw new Error(deliveryError.message);
@@ -64,12 +64,12 @@ export async function rescueUndeliveredGatePassedListings(options: { limit?: num
       const processed = row.status === "processed" && (row.ack_status === "processed" || row.ack_status === "duplicate");
       deliveries.set(String(row.listing_id), {
         status: processed ? "processed" : String(row.status ?? "pending"),
-        schemaBlocked: !ledgerReady && isNewfindPromotionLedgerSchemaBlocked(row.last_error),
+        schemaBlocked: !receiverReady && isNewfindPromotionLedgerSchemaBlocked(row.last_error),
       });
     }
   }
 
-  if (!ledgerReady) {
+  if (!receiverReady) {
     result.undelivered.schemaBlocked = Array.from(deliveries.values()).filter((delivery) => delivery.schemaBlocked).length;
     return result;
   }
