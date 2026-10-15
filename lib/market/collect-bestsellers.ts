@@ -71,6 +71,11 @@ export type CollectedMarketplace = {
     inProductGroupWithIdCount: number;
     childProductsWithExplicitParentRelation: number;
     absoluteTypeIriCount: number;
+    jsonLdScriptTagCount: number;
+    jsonLdParseFailureCount: number;
+    variationMapMarkerCount: number;
+    dimensionToAsinMapMarkerCount: number;
+    twisterDataMarkerCount: number;
     /** Aggregate-only child-variant recovery counters; never log child identifiers or raw HTML. */
     variationAsinsFound: number;
     childDetailAttempted: number;
