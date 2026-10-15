@@ -31,7 +31,8 @@ const checks = [
 ];
 for (const [name, pattern] of checks) assert.match(source, pattern, name);
 assert.match(identitySource, /const freshVariantBarcode = await readSupplierBarcode\(/, "persistence must make one fresh exact-variant barcode lookup");
-assert.match(identitySource, /resolveMarketplaceIdentityFromBarcode\([\s\S]{0,400}freshVariantBarcode/, "the same live barcode must feed identity matching");
+// The call's argument object is intentionally multiline; allow the full expression before checking reuse.
+assert.match(identitySource, /resolveMarketplaceIdentityFromBarcode\([\s\S]{0,1200}freshVariantBarcode/, "the same live barcode must feed identity matching");
 assert.match(identitySource, /variant_barcode: freshVariantBarcode/, "persisted metadata must reuse the exact fresh barcode instead of issuing another CJ request");
 const persistBody = identitySource.slice(identitySource.indexOf("export async function persistCjSupplyIntelligence"));
 assert.equal((persistBody.match(/readSupplierBarcode\(/g) ?? []).length, 1, "persistence must perform only one fresh barcode lookup per candidate");
