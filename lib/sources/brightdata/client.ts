@@ -102,12 +102,12 @@ function extractShoppingProducts(payload: unknown): BrightDataProductCandidate[]
   }
   if (!unwrapped || typeof unwrapped !== "object") return [];
   const root = unwrapped as Record<string, unknown>;
-  let items: unknown = root.shopping ?? root.products ?? root.results ?? root.organic ?? root.items;
+  let items: unknown = root.shopping ?? root.shopping_results ?? root.product_results ?? root.products ?? root.results ?? root.organic ?? root.items;
   if (!Array.isArray(items) && typeof root.body === "string") {
     const body = parseJsonText(root.body);
     if (body && typeof body === "object" && !Array.isArray(body)) {
       const bodyRoot = body as Record<string, unknown>;
-      items = bodyRoot.shopping ?? bodyRoot.products ?? bodyRoot.results ?? bodyRoot.organic ?? bodyRoot.items;
+      items = bodyRoot.shopping ?? bodyRoot.shopping_results ?? bodyRoot.product_results ?? bodyRoot.products ?? bodyRoot.results ?? bodyRoot.organic ?? bodyRoot.items;
     }
   }
   if (!Array.isArray(items)) return [];
@@ -134,10 +134,12 @@ function mcpArguments(tool: { name: string; inputSchema?: Record<string, unknown
   const properties = schema.properties && typeof schema.properties === "object"
     ? schema.properties as Record<string, unknown> : {};
   const args: Record<string, unknown> = {};
-  if ("query" in properties) args.query = query;
-  else if ("search_query" in properties) args.search_query = query;
+  if ((tool.name === "search_engine" || tool.name === "search_engine_batch") && "query" in properties) args.query = query;
+  else if ((tool.name === "search_engine" || tool.name === "search_engine_batch") && "search_query" in properties) args.search_query = query;
   else if ("url" in properties) args.url = shoppingUrl;
   else if ("urls" in properties) args.urls = [shoppingUrl];
+  else if ("query" in properties) args.query = query;
+  else if ("search_query" in properties) args.search_query = query;
   else throw new BrightDataRequestError(`Bright Data MCP tool ${tool.name} has no supported query/url input`);
   if ("engine" in properties) args.engine = "google";
   if ("country" in properties) args.country = "JP";
