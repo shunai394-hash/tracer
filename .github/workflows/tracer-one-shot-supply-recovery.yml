@@ -47,19 +47,6 @@ jobs:
           echo "=== CJ supply discovery (will fail closed during provider cooldown) ==="
           call_get api/cron/supply-first 300 supply-first.json || true
 
-          echo "=== CJ sandbox order lifecycle (no charge / no real fulfillment) ==="
-          T="$(token)" || { echo "OIDC token failed for CJ sandbox lifecycle"; exit 1; }
-          CODE="$(curl -sS -o cj-sandbox.json -w "%{http_code}" --max-time 75 -H "Authorization: Bearer $T" -H "Content-Type: application/json" -X POST "$BASE/api/cron/cj-sandbox-order-test" -d '{"supplierListingId":"ea293362-34db-44eb-b2f6-316ff2cb0a27"}' || true)"
-          echo "CJ sandbox lifecycle HTTP $CODE"
-          python3 - <<'PY'
-          import json
-          try:
-              d=json.load(open("cj-sandbox.json"))
-              print(json.dumps({k:d.get(k) for k in ("ok","phase","supplierOrderId","status","paymentConfirmed","sandbox","charged","realFulfillment","error")},ensure_ascii=False))
-          except Exception:
-              print(open("cj-sandbox.json").read()[:1000])
-          PY
-
           call_get api/cron/sales-test-publication 300 sales-test.json || true
           call_get api/cron/base-publish 60 base-publish.json || true
 
