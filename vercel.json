@@ -73,6 +73,10 @@
     {
       "path": "/api/cron/supply-first",
       "schedule": "30 */6 * * *"
+    },
+    {
+      "path": "/api/cron/market-sourcing",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
