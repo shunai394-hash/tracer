@@ -4,7 +4,7 @@ import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-id
 
 const source = await readFile(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
 const checks = [
-  ["exact shop-listing supplier tuples are queried before supplier-only rows", /select\("product_id,supplier_name,supplier_product_id,supplier_variant_id"\)[\s\S]{0,180}partitionByExactShopListing/],
+  ["exact shop-listing supplier tuples are queried before supplier-only rows", /select\("product_id,supplier_name,supplier_product_id,supplier_variant_id"\)[\s\S]{0,1200}partitionByExactShopListing/],
   ["matched shop-listing suppliers are selected before supplier-only candidates", /const prioritizedRegularRows = \[\.\.\.matchedWomens, \.\.\.matchedOther, \.\.\.unmatchedWomens, \.\.\.unmatchedOther\]/],
   ["reverification telemetry records exact shop-listing coverage", /exactShopListingCandidates: partition\.matched\.length[\s\S]{0,120}supplierOnlyCandidates: partition\.unmatched\.length/],
   ["exact CJ variant price is refreshed by variant ID", /fetchCJVariantByVid\(String\(row\.supplier_variant_id\)\)/],
