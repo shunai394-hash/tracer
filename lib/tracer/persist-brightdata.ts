@@ -274,6 +274,7 @@ export async function persistBrightDataProducts(
           query,
           title: candidate.title,
           price: candidate.price,
+          currency: candidate.currency,
           seller: candidate.seller,
           productUrl: candidate.productUrl,
           imageUrl: candidate.imageUrl,
