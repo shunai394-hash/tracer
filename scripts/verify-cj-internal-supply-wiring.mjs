@@ -11,6 +11,10 @@ const identity = readFileSync("lib/market/identifiers.ts", "utf8");
 const auditMigration = readFileSync("supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql", "utf8");
 
 assert.match(discovery, /import \{ persistCjInternalSupplyCandidate \} from "@\/lib\/suppliers\/persist-cj-internal-supply"/);
+assert.match(discovery, /\.eq\("job_name", "cj-api-quota-circuit"\)/,
+  "supply-first must inspect the persisted CJ quota circuit before attempting provider calls");
+assert.match(discovery, /if \(quotaBlockedUntil && Date\.parse\(quotaBlockedUntil\) > Date\.now\(\)\) \{[\s\S]*?deadlineReached: true[\s\S]*?items: \[\]/,
+  "an active CJ quota cooldown must return a clean no-op instead of repeatedly rejecting the same candidate");
 assert.equal((discovery.match(/persistCjInternalSupplyCandidate\(/g) ?? []).length, 2,
   "both seeded verification and fresh catalog discovery must feed the internal supply catalog");
 assert.match(discovery, /internalSupplyIngested: Boolean\(internalSupply\)/);
