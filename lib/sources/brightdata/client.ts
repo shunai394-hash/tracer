@@ -34,6 +34,10 @@ export function isBrightDataConfigured(): boolean {
   return Boolean(config.apiToken && config.zone);
 }
 
+export function isBrightDataFetchConfigured(): boolean {
+  return isBrightDataConfigured() || isMcpConfigured();
+}
+
 export function getBrightDataClient() {
   const config = getBrightDataConfig();
   if (!config.apiToken) throw new BrightDataConfigError("Bright Data API token is not configured");
@@ -147,7 +151,7 @@ async function searchViaBrightDataMcp(query: string, shoppingUrl: string): Promi
   try {
     const consumer = getMcpToolConsumer();
     const tools = await consumer.listTools();
-    const preferred = ["search_engine", "search_engine_batch", "scrape_as_markdown", "scrape_as_markdown_batch"];
+    const preferred = ["web_data_google_shopping", "search_engine", "search_engine_batch", "scrape_as_markdown", "scrape_as_markdown_batch"];
     for (const name of preferred) {
       const tool = tools.find((candidate) => candidate.name === name);
       if (!tool) continue;
@@ -204,7 +208,57 @@ export async function searchGoogleProducts(query: string): Promise<BrightDataSea
   return { query: normalizedQuery, products: extractShoppingProducts(innerPayload), provider: "brightdata_api" };
 }
 
+function extractMcpHtml(value: unknown, depth = 0): string | null {
+  if (depth > 5 || value == null) return null;
+  const unwrapped = unwrapMcpContent(value);
+  if (typeof unwrapped === "string") {
+    const text = unwrapped.trim();
+    return text.includes("<") && /<html|<!doctype|<script|<div|<body/i.test(text) ? text : null;
+  }
+  if (Array.isArray(unwrapped)) {
+    for (const item of unwrapped) {
+      const html = extractMcpHtml(item, depth + 1);
+      if (html) return html;
+    }
+    return null;
+  }
+  if (typeof unwrapped === "object") {
+    const record = unwrapped as Record<string, unknown>;
+    for (const key of ["html", "body", "content", "data", "result"]) {
+      if (record[key] !== undefined) {
+        const html = extractMcpHtml(record[key], depth + 1);
+        if (html) return html;
+      }
+    }
+  }
+  return null;
+}
+
+async function fetchBrightDataPageViaMcp(url: string): Promise<{ html: string | null; json: unknown } | null> {
+  if (!isMcpConfigured()) return null;
+  try {
+    const consumer = getMcpToolConsumer();
+    const tools = await consumer.listTools();
+    const tool = tools.find((candidate) => candidate.name === "scrape_as_html");
+    if (!tool) return null;
+    const result = await consumer.callTool({
+      name: tool.name,
+      arguments: mcpArguments(tool, url, url),
+    });
+    const html = extractMcpHtml(result);
+    return { html: html ? repairMojibakeText(html) : null, json: result };
+  } catch (error) {
+    console.warn("[BRIGHTDATA MCP] HTML fetch unavailable", error instanceof Error ? error.message : "unknown error");
+    return null;
+  }
+}
+
 export async function fetchBrightDataPage(url: string): Promise<{ url: string; html: string | null; json: unknown }> {
+  const mcpPage = await fetchBrightDataPageViaMcp(url);
+  if (mcpPage?.html) return { url, ...mcpPage };
+  if (!isBrightDataConfigured()) {
+    throw new BrightDataConfigError("Bright Data MCP raw HTML tool is unavailable and API token/zone are not configured");
+  }
   const client = getBrightDataClient();
   const config = getBrightDataConfig();
   let response: Response;
