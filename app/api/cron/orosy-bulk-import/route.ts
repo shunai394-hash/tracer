@@ -1,232 +1,25 @@
 import { NextResponse } from "next/server";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
-import { getOrosyProductDetail, getOrosyShippingQuote, searchOrosyProducts } from "@/lib/sources/orosy";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 10;
 
-const QUERIES = [
-  "レディース バッグ",
-  "レディース ポーチ",
-  "アクセサリー ピアス",
-  "アクセサリー ネックレス",
-  "スキンケア",
-  "ヘアケア",
-  "バス ボディケア",
-  "コスメ 化粧雑貨",
-  "ハンカチ レディース",
-  "女性向け 日用品",
-  "美容 雑貨",
-  "ファッション 小物",
-];
-
-function japaneseTitle(title: string): boolean {
-  const t = title.trim();
-  if (!t || !/[\u3040-\u30ff\u3400-\u9fff]/u.test(t)) return false;
-  // English-only products are explicitly excluded. Mixed Japanese brand names are allowed.
-  const latin = (t.match(/[A-Za-z]/g) ?? []).length;
-  const jp = (t.match(/[\u3040-\u30ff\u3400-\u9fff]/g) ?? []).length;
-  return jp >= 3 && latin <= jp * 2;
-}
-
-function priceFor(cost: number, retail: number | null): number {
-  const floor = Math.ceil((cost / 0.62) / 100) * 100;
-  const retailFloor = retail && retail > cost ? Math.ceil(retail / 100) * 100 : 0;
-  return Math.max(floor, retailFloor);
-}
-
-function slug(title: string, productId: string, variationId: string): string {
-  const base = title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 55);
-  return `${base || "orosy-product"}-${productId}-${variationId}`.slice(0, 180);
-}
-
-async function upsertProduct(supabase: ReturnType<typeof createSupabaseAdminClient>, detail: Awaited<ReturnType<typeof getOrosyProductDetail>>) {
-  if (!detail) return null;
-  const identityKey = `orosy:${detail.id}`;
-  const existing = await supabase.from("products").select("id").eq("identity_key", identityKey).maybeSingle();
-  if (existing.error) throw new Error(existing.error.message);
-  if (existing.data?.id) return String(existing.data.id);
-  const inserted = await supabase.from("products").insert({
-    canonical_name: detail.title,
-    identity_key: identityKey,
-    jan: detail.barcode,
-  }).select("id").single();
-  if (inserted.error) throw new Error(inserted.error.message);
-  return String(inserted.data.id);
-}
-
+/**
+ * Orosy is outside TRACER's approved supplier scope.
+ * Keep the cron endpoint closed so scheduled invocations cannot import
+ * products, create supplier records, or indirectly enable listings.
+ */
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
 
-  const supabase = createSupabaseAdminClient();
-  const started = Date.now();
-  const target = 240;
-  const candidates = new Map<string, Awaited<ReturnType<typeof getOrosyProductDetail>>>();
-
-  for (const query of QUERIES) {
-    if (Date.now() - started > 180_000 || candidates.size >= target) break;
-    try {
-      const results = await searchOrosyProducts(query);
-      for (const item of results) {
-        if (candidates.size >= target) break;
-        if (!japaneseTitle(item.title) || !item.orderable || !item.imageUrl || !item.imageUrl.startsWith("https://")) continue;
-        if (candidates.has(item.id)) continue;
-        try {
-          const detail = await getOrosyProductDetail(item.id);
-          if (!detail || !japaneseTitle(detail.title) || !detail.orderable || !detail.imageUrl || !detail.imageUrl.startsWith("https://")) continue;
-          const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId);
-          if (!variation) continue;
-          candidates.set(`${detail.id}:${variation.variationId}`, detail);
-        } catch {
-          // One bad product must not abort the batch.
-        }
-      }
-    } catch {
-      // Continue with the next category.
-    }
-  }
-
-  const accepted: string[] = [];
-  const rejected: Array<{ id: string; reason: string }> = [];
-
-  for (const detail of candidates.values()) {
-    if (!detail) continue;
-    if (Date.now() - started > 240_000 || accepted.length >= 200) break;
-    const variation = detail.variations.find(v => (v.stockQty ?? 0) > 0 && (v.buyerPrice ?? 0) > 0 && v.variationId);
-    if (!variation || variation.buyerPrice === null || variation.stockQty === null || variation.currency?.trim().toUpperCase() !== "JPY") continue;
-
-    const productId = await upsertProduct(supabase, detail);
-    if (!productId) continue;
-
-    const supplierExisting = await supabase.from("supplier_listings")
-      .select("id").eq("supplier", "orosy").eq("supplier_product_id", detail.id)
-      .eq("supplier_variant_id", variation.variationId).maybeSingle();
-    if (supplierExisting.error) throw new Error(supplierExisting.error.message);
-
-    const now = new Date().toISOString();
-    // Product detail does not prove destination shipping cost. Fetch a separate
-    // JP quote and retain unknown when the quote is unresolved or non-JPY.
-    let shippingQuote: Awaited<ReturnType<typeof getOrosyShippingQuote>> | null = null;
-    try {
-      shippingQuote = await getOrosyShippingQuote(detail.id);
-    } catch {
-      // Import as blocked evidence; a quote failure must not abort other products.
-    }
-    // The current quote endpoint is keyed by product ID, not the selected
-    // variation ID. A product-level quote is not sufficient evidence for this
-    // exact variant, so keep landed shipping cost unverified until the API
-    // contract can quote the selected variation explicitly.
-    const shippingVerified = false;
-    const shippingCost: number | null = null;
-    const blockReason = shippingQuote && !shippingQuote.unresolved
-      ? "orosy_variant_shipping_unverified"
-      : "orosy_shipping_quote_unverified";
-    const supplierPayload = {
+  return NextResponse.json(
+    {
+      ok: false,
+      disabled: true,
+      reason: "supplier_disabled_by_product_decision",
       supplier: "orosy",
-      external_id: detail.id,
-      title: detail.title,
-      product_id: productId,
-      jan: variation.jan,
-      mpn: detail.productNumber,
-      cost: variation.buyerPrice,
-      currency: variation.currency,
-      inventory: variation.stockQty,
-      ship_to: "JP",
-      tracking_available: null,
-      order_method: "orosy_api",
-      api_available: true,
-      identity_method: variation.jan ? "jan" : "orosy_supplier_variant",
-      identity_status: "linked",
-      identity_confidence: variation.jan ? 1 : 0.98,
-      configured: true,
-      orderable: false,
-      price_confirmed: true,
-      price_checked_at: now,
-      inventory_confirmed: true,
-      verification_status: "retryable",
-      shipping_cost: shippingCost,
-      shipping_status: "unknown",
-      shipping_checked_at: null,
-      inventory_checked_at: now,
-      last_verified_at: now,
-      fetched_at: now,
-      metadata: { source: "orosy_bulk_import", delivery_group: detail.deliveryGroup, category: detail.category },
-    };
-
-    let supplierListingId: string;
-    if (supplierExisting.data?.id) {
-      const updated = await supabase.from("supplier_listings").update(supplierPayload)
-        .eq("id", supplierExisting.data.id).select("id").single();
-      if (updated.error) throw new Error(updated.error.message);
-      supplierListingId = String(updated.data.id);
-    } else {
-      const inserted = await supabase.from("supplier_listings").insert(supplierPayload).select("id").single();
-      if (inserted.error) throw new Error(inserted.error.message);
-      supplierListingId = String(inserted.data.id);
-    }
-
-    const sellingPrice = priceFor(variation.buyerPrice, variation.retailPrice);
-    const listingSlug = slug(detail.title, detail.id, variation.variationId);
-    const listingPayload = {
-      product_id: productId,
-      supplier_listing_id: supplierListingId,
-      slug: listingSlug,
-      title: detail.title,
-      description: `${detail.brand ? detail.brand + "｜" : ""}${detail.category ?? "日本製品"}。`,
-      image_url: detail.imageUrl,
-      selling_price: sellingPrice,
-      currency: "JPY",
-      published: false,
-      selection_reasons: ["OROSY_BULK_IMPORT", "JAPANESE_TITLE", "WOMEN_FOCUSED", "IN_STOCK", "IMAGE_VERIFIED"],
-      missing: [blockReason],
-      published_at: null,
-      pipeline_stage: "BLOCKED",
-      pipeline_status: "blocked",
-      pipeline_reason: blockReason,
-      pipeline_error: blockReason,
-      pipeline_updated_at: now,
-      supplier_name: "orosy",
-      supplier_product_id: detail.id,
-      supplier_variant_id: variation.variationId,
-      source_cost: variation.buyerPrice,
-      shipping_cost: shippingCost,
-      inventory: variation.stockQty,
-      orderable: false,
-      tracking_available: null,
-      identity_method: variation.jan ? "jan" : "orosy_supplier_variant",
-      identity_confidence: variation.jan ? 1 : 0.98,
-      contribution_profit: null,
-      contribution_margin: null,
-      updated_at: now,
-    };
-
-    const existingListing = await supabase.from("shop_listings").select("id")
-      .eq("supplier_product_id", detail.id).eq("supplier_variant_id", variation.variationId).maybeSingle();
-    if (existingListing.error) throw new Error(existingListing.error.message);
-
-    const listingResult = existingListing.data?.id
-      ? await supabase.from("shop_listings").update(listingPayload).eq("id", existingListing.data.id).select("id").single()
-      : await supabase.from("shop_listings").insert(listingPayload).select("id").single();
-    if (listingResult.error) {
-      rejected.push({ id: `${detail.id}:${variation.variationId}`, reason: listingResult.error.message });
-      continue;
-    }
-    accepted.push(String(listingResult.data.id));
-  }
-
-  // This endpoint only stages blocked candidates. Publishing/syncing existing listings
-  // here would create unrelated production writes from an import job.
-  const shopify = { skipped: true, reason: "staging_only_no_shopify_sync" };
-
-  return NextResponse.json({
-    ok: true,
-    source: "orosy",
-    candidates: candidates.size,
-    accepted: accepted.length,
-    rejected: rejected.length,
-    shopify,
-    elapsedMs: Date.now() - started,
-  });
+    },
+    { status: 410 },
+  );
 }
