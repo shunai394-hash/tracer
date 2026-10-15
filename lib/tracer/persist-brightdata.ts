@@ -26,7 +26,7 @@ function normalizeIdentityText(value: string): string {
     .normalize("NFKD")
     .toLowerCase()
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -66,12 +66,6 @@ function validHttpUrl(value: string | null): string | null {
   } catch {
     return null;
   }
-}
-
-function inferBrand(title: string): string | null {
-  const first = normalizeTitle(title).split(" ")[0]?.trim();
-
-  return first || null;
 }
 
 export async function persistBrightDataProducts(
@@ -128,7 +122,7 @@ export async function persistBrightDataProducts(
 
     if (!canonicalName) continue;
 
-    const brandName = inferBrand(canonicalName);
+    const brandName = candidate.brand ? normalizeTitle(candidate.brand) : null;
     const identityKey = buildIdentityKey(brandName, canonicalName);
 
     let brandId: string | null = null;
