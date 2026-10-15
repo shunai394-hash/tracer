@@ -6,11 +6,7 @@ import { scoreProductIntelligence } from "@/lib/intelligence/score-products";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { persistDemandIntelligence } from "@/lib/intelligence/persist-demand-intelligence";
 import { persistReorderRecommendations } from "@/lib/ordering/persist-reorder";
-import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
-import {
-  promoteShopListingToNewfind,
-} from "@/lib/integration/newfind";
 import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
@@ -501,24 +497,17 @@ export async function runIntelligencePipeline(options: {
   );
   steps.push(supplySalesStep);
 
-  const salesTestStep = await runStep("sales_test_select", () => selectAndPublishSalesTests(bestsellerIds, 50), { downstream: true, budgetMs: 20_000 });
+  // Only supplier-native CJ offers may enter the sale-selection path.
+  // Marketplace bestseller sales tests and NEWFIND delivery are out of scope;
+  // this pipeline owns TRACER, BASE, and Shopify only.
+  const salesTestStep: PipelineStepResult = {
+    name: "sales_test_select",
+    ok: true,
+    skipped: true,
+    retryable: false,
+    result: { skipped: true, reason: "marketplace_sourcing_disabled_supplier_native_only" },
+  };
   steps.push(salesTestStep);
-
-  // Both Sales Test Gate paths deliver to NEWFIND (previously only the
-  // market path did). promoteShopListingToNewfind re-checks the gate.
-  steps.push(await runStep("newfind_promotion", async () => {
-    const ids = [salesTestStep, supplySalesStep].flatMap((step) => {
-      const result = step.result as { publishedListingIds?: unknown } | undefined;
-      return Array.isArray(result?.publishedListingIds)
-        ? result.publishedListingIds.filter((id): id is string => typeof id === "string")
-        : [];
-    });
-    return Promise.all(ids.map((id) => promoteShopListingToNewfind(id)));
-  }, { downstream: true, budgetMs: 6_000 }));
-  // NEWFIND has its own scheduled retry worker. Keep patrol delivery bounded so
-  // one slow downstream destination cannot consume the entire patrol timeout.
-  // Pending delivery retries run in the dedicated five-minute newfind-retry cron.
-  // Do not let downstream schema/cache delays block scoring and channel reconciliation.
 
   steps.push(await runStep("ordering", () => persistReorderRecommendations(), { downstream: true, budgetMs: 15_000 }));
   steps.push(await runStep("test_ready", async () => {
