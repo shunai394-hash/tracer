@@ -25,6 +25,7 @@ assert.ok(collector.includes('const preferred = ["scrape_as_markdown", "scrape_a
 assert.ok(collector.includes("application\\/ld\\+json"), "HTML product search should parse structured Product JSON-LD");
 assert.ok(collector.includes("const collectProducts = (node: unknown, depth = 0)"), "nested Product JSON-LD should be traversed");
 assert.ok(collector.includes("const htmlAnchors = [...unwrapped.matchAll"), "HTML-only Google Shopping cards should be parsed when JSON-LD is absent");
+assert.ok(collector.includes("envelope?.structuredContent ?? envelope?.content ?? payload"), "MCP result envelopes must be unwrapped before parsing");
 assert.ok(collector.includes('for (const key of ["data", "content", "result", "response", "payload", "body"])'), "nested MCP response envelopes should be searched for product arrays");
 assert.ok(collector.includes('"product_title", "productTitle"'), "alternate product-title keys should be recognized");
 assert.ok(collector.includes("if (!priceMatch) continue;"), "HTML card candidates must have an explicit price");
