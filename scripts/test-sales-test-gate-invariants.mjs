@@ -31,7 +31,7 @@ assert.match(supplySelector, /requireDomesticShipping: !nativeCjSupplyIdentity/)
 assert.equal(isPublishableCatalogTitle("トレンド・seeded_dueアイテム"), false);
 assert.equal(isPublishableCatalogTitle("Aroma Filter"), true);
 assert.match(supplySelector, /generic_non_merchandisable_title/);
-assert.doesNotMatch(supplySelector, /reasons\.push\(["\x27]profit_not_positive|if \(!profit\.calculable\)|intelligence_profit_not_ok/,
+assert.doesNotMatch(supplySelector, /reasons\.push\(["\']profit_not_positive|if \(!profit\.calculable\)|intelligence_profit_not_ok/, "profit/margin estimates must not be a hard publication gate");
 assert.match(marketSelector, /requireDomesticShipping: true/);
 assert.match(supplySelector, /rejectedCount: rejected\.length/);
 assert.match(supplySelector, /rejectionCounts: summarizeRejections\(rejected\)/);
