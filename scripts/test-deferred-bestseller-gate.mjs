@@ -14,5 +14,5 @@ const dropshipBlock = pipeline.match(/steps\.push\(\{\s*name: "dropship",[\s\S]*
 assert.ok(dropshipBlock, "dropship step must remain visible in pipeline telemetry");
 assert.match(dropshipBlock[0], /skipped: true/, "marketplace-ranking procurement path must be disabled");
 assert.match(dropshipBlock[0], /marketplace_rankings_not_used_for_supplier_procurement/, "reason must clearly state rankings are not supplier sources");
-assert.match(pipeline, /supply-first path, which verifies the exact CJ product\/variant/i, "procurement must use direct CJ supply-first verification");
+assert.match(dropshipBlock[0], /discoveryCron: "\\/api\\/cron\\/supply-first"/, "procurement must route to the dedicated CJ supply-first cron");
 assert.doesNotMatch(pipeline, /investigateDropshipForBestsellers/, "ranking candidates must not be passed to supplier investigation");
