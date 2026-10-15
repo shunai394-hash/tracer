@@ -24,6 +24,10 @@ assert.match(collector, /provider: "brightdata_mcp"/, "ingest results must ident
 assert.ok(collector.includes('const preferred = ["scrape_as_markdown", "scrape_as_html", "search_engine", "search_engine_batch"];'), "product collection should try the working HTML scraper before search fallback");
 assert.ok(collector.includes("application\\/ld\\+json"), "HTML product search should parse structured Product JSON-LD");
 assert.ok(collector.includes("const collectProducts = (node: unknown, depth = 0)"), "nested Product JSON-LD should be traversed");
+assert.match(collector, /root\.organic_results/);
+assert.match(collector, /for \(const key of \["data", "content", "result", "response", "payload", "body"\]\)/, "nested MCP response envelopes must be traversed to find product results");
+assert.match(collector, /"product_title", "productTitle"/, "provider-specific title keys must be recognized");
+assert.match(collector, /"product_link", "productLink", "source_url", "sourceUrl"/, "provider-specific product URL keys must be recognized");
 assert.ok(collector.includes("const lines = unwrapped.split(/\\r?\\n/);"), "Markdown product cards must be parsed from Bright Data results");
 assert.ok(collector.includes("if (!priceMatch) continue;"), "generic navigation links without a price must not become Markdown product candidates");
 assert.match(collector, /const mcpConfigured = isMcpConfigured\(\);[\s\S]{0,500}Bright Data MCP was configured but returned no parseable shopping products/, "MCP-only config must not fall through to missing API-token/zone config");
