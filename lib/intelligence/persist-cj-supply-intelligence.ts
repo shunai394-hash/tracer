@@ -41,7 +41,7 @@ async function readSupplierBarcode(args: { supplierProductId: string; supplierVa
   try {
     const variants = await fetchCJProductVariants(args.supplierProductId, { countryCode: "JP" });
     const variant = variants.find((item) => item.vid === args.supplierVariantId && item.productId === args.supplierProductId) ?? null;
-    return { barcode: normalizeBarcode(variant?.barcode), variant };
+    return { barcode: normalizeBarcode(variant?.barcode), variant: null };
   } catch (error) { console.warn("[cj-supply-identity] variant barcode lookup failed", { supplierProductId: args.supplierProductId, error: error instanceof Error ? error.message : String(error) }); }
   return { barcode: "", variant: null };
 }
