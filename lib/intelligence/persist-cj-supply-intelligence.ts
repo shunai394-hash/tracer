@@ -156,10 +156,17 @@ async function resolveMarketplaceIdentityFromBarcode(args: { db: ReturnType<type
   };
 }
 
-export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<MarketplaceIdentity | null> {
-  // Always fetch from CJ for this exact variant; caller-provided identifiers may be stale.
+export async function resolveMarketplaceIdentityWithFreshBarcode(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<{ identity: MarketplaceIdentity | null; variantBarcode: string | null }> {
+  // Fetch the exact CJ variant barcode once, then reuse that same fresh value
+  // for both marketplace matching and persistence/diagnostics.
   const freshBarcode = await readSupplierBarcode(args);
-  return resolveMarketplaceIdentityFromBarcode(args, freshBarcode);
+  const identity = await resolveMarketplaceIdentityFromBarcode(args, freshBarcode);
+  return { identity, variantBarcode: freshBarcode || null };
+}
+
+export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<MarketplaceIdentity | null> {
+  const result = await resolveMarketplaceIdentityWithFreshBarcode(args);
+  return result.identity;
 }
 
 export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntelligenceArgs): Promise<{ offerId: string | null; intelligenceId: string | null; identity: MarketplaceIdentity | null }> {
