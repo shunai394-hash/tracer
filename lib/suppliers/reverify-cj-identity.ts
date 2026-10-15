@@ -103,6 +103,22 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const { count: candidateCount, error: countError } = await candidateFilter;
   if (countError) throw new Error(`identity reverify candidate count failed: ${countError.message}`);
   const total = candidateCount ?? 0;
+  // Prioritize only the explicit stock-cap deployment hold after the cap is confirmed.
+  // This bypasses that row's barcode-related retry backoff, not the API quota or evidence gates.
+  const stockCapHeldResult = process.env.TRACER_STOREFRONT_STOCK_CAP_DEPLOYED === "1"
+    ? await db.from("supplier_listings")
+        .select("id,product_id,title,cost,shipping_cost,shipping_status,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency,price_confirmed,inventory_confirmed,configured,api_available,orderable,tracking_available,ship_to,verification_error")
+        .eq("supplier", "cj")
+        .eq("verification_error", "storefront_stock_cap_deploy_pending")
+        .in("verification_status", ["unverified", "retryable", "verified"])
+        .in("identity_method", ["supply_discovered", "none"])
+        .not("supplier_variant_id", "is", null)
+        .order("last_verified_at", { ascending: true })
+        .limit(limit)
+    : { data: [], error: null };
+  if (stockCapHeldResult.error) throw new Error(`stock-cap held CJ identity read failed: ${stockCapHeldResult.error.message}`);
+  const stockCapHeldRows = stockCapHeldResult.data ?? [];
+  const stockCapHoldIds = new Set(stockCapHeldRows.map((row) => String(row.id)));
 
   const { data: priorRuns, error: priorRunsError } = await db
     .from("cron_runs")
@@ -138,29 +154,38 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
     if (rowsResult.error) throw new Error(`identity reverify candidate wrap query failed: ${rowsResult.error.message}`);
   }
 
-  const rows = rowsResult.data ?? [];
-  const scanCursor = rows.length > 0 ? String(rows[rows.length - 1].id) : priorCursor;
+  const scanRows = rowsResult.data ?? [];
+  const scanCursor = scanRows.length > 0 ? String(scanRows[scanRows.length - 1].id) : priorCursor;
+  const rowsById = new Map<string, (typeof scanRows)[number]>();
+  for (const row of stockCapHeldRows) rowsById.set(String(row.id), row as (typeof scanRows)[number]);
+  for (const row of scanRows) rowsById.set(String(row.id), row);
+  const rows = [...rowsById.values()];
   const nowMs = Date.now();
-  // Force bypasses only the per-row identity retry backoff. The CJ API quota
-  // circuit, exact supplier identity checks, and verification invariants remain
-  // enforced, so scheduled freshness recovery cannot bypass provider limits.
+  // Force bypasses only the per-row identity retry backoff. The exact stock-cap
+  // hold is also due immediately after the explicit deployment flag is set.
+  // The CJ API quota circuit and all supplier-evidence gates remain enforced.
   const allRows = rows.filter((row) =>
     isCjIdentityReverifyCandidate({
       verificationStatus: row.verification_status,
       identityMethod: row.identity_method,
       supplierVariantId: row.supplier_variant_id,
-    }) && (force || isCjIdentityReverifyDue(row.metadata, nowMs))
+    }) && (force || stockCapHoldIds.has(String(row.id)) || isCjIdentityReverifyDue(row.metadata, nowMs))
   );
-  const womensRows = allRows.filter((row) => isWomensProductTitle(row.title, row.metadata));
-  const otherRows = allRows.filter((row) => !isWomensProductTitle(row.title, row.metadata));
+  const stockCapHeld = allRows.filter((row) => stockCapHoldIds.has(String(row.id)));
+  const regularRows = allRows.filter((row) => !stockCapHoldIds.has(String(row.id)));
+  const womensRows = regularRows.filter((row) => isWomensProductTitle(row.title, row.metadata));
+  const otherRows = regularRows.filter((row) => !isWomensProductTitle(row.title, row.metadata));
   const priority = (row: typeof allRows[number]) => row.verification_status === "unverified" ? 0 : 1;
+  stockCapHeld.sort((a, b) => priority(a) - priority(b) || String(a.id).localeCompare(String(b.id)));
   womensRows.sort((a, b) => priority(a) - priority(b) || String(a.id).localeCompare(String(b.id)));
   otherRows.sort((a, b) => priority(a) - priority(b) || String(a.id).localeCompare(String(b.id)));
   const beforeCounts = await readCjIdentityProgressCounts(db);
-  const selectedWomens = womensRows.slice(0, Math.min(limit, womensRows.length));
-  const remaining = Math.max(0, limit - selectedWomens.length);
+  const selectedStockCapHeld = stockCapHeld.slice(0, Math.min(limit, stockCapHeld.length));
+  const remainingForRegular = Math.max(0, limit - selectedStockCapHeld.length);
+  const selectedWomens = womensRows.slice(0, Math.min(remainingForRegular, womensRows.length));
+  const remaining = Math.max(0, remainingForRegular - selectedWomens.length);
   const selectedOther = remaining > 0 ? otherRows.slice(0, Math.min(remaining, otherRows.length)) : [];
-  const selectedRows = [...selectedWomens, ...selectedOther];
+  const selectedRows = [...selectedStockCapHeld, ...selectedWomens, ...selectedOther];
   const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, remediationQueued: [], errors: [], promotedListings: [], nextCursor: scanCursor, quotaBlockedUntil: null, progress: { before: beforeCounts, after: beforeCounts } };
   const processRow = async (row: NonNullable<typeof rows>[number]) => {
     const supplierListingId = String(row.id);
