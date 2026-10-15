@@ -23,6 +23,7 @@ assert.doesNotMatch(pipeline, /researchLimitedSupply/, "legacy CJ research must 
 assert.match(pipeline, /discoverAndCreateCjSupply\(3/);
 assert.match(pipeline, /const bestsellerStep = await runStep\("bestsellers", [\s\S]*?\{ budgetMs: 40_000 \}\)/);
 assert.match(pipeline, /runStep\("ordering", \(\) => persistReorderRecommendations\(\), \{ downstream: true, budgetMs: 15_000 \}\)/);
+assert.equal(pipeline.includes('runStep("newfind_retry"'), false);
 
 // Persist provider quota exhaustion across patrol invocations so the five-minute
 // cron does not keep spending requests against an exhausted Gemini free-tier quota.
