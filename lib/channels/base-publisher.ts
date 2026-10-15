@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
+import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { createBaseItem, editBaseItem, addBaseItemImage, isBaseConfigured } from "@/lib/channels/base";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
@@ -347,7 +347,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     // is re-verified separately before any procurement attempt.
     const storefrontInventory = toStorefrontStockQuantity(
       availableInventory,
-      process.env.BASE_STOREFRONT_STOCK_CAP ?? process.env.SHOPIFY_STOREFRONT_STOCK_CAP,
+      getStorefrontStockCap(),
     );
 
     const leaseUntil = new Date(Date.now() + 2 * 60_000).toISOString();
