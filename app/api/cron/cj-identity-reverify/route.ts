@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { reverifyCjSupplyIdentities } from "@/lib/suppliers/reverify-cj-identity";
+import { isWithinCjQuotaResetReservation } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -21,6 +22,29 @@ export async function GET(request: Request) {
     const requestedLimit = Number(url.searchParams.get("limit") ?? 25);
     const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(25, Math.floor(requestedLimit))) : 25;
     const force = url.searchParams.get("force") === "1";
+    // Do not let the final pre-reset poll exhaust CJ quota immediately before the
+    // one-time sandbox lifecycle proof at 00:01 UTC. This is a scheduling guard,
+    // not a supplier-evidence bypass; the next normal poll resumes at 00:12 UTC.
+    if (isWithinCjQuotaResetReservation(new Date())) {
+      console.info("[cj-identity-reverify] skipped daily quota-reset reservation");
+      return NextResponse.json({
+        ok: true,
+        phase: "cj_identity_reverify",
+        skipped: true,
+        reason: "cj_daily_quota_reset_reservation",
+        elapsedMs: Date.now() - startedAt,
+        checked: 0,
+        promoted: 0,
+        supplierVerified: 0,
+        noUniqueBarcodeMatch: 0,
+        missingEconomics: 0,
+        errors: [],
+        remediationQueued: [],
+        promotedListings: [],
+        nextCursor: null,
+        quotaBlockedUntil: null,
+      });
+    }
     const result = await reverifyCjSupplyIdentities({
       // Production telemetry showed 40 checks consuming ~182s and hitting a
       // CJ QPS 429. A 25-row cap leaves room for retries under the 150s budget.
