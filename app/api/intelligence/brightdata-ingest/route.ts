@@ -20,7 +20,7 @@ export async function POST(request: Request) {
 
     const result = await searchGoogleProducts(query);
     const candidates = result.products.slice(0, 30);
-    const persisted = await persistBrightDataProducts(result.query, candidates);
+    const persisted = await persistBrightDataProducts(result.query, candidates, result.provider);
     return NextResponse.json({
       ok: true,
       query: result.query,
