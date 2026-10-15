@@ -30,8 +30,8 @@ assert.match(reconcile, /const columns = "id, title, base_item_id, published, pi
 assert.match(reconcile, /\.select\("id, title, slug, bestseller_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons"\)/,
   "withdraw gate checks must fetch the Japanese title they validate");
 
-assert.ok(patrol.includes("retryPendingNewfindPromotions(5)"), "the five-minute patrol must drain failed NEWFIND deliveries even when the intelligence pipeline is deferred");
-assert.ok(patrol.includes("startedAt + 270_000") && patrol.includes("startedAt + 285_000"), "NEWFIND retries must respect the patrol time budget");
+assert.doesNotMatch(patrol, /retryPendingNewfindPromotions|rescueUndeliveredGatePassedListings/,
+  "the production patrol is limited to TRACER, BASE, and Shopify; NEWFIND delivery is out of scope");
 assert.match(source, /const productUrl = tracerUrl/);
 assert.match(source, /const tracerResolution = await resolveLiveTracerUrl/);
 assert.match(source, /listing\.shopify_sync_status !== "synced" \|\| !listing\.shopify_product_id \|\| !listing\.shopify_variant_id \|\| !listing\.shopify_handle/, "NEWFIND delivery must require a live Shopify product and variant");
