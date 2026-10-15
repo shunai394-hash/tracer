@@ -102,7 +102,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   // This bypasses that row's barcode-related retry backoff, not the API quota or evidence gates.
   const stockCapHeldResult = process.env.TRACER_STOREFRONT_STOCK_CAP_DEPLOYED === "1"
     ? await db.from("supplier_listings")
-        .select("id,product_id,title,cost,shipping_cost,shipping_status,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency,price_confirmed,inventory_confirmed,configured,api_available,orderable,tracking_available,ship_to,verification_error")
+        .select("id,product_id,title,sku,cost,shipping_cost,shipping_status,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency,price_confirmed,inventory_confirmed,configured,api_available,orderable,tracking_available,ship_to,verification_error")
         .eq("supplier", "cj")
         .eq("verification_error", "storefront_stock_cap_deploy_pending")
         .in("verification_status", ["unverified", "retryable", "verified"])
@@ -129,7 +129,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
 
   const buildCandidateQuery = () => db
     .from("supplier_listings")
-    .select("id,product_id,title,cost,shipping_cost,shipping_status,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency,price_confirmed,inventory_confirmed,configured,api_available,orderable,tracking_available,ship_to,verification_error")
+    .select("id,product_id,title,sku,cost,shipping_cost,shipping_status,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency,price_confirmed,inventory_confirmed,configured,api_available,orderable,tracking_available,ship_to,verification_error")
     .eq("supplier", "cj")
     .in("verification_status", ["unverified", "retryable", "verified"])
     .in("identity_method", ["supply_discovered", "none"])
@@ -324,6 +324,12 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       if (priceVerified && cost !== null) {
         refreshedFields.cost = cost;
         refreshedFields.price_confirmed = true;
+      }
+      if (variantDetails?.vid === String(row.supplier_variant_id)
+        && variantDetails.productId === String(row.supplier_product_id)
+        && typeof variantDetails.sku === "string"
+        && variantDetails.sku.trim()) {
+        refreshedFields.sku = variantDetails.sku.trim();
       }
       if (shippingQuoteVerified && shippingCost !== null) {
         refreshedFields.shipping_cost = shippingCost;
