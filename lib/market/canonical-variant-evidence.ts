@@ -268,10 +268,20 @@ export function parseAmazonVariationAsinMap(
   const parentAsin = extractAsinFromUrl(parentProductUrl);
   const output: AmazonVariationAsinEvidence[] = [];
   const seen = new Set<string>();
-  const patterns = [
-    /(?:var|let|const)\s+dimensionValuesDisplayData\s*=/gi,
-    /dimensionValuesDisplayData\s*:/gi,
+  // Amazon changes the variable name between page templates/locales.
+  // These are explicit ASIN-keyed variation maps only; any discovered ASIN
+  // remains discovery evidence until its own detail page supplies a barcode.
+  const mapNames = [
+    "dimensionValuesDisplayData",
+    "asinVariationValues",
+    "variationValues",
+    "variationDisplayValues",
+    "variationDisplayData",
   ];
+  const patterns = mapNames.flatMap((name) => [
+    new RegExp(`(?:var|let|const)\\s+${name}\\s*=`, "gi"),
+    new RegExp(`${name}\\s*:`, "gi"),
+  ]);
   for (const pattern of patterns) {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(html))) {
