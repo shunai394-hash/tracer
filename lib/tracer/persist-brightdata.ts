@@ -335,7 +335,8 @@ export async function persistBrightDataProducts(
         observed_at: new Date().toISOString(),
         metadata: {
           query,
-          provider: PROVIDER,
+          provider,
+          provider_family: PROVIDER,
           source_id: sourceId,
           observation_id: observationResult.data.id,
           currency_confidence: currencyAssessment.confidence,
