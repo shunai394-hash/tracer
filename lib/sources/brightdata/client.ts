@@ -150,6 +150,7 @@ function extractShoppingProducts(payload: unknown): BrightDataProductCandidate[]
       if (!title || !productUrl || seen.has(title)) continue;
       const context = lines.slice(index, index + 4).join(" ");
       const priceMatch = context.match(/(?:¥|￥|JPY|US\$|\$)\s*[\d,]+(?:\.\d{1,2})?/i);
+      if (!priceMatch) continue;
       const sellerMatch = context.match(/(?:from|by|販売元|ショップ)\s+([^|•]{2,80})/i);
       seen.add(title);
       const price = priceMatch?.[0]?.replace(/\s+/g, " ").trim() ?? null;
@@ -228,7 +229,7 @@ async function searchViaBrightDataMcp(query: string, shoppingUrl: string): Promi
   try {
     const consumer = getMcpToolConsumer();
     const tools = await consumer.listTools();
-    const preferred = ["scrape_as_markdown", "search_engine", "search_engine_batch"];
+    const preferred = ["web_data_google_shopping", "scrape_as_markdown", "search_engine", "search_engine_batch"];
     for (const name of preferred) {
       const tool = tools.find((candidate) => candidate.name === name);
       if (!tool) continue;
