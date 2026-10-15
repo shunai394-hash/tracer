@@ -620,7 +620,7 @@ export async function runIntelligencePipeline(options: {
     // marketplace source lacks child-variant evidence or CJ is in quota cooldown,
     // record the coverage gap and retry on a later patrol; do not mark the core
     // supply-first sales cycle incomplete when its downstream steps ran.
-    const optionalDiscoverySteps = new Set(["bestsellers", "auxiliary_trends", "supply", "dropship"]);
+    const optionalDiscoverySteps = new Set(["bestsellers", "auxiliary_trends", "supply", "supply_first", "dropship"]);
     if (optionalDiscoverySteps.has(step.name) && step.retryable === true) return false;
     // Identity re-verification is also a bounded background enrichment step.
     // The cursor resumes on a later patrol; unresolved identity must still pass
