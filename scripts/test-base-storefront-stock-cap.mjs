@@ -23,4 +23,4 @@ assert.match(stock, /STOREFRONT_STOCK_CAP \?\? env\.SHOPIFY_STOREFRONT_STOCK_CAP
 assert.match(source, /stock: storefrontInventory, visible: true/);
 assert.doesNotMatch(source, /stock: availableInventory, visible: true/);
 assert.match(patrol, /publishPublishedListingsToBase\(15\)/, "the five-minute patrol should reconcile full safe BASE batches, not only three listings");
-console.log("BASE storefront stock cap: 11 assertions passed");
+console.log("Shared storefront stock cap: 14 assertions passed");
