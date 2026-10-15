@@ -50,7 +50,7 @@ jobs:
             -X POST "${BASE}/api/cron/cj-sandbox-order-test" \
             -H "Authorization: Bearer ${TOKEN}" \
             -H "Content-Type: application/json" \
-            --data "{\"supplierListingId\":\" ${SUPPLIER_LISTING_ID} \"}")"
+            --data "{\"supplierListingId\":\"${SUPPLIER_LISTING_ID}\"}")"
 
           python3 - <<'PY'
           import json
