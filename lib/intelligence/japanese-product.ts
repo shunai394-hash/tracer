@@ -1,4 +1,5 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/facial spot scanning machine mini home mole spotting apparatus/i, "家庭用 フェイススポットケア機器"],
   [/ceramic ashtray home bedroom dormitory office/i, "セラミック製 卓上灰皿"],
   [/bathroommobile phone box waterproofstand|bathroom.*mobile phone box.*waterproof.*stand/i, "防水ケース付き バスルーム用スマホホルダー"],
   [/suitable for creative new envelopes.*huawei.*mobile phone shell.*acrylic|huawei.*acrylic.*protective sleeve/i, "Huawei対応 アクリルスマホケース"],

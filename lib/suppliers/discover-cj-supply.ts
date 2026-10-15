@@ -185,6 +185,11 @@ export async function discoverAndCreateCjSupply(
   candidateCount: number;
   eligibleCount: number;
   deadlineReached: boolean;
+  skipped?: boolean;
+  retryable?: boolean;
+  reason?: string;
+  quotaBlocked?: boolean;
+  retryAfter?: string;
   items: Array<Record<string, unknown>>;
 }> {
   const db = createSupabaseAdminClient();
@@ -214,7 +219,13 @@ export async function discoverAndCreateCjSupply(
       rejected: 0,
       candidateCount: 0,
       eligibleCount: 0,
-      deadlineReached: true,
+      // A quota cooldown is an intentional deferral, not a timeout.
+      deadlineReached: false,
+      skipped: true,
+      retryable: true,
+      reason: "supplier_quota_cooldown",
+      quotaBlocked: true,
+      retryAfter: quotaBlockedUntil,
       items: [],
     };
   }

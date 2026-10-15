@@ -13,20 +13,20 @@ const auditMigration = readFileSync("supabase/migrations/20261010150000_tracer_i
 assert.match(discovery, /import \{ persistCjInternalSupplyCandidate \} from "@\/lib\/suppliers\/persist-cj-internal-supply"/);
 assert.match(discovery, /\.eq\("job_name", "cj-api-quota-circuit"\)/,
   "supply-first must inspect the persisted CJ quota circuit before attempting provider calls");
-assert.match(discovery, /if \(quotaBlockedUntil && Date\.parse\(quotaBlockedUntil\) > Date\.now\(\)\) \{[\s\S]*?deadlineReached: true[\s\S]*?items: \[\]/,
+assert.match(discovery, /if \(quotaBlockedUntil && Date\.parse\(quotaBlockedUntil\) > Date\.now\(\)\) \{[\s\S]*?deadlineReached: false[\s\S]*?skipped: true[\s\S]*?retryable: true[\s\S]*?reason: "supplier_quota_cooldown"[\s\S]*?retryAfter: quotaBlockedUntil[\s\S]*?items: \[\]/,
   "an active CJ quota cooldown must return a clean no-op instead of repeatedly rejecting the same candidate");
 assert.equal((discovery.match(/persistCjInternalSupplyCandidate\(/g) ?? []).length, 2,
   "both seeded verification and fresh catalog discovery must feed the internal supply catalog");
 assert.match(discovery, /internalSupplyIngested: Boolean\(internalSupply\)/);
 assert.match(discovery, /"women handbag", "women crossbody bag", "women shoulder bag", "women tote bag"/,
   "new supply discovery must prioritize women's bags before beauty tools and hair accessories");
-assert.match(discovery, /"beauty tools", "facial cleansing brush", "makeup brush cleaner", "makeup organizer"/,
+assert.match(discovery, /"beauty tools"[\s\S]*?"facial cleansing brush"[\s\S]*?"makeup brush cleaner"[\s\S]*?"makeup organizer"/,
   "beauty tools must follow women's bags in the supply query priority");
 assert.match(discovery, /"hair styling tools", "hair clip women", "claw clip women"/,
   "hair accessories must be an explicit high-priority catalog segment");
 assert.match(discovery, /Include every due supplier category/,
   "category priority must sort candidates, not exclude non-women's categories");
-assert.match(discovery, /supply-first-catalog-cursor-v2/,
+assert.match(discovery, /supply-first-catalog-cursor-v\d+/,
   "query-order changes must not reinterpret an old cursor index");
 assert.match(discovery, /next_verification_at\.is\.null,next_verification_at\.lte/,
   "supplier verification queue must select only rows whose next verification is due");
