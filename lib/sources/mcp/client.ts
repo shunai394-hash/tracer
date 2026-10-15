@@ -16,10 +16,11 @@ export function isMcpConfigured(): boolean {
 }
 
 export function getMcpToolConsumer() {
-  const { mcpUrl } = getBrightDataConfig();
+  const { mcpUrl, mcpApiKey } = getBrightDataConfig();
   if (!mcpUrl) throw new McpConfigError();
   return createMcpToolConsumer({
     endpoint: mcpUrl,
+    ...(mcpApiKey ? { accessToken: mcpApiKey } : {}),
     clientName: "tracer",
     clientVersion: "0.1.0",
   });
