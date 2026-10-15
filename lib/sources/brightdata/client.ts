@@ -187,7 +187,10 @@ async function searchViaBrightDataMcp(query: string, shoppingUrl: string): Promi
         const call: McpToolCall = { name: tool.name, arguments: mcpArguments(tool, query, shoppingUrl) };
         const result = await consumer.callTool(call);
         const products = extractShoppingProducts(result);
-        if (products.length) return products;
+        if (products.length) {
+          console.info("[BRIGHTDATA MCP] product search succeeded", { tool: tool.name, count: products.length });
+          return products;
+        }
       } catch (error) {
         // A tool can be unavailable for a particular account or reject its
         // schema. Continue to the next supported MCP tool before API fallback.
@@ -280,6 +283,9 @@ async function fetchBrightDataPageViaMcp(url: string): Promise<{ html: string | 
       arguments: mcpArguments(tool, url, url),
     });
     const html = extractMcpHtml(result);
+    const host = new URL(url).hostname;
+    if (html) console.info("[BRIGHTDATA MCP] scrape_as_html succeeded", { host, bytes: html.length });
+    else console.warn("[BRIGHTDATA MCP] scrape_as_html returned no HTML", { host });
     return { html: html ? repairMojibakeText(html) : null, json: result };
   } catch (error) {
     console.warn("[BRIGHTDATA MCP] HTML fetch unavailable", error instanceof Error ? error.message : "unknown error");
