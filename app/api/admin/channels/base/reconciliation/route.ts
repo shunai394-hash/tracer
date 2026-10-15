@@ -22,6 +22,8 @@ type ListingRow = {
   base_publication_status: string | null;
 };
 
+const TRACER_IDENTIFIER = /^TRC-([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+
 function normalizedTitle(value: unknown): string {
   return String(value ?? "")
     .normalize("NFKC")
@@ -88,6 +90,7 @@ export async function POST(request: Request) {
     if (!complete) throw new Error("TRACER_LISTINGS_SCAN_INCOMPLETE");
 
     const byBaseId = new Map<string, ListingRow[]>();
+    const byListingId = new Map(listings.map((listing) => [String(listing.id).toLowerCase(), listing]));
     const byTitle = new Map<string, ListingRow[]>();
     for (const listing of listings) {
       const baseId = String(listing.base_item_id ?? "").trim();
@@ -109,6 +112,12 @@ export async function POST(request: Request) {
       const title = String(item.title ?? item.name ?? "");
       const key = normalizedTitle(title);
       const exactIdListings = byBaseId.get(baseItemId) ?? [];
+      const identifierMatch = String(item.identifier ?? "").trim().match(TRACER_IDENTIFIER);
+      const exactIdentifierListings = identifierMatch?.[1]
+        ? [byListingId.get(identifierMatch[1].toLowerCase())].filter((row): row is ListingRow => Boolean(row))
+        : [];
+      const identifierTarget = exactIdentifierListings.length === 1 ? exactIdentifierListings[0] : null;
+      const identifierRepairable = Boolean(identifierTarget && !String(identifierTarget.base_item_id ?? "").trim() && !(byBaseId.get(baseItemId)?.length));
       const titleCandidates = key ? (byTitle.get(key) ?? []) : [];
       return {
         baseItemId,
@@ -117,6 +126,15 @@ export async function POST(request: Request) {
         price: item.price ?? null,
         stock: item.stock ?? null,
         exactBaseIdMatchCount: exactIdListings.length,
+        exactIdentifierMatchCount: exactIdentifierListings.length,
+        exactIdentifierRepairable: identifierRepairable,
+        exactIdentifierMatches: exactIdentifierListings.map((row) => ({
+          listingId: row.id,
+          existingBaseItemId: row.base_item_id,
+          supplierListingId: row.supplier_listing_id,
+          supplierProductId: row.supplier_product_id,
+          supplierVariantId: row.supplier_variant_id,
+        })),
         exactBaseIdMatches: exactIdListings.map((row) => ({
           listingId: row.id,
           title: row.title,
@@ -168,6 +186,9 @@ export async function POST(request: Request) {
       exactBaseIdMappedCount: exactMapped,
       baseItemsWithoutExactMappingCount: unmapped,
       baseItemsWithAmbiguousExactMappingCount: ambiguous,
+      baseItemsWithExactIdentifierMatchCount: items.filter((item) => item.exactIdentifierMatchCount === 1).length,
+      baseItemsWithAmbiguousIdentifierMatchCount: items.filter((item) => item.exactIdentifierMatchCount > 1).length,
+      baseItemsWithRepairableIdentifierMatchCount: items.filter((item) => item.exactIdentifierRepairable).length,
       baseItemsWithExactTitleCandidateCount: titleCandidateCount,
       tracerListingsWithoutBaseItemIdCount: listings.filter((row) => !String(row.base_item_id ?? "").trim()).length,
       duplicateBaseItemIdGroupsInTracer: [...byBaseId.entries()].filter(([, rows]) => rows.length > 1).length,

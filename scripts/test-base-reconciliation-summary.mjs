@@ -16,6 +16,10 @@ try {
     tracerListingCount: 3,
     exactBaseIdMappedCount: 1,
     baseItemsWithoutExactMappingCount: 3,
+    baseItemsWithAmbiguousExactMappingCount: 0,
+    baseItemsWithExactIdentifierMatchCount: 2,
+    baseItemsWithAmbiguousIdentifierMatchCount: 0,
+    baseItemsWithRepairableIdentifierMatchCount: 1,
     tracerListingsWithoutBaseItemIdCount: 2,
     duplicateBaseItemIdGroupsInTracer: 0,
     items: [
@@ -28,6 +32,8 @@ try {
   await writeFile(input, JSON.stringify(report));
   const run = spawnSync(process.execPath, ["scripts/summarize-base-reconciliation.mjs", input], { encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /"uniqueMatches": 2/);
+  assert.match(run.stdout, /"repairableMissingBaseIds": 1/);
   assert.match(run.stdout, /"none": 1/);
   assert.match(run.stdout, /"exactlyOne": 1/);
   assert.match(run.stdout, /"multiple": 2/);
@@ -43,7 +49,7 @@ try {
   const invalid = spawnSync(process.execPath, ["scripts/summarize-base-reconciliation.mjs", input], { encoding: "utf8" });
   assert.notEqual(invalid.status, 0);
   assert.match(invalid.stderr, /RECONCILIATION_REPORT_INCOMPLETE/);
-  await writeFile(input, JSON.stringify({ complete: true, baseItemCount: 1, items: [{ exactTitleCandidates: [] }] }));
+  await writeFile(input, JSON.stringify({ ...report, baseItemCount: 1, baseVisibleCount: 1, baseHiddenCount: 0, exactBaseIdMappedCount: 1, baseItemsWithoutExactMappingCount: 0, baseItemsWithAmbiguousExactMappingCount: 0, baseItemsWithExactIdentifierMatchCount: 0, baseItemsWithAmbiguousIdentifierMatchCount: 0, baseItemsWithRepairableIdentifierMatchCount: 0, items: [{ exactTitleCandidates: [] }] }));
   const malformed = spawnSync(process.execPath, ["scripts/summarize-base-reconciliation.mjs", input], { encoding: "utf8" });
   assert.notEqual(malformed.status, 0);
   assert.match(malformed.stderr, /RECONCILIATION_CANDIDATE_COUNTS_INVALID/);
