@@ -141,6 +141,7 @@ assert.match(patrolWorkflow, /r.get\("ok"\) is not True/);
 assert.match(patrolWorkflow, /timeout-minutes: 9/);
 assert.match(patrolRoute, /const safeSteps = pipeline\.steps\.map/);
 assert.doesNotMatch(patrolRoute, /retryPendingNewfindPromotions|rescueUndeliveredGatePassedListings/, "the three-site patrol must not write to NEWFIND");
+assert.doesNotMatch(salesPublicationRoute, /promoteShopListingToNewfind/, "sales-test publication must not deliver outside the three-site scope");
 assert.match(patrolRoute, /technicalDeferredSteps/);
 assert.match(patrolRoute, /businessReadinessMissing/, "business readiness gaps must be reported incomplete without masquerading as a technical exception");
 assert.match(patrolRoute, /errorCategories: Array\.from\(new Set\(errors\.map/);
