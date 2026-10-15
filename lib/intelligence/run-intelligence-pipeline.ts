@@ -576,6 +576,37 @@ export async function runIntelligencePipeline(options: {
     return { testReady: result?.testReady ?? 0, note: "TEST_READY is produced only after the data quality gate" };
   }, { downstream: true, budgetMs: 2_000 }));
 
+  // A pipeline that completed its code stages is not business-ready if no fresh
+  // supplier offer can actually be ordered or no published shop listing is marked
+  // orderable. Keep this as a retryable readiness gap (not a code exception) so
+  // patrol reports incomplete while continuing independent publication/reconciliation.
+  const { count: publishedOrderableListingCount, error: publishedOrderableListingError } = await db
+    .from("shop_listings")
+    .select("id", { count: "exact", head: true })
+    .eq("published", true)
+    .eq("orderable", true)
+    .gt("inventory", 0);
+  if (publishedOrderableListingError) throw new Error(`business readiness listing count failed: ${publishedOrderableListingError.message}`);
+  const freshOrderableSupplierCount = verifiedSupplyCount ?? 0;
+  const publishedOrderableListings = publishedOrderableListingCount ?? 0;
+  const businessReady = freshOrderableSupplierCount > 0 && publishedOrderableListings > 0;
+  steps.push({
+    name: "business_readiness",
+    ok: true,
+    skipped: !businessReady,
+    retryable: !businessReady,
+    result: {
+      ready: businessReady,
+      freshOrderableSuppliers: freshOrderableSupplierCount,
+      publishedOrderableListings,
+      reason: businessReady
+        ? null
+        : freshOrderableSupplierCount === 0
+          ? "no_fresh_verified_orderable_supplier"
+          : "no_published_orderable_listing",
+    },
+  });
+
   // Marketplace ranking pages are demand observations, not supplier catalogs.
   // Do not use Yahoo/Amazon/Rakuten ranking rows or their barcodes to drive
   // procurement matching. CJ procurement is handled by the dedicated
