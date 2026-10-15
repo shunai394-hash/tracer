@@ -45,7 +45,7 @@ assert.match(selector, /Boolean\(candidate\.supplier_product_id\)/);
 assert.match(selector, /Boolean\(candidate\.supplier_variant_id\)/);
 assert.match(selector, /domesticShipping: nativeCjSupplyIdentity \? 0 : null/);
 assert.match(selector, /resolveUnknownShippingAllowanceUsd\(process\.env\.TRACER_CJ_UNKNOWN_SHIPPING_ALLOWANCE_USD\)/, "unknown CJ freight must use a configurable non-zero allowance");
-assert.match(selector, /shipping_cost: num\(item\.listing\.shipping_cost\)/, "estimated freight must not be persisted as if it were an actual supplier quote");
+assert.match(selector, /persistedListingShippingCost\(\{ supplierShippingCost: num\(item\.listing\.shipping_cost\), convertedInternationalShipping: item\.profit\.internationalShipping \}\)/, "real supplier freight must be persisted in selling currency; estimated freight stays null");
 assert.match(selector, /shipping_allowance_estimated_usd_\$\{item\.shippingAllowanceUsd\}_not_supplier_quote/, "the selected listing must label its pricing allowance as an estimate");
 assert.match(selector, /calculateSupplySellingPriceJpy\(/, "missing selling prices must flow through the tested landed-price calculator");
 assert.match(selector, /supplierMetadata\.image_url/ , "use the verified supplier image stored in metadata when the product master has no image");
