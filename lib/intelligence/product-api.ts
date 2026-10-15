@@ -28,7 +28,7 @@ export type ProductIntelligenceInput = {
 };
 
 export type ProductIntelligenceOffer = {
-  supplier: "cj" | "orosy";
+  supplier: "cj";
   productId: string;
   variantId: string | null;
   title: string;
@@ -59,7 +59,6 @@ export type ProductIntelligenceResult = {
   offers: ProductIntelligenceOffer[];
   suppliers: {
     cj: "available" | "not_configured" | "error";
-    orosy: "available" | "not_configured" | "error";
   };
   sellability: {
     eligible: boolean;
@@ -241,7 +240,6 @@ export async function runProductIntelligence(
     offers,
     suppliers: {
       cj: cj.status,
-      orosy: "not_configured",
     },
     sellability: {
       eligible: reason === "eligible",
