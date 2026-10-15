@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   getOrderSkuLookup,
   resolveShopifyOrderSkus,
@@ -43,4 +44,17 @@ test("fails closed for missing and ambiguous exact SKU mappings", () => {
     resolveShopifyOrderSkus(["TRC-same-variant"], [a, b]),
     { ok: false, reason: "listing_mapping_ambiguous", sku: "TRC-same-variant" },
   );
+});
+
+const webhook = readFileSync("app/api/webhooks/shopify/orders/route.ts", "utf8");
+test("Shopify webhook writes the deployed order schema and repairs partial item imports", () => {
+  assert.match(webhook, /shopify_order_name:/, "use the existing shopify_order_name column");
+  assert.doesNotMatch(webhook, /shopify_order_number:/, "do not write a column absent from the deployed schema");
+  assert.match(webhook, /shopify_line_item_id_missing/, "require stable line IDs for idempotent retries");
+  assert.match(webhook, /incomingLineIds\.every\(\(id\) => existingLineItemIds\.has\(id\)\)/,
+    "fully imported webhook retries must short-circuit");
+  assert.match(webhook, /existing_order_items_legacy_id_missing/,
+    "do not guess mappings for legacy items without Shopify IDs");
+  assert.match(webhook, /shop_order_items_insert_failed:/,
+    "surface an item write failure so Shopify retries can repair the order");
 });
