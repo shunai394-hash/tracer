@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates, normalizeIdentifier } from "@/lib/market/identifiers";
+import { normalizeIdentifier } from "@/lib/market/identifiers";
 
 type CandidateArgs = {
   supplierProductId: string;
@@ -234,109 +234,11 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     throw new Error("cj_internal_supply_product_activation_failed: " + (activate.error?.message ?? "no row returned"));
   }
 
-  // Link only against independently stored marketplace CHILD-variant evidence.
-  // Parent product barcodes, titles, and MPNs are not variant identity proof.
-  let identityLink: {
-    bestsellerId: string;
-    canonicalVariantEvidenceId: string;
-    method: string;
-    rationale: string;
-  } | null = null;
-  if (Object.values(ids).some(Boolean)) {
-    const clauses = ["jan", "gtin", "ean", "upc"]
-      .flatMap((column) => Object.values(ids)
-        .filter((value): value is string => Boolean(value))
-        .flatMap((value) => marketplaceBarcodeCandidates(value).map((candidate) => `${column}.eq.${candidate}`)))
-      .filter((clause, index, all) => all.indexOf(clause) === index);
-    const { data: canonicalRows, error: canonicalError } = await db
-      .from("marketplace_bestseller_variants")
-      .select("id,bestseller_id,source_variant_id,jan,gtin,ean,upc,evidence_source")
-      .or(clauses.join(","))
-      .limit(51);
-
-    if (canonicalError) {
-      console.warn("[cj-internal-supply] canonical child-variant evidence lookup failed", {
-        sourceRef,
-        error: canonicalError.message,
-      });
-    } else if ((canonicalRows ?? []).length <= 50) {
-      const matched = (canonicalRows ?? []).map((row: Record<string, unknown>) => {
-        const identity = matchProductIdentity({
-          market: identifiersFromRecord(row),
-          supply: identifiersFromRecord(ids as unknown as Record<string, unknown>),
-        });
-        const barcodeMethod = ["jan", "gtin", "ean", "upc"].includes(identity.method);
-        return { row, identity, barcodeMethod };
-      }).filter((item) =>
-        item.barcodeMethod
-        && item.identity.salesEligible
-        && ["schema_org_product_group_has_variant", "schema_org_product_is_variant_of", "amazon_variation_asin_map"].includes(String(item.row.evidence_source))
-        && typeof item.row.id === "string"
-        && typeof item.row.bestseller_id === "string"
-        && typeof item.row.source_variant_id === "string",
-      );
-
-      // The supplier variant must have exactly one matching canonical child
-      // variant across all stored evidence. Parent-only matches are never queried.
-      if (matched.length === 1) {
-        const row = matched[0].row;
-        const linkPayload = {
-          bestseller_id: String(row.bestseller_id),
-          supply_product_id: productId,
-          supply_variant_id: variantId,
-          marketplace_variant_evidence_id: String(row.id),
-          identity_method: matched[0].identity.method,
-          identity_confidence: matched[0].identity.confidence,
-          identity_rationale: matched[0].identity.rationale,
-          status: "verified",
-        };
-        const link = await db.from("internal_supply_links").insert(linkPayload);
-        if (!link.error) {
-          identityLink = {
-            bestsellerId: String(row.bestseller_id),
-            canonicalVariantEvidenceId: String(row.id),
-            method: matched[0].identity.method,
-            rationale: matched[0].identity.rationale,
-          };
-        } else if (/duplicate|unique/i.test(link.error.message)) {
-          // A duplicate is an idempotent retry only when the persisted link
-          // points to this exact canonical child evidence row and method.
-          const existingLink = await db
-            .from("internal_supply_links")
-            .select("marketplace_variant_evidence_id,identity_method,identity_confidence,identity_rationale,status")
-            .eq("bestseller_id", linkPayload.bestseller_id)
-            .eq("supply_product_id", linkPayload.supply_product_id)
-            .eq("supply_variant_id", linkPayload.supply_variant_id)
-            .maybeSingle();
-          const sameEvidence = !existingLink.error
-            && existingLink.data?.status === "verified"
-            && existingLink.data?.marketplace_variant_evidence_id === linkPayload.marketplace_variant_evidence_id
-            && existingLink.data?.identity_method === linkPayload.identity_method
-            && Number(existingLink.data?.identity_confidence) === linkPayload.identity_confidence
-            && existingLink.data?.identity_rationale === linkPayload.identity_rationale;
-          if (sameEvidence) {
-            identityLink = {
-              bestsellerId: String(row.bestseller_id),
-              canonicalVariantEvidenceId: String(row.id),
-              method: matched[0].identity.method,
-              rationale: matched[0].identity.rationale,
-            };
-          } else {
-            console.warn("[cj-internal-supply] duplicate link does not match canonical child evidence", {
-              sourceRef,
-              error: link.error.message,
-              existingError: existingLink.error?.message ?? null,
-            });
-          }
-        } else {
-          console.warn("[cj-internal-supply] canonical child-variant link persistence failed", {
-            sourceRef,
-            error: link.error.message,
-          });
-        }
-      }
-    }
-  }
+  const identityLink: { bestsellerId: string; canonicalVariantEvidenceId: string; method: string; rationale: string } | null = null;
+  // Supplier inventory is retained by the exact CJ product+variant IDs above.
+  // Marketplace demand datasets are not required to persist this source record.
+  // Keep identityLink null unless a future explicitly enabled, separate identity
+  // workflow proves a cross-catalog relationship.
 
   // Audit is best-effort for compatibility with databases that have not yet
   // applied the PR #152 migration. Its absence must not hide the source write.
