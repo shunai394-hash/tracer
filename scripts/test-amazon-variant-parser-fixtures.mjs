@@ -201,4 +201,16 @@ assert.deepEqual(
 );
 
 
-const quotedPropertyVariationHtml = String.raw`\n<script>\nvar twisterData = {\"dimensionToAsinMap\":{\"[\\\"Color=Red\\\",\\\"Size=M\\\"]\":\"B0CHILD011\",\"[\\\"Color=Blue\\\",\\\"Size=L\\\"]\":\"B0CHILD012\"}};\n</script>`;\nassert.deepEqual(\n  parseAmazonVariationAsinMap(quotedPropertyVariationHtml, parentUrl),\n  [\n    { asin: \"B0CHILD011\", variationValues: ['[\"Color=Red\",\"Size=M\"]'] },\n    { asin: \"B0CHILD012\", variationValues: ['[\"Color=Blue\",\"Size=L\"]'] },\n  ],\n  \"parse quoted dimensionToAsinMap property keys embedded in Amazon twister data\",\n);\n\nconsole.log("Amazon variant parser fixtures: passed");
+const quotedPropertyVariationHtml = String.raw`
+<script>
+var twisterData = {"dimensionToAsinMap":{"[\"Color=Red\",\"Size=M\"]":"B0CHILD011","[\"Color=Blue\",\"Size=L\"]":"B0CHILD012"}};
+</script>`;
+assert.deepEqual(
+  parseAmazonVariationAsinMap(quotedPropertyVariationHtml, parentUrl),
+  [
+    { asin: "B0CHILD011", variationValues: ['["Color=Red","Size=M"]'] },
+    { asin: "B0CHILD012", variationValues: ['["Color=Blue","Size=L"]'] },
+  ],
+  "parse quoted dimensionToAsinMap property keys embedded in Amazon twister data",
+);
+console.log("Amazon variant parser fixtures: passed");
