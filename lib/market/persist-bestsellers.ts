@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { collectMarketplaceBestsellers } from "@/lib/market/collect-bestsellers";
 import { writeEvidenceBatch } from "@/lib/market/evidence-ledger";
 import { EMPTY_IDENTIFIERS, hasAnyIdentifier } from "@/lib/market/identifiers";
+import { persistTracerV2Stage } from "@/lib/tracer-v2/persist-stage";
 
 // Priority mirrors pickIdentifierQuery (lib/market/identifiers.ts): a real
 // identifier of any scheme is always preferred over a title-text key, which
@@ -137,6 +138,25 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
       inserted += 1;
       bestsellerIds.push(String(bestseller.id));
 
+      const tracerV2ProductKey = `marketplace:${sourceItemKey}`;
+      const demandStage = await persistTracerV2Stage({
+        productKey: tracerV2ProductKey,
+        stage: "demand_discovered",
+        outcome: "completed",
+        idempotencyKey: `demand:${sourceItemKey}`,
+        externalId: String(bestseller.id),
+        evidence: {
+          marketplace: marketplace.marketplace,
+          source: marketplace.source,
+          sourceItemKey,
+          title: item.title,
+          productUrl: item.productUrl,
+        },
+      });
+      if (!demandStage.ok) {
+        throw new Error(`tracer_v2_demand_stage_failed:${demandStage.reason ?? "unknown"}`);
+      }
+
       const variantEvidenceRows = (item.canonicalVariants ?? []).map((variant) => ({
         bestseller_id: bestseller.id,
         marketplace: marketplace.marketplace,
@@ -157,6 +177,8 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
         updated_at: marketplace.fetchedAt,
       }));
       canonicalVariantEvidenceParsed += variantEvidenceRows.length;
+      let variantEvidenceWriteVerified = false;
+      let variantEvidenceWriteCount = 0;
       if (variantEvidenceRows.length > 0) {
         const { data: writtenVariants, error: variantWriteError } = await supabase
           .from("marketplace_bestseller_variants")
@@ -176,6 +198,8 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
           // response with no representation is not proof that every row was stored.
           const writtenCount = writtenVariants?.length ?? 0;
           canonicalVariantEvidenceWritten += writtenCount;
+          variantEvidenceWriteCount = writtenCount;
+          variantEvidenceWriteVerified = writtenCount === variantEvidenceRows.length;
           if (writtenCount < variantEvidenceRows.length) {
             canonicalVariantEvidenceWriteFailures += variantEvidenceRows.length - writtenCount;
             console.error("[TRACER CANONICAL VARIANT EVIDENCE WRITE COUNT MISMATCH]", {
@@ -184,6 +208,31 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
             });
           }
         }
+      }
+
+      const variantStageOutcome = variantEvidenceWriteVerified
+        ? "completed"
+        : "blocked";
+      const variantStage = await persistTracerV2Stage({
+        productKey: tracerV2ProductKey,
+        stage: "variant_evidence_saved",
+        outcome: variantStageOutcome,
+        idempotencyKey: `variants:${sourceItemKey}:${marketplace.fetchedAt}`,
+        externalId: variantStageOutcome === "completed" ? String(variantEvidenceRows.length) : null,
+        reason: variantStageOutcome === "blocked"
+          ? variantEvidenceRows.length === 0
+            ? "no_canonical_variant_evidence"
+            : "canonical_variant_evidence_not_fully_persisted"
+          : null,
+        evidence: {
+          parsed: variantEvidenceRows.length,
+          written: variantEvidenceWriteCount,
+          marketplace: marketplace.marketplace,
+          source: marketplace.source,
+        },
+      });
+      if (!variantStage.ok) {
+        throw new Error(`tracer_v2_variant_stage_failed:${variantStage.reason ?? "unknown"}`);
       }
 
       let productId: string | null = null;
