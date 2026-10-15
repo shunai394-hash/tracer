@@ -29,15 +29,22 @@ function normalizeBarcode(value: unknown): string { return typeof value === "str
 
 async function readSupplierBarcode(args: { supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null }): Promise<string> {
   // A persisted/listing-level barcode is not proof for this exact variant. Always re-read the live CJ variant.
-  try {
-    const variants = await fetchCJProductVariants(args.supplierProductId, { countryCode: "JP" });
-    const direct = normalizeBarcode(variants.find((item) => item.vid === args.supplierVariantId)?.barcode);
-    if (direct) return direct;
-  } catch (error) { console.warn("[cj-supply-identity] variant barcode lookup failed", { error: error instanceof Error ? error.message : String(error) }); }
+  // Prefer the exact variant endpoint first: it returns product+variant
+  // identity and usually barcode/SKU in one request. The product-wide variants
+  // endpoint is a fallback only when the exact variant has no barcode, reducing
+  // CJ quota consumption during recovery.
   try {
     const detailVariant = await fetchCJVariantByVid(args.supplierVariantId);
-    if (detailVariant?.vid === args.supplierVariantId) return normalizeBarcode(detailVariant.barcode);
+    if (detailVariant?.vid === args.supplierVariantId && detailVariant.productId === args.supplierProductId) {
+      const barcode = normalizeBarcode(detailVariant.barcode);
+      if (barcode) return barcode;
+    }
   } catch (error) { console.warn("[cj-supply-identity] queryByVid barcode lookup failed", { error: error instanceof Error ? error.message : String(error) }); }
+  try {
+    const variants = await fetchCJProductVariants(args.supplierProductId, { countryCode: "JP" });
+    const direct = normalizeBarcode(variants.find((item) => item.vid === args.supplierVariantId && item.productId === args.supplierProductId)?.barcode);
+    if (direct) return direct;
+  } catch (error) { console.warn("[cj-supply-identity] variant barcode lookup failed", { error: error instanceof Error ? error.message : String(error) }); }
   return "";
 }
 
