@@ -105,7 +105,8 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
         && candidate.tracking_available === true
         && candidate.api_available === true;
     });
-    const pool = verifiedCandidates.length > 0 ? verifiedCandidates : candidates;
+    // Fail closed: if no supplier offer passes identity, freshness, inventory and orderability checks, publish none.
+    const pool = verifiedCandidates;
     const best = pool.reduce<Record<string, unknown> | null>((current, candidate) =>
       !current || listingQuality(candidate) > listingQuality(current) ? candidate : current, null);
     if (best) listingByProduct.set(productId, best);
