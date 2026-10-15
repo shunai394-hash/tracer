@@ -3,7 +3,7 @@ name: TRACER CJ Sandbox Lifecycle — One-Time Verification
 on:
   workflow_dispatch:
   schedule:
-    - cron: "40 4 15 10 *"
+    - cron: "10 0 16 10 *"
 
 permissions:
   id-token: write
@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$(date -u +%F)" != "2026-10-15" ]; then
+          if [ "$(date -u +%F)" != "2026-10-16" ]; then
             echo "One-time sandbox window has passed; no external request made."
             exit 0
           fi
