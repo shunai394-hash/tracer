@@ -17,6 +17,7 @@ assert.ok(!cron.includes('job_name: "market-sourcing"'), "patrol telemetry must 
 assert.ok(cron.includes("canonicalVariantEvidenceParsed"), "cron must report parsed child-variant evidence");
 assert.ok(cron.includes("export const maxDuration = 300;"), "marketplace detail scraping needs a 300-second runtime budget");
 assert.ok(cron.includes("canonicalVariantEvidenceWritten"), "cron must report persisted child-variant evidence");
+assert.match(cron, /MARKETPLACE_SOURCES\.length/, "source rotation must adapt when demand categories are added");
 assert.match(variantParser, /dimensionToAsinMap/, "Amazon child-ASIN variation maps must be parsed");
 assert.match(variantParser, /dimensionToAsinMapMarkerCount/, "aggregate diagnostics must show whether Amazon variation maps exist in fetched HTML");
 assert.match(collector, /dimensionToAsinMapMarkerCount: number/, "cron telemetry must persist variation-map diagnostics");
