@@ -97,8 +97,9 @@ function html(value: string | null): string {
 }
 
 function sku(listing: Listing): string {
-  const source = listing.supplier_variant_id || listing.supplier_product_id || listing.id;
-  return `TRC-${source}`.slice(0, 100);
+  // BASE uses TRC-${listing.id} as its stable item identifier. Keep the same
+  // channel-neutral SKU on Shopify; supplier IDs remain separate provenance.
+  return `TRC-${listing.id}`.slice(0, 100);
 }
 
 async function ensureJapaneseCopy(row: Listing): Promise<{ title: string; description: string }> {
