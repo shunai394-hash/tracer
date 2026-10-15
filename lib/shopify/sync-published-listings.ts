@@ -254,7 +254,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
     : rows.filter((row) => {
         const status = String(row.shopify_sync_status ?? "");
         if (status === "syncing") return false;
-        if (!hasPublishableSupplierIdentity(row.identity_status)) return Boolean(row.shopify_product_id) && status !== "blocked";
+        // Supplier verification/orderability must not suppress catalog publication; exact IDs are checked by blockReasons and order-time fulfillment revalidates availability.
         if (row.published === true && (row.pipeline_stage === "PUBLISHED" || row.pipeline_stage === "BASE_PUBLISHED") && row.pipeline_status === "published") {
           if (status !== "synced") return true;
           if (liveStockReconciliationError) return false;
@@ -266,9 +266,9 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
         if (row.published === false && row.pipeline_stage === "SELECTED" && row.pipeline_status === "selected") {
           return status !== "synced";
         }
-        if (row.published === false && row.pipeline_stage === "BLOCKED" && row.shopify_product_id) {
-          // A DB status of "blocked" is not proof that the product is no longer published on Shopify.
-          return row.shopify_sync_error !== "shopify_unpublished_verified";
+        if (row.published === false && row.pipeline_stage === "BLOCKED") {
+          // Retry any catalog-eligible row, including products hidden by an obsolete workflow gate.
+          return blockReasons(row).length === 0;
         }
         return false;
       }).slice(0, safeLimit);
@@ -290,6 +290,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
  */
 function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
+  if (!row.supplier_product_id || !row.supplier_variant_id) reasons.push("supplier_variant_missing");
   if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
   if (!isPublishableCatalogDescription(row.description)) reasons.push("catalog_description_not_publishable");
   // Publication is a catalog operation. Do not hide a profitable, precisely
