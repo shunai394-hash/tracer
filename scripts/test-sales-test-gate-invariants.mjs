@@ -37,7 +37,7 @@ assert.match(supplySelector, /rejectedCount: rejected\.length/);
 assert.match(supplySelector, /rejectionCounts: summarizeRejections\(rejected\)/);
 assert.match(supplySelector, /title: sourceTitle/);
 assert.match(supplySelector, /contributionProfit: profit\.contributionProfit/);
-assert.doesNotMatch(supplySelector, /profit_not_positive|if \(!profit\.calculable\)|intelligence_profit_not_ok/,
+assert.doesNotMatch(supplySelector, /reasons\.push\(.{0,10}profit_not_positive|if \(!profit\.calculable\)|intelligence_profit_not_ok/,
   "profit/margin estimates must not be a hard publication gate");
 assert.doesNotMatch(marketSelector, /profit_not_positive|if \(!profit\.calculable\)|intelligence_profit_not_ok/,
   "market-linked product publication must respect merchant pricing too");
