@@ -119,6 +119,8 @@ assert.doesNotMatch(baseRepair, /\.update\(\{[^}]*published\s*:/, "BASE identity
 assert.doesNotMatch(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/, "use the guarded GitHub Actions reconciliation schedule without a duplicate Vercel cron");
 assert.doesNotMatch(vercel, /"path": "\/api\/cron\/(market-sourcing|supplier-investigation|demand-match)"/, "marketplace-derived collection and matching must not run as sourcing jobs");
 assert.match(intelligencePipeline, /marketplace_sourcing_disabled_supplier_native_only/, "patrol must not read marketplace-derived sourcing data");
+assert.doesNotMatch(vercel, /"path": "\/api\/cron\/newfind-retry"/, "out-of-scope NEWFIND retries must not run in the three-site workflow");
+assert.match(intelligencePipeline, /marketplace_sourcing_disabled_supplier_native_only/, "marketplace candidates must not feed publication");
 assert.match(unpublishWorkflow, /cron: "\*\/15 \* \* \* \*"/, "guarded unlinked listing reconciliation must retry every 15 minutes via GitHub Actions");
 assert.match(unpublishWorkflow, /api\/cron\/unpublish-unlinked/);
 assert.match(unpublishWorkflow, /id-token: write/);
