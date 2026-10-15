@@ -3,10 +3,6 @@
   "buildCommand": "npm run build",
   "crons": [
     {
-      "path": "/api/cron/supplier-investigation",
-      "schedule": "5 12 * * *"
-    },
-    {
       "path": "/api/cron/cj-variant-repair",
       "schedule": "7 12 * * *"
     },
