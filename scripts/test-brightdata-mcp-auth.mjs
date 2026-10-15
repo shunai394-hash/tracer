@@ -38,6 +38,9 @@ assert.match(ingestRoute, /requireAutomationAuth\(request\)/, "Bright Data inges
 assert.ok(ingestRoute.indexOf("requireAutomationAuth(request)") < ingestRoute.indexOf("searchGoogleProducts(query)"),
   "authorization must be checked before calling the paid MCP provider or persisting products");
 assert.match(ingestRoute, /result\.products\.slice\(0, 30\)/, "each ingest call must have a bounded database-write batch");
+assert.match(ingestRoute, /persistBrightDataProducts\(result\.query, candidates, result\.provider\)/,
+  "the actual transport must be passed into persistence");
+assert.match(persistence, /provider_family: PROVIDER/, "the persisted offer must preserve transport provenance separately from provider family");
 assert.match(collector, /candidate\.name === "scrape_as_html"/, "marketplace detail pages must use MCP raw HTML for child-variant parsing");
 assert.match(collector, /Bright Data MCP raw HTML tool is unavailable/, "do not silently claim collection succeeded when MCP HTML and API fallback are unavailable");
 assert.match(client, /mcp\.brightdata\.com\/mcp\?pro=1/, "default hosted endpoint must expose advanced scraping tools");
