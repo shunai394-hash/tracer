@@ -22,5 +22,5 @@ assert.doesNotMatch(investigation, /searchOrosyProducts|getOrosyProductDetail|ge
 assert.doesNotMatch(envExample, /OROSY_/, "Orosy secrets must not be part of the example runtime configuration");
 assert.ok(envConfig.includes('if (name === "orosy") return false;'), "Orosy must be treated as unconfigured");
 assert.ok(envConfig.includes('if (key === "OROSY") return false;'), "Orosy live and automatic ordering must stay disabled");
-assert.ok(envConfig.includes("export function isOrosyLiveOrderingEnabled(): boolean {\\n  return false;"), "legacy Orosy live-ordering helper must be hard-disabled");
-console.log("Orosy removal policy: 8 assertions passed");
+assert.match(envConfig, /export function isOrosyLiveOrderingEnabled\(\): boolean \{\s+return false;/, "legacy Orosy live-ordering helper must be hard-disabled");
+console.log("Orosy removal policy: 11 assertions passed");
