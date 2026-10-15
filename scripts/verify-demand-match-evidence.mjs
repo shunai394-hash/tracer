@@ -94,6 +94,11 @@ test("canonical marketplace variant diagnostics", "distinguishes missing Product
     inProductGroupWithIdCount: 0,
     childProductsWithExplicitParentRelation: 0,
     absoluteTypeIriCount: 2,
+    jsonLdScriptTagCount: 1,
+    jsonLdParseFailureCount: 0,
+    dimensionToAsinMapMarkerCount: 0,
+    variationMapMarkerCount: 0,
+    twisterDataMarkerCount: 0,
   });
   assert.deepEqual(inspectCanonicalMarketplaceVariantMarkup("<html></html>"), {
     jsonLdNodeCount: 0,
@@ -105,6 +110,11 @@ test("canonical marketplace variant diagnostics", "distinguishes missing Product
     inProductGroupWithIdCount: 0,
     childProductsWithExplicitParentRelation: 0,
     absoluteTypeIriCount: 0,
+    jsonLdScriptTagCount: 0,
+    jsonLdParseFailureCount: 0,
+    dimensionToAsinMapMarkerCount: 0,
+    variationMapMarkerCount: 0,
+    twisterDataMarkerCount: 0,
   });
 });
 
@@ -140,19 +150,19 @@ test("canonical marketplace variant evidence", "does not infer identity from an 
 
 
 
-test("Amazon child variation map", "extracts explicit child ASINs from object and JSON-string maps and excludes the parent ASIN", () => {
+test("Amazon child variation map", "extracts only explicit child ASINs and excludes the parent ASIN", () => {
   const html = '<script>var dimensionValuesDisplayData = {"B0CHILD001":["Blue","Small"],"B0CHILD002":["Red","Large"],"B0PARENT01":["Parent"]};</script>';
   const variants = parseAmazonVariationAsinMap(html, "https://www.amazon.co.jp/dp/B0PARENT01");
   assert.deepEqual(variants, [
     { asin: "B0CHILD001", variationValues: ["Blue", "Small"] },
     { asin: "B0CHILD002", variationValues: ["Red", "Large"] },
   ]);
+  // Legacy localized pages may JSON-encode the variation map as a quoted string.
   const encodedMap = JSON.stringify({ B0CHILD003: ["Green", "Medium"], B0PARENT01: ["Parent"] });
   const encodedHtml = '<script>var dimensionValuesDisplayData = ' + JSON.stringify(encodedMap) + ';</script>';
-  assert.deepEqual(
-    parseAmazonVariationAsinMap(encodedHtml, "https://www.amazon.co.jp/dp/B0PARENT01"),
-    [{ asin: "B0CHILD003", variationValues: ["Green", "Medium"] }],
-  );
+  assert.deepEqual(parseAmazonVariationAsinMap(encodedHtml, "https://www.amazon.co.jp/dp/B0PARENT01"), [
+    { asin: "B0CHILD003", variationValues: ["Green", "Medium"] },
+  ]);
   assert.deepEqual(parseAmazonVariationAsinMap("<html></html>", "https://www.amazon.co.jp/dp/B0PARENT01"), []);
 });
 

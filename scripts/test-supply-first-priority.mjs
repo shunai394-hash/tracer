@@ -35,3 +35,8 @@ assert.match(cronRoute, /quotaBlocked: supplyFirst\.quotaBlocked === true/, "quo
 assert.match(cronRoute, /retryAfter: typeof supplyFirst\.retryAfter === "string"/, "the audit record must retain the next retry time without logging credentials");
 
 console.log("supply-first dedicated-cron ownership checks passed");
+
+
+// Market evidence must stay separate from supplier-native discovery and sales eligibility.
+assert.match(source, /marketplace_sourcing_disabled_supplier_native_only/);
+assert.doesNotMatch(source, /writeMarketCursor|persistMarketplaceBestsellers/);
