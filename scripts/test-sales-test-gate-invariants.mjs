@@ -14,14 +14,15 @@ for (const [name, result] of checks) {
   console.log(`${name} invariants: ${result.cases.length} cases passed`);
 }
 
-// This script runs directly in Node before the Next build. Keep the profit
-// guard check static because simulate-profit.ts uses a Next/TS path alias.
-const [profit, supplySelector, marketSelector, publicationRoute, diagnosticWorkflow] = await Promise.all([
+// This script runs directly in Node before the Next build. Keep pricing and
+// publication-gate contracts static because simulate-profit.ts uses a Next/TS path alias.
+const [profit, supplySelector, marketSelector, publicationRoute, diagnosticWorkflow, shopifySync] = await Promise.all([
   readFile(new URL("../lib/intelligence/simulate-profit.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/market/select-sales-tests.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/cron/sales-test-publication/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../.github/workflows/tracer-shopify-auth-check.yml", import.meta.url), "utf8"),
+  readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8"),
 ]);
 assert.match(profit, /requireDomesticShipping === true && args\.domesticShipping == null/);
 assert.match(profit, /unknown\("domestic_shipping_unknown"\)/);
@@ -30,12 +31,18 @@ assert.match(supplySelector, /requireDomesticShipping: !nativeCjSupplyIdentity/)
 assert.equal(isPublishableCatalogTitle("トレンド・seeded_dueアイテム"), false);
 assert.equal(isPublishableCatalogTitle("Aroma Filter"), true);
 assert.match(supplySelector, /generic_non_merchandisable_title/);
-assert.doesNotMatch(supplySelector, /product_master_title_not_publishable|product_master_title_missing/);
+assert.doesNotMatch(supplySelector, /reasons\.push\(.{0,10}profit_not_positive|if \(!profit\.calculable\)|intelligence_profit_not_ok/, "profit/margin estimates must not be a hard publication gate");
 assert.match(marketSelector, /requireDomesticShipping: true/);
 assert.match(supplySelector, /rejectedCount: rejected\.length/);
 assert.match(supplySelector, /rejectionCounts: summarizeRejections\(rejected\)/);
 assert.match(supplySelector, /title: sourceTitle/);
 assert.match(supplySelector, /contributionProfit: profit\.contributionProfit/);
+assert.doesNotMatch(supplySelector, /reasons\.push\(.{0,10}profit_not_positive|if \(!profit\.calculable\)|intelligence_profit_not_ok/,
+  "profit/margin estimates must not be a hard publication gate");
+assert.doesNotMatch(marketSelector, /profit_not_positive|if \(!profit\.calculable\)|intelligence_profit_not_ok/,
+  "market-linked product publication must respect merchant pricing too");
+assert.doesNotMatch(shopifySync, /profit_not_positive|margin_not_positive/,
+  "Shopify sync must not block solely because a merchant-selected price has low/negative margin");
 assert.match(supplySelector, /const rejectedSamples = rejected\.slice\(0, 50\)/, "rejection samples must not prioritize a removed women-only gate");
 assert.match(publicationRoute, /Math\.min\(500, Math\.floor\(requestedDryRunLimit\)\)/);
 assert.match(publicationRoute, /\.slice\(0, dryRunLimit\)/);

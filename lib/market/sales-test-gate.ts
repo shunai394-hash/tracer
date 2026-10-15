@@ -41,8 +41,11 @@ function isNonPhysicalProductTitle(title: string | null): boolean {
   return NON_PHYSICAL_TITLE_PATTERNS.some((pattern) => pattern.test(title));
 }
 
-export function evaluateSalesTestGate(input: SalesTestGateInput): { eligible: boolean; reasons: string[] } {
+export type SalesTestGateResult = { eligible: boolean; reasons: string[]; warnings: string[] };
+
+export function evaluateSalesTestGate(input: SalesTestGateInput): SalesTestGateResult {
   const reasons: string[] = [];
+  const warnings: string[] = [];
   if ((input.requireRank ?? true) && input.rank === null) reasons.push("rank_unknown");
   if (!input.title) reasons.push("title_unknown");
   else if (!isJapaneseProductTitle(input.title)) reasons.push("japanese_title_required");
@@ -57,15 +60,18 @@ export function evaluateSalesTestGate(input: SalesTestGateInput): { eligible: bo
   else if (!Number.isFinite(input.shippingCost) || input.shippingCost < 0) reasons.push("shipping_invalid");
   if (input.trackingAvailable !== true) reasons.push("tracking_unknown");
   if (input.apiAvailable !== true) reasons.push("supplier_api_unknown");
-  if (!input.profitCalculable || input.currencyMismatch) reasons.push("profit_unknown");
-  if (input.contributionProfit === null || !Number.isFinite(input.contributionProfit) || input.contributionProfit <= 0) reasons.push("profit_not_positive");
+  // Margin is information for the merchant's pricing decision, not a listing
+  // veto. Actual supplier order execution retains its separate safety gates.
+  if (!input.profitCalculable || input.currencyMismatch) warnings.push("profit_unknown");
+  if (input.contributionProfit === null || !Number.isFinite(input.contributionProfit)) warnings.push("profit_amount_unknown");
+  else if (input.contributionProfit <= 0) warnings.push("profit_not_positive");
   if (input.priceConfirmed !== undefined && input.priceConfirmed !== true) reasons.push("price_unconfirmed");
   if (input.inventoryConfirmed !== undefined && input.inventoryConfirmed !== true) reasons.push("inventory_unknown");
   if (input.inventory !== undefined && (input.inventory === null || !Number.isFinite(input.inventory) || input.inventory <= 0)) reasons.push("inventory_zero");
   if (input.orderable !== undefined && input.orderable !== true) reasons.push("supplier_not_orderable");
   if (input.supplierProductId !== undefined && !input.supplierProductId) reasons.push("supplier_product_unknown");
   if (input.supplierVariantId !== undefined && !input.supplierVariantId) reasons.push("supplier_variant_unknown");
-  return { eligible: reasons.length === 0, reasons };
+  return { eligible: reasons.length === 0, reasons, warnings };
 }
 
 export function verifySalesTestGateInvariants(): { ok: boolean; cases: Array<{ name: string; expected: boolean; actual: boolean }> } {
@@ -77,15 +83,17 @@ export function verifySalesTestGateInvariants(): { ok: boolean; cases: Array<{ n
   const invalidEconomics = evaluateSalesTestGate({ ...supplyReadyInput(), sourceCost: -1, shippingCost: -1, requireRank: false });
   const giftCard = evaluateSalesTestGate({ ...supplyReadyInput(), title: "Amazon Gift Card", requireRank: false });
   const unknownProfit = evaluateSalesTestGate({ ...supplyReadyInput(), contributionProfit: null, requireRank: false });
+  const negativeProfit = evaluateSalesTestGate({ ...supplyReadyInput(), contributionProfit: -250, requireRank: false });
   const cases = [
     { name: "complete_observed_product_is_eligible", expected: true, actual: ready.eligible },
     { name: "english_title_is_not_eligible", expected: true, actual: englishTitle.eligible === false && englishTitle.reasons.includes("japanese_title_required") },
     { name: "supply_ready_is_eligible_without_market_rank", expected: true, actual: supplyReady.eligible },
     { name: "supply_zero_inventory_is_blocked", expected: true, actual: supplyInventoryBlocked.eligible === false && supplyInventoryBlocked.reasons.includes("inventory_zero") },
     { name: "zero_price_is_blocked", expected: true, actual: invalidPrice.eligible === false && invalidPrice.reasons.includes("selling_price_invalid") },
-    { name: "negative_economics_are_blocked", expected: true, actual: invalidEconomics.eligible === false && invalidEconomics.reasons.includes("source_cost_invalid") && invalidEconomics.reasons.includes("shipping_invalid") },
+    { name: "negative_costs_are_blocked", expected: true, actual: invalidEconomics.eligible === false && invalidEconomics.reasons.includes("source_cost_invalid") && invalidEconomics.reasons.includes("shipping_invalid") },
     { name: "gift_card_is_blocked", expected: true, actual: giftCard.eligible === false && giftCard.reasons.includes("non_physical_product") },
-    { name: "unknown_contribution_profit_is_blocked", expected: true, actual: unknownProfit.eligible === false && unknownProfit.reasons.includes("profit_not_positive") },
+    { name: "unknown_profit_warns_without_blocking_listing", expected: true, actual: unknownProfit.eligible && unknownProfit.warnings.includes("profit_amount_unknown") },
+    { name: "negative_profit_warns_without_blocking_listing", expected: true, actual: negativeProfit.eligible && negativeProfit.warnings.includes("profit_not_positive") },
   ];
   return { ok: cases.every((item) => item.actual === item.expected), cases };
 }

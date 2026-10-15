@@ -69,6 +69,13 @@ assert.equal(calculateSupplySellingPriceJpy({
   ...fees,
 }), 5200, "merchant-selected price above the target margin is preserved");
 assert.equal(calculateSupplySellingPriceJpy({
+  existingSellingPriceJpy: 2499.5,
+  sourceCost: 10,
+  shippingCost: 4,
+  sourceFxRateToSelling: 150,
+  ...fees,
+}), 2499.5, "merchant-selected fractional price is preserved exactly");
+assert.equal(calculateSupplySellingPriceJpy({
   existingSellingPriceJpy: 2500,
   sourceCost: 10,
   shippingCost: null,
