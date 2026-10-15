@@ -193,11 +193,11 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
     return { fetchedAt, marketplaces: [], itemCount: 0, sourceIndex: requestedSourceIndex };
   }
 
-  // Probe up to three sources per patrol in priority order. A blocked or
-  // layout-drifted ranking page must not burn an entire 15-minute cycle while
-  // a later source (e.g. Rakuten) may still return usable products. Fetch the
-  // bounded probe set concurrently, then select the first source with parsed
-  // items so the persisted cursor resumes at the source that actually worked.
+  // Probe up to three sources per patrol in priority order. Yahoo/Rakuten are
+  // retained as demand observations, but they cannot end a child-variant
+  // identity pass: only Amazon sources (index >= 2) are eligible to terminate
+  // the probe. Otherwise a non-empty Rakuten ranking hides the Amazon detail
+  // pages and every patrol reports zero canonical child variants.
   const collectedSources = await Promise.all(
     sourceEntries.map(async ({ source, sourceIndex }) => {
       try {
@@ -260,7 +260,7 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
         skipped: items.length === 0,
         reason: items.length === 0 ? "ranking_html_returned_zero_items" : undefined,
       });
-      if (items.length > 0 && hasExplicitSourceIndex) break;
+      if (items.length > 0 && hasExplicitSourceIndex && currentSourceIndex >= 2) break;
     } catch (error) {
       if (error instanceof BrightDataConfigError) {
         marketplaces.push({
