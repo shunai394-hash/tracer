@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { BrightDataProductCandidate } from "@/lib/sources/brightdata/client";
+import type { BrightDataProductCandidate, BrightDataSearchResult } from "@/lib/sources/brightdata/client";
 import { assessCurrencyConfidence } from "@/lib/intelligence/currency-confidence";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -71,6 +71,7 @@ function validHttpUrl(value: string | null): string | null {
 export async function persistBrightDataProducts(
   query: string,
   candidates: BrightDataProductCandidate[],
+  provider: BrightDataSearchResult["provider"],
 ): Promise<PersistResult> {
   const supabase = createSupabaseAdminClient();
 
@@ -264,6 +265,7 @@ export async function persistBrightDataProducts(
         source_type: SOURCE_TYPE,
         raw_data: {
           query,
+          provider,
           title: candidate.title,
           price: candidate.price,
           currency: candidate.currency,
