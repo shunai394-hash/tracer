@@ -1,0 +1,80 @@
+name: One-time CJ sandbox order lifecycle proof
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  cj-sandbox-order-test:
+    if: contains(github.event.head_commit.message, '[run-cj-sandbox-order-test]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait for production to include this commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          OIDC_TOKEN="$(curl -sSf --max-time 20 \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          for i in $(seq 1 18); do
+            sha="$(curl -sS --max-time 10 -H "Authorization: Bearer $OIDC_TOKEN" \
+              "$BASE/api/intelligence/pipeline-audit" \
+              | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            git fetch --no-tags origin main
+            if git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              echo "Production is on descendant commit $sha; the sandbox route is included."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Production does not include this commit; refusing to create a sandbox order."
+          exit 1
+
+      - name: Create exactly one CJ sandbox order and verify simulated payment/tracking
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          OIDC_TOKEN="$(curl -sSf --max-time 20 \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl -sS -o sandbox-report.json -w "%{http_code}" --max-time 180 \
+            -X POST \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"supplierListingId":"dcff8b2d-fd38-4d69-923e-2121635a24e4"}' \
+            "$BASE/api/cron/cj-sandbox-order-test" || true)"
+          echo "CJ sandbox lifecycle HTTP $code"
+          python3 - <<'PY'
+          import json,sys
+          with open("sandbox-report.json", encoding="utf-8") as f:
+              r=json.load(f)
+          safe={k:r.get(k) for k in ("ok","phase","supplierListingId","supplierOrderId","status","trackingNumber","paymentConfirmed","sandbox","charged","realFulfillment","error")}
+          print(json.dumps(safe,ensure_ascii=False))
+          if not (
+              r.get("ok") is True
+              and r.get("sandbox") is True
+              and r.get("charged") is False
+              and r.get("realFulfillment") is False
+              and r.get("paymentConfirmed") is True
+              and bool(r.get("supplierOrderId"))
+              and bool(r.get("trackingNumber"))
+          ):
+              sys.exit(1)
+          PY
+          test "$code" = "200"
