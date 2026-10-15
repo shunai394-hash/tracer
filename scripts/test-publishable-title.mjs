@@ -118,6 +118,18 @@ const candidateTitles = [
   ["soft toothbrush", "Micron Soft Toothbrush", "Micron ソフト歯ブラシ"],
   ["holiday door frame", "Wooden Door I Saw That Jesus Head Funny Home Decor Frame Ornament AND Merry Christmas Door Frame Decoration Santa Claus Elk", "クリスマス ドアフレーム飾り"],
 
+  ["chair cushion", "Sedentary Backrest Integrated Chair Cushion Seat Cushion", "背もたれ一体型 チェアクッション"],
+  ["nordic sofa cushion", "Nordic Pillows Cushions Home Decor Pillows Decorative Living Room Office Cushion Decorative Cushions For Sofa", "北欧風 ソファクッション"],
+  ["silicone drain catcher", "Sink Drain Strainer Hair Catchers Rubber Shower Bathtub Floor Filter Water Stopper Silicone Bathroom Kitchen Deodorant Plug", "排水口用 シリコンヘアキャッチャー"],
+  ["highlighter set", "25 Colors Double Head Highlighter Pen Mildliner Colors Fluorescent Highlighters Art Marker School Office", "両頭蛍光マーカー 25色セット"],
+  ["waterproof mouse pad", "Competitive Gaming Office Waterproof Mouse Pad", "防水 ゲーミングマウスパッド"],
+  ["foot hammock", "Office Leg And Foot Hammock Long-Distance Travel Foot Fatigue Relief Tool Airplane Travel Foot Hammock", "オフィス・旅行用 フットレストハンモック"],
+  ["electric kitchen scrubber", "Kitchen Supplies Multifunctional Brush Electric Scrubber Rechargeable Dishwashing Brush Automatic Range Hood Stove", "充電式 電動キッチンクリーナー"],
+  ["nylon grinding wheel", "T-type Fiber Grinding Head Nylon Wheel Grinding Disc", "T型 ナイロン研磨ホイール"],
+  ["insulated lunch tote", "Soft Lightweight Insulated Office Lunch Tote", "保冷ランチトートバッグ"],
+  ["laundry set", "Laundry &cleansing Set", "ランドリー・洗濯用品セット"],
+  ["rice storage container", "Rice Bucket Automatic Out Household Food Grade Insect Proof", "防虫仕様 米びつ保存容器"],
+  ["compact humidifier", "Household Capacity Mute Mini Office Humidification", "静音 コンパクト加湿器"],
 ];
 for (const [name, source, expected] of candidateTitles) {
   const title = localizeProductTitle(source);
