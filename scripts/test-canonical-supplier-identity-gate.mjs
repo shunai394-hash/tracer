@@ -125,7 +125,7 @@ assert.doesNotMatch(vercel, /"path": "\/api\/cron\/(market-sourcing|supplier-inv
 assert.match(intelligencePipeline, /marketplace_sourcing_disabled_supplier_native_only/, "patrol must not read marketplace-derived sourcing data");
 assert.doesNotMatch(vercel, /"path": "\/api\/cron\/newfind-retry"/, "out-of-scope NEWFIND retries must not run in the three-site workflow");
 assert.match(intelligencePipeline, /marketplace_sourcing_disabled_supplier_native_only/, "marketplace candidates must not feed publication");
-assert.match(unpublishWorkflow, /cron: "\*\/15 \* \* \* \*"/, "guarded unlinked listing reconciliation must retry every 15 minutes via GitHub Actions");
+assert.match(unpublishWorkflow, /cron: "\\*\\/5 \\* \\* \\* \\*"/, "guarded unlinked listing reconciliation must retry every five minutes via GitHub Actions");
 assert.match(unpublishWorkflow, /api\/cron\/unpublish-unlinked/);
 assert.match(unpublishWorkflow, /id-token: write/);
 assert.match(unpublishWorkflow, /timeout-minutes: 13/);
