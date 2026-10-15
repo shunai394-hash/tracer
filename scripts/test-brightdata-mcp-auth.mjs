@@ -5,6 +5,7 @@ const env = await readFile(new URL("../lib/config/env.ts", import.meta.url), "ut
 const client = await readFile(new URL("../lib/sources/mcp/client.ts", import.meta.url), "utf8");
 const remote = await readFile(new URL("../lib/sources/mcp/remote-client.ts", import.meta.url), "utf8");
 const ingestRoute = await readFile(new URL("../app/api/intelligence/brightdata-ingest/route.ts", import.meta.url), "utf8");
+const persistence = await readFile(new URL("../lib/tracer/persist-brightdata.ts", import.meta.url), "utf8");
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 const collector = await readFile(new URL("../lib/sources/brightdata/client.ts", import.meta.url), "utf8");
 
@@ -20,11 +21,17 @@ assert.match(collector, /consumer\.listTools\(\)/, "product collection must disc
 assert.match(collector, /consumer\.callTool\(call\)/, "product collection must invoke a discovered Bright Data MCP tool");
 assert.match(collector, /provider: "brightdata_mcp"/, "ingest results must identify successful MCP-backed collection");
 assert.match(collector, /export function isBrightDataFetchConfigured\(\): boolean/);
+assert.match(collector, /function normalizeCurrency\(/, "Google Shopping currency must be preserved rather than inferred as USD");
+assert.match(collector, /currency: string \| null/);
 assert.match(collector, /candidate\.name === "scrape_as_html"/, "marketplace detail pages must use MCP raw HTML for child-variant parsing");
 assert.match(collector, /Bright Data MCP raw HTML tool is unavailable/, "do not silently claim collection succeeded when MCP HTML and API fallback are unavailable");
 assert.match(client, /mcp\.brightdata\.com\/mcp\?pro=1/, "default hosted endpoint must expose advanced scraping tools");
 assert.match(ingestRoute, /requireAutomationAuth\(request\)/, "Bright Data ingest writes must require automation authentication");
 assert.ok(ingestRoute.indexOf("requireAutomationAuth(request)") < ingestRoute.indexOf("searchGoogleProducts(query)"),
   "authorization must be checked before calling the paid MCP provider or persisting products");
+assert.match(ingestRoute, /result\.products\.slice\(0, 30\)/, "each ingest call must have a bounded database-write batch");
+assert.match(persistence, /candidate\.currency/, "persistence must use source-provided currency");
+assert.match(persistence, /const amount = currency \? parsedAmount : null/, "unknown-currency amounts must not enter normalized prices");
+assert.doesNotMatch(persistence, /currency:\s*"USD"/, "Japanese Google Shopping prices must never be hardcoded as USD");
 assert.match(packageJson.scripts.prebuild, /test:brightdata-mcp-auth/);
 console.log("Bright Data MCP auth and product-collection contract checks passed");
