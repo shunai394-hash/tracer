@@ -17,6 +17,7 @@ assert.match(discovery, /retryAfter: quotaBlockedUntil/, "the caller must receiv
 assert.match(discovery, /seededVerificationLimit = Math\.min\(5, Math\.max\(0, limit\)\)/, "a bounded batch of due supplier variants must be refreshed before new catalog discovery");
 assert.match(discovery, /const catalogDiscoveryLimit = Math\.max\(0, limit - seededChecked\)/, "seeded refresh attempts must consume the shared bounded run budget");
 assert.match(discovery, /catalogDiscovered < catalogDiscoveryLimit/, "new catalog discovery must use only the remaining per-run candidate budget");
+assert.match(discovery, /let catalogAttempted = 0;[\s\S]*?if \(catalogAttempted >= catalogDiscoveryLimit[\s\S]*?catalogAttempted \+= 1;/, "rejected or unavailable new candidates must still consume the bounded attempt budget");
 assert.match(discovery, /const seededVariant = seededVariants\.find\(\(item\) => item\.vid === candidate\.variantId\)/, "refresh must confirm the exact live CJ product/variant pair");
 assert.match(discovery, /const liveCost = Number\(seededVariant\.sellPrice\)/, "refresh must use current exact-variant price, not stale stored cost");
 console.log("supply-first dedicated-cron ownership checks passed");
