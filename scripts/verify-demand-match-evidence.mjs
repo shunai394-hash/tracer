@@ -94,6 +94,11 @@ test("canonical marketplace variant diagnostics", "distinguishes missing Product
     inProductGroupWithIdCount: 0,
     childProductsWithExplicitParentRelation: 0,
     absoluteTypeIriCount: 2,
+    jsonLdScriptTagCount: 1,
+    jsonLdParseFailureCount: 0,
+    variationMapMarkerCount: 0,
+    dimensionToAsinMapMarkerCount: 0,
+    twisterDataMarkerCount: 0,
   });
   assert.deepEqual(inspectCanonicalMarketplaceVariantMarkup("<html></html>"), {
     jsonLdNodeCount: 0,
@@ -105,6 +110,11 @@ test("canonical marketplace variant diagnostics", "distinguishes missing Product
     inProductGroupWithIdCount: 0,
     childProductsWithExplicitParentRelation: 0,
     absoluteTypeIriCount: 0,
+    jsonLdScriptTagCount: 0,
+    jsonLdParseFailureCount: 0,
+    variationMapMarkerCount: 0,
+    dimensionToAsinMapMarkerCount: 0,
+    twisterDataMarkerCount: 0,
   });
 });
 
