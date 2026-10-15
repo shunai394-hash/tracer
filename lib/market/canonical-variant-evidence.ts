@@ -40,6 +40,21 @@ function collectDimensionStrings(value: unknown): string[] {
 }
 
 function extractBalancedJsonObject(source: string, start: number): { value: unknown; end: number } | null {
+  // Some Amazon templates serialize a variation map as a JSON string instead
+  // of an object literal. Parse the quoted value, then decode its JSON payload.
+  if (source[start] === '"') {
+    let escaped = false;
+    for (let i = start + 1; i < source.length; i += 1) {
+      const char = source[i];
+      if (escaped) escaped = false;
+      else if (char === "\\\\") escaped = true;
+      else if (char === '"') {
+        try { return { value: JSON.parse(source.slice(start, i + 1)), end: i + 1 }; }
+        catch { return null; }
+      }
+    }
+    return null;
+  }
   if (source[start] !== "{") return null;
   let depth = 0;
   let inString = false;
@@ -416,7 +431,13 @@ export function parseAmazonVariationAsinMap(
       const extracted = extractBalancedJsonObject(html, start);
       if (!extracted) continue;
       pattern.lastIndex = extracted.end;
-      const record = asRecord(extracted.value);
+      let decodedValue: unknown = extracted.value;
+      // Double-encoded variation maps occur on some localized Amazon templates.
+      // Decode at most twice and accept only explicit JSON maps.
+      for (let decodeAttempt = 0; decodeAttempt < 2 && typeof decodedValue === "string"; decodeAttempt += 1) {
+        try { decodedValue = JSON.parse(decodedValue) as unknown; } catch { break; }
+      }
+      const record = asRecord(decodedValue);
       if (!record) continue;
       for (const [rawKey, rawValues] of Object.entries(record)) {
         if (name === "dimensionToAsinMap") {
