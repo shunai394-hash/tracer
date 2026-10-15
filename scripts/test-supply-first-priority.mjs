@@ -3,6 +3,7 @@ import fs from "node:fs";
 
 const source = fs.readFileSync(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
 const discovery = fs.readFileSync(new URL("../lib/suppliers/discover-cj-supply.ts", import.meta.url), "utf8");
+const cronRoute = fs.readFileSync(new URL("../app/api/cron/supply-first/route.ts", import.meta.url), "utf8");
 const supplyFirst = source.indexOf('const supplyFirstStep');
 const marketplace = source.indexOf('runStep("bestsellers"');
 assert.ok(supplyFirst >= 0, "supply-first discovery step must exist");
@@ -25,5 +26,11 @@ assert.match(discovery, /catalogDiscoveryLimit = Math\.max\(0, limit - seededChe
 assert.match(discovery, /catalogDiscovered < catalogDiscoveryLimit/, "new catalog discovery must use only the remaining per-run candidate budget");
 
 assert.match(discovery, /api_available: preserveVerifiedOrderPath[\s\S]*?orderable: preserveVerifiedOrderPath[\s\S]*?tracking_available: preserveVerifiedOrderPath/, "new candidates must not inherit an existing supplier order path");
+assert.match(cronRoute, /job_name: "supply-first"/, "the dedicated supplier cron must write an auditable run record");
+assert.match(cronRoute, /status: "running"/);
+assert.match(cronRoute, /status: "succeeded"/);
+assert.match(cronRoute, /status: "failed"/);
+assert.match(cronRoute, /quotaBlocked: supplyFirst\.quotaBlocked === true/, "quota cooldowns must be distinguishable from successful product discovery");
+assert.match(cronRoute, /retryAfter: typeof supplyFirst\.retryAfter === "string"/, "the audit record must retain the next retry time without logging credentials");
 
 console.log("supply-first dedicated-cron ownership checks passed");
