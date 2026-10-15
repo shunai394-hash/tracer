@@ -34,6 +34,7 @@ for (const [name, title, expected] of cases) {
 
 assert.equal(localizeProductTitle("Simple Oil Wax Leather Messenger Shoulder Bags Women's High Capacity Portable Tote Bag"), "レディース ショルダーバッグ");
 assert.equal(localizeProductTitle("Portable Cosmetic Bag Waterproof Divider Multi-grid Pockets Toiletry Bags Travel Storage Handbags Women Make Up Bag"), "仕切り付き コスメポーチ");
+assert.equal(localizeProductTitle("Facial Spot Scanning Machine Mini Home Mole Spotting Apparatus"), "家庭用 フェイススポットケア機器");
 assert.equal(localizeProductTitle("Fashion And Nature Phoera Eyebrow Cream 6 Colors (Fashion And Nature Phoera Eyebrow Cream 6 Colors 01Blonde)"), "PHOERA アイブロウクリーム 01 ブロンド");
 assert.equal(localizeProductTitle("Ceramic Ashtray Home Bedroom Dormitory Office"), "セラミック製 卓上灰皿");
 assert.equal(localizeProductTitle("BathroomMobile Phone Box WaterproofStand Toilet Storage Artifact Toilet Bath Rack Kitchen Chase Drama Watching TV"), "防水ケース付き バスルーム用スマホホルダー");
