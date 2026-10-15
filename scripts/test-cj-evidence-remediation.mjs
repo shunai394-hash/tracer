@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const source = await readFile(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
+const identitySource = await readFile(new URL("../lib/intelligence/persist-cj-supply-intelligence.ts", import.meta.url), "utf8");
 const checks = [
   ["exact shop-listing supplier tuples are queried before supplier-only rows", /select\("product_id,supplier_name,supplier_product_id,supplier_variant_id"\)[\s\S]{0,1200}partitionByExactShopListing/],
   ["matched shop-listing suppliers are selected before supplier-only candidates", /const prioritizedRegularRows = \[\.\.\.matchedWomens, \.\.\.matchedOther, \.\.\.unmatchedWomens, \.\.\.unmatchedOther\]/],
@@ -29,6 +30,12 @@ const checks = [
   ["incomplete evidence cannot flow into the canonical persistence step", /if \(!priceVerified \|\| cost === null \|\| shippingCost === null \|\| !shippingQuoteVerified \|\| !inventoryVerified \|\| inventory === null \|\| fxRate === null \|\| sellingPriceJpy === null \|\| !imageUrl\)/],
 ];
 for (const [name, pattern] of checks) assert.match(source, pattern, name);
+assert.match(identitySource, /const freshVariantBarcode = await readSupplierBarcode\(/, "persistence must make one fresh exact-variant barcode lookup");
+assert.match(identitySource, /resolveMarketplaceIdentityFromBarcode\([\s\S]{0,400}freshVariantBarcode/, "the same live barcode must feed identity matching");
+assert.match(identitySource, /variant_barcode: freshVariantBarcode/, "persisted metadata must reuse the exact fresh barcode instead of issuing another CJ request");
+const persistBody = identitySource.slice(identitySource.indexOf("export async function persistCjSupplyIntelligence"));
+assert.equal((persistBody.match(/readSupplierBarcode\(/g) ?? []).length, 1, "persistence must perform only one fresh barcode lookup per candidate");
+
 const policy = verifyCjIdentityReverifyPolicyInvariants();
 assert.equal(policy.ok, true, JSON.stringify(policy.cases.filter((item) => item.actual !== item.expected)));
 console.log(`CJ evidence recovery: ${checks.length} source invariants and policy invariants passed`);

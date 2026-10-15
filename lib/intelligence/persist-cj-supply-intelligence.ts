@@ -41,10 +41,10 @@ async function readSupplierBarcode(args: { supplierProductId: string; supplierVa
   return "";
 }
 
-export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<MarketplaceIdentity | null> {
-  // Identity must be proven by a fresh barcode returned for this exact supplier variant.
-  // Never use parent-product MPN, title, or a caller-supplied stale barcode as a substitute.
-  const barcode = normalizeBarcode(await readSupplierBarcode(args));
+async function resolveMarketplaceIdentityFromBarcode(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string }, freshBarcode: string): Promise<MarketplaceIdentity | null> {
+  // Callers must supply only the result of readSupplierBarcode from this same request.
+  // This keeps live evidence fresh without making a second quota-consuming CJ API lookup.
+  const barcode = normalizeBarcode(freshBarcode);
   const barcodeIds = identifiersFromRecord({ gtin: barcode, jan: barcode, ean: barcode, upc: barcode });
   const validBarcode = pickSupplierBarcodeIdentifier(barcodeIds);
   if (!validBarcode) return null;
@@ -156,11 +156,22 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
   };
 }
 
+export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<MarketplaceIdentity | null> {
+  // Always fetch from CJ for this exact variant; caller-provided identifiers may be stale.
+  const freshBarcode = await readSupplierBarcode(args);
+  return resolveMarketplaceIdentityFromBarcode(args, freshBarcode);
+}
+
 export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntelligenceArgs, options: { identity?: MarketplaceIdentity | null } = {}): Promise<{ offerId: string | null; intelligenceId: string | null; identity: MarketplaceIdentity | null }> {
   const supabase = createSupabaseAdminClient();
   const now = new Date().toISOString();
   const currencyAssessment = assessCurrencyConfidence({ currency: "USD", price: args.cost, provider: "cj" });
-  const marketplaceIdentity = options.identity !== undefined ? options.identity : await resolveMarketplaceIdentity({ db: supabase, supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId, variantBarcode: args.variantBarcode, supplierIdentifiers: args.supplierIdentifiers });
+  // Read the exact live variant barcode once and reuse that same fresh evidence
+  // for identity matching and metadata; the old path fetched it twice per candidate.
+  const freshVariantBarcode = await readSupplierBarcode({ supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId });
+  const marketplaceIdentity = options.identity !== undefined
+    ? options.identity
+    : await resolveMarketplaceIdentityFromBarcode({ db: supabase, supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId }, freshVariantBarcode);
   const canonicalProductId = marketplaceIdentity?.productId ?? args.productId;
   let existingListingMetadata: Record<string, unknown> = {};
   const existingListing = await supabase.from("supplier_listings").select("metadata,product_id,verification_status,shipping_status,configured,price_confirmed,inventory_confirmed,api_available,orderable,tracking_available,inventory,cost,shipping_cost,ship_to,supplier_product_id,supplier_variant_id,verification_error,last_verified_at").eq("id", args.supplierListingId).maybeSingle();
@@ -249,7 +260,7 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
     candidateIntelligenceId = String(candidate.data.id);
   }
 
-  const verifiedMetadata = { ...existingListingMetadata, source: "cj_supply_first", identity_source: marketplaceIdentity ? "fresh_exact_cj_variant_barcode_to_canonical_child_variant" : "exact_variant_identity_unresolved", identity_rationale: marketplaceIdentity?.rationale ?? "Supplier candidate retained without claiming a marketplace identity match", supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: await readSupplierBarcode({ supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId }), canonical_variant_evidence_id: marketplaceIdentity?.canonicalVariantEvidenceId ?? null, canonical_source_variant_id: marketplaceIdentity?.sourceVariantId ?? null };
+  const verifiedMetadata = { ...existingListingMetadata, source: "cj_supply_first", identity_source: marketplaceIdentity ? "fresh_exact_cj_variant_barcode_to_canonical_child_variant" : "exact_variant_identity_unresolved", identity_rationale: marketplaceIdentity?.rationale ?? "Supplier candidate retained without claiming a marketplace identity match", supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: freshVariantBarcode, canonical_variant_evidence_id: marketplaceIdentity?.canonicalVariantEvidenceId ?? null, canonical_source_variant_id: marketplaceIdentity?.sourceVariantId ?? null };
   const { error: evidenceError } = await supabase.from("supplier_listings").update({
     bestseller_id: marketplaceIdentity?.bestsellerId ?? null,
     product_id: marketplaceIdentity?.productId ?? nativeCandidateProductId,
