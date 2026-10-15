@@ -1,22 +1,21 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
+const cron = await readFile(new URL("../app/api/cron/market-sourcing/route.ts", import.meta.url), "utf8");
 const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
-const cursorWrite = source.indexOf('const next = await writeMarketCursor(db, observation, "patrol-ai")');
-const guard = source.indexOf("const emptyCollection = observation.itemCount === 0", cursorWrite);
-const finalReturn = source.indexOf("return { ...observation, cursor, nextCursor: next };", guard);
+const persistence = await readFile(new URL("../lib/market/persist-bestsellers.ts", import.meta.url), "utf8");
 
-assert.ok(cursorWrite >= 0, "market cursor must be persisted before collection/evidence retry decisions");
-assert.ok(guard > cursorWrite, "empty-evidence guard must run after cursor advancement");
-assert.ok(finalReturn > guard, "normal success return must follow the retry guard");
-const guarded = source.slice(guard, finalReturn);
-assert.ok(guarded.includes("observation.canonicalVariantEvidenceParsed === 0"), "zero canonical variant evidence must defer the stage");
-assert.ok(guarded.includes("observation.canonicalVariantEvidenceWriteFailures > 0"), "evidence write failures must be detectable");
-assert.ok(guarded.includes("skipped: true"), "unusable collection must not be treated as a completed stage");
-assert.ok(guarded.includes("retryable: true") || guarded.includes("retryable: !nonBlockingSourceCoverageSkip"), "unusable collection must be retried unless this source intentionally provides observation-only coverage");
-assert.ok(guarded.includes('"canonical_variant_evidence_empty"'), "zero-evidence reason must be explicit");
-assert.ok(guarded.includes('"canonical_variant_evidence_empty_brightdata_not_configured"'), "missing Amazon proxy must have a distinct actionable reason");
-assert.ok(collector.includes("brightDataConfigured: isBrightDataFetchConfigured()"), "collection telemetry must expose whether Amazon proxy retries are configured");
-assert.ok(guarded.includes('"canonical_variant_evidence_write_failed"'), "persistence failure reason must be explicit");
-console.log("PASS: empty or unpersisted canonical variant evidence defers the intelligence pipeline");
+assert.ok(cron.includes("persistMarketplaceBestsellers"), "dedicated market-sourcing cron must invoke the collector");
+assert.ok(cron.includes('job_name: "market-sourcing-observation"'), "market-sourcing must persist its own run/cursor");
+assert.ok(cron.includes("canonicalVariantEvidenceParsed"), "cron telemetry must expose parsed child-variant evidence");
+assert.ok(cron.includes("canonicalVariantEvidenceWritten"), "cron telemetry must expose persisted child-variant evidence");
+assert.ok(cron.includes('"write_failed"'), "variant persistence failures must be distinguishable from empty source evidence");
+assert.ok(cron.includes('"no_canonical_variant_evidence"'), "zero child evidence must be visible instead of being counted as a successful variant recovery");
+assert.ok(cron.includes('"persisted"'), "complete variant evidence persistence must be explicitly recorded");
+assert.ok(cron.includes('reason: "observation_only"'), "market observation must never publish or place orders");
+assert.ok(collector.includes("brightDataConfigured: isBrightDataFetchConfigured()"), "telemetry must reflect the actual Bright Data API or MCP fetch configuration");
+assert.ok(collector.includes("parseAmazonVariationAsinMap"), "Amazon child-ASIN maps must be considered as explicit discovery evidence");
+assert.ok(persistence.includes('.from("marketplace_bestseller_variants")'), "canonical child-variant evidence must be persisted to its own table");
+assert.ok(persistence.includes("canonicalVariantEvidenceWriteFailures"), "variant write failures must be counted and returned");
+assert.ok(persistence.includes("canonicalVariantEvidenceWritten"), "only confirmed database writes may count as persisted variants");
+console.log("PASS: market-sourcing exposes canonical variant parse/write status and remains observation-only");
