@@ -90,7 +90,7 @@ jobs:
             if (candidate.complete !== true || !Array.isArray(candidate.items) || candidate.baseItemCount !== candidate.items.length) {
               throw new Error("BASE_RECONCILIATION_INCOMPLETE_OR_COUNT_MISMATCH");
             }
-            if (Object.prototype.hasOwnProperty.call(candidate, "baseItemsWithExactSupplierIdentifierCandidateCount")) {
+            if (candidate.schemaVersion >= 2 && Object.prototype.hasOwnProperty.call(candidate, "baseItemsWithExactSupplierIdentifierCandidateCount") && Object.prototype.hasOwnProperty.call(candidate, "baseItemsWithAmbiguousExactTitleCandidateCount")) {
               report = candidate;
               break;
             }
