@@ -16,8 +16,8 @@ export async function GET(request: Request) {
 
   const db = createSupabaseAdminClient();
   const { data, error } = await db.from("shop_listings")
-    .select("id,supplier_listing_id,published,orderable,pipeline_reason,shopify_product_id,shopify_sync_status,base_item_id,base_publication_status,base_last_error")
-    .or("published.eq.true,and(shopify_product_id.not.is.null,shopify_sync_status.is.null),and(shopify_product_id.not.is.null,shopify_sync_status.neq.blocked,shopify_sync_status.neq.synced),and(base_item_id.not.is.null,base_last_error.is.null),and(base_item_id.not.is.null,base_last_error.neq.supplier_identity_unlinked_hidden,base_last_error.neq.tracer_unpublished_hidden,base_last_error.neq.base_auth_invalid_reauthorization_required)")
+    .select("id,supplier_listing_id,published,orderable,pipeline_reason,shopify_product_id,shopify_sync_status,shopify_sync_error,base_item_id,base_publication_status,base_last_error")
+    .or("published.eq.true,and(shopify_product_id.not.is.null,shopify_sync_status.is.null),and(shopify_product_id.not.is.null,shopify_sync_status.neq.blocked,shopify_sync_status.neq.synced),and(shopify_product_id.not.is.null,shopify_sync_status.eq.blocked,shopify_sync_error.is.null),and(shopify_product_id.not.is.null,shopify_sync_status.eq.blocked,shopify_sync_error.neq.shopify_unpublished_verified),and(base_item_id.not.is.null,base_last_error.is.null),and(base_item_id.not.is.null,base_last_error.neq.supplier_identity_unlinked_hidden,base_last_error.neq.tracer_unpublished_hidden,base_last_error.neq.base_auth_invalid_reauthorization_required)")
     .order("created_at", { ascending: true })
     .limit(1000);
   if (error) return NextResponse.json({ ok: false, stage: "read", error: error.message }, { status: 500 });
@@ -40,7 +40,7 @@ export async function GET(request: Request) {
     if (updateError) return NextResponse.json({ ok: false, stage: "block", error: updateError.message }, { status: 500 });
   }
 
-  const shopifyPending = unlinked.filter((row) => row.shopify_product_id && row.shopify_sync_status !== "blocked").slice(0, 15);
+  const shopifyPending = unlinked.filter((row) => row.shopify_product_id && (row.shopify_sync_status !== "blocked" || row.shopify_sync_error !== "shopify_unpublished_verified")).slice(0, 15);
   const basePending = unlinked.filter((row) => row.base_item_id && row.base_last_error !== "supplier_identity_unlinked_hidden" && row.base_last_error !== BASE_AUTH_REAUTH_REQUIRED).slice(0, 50);
   let shopify: unknown = { skipped: true };
   let base: unknown = { skipped: true };
