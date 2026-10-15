@@ -39,12 +39,12 @@ assert.match(source, /:schema-retry/,
   "schema-fix replay must use a fresh event id so the receiver does not short-circuit a rejected inbox row");
 assert.match(source, /Could not find the table .*tracer_promotions.*schema cache/,
   "a missing NEWFIND promotion ledger must be replayed with a fresh event ID after the migration is applied");
-assert.match(source, /NEWFIND_TRACER_PROMOTION_LEDGER_READY/,
-  "the retry loop must remain paused until the NEWFIND database migration is confirmed applied");
-assert.match(source, /newfind_promotion_ledger_not_confirmed_ready/,
+assert.match(source, /NEWFIND_TRACER_PROMOTION_RECEIVER_READY/,
+  "the retry loop must remain paused until the NEWFIND promotion receiver is deployed and confirmed ready");
+assert.match(source, /newfind_promotion_receiver_not_confirmed_ready/,
   "new promotions must not be sent to NEWFIND until the ledger is confirmed ready");
-assert.ok(source.includes("if (!schemaReady) {"), "the retry batch must stop before sending events while the ledger is not ready");
-assert.ok(reconcile.includes("if (!ledgerReady) {"), "the rescue loop must stop while the ledger is not ready");
+assert.ok(source.includes("if (!schemaReady) {"), "the retry batch must stop before sending events while the promotion receiver is not ready");
+assert.ok(reconcile.includes("if (!ledgerReady) {"), "the rescue loop must stop while the promotion receiver is not ready");
 assert.match(source, /schemaBlocked: schemaBlockedIds\.size/,
   "retry telemetry must report promotions paused by the missing ledger");
 assert.match(reconcile, /isNewfindPromotionLedgerSchemaBlocked/,
