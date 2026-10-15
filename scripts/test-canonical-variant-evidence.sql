@@ -10,6 +10,7 @@ create table if not exists public.marketplace_bestsellers (
 \i supabase/migrations/20261010170000_marketplace_bestseller_variants.sql
 \i supabase/migrations/20261010170000_marketplace_bestseller_variants.sql
 \i supabase/migrations/20261011110000_allow_amazon_child_asin_evidence.sql
+\i supabase/migrations/20261015080000_allow_schema_org_is_variant_of_evidence.sql
 
 insert into public.marketplace_bestsellers(id, marketplace, title, source)
 values ('30000000-0000-4000-8000-000000000001', 'amazon.co.jp', 'Variant fixture parent', 'ci_fixture')
@@ -42,6 +43,20 @@ on conflict (bestseller_id, source_variant_id) do update
 set jan = excluded.jan, evidence_source = excluded.evidence_source,
     raw_evidence = excluded.raw_evidence, updated_at = now();
 
+insert into public.marketplace_bestseller_variants(
+  bestseller_id, marketplace, source, source_variant_id, asin, gtin,
+  evidence_source, raw_evidence, fetched_at
+)
+values (
+  '30000000-0000-4000-8000-000000000001', 'amazon.co.jp', 'ci_fixture',
+  'B0CHILD003', 'B0CHILD003', '4006381333931',
+  'schema_org_product_is_variant_of',
+  '{"relation":"Product.isVariantOf","child_barcode":true,"parent_barcode_not_inherited":true}'::jsonb, now()
+)
+on conflict (bestseller_id, source_variant_id) do update
+set gtin = excluded.gtin, evidence_source = excluded.evidence_source,
+    raw_evidence = excluded.raw_evidence, updated_at = now();
+
 do $$
 declare
   v_count integer;
@@ -64,6 +79,16 @@ begin
      and jan = '4006381333931';
   if v_count <> 1 then
     raise exception 'explicit Amazon child-ASIN evidence with its own barcode was not accepted';
+  end if;
+
+  select count(*) into v_count
+    from public.marketplace_bestseller_variants
+   where bestseller_id = '30000000-0000-4000-8000-000000000001'
+     and source_variant_id = 'B0CHILD003'
+     and evidence_source = 'schema_org_product_is_variant_of'
+     and gtin = '4006381333931';
+  if v_count <> 1 then
+    raise exception 'explicit Schema.org isVariantOf child evidence was not accepted';
   end if;
 
   begin

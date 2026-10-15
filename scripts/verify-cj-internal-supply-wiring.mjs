@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 const discovery = readFileSync("lib/suppliers/discover-cj-supply.ts", "utf8");
 const marketCollector = readFileSync("lib/market/collect-bestsellers.ts", "utf8");
 const ingest = readFileSync("lib/suppliers/persist-cj-internal-supply.ts", "utf8");
+const intelligence = readFileSync("lib/intelligence/persist-cj-supply-intelligence.ts", "utf8");
 const catalogSync = readFileSync("lib/suppliers/sync-tracer-catalog.ts", "utf8");
 const identity = readFileSync("lib/market/identifiers.ts", "utf8");
 const auditMigration = readFileSync("supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql", "utf8");
@@ -73,10 +74,12 @@ assert.match(ingest, /from\("marketplace_bestseller_variants"\)/,
   "supplier identity must be compared against independently stored marketplace child variants");
 assert.match(ingest, /marketplace_variant_evidence_id: String\(row\.id\)/,
   "verified links must persist the exact canonical child-variant evidence ID");
-assert.match(ingest, /\["schema_org_product_group_has_variant", "amazon_variation_asin_map"\]\.includes\(String\(item\.row\.evidence_source\)\)/,
-  "Schema.org child variants and explicit Amazon child-ASIN-map variants are eligible only after child barcode proof");
-assert.match(catalogSync, /\["schema_org_product_group_has_variant", "amazon_variation_asin_map"\]\.includes\(String\(candidate\.canonical\.evidence_source\)\)/,
-  "catalog sync must accept both supported canonical child-evidence sources after exact barcode matching");
+assert.match(ingest, /\["schema_org_product_group_has_variant", "schema_org_product_is_variant_of", "amazon_variation_asin_map"\]\.includes\(String\(item\.row\.evidence_source\)\)/,
+  "Schema.org hasVariant/isVariantOf children and explicit Amazon child-ASIN-map variants are eligible only after child barcode proof");
+assert.match(catalogSync, /\["schema_org_product_group_has_variant", "schema_org_product_is_variant_of", "amazon_variation_asin_map"\]\.includes\(String\(candidate\.canonical\.evidence_source\)\)/,
+  "catalog sync must accept all supported canonical child-evidence sources after exact barcode matching");
+assert.match(intelligence, /const schemaChild = \["schema_org_product_group_has_variant", "schema_org_product_is_variant_of"\]\.includes\(String\(row\.evidence_source\)\)/,
+  "intelligence resolver must accept inverse Schema.org child evidence only with exact barcode matching");
 assert.match(ingest, /const barcodeMethod = \["jan", "gtin", "ean", "upc"\]\.includes\(identity\.method\)/,
   "only exact barcode-family proof may establish supplier-to-child-variant identity");
 assert.match(ingest, /automated_order_creation_verified: false/,

@@ -66,7 +66,7 @@ export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof c
       const rawEvidence = row.raw_evidence && typeof row.raw_evidence === "object" && !Array.isArray(row.raw_evidence)
         ? row.raw_evidence as Record<string, unknown>
         : {};
-      const schemaChild = row.evidence_source === "schema_org_product_group_has_variant";
+      const schemaChild = ["schema_org_product_group_has_variant", "schema_org_product_is_variant_of"].includes(String(row.evidence_source));
       const verifiedAmazonChild = row.evidence_source === "amazon_variation_asin_map"
         && rawEvidence.extraction === "child_detail_page"
         && typeof rawEvidence.child_product_url === "string"

@@ -95,7 +95,7 @@ export async function syncTracerCatalogFromInternalSupply(args: {
   }).filter((candidate) =>
     candidate.identity.salesEligible
     && ["jan", "gtin", "ean", "upc"].includes(candidate.identity.method)
-    && ["schema_org_product_group_has_variant", "amazon_variation_asin_map"].includes(String(candidate.canonical.evidence_source))
+    && ["schema_org_product_group_has_variant", "schema_org_product_is_variant_of", "amazon_variation_asin_map"].includes(String(candidate.canonical.evidence_source))
     && typeof candidate.canonical.source_variant_id === "string"
     && candidate.canonical.source_variant_id.trim().length > 0,
   ));
