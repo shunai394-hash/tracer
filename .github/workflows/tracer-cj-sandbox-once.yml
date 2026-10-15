@@ -71,8 +71,11 @@ jobs:
           python3 - <<'PY'
           import json, sys
           data = json.load(open("sandbox-result.json"))
+          status = str(data.get("status") or "").strip().upper()
           valid = (
               data.get("ok") is True
+              and bool(str(data.get("supplierOrderId") or "").strip())
+              and status in ("500", "SHIPPED", "IN_TRANSIT")
               and data.get("sandbox") is True
               and data.get("charged") is False
               and data.get("realFulfillment") is False
