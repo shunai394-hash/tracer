@@ -17,7 +17,7 @@ export function tracerSkuForListing(listing: OrderSkuListing): string {
 }
 
 /** Accept existing Shopify SKUs during migration while new syncs use the shared listing ID. */
-function legacyTracerSkusForListing(listing: OrderSkuListing): string[] {
+export function legacyTracerSkusForListing(listing: OrderSkuListing): string[] {
   return [...new Set([listing.supplier_variant_id, listing.supplier_product_id]
     .filter((source): source is string => Boolean(source && source.trim()))
     .map((source) => `TRC-${source}`.slice(0, 100)))];
