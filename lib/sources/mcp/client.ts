@@ -52,7 +52,24 @@ function extractHtmlFromMcpPayload(value: unknown, depth = 0): string | null {
       const parsed: unknown = JSON.parse(trimmed);
       return extractHtmlFromMcpPayload(parsed, depth + 1);
     } catch {
-      return null;
+      // Bright Data MCP commonly returns Markdown rather than raw HTML.
+      // Convert only explicit HTTP(S) Markdown links so the existing ranking
+      // parser can consume discovered product links; no identity is inferred.
+      if (!/\[[^\]]+\]\(https?:\/\//i.test(trimmed)) return null;
+      const escapeHtml = (input: string) => input
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+      const html = trimmed
+        .split(/\r?\n/)
+        .map((line) => {
+          const linked = line.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)(?:\s+[^)]*)?\)/g,
+            (_match, label: string, href: string) => `<a href="${escapeHtml(href)}">${escapeHtml(label)}</a>`);
+          return `<p>${linked}</p>`;
+        })
+        .join("\n");
+      return html.includes("<a href=") ? html : null;
     }
   }
   if (Array.isArray(value)) {
