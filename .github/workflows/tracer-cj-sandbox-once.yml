@@ -1,0 +1,87 @@
+name: TRACER CJ Sandbox Lifecycle — One-Time Verification
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "40 4 15 10 *"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tracer-cj-sandbox-one-time-20261015
+  cancel-in-progress: false
+
+jobs:
+  sandbox-lifecycle:
+    if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Run one authenticated CJ sandbox order lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$(date -u +%F)" != "2026-10-15" ]; then
+            echo "One-time sandbox window has passed; no external request made."
+            exit 0
+          fi
+
+          BASE="https://tracer-pied-alpha.vercel.app"
+          SUPPLIER_LISTING_ID="9a6eec53-9585-4c28-84a5-d7b879b8e44c"
+
+          get_oidc_token() {
+            curl -sSf --max-time 15 \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+
+          # Wait for the production deployment triggered by this workflow merge.
+          sleep 60
+
+          TOKEN="$(get_oidc_token)"
+          HTTP_CODE="$(curl -sS --max-time 90 -o sandbox-result.json -w '%{http_code}' \
+            -X POST "${BASE}/api/cron/cj-sandbox-order-test" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "{\"supplierListingId\":\" ${SUPPLIER_LISTING_ID} \"}")"
+
+          python3 - <<'PY'
+          import json
+          data = json.load(open("sandbox-result.json"))
+          safe = {key: data.get(key) for key in (
+              "ok", "phase", "supplierListingId", "supplierOrderId",
+              "status", "trackingNumber", "paymentConfirmed",
+              "sandbox", "charged", "realFulfillment", "error"
+          )}
+          print(json.dumps(safe, ensure_ascii=False, indent=2))
+          PY
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "CJ sandbox lifecycle endpoint returned HTTP $HTTP_CODE. No automatic retry is performed to avoid duplicate sandbox orders."
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json, sys
+          data = json.load(open("sandbox-result.json"))
+          valid = (
+              data.get("ok") is True
+              and data.get("sandbox") is True
+              and data.get("charged") is False
+              and data.get("realFulfillment") is False
+              and data.get("paymentConfirmed") is True
+              and isinstance(data.get("trackingNumber"), str)
+              and bool(data["trackingNumber"].strip())
+          )
+          if not valid:
+              print("Sandbox lifecycle did not prove payment and tracking invariants; refusing to mark the run successful.")
+              sys.exit(1)
+          print("CJ sandbox create → simulated payment → status transition → tracking proof passed. Live ordering flags remain unchanged.")
+          PY
