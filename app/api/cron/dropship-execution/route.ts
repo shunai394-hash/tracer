@@ -17,6 +17,8 @@ export async function GET(request: Request) {
     initializeProcurement();
 
     // One automated commerce chain: BASE order sync first, then supplier execution.
+    // This route runs every 15 minutes; key each UTC minute, not the whole hour,
+    // or the first completed run would suppress the next three scheduled runs.
     // BASE payment confirmation and all existing supplier safety gates remain authoritative.
     const baseSync = await syncBaseOrdersToTracer(50);
 
@@ -43,7 +45,7 @@ export async function GET(request: Request) {
     const internalOrderableVariantCount = internalVariants.error ? null : (internalVariants.count ?? 0);
 
     const automation = await runAutonomousOrderControl(
-      `dropship-cron:${new Date().toISOString().slice(0, 13)}`,
+      `dropship-cron:${new Date().toISOString().slice(0, 16)}`,
     );
 
     return NextResponse.json({
