@@ -21,7 +21,7 @@ assert.match(base, /visibleItemsWithAmbiguousDbMapping/);
 assert.match(base, /visibleItemsMatchedByStableIdentifier/, "BASE audit should report exact TRC-listing-id recovery candidates");
 assert.match(base, /visibleItemsMissingPersistedBaseMapping/, "BASE audit must distinguish recoverable identifiers from persisted BASE IDs");
 assert.match(base, /visibleItemsWithIdentifierConflict/, "BASE audit must surface conflicting persisted IDs rather than overwrite them");
-assert.match(base, /stableMatch\\.id !== directMatches\\[0\\]\\.id/, "BASE item ID and stable identifier pointing to different listings must be flagged as conflict");
+assert.match(base, /stableMatch\.id !== directMatches\[0\]\.id/, "BASE item ID and stable identifier pointing to different listings must be flagged as conflict");
 assert.match(base, /stableTracerIdentifier\.exec\(entry\.identifier/, "only exact TRC-UUID identifiers may be used for read-only recovery");
 assert.match(base, /\.from\("shop_listings"\)\.select\("id,base_item_id,supplier_listing_id"\)\.in\("id", stableListingIds\)/, "stable identifiers must resolve by exact listing UUID");
 assert.doesNotMatch(base, /\.update\(|\.insert\(|\.upsert\(/, "BASE diagnostics must remain read-only and never repair mappings in the diagnostic request");
