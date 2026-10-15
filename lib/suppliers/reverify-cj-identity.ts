@@ -237,6 +237,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       let variantDetails: Awaited<ReturnType<typeof fetchCJVariantByVid>> = null;
       let productDetails: Awaited<ReturnType<typeof getCJProductDetail>> = null;
       const refreshErrors: string[] = [];
+      let liveSupplierApiVerified = row.api_available === true && row.configured === true;
 
       if (missingCost && currency === "USD") {
         try {
@@ -247,6 +248,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
           if (fetchedCost !== null && fetchedCost > 0) {
             cost = fetchedCost;
             priceVerified = true;
+            liveSupplierApiVerified = true;
           } else if (!exactVariant) refreshErrors.push("cost:returned_variant_or_product_id_mismatch");
         } catch (error) {
           if (isCJQuotaCircuitBlockingError(error)) throw error;
@@ -259,6 +261,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
           if (fetchedShipping !== null && Number.isFinite(fetchedShipping) && fetchedShipping > 0) {
             shippingCost = fetchedShipping;
             shippingQuoteVerified = true;
+            liveSupplierApiVerified = true;
           }
         } catch (error) {
           if (isCJQuotaCircuitBlockingError(error)) throw error;
@@ -271,6 +274,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
           if (fetchedInventory !== null && Number.isFinite(fetchedInventory) && fetchedInventory >= 0) {
             inventory = fetchedInventory;
             inventoryVerified = true;
+            liveSupplierApiVerified = true;
           }
         } catch (error) {
           if (isCJQuotaCircuitBlockingError(error)) throw error;
@@ -280,7 +284,10 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       if (missingImage) {
         try {
           productDetails = await getCJProductDetail(String(row.supplier_product_id));
-          if (productDetails?.id === String(row.supplier_product_id) && isHttpUrl(productDetails.imageUrl)) imageUrl = productDetails.imageUrl.trim();
+          if (productDetails?.id === String(row.supplier_product_id) && isHttpUrl(productDetails.imageUrl)) {
+            imageUrl = productDetails.imageUrl.trim();
+            liveSupplierApiVerified = true;
+          }
           else if (productDetails && productDetails.id !== String(row.supplier_product_id)) refreshErrors.push("image:returned_product_id_mismatch");
         } catch (error) {
           if (isCJQuotaCircuitBlockingError(error)) throw error;
@@ -307,6 +314,13 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         last_identity_reverify_at: checkedAt.toISOString(),
       };
       const refreshedFields: Record<string, unknown> = { metadata: nextListingMetadata };
+      if (liveSupplierApiVerified) {
+        // Backup restoration intentionally invalidated stale supplier capability
+        // flags. Re-enable only the flags proven by successful live CJ reads;
+        // never infer that a real order or tracking flow has been tested.
+        refreshedFields.configured = true;
+        refreshedFields.api_available = true;
+      }
       if (priceVerified && cost !== null) {
         refreshedFields.cost = cost;
         refreshedFields.price_confirmed = true;
@@ -328,12 +342,17 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const canMarkFreshVerified = priceVerified && cost !== null && cost > 0
         && shippingQuoteVerified && shippingCost !== null
         && inventoryVerified && inventory !== null && inventory > 0
-        && row.configured === true && row.api_available === true
+        && (row.configured === true || liveSupplierApiVerified)
+        && (row.api_available === true || liveSupplierApiVerified)
         && (row.orderable === true || stockCapHoldRecoverable) && row.tracking_available === true
         && Boolean(String(row.supplier_product_id ?? "").trim())
         && Boolean(String(row.supplier_variant_id ?? "").trim())
         && String(row.ship_to ?? "").trim().toUpperCase() === "JP"
         && (row.verification_error == null || row.verification_error === "" || stockCapHoldRecoverable);
+      if (liveSupplierApiVerified && !canMarkFreshVerified && typeof row.verification_error === "string" && row.verification_error.startsWith("Restored from backup; stale evidence disabled")) {
+        refreshedFields.verification_error = "Live CJ product/variant and supply data refreshed; supplier orderability and tracking capability remain unverified";
+        refreshedFields.verification_status = "retryable";
+      }
       if (canMarkFreshVerified) {
         refreshedFields.verification_status = "verified";
         refreshedFields.last_verified_at = checkedAt.toISOString();
