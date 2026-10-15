@@ -350,15 +350,19 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
         const recovered = await Promise.all(childAsinsToFetch.map(async (child) => {
           const childUrl = `https://www.amazon.co.jp/dp/${child.asin}`;
           const childHtml = await fetchHtml(childUrl, { retryBrightDataWhenAmazonIdentifierMissing: true });
-          if (!childHtml) return null;
-          childDetailFetched += 1;
-          const childDetail = parseAmazonProductDetail(childHtml);
-          const jan = normalizeIdentifier("jan", childDetail.jan);
-          const gtin = normalizeIdentifier("gtin", childDetail.gtin);
-          const ean = normalizeIdentifier("ean", childDetail.ean);
-          const upc = normalizeIdentifier("upc", childDetail.upc);
-          if (!jan && !gtin && !ean && !upc) return null;
-          childBarcodeFound += 1;
+          if (childHtml) childDetailFetched += 1;
+          const childDetail = childHtml ? parseAmazonProductDetail(childHtml) : null;
+          const jan = normalizeIdentifier("jan", childDetail?.jan ?? null);
+          const gtin = normalizeIdentifier("gtin", childDetail?.gtin ?? null);
+          const ean = normalizeIdentifier("ean", childDetail?.ean ?? null);
+          const upc = normalizeIdentifier("upc", childDetail?.upc ?? null);
+          const hasBarcode = Boolean(jan || gtin || ean || upc);
+          if (hasBarcode) childBarcodeFound += 1;
+          const childModel = normalizeIdentifier("mpn", childDetail?.model ?? null);
+          const parentModel = normalizeIdentifier("mpn", item.model);
+          // Save explicit child-ASIN/dimension evidence even if the child page
+          // is unavailable or exposes no barcode. Such rows are discovery-only;
+          // they cannot pass supplier identity or sales eligibility on ASIN alone.
           return {
             sourceVariantId: child.asin,
             sku: null,
@@ -368,7 +372,7 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
             gtin,
             ean,
             upc,
-            mpn: normalizeIdentifier("mpn", childDetail.model),
+            mpn: childModel && childModel !== parentModel ? childModel : null,
             productUrl: childUrl,
             evidenceSource: "amazon_variation_asin_map" as const,
             rawEvidence: {
@@ -380,7 +384,9 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
               child_gtin: gtin,
               child_ean: ean,
               child_upc: upc,
-              extraction: "child_detail_page",
+              child_detail_fetched: Boolean(childHtml),
+              child_detail_has_barcode: hasBarcode,
+              extraction: !childHtml ? "variation_map_only_child_fetch_failed" : hasBarcode ? "child_detail_page" : "child_detail_page_barcode_missing",
             },
           };
         }));
