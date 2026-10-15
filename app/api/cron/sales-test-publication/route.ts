@@ -4,7 +4,6 @@ import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
-import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync";
@@ -32,26 +31,13 @@ async function buildOpportunityInBatches(productIds: string[], batchSize = 15) {
 }
 
 async function promoteGatePassedListings(selectedListingIds: string[]) {
-  // Delivery channels are independent: a Shopify/BASE outage must not suppress
-  // NEWFIND promotion or change the canonical TRACER publication result.
+  // The operational scope is TRACER, BASE, and Shopify only.
   const shopify = await syncPublishedListingsToShopify(selectedListingIds).catch((error) => ({
     ok: false,
     listingIds: [] as string[],
     error: error instanceof Error ? error.message : String(error),
   }));
   const publishedListingIds = shopify.listingIds;
-  // Deliver to NEWFIND before BASE. A BASE image/API failure must not overwrite
-  // the durable Sales Test Gate provenance before another channel can use it.
-  const newfind = await Promise.all(
-    selectedListingIds.map((listingId) => promoteShopListingToNewfind(listingId).catch((error) => ({
-      configured: true,
-      sent: false,
-      eventId: `tracer-shop-listing:${listingId}`,
-      status: null,
-      ackStatus: null,
-      detail: error instanceof Error ? error.message : String(error),
-    }))),
-  );
   const base = await publishPublishedListingsToBase(400, selectedListingIds).catch((error) => ({
     ok: false,
     results: [] as Array<{ ok: boolean; baseItemId?: string | null; listingId: string; error?: string }>,
@@ -62,7 +48,7 @@ async function promoteGatePassedListings(selectedListingIds: string[]) {
     publishedListingIds,
     base,
     baseReady: base.results.filter((result) => result.ok && result.baseItemId).map((result) => result.listingId),
-    newfind,
+    newfind: { skipped: true, reason: "out_of_scope_tracer_base_shopify_only" },
   };
 }
 
@@ -228,7 +214,8 @@ export async function GET(request: Request) {
             shopifyError: "error" in downstream.shopify ? downstream.shopify.error : null,
             baseOk: !("error" in downstream.base),
             baseError: "error" in downstream.base ? downstream.base.error : null,
-            newfindSent: downstream.newfind.filter((item) => item.sent).length,
+            newfindSent: 0,
+            newfindSkipped: true,
           },
         },
       }).eq("id", cronRunId);
