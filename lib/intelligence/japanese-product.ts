@@ -1,4 +1,8 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/ceramic ashtray home bedroom dormitory office/i, "セラミック製 卓上灰皿"],
+  [/bathroommobile phone box waterproofstand|bathroom.*mobile phone box.*waterproof.*stand/i, "防水ケース付き バスルーム用スマホホルダー"],
+  [/suitable for creative new envelopes.*huawei.*mobile phone shell.*acrylic|huawei.*acrylic.*protective sleeve/i, "Huawei対応 アクリルスマホケース"],
+  [/compatible withapple.*tempered glass film.*iphone|tempered glass film.*iphone11promax/i, "iPhone用 強化ガラス保護フィルム"],
   [/fashion and nature phoera eyebrow cream 6 colors.*01blonde/i, "PHOERA アイブロウクリーム 01 ブロンド"],
   [/wooden door.*christmas door frame decoration|christmas door frame decoration.*santa claus/i, "クリスマス ドアフレーム飾り"],
   [/office 8.inch wind.driven fan|8.inch wind.driven fan/i, "卓上 8インチ送風ファン"],
@@ -222,6 +226,10 @@ export function localizeProductDescription(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const source = value.normalize("NFKC");
   const rules: Array<[RegExp, string]> = [
+    [/ceramic ashtray home bedroom dormitory office/i, "卓上で使うセラミック製の灰皿です。寸法・重量・お手入れ方法は販売元の仕様をご確認ください。"],
+    [/bathroommobile phone box waterproofstand|bathroom.*mobile phone box.*waterproof.*stand/i, "浴室やキッチンでスマートフォンを置くためのホルダーです。対応機種・固定方法・防水性能は販売元の仕様をご確認ください。"],
+    [/suitable for creative new envelopes.*huawei.*mobile phone shell.*acrylic|huawei.*acrylic.*protective sleeve/i, "Huawei各機種向けのアクリル製スマートフォンケースです。対応モデル・寸法・素材は購入前に商品バリエーションと販売元の仕様をご確認ください。"],
+    [/compatible withapple.*tempered glass film.*iphone|tempered glass film.*iphone11promax/i, "iPhone用の強化ガラス保護フィルムです。対応モデル・枚数・貼付方法は購入前に商品バリエーションと販売元の仕様をご確認ください。"],
     [/sedentary backrest integrated chair cushion|integrated chair cushion seat cushion/i, "座面と背もたれを支える一体型チェアクッションです。寸法・中材・対応する椅子の形状は販売元の仕様をご確認ください。"],
     [/nordic pillows cushions home decor|decorative cushions for sofa/i, "ソファや室内の装飾に使うクッションです。寸法・素材・中材・洗濯方法は販売元の仕様をご確認ください。"],
     [/sink drain strainer|hair catchers rubber shower bathtub|silicone bathroom kitchen deodorant plug/i, "シンクや浴室の排水口に使うヘアキャッチャーです。寸法・対応する排水口・素材・お手入れ方法は販売元の仕様をご確認ください。"],
