@@ -306,15 +306,19 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
       if (!detailHtml) return;
       htmlFetched += 1;
 
+      // Canonical child evidence is marketplace-neutral Schema.org data. The
+      // old branch parsed ProductGroup children only for Amazon, so Yahoo
+      // Shopping pages with the same explicit child GTIN/JAN were discarded.
+      const markup = inspectCanonicalMarketplaceVariantMarkup(detailHtml);
+      jsonLdNodeCount += markup.jsonLdNodeCount;
+      productGroupCount += markup.productGroupCount;
+      groupsWithVariantCount += markup.groupsWithVariantCount;
+      variantProductNodeCount += markup.variantProductNodeCount;
+      absoluteTypeIriCount += markup.absoluteTypeIriCount;
+      item.canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl);
+
       if (marketplace.marketplace === "amazon.co.jp") {
         const detail = parseAmazonProductDetail(detailHtml);
-        const markup = inspectCanonicalMarketplaceVariantMarkup(detailHtml);
-        jsonLdNodeCount += markup.jsonLdNodeCount;
-        productGroupCount += markup.productGroupCount;
-        groupsWithVariantCount += markup.groupsWithVariantCount;
-        variantProductNodeCount += markup.variantProductNodeCount;
-        absoluteTypeIriCount += markup.absoluteTypeIriCount;
-        item.canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl);
         // ProductGroup.hasVariant and Amazon's explicit child-ASIN map are
         // independent evidence channels. Fetch any child page whose exact ASIN
         // does not yet have a concrete barcode, including JSON-LD children that
@@ -406,6 +410,7 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
         }
         if (item.jan || item.mpn) identifierFound += 1;
       } else {
+        canonicalVariantCount += item.canonicalVariants.length;
         const detail = parseYahooProductDetail(detailHtml);
         item.jan = normalizeIdentifier("jan", detail.jan);
         item.gtin = normalizeIdentifier("gtin", detail.gtin);
