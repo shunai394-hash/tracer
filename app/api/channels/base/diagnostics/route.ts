@@ -84,7 +84,7 @@ export async function GET(request: Request) {
             id: String(row.id),
             base_item_id: row.base_item_id == null ? null : String(row.base_item_id),
             supplier_listing_id: row.supplier_listing_id == null ? null : String(row.supplier_listing_id),
-          }]));
+          }] as const));
           const linkedSupplierIds = await getLinkedSupplierListingIds([
             ...(listingRows ?? []).map((row) => row.supplier_listing_id),
             ...(identifierRows ?? []).map((row) => row.supplier_listing_id),
