@@ -120,10 +120,10 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   const { data: listings, error } = await query.order("created_at", { ascending: false }).limit(safeLimit);
   if (error) throw new Error(error.message);
 
-  const supplierStatuses = await getPublishableSupplierListingStatuses((listings ?? []).map((listing) => listing.supplier_listing_id));
-  const identityUnlinkedIds = new Set((listings ?? [])
-    .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.supplier_listing_id)))
-    .map((listing) => String(listing.id)));
+  // Storefront visibility is independent from current supplier verification.
+  // Exact supplier product/variant identity is still required below, while
+  // order-time procurement rechecks current stock, price and API availability.
+  const identityUnlinkedIds = new Set<string>();
   const results: BasePublicationResult["results"] = [];
   let unpublishFailed = 0;
 
@@ -186,7 +186,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
   }
 
-  const activeListings = (listings ?? []).filter((listing) => !identityUnlinkedIds.has(String(listing.id)) && !["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? "")) && (!listing.base_item_id || listing.published === true));
+  const activeListings = (listings ?? []).filter((listing) => !identityUnlinkedIds.has(String(listing.id)) && (!listing.base_item_id || listing.published === true || ["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))));
   // Generate Japanese copy concurrently only for listings that can remain visible.
   // spend the full serverless timeout waiting on Gemini one listing at a time.
   const copyResults = await Promise.all(activeListings.map(async (listing) => {
