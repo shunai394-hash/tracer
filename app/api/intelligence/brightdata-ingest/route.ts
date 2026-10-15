@@ -19,12 +19,14 @@ export async function POST(request: Request) {
     if (!query) return NextResponse.json({ ok: false, error: "query is required" }, { status: 400 });
 
     const result = await searchGoogleProducts(query);
-    const persisted = await persistBrightDataProducts(result.query, result.products);
+    const candidates = result.products.slice(0, 30);
+    const persisted = await persistBrightDataProducts(result.query, candidates);
     return NextResponse.json({
       ok: true,
       query: result.query,
       provider: result.provider,
       fetched: result.products.length,
+      accepted: candidates.length,
       persisted,
     });
   } catch (error) {
