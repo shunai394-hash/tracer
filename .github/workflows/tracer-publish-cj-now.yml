@@ -6,7 +6,7 @@ name: TRACER Publish CJ Products Now
 on:
   workflow_dispatch:
   schedule:
-    - cron: "56 23 14 10 *"
+    - cron: "5 0 16 10 *"
   push:
     branches: [main]
 
@@ -41,8 +41,8 @@ jobs:
           }
 
           # Prevent later annual cron matches from calling CJ or publication endpoints.
-          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] && [ "$schedule_date" != "2026-10-14" ] && ! { [ "$schedule_date" = "2026-10-15" ] && [ "$schedule_hour" -lt 2 ]; }; then
-            echo "One-time CJ quota-reset window has passed; skipping before API calls."
+          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] && ! { [ "$schedule_date" = "2026-10-16" ] && [ "$schedule_hour" -lt 1 ]; }; then
+            echo "One-time post-cooldown retry window has passed; skipping before API calls."
             exit 0
           fi
 
@@ -67,10 +67,10 @@ jobs:
           print(json.dumps(d, ensure_ascii=False, indent=2)[:30000])
           PY
 
-          # This schedule is a one-time retry for the known CJ API cooldown on 2026-10-14 UTC.
+          # This schedule is a one-time retry after the persisted CJ API cooldown expires on 2026-10-15 UTC.
           # Keep later annual schedule matches as no-ops; the manual/push path remains usable.
-          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] && [ "$schedule_date" != "2026-10-14" ] && ! { [ "$schedule_date" = "2026-10-15" ] && [ "$schedule_hour" -lt 2 ]; }; then
-            echo "One-time cooldown retry window has passed; skipping."
+          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] && ! { [ "$schedule_date" = "2026-10-16" ] && [ "$schedule_hour" -lt 1 ]; }; then
+            echo "One-time post-cooldown retry window has passed; skipping."
             exit 0
           fi
 
