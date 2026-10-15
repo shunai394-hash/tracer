@@ -14,7 +14,8 @@ import {
 } from "@/lib/integration/newfind";
 import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { readMarketCursor, writeMarketCursor } from "@/lib/market/market-cursor";
+import { readMarketCursor } from "@/lib/market/market-cursor";
+import { advanceMarketCursor } from "@/lib/market/market-cursor-policy";
 import {
   GeminiConfigError,
   GeminiRequestError,
@@ -372,7 +373,9 @@ export async function runIntelligencePipeline(options: {
       startIndex: cursor.startIndex,
       batchSize: 10,
     });
-    const next = await writeMarketCursor(db, observation, "patrol-ai");
+    // The dedicated market-sourcing cron is the sole cursor writer. This patrol
+    // computes only a preview; a slower concurrent run cannot overwrite the owner's cursor.
+    const next = advanceMarketCursor(observation);
     // A non-empty ranking batch is not enough to unblock canonical identity.
     // If no child-variant evidence was parsed (or all parsed evidence writes failed),
     // defer the pipeline so publication/procurement never treats source coverage as identity proof.
