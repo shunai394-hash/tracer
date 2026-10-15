@@ -187,4 +187,17 @@ assert.deepEqual(
   "parse Amazon dimension-to-ASIN maps where the dimension tuple is the key",
 );
 
+const serializedMapHtml = String.raw`
+<script>
+var dimensionValuesDisplayData = "{\\"B0CHILD009\\":[\\"Red\\",\\"Large\\"],\\"B0CHILD010\\":[\\"Blue\\"]}";
+</script>`;
+assert.deepEqual(
+  parseAmazonVariationAsinMap(serializedMapHtml, parentUrl),
+  [
+    { asin: "B0CHILD009", variationValues: ["Red", "Large"] },
+    { asin: "B0CHILD010", variationValues: ["Blue"] },
+  ],
+  "decode a JSON-string-encoded Amazon variation map",
+);
+
 console.log("Amazon variant parser fixtures: passed");
