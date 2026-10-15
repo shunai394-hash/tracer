@@ -337,6 +337,46 @@ export async function runIntelligencePipeline(options: {
   pipelineTimedOut = false;
   const db = createSupabaseAdminClient();
 
+  // Prioritize supplier-first discovery before marketplace/demand enrichment can consume the patrol budget.
+  // Supply-first is discovery only. It creates canonical product/offer/intelligence
+  // evidence; publication is deferred until the same Opportunity Intelligence
+  // and strict sales-test gates have passed.
+  // Keep each patrol bounded: live CJ stock/freight and identity checks are
+  // network-bound, while Opportunity Intelligence and Sales Test are also
+  // required in the same invocation. Larger backlogs are drained by later patrols.
+  const supplyFirstStep = await runStep("supply_first", () =>
+    discoverAndCreateCjSupply(3, {
+      deadlineAt: Math.min(pipelineDeadlineAt - 5_000, Date.now() + 18_000),
+    }), { budgetMs: 20_000 });
+  // A normal return is not proof that discovery completed: the supplier
+  // scanner can defer on its deadline or quota circuit with zero candidates.
+  // Mark that run deferred/retryable so patrol status cannot claim success.
+  // Keep partial results usable when at least one candidate was actually found.
+  const supplyFirstResult = supplyFirstStep.result && typeof supplyFirstStep.result === "object"
+    ? supplyFirstStep.result as { deadlineReached?: unknown; candidateCount?: unknown; items?: unknown }
+    : null;
+  const supplyFirstEmptyDeadline = supplyFirstResult?.deadlineReached === true
+    && Number(supplyFirstResult.candidateCount ?? 0) === 0
+    && (!Array.isArray(supplyFirstResult.items) || supplyFirstResult.items.length === 0);
+  if (supplyFirstEmptyDeadline) {
+    supplyFirstStep.ok = true;
+    supplyFirstStep.skipped = true;
+    supplyFirstStep.retryable = true;
+    supplyFirstStep.result = {
+      ...supplyFirstResult,
+      skipped: true,
+      retryable: true,
+      reason: "supply_discovery_deferred_without_candidates",
+    };
+  }
+  steps.push(supplyFirstStep);
+
+  const supplyItems =
+    supplyFirstStep.result && typeof supplyFirstStep.result === "object" && Array.isArray((supplyFirstStep.result as { items?: unknown }).items)
+      ? ((supplyFirstStep.result as { items: Array<Record<string, unknown>> }).items)
+      : [];
+
+
   // Demand matching runs first. It reads persisted demand/catalog evidence
   // and does not depend on the current marketplace fetch. Previously the
   // marketplace stage could consume the budget before matching started.
@@ -432,44 +472,6 @@ export async function runIntelligencePipeline(options: {
   // It repeatedly consumes its 18s budget and stops downstream publication. The
   // bounded supply-first catalog route handles fresh CJ discovery independently.
 
-  // Supply-first is discovery only. It creates canonical product/offer/intelligence
-  // evidence; publication is deferred until the same Opportunity Intelligence
-  // and strict sales-test gates have passed.
-  // Keep each patrol bounded: live CJ stock/freight and identity checks are
-  // network-bound, while Opportunity Intelligence and Sales Test are also
-  // required in the same invocation. Larger backlogs are drained by later patrols.
-  const supplyFirstStep = await runStep("supply_first", () =>
-    discoverAndCreateCjSupply(3, {
-      deadlineAt: Math.min(pipelineDeadlineAt - 5_000, Date.now() + 18_000),
-    }));
-  // A normal return is not proof that discovery completed: the supplier
-  // scanner can defer on its deadline or quota circuit with zero candidates.
-  // Mark that run deferred/retryable so patrol status cannot claim success.
-  // Keep partial results usable when at least one candidate was actually found.
-  const supplyFirstResult = supplyFirstStep.result && typeof supplyFirstStep.result === "object"
-    ? supplyFirstStep.result as { deadlineReached?: unknown; candidateCount?: unknown; items?: unknown }
-    : null;
-  const supplyFirstEmptyDeadline = supplyFirstResult?.deadlineReached === true
-    && Number(supplyFirstResult.candidateCount ?? 0) === 0
-    && (!Array.isArray(supplyFirstResult.items) || supplyFirstResult.items.length === 0);
-  if (supplyFirstEmptyDeadline) {
-    supplyFirstStep.ok = true;
-    supplyFirstStep.skipped = true;
-    supplyFirstStep.retryable = true;
-    supplyFirstStep.result = {
-      ...supplyFirstResult,
-      skipped: true,
-      retryable: true,
-      reason: "supply_discovery_deferred_without_candidates",
-    };
-  }
-  steps.push(supplyFirstStep);
-
-  const supplyItems =
-    supplyFirstStep.result && typeof supplyFirstStep.result === "object" && Array.isArray((supplyFirstStep.result as { items?: unknown }).items)
-      ? ((supplyFirstStep.result as { items: Array<Record<string, unknown>> }).items)
-      : [];
-
   // Rotate over every product_intelligence page. The previous fixed
   // "% 7" rotation only ever reached the first 350 rows (ordered by
   // product_id), so most products never got opportunity_intelligence.
@@ -513,7 +515,29 @@ export async function runIntelligencePipeline(options: {
   // Native CJ identity is permitted downstream only when the selector rechecks
   // verified product+variant IDs, shipping, price, inventory, API and orderability.
   const freshSupplyCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const { data: verifiedSupply } = await db
+  const verifiedSupplyPageSize = 100;
+  const { count: verifiedSupplyCount, error: verifiedSupplyCountError } = await db
+    .from("supplier_listings")
+    .select("id", { count: "exact", head: true })
+    .eq("supplier", "cj")
+    .eq("verification_status", "verified")
+    .eq("shipping_status", "verified")
+    .eq("price_confirmed", true)
+    .eq("inventory_confirmed", true)
+    .eq("orderable", true)
+    .eq("tracking_available", true)
+    .eq("api_available", true)
+    .gt("inventory", 0)
+    .not("supplier_product_id", "is", null)
+    .not("supplier_variant_id", "is", null)
+    .not("product_id", "is", null)
+    .gte("last_verified_at", freshSupplyCutoff);
+  if (verifiedSupplyCountError) throw new Error(verifiedSupplyCountError.message);
+  const verifiedSupplyPages = Math.max(1, Math.ceil((verifiedSupplyCount ?? 0) / verifiedSupplyPageSize));
+  // Rotate on each five-minute patrol so already-published recent offers do not
+  // permanently occupy the first page and starve new sellable supplier products.
+  const verifiedSupplyOffset = (Math.floor(Date.now() / 300_000) % verifiedSupplyPages) * verifiedSupplyPageSize;
+  const { data: verifiedSupply, error: verifiedSupplyError } = await db
     .from("supplier_listings")
     .select("product_id")
     .eq("supplier", "cj")
@@ -530,7 +554,8 @@ export async function runIntelligencePipeline(options: {
     .not("product_id", "is", null)
     .gte("last_verified_at", freshSupplyCutoff)
     .order("last_verified_at", { ascending: false, nullsFirst: false })
-    .limit(100);
+    .range(verifiedSupplyOffset, verifiedSupplyOffset + verifiedSupplyPageSize - 1);
+  if (verifiedSupplyError) throw new Error(verifiedSupplyError.message);
   const supplyCandidateIds = Array.from(new Set([
     ...listedProductIds,
     ...supplyProductIds,
