@@ -8,8 +8,9 @@ export const maxDuration = 60;
 
 /**
  * Repairs only a missing supplier_listings FK when the external CJ product +
- * variant pair maps to exactly one already-linked row for the same internal
- * product. This never creates identity evidence or publishes products.
+ * variant pair maps to exactly one matching row for the same internal product.
+ * Eligible identity states are linked and supply_discovered; this repair never
+ * promotes identity status, creates identity evidence, or publishes products.
  *
  * POST body: { "apply": true, "limit": 1000 }
  * Without apply:true the endpoint is a dry-run.
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
       .from("supplier_listings")
       .select("id,product_id,supplier,supplier_product_id,supplier_variant_id,identity_status")
       .eq("supplier", "cj")
-      .eq("identity_status", "linked")
+      .in("identity_status", ["linked", "supply_discovered"])
       .in("supplier_product_id", batch);
     if (error) {
       return NextResponse.json({ ok: false, error: "supplier_identity_read_failed" }, { status: 500 });
@@ -106,7 +107,7 @@ export async function POST(request: Request) {
 
     if (matches.length === 0) {
       noMatch += 1;
-      results.push({ shopListingId, outcome: "no_exact_linked_supplier_match" });
+      results.push({ shopListingId, outcome: "no_exact_supplier_match" });
       continue;
     }
     if (matches.length !== 1) {
@@ -172,7 +173,7 @@ export async function POST(request: Request) {
     ok: true,
     apply,
     readOnly: !apply,
-    matchingRule: "exact CJ product+variant, exactly one identity_status=linked row, and matching internal product_id",
+    matchingRule: "exact CJ product+variant, exactly one linked or supply_discovered row, and matching internal product_id",
     scanned: rows.length,
     repairable: results.filter((row) => row.outcome === "repairable_dry_run").length,
     repaired,
