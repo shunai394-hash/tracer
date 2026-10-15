@@ -236,13 +236,18 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
     }
   }
 
+  const supplierStatuses = await getPublishableSupplierListingStatuses(rows.map((row) => row.supplier_listing_id));
   const actionable = listingIds?.length
     ? rows.slice(0, safeLimit)
     : rows.filter((row) => {
         const status = String(row.shopify_sync_status ?? "");
         if (status === "syncing") return false;
-        // Supplier verification/orderability must not suppress catalog publication; exact IDs are checked by blockReasons and order-time fulfillment revalidates availability.
+        const supplierEligible = Boolean(row.supplier_listing_id && supplierStatuses.has(String(row.supplier_listing_id)));
+        const listingEligible = supplierEligible && blockReasons(row).length === 0;
         if (row.published === true) {
+          // Reconcile already-synced products when supplier evidence/orderability expires,
+          // even if Shopify's current inventory still matches the stale TRACER quantity.
+          if (!listingEligible) return true;
           if (status !== "synced") return true;
           if (liveStockReconciliationError) return false;
           const variantId = toShopifyGid("ProductVariant", row.shopify_variant_id);
@@ -251,8 +256,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
           return liveQuantity !== toStorefrontStockQuantity(row.inventory, process.env.SHOPIFY_STOREFRONT_STOCK_CAP);
         }
         if (row.published === false) {
-          // Retry any catalog-eligible row, including products hidden by an obsolete workflow gate.
-          return blockReasons(row).length === 0;
+          return listingEligible;
         }
         return false;
       }).slice(0, safeLimit);
