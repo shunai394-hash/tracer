@@ -24,8 +24,8 @@ assert.ok(collector.includes("if (!priceMatch) continue;"), "generic navigation 
 assert.ok(collector.includes("Continue to the next supported MCP tool before API fallback"), "one unavailable MCP tool must not abort the remaining tool attempts");
 assert.match(collector, /export function isBrightDataFetchConfigured\(\): boolean/);
 assert.match(collector, /candidate\.name === "scrape_as_html"/, "marketplace detail pages must use MCP raw HTML for child-variant parsing");
-assert.match(collector, /\\[BRIGHTDATA MCP\\] scrape_as_html succeeded/, "successful MCP raw HTML calls must be visible in runtime logs");
-assert.match(collector, /\\[BRIGHTDATA MCP\\] product search succeeded/, "successful MCP product searches must be visible in runtime logs");
+assert.ok(collector.includes('console.info("[BRIGHTDATA MCP] scrape_as_html succeeded"'), "successful MCP raw HTML calls must be visible in runtime logs");
+assert.ok(collector.includes('console.info("[BRIGHTDATA MCP] product search succeeded"'), "successful MCP product searches must be visible in runtime logs");
 assert.match(collector, /Bright Data MCP raw HTML tool is unavailable/, "do not silently claim collection succeeded when MCP HTML and API fallback are unavailable");
 assert.match(client, /mcp\.brightdata\.com\/mcp\?pro=1/, "default hosted endpoint must expose advanced scraping tools");
 assert.match(packageJson.scripts.prebuild, /test:brightdata-mcp-auth/);
