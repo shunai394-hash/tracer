@@ -27,35 +27,83 @@ export async function POST(request: Request) {
   }
 
   const db = createSupabaseAdminClient();
+
+  // Never spend a CJ API request while the persisted provider quota circuit is open.
+  const { data: quotaRun, error: quotaError } = await db
+    .from("cron_runs")
+    .select("metadata")
+    .eq("job_name", "cj-api-quota-circuit")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (quotaError) return NextResponse.json({ ok: false, error: "CJ_QUOTA_CIRCUIT_LOOKUP_FAILED" }, { status: 500 });
+  const quotaMetadata = quotaRun?.metadata && typeof quotaRun.metadata === "object" && !Array.isArray(quotaRun.metadata)
+    ? quotaRun.metadata as Record<string, unknown>
+    : {};
+  const blockedUntil = typeof quotaMetadata.blockedUntil === "string" ? quotaMetadata.blockedUntil : null;
+  if (blockedUntil && Date.parse(blockedUntil) > Date.now()) {
+    return NextResponse.json({ ok: false, error: "CJ_API_QUOTA_COOLDOWN", retryAfter: blockedUntil }, { status: 409 });
+  }
+
+  // This test exists to establish the order-path contract, so it must accept an
+  // unverified candidate. runCJSandboxOrderLifecycle performs fresh exact-variant,
+  // price, stock and Japan-freight checks before creating a sandbox-only order.
   const { data: listing, error } = await db
     .from("supplier_listings")
-    .select("id,supplier,supplier_product_id,supplier_variant_id,verification_status,shipping_status,configured,price_confirmed,inventory_confirmed,api_available,orderable,tracking_available,inventory,last_verified_at")
+    .select("id,supplier,supplier_product_id,supplier_variant_id,configured")
     .eq("id", supplierListingId)
     .maybeSingle();
 
   if (error) {
     return NextResponse.json({ ok: false, error: "SUPPLIER_LISTING_LOOKUP_FAILED" }, { status: 500 });
   }
-  const lastVerifiedAt = listing?.last_verified_at ? Date.parse(String(listing.last_verified_at)) : Number.NaN;
-  const fresh = Number.isFinite(lastVerifiedAt) && lastVerifiedAt >= Date.now() - 7 * 24 * 60 * 60 * 1000 && lastVerifiedAt <= Date.now() + 5 * 60 * 1000;
   if (
     !listing ||
     listing.supplier !== "cj" ||
-    !listing.supplier_product_id ||
-    !listing.supplier_variant_id ||
-    listing.verification_status !== "verified" ||
-    listing.shipping_status !== "verified" ||
-    listing.configured !== true ||
-    listing.price_confirmed !== true ||
-    listing.inventory_confirmed !== true ||
-    listing.api_available !== true ||
-    listing.orderable !== true ||
-    listing.tracking_available !== true ||
-    Number(listing.inventory) < 1 ||
-    !fresh
+    !String(listing.supplier_product_id ?? "").trim() ||
+    !String(listing.supplier_variant_id ?? "").trim() ||
+    listing.configured !== true
   ) {
-    return NextResponse.json({ ok: false, error: "SUPPLIER_LISTING_NOT_FRESH_VERIFIED_FOR_SANDBOX" }, { status: 409 });
+    return NextResponse.json({ ok: false, error: "SUPPLIER_LISTING_NOT_CJ_SANDBOX_CANDIDATE" }, { status: 409 });
   }
+
+  // One successful lifecycle is sufficient for this one-time contract proof.
+  // Failed attempts are auditable and may be retried only after inspecting the cause.
+  const { data: previousRuns, error: previousRunsError } = await db
+    .from("cron_runs")
+    .select("status,started_at,metadata")
+    .eq("job_name", "cj-sandbox-order-lifecycle")
+    .order("started_at", { ascending: false })
+    .limit(1);
+  if (previousRunsError) return NextResponse.json({ ok: false, error: "SANDBOX_AUDIT_LOOKUP_FAILED" }, { status: 500 });
+  const previous = previousRuns?.[0];
+  if (previous?.status === "succeeded") {
+    return NextResponse.json({ ok: false, error: "CJ_SANDBOX_LIFECYCLE_ALREADY_VERIFIED" }, { status: 409 });
+  }
+  if (previous?.status === "running" && Date.now() - Date.parse(String(previous.started_at)) < 10 * 60 * 1000) {
+    return NextResponse.json({ ok: false, error: "CJ_SANDBOX_LIFECYCLE_ALREADY_RUNNING" }, { status: 409 });
+  }
+
+  const startedAt = Date.now();
+  const { data: run, error: runError } = await db
+    .from("cron_runs")
+    .insert({
+      job_name: "cj-sandbox-order-lifecycle",
+      status: "running",
+      metadata: {
+        phase: "cj_sandbox_order_lifecycle",
+        supplierListingId,
+        sandbox: true,
+        charged: false,
+        realFulfillment: false,
+      },
+    })
+    .select("id")
+    .single();
+  if (runError || !run?.id) {
+    return NextResponse.json({ ok: false, error: "SANDBOX_AUDIT_CLAIM_FAILED" }, { status: 500 });
+  }
+  const runId = String(run.id);
 
   try {
     const result = await runCJSandboxOrderLifecycle({
@@ -73,16 +121,28 @@ export async function POST(request: Request) {
       shippingCustomerName: "TRACER SANDBOX TEST",
       email: "sandbox-test@example.invalid",
     });
-    console.info("[TRACER CJ SANDBOX ORDER TEST COMPLETE]", JSON.stringify({
+    const auditMetadata = {
+      phase: "cj_sandbox_order_lifecycle",
       supplierListingId,
       supplierOrderId: result.supplierOrderId,
-      status: result.status,
+      supplierStatus: result.status,
       paymentConfirmed: result.paymentConfirmed,
       sandbox: result.sandbox,
       charged: result.charged,
       realFulfillment: result.realFulfillment,
       trackingNumberPresent: Boolean(result.trackingNumber.trim()),
-    }));
+    };
+    const { error: auditWriteError } = await db.from("cron_runs").update({
+      status: "succeeded",
+      finished_at: new Date().toISOString(),
+      duration_ms: Date.now() - startedAt,
+      processed: 1,
+      failed: 0,
+      metadata: auditMetadata,
+    }).eq("id", runId);
+    if (auditWriteError) throw new Error("CJ_SANDBOX_AUDIT_WRITE_FAILED");
+
+    console.info("[TRACER CJ SANDBOX ORDER TEST COMPLETE]", JSON.stringify(auditMetadata));
     return NextResponse.json({
       ok: true,
       phase: "cj_sandbox_order_lifecycle",
@@ -90,15 +150,28 @@ export async function POST(request: Request) {
       ...result,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    console.error("[TRACER CJ SANDBOX ORDER TEST FAILED]", {
-      supplierListingId,
-      error: error instanceof Error ? error.message.slice(0, 240) : "unknown",
-    });
+    const detail = error instanceof Error ? error.message.slice(0, 240) : "CJ sandbox test failed";
+    await db.from("cron_runs").update({
+      status: "failed",
+      finished_at: new Date().toISOString(),
+      duration_ms: Date.now() - startedAt,
+      processed: 0,
+      failed: 1,
+      error: detail,
+      metadata: {
+        phase: "cj_sandbox_order_lifecycle",
+        supplierListingId,
+        sandbox: true,
+        charged: false,
+        realFulfillment: false,
+      },
+    }).eq("id", runId);
+    console.error("[TRACER CJ SANDBOX ORDER TEST FAILED]", { supplierListingId, error: detail });
     return NextResponse.json({
       ok: false,
       phase: "cj_sandbox_order_lifecycle",
       supplierListingId,
-      error: error instanceof Error ? error.message.slice(0, 240) : "CJ sandbox test failed",
+      error: detail,
     }, { status: 502, headers: { "Cache-Control": "no-store" } });
   }
 }
