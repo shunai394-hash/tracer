@@ -93,6 +93,7 @@ assert.match(base, /supplier_product_id.not.is.null,supplier_variant_id.not.is.n
 assert.match(base, /getPublishableSupplierListingStatuses/, "BASE publication must require a linked or freshly verified native supplier listing");
 assert.match(base, /listing\.orderable !== true/, "BASE publication requires supplier orderability");
 assert.match(base, /listing\.tracking_available !== true/, "BASE publication requires tracking capability");
+assert.match(base, /if \(!isIdentityUnlinked && listing\.published !== true && listing\.base_last_error !== "tracer_unpublished_hidden"\) continue/, "BASE must not skip hiding an unverified supplier item merely because TRACER already marked it unpublished");
 assert.match(base, /profit_not_positive/, "BASE publication requires positive contribution profit");
 assert.match(base, /query\.order\("created_at", \{ ascending: false \}\)/,
   "BASE batches must prioritize new gate-passed listings instead of starving them behind old hidden rows");
@@ -124,7 +125,7 @@ assert.doesNotMatch(vercel, /"path": "\/api\/cron\/(market-sourcing|supplier-inv
 assert.match(intelligencePipeline, /marketplace_sourcing_disabled_supplier_native_only/, "patrol must not read marketplace-derived sourcing data");
 assert.doesNotMatch(vercel, /"path": "\/api\/cron\/newfind-retry"/, "out-of-scope NEWFIND retries must not run in the three-site workflow");
 assert.match(intelligencePipeline, /marketplace_sourcing_disabled_supplier_native_only/, "marketplace candidates must not feed publication");
-assert.match(unpublishWorkflow, /cron: "\*\/15 \* \* \* \*"/, "guarded unlinked listing reconciliation must retry every 15 minutes via GitHub Actions");
+assert.ok(unpublishWorkflow.includes('cron: "*/5 * * * *"'), "guarded unlinked listing reconciliation must retry every five minutes via GitHub Actions");
 assert.match(unpublishWorkflow, /api\/cron\/unpublish-unlinked/);
 assert.match(unpublishWorkflow, /id-token: write/);
 assert.match(unpublishWorkflow, /timeout-minutes: 13/);
@@ -139,6 +140,9 @@ assert.match(patrolWorkflow, /pipelineComplete:/);
 assert.match(patrolWorkflow, /r.get\("ok"\) is not True/);
 assert.match(patrolWorkflow, /timeout-minutes: 9/);
 assert.match(patrolRoute, /const safeSteps = pipeline\.steps\.map/);
+assert.doesNotMatch(patrolRoute, /retryPendingNewfindPromotions|rescueUndeliveredGatePassedListings/, "the three-site patrol must not write to NEWFIND");
+assert.doesNotMatch(salesPublicationRoute, /promoteShopListingToNewfind/, "sales-test publication must not deliver outside the three-site scope");
+assert.doesNotMatch(salesPublicationRoute, /marketplace_bestsellers|selectAndPublishSalesTests/, "scheduled sales publication must not use marketplace-derived candidates");
 assert.match(patrolRoute, /technicalDeferredSteps/);
 assert.match(patrolRoute, /businessReadinessMissing/, "business readiness gaps must be reported incomplete without masquerading as a technical exception");
 assert.match(patrolRoute, /errorCategories: Array\.from\(new Set\(errors\.map/);
