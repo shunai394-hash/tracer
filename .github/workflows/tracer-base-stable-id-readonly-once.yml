@@ -1,0 +1,111 @@
+name: TRACER BASE Stable-ID Read-Only Audit
+
+on:
+  schedule:
+    - cron: "35 4 15 10 *"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tracer-base-stable-id-readonly-audit-20261015
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Fetch BASE snapshot and reconcile stable identifiers without writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$(date -u +%F)" != "2026-10-15" ]; then
+            echo "One-time BASE audit window has passed; no API request made."
+            exit 0
+          fi
+          sleep 30
+          node --input-type=module <<'NODE'
+          const base = "https://tracer-pied-alpha.vercel.app";
+          const audience = base;
+          const tokenUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          tokenUrl.searchParams.set("audience", audience);
+          const tokenResponse = await fetch(tokenUrl, {
+            headers: { Authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
+            signal: AbortSignal.timeout(15000),
+          });
+          if (!tokenResponse.ok) throw new Error(`OIDC_TOKEN_REQUEST_FAILED:${tokenResponse.status}`);
+          const tokenBody = await tokenResponse.json();
+          if (typeof tokenBody.value !== "string" || !tokenBody.value) throw new Error("OIDC_TOKEN_MISSING");
+          const headers = { Authorization: `Bearer ${tokenBody.value}`, Accept: "application/json" };
+
+          const snapshotResponse = await fetch(`${base}/api/admin/channels/base/snapshot`, {
+            headers,
+            signal: AbortSignal.timeout(110000),
+          });
+          if (!snapshotResponse.ok) throw new Error(`BASE_SNAPSHOT_HTTP_${snapshotResponse.status}`);
+          const snapshot = await snapshotResponse.json();
+          if (snapshot.complete !== true || !Array.isArray(snapshot.items) ||
+              snapshot.itemCount !== snapshot.items.length || snapshot.itemCount < 1) {
+            throw new Error("BASE_SNAPSHOT_INCOMPLETE_OR_COUNT_MISMATCH");
+          }
+          const itemIds = snapshot.items.map((item) => String(item?.item_id ?? ""));
+          if (itemIds.some((id) => !id) || new Set(itemIds).size !== itemIds.length) {
+            throw new Error("BASE_SNAPSHOT_ITEM_ID_MISSING_OR_DUPLICATE");
+          }
+
+          const reportResponse = await fetch(`${base}/api/admin/channels/base/reconciliation`, {
+            method: "POST",
+            headers: { ...headers, "Content-Type": "application/json" },
+            body: JSON.stringify({ snapshot }),
+            signal: AbortSignal.timeout(110000),
+          });
+          if (!reportResponse.ok) throw new Error(`BASE_RECONCILIATION_HTTP_${reportResponse.status}`);
+          const report = await reportResponse.json();
+          if (report.complete !== true || !Array.isArray(report.items) ||
+              report.baseItemCount !== report.items.length || report.baseItemCount !== snapshot.itemCount) {
+            throw new Error("BASE_RECONCILIATION_INCOMPLETE_OR_COUNT_MISMATCH");
+          }
+
+          const stable = report.items
+            .filter((item) => /^TRC-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(item.identifier ?? "")))
+            .sort((a, b) => String(a.identifier).localeCompare(String(b.identifier)))
+            .map((item) => ({
+              identifier: item.identifier,
+              baseItemId: item.baseItemId,
+              title: item.title,
+              visible: item.visible,
+              stableIdentifierListingId: item.stableIdentifierListingId,
+              stableIdentifierMatchCount: item.stableIdentifierMatchCount,
+              existingBaseItemId: item.stableIdentifierMatches?.[0]?.existingBaseItemId ?? null,
+              exactBaseIdMatchCount: item.exactBaseIdMatchCount,
+              exactTitleCandidateCount: item.exactTitleCandidateCount,
+              exactTitleCandidateListingIds: item.exactTitleCandidateListingIds ?? item.exactTitleCandidates?.map((candidate) => candidate.listingId) ?? [],
+            }));
+          const unmapped = report.items.filter((item) => item.exactBaseIdMatchCount === 0);
+          const output = {
+            readOnly: true,
+            writesPerformed: false,
+            generatedAt: report.generatedAt,
+            baseItemCount: report.baseItemCount,
+            baseVisibleCount: report.baseVisibleCount,
+            exactBaseIdMappedCount: report.exactBaseIdMappedCount,
+            baseItemsWithoutExactMappingCount: report.baseItemsWithoutExactMappingCount,
+            baseItemsWithAmbiguousExactMappingCount: report.baseItemsWithAmbiguousExactMappingCount,
+            baseItemsWithExactTitleCandidateCount: report.baseItemsWithExactTitleCandidateCount,
+            stableIdentifierCount: stable.length,
+            stableIdentifierListingMatchedCount: stable.filter((item) => item.stableIdentifierMatchCount === 1).length,
+            stableIdentifierBaseItemIdAlreadyExactCount: stable.filter((item) => item.existingBaseItemId != null && String(item.existingBaseItemId) === String(item.baseItemId)).length,
+            stableIdentifierBaseItemIdMissingCount: stable.filter((item) => item.stableIdentifierMatchCount === 1 && item.existingBaseItemId == null).length,
+            stableIdentifierBaseItemIdConflictCount: stable.filter((item) => item.stableIdentifierMatchCount === 1 && item.existingBaseItemId != null && String(item.existingBaseItemId) !== String(item.baseItemId)).length,
+            unmappedWithTitleCandidates: unmapped.filter((item) => item.exactTitleCandidateCount > 0).length,
+            stableIdentifiers: stable,
+          };
+          console.log("[TRACER BASE READONLY AUDIT RESULT]", JSON.stringify(output));
+          NODE

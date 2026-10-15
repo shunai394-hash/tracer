@@ -22,6 +22,12 @@ type ListingRow = {
   base_publication_status: string | null;
 };
 
+function text(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
 function normalizedTitle(value: unknown): string {
   return String(value ?? "")
     .normalize("NFKC")
@@ -89,7 +95,9 @@ export async function POST(request: Request) {
 
     const byBaseId = new Map<string, ListingRow[]>();
     const byTitle = new Map<string, ListingRow[]>();
+    const byListingId = new Map<string, ListingRow>();
     for (const listing of listings) {
+      byListingId.set(String(listing.id).toLowerCase(), listing);
       const baseId = String(listing.base_item_id ?? "").trim();
       if (baseId) {
         const group = byBaseId.get(baseId) ?? [];
@@ -108,10 +116,30 @@ export async function POST(request: Request) {
       const baseItemId = String(item.item_id ?? "");
       const title = String(item.title ?? item.name ?? "");
       const key = normalizedTitle(title);
+      const identifier = text(item.identifier);
+      const stableIdentifierMatch = identifier?.match(/^TRC-([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i);
+      const stableIdentifierListingId = stableIdentifierMatch?.[1]?.toLowerCase() ?? null;
+      const stableIdentifierListing = stableIdentifierListingId ? byListingId.get(stableIdentifierListingId) ?? null : null;
       const exactIdListings = byBaseId.get(baseItemId) ?? [];
       const titleCandidates = key ? (byTitle.get(key) ?? []) : [];
       return {
         baseItemId,
+        identifier,
+        stableIdentifierListingId,
+        stableIdentifierMatchCount: stableIdentifierListing ? 1 : 0,
+        stableIdentifierMatches: stableIdentifierListing ? [{
+          listingId: stableIdentifierListing.id,
+          title: stableIdentifierListing.title,
+          published: stableIdentifierListing.published,
+          existingBaseItemId: stableIdentifierListing.base_item_id,
+          supplierListingId: stableIdentifierListing.supplier_listing_id,
+          supplierProductId: stableIdentifierListing.supplier_product_id,
+          supplierVariantId: stableIdentifierListing.supplier_variant_id,
+          inventory: stableIdentifierListing.inventory,
+          orderable: stableIdentifierListing.orderable,
+          sellingPrice: stableIdentifierListing.selling_price,
+          basePublicationStatus: stableIdentifierListing.base_publication_status,
+        }] : [],
         visible: visibility(item.visible),
         title,
         price: item.price ?? null,
@@ -174,6 +202,36 @@ export async function POST(request: Request) {
       note: "Exact-title candidates are unverified suggestions only. This report never writes mappings or changes BASE listings.",
       items,
     };
+    const stableIdentifierAudit = items
+      .filter((item) => /^TRC-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(item.identifier ?? "")))
+      .map((item) => ({
+        baseItemId: item.baseItemId,
+        identifier: item.identifier,
+        title: item.title,
+        visible: item.visible,
+        stableIdentifierListingId: item.stableIdentifierListingId,
+        stableIdentifierMatchCount: item.stableIdentifierMatchCount,
+        stableIdentifierMatches: item.stableIdentifierMatches,
+        exactBaseIdMatchCount: item.exactBaseIdMatchCount,
+        exactTitleCandidateCount: item.exactTitleCandidateCount,
+        exactTitleCandidateListingIds: item.exactTitleCandidates.map((candidate) => candidate.listingId),
+      }))
+      .sort((a, b) => String(a.identifier).localeCompare(String(b.identifier)));
+    console.info("[TRACER BASE STABLE-ID RECONCILIATION]", JSON.stringify({
+      generatedAt: report.generatedAt,
+      complete: report.complete,
+      baseItemCount: report.baseItemCount,
+      exactBaseIdMappedCount: report.exactBaseIdMappedCount,
+      baseItemsWithoutExactMappingCount: report.baseItemsWithoutExactMappingCount,
+      baseItemsWithAmbiguousExactMappingCount: report.baseItemsWithAmbiguousExactMappingCount,
+      baseItemsWithExactTitleCandidateCount: report.baseItemsWithExactTitleCandidateCount,
+      stableIdentifierCount: stableIdentifierAudit.length,
+      stableIdentifierListingMatchedCount: stableIdentifierAudit.filter((item) => item.stableIdentifierMatchCount === 1).length,
+      stableIdentifierBaseItemIdAlreadyExactCount: stableIdentifierAudit.filter((item) => item.stableIdentifierMatches[0]?.existingBaseItemId != null && String(item.stableIdentifierMatches[0].existingBaseItemId) === String(item.baseItemId)).length,
+      stableIdentifierBaseItemIdMissingCount: stableIdentifierAudit.filter((item) => item.stableIdentifierMatchCount === 1 && item.stableIdentifierMatches[0]?.existingBaseItemId == null).length,
+      stableIdentifierBaseItemIdConflictCount: stableIdentifierAudit.filter((item) => item.stableIdentifierMatchCount === 1 && item.stableIdentifierMatches[0]?.existingBaseItemId != null && String(item.stableIdentifierMatches[0].existingBaseItemId) !== String(item.baseItemId)).length,
+      stableIdentifierAudit,
+    }));
     const date = report.generatedAt.slice(0, 10);
     return new Response(JSON.stringify(report, null, 2), {
       status: 200,
