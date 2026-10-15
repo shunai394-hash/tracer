@@ -403,6 +403,11 @@ export async function runCJSandboxOrderLifecycle(input: SupplierOrderInput): Pro
   sandbox: true;
   charged: false;
   realFulfillment: false;
+  verifiedSupplierProductId: string;
+  verifiedSupplierVariantId: string;
+  verifiedUnitCostUsd: number;
+  verifiedShippingCostUsd: number;
+  verifiedInventory: number;
 }> {
   const required: Array<[string, string | undefined]> = [
     ["supplierProductId", input.supplierProductId],
@@ -480,5 +485,10 @@ export async function runCJSandboxOrderLifecycle(input: SupplierOrderInput): Pro
     sandbox: true,
     charged: false,
     realFulfillment: false,
+    verifiedSupplierProductId: variant.productId,
+    verifiedSupplierVariantId: variant.vid,
+    verifiedUnitCostUsd: positiveNumber(variant.sellPrice)!,
+    verifiedShippingCostUsd: freight.shippingCost,
+    verifiedInventory: variant.inventory!,
   };
 }
