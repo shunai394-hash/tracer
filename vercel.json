@@ -15,10 +15,6 @@
       "schedule": "7 12 * * *"
     },
     {
-      "path": "/api/cron/orosy-bulk-import",
-      "schedule": "10 12 * * *"
-    },
-    {
       "path": "/api/cron/inventory-refresh",
       "schedule": "15 12 * * *"
     },
@@ -65,10 +61,6 @@
     {
       "path": "/api/cron/cj-variant-repair",
       "schedule": "7 18 * * *"
-    },
-    {
-      "path": "/api/cron/orosy-bulk-import",
-      "schedule": "10 18 * * *"
     },
     {
       "path": "/api/cron/demand-match",

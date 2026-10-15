@@ -7,6 +7,8 @@ const marketSelector = readFileSync("lib/market/select-sales-tests.ts", "utf8");
 const pricing = readFileSync("lib/market/supply-pricing.ts", "utf8");
 const identity = readFileSync("lib/catalog/canonical-supplier-identity.ts", "utf8");
 const japaneseProduct = readFileSync("lib/intelligence/japanese-product.ts", "utf8");
+const commerceCycle = readFileSync(".github/workflows/tracer-autonomous-commerce-cycle.yml", "utf8");
+const oneShotRecovery = readFileSync(".github/workflows/tracer-one-shot-supply-recovery.yml", "utf8");
 const vercel = JSON.parse(readFileSync("vercel.json", "utf8"));
 
 // The supply-first queue must not require a marketplace identity link: a
@@ -56,6 +58,10 @@ assert.match(selector, /isPublishableCatalogDescription\(localizedDescription\)/
 assert.match(selector, /if \(!publishableDescription\)/);
 assert.match(japaneseProduct, /knitted headband.*women/i);
 assert.match(japaneseProduct, /柔らかなニット素材のクロスヘアバンドです/);
+
+assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/orosy-bulk-import"), [], "Orosy sourcing must stay disabled");
+assert.doesNotMatch(commerceCycle, /orosy-bulk-import/, "autonomous commerce workflow must not invoke Orosy");
+assert.doesNotMatch(oneShotRecovery, /orosy-bulk-import/, "one-shot recovery must not invoke Orosy");
 
 const patrolSchedules = vercel.crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule);
 assert.deepEqual(patrolSchedules, ["*/5 * * * *"], "the existing Vercel AI patrol must remain every five minutes");

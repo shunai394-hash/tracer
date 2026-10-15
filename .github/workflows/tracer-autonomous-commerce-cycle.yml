@@ -56,7 +56,6 @@ jobs:
           call "/api/cron/sales-test-publication" 300 publish-first.json
 
           # Refresh supply and intelligence without making them a publication bypass.
-          call "/api/cron/orosy-bulk-import" 120 orosy.json
           call "/api/cron/market-sourcing" 60 market-sourcing.json
           call "/api/cron/supplier-investigation" 180 supplier-investigation.json
           call "/api/cron/intelligence" 300 intelligence.json

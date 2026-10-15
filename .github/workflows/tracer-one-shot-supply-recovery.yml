@@ -39,8 +39,7 @@ jobs:
               print(open(sys.argv[1]).read()[:1000])
           PY
           }
-          echo "=== Alternate supplier and market recovery (CJ cooldown-safe) ==="
-          call_get api/cron/orosy-bulk-import 180 orosy-import.json || true
+          echo "=== Market recovery (CJ cooldown-safe) ==="
           call_get api/cron/market-sourcing 90 market-sourcing.json || true
           call_get api/cron/supplier-investigation 240 supplier-investigation.json || true
           call_get api/cron/intelligence 300 intelligence.json || true
