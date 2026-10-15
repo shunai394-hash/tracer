@@ -41,6 +41,8 @@ export type CJCreateOrderInput = {
   shippingCountry?: string;
   /** CJ payment mode: 2 = automatic balance payment, 3 = create-only. */
   payType?: 2 | 3;
+  /** Explicitly create a CJ sandbox order; omitted for all live orders. */
+  isSandbox?: boolean;
   products: CJOrderProduct[];
 };
 
@@ -162,7 +164,8 @@ export async function createCJOrderV2(
   body.fromCountryCode = input.fromCountryCode;
   // CJ defaults to deprecated page payment when payType is omitted.
   // Use balance payment so a live TRACER order does not stop at a payment page.
-  body.payType = input.payType ?? 2;
+  body.payType = input.payType ?? (input.isSandbox ? 3 : 2);
+  if (input.isSandbox) body.isSandbox = 1;
 
   // Order creation claims the shared CJ QPS slot but is never auto-retried,
   // so a throttled or ambiguous response cannot create a duplicate order.
@@ -259,6 +262,70 @@ export async function getCJTrackingInfo(trackNumber: string): Promise<CJTracking
  * status vocabulary can vary across CJ order states. The endpoint itself is
  * documented by CJ API v2.0.
  */
+type CJSandboxActionResponse = {
+  code?: number;
+  result?: boolean;
+  message?: string;
+  data?: boolean;
+};
+
+async function postCJSandboxAction(
+  path: string,
+  body: Record<string, string | number>,
+): Promise<CJSandboxActionResponse> {
+  const token = await getAccessTokenForOrder();
+  const response = await fetchCJWithRateLimit(
+    `https://developers.cjdropshipping.com/api2.0/v1/shopping/sandbox/${path}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "CJ-Access-Token": token,
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    },
+  );
+  const payload = (await response.json().catch(() => ({}))) as CJSandboxActionResponse;
+  if (
+    !response.ok ||
+    payload.result === false ||
+    payload.data === false ||
+    (typeof payload.code === "number" && payload.code !== 200)
+  ) {
+    throw new CJRequestError(
+      payload.message || `CJ sandbox ${path} failed with HTTP ${response.status}`,
+      "CJ_SANDBOX_ACTION_FAILED",
+    );
+  }
+  return payload;
+}
+
+export async function simulateCJSandboxPayment(orderId: string): Promise<void> {
+  const id = orderId.trim();
+  if (!id) throw new CJRequestError("CJ sandbox order ID is empty", "CJ_SANDBOX_ORDER_ID_MISSING");
+  await postCJSandboxAction("simulatePay", { orderId: id });
+}
+
+export async function updateCJSandboxOrderStatus(
+  orderId: string,
+  targetStatus: 400 | 500 | 600 | 700,
+): Promise<void> {
+  const id = orderId.trim();
+  if (!id) throw new CJRequestError("CJ sandbox order ID is empty", "CJ_SANDBOX_ORDER_ID_MISSING");
+  await postCJSandboxAction("updateStatus", { orderId: id, targetStatus });
+}
+
+export async function updateCJSandboxTrackingNumber(
+  orderId: string,
+  trackingNumber: string,
+): Promise<void> {
+  const id = orderId.trim();
+  const tracking = trackingNumber.trim();
+  if (!id || !tracking) throw new CJRequestError("CJ sandbox order ID and tracking number are required", "CJ_SANDBOX_TRACKING_INPUT_MISSING");
+  await postCJSandboxAction("updateTrackNumber", { orderId: id, trackNumber: tracking });
+}
+
 export type CJOrderStatusResult = {
   status: string | null;
   trackingNumber: string | null;
