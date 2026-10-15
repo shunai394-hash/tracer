@@ -9,6 +9,8 @@ type ReconcileResult = {
   updated: number;
   failed: number;
   purchaseOrderIds: string[];
+  failedPurchaseOrderIds: string[];
+  failureDetails: Array<{ purchaseOrderId: string; stage: string; reason: string }>;
 };
 
 function normalizeStatus(value: string | null | undefined): string | null {
@@ -45,6 +47,8 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
   let updated = 0;
   let failed = 0;
   const purchaseOrderIds: string[] = [];
+  const failedPurchaseOrderIds: string[] = [];
+  const failureDetails: Array<{ purchaseOrderId: string; stage: string; reason: string }> = [];
 
   for (const po of purchaseOrders ?? []) {
     const purchaseOrderId = String(po.id);
@@ -54,9 +58,21 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
 
     if (!adapter) {
       failed += 1;
+      failedPurchaseOrderIds.push(purchaseOrderId);
+      failureDetails.push({
+        purchaseOrderId,
+        stage: "supplier_adapter_lookup",
+        reason: "supplier_adapter_unavailable",
+      });
+      console.error("[TRACER SUPPLIER RECONCILIATION]", {
+        purchaseOrderId,
+        stage: "supplier_adapter_lookup",
+        reason: "supplier_adapter_unavailable",
+      });
       continue;
     }
 
+    let stage = "supplier_status_lookup";
     try {
       const [statusResult, trackingResult] = await Promise.all([
         adapter.capabilities.orderStatus
@@ -98,6 +114,7 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
         update.shipped_at = trackingResult.shippedAt;
       }
 
+      stage = "purchase_order_status_update";
       const { error: updateError } = await supabase
         .from("purchase_orders")
         .update(update)
@@ -106,6 +123,7 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
       if (updateError) throw new Error(updateError.message);
 
       if (supplierName.toLowerCase() === "tracer_internal") {
+        stage = "internal_fulfillment_status_update";
         const internalStatus =
           nextStatus === "delivered" ? "delivered" :
           nextStatus === "shipped" ? "shipped" :
@@ -114,7 +132,7 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
           nextStatus === "cancelled" ? "cancelled" :
           "reserved";
 
-        await supabase
+        const { data: internalOrder, error: internalUpdateError } = await supabase
           .from("internal_fulfillment_orders")
           .update({
             status: internalStatus,
@@ -123,14 +141,27 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
             tracking_url: trackingResult?.trackingUrl ?? null,
             updated_at: new Date().toISOString(),
           })
-          .eq("purchase_order_id", purchaseOrderId);
+          .eq("purchase_order_id", purchaseOrderId)
+          .select("id")
+          .maybeSingle();
+
+        if (internalUpdateError) throw new Error(internalUpdateError.message);
+        if (!internalOrder) throw new Error("internal_fulfillment_order_not_found");
       }
 
+      stage = "complete";
       updated += 1;
       purchaseOrderIds.push(purchaseOrderId);
     } catch (error) {
       failed += 1;
-      console.error("[TRACER SUPPLIER RECONCILIATION]", purchaseOrderId, error);
+      failedPurchaseOrderIds.push(purchaseOrderId);
+      const reason = error instanceof Error ? error.message : String(error);
+      failureDetails.push({ purchaseOrderId, stage, reason });
+      console.error("[TRACER SUPPLIER RECONCILIATION]", {
+        purchaseOrderId,
+        stage,
+        reason,
+      });
     }
   }
 
@@ -139,5 +170,7 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
     updated,
     failed,
     purchaseOrderIds,
+    failedPurchaseOrderIds,
+    failureDetails,
   };
 }

@@ -9,6 +9,7 @@ import {
   searchCJProducts,
   calculateCJFreight,
 } from "@/lib/sources/cj";
+import { isCJQuotaCircuitBlockingError } from "@/lib/sources/cj/client";
 import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/cj/variant-select";
 import { persistCjSupplyIntelligence } from "@/lib/intelligence/persist-cj-supply-intelligence";
 import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
@@ -82,17 +83,24 @@ async function readCatalogCursor(db: ReturnType<typeof createSupabaseAdminClient
 
 async function writeCatalogCursor(
   db: ReturnType<typeof createSupabaseAdminClient>,
-  cursor: CatalogCursor & { verified: number; rejected: number },
+  cursor: CatalogCursor & { verified: number; rejected: number; quotaBlocked: boolean },
 ): Promise<void> {
   const now = new Date().toISOString();
   const { error } = await db.from("cron_runs").insert({
     job_name: CATALOG_CURSOR_JOB,
-    status: "succeeded",
+    // A quota circuit is a blocked run, not a successful catalog pass.
+    // Ordinary candidate rejections remain counted without making the whole run fail.
+    status: cursor.quotaBlocked ? "failed" : "succeeded",
     started_at: now,
     finished_at: now,
     processed: cursor.verified,
     failed: cursor.rejected,
-    metadata: { queryIndex: cursor.queryIndex, page: cursor.page },
+    metadata: {
+      queryIndex: cursor.queryIndex,
+      page: cursor.page,
+      quotaBlocked: cursor.quotaBlocked,
+      reason: cursor.quotaBlocked ? "supplier_quota_cooldown" : null,
+    },
   });
   if (error) console.error("[supply-first] catalog cursor write failed", error.message);
 }
@@ -175,6 +183,36 @@ export async function discoverAndCreateCjSupply(
 }> {
   const db = createSupabaseAdminClient();
 
+  // Do not repeatedly query CJ while the persisted provider quota circuit is open.
+  // The shared CJ client already fails closed, but checking here prevents each
+  // five-minute patrol from re-selecting and rejecting the same seeded candidate.
+  const quotaCircuit = await db
+    .from("cron_runs")
+    .select("metadata")
+    .eq("job_name", "cj-api-quota-circuit")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (quotaCircuit.error) {
+    throw new Error(`CJ quota circuit lookup failed: ${quotaCircuit.error.message}`);
+  }
+  const quotaMetadata = quotaCircuit.data?.metadata && typeof quotaCircuit.data.metadata === "object" && !Array.isArray(quotaCircuit.data.metadata)
+    ? quotaCircuit.data.metadata as Record<string, unknown>
+    : {};
+  const quotaBlockedUntil = typeof quotaMetadata.blockedUntil === "string" ? quotaMetadata.blockedUntil : null;
+  if (quotaBlockedUntil && Date.parse(quotaBlockedUntil) > Date.now()) {
+    return {
+      discovered: 0,
+      published: 0,
+      verified: 0,
+      rejected: 0,
+      candidateCount: 0,
+      eligibleCount: 0,
+      deadlineReached: true,
+      items: [],
+    };
+  }
+
   // Supply discovery is intentionally independent from procurement eligibility.
   // CJ is queried directly below and every candidate is re-verified live for
   // variant, stock, Japan freight and cost. Payment/order-creation gates stay
@@ -196,6 +234,10 @@ export async function discoverAndCreateCjSupply(
   let verified = 0;
   let catalogDiscovered = 0;
   let rejected = 0;
+  // Once CJ reports an exhausted/unknown quota circuit, stop this invocation.
+  // Repeating dozens of searches cannot recover the provider quota and only
+  // creates noisy failure records; leave the cursor on the same query to resume later.
+  let cjQuotaBlocked = false;
 
   // Reuse previously discovered CJ IDs first. These rows are only candidates;
   // stock, variant and Japan freight are re-verified live before publication.
@@ -255,7 +297,11 @@ export async function discoverAndCreateCjSupply(
       const key = `${String(row.supplier_product_id)}:${String(row.supplier_variant_id)}`;
       if (existingVariants.has(key) || seenSeedKeys.has(key)) return false;
       seenSeedKeys.add(key);
-      return priorityWomenSupplyCategory(row.title, row.metadata) < 99;
+      // Include every due supplier category. Women-focused categories remain
+      // first in the sort order, but category priority must never exclude the
+      // rest of the catalog from discovery. Live stock, freight, cost and
+      // Japanese-title checks below remain the actual candidate requirements.
+      return true;
     })
     .sort((a, b) =>
       priorityWomenSupplyCategory(a.title, a.metadata) - priorityWomenSupplyCategory(b.title, b.metadata) ||
@@ -420,20 +466,16 @@ export async function discoverAndCreateCjSupply(
       if (productInsert.error) throw new Error(productInsert.error.message);
       const productId = String(productInsert.data.id);
       const supplierInsert = await upsertSupplierListing(db, {
-        supplier: "cj", external_id: candidate.variantId, sku: null, title: detail.title, product_id: productId,
+        supplier: "cj", external_id: candidate.variantId, sku: null, title: detail.title, product_id: null,
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
-        order_method: "cj_api", api_available: true, verification_status: "verified", shipping_status: "verified", identity_method: "supply_discovered",
-        identity_status: "supply_discovered", identity_confidence: 1, configured: true,
+        order_method: "cj_api", api_available: false, verification_status: "unverified", shipping_status: "verified", identity_method: "supply_discovered",
+        identity_status: "supply_discovered", identity_confidence: 0, configured: true,
         supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
         gtin: normalizeIdentifier("gtin", variantBarcode),
-        orderable: true, price_confirmed: true, inventory_confirmed: true, tracking_available: cjTrackingAvailable,
+        orderable: false, price_confirmed: true, inventory_confirmed: true, tracking_available: false,
         fetched_at: new Date().toISOString(), metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate }
       }, seededCandidate.supplierListingId);
       if (supplierInsert.error) throw new Error(supplierInsert.error.message);
-      await markVerification(db, String(supplierInsert.data.id), { status: "verified", shippingStatus: "verified" });
-      if (seededCandidate.supplierListingId && seededCandidate.supplierListingId !== String(supplierInsert.data.id)) {
-        await markVerification(db, seededCandidate.supplierListingId, { status: "verified", shippingStatus: "verified" });
-      }
       const intelligence = await persistCjSupplyIntelligence({
         productId,
         title: displayTitle,
@@ -501,9 +543,18 @@ export async function discoverAndCreateCjSupply(
     } catch (error) {
       rejected++;
       const message = error instanceof Error ? error.message : String(error);
-      items.push({ rejectedStage: "error", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, error: message });
-      if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: message.slice(0, 500), attempts: seededCandidate.attempts });
-      console.warn("[supply-first] seeded candidate rejected", { productId: candidate.id, error: message });
+      cjQuotaBlocked = isCJQuotaCircuitBlockingError(error);
+      items.push({
+        rejectedStage: cjQuotaBlocked ? "supplier_quota_cooldown" : "error",
+        supplierProductId: candidate.id,
+        supplierVariantId: candidate.variantId,
+        error: message,
+      });
+      if (seededCandidate.supplierListingId && !cjQuotaBlocked) {
+        await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: message.slice(0, 500), attempts: seededCandidate.attempts });
+      }
+      console.warn("[supply-first] seeded candidate rejected", { productId: candidate.id, error: message, quotaBlocked: cjQuotaBlocked });
+      if (cjQuotaBlocked) break;
     }
   }
 
@@ -518,7 +569,7 @@ export async function discoverAndCreateCjSupply(
   let page = cursor.page;
   let pagesScanned = 0;
   const seenSearchProducts = new Set<string>();
-  while (catalogDiscovered < limit && pagesScanned < queries.length * 2) {
+  while (!cjQuotaBlocked && catalogDiscovered < limit && pagesScanned < queries.length * 2) {
     if (Date.now() >= deadlineAt) {
       deadlineReached = true;
       break;
@@ -530,7 +581,15 @@ export async function discoverAndCreateCjSupply(
     try {
       search = await searchCJProducts(query, { page, size: 20 });
     } catch (error) {
-      items.push({ rejectedStage: "catalog_search_failed", query, page, error: error instanceof Error ? error.message : String(error) });
+      const message = error instanceof Error ? error.message : String(error);
+      cjQuotaBlocked = isCJQuotaCircuitBlockingError(error);
+      items.push({
+        rejectedStage: cjQuotaBlocked ? "supplier_quota_cooldown" : "catalog_search_failed",
+        query,
+        page,
+        error: message,
+      });
+      if (cjQuotaBlocked) break;
       ({ queryIndex, page } = nextCatalogQuery(queryIndex, queries.length));
       continue;
     }
@@ -652,26 +711,28 @@ export async function discoverAndCreateCjSupply(
               external_id: variant.vid,
               sku: variant.sku,
               title: detail.title,
-              product_id: productId,
+              // Discovery is not canonical identity. Keep unresolved supply detached until a unique exact-variant match exists.
+              product_id: null,
               cost,
               shipping_cost: freight,
               currency: "USD",
               inventory: Math.floor(stock),
               ship_to: "JP",
               order_method: "cj_api",
-              api_available: true,
+              api_available: false,
+              verification_status: "unverified",
               identity_method: "supply_discovered",
               identity_status: "supply_discovered",
-              identity_confidence: 1,
+              identity_confidence: 0,
               configured: true,
               supplier_product_id: candidate.id,
               supplier_variant_id: variant.vid,
               cj_variant_id: variant.vid,
               gtin: normalizeIdentifier("gtin", variantBarcode),
-              orderable: true,
+              orderable: false,
               price_confirmed: true,
               inventory_confirmed: true,
-              tracking_available: cjTrackingAvailable,
+              tracking_available: false,
               fetched_at: now,
               metadata: {
                 source: "cj_supply_first",
@@ -766,7 +827,7 @@ export async function discoverAndCreateCjSupply(
         : { queryIndex, page: page + 1 });
     }
   }
-  await writeCatalogCursor(db, { queryIndex, page, verified, rejected });
+  await writeCatalogCursor(db, { queryIndex, page, verified, rejected, quotaBlocked: cjQuotaBlocked });
 
   return { discovered, published: 0, verified, rejected, candidateCount: candidateInputs.length, eligibleCount: seeded.length, deadlineReached, items };
 }

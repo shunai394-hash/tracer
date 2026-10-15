@@ -22,7 +22,7 @@ export type SalesTestGateInput = {
   requireRank?: boolean;
 };
 
-import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+import { isJapaneseProductTitle } from "../intelligence/japanese-product.ts";
 
 const NON_PHYSICAL_TITLE_PATTERNS = [
   /商品券/i,
@@ -91,7 +91,7 @@ export function verifySalesTestGateInvariants(): { ok: boolean; cases: Array<{ n
 }
 
 function supplyReadyInput(): SalesTestGateInput {
-  return { rank: null, title: "Supply product", sellingPrice: 3980, identityLinked: true, identityMethod: "jan", identityConfidence: 0.95, sourceCost: 1000, shippingCost: 300, trackingAvailable: true, apiAvailable: true, profitCalculable: true, shippingUnknown: false, contributionProfit: 2680, currencyMismatch: false, priceConfirmed: true, inventoryConfirmed: true, inventory: 20, orderable: true, supplierProductId: "pid", supplierVariantId: "vid" };
+  return { rank: null, title: "サプライ商品", sellingPrice: 3980, identityLinked: true, identityMethod: "jan", identityConfidence: 0.95, sourceCost: 1000, shippingCost: 300, trackingAvailable: true, apiAvailable: true, profitCalculable: true, shippingUnknown: false, contributionProfit: 2680, currencyMismatch: false, priceConfirmed: true, inventoryConfirmed: true, inventory: 20, orderable: true, supplierProductId: "pid", supplierVariantId: "vid" };
 }
 
 export const SALES_TEST_GATE_PASSED = "sales_test_gate_passed";
@@ -100,9 +100,10 @@ export type SalesTestGateRow = { published?: unknown; pipeline_stage?: unknown; 
 
 export function hasPassedSalesTestGate(row: SalesTestGateRow): boolean {
   if (row.published !== true) return false;
-  if (row.pipeline_status !== "published") return false;
-  if (row.pipeline_stage !== "PUBLISHED" && row.pipeline_stage !== "BASE_PUBLISHED") return false;
-  if (row.pipeline_reason !== SALES_TEST_GATE_PASSED) return false;
+  // The selection marker is durable gate provenance. Downstream channel failures
+  // may overwrite pipeline_stage/status/reason, but must not invalidate another
+  // channel's delivery. Explicitly blocked or unpublished rows still fail closed.
+  if (row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") return false;
   if (!isJapaneseProductTitle(row.title)) return false;
   return Array.isArray(row.selection_reasons) && row.selection_reasons.includes(SALES_TEST_GATE_PASSED);
 }

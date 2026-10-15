@@ -6,10 +6,15 @@ import { readFileSync } from "node:fs";
 const discovery = readFileSync("lib/suppliers/discover-cj-supply.ts", "utf8");
 const marketCollector = readFileSync("lib/market/collect-bestsellers.ts", "utf8");
 const ingest = readFileSync("lib/suppliers/persist-cj-internal-supply.ts", "utf8");
+const catalogSync = readFileSync("lib/suppliers/sync-tracer-catalog.ts", "utf8");
 const identity = readFileSync("lib/market/identifiers.ts", "utf8");
 const auditMigration = readFileSync("supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql", "utf8");
 
 assert.match(discovery, /import \{ persistCjInternalSupplyCandidate \} from "@\/lib\/suppliers\/persist-cj-internal-supply"/);
+assert.match(discovery, /\.eq\("job_name", "cj-api-quota-circuit"\)/,
+  "supply-first must inspect the persisted CJ quota circuit before attempting provider calls");
+assert.match(discovery, /if \(quotaBlockedUntil && Date\.parse\(quotaBlockedUntil\) > Date\.now\(\)\) \{[\s\S]*?deadlineReached: true[\s\S]*?items: \[\]/,
+  "an active CJ quota cooldown must return a clean no-op instead of repeatedly rejecting the same candidate");
 assert.equal((discovery.match(/persistCjInternalSupplyCandidate\(/g) ?? []).length, 2,
   "both seeded verification and fresh catalog discovery must feed the internal supply catalog");
 assert.match(discovery, /internalSupplyIngested: Boolean\(internalSupply\)/);
@@ -19,6 +24,8 @@ assert.match(discovery, /"beauty tools", "facial cleansing brush", "makeup brush
   "beauty tools must follow women's bags in the supply query priority");
 assert.match(discovery, /"hair styling tools", "hair clip women", "claw clip women"/,
   "hair accessories must be an explicit high-priority catalog segment");
+assert.match(discovery, /Include every due supplier category/,
+  "category priority must sort candidates, not exclude non-women's categories");
 assert.match(discovery, /supply-first-catalog-cursor-v2/,
   "query-order changes must not reinterpret an old cursor index");
 assert.match(discovery, /next_verification_at\.is\.null,next_verification_at\.lte/,
@@ -31,8 +38,8 @@ assert.match(discovery, /seededChecked >= seededVerificationLimit/,
   "seeded verification must have a hard per-run attempt budget");
 assert.match(marketCollector, /retryBrightDataWhenCanonicalVariantsMissing/,
   "Amazon detail fetches must retry Bright Data when direct HTML lacks JSON-LD");
-assert.match(marketCollector, /hasCanonicalVariants\(directHtml\)/,
-  "a non-empty page without child-variant evidence must not suppress the canonical evidence fallback");
+assert.match(marketCollector, /hasAmazonVariantEvidence\(directHtml\)/,
+  "a non-empty Amazon page without canonical child variants or an explicit variation-ASIN map must not suppress the Bright Data fallback");
 assert.match(ingest, /sourceRef = `cj:\$\{args\.supplierProductId\}:\$\{args\.supplierVariantId\}`/,
   "source reference must be deterministic for the concrete supplier product+variant");
 assert.match(ingest, /onConflict: "source_name,source_ref"/,
@@ -66,8 +73,10 @@ assert.match(ingest, /from\("marketplace_bestseller_variants"\)/,
   "supplier identity must be compared against independently stored marketplace child variants");
 assert.match(ingest, /marketplace_variant_evidence_id: String\(row\.id\)/,
   "verified links must persist the exact canonical child-variant evidence ID");
-assert.match(ingest, /item\.row\.evidence_source === "schema_org_product_group_has_variant"/,
-  "only explicit canonical child-variant evidence is eligible");
+assert.match(ingest, /\["schema_org_product_group_has_variant", "amazon_variation_asin_map"\]\.includes\(String\(item\.row\.evidence_source\)\)/,
+  "Schema.org child variants and explicit Amazon child-ASIN-map variants are eligible only after child barcode proof");
+assert.match(catalogSync, /\["schema_org_product_group_has_variant", "amazon_variation_asin_map"\]\.includes\(String\(candidate\.canonical\.evidence_source\)\)/,
+  "catalog sync must accept both supported canonical child-evidence sources after exact barcode matching");
 assert.match(ingest, /const barcodeMethod = \["jan", "gtin", "ean", "upc"\]\.includes\(identity\.method\)/,
   "only exact barcode-family proof may establish supplier-to-child-variant identity");
 assert.match(ingest, /automated_order_creation_verified: false/,

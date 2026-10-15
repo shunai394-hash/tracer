@@ -16,6 +16,7 @@ import {
 import { extractAsinFromUrl, normalizeIdentifier } from "@/lib/market/identifiers";
 import { inspectCanonicalMarketplaceVariantMarkup, parseAmazonVariationAsinMap, parseCanonicalMarketplaceVariantEvidence } from "@/lib/market/canonical-variant-evidence";
 import { decodeHtmlBytes } from "@/lib/market/charset";
+import { isAmazonChallengeHtml } from "@/lib/market/amazon-response";
 
 export const MARKETPLACE_SOURCES = [
   { marketplace: "yahoo_shopping", url: "https://shopping.yahoo.co.jp/ranking/", source: "yahoo_shopping_ranking" },
@@ -62,10 +63,17 @@ export type CollectedMarketplace = {
     groupsWithVariantCount: number;
     variantProductNodeCount: number;
     absoluteTypeIriCount: number;
+    /** Aggregate-only child-variant recovery counters; never log child identifiers or raw HTML. */
+    variationAsinsFound: number;
+    childDetailAttempted: number;
+    childDetailFetched: number;
+    childBarcodeFound: number;
+    /** Whether the configured proxy provider can retry Amazon anti-bot/challenge responses. */
+    brightDataConfigured: boolean;
   };
 };
 
-async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVariantsMissing?: boolean } = {}): Promise<string | null> {
+async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVariantsMissing?: boolean; retryBrightDataWhenAmazonIdentifierMissing?: boolean } = {}): Promise<string | null> {
   const directFetch = async (): Promise<string | null> => {
     try {
       const response = await fetch(url, {
@@ -100,29 +108,59 @@ async function fetchHtml(url: string, options: { retryBrightDataWhenCanonicalVar
   // successful. For Amazon child-variant extraction, retry through Bright Data
   // when the direct response has no JSON-LD Product/ProductGroup markup.
   const directHtml = await directFetch();
-  const hasCanonicalVariants = (html: string | null): boolean =>
-    Boolean(html && parseCanonicalMarketplaceVariantEvidence(html, url).length > 0);
-  if (directHtml && (!options.retryBrightDataWhenCanonicalVariantsMissing || hasCanonicalVariants(directHtml))) {
-    return directHtml;
-  }
+  // Amazon can expose its child variants either as Schema.org ProductGroup
+  // nodes or as an explicit dimensionValuesDisplayData child-ASIN map. Treat
+  // both as usable variant evidence when deciding whether Bright Data improved
+  // a direct response; otherwise a useful child-ASIN map gets discarded.
+  const hasAmazonVariantEvidence = (html: string | null): boolean =>
+    Boolean(
+      html &&
+      (
+        parseCanonicalMarketplaceVariantEvidence(html, url).length > 0 ||
+        parseAmazonVariationAsinMap(html, url).length > 0
+      )
+    );
+  // Child detail pages need a stronger success condition than "some HTML":
+  // challenge pages often return HTTP 200 HTML but contain no concrete barcode.
+  // Only use that direct response immediately when the requested evidence exists.
+  const hasAmazonProductIdentifier = (html: string | null): boolean => {
+    if (!html) return false;
+    const detail = parseAmazonProductDetail(html);
+    return Boolean(
+      normalizeIdentifier("jan", detail.jan) ||
+      normalizeIdentifier("gtin", detail.gtin) ||
+      normalizeIdentifier("ean", detail.ean) ||
+      normalizeIdentifier("upc", detail.upc)
+    );
+  };
+  const directIsChallenge = isAmazonChallengeHtml(directHtml, url);
+  const directHasRequiredEvidence =
+    !directIsChallenge &&
+    (!options.retryBrightDataWhenCanonicalVariantsMissing || hasAmazonVariantEvidence(directHtml)) &&
+    (!options.retryBrightDataWhenAmazonIdentifierMissing || hasAmazonProductIdentifier(directHtml));
+  if (directHtml && directHasRequiredEvidence) return directHtml;
 
   if (isBrightDataConfigured()) {
     try {
       const page = await fetchBrightDataPage(url);
-      if (page.html && (!options.retryBrightDataWhenCanonicalVariantsMissing || hasCanonicalVariants(page.html))) {
+      const brightDataHasRequiredEvidence =
+        !isAmazonChallengeHtml(page.html, url) &&
+        (!options.retryBrightDataWhenCanonicalVariantsMissing || hasAmazonVariantEvidence(page.html)) &&
+        (!options.retryBrightDataWhenAmazonIdentifierMissing || hasAmazonProductIdentifier(page.html));
+      if (page.html && brightDataHasRequiredEvidence) {
         return page.html;
       }
       // If Bright Data did not improve the response, retain a usable direct
       // response for ordinary parsing/diagnostics. It still cannot create
       // canonical evidence unless the strict JSON-LD parser finds child nodes.
-      if (directHtml) return directHtml;
-      if (page.html) return page.html;
+      if (directHtml && !directIsChallenge) return directHtml;
+      if (page.html && !isAmazonChallengeHtml(page.html, url)) return page.html;
     } catch {
       // Fall through to the direct response if one exists.
     }
   }
 
-  return directHtml;
+  return directIsChallenge ? null : directHtml;
 }
 function enrichAmazon(item: ParsedBestseller): ParsedBestseller {
   return {
@@ -256,6 +294,10 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
   let groupsWithVariantCount = 0;
   let variantProductNodeCount = 0;
   let absoluteTypeIriCount = 0;
+  let variationAsinsFound = 0;
+  let childDetailAttempted = 0;
+  let childDetailFetched = 0;
+  let childBarcodeFound = 0;
 
   await Promise.all(details.map(async (item) => {
     if (!item.productUrl) return;
@@ -279,16 +321,20 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
         // JAN/GTIN, and persist only child pages with a valid concrete barcode.
         if (item.canonicalVariants.length === 0) {
           const childAsins = parseAmazonVariationAsinMap(detailHtml, item.productUrl).slice(0, 6);
+          variationAsinsFound += childAsins.length;
+          childDetailAttempted += childAsins.length;
           const recovered = await Promise.all(childAsins.map(async (child) => {
             const childUrl = `https://www.amazon.co.jp/dp/${child.asin}`;
-            const childHtml = await fetchHtml(childUrl);
+            const childHtml = await fetchHtml(childUrl, { retryBrightDataWhenAmazonIdentifierMissing: true });
             if (!childHtml) return null;
+            childDetailFetched += 1;
             const childDetail = parseAmazonProductDetail(childHtml);
             const jan = normalizeIdentifier("jan", childDetail.jan);
             const gtin = normalizeIdentifier("gtin", childDetail.gtin);
             const ean = normalizeIdentifier("ean", childDetail.ean);
             const upc = normalizeIdentifier("upc", childDetail.upc);
             if (!jan && !gtin && !ean && !upc) return null;
+            childBarcodeFound += 1;
             return {
               sourceVariantId: child.asin,
               sku: null,
@@ -355,6 +401,11 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
       groupsWithVariantCount,
       variantProductNodeCount,
       absoluteTypeIriCount,
+      variationAsinsFound,
+      childDetailAttempted,
+      childDetailFetched,
+      childBarcodeFound,
+      brightDataConfigured: isBrightDataConfigured(),
     },
   };
 }

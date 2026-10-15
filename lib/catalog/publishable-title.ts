@@ -13,6 +13,22 @@ const NON_PRODUCT_TITLE_MARKERS = [
   "supplier_variant_identity_missing",
 ] as const;
 
+// Category-only labels are not sufficiently specific to identify a product.
+// Keep this exact-match list narrow so useful descriptive titles remain valid.
+const GENERIC_CATALOG_TITLES = new Set([
+  "バスルームマット",
+  "キッチン用品",
+  "美容・メイクアイテム",
+  "ヘアケアアイテム",
+  "バッグ・収納アイテム",
+  "アクセサリー",
+  "ペット用品",
+  "冷風・送風アイテム",
+  "インテリア照明",
+  "レジャー用品",
+  "電動シェーバー",
+]);
+
 /**
  * Reject workflow/status text accidentally persisted as a buyer-facing title.
  * This is intentionally a narrow safety check, not a substitute for the
@@ -22,6 +38,8 @@ export function isPublishableCatalogTitle(value: unknown): boolean {
   if (typeof value !== "string") return false;
   const title = value.normalize("NFKC").replace(/\s+/g, " ").trim();
   if (!title || title.length > 180) return false;
+  if (GENERIC_CATALOG_TITLES.has(title)) return false;
+  if (/^トレンド・.{1,24}アイテム$/.test(title)) return false;
   const normalized = title.toLocaleLowerCase("ja-JP");
   return !NON_PRODUCT_TITLE_MARKERS.some((marker) =>
     normalized.includes(marker.normalize("NFKC").toLocaleLowerCase("ja-JP")),

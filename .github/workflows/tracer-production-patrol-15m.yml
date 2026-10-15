@@ -1,4 +1,4 @@
-name: TRACER Production Patrol (15m)
+name: TRACER Production Patrol (5m)
 
 on:
   push:
@@ -7,6 +7,9 @@ on:
     paths:
       - ".github/workflows/tracer-production-patrol-15m.yml"
       - "app/api/cron/patrol-ai/route.ts"
+      - "lib/ops/catalog-count-check.ts"
+      - "scripts/test-catalog-count-safety-check.mjs"
+      - "package.json"
       - "app/api/cron/cj-identity-reverify/route.ts"
       - "scripts/test-bounded-identity-stamping.mjs"
       - "vercel.json"
@@ -21,7 +24,7 @@ on:
       - "lib/suppliers/cj-identity-reverify-policy.ts"
   workflow_dispatch:
   schedule:
-    - cron: "*/15 * * * *" # continuous patrol every 15 minutes; times are UTC
+    - cron: "*/5 * * * *" # continuous patrol every 5 minutes; times are UTC
 
 permissions:
   id-token: write
@@ -51,6 +54,10 @@ jobs:
             sha="$(curl -sS --max-time 10 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
             echo "attempt $i: production commit=$sha expected=$GITHUB_SHA"
             if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            # A later commit may have reached production after this workflow started.
+            # Refresh the branch ref before testing ancestry; checkout's initial fetch
+            # can otherwise leave a valid descendant SHA unknown to this runner.
+            git fetch --no-tags origin main
             if git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
               echo "Production is on descendant commit $sha; the patrol code is included."
               exit 0
@@ -114,6 +121,11 @@ jobs:
               return {k:s.get(k) for k in ("name","ok","skipped","retryable")} | {
                   "reason":result.get("reason"),
                   "elapsedMs":result.get("elapsedMs"),
+                  "itemCount":result.get("itemCount"),
+                  "canonicalVariantEvidenceParsed":result.get("canonicalVariantEvidenceParsed"),
+                  "canonicalVariantEvidenceWritten":result.get("canonicalVariantEvidenceWritten"),
+                  "canonicalVariantEvidenceWriteFailures":result.get("canonicalVariantEvidenceWriteFailures"),
+                  "enrichment":result.get("enrichment"),
               }
           print("=== TRACER AI PATROL REPORT ===")
           print("status:", r.get("status"))

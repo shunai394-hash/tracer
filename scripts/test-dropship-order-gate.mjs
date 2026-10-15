@@ -14,7 +14,8 @@ assert.match(orderControl, /\.in\("order_status", \["placed", "processing", "ful
 assert.doesNotMatch(orderControl, /\.in\("order_status", \[[^\]]*fulfilled/);
 assert.match(dropship, /supplierIdentityStatus: typeof listingRow\.identity_status === "string" \? listingRow\.identity_status : null/, "PO intent must pass the actual supplier identity state into the gate");
 assert.match(supplierExecution, /if \(isCjSupplierName\(supplierName\)\)/, "live CJ execution must re-check canonical identity");
-assert.match(supplierExecution, /identityRows\?\.length !== 1 \|\| identityRows\?\.\[0\]\?\.identity_status !== "linked"/, "live CJ execution must require exactly one linked supplier product+variant");
+assert.match(supplierExecution, /const uniqueExactVariant = identityRows\?\.length === 1/, "live CJ execution must require one exact supplier product+variant");
+assert.match(supplierExecution, /identity_status === "supply_discovered"[\s\S]*?isNativeCjSupplierListing/, "standalone CJ execution must require fresh verified native-supply evidence");
 assert.match(supplierExecution, /supplier_identity_lookup_failed/);
 assert.match(supplierExecution, /supplier_identity_unlinked_or_ambiguous/);
 assert.match(executionRoute, /externalLiveOrderCapableSupplierCount/, "scheduled order execution must expose whether any external supplier can actually accept live orders");

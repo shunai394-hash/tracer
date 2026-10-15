@@ -3,7 +3,7 @@ import "server-only";
 import { createHmac } from "node:crypto";
 import { getNewfindConfig } from "@/lib/config/env";
 import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
-import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
+import { isNewfindPromotionLedgerSchemaBlocked, promoteShopListingToNewfind } from "@/lib/integration/newfind";
 
 function buildUrl(base: string): string {
   const trimmed = base.trim().replace(/\/$/, "");
@@ -13,8 +13,7 @@ function buildUrl(base: string): string {
 
 function tracerSiteOrigin(): string | null {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
-  const configured = explicit || (vercel ? `https://${vercel.replace(/^https?:\/\//, "")}` : "https://tracer-pied-alpha.vercel.app");
+  const configured = explicit || "https://tracer-pied-alpha.vercel.app";
   try {
     const parsed = new URL(configured);
     if (parsed.protocol !== "https:") return null;
@@ -28,7 +27,7 @@ export type NewfindRescueResult = {
   candidates: number;
   onBase: number;
   alreadyProcessed: number;
-  undelivered: { missing: number; pending: number; failed: number; sent: number; sending: number };
+  undelivered: { missing: number; pending: number; failed: number; sent: number; sending: number; schemaBlocked: number };
   attempted: number;
   processed: number;
   stillFailing: Array<{ listingId: string; detail: string }>;
@@ -38,7 +37,7 @@ export async function rescueUndeliveredGatePassedListings(options: { limit?: num
   const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
   const limit = Math.max(1, Math.min(options.limit ?? 5, 50));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
-  const columns = "id, base_item_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, updated_at";
+  const columns = "id, title, base_item_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, updated_at";
   const [byReason, byMarker] = await Promise.all([
     supabase.from("shop_listings").select(columns).eq("published", true).eq("pipeline_reason", SALES_TEST_GATE_PASSED).limit(500),
     supabase.from("shop_listings").select(columns).eq("published", true).filter("selection_reasons", "cs", JSON.stringify([SALES_TEST_GATE_PASSED])).limit(500),
@@ -47,28 +46,49 @@ export async function rescueUndeliveredGatePassedListings(options: { limit?: num
   if (byMarker.error) throw new Error(byMarker.error.message);
   const byId = new Map<string, Record<string, unknown>>();
   for (const row of [...(byReason.data ?? []), ...(byMarker.data ?? [])]) byId.set(String(row.id), row as Record<string, unknown>);
-  const listings = Array.from(byId.values()).sort((a, b) => Number(Boolean(b.base_item_id)) - Number(Boolean(a.base_item_id)) || String(a.updated_at ?? "").localeCompare(String(b.updated_at ?? "")));
-  const gated = listings.filter((row) => hasPassedSalesTestGate(row));
-  const result: NewfindRescueResult = { candidates: gated.length, onBase: gated.filter((row) => row.base_item_id).length, alreadyProcessed: 0, undelivered: { missing: 0, pending: 0, failed: 0, sent: 0, sending: 0 }, attempted: 0, processed: 0, stillFailing: [] };
+  const listings = Array.from(byId.values()).sort((a, b) => Number(b.shopify_sync_status === "synced") - Number(a.shopify_sync_status === "synced") || Number(Boolean(b.base_item_id)) - Number(Boolean(a.base_item_id)) || String(a.updated_at ?? "").localeCompare(String(b.updated_at ?? "")));
+  // NEWFIND's sales URL is the TRACER product landing page, which requires a
+  // live Shopify product. BASE-only listings remain queued until Shopify sync
+  // succeeds; retrying them here only produces permanent HTTP 404 failures.
+  const gated = listings.filter((row) => hasPassedSalesTestGate(row) && row.shopify_sync_status === "synced");
+  const result: NewfindRescueResult = { candidates: gated.length, onBase: gated.filter((row) => row.base_item_id).length, alreadyProcessed: 0, undelivered: { missing: 0, pending: 0, failed: 0, sent: 0, sending: 0, schemaBlocked: 0 }, attempted: 0, processed: 0, stillFailing: [] };
   if (gated.length === 0) return result;
 
   const ids = gated.map((row) => String(row.id));
-  const deliveries = new Map<string, string>();
+  const deliveries = new Map<string, { status: string; schemaBlocked: boolean }>();
+  const receiverReady = process.env.NEWFIND_TRACER_PROMOTION_RECEIVER_READY?.trim() === "1";
   for (let i = 0; i < ids.length; i += 100) {
-    const { data, error: deliveryError } = await supabase.from("newfind_promotion_deliveries").select("listing_id, status, ack_status").in("listing_id", ids.slice(i, i + 100));
+    const { data, error: deliveryError } = await supabase.from("newfind_promotion_deliveries").select("listing_id, status, ack_status, last_error").in("listing_id", ids.slice(i, i + 100));
     if (deliveryError) throw new Error(deliveryError.message);
     for (const row of data ?? []) {
       const processed = row.status === "processed" && (row.ack_status === "processed" || row.ack_status === "duplicate");
-      deliveries.set(String(row.listing_id), processed ? "processed" : String(row.status ?? "pending"));
+      deliveries.set(String(row.listing_id), {
+        status: processed ? "processed" : String(row.status ?? "pending"),
+        schemaBlocked: !receiverReady && isNewfindPromotionLedgerSchemaBlocked(row.last_error),
+      });
     }
+  }
+
+  if (!receiverReady) {
+    result.undelivered.schemaBlocked = Array.from(deliveries.values()).filter((delivery) => delivery.schemaBlocked).length;
+    return result;
   }
 
   const targets: string[] = [];
   for (const id of ids) {
-    const status = deliveries.get(id) ?? "missing";
+    const delivery = deliveries.get(id);
+    if (delivery?.schemaBlocked) {
+      result.undelivered.schemaBlocked += 1;
+      continue;
+    }
+    const status = delivery?.status ?? "missing";
     if (status === "processed") { result.alreadyProcessed += 1; continue; }
     const bucket = status in result.undelivered ? status as keyof NewfindRescueResult["undelivered"] : "pending";
     result.undelivered[bucket] += 1;
+    // retryPendingNewfindPromotions already handles every durable delivery
+    // status. Rescue only listings with no delivery row, avoiding a second
+    // send of the same failed item in the same five-minute cron invocation.
+    if (status !== "missing") continue;
     targets.push(id);
   }
 
@@ -103,7 +123,7 @@ export async function withdrawUnpublishedNewfindPromotions(options: { limit?: nu
   result.examined = deliveries?.length ?? 0;
   if (!deliveries || deliveries.length === 0) return result;
 
-  const { data: listings, error: listingError } = await supabase.from("shop_listings").select("id, slug, bestseller_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons").in("id", deliveries.map((row) => String(row.listing_id)));
+  const { data: listings, error: listingError } = await supabase.from("shop_listings").select("id, title, slug, bestseller_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons").in("id", deliveries.map((row) => String(row.listing_id)));
   if (listingError) throw new Error(listingError.message);
   const listingById = new Map((listings ?? []).map((row) => [String(row.id), row]));
   const stale = deliveries.filter((row) => {

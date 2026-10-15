@@ -111,6 +111,16 @@ export async function GET(request: Request) {
       hasMore: observation.hasMore,
       enrichment: observation.enrichment,
       supplierCandidateCount: observation.supplierCandidateIds.length,
+      canonicalVariantEvidenceParsed: observation.canonicalVariantEvidenceParsed,
+      canonicalVariantEvidenceWritten: observation.canonicalVariantEvidenceWritten,
+      canonicalVariantEvidenceWriteFailures: observation.canonicalVariantEvidenceWriteFailures,
+      canonicalVariantEvidenceStatus: observation.canonicalVariantEvidenceWriteFailures > 0
+        ? "write_failed"
+        : observation.canonicalVariantEvidenceParsed === 0
+          ? "no_canonical_variant_evidence"
+          : observation.canonicalVariantEvidenceWritten === observation.canonicalVariantEvidenceParsed
+            ? "persisted"
+            : "incomplete",
     };
 
     if (cronRunId) {
@@ -137,6 +147,16 @@ export async function GET(request: Request) {
         productsCreated: observation.productsCreated,
         supplierCandidateCount: observation.supplierCandidateIds.length,
         enrichment: observation.enrichment,
+        canonicalVariantEvidenceParsed: observation.canonicalVariantEvidenceParsed,
+        canonicalVariantEvidenceWritten: observation.canonicalVariantEvidenceWritten,
+        canonicalVariantEvidenceWriteFailures: observation.canonicalVariantEvidenceWriteFailures,
+        canonicalVariantEvidenceStatus: observation.canonicalVariantEvidenceWriteFailures > 0
+          ? "write_failed"
+          : observation.canonicalVariantEvidenceParsed === 0
+            ? "no_canonical_variant_evidence"
+            : observation.canonicalVariantEvidenceWritten === observation.canonicalVariantEvidenceParsed
+              ? "persisted"
+              : "incomplete",
         sourceIndex: nextSourceIndex,
         startIndex: observation.startIndex,
         processedCount: observation.processedCount,

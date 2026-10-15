@@ -34,7 +34,7 @@ npm run dev
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | browser + server | anon key only |
 | `SUPABASE_SERVICE_ROLE_KEY` | server only | never use in Client Components |
 | `GEMINI_API_KEY` | server only | Gemini REST via `lib/ai/gemini` |
-| `GEMINI_MODEL` | server only | optional, defaults to `gemini-2.5-flash` |
+| `GEMINI_MODEL` | server only | optional, defaults to `gemini-3.8-flash` (legacy `gemini-2.5-flash` setting falls back to 3.8) |
 | `BRIGHTDATA_API_TOKEN` | server only | Bright Data API |
 | `BRIGHTDATA_ZONE` | server only | optional zone |
 | `BRIGHTDATA_MCP_URL` | server only | external MCP endpoint |

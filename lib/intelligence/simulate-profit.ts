@@ -63,6 +63,8 @@ export function simulateContributionProfit(args: {
   /** Observed multiplier from source currency into selling currency. */
   sourceFxRateToSelling?: number | null;
   sourceFxRateSource?: string | null;
+  /** Publication selectors must set this to avoid treating unknown domestic delivery as free. */
+  requireDomesticShipping?: boolean;
 }): ProfitSimulation {
   const sellingAssessment = assessCurrencyConfidence({
     currency: args.sellingCurrency,
@@ -118,7 +120,7 @@ export function simulateContributionProfit(args: {
     totalCost: null,
     roi: null,
     shippingUnknown:
-      args.internationalShipping == null && args.domesticShipping == null,
+      args.internationalShipping == null || (args.requireDomesticShipping === true && args.domesticShipping == null),
     lines: [],
     provenance,
     incalculableReason: reason,
@@ -158,8 +160,14 @@ export function simulateContributionProfit(args: {
     });
   }
 
-  const shippingUnknown =
-    args.internationalShipping == null && args.domesticShipping == null;
+  if (args.requireDomesticShipping === true && args.domesticShipping == null) {
+    return unknown("domestic_shipping_unknown");
+  }
+  if (args.internationalShipping == null) {
+    return unknown("international_shipping_unknown");
+  }
+
+  const shippingUnknown = false;
   const shippingCurrency = args.shippingCurrency?.trim().toUpperCase() ?? null;
 
   if (!shippingUnknown && !shippingCurrency) {
@@ -459,6 +467,23 @@ export function verifyProfitInvariants(): {
     shippingCurrency: "USD",
     sourceFxRateToSelling: 150,
     sourceFxRateSource: "test",
+    domesticShipping: 500,
+    requireDomesticShipping: true,
+  });
+
+  const missingDomesticShipping = simulateContributionProfit({
+    sellingPrice: 5000,
+    sellingCurrency: "JPY",
+    sellingCurrencyConfidence: "high",
+    sellingProvider: "test",
+    sourceCost: 1000,
+    sourceCurrency: "JPY",
+    sourceCurrencyConfidence: "high",
+    sourceProvider: "test",
+    internationalShipping: 300,
+    domesticShipping: null,
+    shippingCurrency: "JPY",
+    requireDomesticShipping: true,
   });
 
   const cases = [
@@ -484,6 +509,11 @@ export function verifyProfitInvariants(): {
         healthy.roi !== null &&
         healthy.totalCost !== null &&
         healthy.totalCost > 0,
+    },
+    {
+      name: "unknown_domestic_shipping_blocks_publication_profit",
+      expected: true,
+      actual: !missingDomesticShipping.calculable && missingDomesticShipping.incalculableReason === "domestic_shipping_unknown" && missingDomesticShipping.shippingUnknown,
     },
     {
       name: "cross_currency_shipping_uses_source_fx",

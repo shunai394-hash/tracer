@@ -1,0 +1,124 @@
+name: TRACER Publish Gate-Passed Channels
+# Re-run the existing guarded publication workflow to publish currently gate-passed products.
+# Triggered 2026-10-14 to prioritize real listings; publication remains supplier-gate controlled.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/tracer-publish-gate-passed-channels.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tracer-gate-passed-channel-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait for production to include this commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          for i in $(seq 1 20); do
+            sha="$(curl -sS --max-time 10 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            git fetch --no-tags origin main
+            if git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              echo "Production is on descendant commit $sha; publication workflow is included."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Production does not include this commit; refusing to write to stores."
+          exit 1
+
+      - name: Sync existing gate-passed listings to Shopify and BASE
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          shopify_code="$(curl -sS -o shopify-initial.json -w "%{http_code}" --max-time 310 -H "Authorization: Bearer $token" "$BASE/api/cron/shopify-publish" || true)"
+          base_code="$(curl -sS -o base-initial.json -w "%{http_code}" --max-time 70 -H "Authorization: Bearer $token" "$BASE/api/cron/base-publish" || true)"
+          echo "Initial Shopify HTTP $shopify_code"
+          echo "Initial BASE HTTP $base_code"
+          python3 - <<'PY'
+          import json
+          for label, path in (("Shopify", "shopify-initial.json"), ("BASE", "base-initial.json")):
+              try:
+                  with open(path, encoding="utf-8") as f: r=json.load(f)
+                  print(label, json.dumps({k:r.get(k) for k in ("ok","phase","attempted","published","synced","failed","skipped")}, ensure_ascii=False))
+              except Exception as e:
+                  print(label, "report unavailable:", str(e))
+          PY
+
+      - name: Run additional Sales Test selection (bounded and gate-controlled)
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl -sS -o sales-test-publication.json -w "%{http_code}" --max-time 310 -H "Authorization: Bearer $token" "$BASE/api/cron/sales-test-publication" || true)"
+          echo "Sales Test publication HTTP $code"
+          python3 - <<'PY'
+          import json
+          try:
+              with open("sales-test-publication.json", encoding="utf-8") as f: r=json.load(f)
+              selected=r.get("supplySelected") or {}
+              downstream=r.get("downstream") or {}
+              print("Sales Test:", json.dumps({
+                  "ok": r.get("ok"), "phase": r.get("phase"), "mode": r.get("mode"),
+                  "published": selected.get("published"), "considered": selected.get("considered"),
+                  "rejectedCount": selected.get("rejectedCount"),
+                  "shopify": downstream.get("shopify"), "base": downstream.get("base")
+              }, ensure_ascii=False))
+          except Exception as e:
+              print("Sales Test report unavailable:", str(e))
+          PY
+
+      - name: Final Shopify and BASE sync verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          shopify_code="$(curl -sS -o shopify-final.json -w "%{http_code}" --max-time 310 -H "Authorization: Bearer $token" "$BASE/api/cron/shopify-publish" || true)"
+          base_code="$(curl -sS -o base-final.json -w "%{http_code}" --max-time 70 -H "Authorization: Bearer $token" "$BASE/api/cron/base-publish" || true)"
+          python3 - "$shopify_code" "$base_code" <<'PY'
+          import json,sys
+          failures=[]
+          for label, path, code in (("Shopify","shopify-final.json",sys.argv[1]),("BASE","base-final.json",sys.argv[2])):
+              try:
+                  with open(path, encoding="utf-8") as f: r=json.load(f)
+              except Exception as e:
+                  failures.append(f"{label}: invalid report ({e})")
+                  continue
+              summary={k:r.get(k) for k in ("ok","phase","attempted","published","synced","failed","skipped")}
+              print(label, "HTTP", code, json.dumps(summary, ensure_ascii=False))
+              if code != "200" or r.get("ok") is not True or int(r.get("failed") or 0) > 0:
+                  failures.append(f"{label}: sync did not fully succeed")
+          if failures:
+              print("Channel sync failures:", "; ".join(failures))
+              sys.exit(1)
+          PY
+
+# Retriggered 2026-10-15: run the guarded BASE + Shopify + Sales Test publication cycle after retry-gate fixes.
+
+# Triggered again after the seven new sales-test listings were confirmed Shopify-synced; finish BASE linkage.
+# Re-run 2026-10-15 after excluding already-hidden BASE items from publication batches.

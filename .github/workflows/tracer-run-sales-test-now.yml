@@ -27,3 +27,5 @@ jobs:
           BASE=https://tracer-pied-alpha.vercel.app
           TOKEN="$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           curl -sSf --max-time 300 -H "Authorization: Bearer $TOKEN" "$BASE/api/cron/sales-test-publication" | tee sales-test-now.json
+
+# Retrigger the guarded Sales Test Gate after the verified Japanese-copy additions.

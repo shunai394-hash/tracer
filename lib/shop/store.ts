@@ -4,7 +4,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
-import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
+import { hasVerifiedPositiveShopifyStock } from "@/lib/shop/live-stock-policy";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -83,47 +84,58 @@ type ShopifyVariantStock = {
 };
 
 async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, number>> {
+  if (!isShopifyConfigured()) throw new Error("shopify_live_stock_unconfigured");
+  if (variantIds.length === 0) throw new Error("shopify_live_stock_variant_ids_empty");
+
+  const requestedIds = [...new Set(variantIds)];
+  const ids = requestedIds.filter((id) => /^gid:\/\/shopify\/ProductVariant\/\d+$/.test(id));
+  if (ids.length !== requestedIds.length || ids.length === 0) {
+    throw new Error("shopify_live_stock_variant_ids_invalid");
+  }
   const liveStock = new Map<string, number>();
-  if (!isShopifyConfigured() || variantIds.length === 0) return liveStock;
+  const batchSize = 100;
 
-  const ids = [...new Set(variantIds)].filter((id) => /^gid:\/\/shopify\/ProductVariant\//.test(id));
-  if (ids.length === 0) return liveStock;
-
-  const data = await shopifyGraphQL<{
-    nodes: Array<ShopifyVariantStock | null>;
-  }>(
-    `query LiveVariantInventory($ids: [ID!]!) {
-      nodes(ids: $ids) {
-        ... on ProductVariant {
-          id
-          inventoryQuantity
+  for (let offset = 0; offset < ids.length; offset += batchSize) {
+    const batch = ids.slice(offset, offset + batchSize);
+    const data = await shopifyGraphQL<{
+      nodes: Array<ShopifyVariantStock | null>;
+    }>(
+      `query LiveVariantInventory($ids: [ID!]!) {
+        nodes(ids: $ids) {
+          ... on ProductVariant {
+            id
+            inventoryQuantity
+          }
         }
-      }
-    }`,
-    { ids },
-  );
+      }`,
+      { ids: batch },
+    );
 
-  for (const node of data.nodes ?? []) {
-    if (!node?.id) continue;
-    const quantity = asNumber(node.inventoryQuantity);
-    liveStock.set(node.id, Math.max(0, Math.floor(quantity ?? 0)));
+    for (const node of data.nodes ?? []) {
+      if (!node?.id || !batch.includes(node.id)) continue;
+      const quantity = asNumber(node.inventoryQuantity);
+      if (quantity === null) throw new Error("shopify_live_stock_quantity_unknown");
+      liveStock.set(node.id, Math.max(0, Math.floor(quantity)));
+    }
+    // Missing/retired variants fail closed per listing below. Do not let one
+    // stale variant suppress every other healthy product from the storefront.
   }
   return liveStock;
 }
 
 async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopListing[]> {
   const mapped = rows.map(mapListing);
-  const linkedSupplierIds = await getLinkedSupplierListingIds(mapped.map((listing) => listing.supplierListingId));
+  const supplierStatuses = await getPublishableSupplierListingStatuses(mapped.map((listing) => listing.supplierListingId));
   const listings = mapped
-    .filter((listing) => Boolean(listing.supplierListingId && linkedSupplierIds.has(listing.supplierListingId)))
+    // The TRACER storefront checkout uses Shopify. Unsynced listings must not
+    // be treated as purchasable, and must not poison the live-stock batch for
+    // products that are already synced and saleable.
+    .filter((listing) => listing.shopifySyncStatus === "synced" && Boolean(listing.shopifyVariantId))
+    .filter((listing) => Boolean(listing.supplierListingId && supplierStatuses.has(listing.supplierListingId)))
     .filter((listing) => isPublishableCatalogTitle(listing.title) && isPublishableCatalogDescription(listing.description) && listing.inventory > 0 && listing.orderable && listing.trackingAvailable && listing.sellingPrice !== null && listing.sellingPrice > 0);
 
   if (listings.length === 0) return [];
 
-  // A Shopify Admin API failure (e.g. HTTP 401 after a credential change)
-  // must not blank the whole storefront: fall back to the DB inventory that
-  // inventory-refresh keeps current, exactly as when Shopify is not
-  // configured, and log it so the failure is visible in monitoring.
   let liveStock = new Map<string, number>();
   try {
     liveStock = await getLiveShopifyStock(
@@ -131,6 +143,10 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
     );
   } catch (error) {
     console.error("[shopify-live-stock-unavailable]", error instanceof Error ? error.message.slice(0, 300) : String(error));
+    // Preserve the published catalog for display during a temporary Shopify
+    // inventory API outage. Checkout independently rechecks live stock and
+    // rejects orders when the current quantity cannot be verified.
+    return listings;
   }
 
   const staleSoldOut = listings.filter((listing) => {
@@ -157,7 +173,7 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
   return listings
     .filter((listing) => {
       const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : undefined;
-      return live === undefined || live > 0;
+      return hasVerifiedPositiveShopifyStock(listing.shopifyVariantId, live);
     })
     .map((listing) => {
       const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : undefined;
@@ -179,7 +195,7 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
     .gt("selling_price", 0)
     .eq("currency", "JPY")
     .order("published_at", { ascending: false })
-    .limit(48);
+    .limit(1800);
 
   if (error) throw new Error(error.message);
   const listings = (await loadLiveListings((data ?? []) as Record<string, unknown>[])).filter((listing) => hasJapaneseText(listing.title) && isPublishableCatalogTitle(listing.title) && isPublishableCatalogDescription(listing.description));
@@ -194,10 +210,12 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
 
 export async function getShopListingBySlug(slug: string): Promise<ShopListing | null> {
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
-    .from("shop_listings")
-    .select(STOREFRONT_SELECT)
-    .eq("slug", slug)
+  const baseQuery = supabase.from("shop_listings").select(STOREFRONT_SELECT);
+  // Stable UUID paths avoid URL-encoding ambiguity for Japanese product slugs
+  // when external channels validate a public sales link.
+  const isListingId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
+  const listingQuery = isListingId ? baseQuery.eq("id", slug) : baseQuery.eq("slug", slug);
+  const { data, error } = await listingQuery
     .eq("published", true)
     .not("shopify_product_id", "is", null)
     .eq("shopify_sync_status", "synced")
@@ -209,8 +227,17 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
 
   if (error) throw new Error(error.message);
   if (!data) return null;
-  const listings = (await loadLiveListings([data as Record<string, unknown>])).filter((listing) => hasJapaneseText(listing.title) && isPublishableCatalogTitle(listing.title));
-  return listings[0] ?? null;
+
+  const listing = mapListing(data as Record<string, unknown>);
+  if (!listing.supplierListingId || !listing.shopifyProductId || !listing.shopifyVariantId || !listing.shopifyHandle) return null;
+  if (!/^gid:\/\/shopify\/ProductVariant\/\d+$/.test(listing.shopifyVariantId)) return null;
+  if (!isPublishableCatalogTitle(listing.title) || !isPublishableCatalogDescription(listing.description) || !hasJapaneseText(listing.title)) return null;
+
+  // The public product page is a landing page that sends customers to the
+  // already-published Shopify product. Supplier identity and live-stock checks
+  // remain mandatory in publication and order-time procurement paths, but must
+  // not turn an existing public sales URL into a 404.
+  return listing;
 }
 
 export async function recordShopFunnelEvent(args: {
@@ -259,10 +286,14 @@ export async function placeShopOrder(args: {
 
   if (error) throw new Error(error.message);
   if (!listings || listings.length !== new Set(listingIds).size) throw new Error("published Shopify listing not found");
-  const linkedSupplierIds = await getLinkedSupplierListingIds(listings.map((listing) => listing.supplier_listing_id));
-  if (listings.some((listing) => !listing.supplier_listing_id || !linkedSupplierIds.has(String(listing.supplier_listing_id)))) {
+  const supplierStatuses = await getPublishableSupplierListingStatuses(listings.map((listing) => listing.supplier_listing_id));
+  if (listings.some((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.supplier_listing_id)))) {
     throw new Error("supplier_identity_unlinked");
   }
+
+  const liveStock = await getLiveShopifyStock(
+    listings.map((listing) => listing.shopify_variant_id).filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
 
   let subtotal = 0;
   let currency: string | null = null;
@@ -274,8 +305,14 @@ export async function placeShopOrder(args: {
     if (!isPublishableCatalogTitle(listing.title)) throw new Error("listing title failed catalog quality gate");
     if (!isPublishableCatalogDescription(listing.description)) throw new Error("listing description failed catalog quality gate");
     if (listing.orderable !== true) throw new Error("listing is not currently orderable");
-    const inventory = asNumber(listing.inventory) ?? 0;
-    if (inventory < item.qty) throw new Error("requested quantity exceeds current inventory");
+    const liveQuantity = typeof listing.shopify_variant_id === "string"
+      ? liveStock.get(listing.shopify_variant_id)
+      : undefined;
+    if (!hasVerifiedPositiveShopifyStock(listing.shopify_variant_id, liveQuantity)) {
+      throw new Error("shopify_live_stock_unverified");
+    }
+    const inventory = Math.min(asNumber(listing.inventory) ?? 0, liveQuantity as number);
+    if (inventory < item.qty) throw new Error("requested quantity exceeds verified live inventory");
     if (!Number.isFinite(item.qty) || item.qty <= 0) throw new Error("quantity must be greater than zero");
     const unitPrice = asNumber(listing.selling_price);
     if (unitPrice === null || unitPrice <= 0) throw new Error("selling price unknown");

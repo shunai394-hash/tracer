@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSupplier, unpublishWorkflow, patrolWorkflow, patrolRoute] = await Promise.all([
+const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSupplier, unpublishWorkflow, patrolWorkflow, patrolRoute, discoverCJ, directGate, salesPublicationRoute, e2eFunnel, intelligencePipeline, baseRepair] = await Promise.all([
   readFile(new URL("../lib/catalog/canonical-supplier-identity.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8"),
@@ -14,14 +14,56 @@ const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSup
   readFile(new URL("../.github/workflows/tracer-unpublish-unlinked.yml", import.meta.url), "utf8"),
   readFile(new URL("../.github/workflows/tracer-production-patrol-15m.yml", import.meta.url), "utf8"),
   readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../lib/suppliers/discover-cj-supply.ts", import.meta.url), "utf8"),
+  readFile(new URL("./direct-900-gate.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/cron/sales-test-publication/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/intelligence/e2e-funnel/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/channels/base/identity-repair/route.ts", import.meta.url), "utf8"),
 ]);
 assert.match(helper, /identity_status === "linked"/);
-assert.match(persist, /verification_error: marketplaceIdentity \? null : "no_unique_canonical_child_variant_match"/, "unmatched CJ identity must persist an explicit reason rather than retaining stale verification state");
-assert.match(persist, /last_verified_at: now/, "CJ verification must refresh its timestamp");
+assert.match(helper, /verificationError === "CJdropshipping is not configured"/, "only the stale CJ configuration error may be ignored when the same row is currently configured and API-available");
+assert.match(helper, /row.configured === true && row.api_available === true/);
+assert.match(persist, /verification_error: marketplaceIdentity \|\| nativeEvidenceFresh \? null : \(priorVerificationError \|\| "no_unique_canonical_child_variant_match"\)/, "only fresh, fully verified native supply evidence may clear the old configuration error");
+assert.match(discoverCJ, /identity_status: "supply_discovered", identity_confidence: 0/, "supply discovery without canonical identity must not claim perfect identity confidence");
+assert.match(discoverCJ, /title: detail\.title, product_id: null/, "CJ supply discovery must not provisionally attach a canonical product ID before identity is resolved");
+assert.match(discoverCJ, /api_available: false, verification_status: "unverified"/, "unresolved CJ supply must not be marked verified or API-orderable before canonical identity is resolved");
+assert.match(discoverCJ, /orderable: false, price_confirmed: true, inventory_confirmed: true, tracking_available: false/, "unresolved CJ supply must remain blocked from ordering even when price and stock observations exist");
+assert.doesNotMatch(discoverCJ, /markVerification\(db, String\(supplierInsert\.data\.id\), \{ status: "verified"/, "discovery must not overwrite the unresolved identity gate with a verified status");
+
+const supplierUpserts = [...discoverCJ.matchAll(/const supplierInsert = await upsertSupplierListing/g)].map((match) => {
+  const end = discoverCJ.indexOf("if (supplierInsert.error)", match.index);
+  assert.notEqual(end, -1, "each CJ supplier upsert must check persistence errors");
+  return discoverCJ.slice(match.index, end);
+});
+assert.equal(supplierUpserts.length, 2, "both seeded and fresh CJ discovery paths must be guarded");
+for (const upsert of supplierUpserts) {
+  assert.match(upsert, /product_id: null/, "unresolved CJ supply must not attach a provisional canonical product");
+  assert.match(upsert, /identity_status: "supply_discovered"/);
+  assert.match(upsert, /identity_confidence: 0/, "unresolved CJ supply must have zero identity confidence");
+  assert.match(upsert, /api_available: false/);
+  assert.match(upsert, /orderable: false/);
+  assert.match(upsert, /tracking_available: false/);
+  assert.doesNotMatch(upsert, /identity_confidence: 1|api_available: true|orderable: true|tracking_available: cjTrackingAvailable/, "discovery must not claim identity or order-path verification");
+}
+
+assert.match(directGate, /\.eq\("identity_status", "linked"\)/, "direct sales-test gate must require canonical supplier identity");
+assert.doesNotMatch(directGate, /identity_status\.eq\.supply_discovered/, "supply discovery alone must never enter direct sales-test selection");
+assert.match(salesPublicationRoute, /\.eq\("identity_status", "linked"\)/, "sales-test publication prefilter must require linked supplier identity");
+assert.match(salesPublicationRoute, /TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED !== "false"/, "verified native CJ supply must be publishable by default; only an explicit false setting may disable it");
+assert.doesNotMatch(salesPublicationRoute, /identity_status\.eq\.supply_discovered/, "sales-test publication must not prefilter unresolved supply as verified");
+assert.match(e2eFunnel, /eq\("identity_status", "linked"\).*eq\("verification_status", "verified"\).*eq\("orderable", true\)/, "readiness funnel must not count unresolved supply as verified and orderable");
+assert.match(intelligencePipeline, /\.eq\("verification_status", "verified"\)[\s\S]*?\.eq\("orderable", true\)/, "supply selection must still require verified, orderable supplier evidence");
+assert.match(intelligencePipeline, /allowNativeCjIdentity:\s*true/, "standalone CJ supply must use the selector’s explicit native-supplier gate rather than pretending marketplace identity is linked");
+assert.match(persist, /last_verified_at: marketplaceIdentity \? now : existingListing\.data\?\.last_verified_at \?\? null/, "unmatched identity must preserve the existing verification timestamp rather than making stale data look fresh");
 assert.match(persist, /bestseller_id: marketplaceIdentity\?\.bestsellerId \?\? null/, "unmatched or ambiguous CJ identity must clear any stale canonical parent link");
 assert.match(persist, /identity_status: marketplaceIdentity \? "linked" : "supply_discovered"/, "CJ discovery alone must not promote supplier identity to linked");
-assert.match(persist, /orderable: false, tracking_available: false, api_available: false/, "identity recheck must not enable purchasing or claim order-path verification");
-assert.match(persist, /if \(!marketplaceIdentity\) return \{ offerId: null, intelligenceId: null, identity: null \}/, "unmatched or ambiguous CJ identity must not create product-linked offer/intelligence rows");
+assert.doesNotMatch(persist, /orderable: false, tracking_available: false, api_available: false/, "identity recheck must not erase existing supplier order-path evidence");
+assert.match(persist, /catalog_stage: "candidate"/, "unmatched supplier supply must be retained as a catalog candidate");
+assert.ok(persist.includes('const nativeIdentityKey = `cj:${args.supplierProductId}:${args.supplierVariantId}`;'), "native candidate linkage must be grounded in the exact CJ product+variant identity key");
+assert.doesNotMatch(persist, /\[existingProductId, discoveredProductId\]\.find/, "native candidate persistence must not trust an arbitrary caller-supplied UUID");
+assert.match(persist, /purchasable: nativeEvidenceFresh/, "unmatched supply becomes purchasable only when fresh native supplier evidence passes");
+assert.match(persist, /if \(!marketplaceIdentity\) return \{ offerId: null, intelligenceId: candidateIntelligenceId, identity: null \}/, "unmatched CJ identity must retain candidate intelligence without creating a marketplace offer");
 assert.ok(persist.indexOf("if (!marketplaceIdentity)") < persist.indexOf("const offerPayload = {"), "no-match exit must happen before any product_offers write");
 assert.match(persist, /offerId: string \| null; intelligenceId: string \| null/, "supply-only discovery must explicitly return absent canonical record IDs");
 assert.doesNotMatch(demandCJ, /assessCanonicalIdentity|CANONICAL_LINK_THRESHOLD/, "CJ demand relevance must not link to a different existing canonical product");
@@ -34,10 +76,15 @@ assert.ok(demandSupplier.includes('.eq("identity_key", identityKey)'), "supplier
 assert.match(demandSupplier, /Missing stable supplier name or product ID; canonical offer persistence blocked/);
 assert.match(helper, /offset \+= 100/, "identity lookups must batch large supplier ID sets");
 assert.match(shopify, /supplier_identity_unlinked/);
-assert.match(shopify, /identity_status !== "linked"/);
+assert.match(shopify, /hasPublishableSupplierIdentity/);
+assert.match(shopify, /native_cj_verified/);
 assert.match(base, /identityUnlinkedIds/);
+assert.match(base, /base_last_error\.neq\.supplier_identity_unlinked_hidden/);
+assert.match(base, /base_last_error\.neq\.tracer_unpublished_hidden/);
+assert.match(base, /query\.order\("created_at", \{ ascending: false \}\)/,
+  "BASE batches must prioritize new gate-passed listings instead of starving them behind old hidden rows");
 assert.match(base, /base_last_error: isIdentityUnlinked \? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden"/);
-assert.match(store, /supplierListingId && linkedSupplierIds\.has/);
+assert.match(store, /supplierListingId && supplierStatuses\.has/);
 assert.match(store, /supplier_identity_unlinked/);
 assert.match(route, /requireAutomationAuth/);
 assert.match(route, /TRACER UNLINKED RECONCILIATION/, "production cleanup progress must be observable with count-only telemetry");
@@ -48,13 +95,19 @@ assert.match(base, /invalid_request.*break/s, "BASE auth failures must stop the 
 assert.match(base, /unpublishFailed \+= 1/);
 assert.match(base, /hidden: results\.filter\(\(r\) => r\.ok && r\.hidden\)\.length/);
 assert.match(route, /publishPublishedListingsToBase\(50/);
+assert.match(baseRepair, /base_create_id_persist_failed/ , "BASE identity repair may use the exact ID saved when item creation succeeded but DB persistence failed");
+assert.match(baseRepair, /persisted_create_marker/);
+assert.match(baseRepair, /identity_evidence_ambiguous/);
+assert.match(baseRepair, /snapshot\.complete/, "incomplete BASE snapshots must never be used for identity repair");
+assert.match(baseRepair, /\.is\("base_item_id", null\)/, "BASE identity repair must compare-and-set only missing links");
+assert.doesNotMatch(baseRepair, /\.update\(\{[^}]*published\s*:/, "BASE identity repair must not change publication state");
 // Keep Vercel Cron disabled; guarded 15-minute reconciliation runs through GitHub Actions OIDC.
 assert.doesNotMatch(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/);
 assert.match(unpublishWorkflow, /cron: "\*\/15 \* \* \* \*"/, "guarded unlinked listing reconciliation must retry every 15 minutes via GitHub Actions");
 assert.match(unpublishWorkflow, /api\/cron\/unpublish-unlinked/);
 assert.match(unpublishWorkflow, /id-token: write/);
 assert.match(unpublishWorkflow, /timeout-minutes: 13/);
-assert.match(patrolWorkflow, /cron: "\*\/15 \* \* \* \*"/);
+assert.match(patrolWorkflow, /cron: "\*\/5 \* \* \* \*"/, "production patrol must run every five minutes");
 assert.match(patrolWorkflow, /push:/, "core patrol changes must trigger a guarded post-deploy run");
 assert.match(patrolWorkflow, /git merge-base --is-ancestor/);
 assert.match(patrolWorkflow, /pipelineComplete:/);

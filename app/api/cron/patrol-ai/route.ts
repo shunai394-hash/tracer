@@ -6,6 +6,7 @@ import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { runIntelligencePipeline } from "@/lib/intelligence/run-intelligence-pipeline";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { rescueUndeliveredGatePassedListings } from "@/lib/integration/newfind";
+import { catalogCountsNeedReview } from "@/lib/ops/catalog-count-check";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -152,6 +153,59 @@ export async function GET(request: Request) {
     cronId = runState.cronId;
 
     const before = await snapshot(db);
+    const priorRuns = await db
+      .from("cron_runs")
+      .select("metadata,started_at")
+      .eq("job_name", "patrol-ai")
+      .in("status", ["succeeded", "failed"])
+      .order("started_at", { ascending: false })
+      .limit(20);
+    if (priorRuns.error) throw new Error(`patrol prior snapshot lookup failed: ${priorRuns.error.message}`);
+    let previous: { shopListings: number; supplierListings: number } | null = null;
+    for (const row of priorRuns.data ?? []) {
+      const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+        ? row.metadata as Record<string, unknown>
+        : {};
+      const after = metadata.after && typeof metadata.after === "object" && !Array.isArray(metadata.after)
+        ? metadata.after as Record<string, unknown>
+        : null;
+      const shopListings = after && typeof after.shopListings === "number" ? after.shopListings : null;
+      const supplierListings = after && typeof after.supplierListings === "number" ? after.supplierListings : null;
+      if (shopListings !== null && supplierListings !== null) {
+        previous = { shopListings, supplierListings };
+        break;
+      }
+    }
+    if (catalogCountsNeedReview(
+      { shopListings: before.shopListings, supplierListings: before.supplierListings },
+      previous,
+    )) {
+      const reason = "catalog_count_drop_requires_manual_review";
+      const report = {
+        ok: false,
+        status: "failed",
+        decision: "catalog_count_safety_stop",
+        before,
+        previous,
+        message: "カタログ件数の急減を検出したため、データ破損や誤削除の可能性を確認するまで自動処理を停止しました。",
+        errors: [reason],
+      };
+      const { error: persistError } = await db.from("cron_runs").update({
+        finished_at: new Date().toISOString(),
+        duration_ms: Date.now() - startedAt,
+        processed: 0,
+        failed: 1,
+        status: "failed",
+        error: reason,
+        metadata: report,
+      }).eq("id", cronId);
+      if (persistError) throw new Error(`catalog safety stop persistence failed: ${persistError.message}`);
+      console.error("[TRACER PATROL CATALOG SAFETY STOP]", JSON.stringify({
+        current: { shopListings: before.shopListings, supplierListings: before.supplierListings },
+        previous,
+      }));
+      return NextResponse.json(report, { status: 503 });
+    }
     console.log("[TRACER PATROL AI START]", JSON.stringify({ before }));
 
     // The patrol must always execute the canonical full intelligence loop.

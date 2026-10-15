@@ -16,11 +16,16 @@ assert.match(source, /identity_status: "identity_unconfirmed"/);
 const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
 assert.doesNotMatch(pipeline, /reverifyCjSupplyIdentities\(/);
 const identityRoute = await readFile(new URL("../app/api/cron/cj-identity-reverify/route.ts", import.meta.url), "utf8");
-assert.match(identityRoute, /reverifyCjSupplyIdentities\(\{[\s\S]*?limit: 25,[\s\S]*?startedAt \+ 150_000/);
+assert.match(identityRoute, /Math\.min\(25, Math\.floor\(requestedLimit\)\)/,
+  "forced CJ freshness checks remain capped at 25 rows");
+assert.match(identityRoute, /const force = url\.searchParams\.get\("force"\) === "1"/);
+assert.match(identityRoute, /reverifyCjSupplyIdentities\(\{[\s\S]*?limit,[\s\S]*?force,[\s\S]*?startedAt \+ 150_000/);
 const discovery = await readFile(new URL("../lib/suppliers/discover-cj-supply.ts", import.meta.url), "utf8");
 assert.equal((discovery.match(/gtin: normalizeIdentifier\("gtin", variantBarcode\)/g) ?? []).length, 2);
 assert.match(discovery, /function priorityWomenSupplyCategory/);
-assert.match(discovery, /priorityWomenSupplyCategory\(row\.title, row\.metadata\) < 99/);
+assert.match(discovery, /Include every due supplier category/);
+assert.match(discovery, /priorityWomenSupplyCategory\(a\.title, a\.metadata\) - priorityWomenSupplyCategory\(b\.title, b\.metadata\)/,
+  "women-focused categories remain prioritized without excluding other categories");
 const reverify = await readFile(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
 assert.match(reverify, /const MAX_CANDIDATE_SCAN = 500/);
 assert.match(reverify, /\.limit\(MAX_CANDIDATE_SCAN\)/);

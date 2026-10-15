@@ -11,13 +11,11 @@ function buildUrl(base: string): string {
 }
 
 // Public origin of the TRACER storefront. Prefer explicit configuration, then
-// Vercel's production URL. The final fallback is the canonical TRACER Vercel
-// production alias; this prevents a missing deployment-only env from silently
-// starving an otherwise gate-passed NEWFIND delivery.
+// the stable production alias. VERCEL_PROJECT_PRODUCTION_URL can resolve to a
+// deployment-specific hostname that does not serve the public /shop route.
 function tracerSiteOrigin(): string | null {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
-  const configured = explicit || (vercel ? `https://${vercel.replace(/^https?:\/\//, "")}` : "https://tracer-pied-alpha.vercel.app");
+  const configured = explicit || "https://tracer-pied-alpha.vercel.app";
   try {
     const parsed = new URL(configured);
     if (parsed.protocol !== "https:") return null;
@@ -27,9 +25,10 @@ function tracerSiteOrigin(): string | null {
   }
 }
 
-async function resolveLiveTracerUrl(slug: string | null): Promise<string | null> {
+async function resolveLiveTracerUrl(slug: string | null): Promise<{ url: string | null; reason: string | null }> {
   const origin = tracerSiteOrigin();
-  if (!origin || !slug) return null;
+  if (!origin) return { url: null, reason: "tracer_sales_url_origin_missing" };
+  if (!slug) return { url: null, reason: "tracer_sales_url_slug_missing" };
   const url = `${origin}/shop/${encodeURIComponent(slug)}`;
   try {
     const response = await fetch(url, {
@@ -39,11 +38,17 @@ async function resolveLiveTracerUrl(slug: string | null): Promise<string | null>
       redirect: "follow",
       signal: AbortSignal.timeout(10_000),
     });
-    return response.ok ? url : null;
-  } catch {
-    return null;
+    return response.ok
+      ? { url, reason: null }
+      : { url: null, reason: `tracer_sales_url_http_${response.status}` };
+  } catch (error) {
+    const reason = error instanceof Error && error.name === "TimeoutError"
+      ? "tracer_sales_url_timeout"
+      : "tracer_sales_url_fetch_failed";
+    return { url: null, reason };
   }
 }
+
 
 function readSelectionReasons(listing: { selection_reasons?: unknown }): string[] {
   return Array.isArray(listing.selection_reasons) ? listing.selection_reasons.map(String) : [];
@@ -52,7 +57,7 @@ function readSelectionReasons(listing: { selection_reasons?: unknown }): string[
 function selectionScore(listing: { selection_reasons?: unknown }): number {
   for (const reason of readSelectionReasons(listing)) {
     const match = /^(?:selection|quality)_score_(\d+(?:\.\d+)?)$/.exec(reason);
-    if (match) return Math.max(0, Math.min(100, Number(match[1])));
+    if (match) return Math.round(Math.max(0, Math.min(100, Number(match[1]))));
   }
   return 0;
 }
@@ -85,6 +90,16 @@ function eventId(listingId: string): string {
   return `tracer-shop-listing:${listingId}`;
 }
 
+export function isNewfindPromotionLedgerSchemaBlocked(value: unknown): boolean {
+  const message = String(value ?? "");
+  return /Could not find the table ['"]public[.]tracer_promotions['"] in the schema cache/i.test(message)
+    || /promotion ledger (?:insert|update) failed:.*tracer_promotions/i.test(message);
+}
+
+function isNewfindPromotionReceiverReady(): boolean {
+  return process.env.NEWFIND_TRACER_PROMOTION_RECEIVER_READY?.trim() === "1";
+}
+
 export type NewfindPromotionResult = {
   configured: boolean;
   sent: boolean;
@@ -99,53 +114,102 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
   processed: number;
   failed: number;
   windowSize: number;
+  schemaBlocked: number;
 }> {
   const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
   const batch = Math.max(1, Math.min(limit, 100));
   const { data, error } = await supabase
     .from("newfind_promotion_deliveries")
-    .select("listing_id")
-    .in("status", ["pending", "failed", "sent"])
+    .select("listing_id, last_error")
+    .in("status", ["pending", "failed", "sent", "sending"])
     .order("updated_at", { ascending: true })
     .limit(500);
 
   if (error) throw new Error(error.message);
 
-  const listingIds = Array.from(new Set((data ?? []).map((row) => String(row.listing_id))));
+  const receiverReady = isNewfindPromotionReceiverReady();
+  const schemaBlockedIds = new Set(
+    (data ?? [])
+      .filter((row) => !receiverReady && isNewfindPromotionLedgerSchemaBlocked(row.last_error))
+      .map((row) => String(row.listing_id)),
+  );
+  const listingIds = Array.from(new Set((data ?? []).map((row) => String(row.listing_id))))
+    .filter((id) => !schemaBlockedIds.has(id));
+  if (!receiverReady) {
+    return {
+      attempted: 0,
+      processed: 0,
+      failed: 0,
+      windowSize: listingIds.length + schemaBlockedIds.size,
+      schemaBlocked: schemaBlockedIds.size,
+    };
+  }
   const eligible: string[] = [];
-  for (let i = 0; i < listingIds.length && eligible.length < batch; i += 100) {
+  const shopifyStatusById = new Map<string, string>();
+  for (let i = 0; i < listingIds.length; i += 100) {
     const chunk = listingIds.slice(i, i + 100);
     const { data: listings, error: listingError } = await supabase
       .from("shop_listings")
-      .select("id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
+      .select("id, title, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status")
       .in("id", chunk)
       .eq("published", true);
     if (listingError) throw new Error(listingError.message);
-    const passed = new Set((listings ?? []).filter((row) => hasPassedSalesTestGate(row)).map((row) => String(row.id)));
-    for (const id of chunk) {
-      if (passed.has(id) && eligible.length < batch) eligible.push(id);
+    for (const row of listings ?? []) {
+      const id = String(row.id);
+      const shopifyStatus = String(row.shopify_sync_status ?? "");
+      shopifyStatusById.set(id, shopifyStatus);
+      // The TRACER public sales page only exists for Shopify-synced listings.
+      // Do not create doomed NEWFIND deliveries for BASE-only or unsynced rows.
+      if (shopifyStatus === "synced" && hasPassedSalesTestGate(row)) eligible.push(id);
     }
   }
 
-  let processed = 0;
-  let failed = 0;
-  for (const listingId of eligible) {
-    const result = await promoteShopListingToNewfind(listingId);
-    if (result.ackStatus === "processed" || result.ackStatus === "duplicate") processed += 1;
-    else if (!result.sent) failed += 1;
-  }
+  // The TRACER product page is intentionally available only for Shopify-synced
+  // products. Retry those first so a backlog of unsynced listings cannot starve
+  // products that are already live and purchasable.
+  eligible.sort((a, b) =>
+    Number(shopifyStatusById.get(b) === "synced") - Number(shopifyStatusById.get(a) === "synced"),
+  );
+  const selected = eligible.slice(0, batch);
 
-  return { attempted: eligible.length, processed, failed, windowSize: listingIds.length };
+  const results = await Promise.all(selected.map(async (listingId) => {
+    try {
+      return await promoteShopListingToNewfind(listingId);
+    } catch (error) {
+      return {
+        configured: true,
+        sent: false,
+        eventId: eventId(listingId),
+        status: null,
+        ackStatus: null,
+        detail: error instanceof Error ? error.message : String(error),
+      } satisfies NewfindPromotionResult;
+    }
+  }));
+  const processed = results.filter((result) => result.ackStatus === "processed" || result.ackStatus === "duplicate").length;
+  const failed = results.filter((result) => !result.sent).length;
+
+  return { attempted: selected.length, processed, failed, windowSize: listingIds.length, schemaBlocked: schemaBlockedIds.size };
 }
 
 export async function promoteShopListingToNewfind(listingId: string): Promise<NewfindPromotionResult> {
   const cfg = getNewfindConfig();
   const id = eventId(listingId);
+  if (!isNewfindPromotionReceiverReady()) {
+    return {
+      configured: Boolean(cfg.apiUrl && cfg.webhookSecret),
+      sent: false,
+      eventId: id,
+      status: null,
+      ackStatus: null,
+      detail: "newfind_promotion_receiver_not_confirmed_ready",
+    };
+  }
   const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
 
   const { data: listing, error } = await supabase
     .from("shop_listings")
-    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, identity_confidence, supplier_name, base_item_id, contribution_margin, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
+    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, identity_confidence, supplier_name, base_item_id, contribution_margin, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, shopify_product_id, shopify_variant_id, shopify_handle")
     .eq("id", listingId)
     .eq("published", true)
     .maybeSingle();
@@ -154,6 +218,11 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
 
   if (!listing || !hasPassedSalesTestGate(listing)) {
     return { configured: Boolean(cfg.apiUrl && cfg.webhookSecret), sent: false, eventId: id, status: null, ackStatus: null, detail: "sales_test_gate_not_passed" };
+  }
+
+  // Do not queue promotions until the public TRACER product page is backed by a live Shopify listing.
+  if (listing.shopify_sync_status !== "synced" || !listing.shopify_product_id || !listing.shopify_variant_id || !listing.shopify_handle) {
+    return { configured: Boolean(cfg.apiUrl && cfg.webhookSecret), sent: false, eventId: id, status: null, ackStatus: null, detail: "shopify_listing_not_live" };
   }
 
   const { error: deliveryUpsertError } = await supabase
@@ -167,11 +236,15 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
 
   const { data: existingDelivery, error: deliveryReadError } = await supabase
     .from("newfind_promotion_deliveries")
-    .select("status, ack_status, http_status, attempts, lease_until, event_id")
+    .select("status, ack_status, http_status, attempts, lease_until, event_id, last_error")
     .eq("listing_id", listingId)
     .maybeSingle();
 
   if (deliveryReadError) throw new Error(deliveryReadError.message);
+
+  if (!isNewfindPromotionReceiverReady() && isNewfindPromotionLedgerSchemaBlocked(existingDelivery?.last_error)) {
+    return { configured: true, sent: false, eventId: id, status: null, ackStatus: null, detail: "newfind_promotion_ledger_schema_blocked" };
+  }
 
   if (existingDelivery?.status === "processed" && (existingDelivery.ack_status === "processed" || existingDelivery.ack_status === "duplicate")) {
     return { configured: true, sent: true, eventId: id, status: typeof existingDelivery.http_status === "number" ? existingDelivery.http_status : 200, ackStatus: "processed", detail: "already_processed" };
@@ -186,9 +259,19 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     return { configured: true, sent: false, eventId: id, status: null, ackStatus: "sending", detail: "newfind_delivery_in_progress" };
   }
 
+  const previousError = String(existingDelivery?.last_error ?? "");
+  const integerSchemaRetry = currentStatus === "failed"
+    && /invalid input syntax for type integer/i.test(previousError)
+    && !String(existingDelivery?.event_id ?? "").includes(":schema-retry");
+  const ledgerSchemaRetry = (currentStatus === "failed" || currentStatus === "sending")
+    && isNewfindPromotionReceiverReady()
+    && isNewfindPromotionLedgerSchemaBlocked(previousError);
+  const retryRejectedSchemaEvent = integerSchemaRetry || ledgerSchemaRetry;
   const sendEventId = currentStatus === "withdrawn"
     ? `${eventId(listingId)}:republished:${now.getTime()}`
-    : typeof existingDelivery?.event_id === "string" && existingDelivery.event_id ? existingDelivery.event_id : id;
+    : retryRejectedSchemaEvent
+      ? `${eventId(listingId)}:schema-retry:${(typeof existingDelivery?.attempts === "number" ? existingDelivery.attempts : 0) + 1}`
+      : typeof existingDelivery?.event_id === "string" && existingDelivery.event_id ? existingDelivery.event_id : id;
 
   let claimQuery = supabase
     .from("newfind_promotion_deliveries")
@@ -212,10 +295,15 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     brand = typeof bestseller?.brand === "string" ? bestseller.brand : null;
   }
 
-  const tracerUrl = await resolveLiveTracerUrl(typeof listing.slug === "string" ? listing.slug : null);
+  // The storefront route explicitly resolves stable listing UUIDs, avoiding
+  // URL-encoding ambiguity for Japanese slugs used by external integrations.
+  const tracerResolution = await resolveLiveTracerUrl(typeof listing.id === "string" ? listing.id : null);
+  const tracerUrl = tracerResolution.url;
+  // NEWFIND validates that sales links originate from TRACER. Only publish a
+  // TRACER URL after the actual product page passes its liveness check.
   const productUrl = tracerUrl;
   if (!productUrl) {
-    const reason = "tracer_sales_url_not_live";
+    const reason = tracerResolution.reason ?? "tracer_sales_url_not_live";
     await supabase.from("newfind_promotion_deliveries").update({ status: "failed", last_error: reason, last_attempt_at: new Date().toISOString(), lease_until: null, updated_at: new Date().toISOString() }).eq("listing_id", listingId).eq("status", "sending").eq("event_id", sendEventId);
     return { configured: true, sent: false, eventId: sendEventId, status: null, ackStatus: null, detail: reason };
   }
@@ -240,7 +328,7 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
       category: category || "other",
       discovery_reason: discoveryReason(listing),
       tracer_url: tracerUrl,
-      sales_url: tracerUrl,
+      sales_url: productUrl,
       market_url: marketUrl ?? undefined,
       tracer_listing_id: listing.id,
       tracer_product_id: listing.product_id ?? undefined,

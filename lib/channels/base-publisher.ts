@@ -6,7 +6,8 @@ import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sal
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
-import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
+import { shopifyGraphQL } from "@/lib/shopify/admin";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -54,11 +55,44 @@ function validHttpUrl(value: unknown): boolean {
   try { const parsed = new URL(value); return parsed.protocol === "http:" || parsed.protocol === "https:"; } catch { return false; }
 }
 
+async function addBaseItemImageWithFallback(input: {
+  itemId: string;
+  imageUrl: string;
+  shopifyProductId?: string | null;
+}): Promise<void> {
+  try {
+    await addBaseItemImage({ itemId: input.itemId, imageNo: 1, imageUrl: input.imageUrl });
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const formatRejected = /このファイル形式はご利用できません|file format.{0,30}(not supported|unsupported)/i.test(message);
+    if (!formatRejected || !input.shopifyProductId || !/^gid:\/\/shopify\/Product\/\d+$/.test(input.shopifyProductId)) {
+      throw error;
+    }
+
+    // BASE sometimes rejects a supplier-hosted image even when the URL ends in
+    // .jpg. Shopify has already accepted and stored this listing's image, so use
+    // its CDN copy as a safe format-compatible fallback instead of abandoning
+    // publication or creating another BASE item.
+    const result = await shopifyGraphQL<{
+      product: { featuredImage: { url: string } | null } | null;
+    }>(
+      `query BaseCompatibleProductImage($id: ID!) {
+        product(id: $id) { featuredImage { url } }
+      }`,
+      { id: input.shopifyProductId },
+    );
+    const fallbackUrl = result.product?.featuredImage?.url;
+    if (!fallbackUrl || fallbackUrl === input.imageUrl || !validHttpUrl(fallbackUrl)) throw error;
+    await addBaseItemImage({ itemId: input.itemId, imageNo: 1, imageUrl: fallbackUrl });
+  }
+}
+
 export async function publishPublishedListingsToBase(limit = 10, listingIds?: string[]): Promise<BasePublicationResult> {
   if (!isBaseConfigured()) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
   if (listingIds !== undefined && listingIds.length === 0) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
   const supabase = createSupabaseAdminClient();
-  let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons");
+  let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,shopify_product_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons");
   if (listingIds && listingIds.length > 0) {
     // Explicit admin retries can target an exact listing regardless of its
     // current publication status.
@@ -70,18 +104,24 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     query = query.or([
       "and(published.eq.true,base_publication_status.is.null)",
       "and(published.eq.true,base_publication_status.neq.published)",
-      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.is.null)",
-      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.neq.published)",
+      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.is.null,base_last_error.is.null)",
+      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.neq.published,base_last_error.is.null)",
+      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.is.null,base_last_error.neq.supplier_identity_unlinked_hidden,base_last_error.neq.tracer_unpublished_hidden)",
+      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.neq.published,base_last_error.neq.supplier_identity_unlinked_hidden,base_last_error.neq.tracer_unpublished_hidden)",
       "and(pipeline_status.eq.selected,base_item_id.is.null)",
+      "and(base_item_id.is.null,base_last_error.like.base_create_id_persist_failed:*)",
     ].join(","));
   }
   const safeLimit = Math.min(15, Math.max(1, Math.floor(Number.isFinite(limit) ? limit : 10)));
-  const { data: listings, error } = await query.order("created_at", { ascending: true }).limit(safeLimit);
+  // Prefer the newest gate-passed, never-published listings. Already-hidden
+  // stale BASE items are excluded above so they cannot consume every bounded
+  // batch and starve fresh products waiting for their first BASE item.
+  const { data: listings, error } = await query.order("created_at", { ascending: false }).limit(safeLimit);
   if (error) throw new Error(error.message);
 
-  const linkedSupplierIds = await getLinkedSupplierListingIds((listings ?? []).map((listing) => listing.supplier_listing_id));
+  const supplierStatuses = await getPublishableSupplierListingStatuses((listings ?? []).map((listing) => listing.supplier_listing_id));
   const identityUnlinkedIds = new Set((listings ?? [])
-    .filter((listing) => !listing.supplier_listing_id || !linkedSupplierIds.has(String(listing.supplier_listing_id)))
+    .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.supplier_listing_id)))
     .map((listing) => String(listing.id)));
   const results: BasePublicationResult["results"] = [];
   let unpublishFailed = 0;
@@ -116,8 +156,8 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     try {
       await editBaseItem({
         itemId: String(listing.base_item_id),
-        title: "販売停止中の商品",
-        detail: "現在この商品は販売停止中です。",
+        title: String(listing.title ?? "").trim() || "商品情報確認中",
+        detail: String(listing.description ?? listing.title ?? "").trim() || "商品情報を確認しています。",
         price: Number(listing.selling_price),
         stock: 0,
         visible: false,
@@ -180,8 +220,8 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         try {
           await editBaseItem({
             itemId: String(listing.base_item_id),
-            title: "販売停止中の商品",
-            detail: "商品情報を再確認しているため、一時的に販売を停止しています。",
+            title: String(listing.title ?? "").trim() || "商品情報確認中",
+            detail: String(listing.description ?? listing.title ?? "").trim() || "商品情報を確認しています。",
             price: Number(listing.selling_price ?? 0),
             stock: 0,
             visible: false,
@@ -339,24 +379,57 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       }
     }
 
+    let baseItemId = listing.base_item_id ? String(listing.base_item_id) : null;
+    const recoveryMarker = String(listing.base_last_error ?? "").match(/^base_create_id_persist_failed:([^:]+)(?::|$)/);
+    if (!baseItemId && recoveryMarker?.[1]) baseItemId = recoveryMarker[1];
+
     try {
-      let baseItemId = listing.base_item_id ? String(listing.base_item_id) : null;
+      if (!listing.base_item_id && recoveryMarker?.[1] && baseItemId) {
+        // Recover the exact ID returned by BASE before any retry can create another item.
+        const { error: recoveryError } = await supabase.from("shop_listings").update({
+          base_item_id: baseItemId,
+          base_publication_status: "creating",
+          base_publication_lease_until: leaseUntil,
+          base_last_error: null,
+        }).eq("id", listingId);
+        if (recoveryError) throw new Error(`base_create_id_recovery_failed:${recoveryError.message}`);
+      }
       if (baseItemId) {
         await editBaseItem({ itemId: baseItemId, title: catalogCopy.title, detail: catalogCopy.detail, price, stock: availableInventory, visible: true });
       } else {
-        const created = await createBaseItem({ title: catalogCopy.title, detail: catalogCopy.detail, price, stock: availableInventory, visible: true });
+        const created = await createBaseItem({ title: catalogCopy.title, identifier: `TRC-${listingId}`, detail: catalogCopy.detail, price, stock: availableInventory, visible: true });
         baseItemId = String(created.item_id ?? created.item?.item_id ?? "");
         if (!baseItemId) throw new Error("BASE create response missing item_id");
         const { error: persistIdError } = await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_publication_status: "creating", base_publication_lease_until: leaseUntil }).eq("id", listingId);
-        if (persistIdError) throw new Error(persistIdError.message);
+        if (persistIdError) throw new Error(`base_create_id_persist_failed:${baseItemId}:${persistIdError.message}`);
       }
-      if (listing.image_url) await addBaseItemImage({ itemId: baseItemId, imageNo: 1, imageUrl: listing.image_url });
-      await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_published_at: new Date().toISOString(), base_publication_status: "published", base_publication_lease_until: null, base_last_error: null, pipeline_stage: "BASE_PUBLISHED", pipeline_status: "published", pipeline_reason: "sales_test_gate_passed", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
+      if (listing.image_url) await addBaseItemImageWithFallback({ itemId: baseItemId, imageUrl: listing.image_url, shopifyProductId: typeof listing.shopify_product_id === "string" ? listing.shopify_product_id : null });
+      const { error: finalizeError } = await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_published_at: new Date().toISOString(), base_publication_status: "published", base_publication_lease_until: null, base_last_error: null, pipeline_stage: "BASE_PUBLISHED", pipeline_status: "published", pipeline_reason: "sales_test_gate_passed", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
+      if (finalizeError) throw new Error(`base_publication_finalize_failed: ${finalizeError.message}`);
       results.push({ listingId, ok: true, baseItemId });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await supabase.from("shop_listings").update({ base_last_error: message, pipeline_stage: "BASE_PUBLICATION", pipeline_status: "failed", pipeline_reason: "base_publish_failed", pipeline_error: message, pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
-      results.push({ listingId, ok: false, error: message });
+      const createIdPersistFailure = message.match(/^base_create_id_persist_failed:([^:]+):([\s\S]*)$/);
+      const recoveryStillNeeded = !listing.base_item_id && recoveryMarker?.[1] && message.startsWith("base_create_id_recovery_failed:");
+      const safeErrorMarker = createIdPersistFailure
+        ? `base_create_id_persist_failed:${createIdPersistFailure[1]}:${createIdPersistFailure[2]}`.slice(0, 2000)
+        : recoveryStillNeeded
+          ? String(listing.base_last_error).slice(0, 2000)
+          : message.slice(0, 2000);
+      const { error: failureWriteError } = await supabase.from("shop_listings").update({
+        base_last_error: safeErrorMarker,
+        base_publication_status: "failed",
+        base_publication_lease_until: null,
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "failed",
+        pipeline_reason: createIdPersistFailure || recoveryStillNeeded ? "base_create_id_recovery_required" : "base_publish_failed",
+        pipeline_error: message.slice(0, 2000),
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      const reportedError = failureWriteError
+        ? `${message};failure_marker_write_failed:${failureWriteError.message}`
+        : message;
+      results.push({ listingId, ok: false, error: reportedError });
     }
   }
   return {

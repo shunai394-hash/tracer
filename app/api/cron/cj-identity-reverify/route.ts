@@ -17,10 +17,15 @@ export async function GET(request: Request) {
 
   const startedAt = Date.now();
   try {
+    const url = new URL(request.url);
+    const requestedLimit = Number(url.searchParams.get("limit") ?? 25);
+    const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(25, Math.floor(requestedLimit))) : 25;
+    const force = url.searchParams.get("force") === "1";
     const result = await reverifyCjSupplyIdentities({
       // Production telemetry showed 40 checks consuming ~182s and hitting a
       // CJ QPS 429. A 25-row cap leaves room for retries under the 150s budget.
-      limit: 25,
+      limit,
+      force,
       deadlineAt: startedAt + 150_000,
     });
 
@@ -32,16 +37,17 @@ export async function GET(request: Request) {
       noUniqueBarcodeMatch: result.noUniqueBarcodeMatch,
       missingEconomics: result.missingEconomics,
       errors: result.errors.length,
+      quotaBlockedUntil: result.quotaBlockedUntil,
       progress: result.progress,
     });
 
     return NextResponse.json({
-      ok: result.errors.length === 0,
+      ok: result.errors.length === 0 && result.quotaBlockedUntil === null,
       phase: "cj_identity_reverify",
       elapsedMs: Date.now() - startedAt,
       ...result,
       next: "sales_test_publication",
-    }, { status: result.errors.length === 0 ? 200 : 207 });
+    }, { status: result.errors.length === 0 && result.quotaBlockedUntil === null ? 200 : 207 });
   } catch (error) {
     return NextResponse.json({
       ok: false,

@@ -30,6 +30,8 @@ export async function GET(request: Request) {
       visibleItemsUnlinked: 0,
       visibleItemsWithoutDbMapping: 0,
       visibleItemsWithAmbiguousDbMapping: 0,
+      itemIdentifierPresentCount: probe.items.entries.filter((entry) => Boolean(entry.identifier)).length,
+      stableTracerIdentifierCount: probe.items.entries.filter((entry) => /^TRC-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry.identifier ?? "")).length,
       itemIdMissingCount: probe.items.entries.filter((entry) => !entry.itemId).length,
       errorStage: null as string | null,
     };
@@ -123,6 +125,8 @@ export async function GET(request: Request) {
       visibleItemsUnlinked: mappingAudit.visibleItemsUnlinked,
       visibleItemsWithoutDbMapping: mappingAudit.visibleItemsWithoutDbMapping,
       visibleItemsWithAmbiguousDbMapping: mappingAudit.visibleItemsWithAmbiguousDbMapping,
+      itemIdentifierPresentCount: mappingAudit.itemIdentifierPresentCount,
+      stableTracerIdentifierCount: mappingAudit.stableTracerIdentifierCount,
       itemIdMissingCount: mappingAudit.itemIdMissingCount,
       mappingAuditErrorStage: mappingAudit.errorStage,
     };

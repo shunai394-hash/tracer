@@ -132,11 +132,15 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
   for (const summary of summaries) {
     const baseOrderKey = String(summary.unique_key);
     try {
-      const { data: existing } = await supabase
+      const { data: existing, error: existingLookupError } = await supabase
         .from("shop_orders")
         .select("id,order_status,payment_status")
         .eq("base_order_key", baseOrderKey)
         .maybeSingle();
+
+      // A failed lookup must never be interpreted as "no existing order":
+      // fail closed to avoid attempting a duplicate import or procurement.
+      if (existingLookupError) throw new Error(existingLookupError.message);
 
       if (existing?.id) {
         const detail = await getBaseOrderDetail(baseOrderKey);

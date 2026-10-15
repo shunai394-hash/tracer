@@ -298,6 +298,7 @@ export async function createPurchaseOrderFromRecommendation(args: {
             ? false
             : null,
       profitCalculable: opportunity?.profit_calculable === true,
+      forecastProfit30d: asNumber(opportunity?.forecast_profit_30d),
       forecastUnits30d: asNumber(rec.forecast_units_30d),
       onHand: asNumber(rec.on_hand),
       recommendedQty: qty,

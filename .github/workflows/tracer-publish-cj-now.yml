@@ -2,7 +2,11 @@ name: TRACER Publish CJ Products Now
 
 # Production publication trigger: verified supplier sales tests -> Shopify.
 # Retry trigger: publish verified, profitable CJ supply without marketplace barcode dependency.
+# Operational retry: run the bounded, gated production reconciliation after stale supplier evidence was found.
 on:
+  workflow_dispatch:
+  schedule:
+    - cron: "5 0 16 10 *"
   push:
     branches: [main]
 
@@ -16,7 +20,7 @@ concurrency:
 
 jobs:
   publish-cj-now:
-    if: contains(github.event.head_commit.message, '[publish-cj-now]')
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[publish-cj-now]')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -30,14 +34,22 @@ jobs:
         run: |
           set -euo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
+          schedule_date="$(date -u +%F)"
+          schedule_hour="$(date -u +%H)"
           token() {
             curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
 
+          # Prevent later annual cron matches from calling CJ or publication endpoints.
+          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] && ! { [ "$schedule_date" = "2026-10-16" ] && [ "$schedule_hour" -lt 1 ]; }; then
+            echo "One-time post-cooldown retry window has passed; skipping before API calls."
+            exit 0
+          fi
+
           echo "=== CJ IDENTITY RECOVERY ==="
           for i in 1 2 3 4 5 6; do
             echo "--- reverify batch $i/6 ---"
-            curl -sSf --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/cj-identity-reverify" > "reverify-$i.json"
+            curl -sSf --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/cj-identity-reverify?force=1&limit=15" > "reverify-$i.json"
             python3 - <<PY
           import json
           d=json.load(open("reverify-$i.json"))
@@ -55,12 +67,38 @@ jobs:
           print(json.dumps(d, ensure_ascii=False, indent=2)[:30000])
           PY
 
+          # The schedule-window guard above is checked once at job start. Do not re-check after the bounded reverify loop, which may cross into the next UTC hour.
+
           echo "=== SALES TEST PUBLICATION ==="
           curl -sSf --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/sales-test-publication" > sales.json
           python3 - <<'PY'
           import json
           d=json.load(open("sales.json"))
           print(json.dumps(d, ensure_ascii=False, indent=2)[:50000])
+          PY
+
+          echo "=== BASE RECONCILIATION ==="
+          curl -sSf --max-time 120 -H "Authorization: Bearer $(token)" "$BASE/api/cron/base-publish" > base.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open("base.json"))
+          print(json.dumps({k:d.get(k) for k in ("ok","phase","attempted","published","hidden","skipped","failed","configured","error")}, ensure_ascii=False, indent=2))
+          PY
+
+          echo "=== SHOPIFY RECONCILIATION ==="
+          curl -sSf --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/shopify-publish" > shopify.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open("shopify.json"))
+          print(json.dumps({k:d.get(k) for k in ("ok","phase","attempted","synced","failed","configured","error","storefrontContract")}, ensure_ascii=False, indent=2))
+          PY
+
+          echo "=== NEWFIND RETRY ==="
+          curl -sSf --max-time 120 -H "Authorization: Bearer $(token)" "$BASE/api/cron/newfind-retry" > newfind.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open("newfind.json"))
+          print(json.dumps({k:d.get(k) for k in ("ok","processed","sent","acknowledged","failed","pending","error")}, ensure_ascii=False, indent=2))
           PY
 
           echo "=== PRODUCTION PUBLISHED COUNT ==="
@@ -72,5 +110,5 @@ jobs:
           PY
 
 # Production deploy is now handled by the deterministic Vercel CLI workflow.
-
+# Manual dispatch is available for a bounded CJ identity reverify + publication cycle.
 # final-publication-cycle

@@ -1,10 +1,7 @@
 import "server-only";
 
 import { collectGoogleTrendsDemand } from "@/lib/intelligence/collect-google-trends";
-import { matchDemandProductsByCategory } from "@/lib/intelligence/match-demand-products";
 import { normalizeProductIntelligence } from "@/lib/intelligence/normalize-products";
-import { persistDemandCJProducts } from "@/lib/intelligence/persist-demand-cj-products";
-import { recordCandidateResolutionEvidence, researchDemandCandidateWithCJ } from "@/lib/intelligence/research-demand-cj";
 import { scoreProductIntelligence } from "@/lib/intelligence/score-products";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { persistDemandIntelligence } from "@/lib/intelligence/persist-demand-intelligence";
@@ -16,7 +13,6 @@ import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sal
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import {
   promoteShopListingToNewfind,
-  retryPendingNewfindPromotions,
 } from "@/lib/integration/newfind";
 import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -26,6 +22,7 @@ import {
   GeminiRequestError,
   GeminiTimeoutError,
 } from "@/lib/ai/gemini/errors";
+import { canFeedSalesGate } from "@/lib/intelligence/bestseller-sales-gate";
 
 export type PipelineStepResult = {
   name: string;
@@ -40,20 +37,38 @@ function classifyFailure(error: unknown): {
   retryable: boolean;
   skippable: boolean;
   message: string;
+  category: "gemini" | "supplier_quota" | "transient" | "fatal";
 } {
   const message = error instanceof Error ? error.message : "Unknown error";
+  const errorCode =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+  // CJ quota errors can occur during supplier search after query ideation.
+  // Never mislabel generic "quota"/HTTP 429 text as a Gemini failure.
+  const supplierQuotaFailure =
+    errorCode === "CJ_QUOTA_EXHAUSTED" ||
+    errorCode === "CJ_QUOTA_CIRCUIT_STATE_UNKNOWN" ||
+    /CJ API quota cooldown|CJ quota circuit state/i.test(message);
   const geminiFailure =
     error instanceof GeminiConfigError ||
     error instanceof GeminiRequestError ||
     error instanceof GeminiTimeoutError ||
-    /gemini|429|quota|rate limit/i.test(message);
+    /gemini/i.test(message);
+  const transientFailure =
+    /timeout|temporar|econnreset|503|502|fetch failed|429|quota|rate limit/i.test(message);
 
   return {
-    retryable:
-      geminiFailure ||
-      /timeout|temporar|econnreset|503|502|fetch failed/i.test(message),
-    skippable: geminiFailure,
+    retryable: supplierQuotaFailure || geminiFailure || transientFailure,
+    skippable: supplierQuotaFailure || geminiFailure,
     message,
+    category: supplierQuotaFailure
+      ? "supplier_quota"
+      : geminiFailure
+        ? "gemini"
+        : transientFailure
+          ? "transient"
+          : "fatal",
   };
 }
 
@@ -164,51 +179,6 @@ async function runStep(
     };
   } finally {
     if (timer) clearTimeout(timer);
-  }
-}
-
-async function researchLimitedSupply(): Promise<unknown> {
-  const supabase = createSupabaseAdminClient();
-
-  const { data: candidates, error } = await supabase
-    .from("demand_product_candidates")
-    .select("id, status")
-    .in("status", ["new", "researching"])
-    .order("created_at", { ascending: false })
-    .limit(1);
-
-  if (error) throw new Error(error.message);
-  const candidate = candidates?.[0];
-  if (!candidate) return { skipped: true, reason: "no_new_candidates" };
-
-  try {
-    const researched = await researchDemandCandidateWithCJ(candidate.id);
-    const persisted = await persistDemandCJProducts(candidate.id, 3);
-    return { researched, persisted };
-  } catch (error) {
-    const classified = classifyFailure(error);
-    if (classified.skippable) {
-      await recordCandidateResolutionEvidence({
-        candidateId: String(candidate.id),
-        fieldName: "candidate_resolution_failed",
-        fieldValue: "gemini_failed",
-        evidenceClass: "actual",
-        confidence: 1,
-        metadata: {
-          stage: "query_ideation",
-          retryable: classified.retryable,
-          error: classified.message,
-        },
-      });
-      return {
-        skipped: true,
-        retryable: classified.retryable,
-        reason: "gemini_failed",
-        candidateId: candidate.id,
-        error: classified.message,
-      };
-    }
-    throw error;
   }
 }
 
@@ -370,7 +340,8 @@ export async function runIntelligencePipeline(options: {
   // Demand matching runs first. It reads persisted demand/catalog evidence
   // and does not depend on the current marketplace fetch. Previously the
   // marketplace stage could consume the budget before matching started.
-  steps.push(await runStep("match", () => matchDemandProductsByCategory(), { budgetMs: 25_000 }));
+  // Demand matching runs in its own five-minute cron. Keep broad catalog reads
+  // out of this pipeline so slow data reads cannot starve product publication.
 
   // Resume market discovery from the persisted cursor instead of re-reading
   // marketplace 0 / item 0 on every patrol, and advance it afterwards.
@@ -382,17 +353,57 @@ export async function runIntelligencePipeline(options: {
       batchSize: 10,
     });
     const next = await writeMarketCursor(db, observation, "patrol-ai");
+    // A non-empty ranking batch is not enough to unblock canonical identity.
+    // If no child-variant evidence was parsed (or all parsed evidence writes failed),
+    // defer the pipeline so publication/procurement never treats source coverage as identity proof.
+    const emptyCollection = observation.itemCount === 0;
+    const emptyVariantEvidence = observation.canonicalVariantEvidenceParsed === 0;
+    const amazonProxyUnavailable = observation.enrichment.some(
+      (item) => item.marketplace === "amazon.co.jp" && !item.brightDataConfigured,
+    );
+    // Yahoo Shopping (0) and Rakuten (1) are useful demand-observation sources,
+    // but this exact-variant sales gate only accepts Amazon child-variant
+    // evidence. Do not stall the entire intelligence loop while rotating through
+    // those sources; their rows remain ineligible for downstream sales matching.
+    const sourceDoesNotProvideCanonicalChildVariants = observation.sourceIndex < 2;
+    const evidencePersistenceFailed = observation.canonicalVariantEvidenceParsed > 0
+      && observation.canonicalVariantEvidenceWritten === 0
+      && observation.canonicalVariantEvidenceWriteFailures > 0;
+    if (emptyCollection || emptyVariantEvidence || evidencePersistenceFailed) {
+      const nonBlockingSourceCoverageSkip =
+        !emptyCollection && emptyVariantEvidence && sourceDoesNotProvideCanonicalChildVariants;
+      return {
+        ...observation,
+        cursor,
+        nextCursor: next,
+        skipped: true,
+        retryable: !nonBlockingSourceCoverageSkip,
+        reason: emptyCollection
+          ? "marketplace_collection_empty"
+          : evidencePersistenceFailed
+            ? "canonical_variant_evidence_write_failed"
+            : nonBlockingSourceCoverageSkip
+              ? "source_has_no_canonical_child_variant_contract"
+              : emptyVariantEvidence && amazonProxyUnavailable
+                ? "canonical_variant_evidence_empty_brightdata_not_configured"
+                : "canonical_variant_evidence_empty",
+      };
+    }
     return { ...observation, cursor, nextCursor: next };
-  }, { budgetMs: 25_000 });
+  }, { budgetMs: 40_000 });
   steps.push(bestsellerStep);
 
+  // A deferred/retryable stage can still carry raw candidate IDs. Only
+  // canonical evidence persisted by a completed stage may feed downstream gates.
+  const bestsellerCanFeedSalesGate = canFeedSalesGate(bestsellerStep);
+
   const bestsellerIds =
-    bestsellerStep.ok && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { bestsellerIds?: unknown }).bestsellerIds)
+    bestsellerCanFeedSalesGate && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { bestsellerIds?: unknown }).bestsellerIds)
       ? ((bestsellerStep.result as { bestsellerIds: string[] }).bestsellerIds)
       : [];
 
   const supplierCandidateIds =
-    bestsellerStep.ok && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { supplierCandidateIds?: unknown }).supplierCandidateIds)
+    bestsellerCanFeedSalesGate && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { supplierCandidateIds?: unknown }).supplierCandidateIds)
       ? (bestsellerStep.result as { supplierCandidateIds: string[] }).supplierCandidateIds
       : [];
 
@@ -416,8 +427,10 @@ export async function runIntelligencePipeline(options: {
   }));
   steps.push(await runStep("shopping_demand_sync", () => syncShoppingDemandObservations(), { budgetMs: 15_000 }));
   steps.push(await runStep("demand", () => inspectDemandObservations(), { budgetMs: 5_000 }));
-  steps.push(await runStep("demand_analyze", () => persistDemandIntelligence(), { budgetMs: 12_000 }));
-  steps.push(await runStep("supply", () => researchLimitedSupply(), { budgetMs: 18_000 }));
+  steps.push(await runStep("demand_analyze", () => persistDemandIntelligence(), { budgetMs: 25_000 }));
+  // Do not run the legacy one-candidate CJ research call in the critical patrol.
+  // It repeatedly consumes its 18s budget and stops downstream publication. The
+  // bounded supply-first catalog route handles fresh CJ discovery independently.
 
   // Supply-first is discovery only. It creates canonical product/offer/intelligence
   // evidence; publication is deferred until the same Opportunity Intelligence
@@ -429,6 +442,27 @@ export async function runIntelligencePipeline(options: {
     discoverAndCreateCjSupply(3, {
       deadlineAt: Math.min(pipelineDeadlineAt - 5_000, Date.now() + 18_000),
     }));
+  // A normal return is not proof that discovery completed: the supplier
+  // scanner can defer on its deadline or quota circuit with zero candidates.
+  // Mark that run deferred/retryable so patrol status cannot claim success.
+  // Keep partial results usable when at least one candidate was actually found.
+  const supplyFirstResult = supplyFirstStep.result && typeof supplyFirstStep.result === "object"
+    ? supplyFirstStep.result as { deadlineReached?: unknown; candidateCount?: unknown; items?: unknown }
+    : null;
+  const supplyFirstEmptyDeadline = supplyFirstResult?.deadlineReached === true
+    && Number(supplyFirstResult.candidateCount ?? 0) === 0
+    && (!Array.isArray(supplyFirstResult.items) || supplyFirstResult.items.length === 0);
+  if (supplyFirstEmptyDeadline) {
+    supplyFirstStep.ok = true;
+    supplyFirstStep.skipped = true;
+    supplyFirstStep.retryable = true;
+    supplyFirstStep.result = {
+      ...supplyFirstResult,
+      skipped: true,
+      retryable: true,
+      reason: "supply_discovery_deferred_without_candidates",
+    };
+  }
   steps.push(supplyFirstStep);
 
   const supplyItems =
@@ -473,15 +507,30 @@ export async function runIntelligencePipeline(options: {
   // Reconsider supply verified by earlier patrols too, so a deferred or
   // timed-out patrol does not strand verified supply before the gate.
   const supplyProductIds = supplyItems.map((item) => String(item.productId ?? "")).filter(Boolean);
+  // Supply-first CJ products are standalone catalog items, not matches to a
+  // marketplace bestseller. Requiring identity_status=linked here silently
+  // excluded hundreds of verified, orderable variants marked supply_discovered.
+  // Native CJ identity is permitted downstream only when the selector rechecks
+  // verified product+variant IDs, shipping, price, inventory, API and orderability.
+  const freshSupplyCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data: verifiedSupply } = await db
     .from("supplier_listings")
     .select("product_id")
     .eq("supplier", "cj")
     .eq("verification_status", "verified")
+    .eq("shipping_status", "verified")
+    .eq("price_confirmed", true)
+    .eq("inventory_confirmed", true)
     .eq("orderable", true)
+    .eq("tracking_available", true)
+    .eq("api_available", true)
+    .gt("inventory", 0)
+    .not("supplier_product_id", "is", null)
+    .not("supplier_variant_id", "is", null)
     .not("product_id", "is", null)
+    .gte("last_verified_at", freshSupplyCutoff)
     .order("last_verified_at", { ascending: false, nullsFirst: false })
-    .limit(50);
+    .limit(100);
   const supplyCandidateIds = Array.from(new Set([
     ...listedProductIds,
     ...supplyProductIds,
@@ -489,7 +538,7 @@ export async function runIntelligencePipeline(options: {
   ]));
   const supplySalesStep = await runStep(
     "supply_sales_test_select",
-    () => selectAndPublishSupplySalesTests(supplyCandidateIds, 50),
+    () => selectAndPublishSupplySalesTests(supplyCandidateIds, 50, { allowNativeCjIdentity: true }),
     { downstream: true, budgetMs: 20_000 },
   );
   steps.push(supplySalesStep);
@@ -510,7 +559,8 @@ export async function runIntelligencePipeline(options: {
   }, { downstream: true, budgetMs: 6_000 }));
   // NEWFIND has its own scheduled retry worker. Keep patrol delivery bounded so
   // one slow downstream destination cannot consume the entire patrol timeout.
-  steps.push(await runStep("newfind_retry", () => retryPendingNewfindPromotions(1), { downstream: true, budgetMs: 4_000 }));
+  // Pending delivery retries run in the dedicated five-minute newfind-retry cron.
+  // Do not let downstream schema/cache delays block scoring and channel reconciliation.
 
   steps.push(await runStep("ordering", () => persistReorderRecommendations(), { downstream: true, budgetMs: 15_000 }));
   steps.push(await runStep("test_ready", async () => {
@@ -528,6 +578,25 @@ export async function runIntelligencePipeline(options: {
   // earlier patrol were never investigated (only the current run's inserts
   // were). Drain a few per patrol, oldest observations first.
   steps.push(await runStep("dropship", async () => {
+    // The pending-barcode backlog is still raw marketplace evidence. Do not
+    // let it bypass the canonical-variant prerequisite when bestseller intake
+    // was deferred or retryable.
+    if (!bestsellerCanFeedSalesGate) {
+      const bestsellerResult = bestsellerStep.result && typeof bestsellerStep.result === "object"
+        ? bestsellerStep.result as { reason?: unknown }
+        : {};
+      const observationOnlySource =
+        bestsellerStep.skipped === true &&
+        bestsellerStep.retryable !== true &&
+        bestsellerResult.reason === "source_has_no_canonical_child_variant_contract";
+      return {
+        skipped: true,
+        retryable: bestsellerStep.retryable === true,
+        reason: observationOnlySource
+          ? "bestseller_source_has_no_canonical_child_variant_contract"
+          : "bestseller_canonical_evidence_deferred",
+      };
+    }
     const { data: backlog, error: backlogError } = await db
       .from("marketplace_bestsellers")
       .select("id")
@@ -546,9 +615,16 @@ export async function runIntelligencePipeline(options: {
   const blockingFailed = steps.some((step) => !step.ok && !step.skipped);
   const deferredStep = steps.find((step) => {
     if (!step.skipped) return false;
-    // Canonical identity re-verification is a bounded background enrichment step.
-    // If CJ is slow, its cursor resumes on a later patrol; unresolved identities
-    // remain blocked by the sales-test gate and must never be force-linked.
+    // Market discovery and supplier discovery are enrichment inputs, not
+    // prerequisites for processing already-persisted supply candidates. If a
+    // marketplace source lacks child-variant evidence or CJ is in quota cooldown,
+    // record the coverage gap and retry on a later patrol; do not mark the core
+    // supply-first sales cycle incomplete when its downstream steps ran.
+    const optionalDiscoverySteps = new Set(["bestsellers", "auxiliary_trends", "supply", "dropship"]);
+    if (optionalDiscoverySteps.has(step.name) && step.retryable === true) return false;
+    // Identity re-verification is also a bounded background enrichment step.
+    // The cursor resumes on a later patrol; unresolved identity must still pass
+    // the independent native-supplier or canonical-identity sales gate.
     if (step.name === "identity_reverify") return false;
     if (step.retryable === true) return true;
     const reason =
@@ -561,7 +637,8 @@ export async function runIntelligencePipeline(options: {
       reason === "step_time_budget_exceeded_deferred" ||
       reason === "previous_step_timeout_stops_pipeline" ||
       reason === "gemini_not_configured_candidate_resolution_blocked" ||
-      reason === "gemini_failed";
+      reason === "gemini_failed" ||
+      reason === "supplier_quota_cooldown";
   });
   const incomplete = pipelineTimedOut || Boolean(deferredStep);
   return {

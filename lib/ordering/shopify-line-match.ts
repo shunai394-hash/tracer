@@ -1,47 +1,62 @@
-const LISTING_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+import { tracerSkuForListing } from "../shopify/order-sku-mapping.ts";
 
-export type ShopifyLineLookup = {
-  listingId: string | null;
-  supplierVariantId: string | null;
+// Pure Shopify order-line -> shop_listings resolution (no server imports so the
+// regression test can load it directly).
+
+export type ShopifyLineIdentity = {
+  /** Trimmed line SKU ("" when Shopify sent none). */
+  sku: string;
+  /** Shopify variant id in both numeric and GID forms (empty when absent). */
   shopifyVariantIds: string[];
 };
-
-export function shopifyLineLookup(input: { sku?: unknown; variantId?: unknown }): ShopifyLineLookup {
-  const sku = typeof input.sku === "string" ? input.sku.trim() : "";
-  const listingId = LISTING_UUID.test(sku) ? sku : null;
-  const prefixed = /^(?:TRC|CJ)-(.+)$/i.exec(sku);
-  const supplierVariantId = prefixed?.[1]?.trim() ? prefixed[1].trim() : null;
-  const rawVariant = input.variantId == null ? "" : String(input.variantId).trim();
-  const shopifyVariantIds: string[] = [];
-  if (rawVariant.startsWith("gid://shopify/ProductVariant/")) {
-    shopifyVariantIds.push(rawVariant);
-    const numeric = rawVariant.slice("gid://shopify/ProductVariant/".length);
-    if (/^\d+$/.test(numeric)) shopifyVariantIds.push(numeric);
-  } else if (/^\d+$/.test(rawVariant)) {
-    shopifyVariantIds.push(rawVariant, `gid://shopify/ProductVariant/${rawVariant}`);
-  }
-  return { listingId, supplierVariantId, shopifyVariantIds };
-}
 
 export type ShopifyListingIdentity = {
   id: string;
   supplier_variant_id?: string | null;
+  supplier_product_id?: string | null;
   shopify_variant_id?: string | null;
 };
 
-export function matchShopifyLineToListing<T extends ShopifyListingIdentity>(
-  line: ShopifyLineLookup,
+export function shopifyLineIdentity(item: { sku?: unknown; variant_id?: unknown }): ShopifyLineIdentity {
+  const sku = typeof item.sku === "string" ? item.sku.trim() : "";
+  const raw = item.variant_id == null ? "" : String(item.variant_id).trim();
+  const shopifyVariantIds: string[] = [];
+  if (raw.startsWith("gid://shopify/ProductVariant/")) {
+    shopifyVariantIds.push(raw);
+    const numeric = raw.slice("gid://shopify/ProductVariant/".length);
+    if (/^\d+$/.test(numeric)) shopifyVariantIds.push(numeric);
+  } else if (/^\d+$/.test(raw)) {
+    shopifyVariantIds.push(raw, `gid://shopify/ProductVariant/${raw}`);
+  }
+  return { sku, shopifyVariantIds };
+}
+
+export type ShopifyLineResolution<T> =
+  | { ok: true; listings: T[] }
+  | { ok: false; reason: "listing_mapping_missing" | "listing_mapping_ambiguous"; lineIndex: number; sku: string };
+
+/**
+ * Every line must resolve to exactly one listing. Evidence is the exact
+ * generated SKU (TRC-<supplier variant | product | listing id>, or a legacy
+ * listing UUID) and the Shopify variant id stored at sync time. If the two
+ * point at different listings the line is ambiguous and the order stops;
+ * nothing is ever guessed from titles or partial matches.
+ */
+export function resolveShopifyOrderLines<T extends ShopifyListingIdentity>(
+  lines: ShopifyLineIdentity[],
   listings: readonly T[],
-): { listing: T | null; reason: "matched" | "listing_mapping_missing" | "listing_mapping_ambiguous" } {
-  const variantIds = new Set(line.shopifyVariantIds);
-  const hits = listings.filter((row) => {
-    if (line.listingId && row.id === line.listingId) return true;
-    if (line.supplierVariantId && row.supplier_variant_id && row.supplier_variant_id === line.supplierVariantId) return true;
-    if (row.shopify_variant_id && variantIds.has(String(row.shopify_variant_id))) return true;
-    return false;
-  });
-  const ids = new Set(hits.map((row) => row.id));
-  if (ids.size === 1) return { listing: hits[0], reason: "matched" };
-  if (ids.size === 0) return { listing: null, reason: "listing_mapping_missing" };
-  return { listing: null, reason: "listing_mapping_ambiguous" };
+): ShopifyLineResolution<T> {
+  const resolved: T[] = [];
+  for (const [lineIndex, line] of lines.entries()) {
+    const variantIds = new Set(line.shopifyVariantIds);
+    const hits = listings.filter((listing) =>
+      (line.sku !== "" && (tracerSkuForListing(listing) === line.sku || listing.id === line.sku))
+      || (Boolean(listing.shopify_variant_id) && variantIds.has(String(listing.shopify_variant_id))),
+    );
+    const ids = new Set(hits.map((listing) => listing.id));
+    if (ids.size === 0) return { ok: false, reason: "listing_mapping_missing", lineIndex, sku: line.sku };
+    if (ids.size > 1) return { ok: false, reason: "listing_mapping_ambiguous", lineIndex, sku: line.sku };
+    resolved.push(hits[0]);
+  }
+  return { ok: true, listings: resolved };
 }

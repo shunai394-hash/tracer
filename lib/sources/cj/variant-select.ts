@@ -1,3 +1,9 @@
+export type CJVerifiedWarehouseInventory = {
+  countryCode: string;
+  quantity: number;
+  storageId: string | null;
+};
+
 export type CJProductVariant = {
   vid: string;
   productId: string;
@@ -6,8 +12,10 @@ export type CJProductVariant = {
   sellPrice: string | null;
   /** CJ's documented numeric variant barcode. */
   barcode: string | null;
-  /** Inventory is still unknown until the stock endpoint is queried. */
+  /** Sum of CJ-owned stock in verified warehouses only; factory stock is excluded. */
   inventory: number | null;
+  /** Verified warehouse stock used to choose a real shipping origin. */
+  inventoryByCountry?: CJVerifiedWarehouseInventory[];
 };
 
 export function selectUnambiguousVariant(

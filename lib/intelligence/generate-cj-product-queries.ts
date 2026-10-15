@@ -1,4 +1,4 @@
-﻿import { generateCachedStructuredJson } from "@/lib/ai/gemini/cache";
+import { generateCachedStructuredJson } from "@/lib/ai/gemini/cache";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { deterministicCJProductQueries } from "./deterministic-cj-product-queries";
 import { normalizeIdentityText } from "@/lib/intelligence/identity-confidence";
@@ -38,16 +38,26 @@ export async function generateCJProductQueries(
   category: string | null,
 ): Promise<string[]> {
   if (!isGeminiConfigured()) return deterministicCJProductQueries(demandQuery);
-  const result = await generateCachedStructuredJson<ProductQueryResponse>({
-    cacheKey: `cj-queries:${demandQuery}:${category ?? ""}`,
-    systemInstruction:
-      "You convert one consumer demand keyword into closely related ecommerce product search keywords. Return ONLY valid JSON in exactly this format: {\"product_queries\":[\"keyword1\",\"keyword2\",\"keyword3\"]}. Generate up to 4 English keywords that stay on the same product or product category as the demand query. Do not invent unrelated accessories such as hair clips, watch bands, bicycle bags, or generic fashion items unless the demand query itself is about those products. Prefer the demand keyword and its direct product forms. Do not return explanations.",
-    prompt: JSON.stringify({
-      demand_query: demandQuery,
-      category,
-      task: "Generate concrete physical-product search keywords that remain relevant to this demand query.",
-    }),
-  });
+
+  let result: ProductQueryResponse;
+  try {
+    result = await generateCachedStructuredJson<ProductQueryResponse>({
+      cacheKey: `cj-queries:${demandQuery}:${category ?? ""}`,
+      systemInstruction:
+        "You convert one consumer demand keyword into closely related ecommerce product search keywords. Return ONLY valid JSON in exactly this format: {\"product_queries\":[\"keyword1\",\"keyword2\",\"keyword3\"]}. Generate up to 4 English keywords that stay on the same product or product category as the demand query. Do not invent unrelated accessories such as hair clips, watch bands, bicycle bags, or generic fashion items unless the demand query itself is about those products. Prefer the demand keyword and its direct product forms. Do not return explanations.",
+      prompt: JSON.stringify({
+        demand_query: demandQuery,
+        category,
+        task: "Generate concrete physical-product search keywords that remain relevant to this demand query.",
+      }),
+    });
+  } catch (error) {
+    // Gemini may be configured but unavailable (quota, HTTP error, invalid JSON, or timeout).
+    // Fall back to the exact observed demand phrase only; this does not approve a product.
+    const reason = error instanceof Error ? error.name : "UnknownError";
+    console.warn("[cj-query-generation] Gemini unavailable; using exact-query fallback", { reason });
+    return deterministicCJProductQueries(demandQuery);
+  }
 
   const generated = Array.isArray(result.product_queries)
     ? result.product_queries

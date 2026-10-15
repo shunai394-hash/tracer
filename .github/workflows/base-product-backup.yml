@@ -1,0 +1,149 @@
+name: BASE product backup
+# Read-only BASE snapshot and exact-ID reconciliation refresh after the latest production audit.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/base-product-backup.yml"
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+jobs:
+  export:
+    name: Export and validate BASE product snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Request a short-lived GitHub OIDC token for Vercel
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { writeFile } from "node:fs/promises";
+
+          const audience = "https://tracer-pied-alpha.vercel.app";
+          const tokenUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          tokenUrl.searchParams.set("audience", audience);
+          const tokenResponse = await fetch(tokenUrl, {
+            headers: { Authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
+          });
+          if (!tokenResponse.ok) throw new Error(`OIDC_TOKEN_REQUEST_FAILED:${tokenResponse.status}`);
+          const tokenBody = await tokenResponse.json();
+          if (typeof tokenBody.value !== "string" || !tokenBody.value) {
+            throw new Error("OIDC_TOKEN_MISSING");
+          }
+
+          const response = await fetch(`${audience}/api/admin/channels/base/snapshot`, {
+            headers: {
+              Authorization: `Bearer ${tokenBody.value}`,
+              Accept: "application/json",
+            },
+            signal: AbortSignal.timeout(110_000),
+          });
+          if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(`BASE_SNAPSHOT_HTTP_${response.status}:${String(body.error ?? "request_failed").slice(0, 100)}`);
+          }
+
+          const snapshot = await response.json();
+          if (snapshot.complete !== true || !Array.isArray(snapshot.items)) {
+            throw new Error("BASE_SNAPSHOT_INCOMPLETE");
+          }
+          if (!Number.isInteger(snapshot.itemCount) || snapshot.itemCount !== snapshot.items.length || snapshot.itemCount < 1) {
+            throw new Error("BASE_SNAPSHOT_COUNT_MISMATCH_OR_EMPTY");
+          }
+          const ids = snapshot.items.map((item) => String(item?.item_id ?? ""));
+          if (ids.some((id) => !id) || new Set(ids).size !== ids.length) {
+            throw new Error("BASE_SNAPSHOT_ITEM_ID_MISSING_OR_DUPLICATE");
+          }
+          const file = `tracer-base-products-${new Date().toISOString().slice(0, 10)}-${process.env.GITHUB_RUN_ID}.json`;
+          await writeFile(file, JSON.stringify(snapshot, null, 2), { mode: 0o600 });
+
+          const auditResponse = await fetch(`${audience}/api/admin/channels/base/reconciliation`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${tokenBody.value}`,
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({ snapshot }),
+            signal: AbortSignal.timeout(110_000),
+          });
+          if (!auditResponse.ok) {
+            const body = await auditResponse.json().catch(() => ({}));
+            throw new Error(`BASE_RECONCILIATION_HTTP_${auditResponse.status}:${String(body.error ?? "request_failed").slice(0, 100)}`);
+          }
+          const report = await auditResponse.json();
+          if (report.complete !== true || !Array.isArray(report.items) || report.baseItemCount !== report.items.length) {
+            throw new Error("BASE_RECONCILIATION_INCOMPLETE_OR_COUNT_MISMATCH");
+          }
+          const reportFile = `tracer-base-reconciliation-${new Date().toISOString().slice(0, 10)}-${process.env.GITHUB_RUN_ID}.json`;
+          await writeFile(reportFile, JSON.stringify(report, null, 2), { mode: 0o600 });
+          console.log(JSON.stringify({
+            reconciliationFile: reportFile,
+            tracerListingCount: report.tracerListingCount,
+            exactBaseIdMappedCount: report.exactBaseIdMappedCount,
+            baseItemsWithoutExactMappingCount: report.baseItemsWithoutExactMappingCount,
+            baseItemsWithAmbiguousExactMappingCount: report.baseItemsWithAmbiguousExactMappingCount,
+            baseItemsWithExactTitleCandidateCount: report.baseItemsWithExactTitleCandidateCount,
+            tracerListingsWithoutBaseItemIdCount: report.tracerListingsWithoutBaseItemIdCount,
+            duplicateBaseItemIdGroupsInTracer: report.duplicateBaseItemIdGroupsInTracer,
+          }));
+          console.log(JSON.stringify({
+            backupFile: file,
+            complete: snapshot.complete,
+            pages: snapshot.pages,
+            itemCount: snapshot.itemCount,
+            visibleCount: snapshot.visibleCount,
+            hiddenCount: snapshot.hiddenCount,
+            unknownVisibilityCount: snapshot.unknownVisibilityCount,
+            uniqueItemIds: new Set(ids).size,
+            generatedAt: snapshot.generatedAt,
+          }));
+          NODE
+
+      - name: Publish sanitized BASE reconciliation summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > base-reconciliation-summary.md
+          import glob, json, os
+          files = glob.glob("tracer-base-reconciliation-*.json")
+          if len(files) != 1:
+              raise SystemExit("BASE_RECONCILIATION_REPORT_FILE_MISSING_OR_AMBIGUOUS")
+          d = json.load(open(files[0], encoding="utf-8"))
+          summary = {
+              "complete": d.get("complete"),
+              "baseItemCount": d.get("baseItemCount"),
+              "baseVisibleCount": d.get("baseVisibleCount"),
+              "baseHiddenCount": d.get("baseHiddenCount"),
+              "tracerListingCount": d.get("tracerListingCount"),
+              "exactBaseIdMappedCount": d.get("exactBaseIdMappedCount"),
+              "baseItemsWithoutExactMappingCount": d.get("baseItemsWithoutExactMappingCount"),
+              "baseItemsWithAmbiguousExactMappingCount": d.get("baseItemsWithAmbiguousExactMappingCount"),
+              "baseItemsWithExactTitleCandidateCount": d.get("baseItemsWithExactTitleCandidateCount"),
+              "tracerListingsWithoutBaseItemIdCount": d.get("tracerListingsWithoutBaseItemIdCount"),
+              "duplicateBaseItemIdGroupsInTracer": d.get("duplicateBaseItemIdGroupsInTracer"),
+              "generatedAt": d.get("generatedAt"),
+              "note": "Exact-title candidates are evidence only; no mappings or listings were changed."
+          }
+          print("# TRACER BASE mapping audit")
+          print()
+          print("Read-only reconciliation summary. No BASE listing, TRACER mapping, or order was modified.")
+          print()
+          print("```json")
+          print(json.dumps(summary, ensure_ascii=False, indent=2))
+          print("```")
+          PY
+          gh issue create \
+            --repo shunai394-hash/tracer \
+            --title "[TRACER BASE mapping audit] Run $GITHUB_RUN_ID" \
+            --body-file base-reconciliation-summary.md
+

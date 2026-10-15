@@ -1,38 +1,178 @@
-name: TRACER Reach 900 Now
-# Immediate production run for the fixed 900-listing Sales Test Gate target.
-
+name: TRACER Ten-Cycle Supply, Publication & Audit
+# Manual, bounded production run. This discovers supply and publishes only candidates
+# that pass the existing Sales Test Gate; it does not place supplier purchase orders.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: tracer-ten-cycle-production-patrol
+  cancel-in-progress: false
+
 jobs:
-  reach-500:
+  ten-cycle:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[TRACER_REACH_500_NOW]')
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 360
     steps:
-      - name: Run supply discovery and Sales Test Gate repeatedly
+      - name: Run ten measured supply / publication / audit cycles
         shell: bash
         run: |
           set -uo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
+          FAILED=0
+
           token() {
-            curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+            curl --fail-with-body --silent --show-error --max-time 30 \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
 
-          for cycle in $(seq 1 8); do
-            echo "===== CYCLE $cycle / 8: SUPPLY DISCOVERY ====="
-            T="$(token)"
-            curl --fail-with-body --silent --show-error --max-time 300               -H "Authorization: Bearer $T"               "$BASE/api/cron/supply-first" | tee "supply-$cycle.json" || true
+          run_endpoint() {
+            local cycle="$1"
+            local label="$2"
+            local path="$3"
+            local max_seconds="$4"
+            local output="cycle-${cycle}-${label}.json"
+            local access_token
+            local http_status
 
-            echo "===== CYCLE $cycle / 8: SALES TEST GATE ====="
-            T="$(token)"
-            curl --fail-with-body --silent --show-error --max-time 300               -H "Authorization: Bearer $T"               "$BASE/api/cron/sales-test-publication" | tee "sales-$cycle.json" || true
+            echo "===== CYCLE ${cycle} / 10: ${label} ====="
+            if ! access_token="$(token)"; then
+              printf '{"ok":false,"error":"oidc_token_failed","path":"%s"}\n' "$path" > "$output"
+              echo "::error::Cycle ${cycle} ${label}: could not obtain deployment token"
+              FAILED=1
+              return 0
+            fi
 
-            echo "===== CYCLE $cycle / 8: PRODUCTION AUDIT ====="
-            T="$(token)"
-            curl --fail-with-body --silent --show-error --max-time 60               -H "Authorization: Bearer $T"               "$BASE/api/intelligence/pipeline-audit" | tee "audit-$cycle.json" || true
+            if ! http_status="$(curl --silent --show-error --max-time "$max_seconds" \
+              -o "$output" -w '%{http_code}' \
+              -H "Authorization: Bearer ${access_token}" \
+              "${BASE}${path}")"; then
+              echo "::error::Cycle ${cycle} ${label}: request failed or timed out"
+              FAILED=1
+              return 0
+            fi
+
+            if ! python3 - "$output" "$http_status" "$label" <<'PY'
+          import json, sys
+          path, status, label = sys.argv[1:]
+          try:
+              with open(path, encoding="utf-8") as f:
+                  body = json.load(f)
+          except Exception as exc:
+              print(f"::error::{label}: response is not valid JSON: {exc}")
+              raise SystemExit(1)
+          if not status.isdigit() or not 200 <= int(status) < 300:
+              print(f"::error::{label}: HTTP {status}")
+              raise SystemExit(1)
+          if not isinstance(body, dict) or body.get("ok") is not True:
+              print(f"::error::{label}: endpoint did not report ok=true")
+              raise SystemExit(1)
+          print(f"{label}: HTTP {status}, ok=true")
+          if label == "audit":
+              counts = body.get("counts", {})
+              for key in ("shop_listings", "shop_listings_published", "shop_listings_published_orderable", "shop_listings_on_base_published"):
+                  print(f"  {key}={counts.get(key, 'not_returned')}")
+          if label == "supply":
+              supply = body.get("supplyFirst", {})
+              opportunity = body.get("opportunityIntelligence", {})
+              if isinstance(supply, dict) and (supply.get("ok") is False or supply.get("error")):
+                  print("::error::Supply discovery reported a nested failure")
+                  raise SystemExit(1)
+              if isinstance(opportunity, dict) and opportunity.get("error"):
+                  print("::error::Opportunity intelligence reported a nested failure")
+                  raise SystemExit(1)
+          if label == "sales":
+              selected = body.get("supplySelected", body.get("decision", {}))
+              if isinstance(selected, dict):
+                  print(f"  published={selected.get('published', 'not_returned')}")
+              downstream = body.get("downstream", {})
+              if not isinstance(downstream, dict):
+                  downstream = {}
+              selected_ids = selected.get("selectedListingIds", []) if isinstance(selected, dict) else []
+              expected_selected = len(selected_ids) if isinstance(selected_ids, list) else 0
+              shopify = downstream.get("shopify", {})
+              if not isinstance(shopify, dict):
+                  print("::error::Shopify sync response is missing or malformed")
+                  raise SystemExit(1)
+              shopify_failed = shopify.get("failed", [])
+              if (shopify.get("error") or shopify.get("configured") is not True
+                      or not isinstance(shopify_failed, list) or len(shopify_failed) > 0
+                      or (expected_selected > 0 and shopify.get("attempted", 0) == 0)):
+                  print("::error::Shopify sync failed, is not configured, or attempted no selected listings")
+                  raise SystemExit(1)
+              base = downstream.get("base", {})
+              if not isinstance(base, dict):
+                  print("::error::BASE publication response is missing or malformed")
+                  raise SystemExit(1)
+              results = base.get("results", [])
+              if (base.get("error") or base.get("failed", 0) > 0
+                      or not isinstance(results, list)
+                      or (expected_selected > 0 and base.get("attempted", 0) == 0)
+                      or (isinstance(base.get("attempted"), int) and base.get("attempted") != len(results))):
+                  print("::error::BASE publication failed, was not configured, or returned incomplete per-item evidence")
+                  raise SystemExit(1)
+              failed = [row for row in results if not isinstance(row, dict) or not row.get("ok") or not row.get("baseItemId")]
+              if failed:
+                  print(f"::error::BASE reported {len(failed)} failed/unlinked publication result(s)")
+                  raise SystemExit(1)
+          PY
+            then
+              FAILED=1
+            fi
+          }
+
+          for cycle in $(seq 1 10); do
+            run_endpoint "$cycle" supply "/api/cron/supply-first" 300
+            run_endpoint "$cycle" sales "/api/cron/sales-test-publication" 300
+            run_endpoint "$cycle" audit "/api/intelligence/pipeline-audit" 60
           done
+
+          echo "===== FINAL SUMMARY ====="
+          echo "cycles=10"
+          if ! python3 <<'PY'
+          import json
+          def counts(cycle):
+              with open(f"cycle-{cycle}-audit.json", encoding="utf-8") as f:
+                  return json.load(f).get("counts", {})
+          try:
+              before, after = counts(1), counts(10)
+          except Exception as exc:
+              print(f"::error::Cannot compare first/last audit counts: {exc}")
+              raise SystemExit(1)
+          keys = ("shop_listings_published", "shop_listings_published_orderable", "shop_listings_on_base_published")
+          progressed = False
+          for key in keys:
+              a, b = before.get(key), after.get(key)
+              print(f"{key}: before={a} after={b}")
+              if isinstance(a, (int, float)) and isinstance(b, (int, float)) and b > a:
+                  progressed = True
+          if not progressed:
+              print("::error::Ten cycles ran but no publication/orderability count increased; inspect blockers in the saved audit evidence.")
+              raise SystemExit(1)
+          print("Verified progress: at least one publication/orderability count increased.")
+          PY
+          then
+            FAILED=1
+          fi
+          echo "failed_endpoint_or_publication_checks=${FAILED}"
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::At least one cycle failed or the ten-cycle run made no measurable publication progress; inspect saved cycle JSON artifacts."
+            exit 1
+          fi
+          echo "All ten cycles completed with successful checks and measurable progress."
+      - name: Preserve per-cycle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tracer-ten-cycle-evidence
+          path: cycle-*.json
+          if-no-files-found: warn
+          retention-days: 30

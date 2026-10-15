@@ -1,11 +1,14 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
+import { PROFIT_ASSUMPTIONS, simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
 import { evaluateSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
-import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { isJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
+import { isNativeCjSupplierListing } from "@/lib/catalog/canonical-supplier-identity";
+import { calculateSupplySellingPriceJpy, resolveSupplierFxRateToJpy, resolveUnknownShippingAllowanceUsd } from "@/lib/market/supply-pricing";
 
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -31,12 +34,26 @@ function listingQuality(row: Record<string, unknown>): number {
   return (row.identity_status === "linked" ? 1000 : 0) + (row.identity_method ? 100 : 0) + identity * 100 + (row.price_confirmed === true ? 100 : 0) + (row.inventory_confirmed === true ? 100 : 0) + (row.orderable === true ? 100 : 0) + (row.tracking_available === true ? 50 : 0) + (row.api_available === true ? 50 : 0) + (row.supplier_product_id ? 25 : 0) + (row.supplier_variant_id ? 25 : 0) + Math.min(inventory, 1000) / 1000;
 }
 
-export type SupplySalesTestResult = { published: number; publishedListingIds: string[]; selectedListingIds: string[]; considered: number; rejected: Array<{ productId: string; reasons: string[] }> };
+export type SupplySalesTestResult = {
+  published: number;
+  publishedListingIds: string[];
+  selectedListingIds: string[];
+  considered: number;
+  rejectedCount: number;
+  rejectionCounts: Record<string, number>;
+  rejected: Array<{ productId: string; reasons: string[]; title?: string; masterTitle?: string; category?: string | null; supplier?: string; categoryPriority?: number; sellingPrice?: number | null; sourceCost?: number | null; internationalShipping?: number | null; domesticShippingKnown?: boolean; contributionProfit?: number | null; contributionMargin?: number | null }>;
+};
 
-export async function selectAndPublishSupplySalesTests(productIds: string[], limit = 3, options: { dryRun?: boolean } = {}): Promise<SupplySalesTestResult & { eligibleProductIds?: string[] }> {
+function summarizeRejections(rows: Array<{ reasons: string[] }>): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const row of rows) for (const reason of row.reasons) counts[reason] = (counts[reason] ?? 0) + 1;
+  return counts;
+}
+
+export async function selectAndPublishSupplySalesTests(productIds: string[], limit = 3, options: { dryRun?: boolean; allowNativeCjIdentity?: boolean } = {}): Promise<SupplySalesTestResult & { eligibleProductIds?: string[]; eligibleSamples?: Array<Record<string, unknown>> }> {
   const supabase = createSupabaseAdminClient();
   const observedFx = await getObservedUsdToJpyRate();
-  if (productIds.length === 0 || limit <= 0) return { published: 0, publishedListingIds: [], selectedListingIds: [], considered: 0, rejected: [] };
+  if (productIds.length === 0 || limit <= 0) return { published: 0, publishedListingIds: [], selectedListingIds: [], considered: 0, rejectedCount: 0, rejectionCounts: {}, rejected: [] };
   const uniqueProductIds = Array.from(new Set(productIds));
   const { data: intelligenceRows, error: intelligenceError } = await supabase.from("opportunity_intelligence").select("product_id,demand_score,search_fit_score,market_gap_score,competition_score,creative_score,selection_score,overall_confidence,selection_eligible,sellability_state,filter_state,profit_state,recommendation_summary,why_now").in("product_id", uniqueProductIds);
   if (intelligenceError) throw new Error(intelligenceError.message);
@@ -48,23 +65,83 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   const intelligenceByProduct = new Map((intelligenceRows ?? []).map((row) => [String(row.product_id), row as Record<string, unknown>]));
   const baseByProduct = new Map((intelligenceBase ?? []).map((row) => [String(row.product_id), row as Record<string, unknown>]));
   const listingByProduct = new Map<string, Record<string, unknown>>();
-  for (const row of listings ?? []) { const key = String(row.product_id); const candidate = row as Record<string, unknown>; const current = listingByProduct.get(key); if (!current || listingQuality(candidate) > listingQuality(current)) listingByProduct.set(key, candidate); }
+  const identifierGradeMethods = new Set(["asin", "jan", "gtin", "ean", "upc", "mpn", "brand_mpn", "tracer_catalog"]);
+  const listingCandidatesByProduct = new Map<string, Record<string, unknown>[]>();
+  for (const row of listings ?? []) {
+    const candidate = row as Record<string, unknown>;
+    const key = String(candidate.product_id ?? "");
+    if (!key) continue;
+    const bucket = listingCandidatesByProduct.get(key) ?? [];
+    bucket.push(candidate);
+    listingCandidatesByProduct.set(key, bucket);
+  }
+  for (const [productId, candidates] of listingCandidatesByProduct) {
+    // A stale/unverified supplier row must not mask a different, currently
+    // verified variant for the same canonical product. Prefer only rows that
+    // already satisfy the live supply/identity prerequisites, then rank those.
+    const verifiedCandidates = candidates.filter((candidate) => {
+      const supplier = String(candidate.supplier ?? "").trim().toLowerCase();
+      const nativeSupplierIdentity = options.allowNativeCjIdentity === true && isNativeCjSupplierListing(candidate);
+      const canonicalIdentity = candidate.identity_status === "linked"
+        && identifierGradeMethods.has(String(candidate.identity_method ?? "").trim().toLowerCase())
+        && (num(candidate.identity_confidence) ?? 0) >= 0.88;
+      return (nativeSupplierIdentity || canonicalIdentity)
+        && Boolean(candidate.supplier_product_id)
+        && Boolean(candidate.supplier_variant_id)
+        && candidate.price_confirmed === true
+        && candidate.inventory_confirmed === true
+        && (num(candidate.inventory) ?? 0) > 0
+        && candidate.orderable === true
+        && candidate.tracking_available === true
+        && candidate.api_available === true;
+    });
+    const pool = verifiedCandidates.length > 0 ? verifiedCandidates : candidates;
+    const best = pool.reduce<Record<string, unknown> | null>((current, candidate) =>
+      !current || listingQuality(candidate) > listingQuality(current) ? candidate : current, null);
+    if (best) listingByProduct.set(productId, best);
+  }
 
-  const rejected: Array<{ productId: string; reasons: string[] }> = [];
-  const eligible: Array<{ productId: string; listing: Record<string, unknown>; base: Record<string, unknown>; intelligence: Record<string, unknown>; profit: ReturnType<typeof simulateContributionProfit>; quality: number }> = [];
+  const rejected: SupplySalesTestResult["rejected"] = [];
+  const eligible: Array<{ productId: string; listing: Record<string, unknown>; base: Record<string, unknown>; intelligence: Record<string, unknown>; profit: ReturnType<typeof simulateContributionProfit>; quality: number; description: string; shippingAllowanceUsd: number; imageUrl: string }> = [];
   for (const productId of uniqueProductIds) {
-    const reasons: string[] = []; const intelligence = intelligenceByProduct.get(productId); const base = baseByProduct.get(productId); const listing = listingByProduct.get(productId);
-    const sourceTitle = typeof base?.normalized_title === 'string' ? base.normalized_title.normalize('NFKC').trim() : '';
+    const reasons: string[] = []; const intelligence = intelligenceByProduct.get(productId) ?? { product_id: productId, demand_score: null, search_fit_score: null, market_gap_score: null, competition_score: null, creative_score: null, selection_score: null, overall_confidence: null, selection_eligible: false, sellability_state: null, filter_state: null, profit_state: null, recommendation_summary: null, why_now: null }; const base = baseByProduct.get(productId); const listing = listingByProduct.get(productId);
+    const sourceTitle = (typeof listing?.title === "string" && listing.title.trim()
+      ? listing.title
+      : typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
+    // A concrete supplier title must not mask a generic or workflow-derived
+    // product-master title (for example "トレンド・seeded_dueアイテム").
+    const masterTitle = (typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
+    const nativeCjSupplyIdentity = Boolean(listing && options.allowNativeCjIdentity === true && isNativeCjSupplierListing(listing));
+    // The supplier's concrete title is the listing source of truth. A generic
+    // legacy product-master title must not suppress a verified supplier offer;
+    // the localized supplier title and placeholder checks below are authoritative.
     const sourceMetadata = base?.metadata && typeof base.metadata === 'object' && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const womenPriority = womenProductPriority({ title: sourceTitle, category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
-    if (base && !womenPriority.isWomenFocused) reasons.push('outside_womens_product_strategy');
+    // Women's relevance is a ranking bonus, not an exclusion rule. All product
+    // categories may be sold when Japanese copy, exact supplier identity,
+    // fulfilment evidence, and positive contribution profit pass.
     if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
-    if (!intelligence) reasons.push("opportunity_intelligence_missing"); if (!base) reasons.push("product_intelligence_missing"); if (!listing) reasons.push("supplier_listing_missing");
-    if (reasons.length > 0) { rejected.push({ productId, reasons }); continue; }
-    if (!intelligence || !base || !listing) { rejected.push({ productId, reasons: ["required_supply_intelligence_missing"] }); continue; }
-    if (!validHttpUrl(base.image_url)) reasons.push("image_url_invalid");
-    const localizedTitle = localizeProductTitle(base.normalized_title, metadataCategory(base.metadata));
+    if (!base) reasons.push("product_intelligence_missing"); if (!listing) reasons.push("supplier_listing_missing");
+    if (reasons.length > 0) { rejected.push({ productId, reasons, title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
+    if (!base || !listing) { rejected.push({ productId, reasons: ["required_catalog_or_supplier_data_missing"], title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
+    const supplierMetadata = listing.metadata && typeof listing.metadata === "object" && !Array.isArray(listing.metadata)
+      ? listing.metadata as Record<string, unknown>
+      : {};
+    const supplierImageCandidate = supplierMetadata.image_url ?? supplierMetadata.imageUrl ?? supplierMetadata.product_image_url
+      ?? (Array.isArray(supplierMetadata.images) ? supplierMetadata.images[0] : null);
+    const productImageUrl = validHttpUrl(base.image_url)
+      ? String(base.image_url)
+      : validHttpUrl(supplierImageCandidate) ? String(supplierImageCandidate) : null;
+    if (!productImageUrl) reasons.push("image_url_invalid");
+    const localizedTitle = localizeProductTitle(sourceTitle, metadataCategory(base.metadata));
     if (!isJapaneseProductTitle(localizedTitle)) reasons.push("japanese_title_unavailable");
+    else if (!isPublishableCatalogTitle(localizedTitle)) reasons.push("catalog_title_not_publishable");
+    const recommendationSummary = typeof intelligence.recommendation_summary === "string" ? intelligence.recommendation_summary.trim() : null;
+    const localizedDescription = localizeProductDescription(sourceTitle);
+    const publishableDescription = isPublishableCatalogDescription(localizedDescription)
+      ? localizedDescription
+      : isPublishableCatalogDescription(recommendationSummary) ? recommendationSummary : null;
+    if (!publishableDescription) reasons.push("japanese_description_unavailable");
 
     const rawIdentityMethod = String(listing.identity_method ?? "").trim().toLowerCase();
     const identifierGradeMethods = new Set(["asin", "jan", "gtin", "ean", "upc", "mpn", "brand_mpn", "tracer_catalog"]);
@@ -72,61 +149,81 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // it does not prove that it is the same item as the marketplace demand product.
     // Only an explicit server-side identity link with identifier-grade evidence may
     // pass this gate. Never infer marketplace identity from verification_status.
-    const supplierVerifiedIdentity = listing.identity_status === "linked"
+    
+    const supplierVerifiedIdentity = nativeCjSupplyIdentity || (
+      listing.identity_status === "linked"
       && identifierGradeMethods.has(rawIdentityMethod)
       && Boolean(listing.supplier_product_id)
       && Boolean(listing.supplier_variant_id)
       && num(listing.identity_confidence) !== null
-      && (num(listing.identity_confidence) ?? 0) >= 0.88;
-    const identityMethod = rawIdentityMethod;
+      && (num(listing.identity_confidence) ?? 0) >= 0.88
+    );
+    const identityMethod = nativeCjSupplyIdentity ? "cj_supplier_variant" : rawIdentityMethod;
     if (!supplierVerifiedIdentity) reasons.push("identity_not_confirmed");
-    if (num(listing.identity_confidence) === null || (num(listing.identity_confidence) ?? 0) < 0.88) reasons.push("identity_confidence_low");
+    if (!nativeCjSupplyIdentity && (num(listing.identity_confidence) === null || (num(listing.identity_confidence) ?? 0) < 0.88)) reasons.push("identity_confidence_low");
 
     const metadata = base.metadata && typeof base.metadata === "object" && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
-    const sellingPrice = num(metadata.selling_price_jpy);
-    if (sellingPrice === null || sellingPrice <= 0) reasons.push("selling_price_unknown");
+    let sellingPrice = num(metadata.selling_price_jpy);
     const sourceCost = num(listing.cost); const shippingCost = num(listing.shipping_cost);
     if (sourceCost !== null && sourceCost < 0) reasons.push("source_cost_invalid");
     if (shippingCost !== null && shippingCost < 0) reasons.push("shipping_cost_invalid");
 
-    const sourceFxRateToSelling = num(metadata.fx_rate) ?? observedFx?.rate ?? null;
-    const sourceFxRateSource = num(metadata.fx_rate) !== null ? "supplier_listing_metadata" : (observedFx?.source ?? null);
+    const sourceCurrency = typeof listing.currency === "string" && listing.currency.trim() ? listing.currency.trim().toUpperCase() : null;
+    const metadataFxRate = num(metadata.fx_rate);
+    const sourceFxRateToSelling = resolveSupplierFxRateToJpy({
+      sourceCurrency,
+      metadataFxRate,
+      metadataFxSourceCurrency: typeof metadata.fx_rate_source_currency === "string" ? metadata.fx_rate_source_currency : typeof metadata.source_currency === "string" ? metadata.source_currency : null,
+      metadataFxTargetCurrency: typeof metadata.fx_rate_target_currency === "string" ? metadata.fx_rate_target_currency : null,
+      observedUsdToJpyRate: observedFx?.rate ?? null,
+    });
+    const sourceFxRateSource = sourceCurrency === "JPY" ? "same_currency" : metadataFxRate !== null && (sourceCurrency === "USD" || String(metadata.fx_rate_source_currency ?? metadata.source_currency ?? "").trim().toUpperCase() === sourceCurrency) ? "supplier_listing_metadata" : (sourceCurrency === "USD" ? observedFx?.source ?? null : null);
+    // Missing CJ freight is a pricing uncertainty, not an automatic publication veto.
+    // Keep supplier_listings.shipping_cost untouched; use a separately labelled
+    // USD allowance for price/profit simulation and expose the assumption in selection_reasons.
+    const shippingAllowanceUsd = resolveUnknownShippingAllowanceUsd(process.env.TRACER_CJ_UNKNOWN_SHIPPING_ALLOWANCE_USD);
+    const shippingEstimated = shippingCost === null && String(listing.supplier ?? "").trim().toLowerCase() === "cj" && Boolean(listing.supplier_product_id) && Boolean(listing.supplier_variant_id) && listing.orderable === true && sourceCurrency === "USD";
+    const pricingShippingCost = shippingCost ?? (shippingEstimated ? shippingAllowanceUsd : null);
+    sellingPrice = calculateSupplySellingPriceJpy({
+      existingSellingPriceJpy: sellingPrice,
+      sourceCost,
+      shippingCost: pricingShippingCost,
+      sourceFxRateToSelling,
+      platformFeeRate: PROFIT_ASSUMPTIONS.platform_fee_rate,
+      paymentFeeRate: PROFIT_ASSUMPTIONS.payment_fee_rate,
+      advertisingAllowanceRate: PROFIT_ASSUMPTIONS.advertising_allowance_rate,
+      returnRefundReserveRate: PROFIT_ASSUMPTIONS.return_refund_reserve_rate,
+      fxReserveRate: PROFIT_ASSUMPTIONS.fx_reserve_rate,
+      targetContributionMargin: 0.20,
+    });
+    if (sellingPrice === null || sellingPrice <= 0) reasons.push("selling_price_unknown");
     const profit = simulateContributionProfit({
       sellingPrice,
       sellingCurrency: "JPY",
       sellingProvider: "tracer_supply",
       sourceCost,
-      sourceCurrency: typeof listing.currency === "string" ? listing.currency : "USD",
+      sourceCurrency,
       sourceProvider: String(listing.supplier ?? "unknown"),
-      internationalShipping: shippingCost,
-      domesticShipping: null,
-      shippingCurrency: typeof listing.currency === "string" ? listing.currency : "USD",
+      internationalShipping: pricingShippingCost,
+      // CJ freight is quoted for direct delivery to the Japanese customer; there is no separate seller-paid domestic leg.
+      // Other supplier routes remain blocked until their domestic delivery cost is known.
+      domesticShipping: nativeCjSupplyIdentity ? 0 : null,
+      requireDomesticShipping: !nativeCjSupplyIdentity,
+      shippingCurrency: sourceCurrency,
       sourceFxRateToSelling,
       sourceFxRateSource: sourceFxRateSource ?? undefined,
     });
-    const gate = evaluateSalesTestGate({ rank: null, title: localizedTitle, sellingPrice, identityLinked: supplierVerifiedIdentity || (listing.identity_status === "linked" && identifierGradeMethods.has(identityMethod)), identityMethod, identityConfidence: num(listing.identity_confidence), sourceCost, shippingCost, trackingAvailable: listing.tracking_available === true, apiAvailable: listing.api_available === true, profitCalculable: profit.calculable, shippingUnknown: profit.shippingUnknown, contributionProfit: profit.contributionProfit, currencyMismatch: false, priceConfirmed: listing.price_confirmed === true, inventoryConfirmed: listing.inventory_confirmed === true, inventory: num(listing.inventory), orderable: listing.orderable === true, supplierProductId: typeof listing.supplier_product_id === "string" ? listing.supplier_product_id : null, supplierVariantId: typeof listing.supplier_variant_id === "string" ? listing.supplier_variant_id : null, requireRank: false });
+    const gate = evaluateSalesTestGate({ rank: null, title: localizedTitle, sellingPrice, identityLinked: supplierVerifiedIdentity || (listing.identity_status === "linked" && identifierGradeMethods.has(identityMethod)), identityMethod, identityConfidence: nativeCjSupplyIdentity ? 1 : num(listing.identity_confidence), sourceCost, shippingCost: pricingShippingCost, trackingAvailable: listing.tracking_available === true, apiAvailable: listing.api_available === true, profitCalculable: profit.calculable, shippingUnknown: profit.shippingUnknown, contributionProfit: profit.contributionProfit, currencyMismatch: false, priceConfirmed: listing.price_confirmed === true, inventoryConfirmed: listing.inventory_confirmed === true, inventory: num(listing.inventory), orderable: listing.orderable === true, supplierProductId: typeof listing.supplier_product_id === "string" ? listing.supplier_product_id : null, supplierVariantId: typeof listing.supplier_variant_id === "string" ? listing.supplier_variant_id : null, requireRank: false });
     if (!gate.eligible) reasons.push(...gate.reasons);
-    const supplySalesTestReady =
-      supplierVerifiedIdentity &&
-      profit.calculable &&
-      profit.contributionMargin !== null &&
-      profit.contributionMargin > 0;
-    if (!supplySalesTestReady) {
-      if (String(intelligence.sellability_state ?? "") !== "TEST_READY") reasons.push("sellability_not_ready");
-      if (String(intelligence.filter_state ?? "") !== "PASS") reasons.push("intelligence_filter_not_pass");
-      if (String(intelligence.profit_state ?? "") !== "PROFIT_OK") reasons.push("intelligence_profit_not_ok");
-    }
-    if (!supplySalesTestReady) {
-      if (num(intelligence.demand_score) === null) reasons.push("demand_evidence_missing");
-      if (num(intelligence.search_fit_score) === null) reasons.push("search_fit_evidence_missing");
-      if (num(intelligence.market_gap_score) === null) reasons.push("market_gap_evidence_missing");
-      if (num(intelligence.overall_confidence) === null || (num(intelligence.overall_confidence) ?? 0) < 0.6) reasons.push("intelligence_confidence_low");
-    }
-    if (reasons.length) { rejected.push({ productId, reasons: Array.from(new Set(reasons)) }); continue; }
+    // Demand and AI quality scores prioritize the queue; they do not decide
+    // whether an otherwise sellable item can be listed. Publication still
+    // requires Japanese copy, a real image, exact supplier identity, current
+    // stock/orderability/tracking/API evidence, and positive landed profit.
+    if (reasons.length) { rejected.push({ productId, reasons: Array.from(new Set(reasons)), title: sourceTitle, masterTitle, category: metadataCategory(base.metadata), supplier: String(listing.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority, sellingPrice, sourceCost, internationalShipping: shippingCost, domesticShippingKnown: nativeCjSupplyIdentity, contributionProfit: profit.contributionProfit, contributionMargin: profit.contributionMargin }); continue; }
 
     const womenBonus = womenProductPriority({ title: typeof base.normalized_title === "string" ? base.normalized_title : "", category: typeof metadata.category === "string" ? metadata.category : null }).bonus;
     const quality = (num(intelligence.selection_score) ?? 0) * 0.45 + (num(intelligence.demand_score) ?? 0) * 0.2 + (num(intelligence.search_fit_score) ?? 0) * 0.1 + (num(intelligence.market_gap_score) ?? 0) * 0.1 + (num(intelligence.competition_score) ?? 0) * 0.05 + (num(intelligence.creative_score) ?? 0) * 0.05 + (num(intelligence.overall_confidence) ?? 0) * 100 * 0.05 + womenBonus;
-    eligible.push({ productId, listing, base, intelligence, profit, quality });
+    eligible.push({ productId, listing, base, intelligence, profit, quality, description: publishableDescription!, shippingAllowanceUsd, imageUrl: productImageUrl! });
   }
 
   eligible.sort((a, b) => {
@@ -135,16 +232,51 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (womenB.bonus !== womenA.bonus) return womenB.bonus - womenA.bonus;
     return b.quality - a.quality;
   });
-  if (options.dryRun) return { published: 0, publishedListingIds: [], selectedListingIds: [], considered: uniqueProductIds.length, rejected: rejected.slice(0, 50), eligibleProductIds: eligible.map((item) => item.productId) };
+  const rejectedSamples = rejected.slice(0, 50);
+  if (options.dryRun) return {
+    published: 0,
+    publishedListingIds: [],
+    selectedListingIds: [],
+    considered: uniqueProductIds.length,
+    rejectedCount: rejected.length,
+    rejectionCounts: summarizeRejections(rejected),
+    rejected: rejectedSamples,
+    eligibleProductIds: eligible.map((item) => item.productId),
+    eligibleSamples: eligible.slice(0, 50).map((item) => ({
+      productId: item.productId,
+      title: String(item.listing.title ?? item.base.normalized_title ?? ""),
+      localizedTitle: localizeProductTitle(String(item.listing.title ?? item.base.normalized_title ?? ""), metadataCategory(item.base.metadata)),
+      titleQualityPass: isPublishableCatalogTitle(localizeProductTitle(String(item.listing.title ?? item.base.normalized_title ?? ""), metadataCategory(item.base.metadata))),
+      description: item.description,
+      category: metadataCategory(item.base.metadata),
+      supplier: String(item.listing.supplier ?? ""),
+      supplierProductId: item.listing.supplier_product_id ?? null,
+      supplierVariantId: item.listing.supplier_variant_id ?? null,
+      sellingPriceJpy: item.profit.sellingPrice,
+      sourceCost: item.profit.sourceCost,
+      shippingCost: item.profit.internationalShipping,
+      inventory: num(item.listing.inventory),
+      contributionProfit: item.profit.contributionProfit,
+      contributionMargin: item.profit.contributionMargin,
+      identityMethod: item.listing.identity_method ?? null,
+      verificationStatus: item.listing.verification_status ?? null,
+      shippingStatus: item.listing.shipping_status ?? null,
+      priceConfirmed: item.listing.price_confirmed === true,
+      inventoryConfirmed: item.listing.inventory_confirmed === true,
+      orderable: item.listing.orderable === true,
+      trackingAvailable: item.listing.tracking_available === true,
+      apiAvailable: item.listing.api_available === true,
+    })),
+  };
   const eligibleProductIds = eligible.map((item) => item.productId);
   const { data: liveListings, error: liveListingsError } = await supabase.from("shop_listings").select("product_id").in("product_id", eligibleProductIds).eq("published", true).in("pipeline_status", ["published"]);
   if (liveListingsError) throw new Error(liveListingsError.message);
   const liveProductIds = new Set((liveListings ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean));
   const chosen = eligible.filter((item) => !liveProductIds.has(item.productId)).slice(0, limit); const publishedListingIds: string[] = []; const selectedListingIds: string[] = [];
   for (const item of chosen) {
-    const title = localizeProductTitle(item.base.normalized_title, metadataCategory(item.base.metadata)) ?? String(item.base.normalized_title ?? ("TRACER product " + item.productId)); const slug = slugify(title, item.productId); const now = new Date().toISOString();
+    const title = localizeProductTitle(String(item.listing.title ?? item.base.normalized_title ?? ""), metadataCategory(item.base.metadata)) ?? String(item.base.normalized_title ?? ("TRACER product " + item.productId)); const slug = slugify(title, item.productId); const now = new Date().toISOString();
     const metadata = item.base.metadata && typeof item.base.metadata === "object" && !Array.isArray(item.base.metadata) ? item.base.metadata as Record<string, unknown> : {};
-    const payload = { product_id: item.productId, bestseller_id: null, supplier_listing_id: item.listing.id, slug, title, description: typeof item.intelligence.recommendation_summary === "string" && item.intelligence.recommendation_summary.trim() ? item.intelligence.recommendation_summary.trim().slice(0, 700) : "需要・供給・利益・公開条件を確認したTRACERセレクト商品です。", image_url: item.base.image_url, selling_price: num(metadata.selling_price_jpy), currency: "JPY", supplier_name: String(item.listing.supplier ?? "unknown"), supplier_product_id: item.listing.supplier_product_id, supplier_variant_id: item.listing.supplier_variant_id, source_cost: item.profit.sourceCost, shipping_cost: item.profit.internationalShipping, inventory: num(item.listing.inventory), orderable: item.listing.orderable === true, tracking_available: item.listing.tracking_available === true, identity_method: typeof item.listing.identity_method === "string" ? item.listing.identity_method : null, identity_confidence: num(item.listing.identity_confidence), contribution_profit: item.profit.contributionProfit, contribution_margin: item.profit.contributionMargin, published: true, selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:supply", "supply_intelligence_gate_passed", "selection_score_" + (num(item.intelligence.selection_score)?.toFixed(1) ?? "0")], missing: [], published_at: now, pipeline_stage: "PUBLISHED", pipeline_status: "published", pipeline_reason: SALES_TEST_GATE_PASSED, pipeline_error: null, pipeline_updated_at: now, updated_at: now };
+    const payload = { product_id: item.productId, bestseller_id: null, supplier_listing_id: item.listing.id, slug, title, description: item.description.slice(0, 700), image_url: item.imageUrl, selling_price: item.profit.sellingPrice, currency: "JPY", supplier_name: String(item.listing.supplier ?? "unknown"), supplier_product_id: item.listing.supplier_product_id, supplier_variant_id: item.listing.supplier_variant_id, source_cost: item.profit.sourceCost, shipping_cost: num(item.listing.shipping_cost), inventory: num(item.listing.inventory), orderable: item.listing.orderable === true, tracking_available: item.listing.tracking_available === true, identity_method: isNativeCjSupplierListing(item.listing) ? "cj_supplier_variant" : (typeof item.listing.identity_method === "string" ? item.listing.identity_method : null), identity_confidence: isNativeCjSupplierListing(item.listing) ? 1 : num(item.listing.identity_confidence), contribution_profit: item.profit.contributionProfit, contribution_margin: item.profit.contributionMargin, published: true, selection_reasons: [SALES_TEST_GATE_PASSED, "sales_test_gate:supply", "supply_intelligence_gate_passed", ...(item.listing.shipping_cost == null && String(item.listing.supplier ?? "").trim().toLowerCase() === "cj" && item.listing.supplier_product_id && item.listing.supplier_variant_id ? [`shipping_allowance_estimated_usd_${item.shippingAllowanceUsd}_not_supplier_quote`] : []), "selection_score_" + (num(item.intelligence.selection_score)?.toFixed(1) ?? "0")], missing: [], published_at: now, pipeline_stage: "PUBLISHED", pipeline_status: "published", pipeline_reason: SALES_TEST_GATE_PASSED, pipeline_error: null, pipeline_updated_at: now, updated_at: now };
     const existing = await supabase.from("shop_listings").select("id").eq("slug", slug).maybeSingle();
     if (existing.error) throw new Error(existing.error.message);
     let existingId = existing.data?.id ? String(existing.data.id) : null; let keepSlug = false;
@@ -154,5 +286,5 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (result.error) throw new Error(result.error.message);
     if (result.data?.id) { const listingId = String(result.data.id); selectedListingIds.push(listingId); publishedListingIds.push(listingId); }
   }
-  return { published: publishedListingIds.length, publishedListingIds, selectedListingIds, considered: uniqueProductIds.length, rejected: rejected.slice(0, 50) };
+  return { published: publishedListingIds.length, publishedListingIds, selectedListingIds, considered: uniqueProductIds.length, rejectedCount: rejected.length, rejectionCounts: summarizeRejections(rejected), rejected: rejectedSamples };
 }

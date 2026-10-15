@@ -20,6 +20,7 @@ import {
 import { classifySellability } from "../lib/intelligence/sellability.ts";
 import { matchProductIdentity, normalizeIdentifier, pickSupplierBarcodeIdentifier, EMPTY_IDENTIFIERS } from "../lib/market/identifiers.ts";
 import { inspectCanonicalMarketplaceVariantMarkup, parseAmazonVariationAsinMap, parseCanonicalMarketplaceVariantEvidence } from "../lib/market/canonical-variant-evidence.ts";
+import { isAmazonChallengeHtml } from "../lib/market/amazon-response.ts";
 import { verifyCjIdentityReverifyPolicyInvariants } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 const results = [];
@@ -34,6 +35,30 @@ test("demand match bounds", "rotates a bounded observation page and scopes large
   assert.match(source, /\.in\("metadata->>demand_observation_id", demandBatchIdList\)/);
   assert.doesNotMatch(source, /readAll\(\(from, to\) => supabase\.from\("product_offers"/);
   assert.doesNotMatch(source, /readAll\(\(from, to\) => supabase\.from\("demand_product_candidates"/);
+});
+
+test("demand classification fallback", "uses strict catalog title overlap without depending on Gemini availability", async () => {
+  const source = await readFile(new URL("../lib/intelligence/match-demand-products.ts", import.meta.url), "utf8");
+  assert.match(source, /const catalogTitleSignal = productRows\.some/);
+  assert.match(source, /productMatchesQuery\(query, product\.normalized_title, allProductNames\)/);
+  assert.match(source, /reason: "catalog_title_overlap"/);
+  assert.match(source, /never bypasses identifier\/variant gates/);
+});
+
+test("Gemini demand classification failure", "provider failure is deferred instead of counted as a non-product result", async () => {
+  const source = await readFile(new URL("../lib/intelligence/match-demand-products.ts", import.meta.url), "utf8");
+  assert.match(source, /geminiCircuitBreaker\.recordFailure\(error\)/);
+  assert.match(source, /geminiCircuitBreaker\.canCall\(geminiCalls, MAX_GEMINI_CLASSIFICATIONS_PER_RUN\)/);
+  assert.match(source, /A provider failure is not evidence that this query is non-product/);
+  assert.match(source, /intentDeferred \+= 1;\s*continue;/);
+  assert.match(source, /intentDeferred \+= 1;\s*continue;/);
+});
+
+test("Amazon response classification", "rejects HTTP-200 robot-check HTML as product detail evidence", () => {
+  assert.equal(isAmazonChallengeHtml("<html><title>Robot Check</title><body>Enter the characters you see below</body></html>", "https://www.amazon.co.jp/dp/B000000001"), true);
+  assert.equal(isAmazonChallengeHtml("<html><body>通常の商品詳細</body></html>", "https://www.amazon.co.jp/dp/B000000001"), false);
+  assert.equal(isAmazonChallengeHtml("<html><body>Robot Check</body></html>", "https://store.example.com/item"), false);
+  assert.equal(isAmazonChallengeHtml(null, "https://www.amazon.co.jp/dp/B000000001"), false);
 });
 
 test("canonical marketplace variant evidence", "captures only explicit ProductGroup child variants and never copies parent barcodes", () => {

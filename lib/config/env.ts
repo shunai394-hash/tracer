@@ -117,7 +117,12 @@ export function getFoundationStatus(): FoundationStatus {
 
 export function getGeminiConfig() {
   const apiKey = readEnv("GEMINI_API_KEY");
-  const model = readEnv("GEMINI_MODEL") || "gemini-2.5-flash";
+  const configuredModel = readEnv("GEMINI_MODEL");
+  // Gemini 2.5 Flash is no longer available to some new API projects.
+  // Migrate the legacy default and legacy explicit setting to the current stable model.
+  const model = !configuredModel || configuredModel === "gemini-2.5-flash"
+    ? "gemini-3.8-flash"
+    : configuredModel;
   return { apiKey, model };
 }
 
@@ -194,7 +199,7 @@ export function getDropshipSupplierConfig() {
     dsers: present(readEnv("DSERS_API_KEY")),
     zendrop: present(readEnv("ZENDROP_API_KEY")),
     syncee: present(readEnv("SYNCEE_API_KEY")),
-    orosy: present(readEnv("OROSY_API_KEY")) || present(readEnv("OROSY_DEMO_API_KEY")),
+    orosy: false, // Orosy is disabled by explicit product decision.
     faire: present(readEnv("FAIRE_ACCESS_TOKEN")),
   };
 }
@@ -212,14 +217,14 @@ export function isSupplierConfigured(supplierName: string): boolean {
 
 export function isSupplierLiveOrderingEnabled(supplierName: string): boolean {
   const key = supplierName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").toUpperCase();
-  if (key === "CJ" || key === "CJDROPSHIPPING") return false;
+  if (key === "CJ" || key === "CJDROPSHIPPING") return isCJLiveOrderingEnabled();
   if (key === "TRACER_INTERNAL") return readEnv("TRACER_INTERNAL_LIVE_ORDERING") === "1";
   return readEnv(`${key}_LIVE_ORDERING`) === "1";
 }
 
 export function isSupplierAutoOrderingEnabled(supplierName: string): boolean {
   const key = supplierName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").toUpperCase();
-  if (key === "CJ" || key === "CJDROPSHIPPING") return false;
+  if (key === "CJ" || key === "CJDROPSHIPPING") return isCJAutoOrderingEnabled();
   if (key === "TRACER_INTERNAL") return readEnv("TRACER_INTERNAL_AUTO_ORDERING") === "1";
   return readEnv(`${key}_AUTO_ORDERING`) === "1";
 }

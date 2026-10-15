@@ -1,0 +1,67 @@
+name: One-time curated Shopify sync batch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/run-curated-shopify-batch.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  sync:
+    if: contains(github.event.head_commit.message, '[run-shopify-batch-now]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Sync only the 22 verified, profitable Japanese listings
+        env:
+          PRODUCTION_ORIGIN: https://tracer-pied-alpha.vercel.app
+        shell: bash
+        run: |
+          set -euo pipefail
+          failures=0
+          batch1='["54abfe0f-debb-4c58-9ab7-5c7d43464db4","a19a243d-f6f4-4be9-a8a6-339e959f2c39","61609919-c018-4de3-a0f6-1b018285ce3f","d386f36a-541c-4601-bc76-eacec73ac54c","95c04d5a-a274-4191-b12b-75f660affbef","df09d3e8-e240-42b6-a4e4-b271182be421","459931e4-b471-4f92-aad9-640243099887","43244051-7112-4d1d-ba63-3ac49b7dede8","02912424-51f2-4800-964c-a84d21fdaad3","747ec957-22c4-440c-b94b-2ccabd543fe9","15a74b29-b00e-4744-bbdb-06c40b7e3310","74ba90b2-62ec-423f-84c8-818bd92ca3e5","11a43e13-e1c4-436e-8f2d-156791e29150","df8f87fa-7a5d-44bb-9859-b35362166c3d","cfde3ed3-925f-4cfa-afb8-1176d7be8b77"]'
+          batch2='["b16e6148-9752-4303-b8a9-ccc113c952ad","05a56609-8fa8-4542-9d4d-110e13db1410","a1a0a4f8-d6ea-4580-a92d-6bbd20b6f9f1","3999012a-221a-4c38-bfce-0f10912d5e95","c314992e-746f-4b28-8b17-9fe8b2c59574","1a42bbf1-e4b6-44fd-bcee-a4fdd6924142","f9d74f10-c9b4-4311-9220-e7a8340d1fc0"]'
+          for batch in "$batch1" "$batch2"; do
+            listing_ids="$batch"
+            for pass in 1 2 3; do
+              token_response="$(curl -fsS \
+                -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+                "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app")"
+              token="$(jq -r '.value' <<< "$token_response")"
+              if [[ -z "$token" || "$token" == "null" ]]; then
+                echo "GitHub OIDC token was not issued."
+                exit 1
+              fi
+
+              response="$(curl -sS --max-time 240 \
+                -X POST \
+                -H "Authorization: Bearer $token" \
+                -H "Content-Type: application/json" \
+                -H "Cache-Control: no-cache" \
+                --data "{\"listingIds\":$listing_ids,\"limit\":15}" \
+                "$PRODUCTION_ORIGIN/api/admin/shopify/sync")"
+              echo "$response" | jq '{ok, configured, attempted, synced, failed, listingIds}'
+              configured="$(jq -r '.configured // false' <<< "$response")"
+              failed_count="$(jq -r '(.failed // []) | length' <<< "$response")"
+              if [[ "$configured" != "true" ]]; then
+                failures=1
+                break
+              fi
+              if [[ "$failed_count" -eq 0 ]]; then
+                break
+              fi
+              failures=1
+              listing_ids="$(jq -c '[.failed[]?.listingId | select(type == "string")]' <<< "$response")"
+              if [[ "$listing_ids" == "[]" ]]; then break; fi
+              sleep 3
+            done
+          done
+          if [[ "$failures" -ne 0 ]]; then
+            echo "At least one targeted Shopify sync batch reported unresolved failures."
+            exit 1
+          fi

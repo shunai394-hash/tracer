@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { verifySalesTestGateInvariants } from "@/lib/market/sales-test-gate";
 import { verifyWomenPriorityInvariants } from "@/lib/intelligence/womens-priority";
+import { verifyProfitInvariants } from "@/lib/intelligence/simulate-profit";
 import { isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 
 const root = process.cwd();
@@ -17,6 +18,9 @@ const checks = [
   ["BASE catalog validation fail-closed hide", "lib/channels/base-publisher.ts", "base_hide_failed_after_catalog_validation"],
   ["Shopify legacy sync", "lib/shopify/sync.ts", "hasPassedSalesTestGate"],
   ["Shopify canonical sync", "lib/shopify/sync-published-listings.ts", "hasPassedSalesTestGate"],
+  ["Shopify sync includes BASE-published listings", "lib/shopify/sync-published-listings.ts", "pipeline_stage.eq.BASE_PUBLISHED"],
+  ["Shopify sync treats BASE_PUBLISHED as actionable", "lib/shopify/sync-published-listings.ts", 'row.pipeline_stage === "BASE_PUBLISHED"'],
+  ["Shopify failed-sync retry fairness", "lib/shopify/sync-published-listings.ts", "cannot starve the rest of the bounded sync work pool"],
   ["Shopify sync live-stock guard", "lib/shopify/sync-published-listings.ts", "Number(row.inventory) > 0"],
   ["Shopify final CJ supplier safety boundary", "lib/shopify/sync-published-listings.ts", '!/^(cj|cjdropshipping)$/i.test(String(row.supplier_name ?? "").trim())'],
   ["Shopify Japanese title boundary", "lib/shopify/sync-published-listings.ts", "isJapaneseProductTitle(row.title)"],
@@ -46,6 +50,8 @@ const checks = [
   ["BASE publisher idempotent claim", "lib/channels/base-publisher.ts", "base_publication_claim_lost"],
   ["BASE publisher image contract", "lib/channels/base-publisher.ts", "imageNo: 1"],
   ["Supply sales selector", "lib/market/select-supply-sales-tests.ts", "evaluateSalesTestGate"],
+  ["Supply sales selector accounts for direct CJ shipping", "lib/market/select-supply-sales-tests.ts", "domesticShipping: nativeCjSupplyIdentity ? 0 : null"],
+  ["Market sales selector requires domestic shipping", "lib/market/select-sales-tests.ts", "requireDomesticShipping: true"],
   ["Market sales selector", "lib/market/select-sales-tests.ts", "SALES_TEST_GATE_PASSED"],
   ["CJ identity reverify", "lib/suppliers/reverify-cj-identity.ts", "variantBarcode"],
   ["CJ womens recovery priority", "lib/suppliers/reverify-cj-identity.ts", "womensSelected"],
@@ -80,6 +86,8 @@ const failures: string[] = [];
 if (titleFailures.length) failures.push(`publishable-title cases failed: ${titleFailures.join(", ")}`);
 const invariant = verifySalesTestGateInvariants();
 const womenInvariant = verifyWomenPriorityInvariants();
+const profitInvariant = verifyProfitInvariants();
+if (!profitInvariant.ok) failures.push(`profit invariants failed: ${JSON.stringify(profitInvariant.cases)}`);
 if (!womenInvariant.ok) failures.push(`women-priority invariants failed: ${JSON.stringify(womenInvariant.cases)}`);
 if (!invariant.ok) failures.push(`sales-test-gate invariants failed: ${JSON.stringify(invariant.cases)}`);
 for (const [name, relativePath, required] of checks) {
@@ -93,4 +101,4 @@ if (failures.length) {
   process.exit(1);
 }
 console.log("TRACER QUALITY GATE AUDIT: PASS");
-console.log(`Checked ${checks.length} critical publication/downstream paths plus ${invariant.cases.length} gate invariants.`);
+console.log(`Checked ${checks.length} critical publication/downstream paths plus ${invariant.cases.length + womenInvariant.cases.length + profitInvariant.cases.length} gate invariants.`);
