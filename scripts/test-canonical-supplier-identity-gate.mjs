@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSupplier, unpublishWorkflow, patrolWorkflow, patrolRoute, discoverCJ, directGate, salesPublicationRoute, e2eFunnel, intelligencePipeline, baseRepair] = await Promise.all([
+const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSupplier, unpublishWorkflow, patrolWorkflow, patrolRoute, discoverCJ, directGate, salesPublicationRoute, e2eFunnel, intelligencePipeline, baseRepair, supplySelector] = await Promise.all([
   readFile(new URL("../lib/catalog/canonical-supplier-identity.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8"),
@@ -20,6 +20,7 @@ const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSup
   readFile(new URL("../app/api/intelligence/e2e-funnel/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/channels/base/identity-repair/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8"),
 ]);
 assert.match(helper, /identity_status === "linked"/);
 assert.match(helper, /verificationError === "CJdropshipping is not configured"/, "only the stale CJ configuration error may be ignored when the same row is currently configured and API-available");
@@ -51,6 +52,8 @@ assert.match(directGate, /\.eq\("identity_status", "linked"\)/, "direct sales-te
 assert.doesNotMatch(directGate, /identity_status\.eq\.supply_discovered/, "supply discovery alone must never enter direct sales-test selection");
 assert.match(salesPublicationRoute, /\.eq\("identity_status", "linked"\)/, "sales-test publication prefilter must require linked supplier identity");
 assert.match(salesPublicationRoute, /TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED !== "false"/, "verified native CJ supply must be publishable by default; only an explicit false setting may disable it");
+assert.match(supplySelector, /const pool = verifiedCandidates;/, "sales-test selector must fail closed when no supplier offer passes all verification checks");
+assert.doesNotMatch(supplySelector, /verifiedCandidates\.length > 0 \? verifiedCandidates : candidates/, "unverified supplier candidates must never be used as a fallback publication pool");
 assert.doesNotMatch(salesPublicationRoute, /identity_status\.eq\.supply_discovered/, "sales-test publication must not prefilter unresolved supply as verified");
 assert.match(e2eFunnel, /eq\("identity_status", "linked"\).*eq\("verification_status", "verified"\).*eq\("orderable", true\)/, "readiness funnel must not count unresolved supply as verified and orderable");
 assert.match(intelligencePipeline, /\.eq\("verification_status", "verified"\)[\s\S]*?\.eq\("orderable", true\)/, "supply selection must still require verified, orderable supplier evidence");
