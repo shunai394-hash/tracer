@@ -184,6 +184,47 @@ function extractShoppingProducts(payload: unknown): BrightDataProductCandidate[]
         const nested = extractShoppingProducts(parsed);
         if (nested.length) return nested;
       }
+      // Google Shopping cards often expose title, outbound URL, and price as
+      // adjacent HTML nodes rather than JSON-LD. Accept only anchors with an
+      // external product URL and an explicit price in the nearby card markup.
+      const htmlAnchors = [...unwrapped.matchAll(/<a\b[^>]*href=(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi)];
+      const htmlProducts: BrightDataProductCandidate[] = [];
+      const htmlSeen = new Set<string>();
+      for (const anchor of htmlAnchors) {
+        const hrefText = normalizeText(anchor[2]).replace(/&amp;/gi, "&");
+        let productUrl: string | null = null;
+        try {
+          const href = new URL(hrefText, "https://www.google.com");
+          if (/(^|\.)google\.(com|co\.jp)$/i.test(href.hostname) && href.pathname === "/url") {
+            productUrl = normalizeUrl(href.searchParams.get("q") ?? href.searchParams.get("url"));
+          } else if (!/(^|\.)google\.(com|co\.jp)$/i.test(href.hostname)) {
+            productUrl = normalizeUrl(href.toString());
+          }
+        } catch { productUrl = normalizeUrl(hrefText); }
+        if (!productUrl) continue;
+        const title = normalizeText(anchor[3]
+          .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, " ")
+          .replace(/<[^>]+>/g, " "));
+        if (title.length < 4 || title.length > 200 || htmlSeen.has(title)) continue;
+        const offset = anchor.index ?? 0;
+        const context = unwrapped.slice(Math.max(0, offset - 700), Math.min(unwrapped.length, offset + anchor[0].length + 1700))
+          .replace(/<[^>]+>/g, " ");
+        const priceMatch = context.match(/(?:¥|￥|JPY\s*)[\s\u00a0]*[\d,]+(?:\.\d{1,2})?|[\d,]+(?:\.\d{1,2})?\s*円|(?:US\$|USD\s*)[\s\u00a0]*[\d,]+(?:\.\d{1,2})?/i);
+        if (!priceMatch) continue;
+        const price = normalizeText(priceMatch[0]);
+        htmlSeen.add(title);
+        htmlProducts.push({
+          title,
+          brand: null,
+          price,
+          currency: normalizeCurrency(null, price),
+          seller: null,
+          productUrl,
+          imageUrl: null,
+        });
+        if (htmlProducts.length >= 100) break;
+      }
+      if (htmlProducts.length) return htmlProducts;
       return [];
     }
     const lines = unwrapped.split(/\r?\n/);
