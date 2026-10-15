@@ -47,7 +47,7 @@ function extractBalancedJsonObject(source: string, start: number): { value: unkn
     for (let i = start + 1; i < source.length; i += 1) {
       const char = source[i];
       if (escaped) escaped = false;
-      else if (char === "\\\\") escaped = true;
+      else if (char === "\\") escaped = true;
       else if (char === '"') {
         try { return { value: JSON.parse(source.slice(start, i + 1)), end: i + 1 }; }
         catch { return null; }
