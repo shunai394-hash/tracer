@@ -123,7 +123,7 @@ export type CanonicalVariantMarkupDiagnostics = {
 /** Aggregate-only diagnostics; never returns source HTML or product/customer payloads. */
 export function inspectCanonicalMarketplaceVariantMarkup(html: string): CanonicalVariantMarkupDiagnostics {
   const nodes = jsonLdNodes(html);
-  const jsonLdScriptMatches = [...html.matchAll(/<script\\b[^>]*type\\s*=\\s*["'][^"']*ld\\+json[^"']*["'][^>]*>([\\s\\S]*?)<\\/script>/gi)];
+  const jsonLdScriptMatches = [...html.matchAll(/<script\b[^>]*type\s*=\s*["'][^"']*ld\+json[^"']*["'][^>]*>([\s\S]*?)<\/script>/gi)];
   const jsonLdParseFailureCount = jsonLdScriptMatches.filter((match) => {
     const raw = match[1].trim().replace(/^<!--/, "").replace(/-->$/, "").trim();
     try { JSON.parse(raw); return false; } catch { return true; }
