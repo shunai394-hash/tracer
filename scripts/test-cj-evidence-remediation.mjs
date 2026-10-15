@@ -30,12 +30,11 @@ const checks = [
   ["incomplete evidence cannot flow into the canonical persistence step", /if \(!priceVerified \|\| cost === null \|\| shippingCost === null \|\| !shippingQuoteVerified \|\| !inventoryVerified \|\| inventory === null \|\| fxRate === null \|\| sellingPriceJpy === null \|\| !imageUrl\)/],
 ];
 for (const [name, pattern] of checks) assert.match(source, pattern, name);
-assert.match(identitySource, /const freshVariantBarcode = await readSupplierBarcode\(/, "persistence must make one fresh exact-variant barcode lookup");
-// The call's argument object is intentionally multiline; allow the full expression before checking reuse.
-assert.match(identitySource, /resolveMarketplaceIdentityFromBarcode\([\s\S]{0,1200}freshVariantBarcode/, "the same live barcode must feed identity matching");
-assert.match(identitySource, /variant_barcode: freshVariantBarcode/, "persisted metadata must reuse the exact fresh barcode instead of issuing another CJ request");
+assert.match(identitySource, /const freshVariantBarcode = args\.variantBarcode\?\.trim\(\) \|\| null/, "CJ persistence must reuse the exact variant barcode supplied by live discovery, without an extra provider call");
+assert.match(identitySource, /variant_barcode: freshVariantBarcode/, "persisted metadata must retain the supplier-native variant barcode");
 const persistBody = identitySource.slice(identitySource.indexOf("export async function persistCjSupplyIntelligence"));
-assert.equal((persistBody.match(/readSupplierBarcode\(/g) ?? []).length, 1, "persistence must perform only one fresh barcode lookup per candidate");
+assert.equal((persistBody.match(/resolveMarketplaceIdentityFromBarcode\(/g) ?? []).length, 0, "CJ supply persistence must not query marketplace identity tables");
+assert.equal((persistBody.match(/readSupplierBarcode\(/g) ?? []).length, 0, "CJ supply persistence must not perform a redundant barcode lookup");
 
 const policy = verifyCjIdentityReverifyPolicyInvariants();
 assert.equal(policy.ok, true, JSON.stringify(policy.cases.filter((item) => item.actual !== item.expected)));
