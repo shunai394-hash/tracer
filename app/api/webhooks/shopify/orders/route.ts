@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyShopifyWebhookHmac } from "@/lib/shopify/admin";
-import { getOrderSkuLookup, resolveShopifyOrderSkus } from "@/lib/shopify/order-sku-mapping";
+import { getOrderSkuLookup } from "@/lib/shopify/order-sku-mapping";
+import { resolveShopifyOrderLines, shopifyLineIdentity } from "@/lib/ordering/shopify-line-match";
 
 export const runtime = "nodejs";
 
@@ -22,12 +23,15 @@ export async function POST(request: Request) {
 
     const db = createSupabaseAdminClient();
     const items = Array.isArray(order.line_items) ? order.line_items as Array<Record<string, unknown>> : [];
-    const skus = items.map((item) => String(item.sku ?? "").trim());
-    // Stable Shopify line IDs are required to repair partial imports without
-    // duplicating order items when Shopify retries a webhook.
-    if (!items.length || skus.some((sku) => !sku)) {
+    const lines = items.map((item) => shopifyLineIdentity({ sku: item.sku, variant_id: item.variant_id }));
+    const skus = lines.map((line) => line.sku);
+    // Each line needs at least one stable identity: the generated SKU or the
+    // Shopify variant id recorded when TRACER synced the product.
+    if (!items.length || lines.some((line) => !line.sku && line.shopifyVariantIds.length === 0)) {
       return NextResponse.json({ ok: true, blocked: true, reason: "listing_sku_missing" });
     }
+    // Stable Shopify line IDs are required to repair partial imports without
+    // duplicating order items when Shopify retries a webhook.
     if (items.some((item) => item.id == null || !String(item.id).trim())) {
       return NextResponse.json({ ok: true, blocked: true, reason: "shopify_line_item_id_missing" });
     }
@@ -66,8 +70,8 @@ export async function POST(request: Request) {
     // Shopify SKUs are generated as TRC-<supplier_variant_id>, falling back
     // to supplier_product_id and finally listing.id. Do not treat the SKU itself
     // as shop_listings.id: resolve its exact stable identity first.
-    const lookup = getOrderSkuLookup(skus);
-    const listingSelect = "id,product_id,title,published,orderable,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id";
+    const lookup = getOrderSkuLookup(skus.filter(Boolean));
+    const listingSelect = "id,product_id,title,published,orderable,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id,shopify_variant_id";
     type ListingRow = {
       id: string;
       product_id: string;
@@ -79,6 +83,7 @@ export async function POST(request: Request) {
       supplier_name: string | null;
       supplier_product_id: string | null;
       supplier_variant_id: string | null;
+      shopify_variant_id: string | null;
     };
     const candidateRows: ListingRow[] = [];
     if (lookup.supplierSources.length) {
@@ -95,17 +100,22 @@ export async function POST(request: Request) {
       if (legacy.error) throw new Error(legacy.error.message);
       candidateRows.push(...(legacy.data ?? []));
     }
+    // The Shopify variant id is independent evidence: it can map a line that
+    // has no SKU, and it exposes a SKU that points at a different listing.
+    const shopifyVariantIds = [...new Set(lines.flatMap((line) => line.shopifyVariantIds))];
+    if (shopifyVariantIds.length) {
+      const byShopifyVariant = await db.from("shop_listings").select(listingSelect).in("shopify_variant_id", shopifyVariantIds);
+      if (byShopifyVariant.error) throw new Error(byShopifyVariant.error.message);
+      candidateRows.push(...(byShopifyVariant.data ?? []));
+    }
     // Deduplicate rows returned by multiple identity queries.
     const listings = [...new Map(candidateRows.map((row) => [String(row.id), row])).values()];
-    const resolution = resolveShopifyOrderSkus(skus, listings);
+    const resolution = resolveShopifyOrderLines(lines, listings);
     if (!resolution.ok) {
-      return NextResponse.json({ ok: true, blocked: true, reason: resolution.reason, sku: resolution.sku });
+      return NextResponse.json({ ok: true, blocked: true, reason: resolution.reason, sku: resolution.sku, line: resolution.lineIndex });
     }
-    const bySku = resolution.bySku;
-    if (!existingOrderId && skus.some((sku) => {
-      const listing = bySku.get(sku);
-      return !listing || listing.published !== true || listing.orderable !== true;
-    })) {
+    const byLine = resolution.listings;
+    if (!existingOrderId && byLine.some((listing) => listing.published !== true || listing.orderable !== true)) {
       return NextResponse.json({ ok: true, blocked: true, reason: "listing_not_orderable" });
     }
 
@@ -118,7 +128,7 @@ export async function POST(request: Request) {
     let orderId = existingOrderId;
     if (!orderId) {
       const inserted = await db.from("shop_orders").insert({
-        listing_id: bySku.get(skus[0])?.id ?? null,
+        listing_id: byLine[0]?.id ?? null,
         status: "placed",
         payment_method: "shopify",
         payment_status: paid ? "paid" : "pending",
@@ -148,9 +158,8 @@ export async function POST(request: Request) {
     }
 
     for (const [index, item] of items.entries()) {
-      // Use the same normalized SKU used during resolution; Shopify payloads may
-      // contain surrounding whitespace even though lookup keys are trimmed.
-      const listing = bySku.get(skus[index]);
+      // Same per-line resolution used above (SKU and/or Shopify variant id).
+      const listing = byLine[index];
       if (!listing) throw new Error("listing mapping missing during item insert");
       const lineItemId = String(item.id);
       if (existingLineItemIds.has(lineItemId)) continue;

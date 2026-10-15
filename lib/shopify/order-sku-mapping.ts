@@ -23,8 +23,9 @@ export function getOrderSkuLookup(skus: string[]): OrderSkuLookup {
   for (const raw of skus) {
     const sku = raw.trim();
     if (!sku) continue;
-    if (sku.startsWith("TRC-")) {
-      const source = sku.slice(4);
+    if (sku.startsWith("TRC-") || sku.startsWith("CJ-")) {
+      const prefixLength = sku.startsWith("TRC-") ? 4 : 3;
+      const source = sku.slice(prefixLength);
       if (source) supplierSources.add(source);
       // The generated SKU falls back to the listing UUID only when no supplier
       // identity exists. Query UUIDs separately because shop_listings.id is UUID.
