@@ -60,11 +60,19 @@ export function evaluateSalesTestGate(input: SalesTestGateInput): SalesTestGateR
   else if (!Number.isFinite(input.shippingCost) || input.shippingCost < 0) reasons.push("shipping_invalid");
   if (input.trackingAvailable !== true) reasons.push("tracking_unknown");
   if (input.apiAvailable !== true) reasons.push("supplier_api_unknown");
-  // Margin is information for the merchant's pricing decision, not a listing
-  // veto. Actual supplier order execution retains its separate safety gates.
-  if (!input.profitCalculable || input.currencyMismatch) warnings.push("profit_unknown");
-  if (input.contributionProfit === null || !Number.isFinite(input.contributionProfit)) warnings.push("profit_amount_unknown");
-  else if (input.contributionProfit <= 0) warnings.push("profit_not_positive");
+  // Publication requires a calculable, positive contribution profit after all
+  // configured costs and fees. Unknown economics must never silently pass.
+  if (!input.profitCalculable || input.currencyMismatch) {
+    reasons.push("profit_not_calculable");
+    warnings.push("profit_unknown");
+  }
+  if (input.contributionProfit === null || !Number.isFinite(input.contributionProfit)) {
+    reasons.push("profit_amount_unknown");
+    warnings.push("profit_amount_unknown");
+  } else if (input.contributionProfit <= 0) {
+    reasons.push("profit_not_positive");
+    warnings.push("profit_not_positive");
+  }
   if (input.priceConfirmed !== undefined && input.priceConfirmed !== true) reasons.push("price_unconfirmed");
   if (input.inventoryConfirmed !== undefined && input.inventoryConfirmed !== true) reasons.push("inventory_unknown");
   if (input.inventory !== undefined && (input.inventory === null || !Number.isFinite(input.inventory) || input.inventory <= 0)) reasons.push("inventory_zero");
@@ -92,8 +100,11 @@ export function verifySalesTestGateInvariants(): { ok: boolean; cases: Array<{ n
     { name: "zero_price_is_blocked", expected: true, actual: invalidPrice.eligible === false && invalidPrice.reasons.includes("selling_price_invalid") },
     { name: "negative_costs_are_blocked", expected: true, actual: invalidEconomics.eligible === false && invalidEconomics.reasons.includes("source_cost_invalid") && invalidEconomics.reasons.includes("shipping_invalid") },
     { name: "gift_card_is_blocked", expected: true, actual: giftCard.eligible === false && giftCard.reasons.includes("non_physical_product") },
-    { name: "unknown_profit_warns_without_blocking_listing", expected: true, actual: unknownProfit.eligible && unknownProfit.warnings.includes("profit_amount_unknown") },
-    { name: "negative_profit_warns_without_blocking_listing", expected: true, actual: negativeProfit.eligible && negativeProfit.warnings.includes("profit_not_positive") },
+    { name: "unknown_profit_is_blocked", expected: true, actual: !unknownProfit.eligible && unknownProfit.reasons.includes("profit_amount_unknown") },
+    { name: "negative_profit_is_blocked", expected: true, actual: !negativeProfit.eligible && negativeProfit.reasons.includes("profit_not_positive") },
+    { name: "zero_profit_is_blocked", expected: true, actual: !evaluateSalesTestGate({ ...supplyReadyInput(), contributionProfit: 0, requireRank: false }).eligible && evaluateSalesTestGate({ ...supplyReadyInput(), contributionProfit: 0, requireRank: false }).reasons.includes("profit_not_positive"),
+    { name: "uncalculable_profit_is_blocked", expected: true, actual: !evaluateSalesTestGate({ ...supplyReadyInput(), profitCalculable: false, requireRank: false }).eligible && evaluateSalesTestGate({ ...supplyReadyInput(), profitCalculable: false, requireRank: false }).reasons.includes("profit_not_calculable"),
+    { name: "currency_mismatch_is_blocked", expected: true, actual: !evaluateSalesTestGate({ ...supplyReadyInput(), currencyMismatch: true, requireRank: false }).eligible && evaluateSalesTestGate({ ...supplyReadyInput(), currencyMismatch: true, requireRank: false }).reasons.includes("profit_not_calculable"),
   ];
   return { ok: cases.every((item) => item.actual === item.expected), cases };
 }

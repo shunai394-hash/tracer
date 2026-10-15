@@ -143,8 +143,8 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
       category: typeof sourceMetadata.category === "string" ? sourceMetadata.category : null,
       query: typeof sourceMetadata.query === "string" ? sourceMetadata.query : null,
     });
-    // Women's relevance is a ranking bonus, not an exclusion rule. Margin is
-    // reported for the merchant's pricing decision, not used as a publication veto.
+    // Women's relevance is a ranking bonus, not an exclusion rule.
+    // Publication requires calculable positive contribution profit after costs and fees.
     // Product identity, Japanese copy and fulfillment evidence remain required.
     if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
     if (!base) reasons.push("product_intelligence_missing"); if (!listing) reasons.push("supplier_listing_missing");
@@ -210,6 +210,9 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const shippingAllowanceUsd = resolveUnknownShippingAllowanceUsd(process.env.TRACER_CJ_UNKNOWN_SHIPPING_ALLOWANCE_USD);
     const shippingEstimated = shippingCost === null && String(listing.supplier ?? "").trim().toLowerCase() === "cj" && Boolean(listing.supplier_product_id) && Boolean(listing.supplier_variant_id) && listing.orderable === true && sourceCurrency === "USD";
     const pricingShippingCost = shippingCost ?? (shippingEstimated ? shippingAllowanceUsd : null);
+    // An allowance can help estimate a draft price, but it is not a supplier quote.
+    // Never publish until actual shipping cost is confirmed.
+    if (shippingEstimated) reasons.push("shipping_cost_estimated_not_confirmed");
     sellingPrice = calculateSupplySellingPriceJpy({
       existingSellingPriceJpy: sellingPrice,
       sourceCost,
@@ -242,10 +245,10 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const gate = evaluateSalesTestGate({ rank: null, title: localizedTitle, sellingPrice, identityLinked: supplierVerifiedIdentity || (listing.identity_status === "linked" && identifierGradeMethods.has(identityMethod)), identityMethod, identityConfidence: nativeCjSupplyIdentity ? 1 : num(listing.identity_confidence), sourceCost, shippingCost: pricingShippingCost, trackingAvailable: listing.tracking_available === true, apiAvailable: listing.api_available === true, profitCalculable: profit.calculable, shippingUnknown: profit.shippingUnknown, contributionProfit: profit.contributionProfit, currencyMismatch: false, priceConfirmed: listing.price_confirmed === true, inventoryConfirmed: listing.inventory_confirmed === true, inventory: num(listing.inventory), orderable: listing.orderable === true, supplierProductId: typeof listing.supplier_product_id === "string" ? listing.supplier_product_id : null, supplierVariantId: typeof listing.supplier_variant_id === "string" ? listing.supplier_variant_id : null, requireRank: false });
     if (!gate.eligible) reasons.push(...gate.reasons);
     // Demand and AI quality scores prioritize the queue; they do not decide
-    // whether an otherwise sellable item can be listed. Publication still
-    // requires Japanese copy, a real image, exact supplier identity, current
-    // stock/orderability/tracking/API evidence. Profit and margin remain visible
-    // as estimates and warnings rather than automatic publication restrictions.
+    // whether an otherwise sellable item can be listed. Publication requires
+    // Japanese copy, a real image, exact supplier identity, current stock,
+    // confirmed shipping, orderability/tracking/API evidence, and positive
+    // calculable contribution profit after fees.
     if (reasons.length) { rejected.push({ productId, reasons: Array.from(new Set(reasons)), title: sourceTitle, masterTitle, category: metadataCategory(base.metadata), supplier: String(listing.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority, sellingPrice, sourceCost, internationalShipping: shippingCost, domesticShippingKnown: nativeCjSupplyIdentity, contributionProfit: profit.contributionProfit, contributionMargin: profit.contributionMargin }); continue; }
 
     const womenBonus = womenProductPriority({ title: typeof base.normalized_title === "string" ? base.normalized_title : "", category: typeof metadata.category === "string" ? metadata.category : null }).bonus;
