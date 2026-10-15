@@ -106,8 +106,12 @@ function isType(record: Record<string, unknown>, expected: string): boolean {
 export type CanonicalVariantMarkupDiagnostics = {
   jsonLdNodeCount: number;
   productGroupCount: number;
+  productModelCount: number;
   groupsWithVariantCount: number;
   variantProductNodeCount: number;
+  isVariantOfProductCount: number;
+  inProductGroupWithIdCount: number;
+  childProductsWithExplicitParentRelation: number;
   absoluteTypeIriCount: number;
 };
 
@@ -135,11 +139,22 @@ export function inspectCanonicalMarketplaceVariantMarkup(html: string): Canonica
     const types = nodeList(node["@type"]);
     return count + types.filter((value) => typeof value === "string" && /^https?:\/\/schema\.org\//i.test(value.trim())).length;
   }, 0);
+  const products = nodes.filter((node) => isType(node, "Product"));
+  const productModelCount = nodes.filter((node) => isType(node, "ProductModel")).length;
+  const isVariantOfProductCount = products.filter((node) => nodeList(node.isVariantOf).length > 0).length;
+  const inProductGroupWithIdCount = products.filter((node) => Boolean(asString(node.inProductGroupWithID))).length;
+  const childProductsWithExplicitParentRelation = products.filter((node) =>
+    nodeList(node.isVariantOf).length > 0 || Boolean(asString(node.inProductGroupWithID)),
+  ).length;
   return {
     jsonLdNodeCount: nodes.length,
     productGroupCount: groups.length,
+    productModelCount,
     groupsWithVariantCount,
     variantProductNodeCount,
+    isVariantOfProductCount,
+    inProductGroupWithIdCount,
+    childProductsWithExplicitParentRelation,
     absoluteTypeIriCount,
   };
 }

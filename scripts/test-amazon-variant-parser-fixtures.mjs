@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  inspectCanonicalMarketplaceVariantMarkup,
   parseAmazonVariationAsinMap,
   parseCanonicalMarketplaceVariantEvidence,
 } from "../lib/market/canonical-variant-evidence.ts";
@@ -113,6 +114,14 @@ assert.equal(groupIdVariants[0].sourceVariantId, "GROUP-ID-CHILD");
 assert.equal(groupIdVariants[0].evidenceSource, "schema_org_product_is_variant_of");
 assert.equal(groupIdVariants[0].rawEvidence.relation, "Product.inProductGroupWithID");
 assert.equal(groupIdVariants[0].rawEvidence.inProductGroupWithID, "GROUP-123");
+const relationDiagnostics = inspectCanonicalMarketplaceVariantMarkup(
+  productModelRelationHtml + productGroupIdHtml,
+);
+assert.equal(relationDiagnostics.productModelCount, 1);
+assert.equal(relationDiagnostics.isVariantOfProductCount, 1);
+assert.equal(relationDiagnostics.inProductGroupWithIdCount, 1);
+assert.equal(relationDiagnostics.childProductsWithExplicitParentRelation, 2);
+
 
 
 

@@ -87,15 +87,23 @@ test("canonical marketplace variant diagnostics", "distinguishes missing Product
   assert.deepEqual(inspectCanonicalMarketplaceVariantMarkup(html), {
     jsonLdNodeCount: 1,
     productGroupCount: 1,
+    productModelCount: 0,
     groupsWithVariantCount: 1,
     variantProductNodeCount: 1,
+    isVariantOfProductCount: 0,
+    inProductGroupWithIdCount: 0,
+    childProductsWithExplicitParentRelation: 0,
     absoluteTypeIriCount: 2,
   });
   assert.deepEqual(inspectCanonicalMarketplaceVariantMarkup("<html></html>"), {
     jsonLdNodeCount: 0,
     productGroupCount: 0,
+    productModelCount: 0,
     groupsWithVariantCount: 0,
     variantProductNodeCount: 0,
+    isVariantOfProductCount: 0,
+    inProductGroupWithIdCount: 0,
+    childProductsWithExplicitParentRelation: 0,
     absoluteTypeIriCount: 0,
   });
 });
