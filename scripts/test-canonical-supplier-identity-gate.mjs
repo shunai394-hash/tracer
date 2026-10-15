@@ -116,7 +116,9 @@ assert.match(baseRepair, /snapshot\.complete/, "incomplete BASE snapshots must n
 assert.match(baseRepair, /\.is\("base_item_id", null\)/, "BASE identity repair must compare-and-set only missing links");
 assert.doesNotMatch(baseRepair, /\.update\(\{[^}]*published\s*:/, "BASE identity repair must not change publication state");
 // Keep Vercel Cron disabled; guarded 15-minute reconciliation runs through GitHub Actions OIDC.
-assert.doesNotMatch(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/);
+assert.match(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/, "unlinked channel reconciliation must run automatically");
+assert.doesNotMatch(vercel, /"path": "\/api\/cron\/(market-sourcing|supplier-investigation|demand-match)"/, "marketplace-derived collection and matching must not run as sourcing jobs");
+assert.match(intelligencePipeline, /marketplace_sourcing_disabled_supplier_native_only/, "patrol must not read marketplace-derived sourcing data");
 assert.match(unpublishWorkflow, /cron: "\*\/15 \* \* \* \*"/, "guarded unlinked listing reconciliation must retry every 15 minutes via GitHub Actions");
 assert.match(unpublishWorkflow, /api\/cron\/unpublish-unlinked/);
 assert.match(unpublishWorkflow, /id-token: write/);
