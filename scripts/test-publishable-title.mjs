@@ -35,6 +35,19 @@ for (const [name, title, expected] of cases) {
 assert.equal(localizeProductTitle("Simple Oil Wax Leather Messenger Shoulder Bags Women's High Capacity Portable Tote Bag"), "レディース ショルダーバッグ");
 assert.equal(localizeProductTitle("Portable Cosmetic Bag Waterproof Divider Multi-grid Pockets Toiletry Bags Travel Storage Handbags Women Make Up Bag"), "仕切り付き コスメポーチ");
 assert.equal(localizeProductTitle("Fashion And Nature Phoera Eyebrow Cream 6 Colors (Fashion And Nature Phoera Eyebrow Cream 6 Colors 01Blonde)"), "PHOERA アイブロウクリーム 01 ブロンド");
+assert.equal(localizeProductTitle("Ceramic Ashtray Home Bedroom Dormitory Office"), "セラミック製 卓上灰皿");
+assert.equal(localizeProductTitle("BathroomMobile Phone Box WaterproofStand Toilet Storage Artifact Toilet Bath Rack Kitchen Chase Drama Watching TV"), "防水ケース付き バスルーム用スマホホルダー");
+assert.equal(localizeProductTitle("Suitable For Creative New Envelopes Diagonally Across Huawei P40pro Mobile Phone Shell Mate30 Acrylic Nova5 Protective Sleeve"), "Huawei対応 アクリルスマホケース");
+assert.equal(localizeProductTitle("Compatible WithApple, Suitable ForApple 12 Tempered Glass FilmIPhone11ProMax Full Screen Coverage Xs Mobile Phone Film 7,8Plus"), "iPhone用 強化ガラス保護フィルム");
+for (const source of [
+  "Ceramic Ashtray Home Bedroom Dormitory Office",
+  "BathroomMobile Phone Box WaterproofStand Toilet Storage Artifact Toilet Bath Rack Kitchen Chase Drama Watching TV",
+  "Suitable For Creative New Envelopes Diagonally Across Huawei P40pro Mobile Phone Shell Mate30 Acrylic Nova5 Protective Sleeve",
+  "Compatible WithApple, Suitable ForApple 12 Tempered Glass FilmIPhone11ProMax Full Screen Coverage Xs Mobile Phone Film 7,8Plus",
+]) {
+  assert.equal(isPublishableCatalogTitle(localizeProductTitle(source)), true, source);
+  assert.equal(isPublishableCatalogDescription(localizeProductDescription(source)), true, source);
+}
 assert.equal(localizeProductTitle("Bohemian Beach Vacation Flower Hair Clip For Women Fashion Girl Accessories Gift"), "フラワーモチーフ ヘアクリップ");
 assert.equal(localizeProductTitle("Groin Electric Clippers Household Hair Clipper (Groin Electric Clippers Household Hair Clipper Black Cutter head)"), "デリケートゾーン用 電動トリマー");
 assert.equal(localizeProductTitle("Art Design Graffiti Art Hip Hop African Girl with Black Hair Big Earring with Modern Building Shower Curtain for Bathroom Decor"), "アフリカンアート柄 シャワーカーテン");
