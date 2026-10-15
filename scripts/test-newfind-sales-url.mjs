@@ -29,6 +29,8 @@ assert.match(reconcile, /\.select\("id, title, slug, bestseller_id, published, p
 
 assert.match(source, /const productUrl = tracerUrl/);
 assert.match(source, /const tracerResolution = await resolveLiveTracerUrl/);
+assert.match(source, /listing\.shopify_sync_status !== "synced" \|\| !listing\.shopify_product_id \|\| !listing\.shopify_variant_id \|\| !listing\.shopify_handle/, "NEWFIND delivery must require a live Shopify product and variant");
+assert.match(source, /detail: "shopify_listing_not_live"/, "unsynced products must be deferred before creating delivery rows");
 assert.doesNotMatch(source, /const vercel = process\\.env\\.VERCEL_PROJECT_PRODUCTION_URL/,
   "NEWFIND liveness checks must use the canonical storefront origin, not a deployment-specific hostname");
 assert.match(source, /retryRejectedSchemaEvent/,
