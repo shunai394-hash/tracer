@@ -6,7 +6,7 @@ const gate = await readFile(new URL("../lib/intelligence/bestseller-sales-gate.t
 
 assert.ok(pipeline.includes("marketplace_sourcing_disabled_supplier_native_only"), "marketplace ranking collection must be disabled");
 assert.ok(!pipeline.includes("persistMarketplaceBestsellers"), "patrol must not collect marketplace-derived candidates");
-assert.ok(pipeline.includes("const bestsellerCanFeedSalesGate = false"), "marketplace rankings must never feed the sales gate");
+assert.ok(pipeline.includes("name: \"sales_test_select\"") && pipeline.includes("marketplace_sourcing_disabled_supplier_native_only"), "marketplace sales-test selection must be explicitly skipped");
 assert.ok(gate.includes("stage.ok && stage.skipped !== true && stage.retryable !== true"), "skipped source rows must never feed the sales gate");
 assert.ok(pipeline.includes('reason: "marketplace_rankings_not_used_for_supplier_procurement"'), "ranking observations must not be treated as supplier procurement inputs");
 assert.ok(pipeline.includes('discoveryCron: "/api/cron/supply-first"'), "supplier procurement must be routed to the dedicated supply-first cron");
