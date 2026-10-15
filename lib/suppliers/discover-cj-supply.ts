@@ -352,11 +352,11 @@ export async function discoverAndCreateCjSupply(
     verificationError: String(row.verification_error ?? "").trim(),
   }));
 
-  // Reserve most of the invocation budget for NEW catalog discovery. A
-  // failed seeded refresh previously did not increment `verified`, so the
-  // loop could spend the entire deadline on repeated failures and never reach
-  // the priority query cursor. Count attempts separately from successes.
-  const seededVerificationLimit = Math.min(1, Math.max(0, limit));
+  // Refresh a small bounded batch of existing due variants first so stale
+  // orderable supply does not get starved by new-catalog discovery. Count
+  // attempts separately from successes, then reserve the remaining limit for
+  // new catalog candidates.
+  const seededVerificationLimit = Math.min(5, Math.max(0, limit));
   let seededChecked = 0;
   for (const seededCandidate of candidateInputs) {
     if (seededChecked >= seededVerificationLimit) break;
@@ -429,8 +429,8 @@ export async function discoverAndCreateCjSupply(
         });
         continue;
       }
-      // Verify the exact live CJ product/variant pair before trusting stored
-      // cost or stock observations. A stale variant ID is not identity proof.
+      // Confirm that this exact variant still belongs to the exact CJ product.
+      // A stale persisted variant ID must never be treated as live identity proof.
       const seededVariants = await fetchCJProductVariants(candidate.id, { countryCode: "JP" });
       const seededVariant = seededVariants.find((item) => item.vid === candidate.variantId);
       if (!seededVariant) {
@@ -443,6 +443,8 @@ export async function discoverAndCreateCjSupply(
         items.push({ rejectedStage: "supplier_variant_not_in_live_product", supplierProductId: candidate.id, supplierVariantId: candidate.variantId });
         continue;
       }
+      // Price must come from the live exact-variant response, not the stale
+      // supplier-listing/cache price. Stock and Japan freight are rechecked too.
       const liveCost = Number(seededVariant.sellPrice);
       if (!Number.isFinite(liveCost) || liveCost <= 0) {
         rejected++;
@@ -481,12 +483,6 @@ export async function discoverAndCreateCjSupply(
         continue;
       }
       const cost = liveCost;
-      if (!Number.isFinite(cost) || cost <= 0) {
-        rejected++;
-        if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: "cost_unavailable", attempts: seededCandidate.attempts });
-        items.push({ rejectedStage: "cost_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, cost });
-        continue;
-      }
       const salePrice = yenPrice(cost, freight, fxRate);
       const variantBarcode = typeof seededVariant.barcode === "string" ? seededVariant.barcode : null;
       const displayTitle = localizeProductTitle(detail.title, query);
@@ -617,6 +613,8 @@ export async function discoverAndCreateCjSupply(
     }
   }
 
+  const catalogDiscoveryLimit = Math.max(0, limit - seededChecked);
+
   // Seeded verification is only one source of candidates. If all seeded
   // variants fail live Japan-freight verification, continue into the live CJ
   // catalog instead of stopping with zero new products.
@@ -628,7 +626,7 @@ export async function discoverAndCreateCjSupply(
   let page = cursor.page;
   let pagesScanned = 0;
   const seenSearchProducts = new Set<string>();
-  while (!cjQuotaBlocked && catalogDiscovered < limit && pagesScanned < queries.length * 2) {
+  while (!cjQuotaBlocked && catalogDiscovered < catalogDiscoveryLimit && pagesScanned < queries.length * 2) {
     if (Date.now() >= deadlineAt) {
       deadlineReached = true;
       break;
@@ -657,7 +655,7 @@ export async function discoverAndCreateCjSupply(
     const pageNumber = page;
     let pageCompleted = true;
     for (const candidate of search.products.map((x) => ({ ...x, variantId: null as string | null }))) {
-      if (catalogDiscovered >= limit || Date.now() >= deadlineAt) {
+      if (catalogDiscovered >= catalogDiscoveryLimit || Date.now() >= deadlineAt) {
         if (Date.now() >= deadlineAt) deadlineReached = true;
         pageCompleted = false;
         break;
@@ -792,6 +790,7 @@ export async function discoverAndCreateCjSupply(
               price_confirmed: true,
               inventory_confirmed: true,
               tracking_available: false,
+              next_verification_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
               fetched_at: now,
               metadata: {
                 source: "cj_supply_first",
