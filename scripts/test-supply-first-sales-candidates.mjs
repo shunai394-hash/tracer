@@ -58,6 +58,9 @@ assert.match(japaneseProduct, /knitted headband.*women/i);
 assert.match(japaneseProduct, /柔らかなニット素材のクロスヘアバンドです/);
 
 const patrolSchedules = vercel.crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule);
-assert.deepEqual(patrolSchedules, ["*/5 * * * *"], "AI patrol must run every five minutes; do not silently reduce it to daily checks");
+assert.deepEqual(patrolSchedules, ["*/5 * * * *"], "the existing Vercel AI patrol must remain every five minutes");
+const githubPatrolWorkflow = readFileSync(".github/workflows/tracer-production-patrol-15m.yml", "utf8");
+assert.doesNotMatch(githubPatrolWorkflow, /^\s{2}schedule:/m, "GitHub Actions must not schedule a second production patrol that races the Vercel Cron");
+assert.match(githubPatrolWorkflow, /if: github\.event_name == 'workflow_dispatch'/, "manual production patrol remains available");
 
 console.log("Supply-first candidate selection contract passed.");
