@@ -4,7 +4,7 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { runCJSandboxOrderLifecycle } from "@/lib/procurement/cj-adapter";
 
 export const runtime = "nodejs";
-export const maxDuration = 90;
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "SUPPLIER_LISTING_LOOKUP_FAILED" }, { status: 500 });
   }
   const lastVerifiedAt = listing?.last_verified_at ? Date.parse(String(listing.last_verified_at)) : Number.NaN;
-  const fresh = Number.isFinite(lastVerifiedAt) && lastVerifiedAt >= Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const fresh = Number.isFinite(lastVerifiedAt) && lastVerifiedAt >= Date.now() - 7 * 24 * 60 * 60 * 1000 && lastVerifiedAt <= Date.now() + 5 * 60 * 1000;
   if (
     !listing ||
     listing.supplier !== "cj" ||
