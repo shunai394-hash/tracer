@@ -59,10 +59,10 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   // re-published by the next supply-first pass just because its old quote still
   // looks profitable. Only a separate verification workflow may clear this hold.
   const { data: heldRows, error: heldRowsError } = await supabase
-    .from("shop_listings")
+    .from("supplier_listings")
     .select("product_id")
     .in("product_id", uniqueProductIds)
-    .eq("pipeline_reason", "supplier_inventory_reverification_required");
+    .eq("verification_error", "storefront_stock_cap_deploy_pending");
   if (heldRowsError) throw new Error(heldRowsError.message);
   const heldProductIds = new Set((heldRows ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean));
   const { data: intelligenceRows, error: intelligenceError } = await supabase.from("opportunity_intelligence").select("product_id,demand_score,search_fit_score,market_gap_score,competition_score,creative_score,selection_score,overall_confidence,selection_eligible,sellability_state,filter_state,profit_state,recommendation_summary,why_now").in("product_id", uniqueProductIds);
