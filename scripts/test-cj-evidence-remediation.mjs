@@ -34,6 +34,10 @@ const checks = [
 for (const [name, pattern] of checks) assert.match(source, pattern, name);
 assert.match(identitySource, /const freshVariantBarcode = args\.variantBarcode\?\.trim\(\) \|\| null/, "CJ persistence must reuse the exact variant barcode supplied by live discovery, without an extra provider call");
 assert.match(identitySource, /export async function resolveMarketplaceIdentityWithFreshBarcode/);
+assert.match(identitySource, /fetchCJVariantByVid\(args\.supplierVariantId\)/, "read exact variant first to reuse SKU, cost and barcode in one CJ API request");
+assert.ok(identitySource.indexOf("fetchCJVariantByVid(args.supplierVariantId)") < identitySource.indexOf("fetchCJProductVariants(args.supplierProductId"), "product-wide variant lookup is only a fallback");
+assert.match(source, /variantDetails: freshVariantDetails/);
+assert.match(source, /variantDetails = variantDetails \?\? await fetchCJVariantByVid/);
 assert.match(identitySource, /const freshBarcode = await readSupplierBarcode\(args\)[\s\S]{0,180}resolveMarketplaceIdentityFromBarcode\(args, freshBarcode\)/);
 assert.doesNotMatch(source, /readPersistableBarcode|fetchCJProductVariants/, "one exact-variant lookup per row avoids duplicate CJ API quota consumption");
 assert.match(identitySource, /variant_barcode: freshVariantBarcode/, "persisted metadata must retain the supplier-native variant barcode");
