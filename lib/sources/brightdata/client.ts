@@ -51,7 +51,7 @@ function normalizeText(value: unknown): string {
   if (typeof value !== "string") return "";
   return repairMojibakeText(value)
     .replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;/gi, "'")
-    .replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/\\s+/g, " ").trim();
+    .replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/\s+/g, " ").trim();
 }
 
 function normalizeUrl(value: unknown): string | null {
@@ -88,7 +88,7 @@ function normalizeCurrency(explicitValue: unknown, rawPrice: unknown): string | 
     : rawPrice && typeof rawPrice === "object" && !Array.isArray(rawPrice)
       ? String((rawPrice as Record<string, unknown>).text ?? (rawPrice as Record<string, unknown>).formatted ?? "")
       : "";
-  const codeMatch = priceText.match(/\\b(JPY|USD|EUR|GBP|CNY|CAD|AUD|KRW|TWD|HKD|SGD|INR)\\b/i);
+  const codeMatch = priceText.match(/\b(JPY|USD|EUR|GBP|CNY|CAD|AUD|KRW|TWD|HKD|SGD|INR)\b/i);
   if (codeMatch && SUPPORTED_CURRENCIES.has(codeMatch[1].toUpperCase())) return codeMatch[1].toUpperCase();
   if (/[¥￥]/.test(priceText)) return "JPY";
   if (/€/.test(priceText)) return "EUR";
