@@ -352,11 +352,11 @@ export async function discoverAndCreateCjSupply(
     verificationError: String(row.verification_error ?? "").trim(),
   }));
 
-  // Reserve most of the invocation budget for NEW catalog discovery. A
-  // failed seeded refresh previously did not increment `verified`, so the
-  // loop could spend the entire deadline on repeated failures and never reach
-  // the priority query cursor. Count attempts separately from successes.
-  const seededVerificationLimit = Math.min(1, Math.max(0, limit));
+  // Refresh a small bounded batch of existing due variants first so stale
+  // orderable supply does not get starved by new-catalog discovery. Count
+  // attempts separately from successes, then reserve the remaining limit for
+  // new catalog candidates.
+  const seededVerificationLimit = Math.min(5, Math.max(0, limit));
   let seededChecked = 0;
   for (const seededCandidate of candidateInputs) {
     if (seededChecked >= seededVerificationLimit) break;
@@ -625,10 +625,11 @@ export async function discoverAndCreateCjSupply(
   // ~100 products and discovery never advanced.
   const cursor = await readCatalogCursor(db);
   let queryIndex = cursor.queryIndex % queries.length;
+  const catalogDiscoveryLimit = Math.max(0, limit - seededChecked);
   let page = cursor.page;
   let pagesScanned = 0;
   const seenSearchProducts = new Set<string>();
-  while (!cjQuotaBlocked && catalogDiscovered < limit && pagesScanned < queries.length * 2) {
+  while (!cjQuotaBlocked && catalogDiscovered < catalogDiscoveryLimit && pagesScanned < queries.length * 2) {
     if (Date.now() >= deadlineAt) {
       deadlineReached = true;
       break;
@@ -657,7 +658,7 @@ export async function discoverAndCreateCjSupply(
     const pageNumber = page;
     let pageCompleted = true;
     for (const candidate of search.products.map((x) => ({ ...x, variantId: null as string | null }))) {
-      if (catalogDiscovered >= limit || Date.now() >= deadlineAt) {
+      if (catalogDiscovered >= catalogDiscoveryLimit || Date.now() >= deadlineAt) {
         if (Date.now() >= deadlineAt) deadlineReached = true;
         pageCompleted = false;
         break;
