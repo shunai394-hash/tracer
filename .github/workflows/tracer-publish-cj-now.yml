@@ -46,6 +46,21 @@ jobs:
             exit 0
           fi
 
+          echo "=== SUPPLIER-NATIVE DISCOVERY (PRIMARY PATH) ==="
+          curl -sSf --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/supply-first" > supply-first.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open("supply-first.json"))
+          s=d.get("supplyFirst") or {}
+          print(json.dumps({
+            "ok":d.get("ok"), "skipped":d.get("skipped"), "reason":d.get("reason") or s.get("reason"),
+            "retryable":s.get("retryable"), "candidateCount":s.get("candidateCount"),
+            "discovered":s.get("discovered"), "verified":s.get("verified"),
+            "published":s.get("published"), "items":len(s.get("items") or []),
+            "opportunityIntelligence":d.get("opportunityIntelligence")
+          },ensure_ascii=False,indent=2))
+          PY
+
           echo "=== CJ IDENTITY RECOVERY ==="
           for i in 1 2 3 4 5 6; do
             echo "--- reverify batch $i/6 ---"
