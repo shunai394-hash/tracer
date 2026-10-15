@@ -71,6 +71,8 @@ assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/orosy-bulk
 assert.doesNotMatch(commerceCycle, /orosy-bulk-import/, "autonomous commerce workflow must not invoke Orosy");
 assert.doesNotMatch(oneShotRecovery, /orosy-bulk-import/, "one-shot recovery must not invoke Orosy");
 
+const supplyFirstSchedules = vercel.crons.filter((job) => job.path === "/api/cron/supply-first").map((job) => job.schedule);
+assert.deepEqual(supplyFirstSchedules, ["0 */6 * * *"], "CJ supply discovery must run four times daily to steadily grow the catalog without an unbounded high-frequency loop");
 const patrolSchedules = vercel.crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule);
 assert.deepEqual(patrolSchedules, ["*/5 * * * *"], "the existing Vercel AI patrol must remain every five minutes");
 const githubPatrolWorkflow = readFileSync(".github/workflows/tracer-production-patrol-15m.yml", "utf8");
