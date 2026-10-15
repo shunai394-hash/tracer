@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { recordTracerV2Stage, type TracerV2ProductState } from "../lib/tracer-v2/pipeline-contract.ts";
+import { recordTracerV2Stage } from "../lib/tracer-v2/pipeline-contract.ts";
 
-let state: TracerV2ProductState = { productKey: "fixture-product", records: [] };
-const add = (record: Parameters<typeof recordTracerV2Stage>[1]) => {
+let state = { productKey: "fixture-product", records: [] };
+const add = (record) => {
   const result = recordTracerV2Stage(state, record);
   assert.equal(result.ok, true, result.reason);
   state = result.state;
