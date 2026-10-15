@@ -1,0 +1,72 @@
+name: Bright Data MCP Product Collection Smoke
+
+on:
+  # One bounded production smoke on merge proves the configured MCP is invoked
+  # and persists demand observations. It never publishes products or places orders.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tracer-brightdata-ingest-once.yml"
+  workflow_dispatch:
+    inputs:
+      query:
+        description: "Demand research query (not a supplier or publication source)"
+        required: true
+        default: "レディース バッグ 人気"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tracer-brightdata-ingest-once
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Run one authenticated Bright Data MCP collection
+        shell: bash
+        env:
+          QUERY: ${{ inputs.query || 'レディース バッグ 人気' }}
+        run: |
+          set -euo pipefail
+          BASE="https://tracer-pied-alpha.vercel.app"
+          OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app"
+          OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${OIDC_URL}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          test -n "$OIDC_TOKEN"
+          # Wait for the production alias to finish switching to the merged build.
+          sleep 45
+          python3 -c 'import json,os; print(json.dumps({"query": os.environ["QUERY"]}, ensure_ascii=False))' > request.json
+          curl --fail-with-body --silent --show-error --max-time 120 \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @request.json \
+            "$BASE/api/intelligence/brightdata-ingest" > response.json
+          python3 - <<'PY'
+          import json
+          d = json.load(open("response.json", encoding="utf-8"))
+          p = d.get("persisted") or {}
+          print(json.dumps({
+            "ok": d.get("ok"),
+            "query": d.get("query"),
+            "provider": d.get("provider"),
+            "fetched": d.get("fetched"),
+            "accepted": d.get("accepted"),
+            "productsCreated": p.get("productsCreated"),
+            "productsReused": p.get("productsReused"),
+            "observationsCreated": p.get("observationsCreated"),
+            "pricesCreated": p.get("pricesCreated"),
+            "offersCreated": p.get("offersCreated"),
+          }, ensure_ascii=False))
+          if d.get("ok") is not True:
+            raise SystemExit("Bright Data ingest did not return ok=true")
+          if d.get("provider") != "brightdata_mcp":
+            raise SystemExit("Expected a real Bright Data MCP call; another provider was reported")
+          if not isinstance(d.get("accepted"), int) or not 1 <= d["accepted"] <= 30:
+            raise SystemExit("Expected the new bounded ingest route to accept between 1 and 30 candidates")
+          if not isinstance(p.get("observationsCreated"), int) or p["observationsCreated"] < 1:
+            raise SystemExit("MCP returned no persisted demand observations")
+          PY
