@@ -50,7 +50,7 @@ export async function POST(request: Request) {
   // price, stock and Japan-freight checks before creating a sandbox-only order.
   const { data: listing, error } = await db
     .from("supplier_listings")
-    .select("id,supplier,supplier_product_id,supplier_variant_id,configured")
+    .select("id,supplier,supplier_product_id,supplier_variant_id,configured,metadata")
     .eq("id", supplierListingId)
     .maybeSingle();
 
@@ -121,6 +121,32 @@ export async function POST(request: Request) {
       shippingCustomerName: "TRACER SANDBOX TEST",
       email: "sandbox-test@example.invalid",
     });
+    const sandboxVerifiedAt = new Date().toISOString();
+    const existingListingMetadata = listing.metadata && typeof listing.metadata === "object" && !Array.isArray(listing.metadata)
+      ? listing.metadata as Record<string, unknown>
+      : {};
+    const { error: listingEvidenceWriteError } = await db.from("supplier_listings").update({
+      metadata: {
+        ...existingListingMetadata,
+        cj_sandbox_order_path_verified_at: sandboxVerifiedAt,
+        cj_sandbox_order_path_evidence: {
+          supplierOrderId: result.supplierOrderId,
+          supplierProductId: result.verifiedSupplierProductId,
+          supplierVariantId: result.verifiedSupplierVariantId,
+          unitCostUsd: result.verifiedUnitCostUsd,
+          shippingCostUsd: result.verifiedShippingCostUsd,
+          inventory: result.verifiedInventory,
+          supplierStatus: result.status,
+          paymentConfirmed: result.paymentConfirmed,
+          trackingNumberPresent: Boolean(result.trackingNumber.trim()),
+          sandbox: true,
+          charged: false,
+          realFulfillment: false,
+        },
+      },
+    }).eq("id", supplierListingId);
+    if (listingEvidenceWriteError) throw new Error("CJ_SANDBOX_LISTING_EVIDENCE_WRITE_FAILED");
+
     const auditMetadata = {
       phase: "cj_sandbox_order_lifecycle",
       supplierListingId,
