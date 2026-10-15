@@ -58,6 +58,14 @@ assert.match(selector, /isPublishableCatalogDescription\(localizedDescription\)/
 assert.match(selector, /if \(!publishableDescription\)/);
 assert.match(japaneseProduct, /knitted headband.*women/i);
 assert.match(japaneseProduct, /柔らかなニット素材のクロスヘアバンドです/);
+const discovery = readFileSync("lib/suppliers/discover-cj-supply.ts", "utf8");
+assert.match(discovery, /women hobo bag/);
+assert.match(discovery, /electric face cleansing brush/);
+assert.match(discovery, /hair pins women/);
+assert.match(discovery, /supply-first-catalog-cursor-v3/, "query-order changes must reset the persisted discovery cursor");
+assert.match(selector, /query: typeof sourceMetadata\.query/);
+assert.match(selector, /query: typeof metadataA\.query/);
+assert.match(selector, /query: typeof metadataB\.query/);
 
 assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/orosy-bulk-import"), [], "Orosy sourcing must stay disabled");
 assert.doesNotMatch(commerceCycle, /orosy-bulk-import/, "autonomous commerce workflow must not invoke Orosy");
