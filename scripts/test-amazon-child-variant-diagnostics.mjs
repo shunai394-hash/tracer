@@ -27,8 +27,8 @@ assert.match(collector, /child_detail_has_barcode: hasBarcode/, "child-page barc
 assert.doesNotMatch(collector, /if \(!jan && !gtin && !ean && !upc\) return null/,
   "ASIN-only child evidence must still be persisted; barcode is a separate supplier-linking gate");
 assert.ok(cron.includes('reason: "observation_only"'), "marketplace collection must not publish ranking products or place orders");
-assert.ok(collector.indexOf('source: "amazon_bestsellers_beauty"') < collector.indexOf('source: "amazon_bestsellers_fashion"'), "beauty tool demand evidence must be collected first");
-assert.ok(collector.indexOf('source: "amazon_bestsellers_fashion"') < collector.indexOf('source: "rakuten_ranking"') && collector.indexOf('source: "amazon_bestsellers_fashion"') < collector.indexOf('source: "yahoo_shopping_ranking"'), "fashion and bag variant evidence must be collected before broad marketplace rankings");
+const activeSourceBlock = collector.match(/export const MARKETPLACE_SOURCES = \[([\s\S]*?)\] as const;/)?.[1] ?? "";\nassert.match(activeSourceBlock, /marketplace: "yahoo_shopping"/, "Yahoo! Shopping must remain available for demand research");
+assert.doesNotMatch(activeSourceBlock, /amazon\.co\.jp|rakuten\.co\.jp|marketplace: "rakuten"/, "Amazon and Rakuten must not be fetched by the active market-observation source list");\nassert.equal((activeSourceBlock.match(/marketplace:/g) ?? []).length, 1, "only Yahoo demand research may run in marketplace observation");
 assert.ok(vercel.crons.some((entry) => entry.path === "/api/cron/market-sourcing" && entry.schedule === "*/15 * * * *"),
   "market-sourcing must run on a schedule instead of remaining an unreachable route");
 
