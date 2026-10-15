@@ -102,6 +102,7 @@ export async function GET(request: Request) {
               mappingAudit.visibleItemsMatchedToDatabase += 1;
               const supplierId = directMatches[0].supplier_listing_id;
               if (!supplierId || !linkedSupplierIds.has(supplierId)) mappingAudit.visibleItemsUnlinked += 1;
+              else mappingAudit.visibleItemsLinked += 1;
               continue;
             }
 
@@ -120,6 +121,7 @@ export async function GET(request: Request) {
             }
             const supplierId = stableMatch.supplier_listing_id;
             if (!supplierId || !linkedSupplierIds.has(supplierId)) mappingAudit.visibleItemsUnlinked += 1;
+            else mappingAudit.visibleItemsLinked += 1;
           }
           mappingAudit.ok = mappingAudit.itemIdMissingCount === 0
             && mappingAudit.visibleItemsWithoutDbMapping === 0
