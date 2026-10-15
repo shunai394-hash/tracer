@@ -67,12 +67,7 @@ jobs:
           print(json.dumps(d, ensure_ascii=False, indent=2)[:30000])
           PY
 
-          # This schedule is a one-time retry after the persisted CJ API cooldown expires on 2026-10-15 UTC.
-          # Keep later annual schedule matches as no-ops; the manual/push path remains usable.
-          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] && ! { [ "$schedule_date" = "2026-10-16" ] && [ "$schedule_hour" -lt 1 ]; }; then
-            echo "One-time post-cooldown retry window has passed; skipping."
-            exit 0
-          fi
+          # The schedule-window guard above is checked once at job start. Do not re-check after the bounded reverify loop, which may cross into the next UTC hour.
 
           echo "=== SALES TEST PUBLICATION ==="
           curl -sSf --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/sales-test-publication" > sales.json
