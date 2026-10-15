@@ -17,6 +17,16 @@ test("resolves generated TRC SKU by supplier variant ID", () => {
   if (resolved.ok) assert.equal(resolved.bySku.get(sku)?.id, listing.id);
 });
 
+test("resolves legacy CJ SKU by exact supplier variant ID", () => {
+  const listing = { id: "11111111-1111-4111-8111-111111111111", supplier_variant_id: "variant-42", supplier_product_id: "product-7" };
+  assert.deepEqual(getOrderSkuLookup(["CJ-variant-42"]).supplierSources, ["variant-42"]);
+  const resolved = resolveShopifyOrderSkus(["CJ-variant-42"], [listing]);
+  assert.equal(resolved.ok, true);
+  if (resolved.ok) assert.equal(resolved.bySku.get("CJ-variant-42")?.id, listing.id);
+  assert.equal(resolveShopifyOrderSkus(["CJ-product-7"], [listing]).ok, false,
+    "CJ SKU must not silently map a product ID when a variant ID is required");
+});
+
 test("resolves SKU fallback to supplier product ID", () => {
   const listing = { id: "11111111-1111-4111-8111-111111111111", supplier_variant_id: null, supplier_product_id: "product-7" };
   const sku = tracerSkuForListing(listing);
@@ -31,6 +41,17 @@ test("resolves SKU fallback to listing ID and supports legacy raw listing ID", (
   assert.deepEqual(getOrderSkuLookup([generated]).legacyListingIds, [listing.id]);
   assert.equal(resolveShopifyOrderSkus([generated], [listing]).ok, true);
   assert.equal(resolveShopifyOrderSkus([listing.id], [listing]).ok, true);
+});
+
+test("resolves multiple distinct order lines and trims webhook SKU whitespace", () => {
+  const a = { id: "listing-a", supplier_variant_id: "variant-a", supplier_product_id: "product-a" };
+  const b = { id: "listing-b", supplier_variant_id: "variant-b", supplier_product_id: "product-b" };
+  const resolved = resolveShopifyOrderSkus([" TRC-variant-a ", "CJ-variant-b"], [a, b]);
+  assert.equal(resolved.ok, true);
+  if (resolved.ok) {
+    assert.equal(resolved.bySku.get("TRC-variant-a")?.id, "listing-a");
+    assert.equal(resolved.bySku.get("CJ-variant-b")?.id, "listing-b");
+  }
 });
 
 test("fails closed for missing and ambiguous exact SKU mappings", () => {
