@@ -311,6 +311,11 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
   let inProductGroupWithIdCount = 0;
   let childProductsWithExplicitParentRelation = 0;
   let absoluteTypeIriCount = 0;
+  let jsonLdScriptTagCount = 0;
+  let jsonLdParseFailureCount = 0;
+  let variationMapMarkerCount = 0;
+  let dimensionToAsinMapMarkerCount = 0;
+  let twisterDataMarkerCount = 0;
   let variationAsinsFound = 0;
   let childDetailAttempted = 0;
   let childDetailFetched = 0;
@@ -336,6 +341,11 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
       inProductGroupWithIdCount += markup.inProductGroupWithIdCount;
       childProductsWithExplicitParentRelation += markup.childProductsWithExplicitParentRelation;
       absoluteTypeIriCount += markup.absoluteTypeIriCount;
+      jsonLdScriptTagCount += markup.jsonLdScriptTagCount;
+      jsonLdParseFailureCount += markup.jsonLdParseFailureCount;
+      variationMapMarkerCount += markup.variationMapMarkerCount;
+      dimensionToAsinMapMarkerCount += markup.dimensionToAsinMapMarkerCount;
+      twisterDataMarkerCount += markup.twisterDataMarkerCount;
       item.canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl);
 
       if (marketplace.marketplace === "amazon.co.jp") {
@@ -472,6 +482,11 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
       inProductGroupWithIdCount,
       childProductsWithExplicitParentRelation,
       absoluteTypeIriCount,
+      jsonLdScriptTagCount,
+      jsonLdParseFailureCount,
+      variationMapMarkerCount,
+      dimensionToAsinMapMarkerCount,
+      twisterDataMarkerCount,
       variationAsinsFound,
       childDetailAttempted,
       childDetailFetched,
