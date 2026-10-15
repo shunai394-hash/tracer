@@ -93,11 +93,46 @@ export async function POST(request: Request) {
 
     if (!complete) throw new Error("TRACER_LISTINGS_SCAN_INCOMPLETE");
 
+    // Compare BASE's existing identifier field against exact TRACER/CJ identifiers
+    // and SKU evidence. This is read-only; candidates are never auto-mapped here.
+    const supplierListingIds = [...new Set(listings.map((row) => String(row.supplier_listing_id ?? "")).filter(Boolean))];
+    const supplierEvidence = new Map<string, { sku: string | null; cjVariantId: string | null }>();
+    for (let offset = 0; offset < supplierListingIds.length; offset += 100) {
+      const batch = supplierListingIds.slice(offset, offset + 100);
+      const { data, error } = await db
+        .from("supplier_listings")
+        .select("id,sku,cj_variant_id")
+        .in("id", batch);
+      if (error) throw new Error("TRACER_SUPPLIER_IDENTIFIER_READ_FAILED");
+      for (const row of data ?? []) {
+        supplierEvidence.set(String(row.id), {
+          sku: text(row.sku),
+          cjVariantId: text(row.cj_variant_id),
+        });
+      }
+    }
+
+    const identifierKey = (value: unknown): string => String(value ?? "").normalize("NFKC").trim().toLocaleLowerCase("en-US");
+    const bySupplierIdentifier = new Map<string, ListingRow[]>();
+    const addSupplierIdentifier = (value: unknown, listing: ListingRow) => {
+      const key = identifierKey(value);
+      if (!key) return;
+      const group = bySupplierIdentifier.get(key) ?? [];
+      if (!group.some((row) => row.id === listing.id)) group.push(listing);
+      bySupplierIdentifier.set(key, group);
+    };
+
     const byBaseId = new Map<string, ListingRow[]>();
     const byTitle = new Map<string, ListingRow[]>();
     const byListingId = new Map<string, ListingRow>();
     for (const listing of listings) {
       byListingId.set(String(listing.id).toLowerCase(), listing);
+      addSupplierIdentifier(listing.supplier_listing_id, listing);
+      addSupplierIdentifier(listing.supplier_product_id, listing);
+      addSupplierIdentifier(listing.supplier_variant_id, listing);
+      const evidence = supplierEvidence.get(String(listing.supplier_listing_id ?? ""));
+      addSupplierIdentifier(evidence?.cjVariantId, listing);
+      addSupplierIdentifier(evidence?.sku, listing);
       const baseId = String(listing.base_item_id ?? "").trim();
       if (baseId) {
         const group = byBaseId.get(baseId) ?? [];
@@ -120,6 +155,9 @@ export async function POST(request: Request) {
       const stableIdentifierMatch = identifier?.match(/^TRC-([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i);
       const stableIdentifierListingId = stableIdentifierMatch?.[1]?.toLowerCase() ?? null;
       const stableIdentifierListing = stableIdentifierListingId ? byListingId.get(stableIdentifierListingId) ?? null : null;
+      const supplierIdentifierCandidates = identifier && !stableIdentifierListingId
+        ? (bySupplierIdentifier.get(identifierKey(identifier)) ?? [])
+        : [];
       const exactIdListings = byBaseId.get(baseItemId) ?? [];
       const titleCandidates = key ? (byTitle.get(key) ?? []) : [];
       return {
@@ -140,6 +178,21 @@ export async function POST(request: Request) {
           sellingPrice: stableIdentifierListing.selling_price,
           basePublicationStatus: stableIdentifierListing.base_publication_status,
         }] : [],
+        exactSupplierIdentifierMatchCount: supplierIdentifierCandidates.length,
+        exactSupplierIdentifierMatches: supplierIdentifierCandidates.slice(0, 20).map((row) => ({
+          listingId: row.id,
+          title: row.title,
+          productId: row.product_id,
+          published: row.published,
+          existingBaseItemId: row.base_item_id,
+          supplierListingId: row.supplier_listing_id,
+          supplierProductId: row.supplier_product_id,
+          supplierVariantId: row.supplier_variant_id,
+          inventory: row.inventory,
+          orderable: row.orderable,
+          sellingPrice: row.selling_price,
+          basePublicationStatus: row.base_publication_status,
+        })),
         visible: visibility(item.visible),
         title,
         price: item.price ?? null,
@@ -197,6 +250,8 @@ export async function POST(request: Request) {
       baseItemsWithoutExactMappingCount: unmapped,
       baseItemsWithAmbiguousExactMappingCount: ambiguous,
       baseItemsWithExactTitleCandidateCount: titleCandidateCount,
+      baseItemsWithExactSupplierIdentifierCandidateCount: items.filter((item) => item.exactSupplierIdentifierMatchCount === 1).length,
+      baseItemsWithAmbiguousSupplierIdentifierCandidateCount: items.filter((item) => item.exactSupplierIdentifierMatchCount > 1).length,
       tracerListingsWithoutBaseItemIdCount: listings.filter((row) => !String(row.base_item_id ?? "").trim()).length,
       duplicateBaseItemIdGroupsInTracer: [...byBaseId.entries()].filter(([, rows]) => rows.length > 1).length,
       note: "Exact-title candidates are unverified suggestions only. This report never writes mappings or changes BASE listings.",
