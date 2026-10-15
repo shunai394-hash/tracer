@@ -22,6 +22,12 @@ type ListingRow = {
   base_publication_status: string | null;
 };
 
+function text(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
 function normalizedTitle(value: unknown): string {
   return String(value ?? "")
     .normalize("NFKC")
