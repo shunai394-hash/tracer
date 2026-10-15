@@ -143,6 +143,9 @@ const candidateTitles = [
   ["laundry set", "Laundry &cleansing Set", "ランドリー・洗濯用品セット"],
   ["rice storage container", "Rice Bucket Automatic Out Household Food Grade Insect Proof", "防虫仕様 米びつ保存容器"],
   ["compact humidifier", "Household Capacity Mute Mini Office Humidification", "静音 コンパクト加湿器"],
+  ["six-color eyebrow cream", "Fashion And Nature Phoera Eyebrow Cream 6 Colors", "PHOERA アイブロウクリーム 6色展開"],
+  ["keratin hair treatment cream", "PHOFAY POLY KERATIN BURNT HAIR RESTORATION CREAM", "ケラチン配合 ヘアトリートメントクリーム"],
+  ["bath bomb gift set", "Bath Bombs 14 Pieces Of Explosive Salt Ball Gift Box With Various Fragrance Bath Balls Bubble Bath Bomb for Women", "バスボム 14個セット"],
 ];
 for (const [name, source, expected] of candidateTitles) {
   const title = localizeProductTitle(source);
