@@ -278,18 +278,27 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         refreshedFields.inventory = inventory;
         refreshedFields.inventory_confirmed = true;
       }
+      // A stock-cap deployment hold may only be cleared after the capped storefront-stock
+      // implementation is explicitly confirmed in this production environment.
+      const stockCapHoldRecoverable =
+        row.verification_error === "storefront_stock_cap_deploy_pending"
+        && process.env.TRACER_STOREFRONT_STOCK_CAP_DEPLOYED === "1";
       const canMarkFreshVerified = priceVerified && cost !== null && cost > 0
         && shippingQuoteVerified && shippingCost !== null
         && inventoryVerified && inventory !== null && inventory > 0
         && row.configured === true && row.api_available === true
-        && row.orderable === true && row.tracking_available === true
+        && (row.orderable === true || stockCapHoldRecoverable) && row.tracking_available === true
         && Boolean(String(row.supplier_product_id ?? "").trim())
         && Boolean(String(row.supplier_variant_id ?? "").trim())
         && String(row.ship_to ?? "").trim().toUpperCase() === "JP"
-        && (row.verification_error == null || row.verification_error === "");
+        && (row.verification_error == null || row.verification_error === "" || stockCapHoldRecoverable);
       if (canMarkFreshVerified) {
         refreshedFields.verification_status = "verified";
         refreshedFields.last_verified_at = checkedAt.toISOString();
+        if (stockCapHoldRecoverable) {
+          refreshedFields.orderable = true;
+          refreshedFields.verification_error = null;
+        }
       }
       const { error: evidenceWriteError } = await db.from("supplier_listings").update(refreshedFields).eq("id", supplierListingId);
       if (evidenceWriteError) throw new Error("CJ recovered evidence persistence failed: " + evidenceWriteError.message);
