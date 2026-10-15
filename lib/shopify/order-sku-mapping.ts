@@ -26,7 +26,7 @@ export function getOrderSkuLookup(skus: string[]): OrderSkuLookup {
     // TRC is the current canonical prefix; CJ is retained for listings
     // created by older supplier-specific publication flows.
     if (sku.startsWith("TRC-") || sku.startsWith("CJ-")) {
-      const source = sku.slice(4);
+      const source = sku.startsWith("TRC-") ? sku.slice(4) : sku.slice(3);
       if (source) supplierSources.add(source);
       // The generated SKU falls back to the listing UUID only when no supplier
       // identity exists. Query UUIDs separately because shop_listings.id is UUID.
