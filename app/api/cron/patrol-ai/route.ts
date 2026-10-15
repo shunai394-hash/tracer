@@ -5,7 +5,6 @@ import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibilit
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { runIntelligencePipeline } from "@/lib/intelligence/run-intelligence-pipeline";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
-import { rescueUndeliveredGatePassedListings, retryPendingNewfindPromotions } from "@/lib/integration/newfind";
 import { catalogCountsNeedReview } from "@/lib/ops/catalog-count-check";
 
 export const runtime = "nodejs";
@@ -272,42 +271,7 @@ export async function GET(request: Request) {
       actions.push({ action: "publish_base", ok: false, error: errors.at(-1) });
     }
 
-    // NEWFIND delivery retries are independent from supplier discovery.
-    try {
-      const rescue = await rescueUndeliveredGatePassedListings({
-        limit: 1,
-        deadlineAt: startedAt + 295_000,
-      });
-      actions.push({ action: "newfind_rescue", result: rescue });
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
-      actions.push({ action: "newfind_rescue", ok: false, error: errors.at(-1) });
-    }
-
-    // NEWFIND retries are independent of today's discovery pipeline. A
-    // deferred marketplace/CJ enrichment stage must not strand already-published
-    // products in the durable failed-delivery queue. The retry helper claims
-    // rows with an idempotent lease and rechecks the live UUID product URL.
-    if (Date.now() < startedAt + 270_000) {
-      try {
-        const newfindRetry = await withinBudget(
-          retryPendingNewfindPromotions(5),
-          startedAt + 285_000,
-          "newfind_retry",
-        );
-        actions.push({ action: "newfind_retry", result: newfindRetry });
-      } catch (error) {
-        // Keep the canonical patrol result independent from this delivery
-        // channel; preserve the exact failure in the durable patrol report.
-        actions.push({
-          action: "newfind_retry",
-          ok: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    } else {
-      actions.push({ action: "newfind_retry", skipped: true, reason: "time_budget" });
-    }
+    // This patrol is deliberately limited to TRACER, BASE, and Shopify.
 
     const after = await snapshot(db);
     const progress = {
