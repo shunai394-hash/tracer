@@ -28,6 +28,7 @@ assert.match(shopifySync, /toStorefrontStockQuantity\(row\.inventory, process\.e
 assert.match(shopifySync, /row\.published === false && row\.pipeline_stage === "BLOCKED" && row\.shopify_product_id/, "blocked listings with stored Shopify IDs must be reconciled against the external store");
 assert.match(shopifySync, /shopify_sync_error: "shopify_unpublished_verified"/, "a blocked listing is marked verified only after Shopify unpublish verification succeeds");
 assert.match(shopifySync, /row\.shopify_sync_error !== "shopify_unpublished_verified"/, "legacy blocked rows without verified unpublication must be retried");
+assert.match(shopifySync, /const baseSelect = "[^"]*shopify_sync_status,shopify_sync_error"/, "the main sync query must load the persisted unpublish-verification marker so already-hidden listings are not repeatedly mutated");
 assert.match(unlinkedRoute, /shopify_sync_status\.eq\.blocked,shopify_sync_error\.neq\.shopify_unpublished_verified/, "unlinked reconciliation must include stale blocked Shopify rows");
 assert.match(unlinkedRoute, /row\.shopify_sync_error !== "shopify_unpublished_verified"/, "unlinked reconciliation must retry unverified external unpublication");
 assert.match(shopifySync, /getLiveShopifyStock\(alreadySyncedVariantIds\)/, "already-synced Shopify products must be checked against actual live inventory before deciding they need no work");
