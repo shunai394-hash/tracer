@@ -267,6 +267,7 @@ export async function persistBrightDataProducts(
         raw_data: {
           query,
           title: candidate.title,
+          brand: candidate.brand,
           price: candidate.price,
           currency: candidate.currency,
           seller: candidate.seller,
@@ -275,6 +276,7 @@ export async function persistBrightDataProducts(
         },
         normalized_data: {
           title: canonicalName,
+          brand: brandName,
           seller: candidate.seller,
           sourceUrl,
           imageUrl,
