@@ -6,7 +6,7 @@ import { isCJQuotaCircuitBlockingError, isCJQuotaExhaustedError } from "@/lib/so
 import { getCJQuotaCooldownUntil } from "@/lib/sources/cj/rate-limit-policy";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { normalizeIdentifier } from "@/lib/market/identifiers";
-import { isCjIdentityReverifyCandidate, isCjIdentityReverifyDue, CJ_IDENTITY_RETRY_DELAYS_MS, supplierBarcodeAudit } from "@/lib/suppliers/cj-identity-reverify-policy";
+import { isCjIdentityReverifyCandidate, isCjIdentityReverifyDue, CJ_IDENTITY_RETRY_DELAYS_MS, supplierBarcodeAudit, partitionByExactShopListing } from "@/lib/suppliers/cj-identity-reverify-policy";
 
 const CURSOR_JOB = "cj-identity-reverify-cursor";
 const QUOTA_CIRCUIT_JOB = "cj-api-quota-circuit";
@@ -173,19 +173,37 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   );
   const stockCapHeld = allRows.filter((row) => stockCapHoldIds.has(String(row.id)));
   const regularRows = allRows.filter((row) => !stockCapHoldIds.has(String(row.id)));
-  const womensRows = regularRows.filter((row) => isWomensProductTitle(row.title, row.metadata));
-  const otherRows = regularRows.filter((row) => !isWomensProductTitle(row.title, row.metadata));
+  const productIds = [...new Set(regularRows.map((row) => String(row.product_id ?? "").trim()).filter(Boolean))];
+  const shopEvidenceResult = productIds.length > 0
+    ? await db.from("shop_listings")
+        .select("product_id,supplier_name,supplier_product_id,supplier_variant_id")
+        .eq("supplier_name", "cj")
+        .in("product_id", productIds)
+        .limit(500)
+    : { data: [], error: null };
+  if (shopEvidenceResult.error) throw new Error("exact TRACER shop-listing evidence read failed: " + shopEvidenceResult.error.message);
+  const shopEvidence = (shopEvidenceResult.data ?? []).filter((listing) =>
+    typeof listing.supplier_product_id === "string" && typeof listing.supplier_variant_id === "string"
+  );
+  const partition = partitionByExactShopListing(regularRows, shopEvidence);
+  const matchedWomens = partition.matched.filter((row) => isWomensProductTitle(row.title, row.metadata));
+  const matchedOther = partition.matched.filter((row) => !isWomensProductTitle(row.title, row.metadata));
+  const unmatchedWomens = partition.unmatched.filter((row) => isWomensProductTitle(row.title, row.metadata));
+  const unmatchedOther = partition.unmatched.filter((row) => !isWomensProductTitle(row.title, row.metadata));
   const priority = (row: typeof allRows[number]) => row.verification_status === "unverified" ? 0 : 1;
   stockCapHeld.sort((a, b) => priority(a) - priority(b) || String(a.id).localeCompare(String(b.id)));
-  womensRows.sort((a, b) => priority(a) - priority(b) || String(a.id).localeCompare(String(b.id)));
-  otherRows.sort((a, b) => priority(a) - priority(b) || String(a.id).localeCompare(String(b.id)));
+  for (const group of [matchedWomens, matchedOther, unmatchedWomens, unmatchedOther]) {
+    group.sort((a, b) => priority(a) - priority(b) || String(a.id).localeCompare(String(b.id)));
+  }
+  // Revalidate supplier rows that already back a TRACER listing first. Within
+  // that group, retain the existing women's-product priority. Supplier-only
+  // rows follow, so they cannot consume the initial recovery batches.
+  const prioritizedRegularRows = [...matchedWomens, ...matchedOther, ...unmatchedWomens, ...unmatchedOther];
   const beforeCounts = await readCjIdentityProgressCounts(db);
   const selectedStockCapHeld = stockCapHeld.slice(0, Math.min(limit, stockCapHeld.length));
   const remainingForRegular = Math.max(0, limit - selectedStockCapHeld.length);
-  const selectedWomens = womensRows.slice(0, Math.min(remainingForRegular, womensRows.length));
-  const remaining = Math.max(0, remainingForRegular - selectedWomens.length);
-  const selectedOther = remaining > 0 ? otherRows.slice(0, Math.min(remaining, otherRows.length)) : [];
-  const selectedRows = [...selectedStockCapHeld, ...selectedWomens, ...selectedOther];
+  const selectedRows = [...selectedStockCapHeld, ...prioritizedRegularRows.slice(0, remainingForRegular)];
+  const womensRows = [...matchedWomens, ...unmatchedWomens];
   const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, remediationQueued: [], errors: [], promotedListings: [], nextCursor: scanCursor, quotaBlockedUntil: null, progress: { before: beforeCounts, after: beforeCounts } };
   const processRow = async (row: NonNullable<typeof rows>[number]) => {
     const supplierListingId = String(row.id);
@@ -434,7 +452,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   if (quotaExhausted || circuitBlocked) result.nextCursor = priorCursor;
   result.progress.after = await readCjIdentityProgressCounts(db);
   const now = new Date().toISOString();
-  const { error: runInsertError } = await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: "bounded_cursor_scan_womens_priority", candidateCount: total, womensCandidates: womensRows.length, womensSelected: selectedWomens.length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, progress: result.progress, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
+  const { error: runInsertError } = await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: "exact_shop_listing_then_womens_priority", candidateCount: total, exactShopListingCandidates: partition.matched.length, supplierOnlyCandidates: partition.unmatched.length, womensCandidates: womensRows.length, womensSelected: selectedRows.filter((row) => isWomensProductTitle(row.title, row.metadata)).length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, progress: result.progress, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
   if (runInsertError) throw new Error("CJ identity progress audit persistence failed: " + runInsertError.message);
   return result;
 }
