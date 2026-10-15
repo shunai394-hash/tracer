@@ -110,6 +110,8 @@ assert.match(unpublishWorkflow, /timeout-minutes: 13/);
 assert.doesNotMatch(patrolWorkflow, /^\s{2}schedule:/m, "production patrol must not have a duplicate GitHub Actions schedule");
 const vercelPatrolSchedules = JSON.parse(vercel).crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule);
 assert.deepEqual(vercelPatrolSchedules, ["*/5 * * * *"], "the existing Vercel production patrol must still run every five minutes");
+const cjIdentitySchedules = JSON.parse(vercel).crons.filter((job) => job.path === "/api/cron/cj-identity-reverify").map((job) => job.schedule);
+assert.deepEqual(cjIdentitySchedules, ["2,17,32,47 * * * *"], "CJ identity re-verification must run bounded 25-row batches every 15 minutes, offset from the patrol");
 assert.match(patrolWorkflow, /push:/, "core patrol changes must trigger a guarded post-deploy run");
 assert.match(patrolWorkflow, /git merge-base --is-ancestor/);
 assert.match(patrolWorkflow, /pipelineComplete:/);
