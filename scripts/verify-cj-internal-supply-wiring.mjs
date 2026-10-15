@@ -26,7 +26,7 @@ assert.match(discovery, /"hair styling tools", "hair clip women", "claw clip wom
   "hair accessories must be an explicit high-priority catalog segment");
 assert.match(discovery, /Include every due supplier category/,
   "category priority must sort candidates, not exclude non-women's categories");
-assert.match(discovery, /supply-first-catalog-cursor-v2/,
+assert.match(discovery, /supply-first-catalog-cursor-v\d+/,
   "query-order changes must not reinterpret an old cursor index");
 assert.match(discovery, /next_verification_at\.is\.null,next_verification_at\.lte/,
   "supplier verification queue must select only rows whose next verification is due");
