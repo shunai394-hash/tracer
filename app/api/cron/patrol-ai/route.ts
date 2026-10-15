@@ -238,33 +238,20 @@ export async function GET(request: Request) {
       .map((step) => step.name);
 
     if (!pipeline.complete) {
-      // A deferred/incomplete cycle is not a successful patrol. Keep it visible
-      // to cron monitoring and operators so retries are observable instead of
-      // being reported as a green run merely because no hard exception escaped.
+      // Discovery incompleteness is reported, but must not block independent
+      // publication of already-linked, in-stock, profitable catalog rows.
       errors.push(
         deferredSteps.length
           ? `intelligence_pipeline_incomplete: deferred=${deferredSteps.join(",")}`
           : "intelligence_pipeline_incomplete",
       );
-      // Never publish or deliver downstream when the intelligence cycle did
-      // not complete. In particular, a timed-out stage may still have an
-      // in-flight request; advancing to BASE/NEWFIND would create a mixed-cycle
-      // decision and could publish on stale evidence.
-      actions.push({
-        action: "publish_base",
-        skipped: true,
-        reason: "intelligence_pipeline_incomplete",
-      });
-      actions.push({
-        action: "newfind_rescue",
-        skipped: true,
-        reason: "intelligence_pipeline_incomplete",
-      });
-    } else {
-      try {
-        // Existing BASE items are reconciled here too; never let that outlive
-        // the function budget.
-        const base = await withinBudget(publishPublishedListingsToBase(15), startedAt + 285_000, "publish_base");
+    }
+
+    // Publication is independent of whether today's discovery cycle completed.
+    // The publisher rechecks supplier identity, recorded stock, price and profit;
+    // procurement itself must revalidate live supplier stock/API at order time.
+    try {
+      const base = await withinBudget(publishPublishedListingsToBase(15), startedAt + 285_000, "publish_base");
       actions.push({
         action: "publish_base",
         attempted: base.attempted,
@@ -281,18 +268,16 @@ export async function GET(request: Request) {
       actions.push({ action: "publish_base", ok: false, error: errors.at(-1) });
     }
 
-    // BASE -> NEWFIND: deliver gate-passed listings that never reached NEWFIND
-    // (no delivery row, pending, failed or unacknowledged). Idempotent.
+    // NEWFIND delivery retries are independent from supplier discovery.
     try {
       const rescue = await rescueUndeliveredGatePassedListings({
         limit: 1,
         deadlineAt: startedAt + 295_000,
       });
       actions.push({ action: "newfind_rescue", result: rescue });
-      } catch (error) {
-        errors.push(error instanceof Error ? error.message : String(error));
-        actions.push({ action: "newfind_rescue", ok: false, error: errors.at(-1) });
-      }
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+      actions.push({ action: "newfind_rescue", ok: false, error: errors.at(-1) });
     }
 
     // NEWFIND retries are independent of today's discovery pipeline. A
