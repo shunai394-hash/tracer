@@ -20,6 +20,8 @@ assert.ok(cron.includes("canonicalVariantEvidenceWritten"), "cron must report pe
 assert.match(variantParser, /dimensionToAsinMap/, "Amazon child-ASIN variation maps must be parsed");
 assert.match(variantParser, /dimensionToAsinMapMarkerCount/, "aggregate diagnostics must show whether Amazon variation maps exist in fetched HTML");
 assert.match(collector, /dimensionToAsinMapMarkerCount: number/, "cron telemetry must persist variation-map diagnostics");
+assert.match(collector, /jsonLdScriptTagCount \+= markup\.jsonLdScriptTagCount/, "cron telemetry must record JSON-LD script counts");
+assert.match(collector, /variationMapMarkerCount \+= markup\.variationMapMarkerCount/, "cron telemetry must record variation-map marker counts");
 assert.match(collector, /child_detail_has_barcode: hasBarcode/, "child-page barcode state must be recorded as evidence");
 assert.match(collector, /child_detail_has_barcode: hasBarcode/, "child-page barcode state must be recorded as evidence");
 assert.doesNotMatch(collector, /if \(!jan && !gtin && !ean && !upc\) return null/,
