@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
-import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync";
@@ -32,26 +30,13 @@ async function buildOpportunityInBatches(productIds: string[], batchSize = 15) {
 }
 
 async function promoteGatePassedListings(selectedListingIds: string[]) {
-  // Delivery channels are independent: a Shopify/BASE outage must not suppress
-  // NEWFIND promotion or change the canonical TRACER publication result.
+  // The operational scope is TRACER, BASE, and Shopify only.
   const shopify = await syncPublishedListingsToShopify(selectedListingIds).catch((error) => ({
     ok: false,
     listingIds: [] as string[],
     error: error instanceof Error ? error.message : String(error),
   }));
   const publishedListingIds = shopify.listingIds;
-  // Deliver to NEWFIND before BASE. A BASE image/API failure must not overwrite
-  // the durable Sales Test Gate provenance before another channel can use it.
-  const newfind = await Promise.all(
-    selectedListingIds.map((listingId) => promoteShopListingToNewfind(listingId).catch((error) => ({
-      configured: true,
-      sent: false,
-      eventId: `tracer-shop-listing:${listingId}`,
-      status: null,
-      ackStatus: null,
-      detail: error instanceof Error ? error.message : String(error),
-    }))),
-  );
   const base = await publishPublishedListingsToBase(400, selectedListingIds).catch((error) => ({
     ok: false,
     results: [] as Array<{ ok: boolean; baseItemId?: string | null; listingId: string; error?: string }>,
@@ -62,7 +47,7 @@ async function promoteGatePassedListings(selectedListingIds: string[]) {
     publishedListingIds,
     base,
     baseReady: base.results.filter((result) => result.ok && result.baseItemId).map((result) => result.listingId),
-    newfind,
+    newfind: { skipped: true, reason: "out_of_scope_tracer_base_shopify_only" },
   };
 }
 
@@ -228,7 +213,8 @@ export async function GET(request: Request) {
             shopifyError: "error" in downstream.shopify ? downstream.shopify.error : null,
             baseOk: !("error" in downstream.base),
             baseError: "error" in downstream.base ? downstream.base.error : null,
-            newfindSent: downstream.newfind.filter((item) => item.sent).length,
+            newfindSent: 0,
+            newfindSkipped: true,
           },
         },
       }).eq("id", cronRunId);
@@ -242,31 +228,31 @@ export async function GET(request: Request) {
       });
     }
 
-    const { data: readyRows, error: readyError } = await supabase
-      .from("marketplace_bestsellers")
-      .select("id,product_id")
-      .eq("pipeline_stage", "VARIANT_VERIFIED")
-      .eq("pipeline_status", "ready")
-      .not("product_id", "is", null)
-      .order("fetched_at", { ascending: false })
-      .limit(400);
-    if (readyError) throw new Error(readyError.message);
-    const candidateIds = (readyRows ?? []).map((row) => String(row.id));
-    const marketProductIds = Array.from(new Set((readyRows ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)));
-    if (marketProductIds.length > 0) await buildOpportunityInBatches(marketProductIds, 10);
-    const decision = await selectAndPublishSalesTests(candidateIds, 400);
-    const downstream = await promoteGatePassedListings(decision.selectedListingIds);
-
+    // No marketplace fallback: only supplier-native verified offers can feed
+    // TRACER, BASE, and Shopify. Preserve historical marketplace rows untouched.
     if (cronRunId) await supabase.from("cron_runs").update({
       status: "succeeded",
       finished_at: new Date().toISOString(),
       duration_ms: Date.now() - startedAt,
-      processed: supplySelected.considered + candidateIds.length,
+      processed: supplySelected.considered,
       failed: 0,
-      metadata: { phase: "sales_test_publication", mode: "canonical_supply_fast_path", supplyConsidered: supplySelected.considered, supplyPublished: supplySelected.published, supplyRejected: supplySelected.rejected.length, supplyRejectedReasons: supplySelected.rejected.reduce<Record<string, number>>((counts, item) => { for (const reason of item.reasons) counts[reason] = (counts[reason] ?? 0) + 1; return counts; }, {}), supplyRejectedSample: supplySelected.rejected.slice(0, 20), considered: decision.considered, published: decision.published, shopify: downstream.shopify },
+      metadata: {
+        phase: "sales_test_publication",
+        mode: "canonical_supply_fast_path",
+        supplyConsidered: supplySelected.considered,
+        supplyPublished: supplySelected.published,
+        marketplaceFallback: "disabled_supplier_native_only",
+      },
     }).eq("id", cronRunId);
 
-    return NextResponse.json({ ok: true, phase: "sales_test_publication", elapsedMs: Date.now() - startedAt, mode: "canonical_supply_fast_path", candidateCount: candidateIds.length, decision, downstream, nextPhase: "downstream_delivery" });
+    return NextResponse.json({
+      ok: true,
+      phase: "sales_test_publication",
+      skipped: true,
+      reason: "marketplace_sourcing_disabled_supplier_native_only",
+      mode: "canonical_supply_fast_path",
+      supplySelected,
+    });
   } catch (error) {
     if (cronRunId) {
       try { await supabase.from("cron_runs").update({ status: "failed", finished_at: new Date().toISOString(), duration_ms: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error) }).eq("id", cronRunId); } catch (recordError) { console.error("[TRACER CRON RUN RECORD ERROR]", recordError); }
