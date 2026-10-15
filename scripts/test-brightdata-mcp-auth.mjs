@@ -5,6 +5,7 @@ const env = await readFile(new URL("../lib/config/env.ts", import.meta.url), "ut
 const client = await readFile(new URL("../lib/sources/mcp/client.ts", import.meta.url), "utf8");
 const remote = await readFile(new URL("../lib/sources/mcp/remote-client.ts", import.meta.url), "utf8");
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+const collector = await readFile(new URL("../lib/sources/brightdata/client.ts", import.meta.url), "utf8");
 
 assert.match(env, /mcpApiKey:\s*readEnv\("BRIGHTDATA_MCP_API_KEY"\)/);
 assert.match(client, /https:\/\/mcp\.brightdata\.com\/mcp/);
@@ -13,5 +14,13 @@ assert.match(client, /if \(!mcpUrl && !mcpApiKey\) return null/);
 assert.match(client, /return getConfiguredEndpoint\(\) !== null/);
 assert.doesNotMatch(client, /console\.(?:log|info|warn|error).*endpoint/i, "the MCP endpoint contains the API token and must never be logged");
 assert.match(remote, /new URL\(options\.endpoint\)/);
+assert.match(collector, /getMcpToolConsumer, isMcpConfigured/);
+assert.match(collector, /consumer\.listTools\(\)/, "product collection must discover the real Bright Data MCP tools");
+assert.match(collector, /consumer\.callTool\(call\)/, "product collection must invoke a discovered Bright Data MCP tool");
+assert.match(collector, /provider: "brightdata_mcp"/, "ingest results must identify successful MCP-backed collection");
+assert.match(collector, /export function isBrightDataFetchConfigured\(\): boolean/);
+assert.match(collector, /candidate\.name === "scrape_as_html"/, "marketplace detail pages must use MCP raw HTML for child-variant parsing");
+assert.match(collector, /Bright Data MCP raw HTML tool is unavailable/, "do not silently claim collection succeeded when MCP HTML and API fallback are unavailable");
+assert.match(client, /mcp\.brightdata\.com\/mcp\?pro=1/, "default hosted endpoint must expose advanced scraping tools");
 assert.match(packageJson.scripts.prebuild, /test:brightdata-mcp-auth/);
-console.log("Bright Data MCP auth contract checks passed");
+console.log("Bright Data MCP auth and product-collection contract checks passed");

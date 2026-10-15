@@ -11,7 +11,7 @@ import {
 export { McpConfigError, McpRequestError };
 export type { McpToolCall };
 
-const DEFAULT_BRIGHTDATA_MCP_ENDPOINT = "https://mcp.brightdata.com/mcp";
+const DEFAULT_BRIGHTDATA_MCP_ENDPOINT = "https://mcp.brightdata.com/mcp?pro=1";
 
 function getConfiguredEndpoint(): string | null {
   const { mcpUrl, mcpApiKey } = getBrightDataConfig();
