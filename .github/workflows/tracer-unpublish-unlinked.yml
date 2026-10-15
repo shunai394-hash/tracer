@@ -7,6 +7,12 @@ on:
     paths:
       - ".github/workflows/tracer-unpublish-unlinked.yml"
       - "app/api/cron/unpublish-unlinked/route.ts"
+      - "lib/channels/base-publisher.ts"
+      - "lib/shopify/sync-published-listings.ts"
+      - "lib/catalog/canonical-supplier-identity.ts"
+      - "lib/intelligence/run-intelligence-pipeline.ts"
+      - "app/api/cron/supplier-investigation/route.ts"
+      - "vercel.json"
   workflow_dispatch:
   schedule:
     - cron: "*/15 * * * *"
