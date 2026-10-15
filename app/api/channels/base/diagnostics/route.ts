@@ -23,15 +23,19 @@ export async function GET(request: Request) {
     }
 
     const probe = await probeBaseReadOnly({ itemPageLimit: 100, itemMaxPages: 10 });
+    const stableTracerIdentifier = /^TRC-([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
     const mappingAudit = {
       ok: false,
       visibleItemsMatchedToDatabase: 0,
+      visibleItemsMatchedByStableIdentifier: 0,
+      visibleItemsMissingPersistedBaseMapping: 0,
+      visibleItemsWithIdentifierConflict: 0,
       visibleItemsLinked: 0,
       visibleItemsUnlinked: 0,
       visibleItemsWithoutDbMapping: 0,
       visibleItemsWithAmbiguousDbMapping: 0,
       itemIdentifierPresentCount: probe.items.entries.filter((entry) => Boolean(entry.identifier)).length,
-      stableTracerIdentifierCount: probe.items.entries.filter((entry) => /^TRC-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry.identifier ?? "")).length,
+      stableTracerIdentifierCount: probe.items.entries.filter((entry) => stableTracerIdentifier.test(entry.identifier ?? "")).length,
       itemIdMissingCount: probe.items.entries.filter((entry) => !entry.itemId).length,
       errorStage: null as string | null,
     };
@@ -54,6 +58,17 @@ export async function GET(request: Request) {
             .in("base_item_id", externalIds);
           if (listingError) throw new Error("base_listing_mapping_db_read_failed");
 
+          // BASE's identifier is set at creation to the exact stable value
+          // TRC-<shop_listings.id>. Use it only as a read-only recovery signal;
+          // never infer from title, price, or image and never write a mapping here.
+          const stableListingIds = [...new Set(visibleEntries
+            .map((entry) => stableTracerIdentifier.exec(entry.identifier ?? "")?.[1] ?? null)
+            .filter((value): value is string => value !== null))];
+          const { data: identifierRows, error: identifierError } = stableListingIds.length > 0
+            ? await db.from("shop_listings").select("id,base_item_id,supplier_listing_id").in("id", stableListingIds)
+            : { data: [], error: null };
+          if (identifierError) throw new Error("base_stable_identifier_mapping_db_read_failed");
+
           const rowsByBaseId = new Map<string, Array<{ id: string; base_item_id: string | number | null; supplier_listing_id: string | null }>>();
           for (const row of listingRows ?? []) {
             const key = String(row.base_item_id ?? "");
@@ -65,31 +80,58 @@ export async function GET(request: Request) {
             });
             rowsByBaseId.set(key, existing);
           }
-          const linkedSupplierIds = await getLinkedSupplierListingIds(
-            (listingRows ?? []).map((row) => row.supplier_listing_id),
-          );
+          const rowsByListingId = new Map((identifierRows ?? []).map((row) => [String(row.id), {
+            id: String(row.id),
+            base_item_id: row.base_item_id == null ? null : String(row.base_item_id),
+            supplier_listing_id: row.supplier_listing_id == null ? null : String(row.supplier_listing_id),
+          }] as const));
+          const linkedSupplierIds = await getLinkedSupplierListingIds([
+            ...(listingRows ?? []).map((row) => row.supplier_listing_id),
+            ...(identifierRows ?? []).map((row) => row.supplier_listing_id),
+          ]);
 
           for (const entry of visibleEntries) {
-            const matches = rowsByBaseId.get(String(entry.itemId)) ?? [];
-            if (matches.length === 0) {
-              mappingAudit.visibleItemsWithoutDbMapping += 1;
-              continue;
-            }
-            mappingAudit.visibleItemsMatchedToDatabase += 1;
-            if (matches.length > 1) {
+            const itemId = String(entry.itemId);
+            const directMatches = rowsByBaseId.get(itemId) ?? [];
+            const stableId = stableTracerIdentifier.exec(entry.identifier ?? "")?.[1];
+            const stableMatch = stableId ? rowsByListingId.get(stableId) : null;
+            const identifierConflicts = Boolean(stableMatch && (
+              (stableMatch.base_item_id && stableMatch.base_item_id !== itemId)
+              || (directMatches.length === 1 && stableMatch.id !== directMatches[0].id)
+            ));
+            if (identifierConflicts) mappingAudit.visibleItemsWithIdentifierConflict += 1;
+
+            if (directMatches.length > 1) {
+              mappingAudit.visibleItemsMatchedToDatabase += 1;
               mappingAudit.visibleItemsWithAmbiguousDbMapping += 1;
               continue;
             }
-            const supplierId = matches[0].supplier_listing_id;
-            if (!supplierId || !linkedSupplierIds.has(supplierId)) {
-              mappingAudit.visibleItemsUnlinked += 1;
-            } else {
-              mappingAudit.visibleItemsLinked += 1;
+            if (directMatches.length === 1) {
+              mappingAudit.visibleItemsMatchedToDatabase += 1;
+              const supplierId = directMatches[0].supplier_listing_id;
+              if (!supplierId || !linkedSupplierIds.has(supplierId)) mappingAudit.visibleItemsUnlinked += 1;
+              else mappingAudit.visibleItemsLinked += 1;
+              continue;
             }
+
+            if (!stableMatch) {
+              mappingAudit.visibleItemsWithoutDbMapping += 1;
+              continue;
+            }
+
+            mappingAudit.visibleItemsMatchedByStableIdentifier += 1;
+            if (!identifierConflicts && !stableMatch.base_item_id) {
+              mappingAudit.visibleItemsMissingPersistedBaseMapping += 1;
+            }
+            const supplierId = stableMatch.supplier_listing_id;
+            if (!supplierId || !linkedSupplierIds.has(supplierId)) mappingAudit.visibleItemsUnlinked += 1;
+            else mappingAudit.visibleItemsLinked += 1;
           }
           mappingAudit.ok = mappingAudit.itemIdMissingCount === 0
             && mappingAudit.visibleItemsWithoutDbMapping === 0
             && mappingAudit.visibleItemsWithAmbiguousDbMapping === 0
+            && mappingAudit.visibleItemsWithIdentifierConflict === 0
+            && mappingAudit.visibleItemsMissingPersistedBaseMapping === 0
             && mappingAudit.visibleItemsUnlinked === 0;
         } catch {
           mappingAudit.errorStage = "base_listing_mapping_audit_failed";
@@ -121,6 +163,9 @@ export async function GET(request: Request) {
       itemErrorStage: probe.items.errorStage,
       mappingAuditOk: mappingAudit.ok,
       visibleItemsMatchedToDatabase: mappingAudit.visibleItemsMatchedToDatabase,
+      visibleItemsMatchedByStableIdentifier: mappingAudit.visibleItemsMatchedByStableIdentifier,
+      visibleItemsMissingPersistedBaseMapping: mappingAudit.visibleItemsMissingPersistedBaseMapping,
+      visibleItemsWithIdentifierConflict: mappingAudit.visibleItemsWithIdentifierConflict,
       visibleItemsLinked: mappingAudit.visibleItemsLinked,
       visibleItemsUnlinked: mappingAudit.visibleItemsUnlinked,
       visibleItemsWithoutDbMapping: mappingAudit.visibleItemsWithoutDbMapping,
