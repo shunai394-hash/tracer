@@ -93,6 +93,14 @@ export async function GET(request: Request) {
           for (const entry of visibleEntries) {
             const itemId = String(entry.itemId);
             const directMatches = rowsByBaseId.get(itemId) ?? [];
+            const stableId = stableTracerIdentifier.exec(entry.identifier ?? "")?.[1];
+            const stableMatch = stableId ? rowsByListingId.get(stableId) : null;
+            const identifierConflicts = Boolean(stableMatch && (
+              (stableMatch.base_item_id && stableMatch.base_item_id !== itemId)
+              || (directMatches.length === 1 && stableMatch.id !== directMatches[0].id)
+            ));
+            if (identifierConflicts) mappingAudit.visibleItemsWithIdentifierConflict += 1;
+
             if (directMatches.length > 1) {
               mappingAudit.visibleItemsMatchedToDatabase += 1;
               mappingAudit.visibleItemsWithAmbiguousDbMapping += 1;
@@ -106,17 +114,13 @@ export async function GET(request: Request) {
               continue;
             }
 
-            const stableId = stableTracerIdentifier.exec(entry.identifier ?? "")?.[1];
-            const stableMatch = stableId ? rowsByListingId.get(stableId) : null;
             if (!stableMatch) {
               mappingAudit.visibleItemsWithoutDbMapping += 1;
               continue;
             }
 
             mappingAudit.visibleItemsMatchedByStableIdentifier += 1;
-            if (stableMatch.base_item_id && stableMatch.base_item_id !== itemId) {
-              mappingAudit.visibleItemsWithIdentifierConflict += 1;
-            } else if (!stableMatch.base_item_id) {
+            if (!identifierConflicts && !stableMatch.base_item_id) {
               mappingAudit.visibleItemsMissingPersistedBaseMapping += 1;
             }
             const supplierId = stableMatch.supplier_listing_id;
