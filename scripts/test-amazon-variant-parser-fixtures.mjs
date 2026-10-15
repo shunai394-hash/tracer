@@ -95,6 +95,26 @@ assert.equal(productModelVariants[0].sourceVariantId, "MODEL-CHILD-M");
 assert.equal(productModelVariants[0].gtin, "4901234567894");
 assert.equal(productModelVariants[0].evidenceSource, "schema_org_product_is_variant_of");
 
+const productGroupIdHtml = `
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": "バリエーション子商品",
+  "sku": "GROUP-ID-CHILD",
+  "gtin13": "4901234567894",
+  "inProductGroupWithID": "GROUP-123",
+  "url": "https://shop.example.jp/products/group-child"
+}
+</script>`;
+const groupIdVariants = parseCanonicalMarketplaceVariantEvidence(productGroupIdHtml, "https://shop.example.jp/products/group-parent");
+assert.equal(groupIdVariants.length, 1, "accept explicit inProductGroupWithID even when the ProductGroup node is not embedded");
+assert.equal(groupIdVariants[0].sourceVariantId, "GROUP-ID-CHILD");
+assert.equal(groupIdVariants[0].evidenceSource, "schema_org_product_is_variant_of");
+assert.equal(groupIdVariants[0].rawEvidence.relation, "Product.inProductGroupWithID");
+assert.equal(groupIdVariants[0].rawEvidence.inProductGroupWithID, "GROUP-123");
+
+
 
 
 const variationHtml = `
