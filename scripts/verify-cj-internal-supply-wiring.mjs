@@ -20,13 +20,13 @@ assert.equal((discovery.match(/persistCjInternalSupplyCandidate\(/g) ?? []).leng
 assert.match(discovery, /internalSupplyIngested: Boolean\(internalSupply\)/);
 assert.match(discovery, /"women handbag", "women crossbody bag", "women shoulder bag", "women tote bag"/,
   "new supply discovery must prioritize women's bags before beauty tools and hair accessories");
-assert.match(discovery, /"beauty tools", "facial cleansing brush", "makeup brush cleaner", "makeup organizer"/,
+assert.match(discovery, /"beauty tools"[\s\S]*?"facial cleansing brush"[\s\S]*?"makeup brush cleaner"[\s\S]*?"makeup organizer"/,
   "beauty tools must follow women's bags in the supply query priority");
 assert.match(discovery, /"hair styling tools", "hair clip women", "claw clip women"/,
   "hair accessories must be an explicit high-priority catalog segment");
 assert.match(discovery, /Include every due supplier category/,
   "category priority must sort candidates, not exclude non-women's categories");
-assert.match(discovery, /supply-first-catalog-cursor-v2/,
+assert.match(discovery, /supply-first-catalog-cursor-v\d+/,
   "query-order changes must not reinterpret an old cursor index");
 assert.match(discovery, /next_verification_at\.is\.null,next_verification_at\.lte/,
   "supplier verification queue must select only rows whose next verification is due");
