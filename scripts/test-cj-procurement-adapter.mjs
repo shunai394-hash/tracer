@@ -63,3 +63,7 @@ assert.match(cjReverifySource, /verification_error === "storefront_stock_cap_dep
 assert.match(cjReverifySource, /TRACER_STOREFRONT_STOCK_CAP_DEPLOYED === "1"/, "stock-cap hold recovery must require an explicit deployed-cap confirmation");
 assert.match(cjReverifySource, /refreshedFields\.orderable = true/);
 assert.match(cjReverifySource, /refreshedFields\.verification_error = null/);
+
+assert.match(cjReverifySource, /eq\("verification_error", "storefront_stock_cap_deploy_pending"\)/, "explicit stock-cap holds must be queried even when the normal identity retry backoff is in the future");
+assert.match(cjReverifySource, /stockCapHoldIds\.has\(String\(row\.id\)\)/, "only exact stock-cap holds may bypass the per-row retry backoff");
+assert.match(cjReverifySource, /selectedStockCapHeld/, "stock-cap holds must be prioritized within the bounded re-verification batch");
