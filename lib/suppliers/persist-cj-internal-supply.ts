@@ -234,6 +234,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     throw new Error("cj_internal_supply_product_activation_failed: " + (activate.error?.message ?? "no row returned"));
   }
 
+  const identityLink: { bestsellerId: string; canonicalVariantEvidenceId: string; method: string; rationale: string } | null = null;
   // Supplier inventory is retained by the exact CJ product+variant IDs above.
   // Marketplace demand datasets are not required to persist this source record.
   // Keep identityLink null unless a future explicitly enabled, separate identity
