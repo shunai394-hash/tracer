@@ -8,6 +8,7 @@ const packageJson = JSON.parse(await readFile(new URL("../package.json", import.
 const collector = await readFile(new URL("../lib/sources/brightdata/client.ts", import.meta.url), "utf8");
 
 assert.match(env, /mcpApiKey:\s*readEnv\("BRIGHTDATA_MCP_API_KEY"\)/);
+assert.match(env, /brightDataMcp:\s*present\(readEnv\("BRIGHTDATA_MCP_API_KEY"\)\)\s*\|\|\s*present\(readEnv\("BRIGHTDATA_MCP_URL"\)/, "custom MCP URL alone must count as configured");
 assert.match(client, /https:\/\/mcp\.brightdata\.com\/mcp/);
 assert.match(client, /endpoint\.searchParams\.set\("token", mcpApiKey\)/);
 assert.match(client, /if \(!mcpUrl && !mcpApiKey\) return null/);
