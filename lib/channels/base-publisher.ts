@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { createBaseItem, editBaseItem, addBaseItemImage, isBaseConfigured } from "@/lib/channels/base";
 import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
@@ -350,6 +351,14 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       results.push({ listingId, ok: false, skipped: true, error: availableInventory === null || !Number.isFinite(availableInventory) ? "inventory_unknown" : availableInventory <= 0 ? "inventory_zero" : "supplier_not_orderable" }); continue;
     }
 
+    // Supplier warehouse inventory is not the merchant's storefront stock.
+    // Keep BASE conservative and bounded just like Shopify; supplier inventory
+    // is re-verified separately before any procurement attempt.
+    const storefrontInventory = toStorefrontStockQuantity(
+      availableInventory,
+      process.env.BASE_STOREFRONT_STOCK_CAP ?? process.env.SHOPIFY_STOREFRONT_STOCK_CAP,
+    );
+
     const leaseUntil = new Date(Date.now() + 2 * 60_000).toISOString();
 
     // Claim a new BASE publication atomically before creating the remote item.
@@ -395,9 +404,9 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         if (recoveryError) throw new Error(`base_create_id_recovery_failed:${recoveryError.message}`);
       }
       if (baseItemId) {
-        await editBaseItem({ itemId: baseItemId, title: catalogCopy.title, detail: catalogCopy.detail, price, stock: availableInventory, visible: true });
+        await editBaseItem({ itemId: baseItemId, title: catalogCopy.title, detail: catalogCopy.detail, price, stock: storefrontInventory, visible: true });
       } else {
-        const created = await createBaseItem({ title: catalogCopy.title, identifier: `TRC-${listingId}`, detail: catalogCopy.detail, price, stock: availableInventory, visible: true });
+        const created = await createBaseItem({ title: catalogCopy.title, identifier: `TRC-${listingId}`, detail: catalogCopy.detail, price, stock: storefrontInventory, visible: true });
         baseItemId = String(created.item_id ?? created.item?.item_id ?? "");
         if (!baseItemId) throw new Error("BASE create response missing item_id");
         const { error: persistIdError } = await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_publication_status: "creating", base_publication_lease_until: leaseUntil }).eq("id", listingId);
