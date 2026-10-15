@@ -14,6 +14,9 @@ const aggregateCountFields = [
   "exactBaseIdMappedCount",
   "baseItemsWithoutExactMappingCount",
   "baseItemsWithAmbiguousExactMappingCount",
+  "baseItemsWithExactIdentifierMatchCount",
+  "baseItemsWithAmbiguousIdentifierMatchCount",
+  "baseItemsWithRepairableIdentifierMatchCount",
   "tracerListingsWithoutBaseItemIdCount",
   "duplicateBaseItemIdGroupsInTracer",
 ];
@@ -23,7 +26,9 @@ if (aggregateCountFields.some((field) => !Number.isSafeInteger(report[field]) ||
 if (
   report.baseVisibleCount + report.baseHiddenCount > report.baseItemCount ||
   report.exactBaseIdMappedCount + report.baseItemsWithoutExactMappingCount +
-    report.baseItemsWithAmbiguousExactMappingCount !== report.baseItemCount
+    report.baseItemsWithAmbiguousExactMappingCount !== report.baseItemCount ||
+  report.baseItemsWithExactIdentifierMatchCount + report.baseItemsWithAmbiguousIdentifierMatchCount > report.baseItemCount ||
+  report.baseItemsWithRepairableIdentifierMatchCount > report.baseItemsWithExactIdentifierMatchCount
 ) {
   throw new Error("RECONCILIATION_AGGREGATE_COUNTS_INCONSISTENT");
 }
@@ -52,6 +57,11 @@ const summary = {
   tracerListingCount: report.tracerListingCount,
   exactBaseIdMappedCount: report.exactBaseIdMappedCount,
   baseItemsWithoutExactMappingCount: report.baseItemsWithoutExactMappingCount,
+  exactIdentifierEvidence: {
+    uniqueMatches: report.baseItemsWithExactIdentifierMatchCount,
+    ambiguousMatches: report.baseItemsWithAmbiguousIdentifierMatchCount,
+    repairableMissingBaseIds: report.baseItemsWithRepairableIdentifierMatchCount,
+  },
   titleCandidateBuckets: {
     none: count((item) => candidateCount(item) === 0),
     exactlyOne: count((item) => candidateCount(item) === 1),
