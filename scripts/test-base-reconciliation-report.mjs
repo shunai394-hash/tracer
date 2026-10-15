@@ -24,7 +24,7 @@ assert.ok(route.includes("baseItemsWithExactSupplierIdentifierCandidateCount"));
 assert.match(workflow, /baseItemsWithExactSupplierIdentifierCandidateCount/);
 assert.match(workflow, /BASE_RECONCILIATION_DEPLOYMENT_NOT_CURRENT/);
 assert.ok(workflow.includes("for (let attempt = 0; attempt < 12; attempt += 1)"));
-assert.ok(workflow.includes("setTimeout((resolve) => setTimeout(resolve, 10_000)"));
+assert.ok(workflow.includes("await new Promise((resolve) => setTimeout(resolve, 10_000))"));
 assert.match(route, /never auto-mapped/);
 assert.match(route, /Cache-Control.*no-store, private/);
 assert.doesNotMatch(route, /\.update\(|\.insert\(|\.upsert\(|createBaseItem\(|editBaseItem\(/);
