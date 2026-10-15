@@ -25,6 +25,20 @@ export function selectUnambiguousVariant(
 }
 
 /**
+ * Recover a supplier variant only from a unique barcode or a single variant.
+ * Price is not identity. A cheaper variant of a multi-variant product is rejected.
+ */
+export function selectRecoverableVariant(
+  variants: CJProductVariant[],
+  barcode: string | null,
+): CJProductVariant | null {
+  const matched = selectVariantMatchingBarcode(variants, barcode);
+  if (matched?.vid) return matched;
+  const unambiguous = selectUnambiguousVariant(variants);
+  return unambiguous?.vid ? unambiguous : null;
+}
+
+/**
  * When a marketplace barcode exactly identifies one CJ variant, that variant
  * is safe to use even when the CJ product has multiple color/size variants.
  * Multiple matches remain ambiguous and are rejected.
@@ -106,6 +120,28 @@ export function verifyVariantSelectionInvariants(): {
       name: "zero_variants_returns_null",
       expected: true,
       actual: selectUnambiguousVariant([]) === null,
+    },
+    {
+      name: "cheaper_variant_is_not_recovered",
+      expected: true,
+      actual: selectRecoverableVariant(
+        [
+          { ...one[0], vid: "cheap", sellPrice: "1.00", barcode: "111" },
+          { ...one[0], vid: "dear", sellPrice: "9.00", barcode: "222" },
+        ],
+        null,
+      ) === null,
+    },
+    {
+      name: "barcode_recovers_the_matching_variant_not_the_cheapest",
+      expected: true,
+      actual: selectRecoverableVariant(
+        [
+          { ...one[0], vid: "cheap", sellPrice: "1.00", barcode: "111" },
+          { ...one[0], vid: "dear", sellPrice: "9.00", barcode: "222" },
+        ],
+        "222",
+      )?.vid === "dear",
     },
   ];
 
