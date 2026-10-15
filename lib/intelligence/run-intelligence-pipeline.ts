@@ -518,9 +518,8 @@ export async function runIntelligencePipeline(options: {
   // Native CJ identity is permitted downstream only when the selector rechecks
   // verified product+variant IDs, shipping, price, inventory, API and orderability.
   const freshSupplyCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const { data: verifiedSupply } = await db
-    .from("supplier_listings")
-    .select("product_id")
+  const verifiedSupplyPageSize = 100;
+  const verifiedSupplyFilter = (query: ReturnType<typeof db.from>) => query
     .eq("supplier", "cj")
     .eq("verification_status", "verified")
     .eq("shipping_status", "verified")
@@ -533,9 +532,21 @@ export async function runIntelligencePipeline(options: {
     .not("supplier_product_id", "is", null)
     .not("supplier_variant_id", "is", null)
     .not("product_id", "is", null)
-    .gte("last_verified_at", freshSupplyCutoff)
+    .gte("last_verified_at", freshSupplyCutoff);
+  const { count: verifiedSupplyCount, error: verifiedSupplyCountError } = await verifiedSupplyFilter(
+    db.from("supplier_listings").select("id", { count: "exact", head: true }),
+  );
+  if (verifiedSupplyCountError) throw new Error(verifiedSupplyCountError.message);
+  const verifiedSupplyPages = Math.max(1, Math.ceil((verifiedSupplyCount ?? 0) / verifiedSupplyPageSize));
+  // Rotate on each five-minute patrol so already-published recent offers do not
+  // permanently occupy the first page and starve new sellable supplier products.
+  const verifiedSupplyOffset = (Math.floor(Date.now() / 300_000) % verifiedSupplyPages) * verifiedSupplyPageSize;
+  const { data: verifiedSupply, error: verifiedSupplyError } = await verifiedSupplyFilter(
+    db.from("supplier_listings").select("product_id"),
+  )
     .order("last_verified_at", { ascending: false, nullsFirst: false })
-    .limit(100);
+    .range(verifiedSupplyOffset, verifiedSupplyOffset + verifiedSupplyPageSize - 1);
+  if (verifiedSupplyError) throw new Error(verifiedSupplyError.message);
   const supplyCandidateIds = Array.from(new Set([
     ...listedProductIds,
     ...supplyProductIds,
