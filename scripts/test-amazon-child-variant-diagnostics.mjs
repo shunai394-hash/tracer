@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const cron = await readFile(new URL("../app/api/cron/market-sourcing/route.ts", import.meta.url), "utf8");
+const brightdataIngest = await readFile(new URL("../app/api/intelligence/brightdata-ingest/route.ts", import.meta.url), "utf8");
 const bestsellerApi = await readFile(new URL("../app/api/intelligence/bestsellers/route.ts", import.meta.url), "utf8");
 const sourceDecision = await readFile(new URL("../app/api/intelligence/source-decision/route.ts", import.meta.url), "utf8");
 const marketObserve = await readFile(new URL("../app/api/intelligence/market-observe/route.ts", import.meta.url), "utf8");
@@ -10,6 +11,7 @@ const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pi
 
 for (const [name, source] of [
   ["market-sourcing cron", cron],
+  ["Bright Data ingest API", brightdataIngest],
   ["bestsellers API", bestsellerApi],
   ["source-decision API", sourceDecision],
   ["market-observe API", marketObserve],
