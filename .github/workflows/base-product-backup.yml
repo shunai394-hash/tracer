@@ -132,6 +132,8 @@ jobs:
               "baseItemsWithoutExactMappingCount": d.get("baseItemsWithoutExactMappingCount"),
               "baseItemsWithAmbiguousExactMappingCount": d.get("baseItemsWithAmbiguousExactMappingCount"),
               "baseItemsWithExactTitleCandidateCount": d.get("baseItemsWithExactTitleCandidateCount"),
+              "baseItemsWithExactSupplierIdentifierCandidateCount": d.get("baseItemsWithExactSupplierIdentifierCandidateCount"),
+              "baseItemsWithAmbiguousSupplierIdentifierCandidateCount": d.get("baseItemsWithAmbiguousSupplierIdentifierCandidateCount"),
               "stableIdentifierCount": sum(1 for item in d.get("items", []) if str(item.get("identifier", "")).startswith("TRC-")),
               "stableIdentifierListingMatchedCount": sum(1 for item in d.get("items", []) if str(item.get("identifier", "")).startswith("TRC-") and item.get("stableIdentifierMatchCount") == 1),
               "stableIdentifierBaseItemIdMissingCount": sum(1 for item in d.get("items", []) if str(item.get("identifier", "")).startswith("TRC-") and item.get("stableIdentifierMatchCount") == 1 and item.get("stableIdentifierMatches", [{}])[0].get("existingBaseItemId") is None),
