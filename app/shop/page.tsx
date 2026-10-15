@@ -44,7 +44,7 @@ export default async function ShopPage() {
       ) : (
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-5 lg:grid-cols-4">
           {listings.map((listing) => (
-            <Link key={listing.id} href={`/shop/${listing.slug}`} className="overflow-hidden rounded-lg border border-neutral-200 bg-white transition hover:border-neutral-400">
+            <Link key={listing.id} href={`/shop/${listing.id}`} className="overflow-hidden rounded-lg border border-neutral-200 bg-white transition hover:border-neutral-400">
               {listing.imageUrl ? (
                 <img src={listing.imageUrl} alt={listing.title} loading="lazy" className="aspect-square w-full object-cover" />
               ) : (
