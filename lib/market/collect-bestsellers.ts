@@ -277,7 +277,7 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
 async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Promise<CollectedMarketplace> {
   if (marketplace.items.length === 0) return marketplace;
 
-  const limit = marketplace.marketplace === "yahoo_shopping"
+  const limit = marketplace.marketplace === "yahoo_shopping" || marketplace.marketplace === "rakuten"
     ? YAHOO_DETAIL_ENRICHMENT_LIMIT
     : marketplace.marketplace === "amazon.co.jp"
       ? DETAIL_ENRICHMENT_LIMIT
@@ -411,16 +411,18 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
         if (item.jan || item.mpn) identifierFound += 1;
       } else {
         canonicalVariantCount += item.canonicalVariants.length;
-        const detail = parseYahooProductDetail(detailHtml);
-        item.jan = normalizeIdentifier("jan", detail.jan);
-        item.gtin = normalizeIdentifier("gtin", detail.gtin);
-        item.mpn = normalizeIdentifier("mpn", detail.mpn);
-        item.brand = detail.brand;
-        if (item.price === null && detail.price !== null) {
-          item.price = detail.price;
-          item.currency = detail.currency ?? "JPY";
+        if (marketplace.marketplace === "yahoo_shopping") {
+          const detail = parseYahooProductDetail(detailHtml);
+          item.jan = normalizeIdentifier("jan", detail.jan);
+          item.gtin = normalizeIdentifier("gtin", detail.gtin);
+          item.mpn = normalizeIdentifier("mpn", detail.mpn);
+          item.brand = detail.brand;
+          if (item.price === null && detail.price !== null) {
+            item.price = detail.price;
+            item.currency = detail.currency ?? "JPY";
+          }
+          if (item.jan || item.gtin || item.mpn) identifierFound += 1;
         }
-        if (item.jan || item.gtin || item.mpn) identifierFound += 1;
       }
     } catch {
       // Detail pages stay unknown rather than blocking the listing.
