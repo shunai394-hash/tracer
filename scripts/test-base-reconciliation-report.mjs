@@ -13,7 +13,7 @@ assert.match(route, /shop_listings/);
 assert.match(route, /exactBaseIdMappedCount/);
 assert.match(route, /baseItemsWithoutExactMappingCount/);
 assert.match(route, /exactTitleCandidateCount/);
-assert.ok(route.includes("identifier: text(item.identifier)"));
+assert.ok(route.includes("const identifier = text(item.identifier)"));
 assert.ok(route.includes("TRACER BASE STABLE-ID RECONCILIATION"));
 assert.ok(route.includes("exactTitleCandidateListingIds"));
 assert.ok(route.includes("stableIdentifierMatchCount"));
