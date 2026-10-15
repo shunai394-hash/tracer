@@ -3,11 +3,9 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { createBaseItem, editBaseItem, addBaseItemImage, isBaseConfigured } from "@/lib/channels/base";
-import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
-import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { shopifyGraphQL } from "@/lib/shopify/admin";
 
 export type BasePublicationResult = {
@@ -107,8 +105,9 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       "and(published.eq.true,base_publication_status.neq.published)",
       "and(published.eq.false,base_item_id.not.is.null,base_publication_status.is.null,base_last_error.is.null)",
       "and(published.eq.false,base_item_id.not.is.null,base_publication_status.neq.published,base_last_error.is.null)",
-      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.is.null,base_last_error.neq.supplier_identity_unlinked_hidden,base_last_error.neq.tracer_unpublished_hidden)",
-      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.neq.published,base_last_error.neq.supplier_identity_unlinked_hidden,base_last_error.neq.tracer_unpublished_hidden)",
+      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.is.null)",
+      "and(published.eq.false,base_item_id.not.is.null,base_publication_status.neq.published)",
+      "and(base_item_id.is.null,supplier_product_id.not.is.null,supplier_variant_id.not.is.null,published.eq.false)",
       "and(pipeline_status.eq.selected,base_item_id.is.null)",
       "and(base_item_id.is.null,base_last_error.like.base_create_id_persist_failed:*)",
     ].join(","));
@@ -143,12 +142,11 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     if (blockError) throw new Error(`supplier_identity_block_failed:${blockError.message}`);
   }
 
-  // Hide stale BASE items immediately. Do not spend Gemini time translating
-  // listings that TRACER has already blocked/unpublished.
+  // Reconcile stale BASE items, but allow supplier-linked hidden items to be republished below.
   for (const listing of listings ?? []) {
     const isIdentityUnlinked = identityUnlinkedIds.has(String(listing.id));
     if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked)) continue;
-    if (listing.published !== true && ["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
+    if (listing.published !== true && !["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
     if (listing.selling_price === null) {
       unpublishFailed += 1;
       results.push({ listingId: String(listing.id), ok: false, skipped: true, error: "base_hide_price_unknown" });
@@ -186,7 +184,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
   }
 
-  const activeListings = (listings ?? []).filter((listing) => !identityUnlinkedIds.has(String(listing.id)) && (!listing.base_item_id || listing.published === true || ["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))));
+  const activeListings = (listings ?? []).filter((listing) => !identityUnlinkedIds.has(String(listing.id)));
   // Generate Japanese copy concurrently only for listings that can remain visible.
   // spend the full serverless timeout waiting on Gemini one listing at a time.
   const copyResults = await Promise.all(activeListings.map(async (listing) => {
@@ -211,7 +209,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const listingId = String(listing.id);
     // Already-hidden BASE items were reconciled above; do not process them a
     // second time as missing-copy failures or overwrite their reconciliation reason.
-    if (identityUnlinkedIds.has(listingId) || ["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? "")) || (listing.base_item_id && listing.published !== true)) continue;
+    if (identityUnlinkedIds.has(listingId)) continue;
     const copyResult = copyByListingId.get(listingId);
     if (!copyResult?.copy) {
       const message = copyResult?.error ?? "japanese_catalog_copy_required";
@@ -262,41 +260,15 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     if (catalogCopy.title !== String(listing.title ?? "").trim() || catalogCopy.detail !== String(listing.description ?? listing.title ?? "").trim()) {
       await supabase.from("shop_listings").update({ title: catalogCopy.title, description: catalogCopy.detail, pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
     }
-    const hasSelectedGate = listing.pipeline_status === "selected"
-      && listing.pipeline_reason === SALES_TEST_GATE_PASSED
-      && Array.isArray(listing.selection_reasons)
-      && listing.selection_reasons.includes(SALES_TEST_GATE_PASSED);
-    const hasSalesTestGate = hasPassedSalesTestGate({ ...listing, title: catalogCopy.title, normalized_title: catalogCopy.title } as Parameters<typeof hasPassedSalesTestGate>[0]) || hasSelectedGate;
-
-    if (!listing.base_item_id && !hasSalesTestGate) { results.push({ listingId, ok: false, skipped: true, error: "sales_test_gate_not_passed" }); continue; }
+      // Do not require a separate sales-test workflow flag to publish a catalog item.
+    // Concrete supplier product+variant identity, positive stock, valid price,
+    // shipping cost and positive contribution profit are the meaningful checks.
 
     // BASE publication is a sales-channel operation, not procurement authorization.
     // A listing may be sold on BASE only when the canonical Sales Test Gate has
     // passed and the currently observed supply is sellable. Automatic purchasing
     // is evaluated separately at order time; it must never suppress a valid
     // storefront listing here.
-    if (listing.tracking_available !== true) {
-      await supabase.from("shop_listings").update({
-        published: false,
-        orderable: false,
-        base_publication_status: listing.base_item_id ? "published" : "blocked",
-        pipeline_stage: "BASE_PUBLICATION",
-        pipeline_status: "blocked",
-        pipeline_reason: "tracking_unavailable",
-        pipeline_updated_at: new Date().toISOString(),
-      }).eq("id", listingId);
-      if (listing.base_item_id) {
-        try {
-          await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price: Number(listing.selling_price ?? 0), stock: 0, visible: false });
-        } catch (error) {
-          results.push({ listingId, ok: false, error: error instanceof Error ? error.message : String(error) });
-          continue;
-        }
-      }
-      results.push({ listingId, ok: false, skipped: true, error: "tracking_unavailable" });
-      continue;
-    }
-
     if (!listing.supplier_product_id || !listing.supplier_variant_id) {
       await supabase.from("shop_listings").update({
         published: false,
@@ -338,7 +310,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
 
     const availableInventory = typeof listing.inventory === "number" ? Math.floor(listing.inventory) : typeof listing.inventory === "string" && listing.inventory.trim() !== "" ? Math.floor(Number(listing.inventory)) : null;
-    if (availableInventory === null || !Number.isFinite(availableInventory) || availableInventory <= 0 || listing.orderable !== true) {
+    if (availableInventory === null || !Number.isFinite(availableInventory) || availableInventory <= 0) {
       if (listing.base_item_id) {
         try { await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price, stock: 0, visible: false }); }
         catch (error) {
@@ -372,11 +344,11 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
           base_publication_lease_until: leaseUntil,
           pipeline_stage: "BASE_PUBLICATION",
           pipeline_status: "publishing",
-          pipeline_reason: "sales_test_gate_passed",
+          pipeline_reason: "profitable_supplier_linked_catalog",
           pipeline_updated_at: new Date().toISOString(),
         })
         .eq("id", listingId)
-        .or("published.eq.true,pipeline_status.eq.selected")
+        .or("published.eq.true,pipeline_status.eq.selected,published.eq.false")
         .or("base_publication_status.is.null,base_publication_status.eq.failed,base_publication_status.eq.creating")
         .or("base_publication_lease_until.is.null,base_publication_lease_until.lt." + new Date().toISOString())
         .select("id")
@@ -413,7 +385,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         if (persistIdError) throw new Error(`base_create_id_persist_failed:${baseItemId}:${persistIdError.message}`);
       }
       if (listing.image_url) await addBaseItemImageWithFallback({ itemId: baseItemId, imageUrl: listing.image_url, shopifyProductId: typeof listing.shopify_product_id === "string" ? listing.shopify_product_id : null });
-      const { error: finalizeError } = await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_published_at: new Date().toISOString(), base_publication_status: "published", base_publication_lease_until: null, base_last_error: null, pipeline_stage: "BASE_PUBLISHED", pipeline_status: "published", pipeline_reason: "sales_test_gate_passed", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
+      const { error: finalizeError } = await supabase.from("shop_listings").update({ base_item_id: baseItemId, base_published_at: new Date().toISOString(), base_publication_status: "published", base_publication_lease_until: null, base_last_error: null, pipeline_stage: "BASE_PUBLISHED", pipeline_status: "published", pipeline_reason: "profitable_supplier_linked_catalog", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
       if (finalizeError) throw new Error(`base_publication_finalize_failed: ${finalizeError.message}`);
       results.push({ listingId, ok: true, baseItemId });
     } catch (error) {
