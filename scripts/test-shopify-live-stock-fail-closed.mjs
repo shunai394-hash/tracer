@@ -27,6 +27,9 @@ const shopifyReconcile = await readFile(new URL("../app/api/admin/shopify/reconc
 assert.match(store, /shopify_live_stock_unconfigured/, "missing Shopify credentials must fail closed");
 assert.ok(shopifyReconcile.includes('const expectedSku = `TRC-${row.id}`.slice(0, 100);'), "read-only reconciliation must compare Shopify SKU to the shared BASE/TRACER listing ID");
 assert.ok(!shopifyReconcile.includes('const expectedSku = `TRC-${row.supplier_variant_id'), "supplier IDs must not redefine the channel-neutral listing SKU");
+assert.ok(shopifyReconcile.includes("const expectedStorefrontInventory = toStorefrontStockQuantity(row.inventory, getStorefrontStockCap());"), "live reconciliation must compare Shopify against the same capped inventory sent to BASE");
+assert.ok(shopifyReconcile.includes("publicationMatches: node ? actualLive === expectedLive : null"), "live reconciliation must compare channel publication state against saleability gates");
+assert.ok(shopifyReconcile.includes("inventoryMismatch: count((c) => c.inventoryMatches === false)"), "inventory mismatch must use the shared storefront quantity, not raw supplier stock");
 assert.match(shopifySync, /toStorefrontStockQuantity\(row\.inventory, getStorefrontStockCap\(\)\)/, "supplier inventory must use the same shared cap as BASE");
 assert.equal(getStorefrontStockCap({ STOREFRONT_STOCK_CAP: "7", SHOPIFY_STOREFRONT_STOCK_CAP: "4", BASE_STOREFRONT_STOCK_CAP: "2" }), "7", "all channels must prefer the shared cap");
 assert.match(shopifySync, /if \(row\.published === false\)/, "unpublished catalog-eligible supplier-linked rows must be retried regardless of the legacy pipeline stage");
