@@ -4,7 +4,7 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 // Observation only: this cron collects market demand and canonical child-variant
 // evidence. It never publishes a marketplace ranking item or creates supplier orders.

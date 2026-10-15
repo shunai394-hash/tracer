@@ -13,6 +13,7 @@ assert.ok(cron.includes("persistMarketplaceBestsellers"), "dedicated observation
 assert.ok(cron.includes('job_name: "market-sourcing-observation"'), "observation cursor must be isolated from patrol skip records");
 assert.ok(!cron.includes('job_name: "market-sourcing"'), "patrol telemetry must not reset the market-source cursor");
 assert.ok(cron.includes("canonicalVariantEvidenceParsed"), "cron must report parsed child-variant evidence");
+assert.ok(cron.includes("export const maxDuration = 300;"), "marketplace detail scraping needs a 300-second runtime budget");
 assert.ok(cron.includes("canonicalVariantEvidenceWritten"), "cron must report persisted child-variant evidence");
 assert.ok(cron.includes('reason: "observation_only"'), "marketplace collection must not publish ranking products or place orders");
 assert.ok(vercel.crons.some((entry) => entry.path === "/api/cron/market-sourcing" && entry.schedule === "*/15 * * * *"),
