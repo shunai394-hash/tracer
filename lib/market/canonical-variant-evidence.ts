@@ -255,7 +255,10 @@ export function parseCanonicalMarketplaceVariantEvidence(
     if (!isType(variant, "Product")) continue;
     const relations = nodeList(variant.isVariantOf).map(asRecord)
       .filter((relation): relation is Record<string, unknown> => relation !== null);
-    const belongsToCanonicalVariantParent = relations.some((relation) => {
+    // Some catalogs expose the group relation as Product.inProductGroupWithID
+    // without embedding a ProductGroup node in the same JSON-LD graph.
+    const inProductGroupWithID = asString(variant.inProductGroupWithID);
+    const belongsToCanonicalVariantParent = Boolean(inProductGroupWithID) || relations.some((relation) => {
       // Schema.org permits isVariantOf to target either ProductGroup or
       // ProductModel. Both are explicit child-to-parent relations; resolve
       // local @id references rather than dropping children with a linked node.
@@ -307,6 +310,8 @@ export function parseCanonicalMarketplaceVariantEvidence(
       evidenceSource: "schema_org_product_is_variant_of",
       rawEvidence: {
         source_variant_id: sourceVariantId,
+        inProductGroupWithID,
+        relation: inProductGroupWithID ? "Product.inProductGroupWithID" : "Product.isVariantOf",
         url,
         sku,
         name: asString(variant.name),
