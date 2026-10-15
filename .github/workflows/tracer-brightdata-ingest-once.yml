@@ -37,6 +37,8 @@ jobs:
           OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app"
           OIDC_TOKEN="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${OIDC_URL}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           test -n "$OIDC_TOKEN"
+          # Wait for the production alias to finish switching to the merged build.
+          sleep 45
           python3 -c 'import json,os; print(json.dumps({"query": os.environ["QUERY"]}, ensure_ascii=False))' > request.json
           curl --fail-with-body --silent --show-error --max-time 120 \
             -H "Authorization: Bearer $OIDC_TOKEN" \
@@ -63,6 +65,8 @@ jobs:
             raise SystemExit("Bright Data ingest did not return ok=true")
           if d.get("provider") != "brightdata_mcp":
             raise SystemExit("Expected a real Bright Data MCP call; another provider was reported")
+          if not isinstance(d.get("accepted"), int) or not 1 <= d["accepted"] <= 30:
+            raise SystemExit("Expected the new bounded ingest route to accept between 1 and 30 candidates")
           if not isinstance(p.get("observationsCreated"), int) or p["observationsCreated"] < 1:
             raise SystemExit("MCP returned no persisted demand observations")
           PY
