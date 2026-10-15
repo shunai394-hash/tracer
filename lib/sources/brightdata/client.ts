@@ -122,7 +122,9 @@ function unwrapMcpContent(value: unknown): unknown {
 }
 
 function extractShoppingProducts(payload: unknown): BrightDataProductCandidate[] {
-  const unwrapped = unwrapMcpContent(payload);
+  const envelope = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : null;
+  const mcpPayload = envelope?.structuredContent ?? envelope?.content ?? payload;
+  const unwrapped = unwrapMcpContent(mcpPayload);
   if (Array.isArray(unwrapped)) {
     const productRecords = unwrapped.filter((item) => {
       if (!item || typeof item !== "object" || Array.isArray(item)) return false;
