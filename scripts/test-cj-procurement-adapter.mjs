@@ -57,3 +57,9 @@ assert.match(sandboxRoute, /SUPPLIER_LISTING_NOT_FRESH_VERIFIED_FOR_SANDBOX/);
 assert.match(sandboxRoute, /TRACER CJ SANDBOX ORDER TEST COMPLETE/, "sandbox lifecycle success must be observable without logging the tracking number");
 const vercelConfig = JSON.parse(read("vercel.json"));
 assert.doesNotMatch(JSON.stringify(vercelConfig.crons), /cj-sandbox-order-test/, "sandbox order test must never be scheduled automatically");
+
+const cjReverifySource = read("lib/suppliers/reverify-cj-identity.ts");
+assert.match(cjReverifySource, /verification_error === "storefront_stock_cap_deploy_pending"/, "only the explicit storefront stock-cap hold may be recovered");
+assert.match(cjReverifySource, /TRACER_STOREFRONT_STOCK_CAP_DEPLOYED === "1"/, "stock-cap hold recovery must require an explicit deployed-cap confirmation");
+assert.match(cjReverifySource, /refreshedFields\.orderable = true/);
+assert.match(cjReverifySource, /refreshedFields\.verification_error = null/);
