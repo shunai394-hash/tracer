@@ -17,6 +17,7 @@ export class BrightDataRequestError extends Error {
 
 export type BrightDataProductCandidate = {
   title: string;
+  brand: string | null;
   price: string | null;
   currency: string | null;
   seller: string | null;
@@ -163,11 +164,12 @@ function extractShoppingProducts(payload: unknown): BrightDataProductCandidate[]
           : null),
       rawPrice,
     );
+    const brand = normalizeText(findFirstString(record, ["brand", "brand_name", "brandName", "manufacturer"]));
     const seller = normalizeText(findFirstString(record, ["seller", "merchant", "source", "store", "retailer"]));
     const productUrl = normalizeUrl(record.link ?? record.url ?? record.product_url ?? record.productUrl ?? record.href);
     const imageUrl = normalizeUrl(record.image ?? record.image_url ?? record.imageUrl ?? record.thumbnail ?? record.thumbnail_url ?? record.thumbnailUrl);
     seen.add(title);
-    products.push({ title, price, currency, seller: seller || null, productUrl, imageUrl });
+    products.push({ title, brand: brand || null, price, currency, seller: seller || null, productUrl, imageUrl });
     if (products.length >= 100) break;
   }
   return products;
