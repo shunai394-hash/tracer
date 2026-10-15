@@ -168,7 +168,9 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         published: false,
         orderable: false,
         published_at: null,
-        base_publication_status: "failed",
+        // BASE accepted the visibility=false update. Record this as hidden,
+        // not failed; base_last_error stores a reconciliation marker here.
+        base_publication_status: "hidden",
         base_publication_lease_until: null,
         base_last_error: isIdentityUnlinked ? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden",
         pipeline_stage: "BLOCKED",

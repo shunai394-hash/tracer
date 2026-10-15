@@ -18,7 +18,13 @@ type Props = {
   loadError: string | null;
 };
 
+function isHiddenMarker(value: string | null): boolean {
+  return value === "supplier_identity_unlinked_hidden" || value === "tracer_unpublished_hidden";
+}
+
 function reason(listing: BaseListing): string {
+  if (listing.base_last_error === "supplier_identity_unlinked_hidden") return "仕入先未照合のためBASE非公開済み";
+  if (listing.base_last_error === "tracer_unpublished_hidden") return "TRACERの非公開指示をBASEへ反映済み";
   if (listing.base_last_error) return "BASE公開エラー";
   if (listing.base_item_id && listing.published !== true) return "TRACERで非公開";
   if (listing.selling_price === null) return "販売価格なし";
@@ -37,7 +43,7 @@ function reason(listing: BaseListing): string {
 
 export function BaseOperationsPanel({ configured, listings, loadError }: Props) {
   const published = listings.filter((item) => item.base_item_id && item.published === true);
-  const failed = listings.filter((item) => item.base_last_error);
+  const failed = listings.filter((item) => item.base_last_error && !isHiddenMarker(item.base_last_error));
   const blocked = listings.filter((item) => item.published === true && !item.base_item_id && !item.base_last_error);
   const ready = listings.filter((item) => {
     if (item.published !== true || item.base_item_id) return false;
