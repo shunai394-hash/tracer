@@ -11,5 +11,6 @@ assert.match(source, /catch\s*\(error\)/);
 assert.match(source, /Gemini unavailable; using exact-query fallback/);
 assert.match(source, /return deterministicCJProductQueries\(demandQuery\);/);
 const pipelineSource = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
-assert.match(pipelineSource, /\.in\("status",\s*\["new",\s*"researching"\]\)/);
+assert.match(pipelineSource, /listedProductsNeedingIntelligence\(db,\s*20\)/, "listed products without intelligence must be prioritized");
+assert.match(pipelineSource, /intelligenceBatchOffset/, "intelligence backlog must rotate across product pages");
 console.log("CJ query fallback tests: 5 assertions passed");
