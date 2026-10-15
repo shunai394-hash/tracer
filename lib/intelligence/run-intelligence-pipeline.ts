@@ -1,7 +1,6 @@
 import "server-only";
 
 import { collectGoogleTrendsDemand } from "@/lib/intelligence/collect-google-trends";
-import { matchDemandProductsByCategory } from "@/lib/intelligence/match-demand-products";
 import { normalizeProductIntelligence } from "@/lib/intelligence/normalize-products";
 import { scoreProductIntelligence } from "@/lib/intelligence/score-products";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
@@ -342,7 +341,8 @@ export async function runIntelligencePipeline(options: {
   // Demand matching runs first. It reads persisted demand/catalog evidence
   // and does not depend on the current marketplace fetch. Previously the
   // marketplace stage could consume the budget before matching started.
-  steps.push(await runStep("match", () => matchDemandProductsByCategory(), { budgetMs: 25_000 }));
+  // Demand matching runs in its own five-minute cron. Keep broad catalog reads
+  // out of this pipeline so slow data reads cannot starve product publication.
 
   // Resume market discovery from the persisted cursor instead of re-reading
   // marketplace 0 / item 0 on every patrol, and advance it afterwards.
