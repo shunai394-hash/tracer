@@ -31,18 +31,17 @@ assert.match(supplySelector, /requireDomesticShipping: !nativeCjSupplyIdentity/)
 assert.equal(isPublishableCatalogTitle("トレンド・seeded_dueアイテム"), false);
 assert.equal(isPublishableCatalogTitle("Aroma Filter"), true);
 assert.match(supplySelector, /generic_non_merchandisable_title/);
-assert.doesNotMatch(supplySelector, /reasons\.push\(.{0,10}profit_not_positive|if \(!profit\.calculable\)|intelligence_profit_not_ok/, "profit/margin estimates must not be a hard publication gate");
+assert.match(supplySelector, /profitCalculable: supplierShippingKnown && profit\.calculable/, "unknown supplier freight must not be treated as a calculable profit");
+assert.match(supplySelector, /shippingUnknown: !supplierShippingKnown \|\| profit\.shippingUnknown/);
 assert.match(marketSelector, /requireDomesticShipping: true/);
 assert.match(supplySelector, /rejectedCount: rejected\.length/);
 assert.match(supplySelector, /rejectionCounts: summarizeRejections\(rejected\)/);
 assert.match(supplySelector, /title: sourceTitle/);
 assert.match(supplySelector, /contributionProfit: profit\.contributionProfit/);
-assert.doesNotMatch(supplySelector, /reasons\.push\(.{0,10}profit_not_positive|if \(!profit\.calculable\)|intelligence_profit_not_ok/,
-  "profit/margin estimates must not be a hard publication gate");
-assert.doesNotMatch(marketSelector, /profit_not_positive|if \(!profit\.calculable\)|intelligence_profit_not_ok/,
-  "market-linked product publication must respect merchant pricing too");
-assert.doesNotMatch(shopifySync, /profit_not_positive|margin_not_positive/,
-  "Shopify sync must not block solely because a merchant-selected price has low/negative margin");
+assert.match(marketSelector, /profit_not_positive/, "market-linked publication must reject a non-positive contribution profit");
+assert.match(marketSelector, /if \(!profit\.calculable\) reasons\.push\("profit_unknown"\)/);
+assert.match(shopifySync, /profit_not_positive/, "Shopify sync must reject a stored non-positive contribution profit");
+assert.match(shopifySync, /reasons\.push\("profit_unknown"\)/);
 assert.match(supplySelector, /const rejectedSamples = rejected\.slice\(0, 50\)/, "rejection samples must not prioritize a removed women-only gate");
 assert.match(publicationRoute, /Math\.min\(500, Math\.floor\(requestedDryRunLimit\)\)/);
 assert.match(publicationRoute, /\.slice\(0, dryRunLimit\)/);

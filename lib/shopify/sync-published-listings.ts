@@ -302,8 +302,9 @@ function blockReasons(row: Listing): string[] {
   if (!/^CJ/i.test(String(row.supplier_name ?? ""))) reasons.push("supplier_not_cj");
   if (asNumber(row.shipping_cost) === null) reasons.push("shipping_cost_unknown");
   if (asNumber(row.source_cost) === null) reasons.push("source_cost_unknown");
-  // Profit and margin are advisory values. A merchant-selected price must not
-  // be silently blocked or rewritten just because its margin is low/negative.
+  const contributionProfit = asNumber(row.contribution_profit);
+  if (contributionProfit === null) reasons.push("profit_unknown");
+  else if (contributionProfit <= 0) reasons.push("profit_not_positive");
   return reasons;
 }
 

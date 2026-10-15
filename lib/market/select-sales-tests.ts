@@ -258,9 +258,10 @@ export async function selectAndPublishSalesTests(
           : null,
     });
 
-    // Profit is reported and used for ranking, not as a listing veto. Keep
-    // shipping certainty as a separate fulfillment requirement.
     if (profit.shippingUnknown) reasons.push("shipping_unknown");
+    if (!profit.calculable) reasons.push("profit_unknown");
+    if (profit.contributionProfit === null || !Number.isFinite(profit.contributionProfit)) reasons.push("profit_amount_unknown");
+    else if (profit.contributionProfit <= 0) reasons.push("profit_not_positive");
 
     if (reasons.length > 0) {
       await markPipeline(String(bestseller.id), "SALES_TEST", "blocked", reasons.join(","));
