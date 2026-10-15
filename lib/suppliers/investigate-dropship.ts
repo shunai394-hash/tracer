@@ -7,26 +7,9 @@ import { normalizeIdentifier } from "@/lib/market/identifiers";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import {
   identifiersFromRecord,
-  matchProductIdentity,
   pickIdentifierQuery,
 } from "@/lib/market/identifiers";
 import { linkInternalSupplyForBestseller } from "@/lib/suppliers/internal-catalog";
-
-const UNCONFIGURED_SUPPLIERS = [
-  "hypersku",
-  "dsers",
-  "zendrop",
-  "syncee",
-] as const;
-
-function asNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
 
 async function enrichAsinOnlyRows(rows: Record<string, unknown>[]): Promise<void> {
   const targets = rows.filter((record) => {
@@ -133,9 +116,9 @@ export async function investigateDropshipForBestsellers(
   let processed = 0;
   let matched = 0;
   let skippedNoIdentifier = 0;
-  let unconfigured = 0;
+  const unconfigured = 0;
   let noIdentifierOverlap = 0;
-  let rowErrors = 0;
+  const rowErrors = 0;
   const rowErrorDetails: Array<{ bestsellerId: string; title: string; stage: string; query: string | null; cjProductId: string | null; error: string }> = [];
 
   for (const row of rows ?? []) {
