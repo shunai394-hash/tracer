@@ -7,7 +7,6 @@ import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportuni
 import { persistDemandIntelligence } from "@/lib/intelligence/persist-demand-intelligence";
 import { persistReorderRecommendations } from "@/lib/ordering/persist-reorder";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
-import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import {
@@ -423,11 +422,6 @@ export async function runIntelligencePipeline(options: {
       ? ((bestsellerStep.result as { bestsellerIds: string[] }).bestsellerIds)
       : [];
 
-  const supplierCandidateIds =
-    bestsellerCanFeedSalesGate && bestsellerStep.result && typeof bestsellerStep.result === "object" && Array.isArray((bestsellerStep.result as { supplierCandidateIds?: unknown }).supplierCandidateIds)
-      ? (bestsellerStep.result as { supplierCandidateIds: string[] }).supplierCandidateIds
-      : [];
-
   steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand(), { budgetMs: 5_000 }));
 
   // CJ identity re-verification runs through its dedicated cron endpoint only.
@@ -582,46 +576,23 @@ export async function runIntelligencePipeline(options: {
     return { testReady: result?.testReady ?? 0, note: "TEST_READY is produced only after the data quality gate" };
   }, { downstream: true, budgetMs: 2_000 }));
 
-  // Best-effort catalog enrichment runs after demand intelligence, Sales Test,
-  // and downstream delivery. Supplier/marketplace network latency must never
-  // starve the core AI cycle or publication gates.
-  // Identity backlog: bestsellers that carry a barcode but were inserted by an
-  // earlier patrol were never investigated (only the current run's inserts
-  // were). Drain a few per patrol, oldest observations first.
-  steps.push(await runStep("dropship", async () => {
-    // The pending-barcode backlog is still raw marketplace evidence. Do not
-    // let it bypass the canonical-variant prerequisite when bestseller intake
-    // was deferred or retryable.
-    if (!bestsellerCanFeedSalesGate) {
-      const bestsellerResult = bestsellerStep.result && typeof bestsellerStep.result === "object"
-        ? bestsellerStep.result as { reason?: unknown }
-        : {};
-      const observationOnlySource =
-        bestsellerStep.skipped === true &&
-        bestsellerStep.retryable !== true &&
-        bestsellerResult.reason === "source_has_no_canonical_child_variant_contract";
-      return {
-        skipped: true,
-        retryable: bestsellerStep.retryable === true,
-        reason: observationOnlySource
-          ? "bestseller_source_has_no_canonical_child_variant_contract"
-          : "bestseller_canonical_evidence_deferred",
-      };
-    }
-    const { data: backlog, error: backlogError } = await db
-      .from("marketplace_bestsellers")
-      .select("id")
-      .eq("pipeline_status", "pending")
-      .or("jan.not.is.null,gtin.not.is.null,ean.not.is.null,upc.not.is.null")
-      .order("fetched_at", { ascending: true })
-      .limit(2);
-    if (backlogError) throw new Error(backlogError.message);
-    const ids = Array.from(new Set([
-      ...supplierCandidateIds,
-      ...(backlog ?? []).map((row) => String(row.id)),
-    ]));
-    return investigateDropshipForBestsellers(ids);
-  }, { budgetMs: 30_000 }));
+  // Marketplace ranking pages are demand observations, not supplier catalogs.
+  // Do not use Yahoo/Amazon/Rakuten ranking rows or their barcodes to drive
+  // procurement matching. CJ procurement is handled by the dedicated
+  // supply-first path, which verifies the exact CJ product/variant, price,
+  // stock, Japan shipping, orderability, and tracking directly.
+  steps.push({
+    name: "dropship",
+    ok: true,
+    skipped: true,
+    retryable: false,
+    result: {
+      skipped: true,
+      reason: "marketplace_rankings_not_used_for_supplier_procurement",
+      discoveryCron: "/api/cron/supply-first",
+    },
+  });
+
 
   const blockingFailed = steps.some((step) => !step.ok && !step.skipped);
   const deferredStep = steps.find((step) => {
