@@ -1,6 +1,18 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { matchShopifyLineToListing, shopifyLineLookup, type ShopifyListingIdentity } from "@/lib/ordering/shopify-line-match";
 import { verifyShopifyWebhookHmac } from "@/lib/shopify/admin";
+
+type ShopListingMatch = ShopifyListingIdentity & {
+  product_id: string;
+  title: string;
+  published: boolean;
+  orderable: boolean;
+  selling_price: number | string | null;
+  supplier_listing_id: string | null;
+  supplier_name: string | null;
+  supplier_product_id: string | null;
+};
 
 export const runtime = "nodejs";
 
@@ -25,16 +37,35 @@ export async function POST(request: Request) {
     if (existing.data) return NextResponse.json({ ok: true, duplicate: true, orderId: String(existing.data.id) });
 
     const items = Array.isArray(order.line_items) ? order.line_items as Array<Record<string, unknown>> : [];
-    const skus = items.map((item) => String(item.sku ?? "")).filter(Boolean);
-    if (!items.length || !skus.length) return NextResponse.json({ ok: true, blocked: true, reason: "listing_sku_missing" });
+    const lookups = items.map((item) => shopifyLineLookup({ sku: item.sku, variantId: item.variant_id }));
+    if (!items.length || lookups.every((line) => !line.listingId && !line.supplierVariantId && line.shopifyVariantIds.length === 0)) {
+      return NextResponse.json({ ok: true, blocked: true, reason: "listing_sku_missing" });
+    }
 
-    const { data: listings, error: listingError } = await db.from("shop_listings")
-      .select("id,product_id,title,published,orderable,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id")
-      .in("id", skus);
-    if (listingError) throw new Error(listingError.message);
-    const byId = new Map((listings ?? []).map((row) => [String(row.id), row]));
-    if (skus.some((sku) => !byId.has(sku))) return NextResponse.json({ ok: true, blocked: true, reason: "listing_mapping_missing" });
-    if ((listings ?? []).some((row) => row.published !== true || row.orderable !== true)) {
+    const listingIds = lookups.map((line) => line.listingId).filter((id): id is string => Boolean(id));
+    const supplierVariantIds = lookups.map((line) => line.supplierVariantId).filter((id): id is string => Boolean(id));
+    const shopifyVariantIds = [...new Set(lookups.flatMap((line) => line.shopifyVariantIds))];
+    const select = "id,product_id,title,published,orderable,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id,shopify_variant_id";
+    const fetched: ShopListingMatch[] = [];
+    const load = async (column: "id" | "supplier_variant_id" | "shopify_variant_id", values: string[]) => {
+      if (values.length === 0) return;
+      const { data, error } = await db.from("shop_listings").select(select).in(column, values);
+      if (error) throw new Error(error.message);
+      fetched.push(...((data ?? []) as ShopListingMatch[]));
+    };
+    await load("id", listingIds);
+    await load("supplier_variant_id", supplierVariantIds);
+    await load("shopify_variant_id", shopifyVariantIds);
+    const listings = [...new Map(fetched.map((row) => [row.id, row])).values()];
+    const matched = lookups.map((line) => matchShopifyLineToListing(line, listings));
+    if (matched.some((row) => row.reason === "listing_mapping_ambiguous")) {
+      return NextResponse.json({ ok: true, blocked: true, reason: "listing_mapping_ambiguous" });
+    }
+    if (matched.some((row) => row.reason !== "matched" || !row.listing)) {
+      return NextResponse.json({ ok: true, blocked: true, reason: "listing_mapping_missing" });
+    }
+    const resolved = matched.map((row) => row.listing).filter((row): row is ShopListingMatch => row !== null);
+    if (resolved.some((row) => row.published !== true || row.orderable !== true)) {
       return NextResponse.json({ ok: true, blocked: true, reason: "listing_not_orderable" });
     }
 
@@ -45,7 +76,7 @@ export async function POST(request: Request) {
     const billing = (order.billing_address ?? {}) as Record<string, unknown>;
     const currency = String(order.currency ?? order.presentment_currency ?? "JPY");
     const inserted = await db.from("shop_orders").insert({
-      listing_id: byId.get(skus[0])?.id ?? null,
+      listing_id: resolved[0]?.id ?? null,
       status: "placed",
       payment_method: "shopify",
       payment_status: paid ? "paid" : "pending",
@@ -72,8 +103,9 @@ export async function POST(request: Request) {
     }).select("id").single();
     if (inserted.error) throw new Error(inserted.error.message);
 
-    for (const item of items) {
-      const listing = byId.get(String(item.sku ?? ""));
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      const listing = resolved[index];
       if (!listing) throw new Error("listing mapping missing during item insert");
       const row = await db.from("shop_order_items").insert({
         order_id: inserted.data.id,
