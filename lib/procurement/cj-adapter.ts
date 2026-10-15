@@ -16,6 +16,9 @@ import {
   createCJOrderV2,
   getCJOrderStatus,
   getCJTrackingInfo,
+  simulateCJSandboxPayment,
+  updateCJSandboxOrderStatus,
+  updateCJSandboxTrackingNumber,
 } from "@/lib/sources/cj/create-order";
 import type {
   SupplierInventory,
@@ -385,3 +388,97 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
     };
   },
 };
+
+
+/**
+ * Runs the external CJ create → simulated payment → status → tracking lifecycle
+ * against a CJ sandbox order. It does not use the live-order flags and never
+ * writes purchase/order rows to TRACER's production database.
+ */
+export async function runCJSandboxOrderLifecycle(input: SupplierOrderInput): Promise<{
+  supplierOrderId: string;
+  status: string;
+  trackingNumber: string;
+  paymentConfirmed: true;
+  sandbox: true;
+  charged: false;
+  realFulfillment: false;
+}> {
+  const required: Array<[string, string | undefined]> = [
+    ["supplierProductId", input.supplierProductId],
+    ["supplierVariantId", input.supplierVariantId],
+    ["orderNumber", input.orderNumber],
+    ["shippingCountryCode", input.shippingCountryCode],
+    ["shippingProvince", input.shippingProvince],
+    ["shippingCity", input.shippingCity],
+    ["shippingAddress", input.shippingAddress],
+    ["shippingZip", input.shippingZip],
+    ["shippingCustomerName", input.shippingCustomerName],
+    ["shippingPhone", input.shippingPhone],
+  ];
+  const missing = required.find(([, value]) => !value?.trim());
+  if (missing) throw new Error(`CJ_SANDBOX_INPUT_MISSING:${missing[0]}`);
+  if (!Number.isSafeInteger(input.quantity) || input.quantity < 1) throw new Error("CJ_SANDBOX_QUANTITY_INVALID");
+  if (!countryName(input.shippingCountryCode, input.shippingCountry)) throw new Error("CJ_SANDBOX_COUNTRY_UNVERIFIED");
+
+  const variant = await fetchCJVariantByVid(input.supplierVariantId);
+  if (!variant || variant.productId !== input.supplierProductId) throw new Error("CJ_SANDBOX_VARIANT_MISMATCH");
+  if (variant.inventory === null || variant.inventory < input.quantity || !positiveNumber(variant.sellPrice)) {
+    throw new Error("CJ_SANDBOX_STOCK_OR_PRICE_UNVERIFIED");
+  }
+  const freight = await chooseFreight(
+    input.supplierProductId,
+    input.supplierVariantId,
+    input.shippingCountryCode,
+    input.shippingZip,
+    input.quantity,
+  );
+  if (!freight) throw new Error("CJ_SANDBOX_SHIPPING_UNAVAILABLE");
+  const shippingCountry = countryName(input.shippingCountryCode, input.shippingCountry);
+  if (!shippingCountry) throw new Error("CJ_SANDBOX_COUNTRY_UNVERIFIED");
+
+  const created = await createCJOrderV2({
+    orderNumber: input.orderNumber,
+    shippingCountryCode: input.shippingCountryCode.toUpperCase(),
+    shippingCountry,
+    shippingProvince: input.shippingProvince,
+    shippingCity: input.shippingCity,
+    shippingAddress: input.shippingAddress,
+    shippingAddress2: input.shippingAddress2,
+    shippingZip: input.shippingZip,
+    shippingPhone: input.shippingPhone,
+    shippingCustomerName: input.shippingCustomerName,
+    email: input.email,
+    logisticName: freight.logisticName,
+    fromCountryCode: freight.countryCode,
+    payType: 3,
+    isSandbox: true,
+    products: [{ vid: variant.vid, quantity: input.quantity }],
+  });
+  const orderId = created.supplierOrderId?.trim();
+  if (!created.succeeded || !orderId) throw new Error(`CJ_SANDBOX_CREATE_FAILED:${created.responseCode ?? "unknown"}`);
+
+  await simulateCJSandboxPayment(orderId);
+  const trackingNumber = `SBXTRACER${Date.now()}`;
+  await updateCJSandboxTrackingNumber(orderId, trackingNumber);
+  await updateCJSandboxOrderStatus(orderId, 400);
+  await updateCJSandboxOrderStatus(orderId, 500);
+
+  const observed = await getCJOrderStatus(orderId);
+  const normalizedStatus = (observed.status ?? "").trim().toUpperCase();
+  const shipped = normalizedStatus === "500" || normalizedStatus === "SHIPPED" || normalizedStatus === "IN_TRANSIT";
+  const paymentConfirmed = Boolean(observed.paymentDate || (observed.paymentDateTime && observed.paymentDateTime > 0));
+  if (!paymentConfirmed || !shipped || observed.trackingNumber !== trackingNumber) {
+    throw new Error("CJ_SANDBOX_LIFECYCLE_VERIFICATION_FAILED");
+  }
+
+  return {
+    supplierOrderId: orderId,
+    status: observed.status ?? "500",
+    trackingNumber,
+    paymentConfirmed: true,
+    sandbox: true,
+    charged: false,
+    realFulfillment: false,
+  };
+}
