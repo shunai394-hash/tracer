@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { calculateCJFreight, fetchCJProductVariants, fetchCJVariantStock } from "@/lib/sources/cj";
-import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/cj/variant-select";
+import { selectRecoverableVariant } from "@/lib/sources/cj/variant-select";
 
 const WOMENS_PRODUCT_PATTERNS = [
   /skincare|skin care|serum|moisturizer|moisturiser|face cream|sunscreen|toner|essence|retinol|niacinamide|acne patch|pore strip|facial mask|cleansing/i,
@@ -19,13 +19,10 @@ function isWomens(title: unknown): boolean {
   return WOMENS_PRODUCT_PATTERNS.some((pattern) => pattern.test(typeof title === "string" ? title : ""));
 }
 
-function selectSafeVariant(variants: CJProductVariant[]): CJProductVariant | null {
-  const unambiguous = selectUnambiguousVariant(variants);
-  if (unambiguous?.vid) return unambiguous;
-  const priced = variants
-    .filter((variant) => Boolean(variant.vid) && Number(variant.sellPrice) > 0)
-    .sort((a, b) => Number(a.sellPrice) - Number(b.sellPrice));
-  return priced.length > 0 ? priced[0] : null;
+function knownVariantBarcode(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const barcode = (metadata as Record<string, unknown>).variant_barcode;
+  return typeof barcode === "string" && barcode.trim() ? barcode.trim() : null;
 }
 
 export async function repairCjMissingWomenVariants(options: { limit?: number } = {}) {
@@ -50,7 +47,7 @@ export async function repairCjMissingWomenVariants(options: { limit?: number } =
     const supplierProductId = String(row.supplier_product_id);
     try {
       const variants = await fetchCJProductVariants(supplierProductId, { countryCode: "JP" });
-      const variant = selectSafeVariant(variants);
+      const variant = selectRecoverableVariant(variants, knownVariantBarcode(row.metadata));
       if (!variant?.vid) {
         result.noVariant += 1;
         continue;
