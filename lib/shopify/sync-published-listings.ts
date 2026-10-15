@@ -34,6 +34,7 @@ type Listing = {
   shopify_variant_id: string | null;
   shopify_handle: string | null;
   shopify_sync_status: string | null;
+  shopify_sync_error: string | null;
   shipping_cost?: number | string | null;
   source_cost?: number | string | null;
   contribution_profit?: number | string | null;
@@ -208,7 +209,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
   }
 
   const supabase = createSupabaseAdminClient();
-  const baseSelect = "id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_status";
+  const baseSelect = "id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_status,shopify_sync_error";
   let query = supabase
     .from("shop_listings")
     .select(baseSelect)
@@ -253,6 +254,11 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
     : rows.filter((row) => {
         const status = String(row.shopify_sync_status ?? "");
         if (status === "syncing") return false;
+        // A DB status of "blocked" is not proof that the product is no longer published on Shopify.
+        // Reconcile legacy blocked rows once until the external unpublish has been verified.
+        if (row.published === false && row.pipeline_stage === "BLOCKED" && row.shopify_product_id) {
+          return row.shopify_sync_error !== "shopify_unpublished_verified";
+        }
         if (!hasPublishableSupplierIdentity(row.identity_status)) return Boolean(row.shopify_product_id) && status !== "blocked";
         if (row.published === true && (row.pipeline_stage === "PUBLISHED" || row.pipeline_stage === "BASE_PUBLISHED") && row.pipeline_status === "published") {
           if (status !== "synced") return true;
@@ -406,7 +412,7 @@ async function syncListingRows(
       await unpublishShopifyProduct(String(row.shopify_product_id));
       await supabase.from("shop_listings").update({
         shopify_sync_status: "blocked",
-        shopify_sync_error: "sales_test_or_supply_gate_not_passed",
+        shopify_sync_error: "shopify_unpublished_verified",
         shopify_synced_at: new Date().toISOString(),
       }).eq("id", row.id);
     } catch (error) {
