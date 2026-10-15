@@ -27,3 +27,10 @@ assert.equal(selectRecoverableVariant([cheap, dear], "222")?.vid, "dear");
 assert.equal(selectRecoverableVariant([cheap], null)?.vid, "cheap");
 
 console.log("listing shipping currency and variant recovery passed");
+
+assert.match(repair, /sku: variant\.sku \?\? row\.sku \?\? null/);
+assert.match(repair, /cj_variant_id: variant\.vid/);
+assert.match(repair, /shipping_status: "verified"/);
+assert.match(repair, /tracking capability still require verification/);
+assert.doesNotMatch(repair, /tracking_available: true/, "variant recovery must not invent tracking capability");
+assert.match(repair, /inventory_checked_at: checkedAt/);
