@@ -443,7 +443,7 @@ export async function runIntelligencePipeline(options: {
       deadlineAt: Math.min(pipelineDeadlineAt - 5_000, Date.now() + 18_000),
     }));
   // A normal return is not proof that discovery completed: the supplier
-  // scanner can exhaust its own deadline with zero candidates and no throw.
+  // scanner can defer on its deadline or quota circuit with zero candidates.
   // Mark that run deferred/retryable so patrol status cannot claim success.
   // Keep partial results usable when at least one candidate was actually found.
   const supplyFirstResult = supplyFirstStep.result && typeof supplyFirstStep.result === "object"
@@ -460,7 +460,7 @@ export async function runIntelligencePipeline(options: {
       ...supplyFirstResult,
       skipped: true,
       retryable: true,
-      reason: "supply_discovery_deadline_reached_without_candidates",
+      reason: "supply_discovery_deferred_without_candidates",
     };
   }
   steps.push(supplyFirstStep);
