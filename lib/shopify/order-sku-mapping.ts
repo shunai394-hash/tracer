@@ -2,6 +2,7 @@ export type OrderSkuListing = {
   id: string;
   supplier_variant_id?: string | null;
   supplier_product_id?: string | null;
+  shopify_variant_id?: string | null;
 };
 
 export type OrderSkuLookup = {
@@ -55,6 +56,8 @@ export function resolveShopifyOrderSkus<T extends OrderSkuListing>(
       tracerSkuForListing(listing) === sku ||
       (sku.startsWith("CJ-") && Boolean(listing.supplier_variant_id) &&
         `CJ-${listing.supplier_variant_id}` === sku) ||
+      (sku.startsWith("SHOPIFYVARIANT-") && Boolean(listing.shopify_variant_id) &&
+        String(listing.shopify_variant_id) === sku.slice("SHOPIFYVARIANT-".length)) ||
       listing.id === sku,
     );
     if (exact.length === 0) return { ok: false, reason: "listing_mapping_missing", sku };
