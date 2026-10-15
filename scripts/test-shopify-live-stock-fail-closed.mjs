@@ -31,7 +31,8 @@ assert.doesNotMatch(store, /shopify_live_stock_response_incomplete/, "one missin
 assert.match(store, /Missing\/retired variants fail closed per listing below/);
 assert.match(store, /listing\.shopifySyncStatus === "synced" && Boolean\(listing\.shopifyVariantId\)/, "storefront must only load listings synced to Shopify");
 assert.match(store, /shopify_live_stock_quantity_unknown/, "unknown quantities must be rejected");
-assert.ok(store.includes('[shopify-live-stock-unavailable]') && store.includes("return [];"), "Shopify API failure must return no storefront listings");
+assert.ok(store.includes('[shopify-live-stock-unavailable]') && store.includes("return listings;"), "temporary Shopify API failure must preserve the published catalog for display");
+assert.match(store, /placeShopOrder[\s\S]*getLiveShopifyStock/, "checkout must independently recheck live stock when display falls back to the last synchronized snapshot");
 assert.ok(store.includes("hasVerifiedPositiveShopifyStock(listing.shopifyVariantId, live)"), "storefront must use the tested stock policy");
 assert.equal(store.includes("return live === undefined || live > 0"), false, "unknown live stock must never pass through");
 assert.match(store, /const liveStock = await getLiveShopifyStock/, "order creation must recheck current Shopify stock");
