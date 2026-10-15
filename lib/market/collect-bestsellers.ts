@@ -222,7 +222,7 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
           fetchedAt,
           items: [],
           skipped: true,
-          reason: isBrightDataConfigured()
+          reason: isBrightDataFetchConfigured()
             ? "page_html_not_returned"
             : "brightdata_not_configured_and_direct_fetch_empty",
         });
