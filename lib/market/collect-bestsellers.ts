@@ -22,6 +22,8 @@ export const MARKETPLACE_SOURCES = [
   // Amazon detail pages provide canonical child-ASIN evidence needed for exact
   // supplier-variant matching, so process these sources before broad rankings.
   { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/beauty/", source: "amazon_bestsellers_beauty" },
+  // Fashion is demand/variant research only (bags and hair accessories), never a supplier source.
+  { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/fashion/", source: "amazon_bestsellers_fashion" },
   { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/", source: "amazon_bestsellers" },
   { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/electronics/", source: "amazon_bestsellers_electronics" },
   { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/kitchen/", source: "amazon_bestsellers_kitchen" },
