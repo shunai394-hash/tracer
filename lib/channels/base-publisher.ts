@@ -124,7 +124,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   // Missing, unlinked, or unverified supplier evidence must be hidden on BASE.
   const supplierStatuses = await getPublishableSupplierListingStatuses((listings ?? []).map((listing) => listing.supplier_listing_id));
   const identityUnlinkedIds = new Set<string>((listings ?? [])
-    .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.supplier_listing_id)))
+    .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.supplier_listing_id)) || listing.orderable !== true || listing.tracking_available !== true)
     .map((listing) => String(listing.id)));
   const results: BasePublicationResult["results"] = [];
   let unpublishFailed = 0;
