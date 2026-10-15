@@ -106,4 +106,18 @@ assert.deepEqual(
   "parse complete nested dimension map rather than truncating at the first closing brace",
 );
 
+
+const alternateVariationHtml = `
+<script>
+var asinVariationValues = {"B0CHILD005":["ホワイト","M"],"B0CHILD006":["ブラック","L"]};
+</script>`;
+assert.deepEqual(
+  parseAmazonVariationAsinMap(alternateVariationHtml, parentUrl),
+  [
+    { asin: "B0CHILD005", variationValues: ["ホワイト", "M"] },
+    { asin: "B0CHILD006", variationValues: ["ブラック", "L"] },
+  ],
+  "recognize the alternate explicit asinVariationValues map without weakening child barcode verification",
+);
+
 console.log("Amazon variant parser fixtures: passed");
