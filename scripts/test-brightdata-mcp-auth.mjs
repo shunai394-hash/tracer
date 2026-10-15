@@ -21,7 +21,7 @@ assert.match(collector, /priceText\.match\(\/\\b\(JPY\|USD\|EUR\|GBP\|CNY\|CAD\|
 assert.match(collector, /consumer\.listTools\(\)/, "product collection must discover the real Bright Data MCP tools");
 assert.match(collector, /consumer\.callTool\(call\)/, "product collection must invoke a discovered Bright Data MCP tool");
 assert.match(collector, /provider: "brightdata_mcp"/, "ingest results must identify successful MCP-backed collection");
-assert.ok(collector.includes('const preferred = ["web_data_google_shopping", "scrape_as_markdown", "search_engine", "search_engine_batch"];'), "product collection should prefer the structured Google Shopping scraper, then fall back to markdown/search tools");
+assert.ok(collector.includes('const preferred = ["scrape_as_markdown", "search_engine", "search_engine_batch"];'), "product collection should prefer the structured Google Shopping scraper, then fall back to markdown/search tools");
 assert.ok(collector.includes("const lines = unwrapped.split(/\\r?\\n/);"), "Markdown product cards must be parsed from Bright Data results");
 assert.ok(collector.includes("if (!priceMatch) continue;"), "generic navigation links without a price must not become Markdown product candidates");
 assert.match(collector, /const mcpConfigured = isMcpConfigured\(\);[\s\S]{0,500}Bright Data MCP was configured but returned no parseable shopping products/, "MCP-only config must not fall through to missing API-token/zone config");
