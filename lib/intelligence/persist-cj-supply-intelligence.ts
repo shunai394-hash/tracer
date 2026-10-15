@@ -161,7 +161,7 @@ async function resolveMarketplaceIdentityFromBarcode(args: { db: ReturnType<type
   };
 }
 
-export async function resolveMarketplaceIdentityWithFreshBarcode(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<{ identity: MarketplaceIdentity | null; variantBarcode: string | null }> {
+export async function resolveMarketplaceIdentityWithFreshBarcode(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<{ identity: MarketplaceIdentity | null; variantBarcode: string | null; variantDetails: Awaited<ReturnType<typeof fetchCJVariantByVid>> }> {
   // Fetch the exact CJ variant barcode once, then reuse that same fresh value
   // for both marketplace matching and persistence/diagnostics.
   const freshEvidence = await readSupplierBarcode(args);
