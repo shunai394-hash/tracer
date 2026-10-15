@@ -7,27 +7,20 @@ import {
   tracerSkuForListing,
 } from "../lib/shopify/order-sku-mapping.ts";
 
-test("resolves generated TRC SKU by supplier variant ID", () => {
+test("uses the same stable listing SKU across channels and resolves legacy supplier SKUs", () => {
   const listing = { id: "11111111-1111-4111-8111-111111111111", supplier_variant_id: "variant-42", supplier_product_id: "product-7" };
   const sku = tracerSkuForListing(listing);
-  assert.equal(sku, "TRC-variant-42");
-  assert.deepEqual(getOrderSkuLookup([sku]).supplierSources, ["variant-42"]);
-  const resolved = resolveShopifyOrderSkus([sku], [listing]);
-  assert.equal(resolved.ok, true);
-  if (resolved.ok) assert.equal(resolved.bySku.get(sku)?.id, listing.id);
+  assert.equal(sku, `TRC-${listing.id}`);
+  assert.deepEqual(getOrderSkuLookup([sku]).legacyListingIds, [listing.id]);
+  assert.equal(resolveShopifyOrderSkus([sku], [listing]).ok, true);
+  assert.equal(resolveShopifyOrderSkus(["TRC-variant-42"], [listing]).ok, true, "legacy variant-based SKUs remain order-resolvable");
+  assert.equal(resolveShopifyOrderSkus(["TRC-product-7"], [listing]).ok, true, "legacy product-based SKUs remain order-resolvable");
 });
 
-test("resolves SKU fallback to supplier product ID", () => {
-  const listing = { id: "11111111-1111-4111-8111-111111111111", supplier_variant_id: null, supplier_product_id: "product-7" };
-  const sku = tracerSkuForListing(listing);
-  assert.equal(sku, "TRC-product-7");
-  const resolved = resolveShopifyOrderSkus([sku], [listing]);
-  assert.equal(resolved.ok, true);
-});
-
-test("resolves SKU fallback to listing ID and supports legacy raw listing ID", () => {
+test("generated shared SKU always uses the listing ID when supplier IDs are absent", () => {
   const listing = { id: "11111111-1111-4111-8111-111111111111", supplier_variant_id: null, supplier_product_id: null };
   const generated = tracerSkuForListing(listing);
+  assert.equal(generated, `TRC-${listing.id}`);
   assert.deepEqual(getOrderSkuLookup([generated]).legacyListingIds, [listing.id]);
   assert.equal(resolveShopifyOrderSkus([generated], [listing]).ok, true);
   assert.equal(resolveShopifyOrderSkus([listing.id], [listing]).ok, true);
@@ -44,6 +37,12 @@ test("fails closed for missing and ambiguous exact SKU mappings", () => {
     resolveShopifyOrderSkus(["TRC-same-variant"], [a, b]),
     { ok: false, reason: "listing_mapping_ambiguous", sku: "TRC-same-variant" },
   );
+});
+
+const sync = readFileSync("lib/shopify/sync-published-listings.ts", "utf8");
+test("Shopify product sync uses the shared BASE listing identifier", () => {
+  assert.match(sync, /return `TRC-\$\{listing\.id\}`/);
+  assert.doesNotMatch(sync, /const source = listing\.supplier_variant_id/);
 });
 
 const webhook = readFileSync("app/api/webhooks/shopify/orders/route.ts", "utf8");
