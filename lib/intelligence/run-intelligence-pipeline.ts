@@ -368,9 +368,6 @@ export async function runIntelligencePipeline(options: {
     result: { skipped: true, reason: "marketplace_sourcing_disabled_supplier_native_only" },
   };
   steps.push(bestsellerStep);
-  const bestsellerCanFeedSalesGate = false;
-  const bestsellerIds: string[] = [];
-
   steps.push(await runStep("auxiliary_trends", () => collectGoogleTrendsDemand(), { budgetMs: 5_000 }));
 
   // CJ identity re-verification runs through its dedicated cron endpoint only.
