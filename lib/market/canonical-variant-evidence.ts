@@ -375,10 +375,10 @@ export function parseAmazonVariationAsinMap(
     "asinToVariationValues",
   ];
   const patterns = mapNames.flatMap((name) => [
-    new RegExp(`(?:var|let|const)\\s+${name}\\s*=`, "gi"),
-    new RegExp(`${name}\\s*:`, "gi"),
+    { name, pattern: new RegExp(`(?:var|let|const)\\s+${name}\\s*=`, "gi") },
+    { name, pattern: new RegExp(`${name}\\s*:`, "gi") },
   ]);
-  for (const pattern of patterns) {
+  for (const { name, pattern } of patterns) {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(html))) {
       let start = pattern.lastIndex;
