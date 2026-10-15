@@ -20,7 +20,8 @@ assert.match(retryGate, /shopifyStatus === "synced" && hasPassedSalesTestGate\(r
   "NEWFIND must not retry listings whose TRACER sales page is not live");
 assert.match(reconcile, /shopify_sync_status === "synced"/,
   "rescue must prioritize Shopify-synced products before unsynced rows");
-assert.match(reconcile, /if \(status !== "missing"\) continue;/,\n  "rescue must not re-send failed delivery rows already handled by the retry pass");\nassert.match(reconcile, /hasPassedSalesTestGate\(row\) && row\.shopify_sync_status === "synced"/,
+assert.match(reconcile, /if \(status !== "missing"\) continue;/,
+  "rescue must not re-send failed delivery rows already handled by the retry pass");\nassert.match(reconcile, /hasPassedSalesTestGate\(row\) && row\.shopify_sync_status === "synced"/,
   "rescue must exclude BASE-only listings until Shopify sync makes the sales URL live");
 assert.match(reconcile, /const columns = "id, title, base_item_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, updated_at"/,
   "rescue gate checks must fetch the Japanese title they validate");
