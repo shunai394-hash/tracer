@@ -315,53 +315,86 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
         variantProductNodeCount += markup.variantProductNodeCount;
         absoluteTypeIriCount += markup.absoluteTypeIriCount;
         item.canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl);
-        // Amazon pages often expose child ASINs in their explicit variation map
-        // even when they omit Schema.org ProductGroup.hasVariant. Resolve those
-        // ASINs against each child's own detail page; never inherit the parent's
-        // JAN/GTIN, and persist only child pages with a valid concrete barcode.
-        if (item.canonicalVariants.length === 0) {
-          const childAsins = parseAmazonVariationAsinMap(detailHtml, item.productUrl).slice(0, 6);
-          variationAsinsFound += childAsins.length;
-          childDetailAttempted += childAsins.length;
-          const recovered = await Promise.all(childAsins.map(async (child) => {
-            const childUrl = `https://www.amazon.co.jp/dp/${child.asin}`;
-            const childHtml = await fetchHtml(childUrl, { retryBrightDataWhenAmazonIdentifierMissing: true });
-            if (!childHtml) return null;
-            childDetailFetched += 1;
-            const childDetail = parseAmazonProductDetail(childHtml);
-            const jan = normalizeIdentifier("jan", childDetail.jan);
-            const gtin = normalizeIdentifier("gtin", childDetail.gtin);
-            const ean = normalizeIdentifier("ean", childDetail.ean);
-            const upc = normalizeIdentifier("upc", childDetail.upc);
-            if (!jan && !gtin && !ean && !upc) return null;
-            childBarcodeFound += 1;
-            return {
-              sourceVariantId: child.asin,
-              sku: null,
-              title: child.variationValues.length ? child.variationValues.join(" / ") : null,
-              asin: child.asin,
-              jan,
-              gtin,
-              ean,
-              upc,
-              mpn: normalizeIdentifier("mpn", childDetail.model),
-              productUrl: childUrl,
-              evidenceSource: "amazon_variation_asin_map" as const,
-              rawEvidence: {
-                source_variant_id: child.asin,
-                parent_product_url: item.productUrl,
-                child_product_url: childUrl,
-                variation_values: child.variationValues,
-                child_jan: jan,
-                child_gtin: gtin,
-                child_ean: ean,
-                child_upc: upc,
-                extraction: "child_detail_page",
-              },
-            };
-          }));
-          item.canonicalVariants.push(...recovered.filter((value): value is NonNullable<typeof value> => value !== null));
-        }
+        // ProductGroup.hasVariant and Amazon's explicit child-ASIN map are
+        // independent evidence channels. Fetch any child page whose exact ASIN
+        // does not yet have a concrete barcode, including JSON-LD children that
+        // exist structurally but lack JAN/GTIN/EAN/UPC.
+        const childAsins = parseAmazonVariationAsinMap(detailHtml, item.productUrl).slice(0, 6);
+        const knownBarcodeAsins = new Set(
+          item.canonicalVariants
+            .filter((variant) => Boolean(variant.jan || variant.gtin || variant.ean || variant.upc))
+            .map((variant) => variant.asin)
+            .filter((value): value is string => Boolean(value)),
+        );
+        const childAsinsToFetch = childAsins.filter((child) => !knownBarcodeAsins.has(child.asin));
+        variationAsinsFound += childAsins.length;
+        childDetailAttempted += childAsinsToFetch.length;
+        const recovered = await Promise.all(childAsinsToFetch.map(async (child) => {
+          const childUrl = `https://www.amazon.co.jp/dp/${child.asin}`;
+          const childHtml = await fetchHtml(childUrl, { retryBrightDataWhenAmazonIdentifierMissing: true });
+          if (!childHtml) return null;
+          childDetailFetched += 1;
+          const childDetail = parseAmazonProductDetail(childHtml);
+          const jan = normalizeIdentifier("jan", childDetail.jan);
+          const gtin = normalizeIdentifier("gtin", childDetail.gtin);
+          const ean = normalizeIdentifier("ean", childDetail.ean);
+          const upc = normalizeIdentifier("upc", childDetail.upc);
+          if (!jan && !gtin && !ean && !upc) return null;
+          childBarcodeFound += 1;
+          return {
+            sourceVariantId: child.asin,
+            sku: null,
+            title: child.variationValues.length ? child.variationValues.join(" / ") : null,
+            asin: child.asin,
+            jan,
+            gtin,
+            ean,
+            upc,
+            mpn: normalizeIdentifier("mpn", childDetail.model),
+            productUrl: childUrl,
+            evidenceSource: "amazon_variation_asin_map" as const,
+            rawEvidence: {
+              source_variant_id: child.asin,
+              parent_product_url: item.productUrl,
+              child_product_url: childUrl,
+              variation_values: child.variationValues,
+              child_jan: jan,
+              child_gtin: gtin,
+              child_ean: ean,
+              child_upc: upc,
+              extraction: "child_detail_page",
+            },
+          };
+        }));
+        const recoveredBySourceId = new Map(
+          recovered
+            .filter((value): value is NonNullable<typeof value> => value !== null)
+            .map((value) => [value.sourceVariantId, value] as const),
+        );
+        const recoveredSourceIds = new Set<string>();
+        // Preserve the original JSON-LD provenance when enriching an existing
+        // child row; attach child-page evidence without copying parent fields.
+        item.canonicalVariants = item.canonicalVariants.map((variant) => {
+          const child = recoveredBySourceId.get(variant.sourceVariantId);
+          if (!child) return variant;
+          recoveredSourceIds.add(child.sourceVariantId);
+          return {
+            ...variant,
+            jan: variant.jan ?? child.jan,
+            gtin: variant.gtin ?? child.gtin,
+            ean: variant.ean ?? child.ean,
+            upc: variant.upc ?? child.upc,
+            mpn: variant.mpn ?? child.mpn,
+            productUrl: variant.productUrl ?? child.productUrl,
+            rawEvidence: { ...variant.rawEvidence, child_detail_page: child.rawEvidence },
+          };
+        });
+        const existingSourceIds = new Set(item.canonicalVariants.map((variant) => variant.sourceVariantId));
+        item.canonicalVariants.push(
+          ...[...recoveredBySourceId.values()].filter((variant) =>
+            !existingSourceIds.has(variant.sourceVariantId) && !recoveredSourceIds.has(variant.sourceVariantId)
+          ),
+        );
         canonicalVariantCount += item.canonicalVariants.length;
         item.brand = detail.brand;
         item.model = detail.model;
