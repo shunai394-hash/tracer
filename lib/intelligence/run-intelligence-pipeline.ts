@@ -651,7 +651,16 @@ export async function runIntelligencePipeline(options: {
       reason === "gemini_failed" ||
       reason === "supplier_quota_cooldown";
   });
-  const incomplete = pipelineTimedOut || Boolean(deferredStep);
+  // A run can finish executing its available stages while the business flow is
+  // still degraded because discovery was deferred. Do not report "complete"
+  // when a retryable discovery stage was skipped: production patrol previously
+  // reported complete with zero orderable suppliers and zero published listings.
+  const retryableDiscoveryDeferred = steps.some((step) =>
+    step.skipped === true &&
+    step.retryable === true &&
+    ["bestsellers", "supply", "supply_first", "dropship"].includes(step.name),
+  );
+  const incomplete = pipelineTimedOut || Boolean(deferredStep) || retryableDiscoveryDeferred;
   return {
     ok: !blockingFailed && !incomplete,
     complete: !incomplete && steps.every((step) => step.ok),
