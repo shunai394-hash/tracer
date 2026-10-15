@@ -112,6 +112,7 @@ export async function POST(request: Request) {
       const titleCandidates = key ? (byTitle.get(key) ?? []) : [];
       return {
         baseItemId,
+        identifier: text(item.identifier),
         visible: visibility(item.visible),
         title,
         price: item.price ?? null,
@@ -174,6 +175,29 @@ export async function POST(request: Request) {
       note: "Exact-title candidates are unverified suggestions only. This report never writes mappings or changes BASE listings.",
       items,
     };
+    const stableIdentifierAudit = items
+      .filter((item) => /^TRC-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(item.identifier ?? "")))
+      .map((item) => ({
+        baseItemId: item.baseItemId,
+        identifier: item.identifier,
+        title: item.title,
+        visible: item.visible,
+        exactBaseIdMatchCount: item.exactBaseIdMatchCount,
+        exactTitleCandidateCount: item.exactTitleCandidateCount,
+        exactTitleCandidateListingIds: item.exactTitleCandidates.map((candidate) => candidate.listingId),
+      }))
+      .sort((a, b) => String(a.identifier).localeCompare(String(b.identifier)));
+    console.info("[TRACER BASE STABLE-ID RECONCILIATION]", JSON.stringify({
+      generatedAt: report.generatedAt,
+      complete: report.complete,
+      baseItemCount: report.baseItemCount,
+      exactBaseIdMappedCount: report.exactBaseIdMappedCount,
+      baseItemsWithoutExactMappingCount: report.baseItemsWithoutExactMappingCount,
+      baseItemsWithAmbiguousExactMappingCount: report.baseItemsWithAmbiguousExactMappingCount,
+      baseItemsWithExactTitleCandidateCount: report.baseItemsWithExactTitleCandidateCount,
+      stableIdentifierCount: stableIdentifierAudit.length,
+      stableIdentifierAudit,
+    }));
     const date = report.generatedAt.slice(0, 10);
     return new Response(JSON.stringify(report, null, 2), {
       status: 200,
