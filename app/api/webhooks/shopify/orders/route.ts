@@ -22,7 +22,12 @@ export async function POST(request: Request) {
 
     const db = createSupabaseAdminClient();
     const items = Array.isArray(order.line_items) ? order.line_items as Array<Record<string, unknown>> : [];
-    const skus = items.map((item) => String(item.sku ?? "").trim());
+    const skus = items.map((item) => {
+      const sku = String(item.sku ?? "").trim();
+      const variantId = String(item.variant_id ?? "").trim();
+      // If Shopify omitted SKU, use its stable variant ID as a separate exact key.
+      return sku || (variantId ? `SHOPIFYVARIANT-${variantId}` : "");
+    });
     // Stable Shopify line IDs are required to repair partial imports without
     // duplicating order items when Shopify retries a webhook.
     if (!items.length || skus.some((sku) => !sku)) {
@@ -67,7 +72,7 @@ export async function POST(request: Request) {
     // to supplier_product_id and finally listing.id. Do not treat the SKU itself
     // as shop_listings.id: resolve its exact stable identity first.
     const lookup = getOrderSkuLookup(skus);
-    const listingSelect = "id,product_id,title,published,orderable,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id";
+    const listingSelect = "id,product_id,title,published,orderable,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id,shopify_variant_id";
     type ListingRow = {
       id: string;
       product_id: string;
@@ -79,6 +84,7 @@ export async function POST(request: Request) {
       supplier_name: string | null;
       supplier_product_id: string | null;
       supplier_variant_id: string | null;
+      shopify_variant_id: string | null;
     };
     const candidateRows: ListingRow[] = [];
     if (lookup.supplierSources.length) {
@@ -94,6 +100,14 @@ export async function POST(request: Request) {
       const legacy = await db.from("shop_listings").select(listingSelect).in("id", lookup.legacyListingIds);
       if (legacy.error) throw new Error(legacy.error.message);
       candidateRows.push(...(legacy.data ?? []));
+    }
+    const shopifyVariantIds = items
+      .map((item) => String(item.variant_id ?? "").trim())
+      .filter(Boolean);
+    if (shopifyVariantIds.length) {
+      const byShopifyVariant = await db.from("shop_listings").select(listingSelect).in("shopify_variant_id", shopifyVariantIds);
+      if (byShopifyVariant.error) throw new Error(byShopifyVariant.error.message);
+      candidateRows.push(...(byShopifyVariant.data ?? []));
     }
     // Deduplicate rows returned by multiple identity queries.
     const listings = [...new Map(candidateRows.map((row) => [String(row.id), row])).values()];
