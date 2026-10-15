@@ -209,7 +209,7 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
 
   const { data: listing, error } = await supabase
     .from("shop_listings")
-    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, identity_confidence, supplier_name, base_item_id, contribution_margin, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons")
+    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, identity_confidence, supplier_name, base_item_id, contribution_margin, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, shopify_product_id, shopify_variant_id, shopify_handle")
     .eq("id", listingId)
     .eq("published", true)
     .maybeSingle();
@@ -218,6 +218,11 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
 
   if (!listing || !hasPassedSalesTestGate(listing)) {
     return { configured: Boolean(cfg.apiUrl && cfg.webhookSecret), sent: false, eventId: id, status: null, ackStatus: null, detail: "sales_test_gate_not_passed" };
+  }
+
+  // Do not queue promotions until the public TRACER product page is backed by a live Shopify listing.
+  if (listing.shopify_sync_status !== "synced" || !listing.shopify_product_id || !listing.shopify_variant_id || !listing.shopify_handle) {
+    return { configured: Boolean(cfg.apiUrl && cfg.webhookSecret), sent: false, eventId: id, status: null, ackStatus: null, detail: "shopify_listing_not_live" };
   }
 
   const { error: deliveryUpsertError } = await supabase
