@@ -22,6 +22,8 @@ assert.match(collector, /consumer\.callTool\(call\)/, "product collection must i
 assert.match(collector, /provider: "brightdata_mcp"/, "ingest results must identify successful MCP-backed collection");
 assert.match(collector, /export function isBrightDataFetchConfigured\(\): boolean/);
 assert.match(collector, /function normalizeCurrency\(/, "Google Shopping currency must be preserved rather than inferred as USD");
+assert.match(collector, /productRecords = unwrapped\.filter/, "MCP product arrays must be parsed, not discarded as empty results");
+assert.match(collector, /replace\(\/\\\\s\+\/g, " "\)/, "product titles must collapse actual whitespace");
 assert.match(collector, /currency: string \| null/);
 assert.match(collector, /candidate\.name === "scrape_as_html"/, "marketplace detail pages must use MCP raw HTML for child-variant parsing");
 assert.match(collector, /Bright Data MCP raw HTML tool is unavailable/, "do not silently claim collection succeeded when MCP HTML and API fallback are unavailable");
