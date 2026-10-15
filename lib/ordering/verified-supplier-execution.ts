@@ -2,6 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupplierAdapter } from "@/lib/procurement/registry";
+import { persistOrderStateUpdate } from "@/lib/ordering/status-write";
 import {
   executeSupplierPurchaseOrder,
   type ExecuteSupplierPurchaseOrderResult,
@@ -76,62 +77,79 @@ export async function executeVerifiedSupplierPurchaseOrder(
     paymentConfirmed = supplierOrder?.paymentConfirmed === true;
     supplierStatus = supplierOrder?.status ?? null;
   } catch (error) {
-    await supabase
-      .from("purchase_orders")
-      .update({
-        status: "supplier_payment_verification_failed",
-        supplier_status: "payment_verification_failed",
-        supplier_synced_at: new Date().toISOString(),
-        metadata: {
-          ...metadata,
-          supplier_payment: {
-            confirmed: false,
-            verification_error: error instanceof Error ? error.message : String(error),
-            supplier_order_id: result.supplierOrderId,
-            verified_at: new Date().toISOString(),
+    const failureWrite = await persistOrderStateUpdate(
+      { table: "purchase_orders", id: purchaseOrderId, purchaseOrderId, context: "supplier_payment_verification_failed" },
+      () => supabase
+        .from("purchase_orders")
+        .update({
+          status: "supplier_payment_verification_failed",
+          supplier_status: "payment_verification_failed",
+          supplier_synced_at: new Date().toISOString(),
+          metadata: {
+            ...metadata,
+            supplier_payment: {
+              confirmed: false,
+              verification_error: error instanceof Error ? error.message : String(error),
+              supplier_order_id: result.supplierOrderId,
+              verified_at: new Date().toISOString(),
+            },
           },
-        },
-      })
-      .eq("id", purchaseOrderId);
+        })
+        .eq("id", purchaseOrderId),
+    );
 
     return {
       ...result,
       succeeded: false,
-      reason: "supplier_payment_verification_failed_manual_reconciliation_required",
+      reason: failureWrite.ok
+        ? "supplier_payment_verification_failed_manual_reconciliation_required"
+        : "supplier_payment_verification_failed_status_persist_failed_manual_reconciliation_required",
     };
   }
 
   if (!paymentConfirmed) {
-    await supabase
-      .from("purchase_orders")
-      .update({
-        supplier_order_id: result.supplierOrderId,
-        live_order: true,
-        supplier_status: "payment_pending",
-        supplier_synced_at: new Date().toISOString(),
-        status: "supplier_payment_pending",
-        metadata: {
-          ...metadata,
-          supplier_payment: {
-            confirmed: false,
-            supplier_order_id: result.supplierOrderId,
-            supplier_status: supplierStatus,
-            verified_at: new Date().toISOString(),
+    const pendingWrite = await persistOrderStateUpdate(
+      { table: "purchase_orders", id: purchaseOrderId, purchaseOrderId, context: "supplier_payment_pending" },
+      () => supabase
+        .from("purchase_orders")
+        .update({
+          supplier_order_id: result.supplierOrderId,
+          live_order: true,
+          supplier_status: "payment_pending",
+          supplier_synced_at: new Date().toISOString(),
+          status: "supplier_payment_pending",
+          metadata: {
+            ...metadata,
+            supplier_payment: {
+              confirmed: false,
+              supplier_order_id: result.supplierOrderId,
+              supplier_status: supplierStatus,
+              verified_at: new Date().toISOString(),
+            },
           },
-        },
-      })
-      .eq("id", purchaseOrderId);
+        })
+        .eq("id", purchaseOrderId),
+    );
+    if (!pendingWrite.ok) {
+      return { ...result, succeeded: false, reason: "supplier_payment_pending_status_persist_failed_manual_reconciliation_required" };
+    }
 
-    await supabase
-      .from("supplier_order_attempts")
-      .update({
-        succeeded: false,
-        response_code: "SUPPLIER_PAYMENT_NOT_CONFIRMED",
-        response_message: `Supplier order exists but payment is not explicitly confirmed; status=${supplierStatus ?? "unknown"}`,
-        state: "completed",
-      })
-      .eq("purchase_order_id", purchaseOrderId)
-      .eq("supplier_order_id", result.supplierOrderId);
+    const attemptWrite = await persistOrderStateUpdate(
+      { table: "supplier_order_attempts", id: purchaseOrderId, purchaseOrderId, context: "supplier_payment_pending_attempt" },
+      () => supabase
+        .from("supplier_order_attempts")
+        .update({
+          succeeded: false,
+          response_code: "SUPPLIER_PAYMENT_NOT_CONFIRMED",
+          response_message: `Supplier order exists but payment is not explicitly confirmed; status=${supplierStatus ?? "unknown"}`,
+          state: "completed",
+        })
+        .eq("purchase_order_id", purchaseOrderId)
+        .eq("supplier_order_id", result.supplierOrderId),
+    );
+    if (!attemptWrite.ok) {
+      return { ...result, succeeded: false, reason: "supplier_payment_pending_attempt_persist_failed_manual_reconciliation_required" };
+    }
 
     return {
       ...result,
@@ -168,16 +186,22 @@ export async function executeVerifiedSupplierPurchaseOrder(
     };
   }
 
-  await supabase
-    .from("supplier_order_attempts")
-    .update({
-      succeeded: true,
-      response_code: "SUPPLIER_PAYMENT_CONFIRMED",
-      response_message: `Supplier payment confirmed; status=${supplierStatus ?? "unknown"}`,
-      state: "completed",
-    })
-    .eq("purchase_order_id", purchaseOrderId)
-    .eq("supplier_order_id", result.supplierOrderId);
+  const confirmedAttemptWrite = await persistOrderStateUpdate(
+    { table: "supplier_order_attempts", id: purchaseOrderId, purchaseOrderId, context: "supplier_payment_confirmed_attempt" },
+    () => supabase
+      .from("supplier_order_attempts")
+      .update({
+        succeeded: true,
+        response_code: "SUPPLIER_PAYMENT_CONFIRMED",
+        response_message: `Supplier payment confirmed; status=${supplierStatus ?? "unknown"}`,
+        state: "completed",
+      })
+      .eq("purchase_order_id", purchaseOrderId)
+      .eq("supplier_order_id", result.supplierOrderId),
+  );
+  if (!confirmedAttemptWrite.ok) {
+    return { ...result, succeeded: false, reason: "supplier_payment_confirmation_attempt_persist_failed_manual_reconciliation_required" };
+  }
 
   return {
     ...result,
