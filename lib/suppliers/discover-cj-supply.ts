@@ -516,6 +516,7 @@ export async function discoverAndCreateCjSupply(
         && seededCandidate.shipTo === "JP"
         && seededCandidate.supplierProductId === candidate.id
         && seededCandidate.supplierVariantId === candidate.variantId;
+        && (seededCandidate.verificationError === "" || seededCandidate.verificationError === "CJdropshipping is not configured" || seededCandidate.verificationError === "no_unique_canonical_child_variant_match");
       const supplierInsert = await upsertSupplierListing(db, {
         supplier: "cj", external_id: candidate.variantId, sku: seededVariant.sku ?? null, title: detail.title, product_id: null,
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
