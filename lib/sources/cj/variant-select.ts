@@ -38,6 +38,17 @@ export function selectVariantMatchingBarcode(
   return matches.length === 1 ? matches[0] : null;
 }
 
+/**
+ * Recover a variant only when the barcode matches exactly one CJ variant,
+ * or the product has exactly one variant. Price alone is never identity proof.
+ */
+export function selectRecoverableVariant(
+  variants: CJProductVariant[],
+  barcode: string | null,
+): CJProductVariant | null {
+  return selectVariantMatchingBarcode(variants, barcode) ?? selectUnambiguousVariant(variants);
+}
+
 export function verifyVariantSelectionInvariants(): {
   ok: boolean;
   cases: Array<{ name: string; expected: boolean; actual: boolean }>;
@@ -81,6 +92,16 @@ export function verifyVariantSelectionInvariants(): {
       name: "barcode_selects_exactly_one_variant",
       expected: true,
       actual: selectVariantMatchingBarcode(many, "4901234567891")?.vid === "v2",
+    },
+    {
+      name: "recovery_rejects_cheapest_guess_when_multiple_variants",
+      expected: true,
+      actual: selectRecoverableVariant(many, null) === null,
+    },
+    {
+      name: "recovery_uses_exact_barcode_match",
+      expected: true,
+      actual: selectRecoverableVariant(many, "4901234567891")?.vid === "v2",
     },
     {
       name: "ambiguous_barcode_returns_null",
