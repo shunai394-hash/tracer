@@ -139,6 +139,53 @@ function extractShoppingProducts(payload: unknown): BrightDataProductCandidate[]
     return [];
   }
   if (typeof unwrapped === "string") {
+    // Production MCP can return HTML via scrape_as_html; parse explicit
+    // Product JSON-LD instead of treating arbitrary ranking links as products.
+    if (/<(?:!doctype|html|script|body|div)\b/i.test(unwrapped)) {
+      const structured: unknown[] = [];
+      const scripts = unwrapped.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+      for (const match of scripts) {
+        const parsed = parseJsonText(match[1]);
+        if (parsed && typeof parsed === "object") structured.push(parsed);
+      }
+      const collectProducts = (node: unknown, depth = 0): unknown[] => {
+        if (depth > 8 || node == null) return [];
+        if (Array.isArray(node)) return node.flatMap((item) => collectProducts(item, depth + 1));
+        if (typeof node !== "object") return [];
+        const record = node as Record<string, unknown>;
+        const type = record["@type"];
+        const isProduct = type === "Product" || (Array.isArray(type) && type.includes("Product"));
+        if (isProduct) {
+          const offersValue = record.offers;
+          const offers = Array.isArray(offersValue) ? offersValue[0] : offersValue;
+          const offer = offers && typeof offers === "object" ? offers as Record<string, unknown> : {};
+          return [{
+            title: record.name,
+            brand: typeof record.brand === "string" ? record.brand :
+              record.brand && typeof record.brand === "object" ? (record.brand as Record<string, unknown>).name : null,
+            price: offer.price ?? offer.lowPrice ?? null,
+            currency: offer.priceCurrency ?? null,
+            url: record.url ?? offer.url ?? null,
+            image: Array.isArray(record.image) ? record.image[0] : record.image ?? null,
+            seller: offer.seller && typeof offer.seller === "object"
+              ? (offer.seller as Record<string, unknown>).name : null,
+          }];
+        }
+        return Object.values(record).flatMap((value) => collectProducts(value, depth + 1));
+      };
+      const products = structured.flatMap((item) => collectProducts(item));
+      if (products.length) return extractShoppingProducts({ products });
+      // Also inspect embedded shopping JSON when a scraper wraps it in HTML.
+      const jsonScripts = unwrapped.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi);
+      for (const match of jsonScripts) {
+        const script = match[1].trim();
+        if (!/shopping_results|product_results|products|priceCurrency/.test(script)) continue;
+        const parsed = parseJsonText(script);
+        const nested = extractShoppingProducts(parsed);
+        if (nested.length) return nested;
+      }
+      return [];
+    }
     const lines = unwrapped.split(/\r?\n/);
     const products: BrightDataProductCandidate[] = [];
     const seen = new Set<string>();
@@ -229,7 +276,7 @@ async function searchViaBrightDataMcp(query: string, shoppingUrl: string): Promi
   try {
     const consumer = getMcpToolConsumer();
     const tools = await consumer.listTools();
-    const preferred = ["scrape_as_markdown", "search_engine", "search_engine_batch"];
+    const preferred = ["scrape_as_markdown", "scrape_as_html", "search_engine", "search_engine_batch"];
     for (const name of preferred) {
       const tool = tools.find((candidate) => candidate.name === name);
       if (!tool) continue;
