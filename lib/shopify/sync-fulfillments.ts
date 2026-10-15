@@ -2,6 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getShopifyGrantedScopes, isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
+import { persistOrderStateUpdate } from "@/lib/ordering/status-write";
 
 type FulfillmentOrder = {
   id: string;
@@ -137,14 +138,20 @@ export async function syncShopifyFulfillments(limit = 25): Promise<ShopifyFulfil
       }
       if (!fulfillment.fulfillmentCreate.fulfillment) throw new Error("shopify_fulfillment_missing");
 
-      await supabase
-        .from("shop_orders")
-        .update({
-          order_status: "delivered" === order.order_status ? "delivered" : "shipping",
-          shopify_fulfillment_status: "FULFILLED",
-          shopify_synced_at: new Date().toISOString(),
-        })
-        .eq("id", order.id);
+      const stateWrite = await persistOrderStateUpdate(
+        { table: "shop_orders", id: order.id, context: "shopify_fulfillment_sync_state" },
+        () => supabase
+          .from("shop_orders")
+          .update({
+            order_status: "delivered" === order.order_status ? "delivered" : "shipping",
+            shopify_fulfillment_status: "FULFILLED",
+            shopify_synced_at: new Date().toISOString(),
+          })
+          .eq("id", order.id),
+      );
+      if (!stateWrite.ok) {
+        throw new Error(`shopify_fulfillment_state_persist_failed_manual_reconciliation_required:${stateWrite.error}`);
+      }
       result.synced += 1;
     } catch (error) {
       result.failed += 1;
