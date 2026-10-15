@@ -50,7 +50,14 @@ export function resolveShopifyOrderLines<T extends ShopifyListingIdentity>(
   for (const [lineIndex, line] of lines.entries()) {
     const variantIds = new Set(line.shopifyVariantIds);
     const hits = listings.filter((listing) =>
-      (line.sku !== "" && (tracerSkuForListing(listing) === line.sku || listing.id === line.sku))
+      (line.sku !== "" && (
+        tracerSkuForListing(listing) === line.sku
+        || listing.id === line.sku
+        || (line.sku.startsWith("CJ-") && (
+          line.sku === `CJ-${listing.supplier_variant_id || ""}`
+          || (!listing.supplier_variant_id && line.sku === `CJ-${listing.supplier_product_id || ""}`)
+        ))
+      ))
       || (Boolean(listing.shopify_variant_id) && variantIds.has(String(listing.shopify_variant_id))),
     );
     const ids = new Set(hits.map((listing) => listing.id));
