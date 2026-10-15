@@ -3,6 +3,7 @@ import "server-only";
 import { createHmac } from "node:crypto";
 import { getNewfindConfig } from "@/lib/config/env";
 import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { isRetryableRejectedNewfindEvent } from "@/lib/integration/newfind-retry-policy";
 
 function buildUrl(base: string): string {
   const trimmed = base.trim().replace(/\/$/, "");
@@ -267,11 +268,15 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     && isNewfindPromotionReceiverReady()
     && isNewfindPromotionLedgerSchemaBlocked(previousError);
   const retryRejectedSchemaEvent = integerSchemaRetry || ledgerSchemaRetry;
+  const retryRejectedReceiverEvent = currentStatus === "failed" && isRetryableRejectedNewfindEvent(previousError);
+  const nextAttempt = (typeof existingDelivery?.attempts === "number" ? existingDelivery.attempts : 0) + 1;
   const sendEventId = currentStatus === "withdrawn"
     ? `${eventId(listingId)}:republished:${now.getTime()}`
     : retryRejectedSchemaEvent
-      ? `${eventId(listingId)}:schema-retry:${(typeof existingDelivery?.attempts === "number" ? existingDelivery.attempts : 0) + 1}`
-      : typeof existingDelivery?.event_id === "string" && existingDelivery.event_id ? existingDelivery.event_id : id;
+      ? `${eventId(listingId)}:schema-retry:${nextAttempt}`
+      : retryRejectedReceiverEvent
+        ? `${eventId(listingId)}:receiver-retry:${nextAttempt}`
+        : typeof existingDelivery?.event_id === "string" && existingDelivery.event_id ? existingDelivery.event_id : id;
 
   let claimQuery = supabase
     .from("newfind_promotion_deliveries")
