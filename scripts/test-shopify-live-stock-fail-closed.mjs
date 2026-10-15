@@ -22,8 +22,14 @@ assert.equal(toStorefrontStockQuantity("unknown"), 0, "unknown supplier stock mu
 
 const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
 const shopifySync = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
+const unlinkedRoute = await readFile(new URL("../app/api/cron/unpublish-unlinked/route.ts", import.meta.url), "utf8");
 assert.match(store, /shopify_live_stock_unconfigured/, "missing Shopify credentials must fail closed");
 assert.match(shopifySync, /toStorefrontStockQuantity\(row\.inventory, process\.env\.SHOPIFY_STOREFRONT_STOCK_CAP\)/, "supplier inventory must be projected through a bounded storefront cap before writing Shopify stock");
+assert.match(shopifySync, /row\.published === false && row\.pipeline_stage === "BLOCKED" && row\.shopify_product_id/, "blocked listings with stored Shopify IDs must be reconciled against the external store");
+assert.match(shopifySync, /shopify_sync_error: "shopify_unpublished_verified"/, "a blocked listing is marked verified only after Shopify unpublish verification succeeds");
+assert.match(shopifySync, /row\.shopify_sync_error !== "shopify_unpublished_verified"/, "legacy blocked rows without verified unpublication must be retried");
+assert.match(unlinkedRoute, /shopify_sync_status\.eq\.blocked,shopify_sync_error\.neq\.shopify_unpublished_verified/, "unlinked reconciliation must include stale blocked Shopify rows");
+assert.match(unlinkedRoute, /row\.shopify_sync_error !== "shopify_unpublished_verified"/, "unlinked reconciliation must retry unverified external unpublication");
 assert.match(shopifySync, /getLiveShopifyStock\(alreadySyncedVariantIds\)/, "already-synced Shopify products must be checked against actual live inventory before deciding they need no work");
 assert.match(shopifySync, /liveQuantity !== toStorefrontStockQuantity\(row\.inventory, process\.env\.SHOPIFY_STOREFRONT_STOCK_CAP\)/, "inventory drift above or below the storefront cap must trigger bounded reconciliation");
 assert.match(store, /shopify_live_stock_variant_ids_empty/, "empty live-stock request must not use cached stock");
