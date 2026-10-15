@@ -177,6 +177,7 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
         updated_at: marketplace.fetchedAt,
       }));
       canonicalVariantEvidenceParsed += variantEvidenceRows.length;
+      let variantEvidenceWriteVerified = false;
       if (variantEvidenceRows.length > 0) {
         const { data: writtenVariants, error: variantWriteError } = await supabase
           .from("marketplace_bestseller_variants")
@@ -196,6 +197,7 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
           // response with no representation is not proof that every row was stored.
           const writtenCount = writtenVariants?.length ?? 0;
           canonicalVariantEvidenceWritten += writtenCount;
+          variantEvidenceWriteVerified = writtenCount === variantEvidenceRows.length;
           if (writtenCount < variantEvidenceRows.length) {
             canonicalVariantEvidenceWriteFailures += variantEvidenceRows.length - writtenCount;
             console.error("[TRACER CANONICAL VARIANT EVIDENCE WRITE COUNT MISMATCH]", {
@@ -206,9 +208,7 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
         }
       }
 
-      const variantStageOutcome = variantEvidenceRows.length > 0
-        && canonicalVariantEvidenceWriteFailures === 0
-        && canonicalVariantEvidenceWritten >= variantEvidenceRows.length
+      const variantStageOutcome = variantEvidenceWriteVerified
         ? "completed"
         : "blocked";
       const variantStage = await persistTracerV2Stage({
