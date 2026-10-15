@@ -7,9 +7,10 @@ const requiredSignals = ["variationAsinsFound","childDetailAttempted","childDeta
 for (const signal of requiredSignals) assert.ok(source.includes(signal), `missing diagnostic signal: ${signal}`);
 assert.ok(source.indexOf("if (!jan && !gtin && !ean && !upc) return null;") < source.indexOf("childBarcodeFound += 1;"), "barcode count must follow concrete barcode validation");
 assert.ok(source.includes("childDetailAttempted += childAsinsToFetch.length;"), "count only child detail pages actually scheduled for fetch");
-assert.ok(source.includes("const knownVariantAsins = new Set("), "deduplicate child pages already represented by canonical ProductGroup evidence");
-assert.ok(source.includes("const childAsinsToFetch = childAsins.filter((child) => !knownVariantAsins.has(child.asin));"), "child-ASIN recovery must run independently of whether ProductGroup evidence exists");
-assert.ok(source.includes("...Array.from(recoveredByAsin.values())"), "merge child barcode evidence into existing canonical variants");
+assert.ok(source.includes("const knownBarcodeAsins = new Set("), "skip child pages only when existing child evidence already has a concrete barcode");
+assert.ok(source.includes("const childAsinsToFetch = childAsins.filter((child) => !knownBarcodeAsins.has(child.asin));"), "fetch a child page when its ProductGroup node exists but lacks a barcode");
+assert.ok(source.includes("child_detail_page: child.rawEvidence"), "attach independent child-page barcode provenance to an existing ProductGroup row");
+assert.ok(source.includes("...Array.from(recoveredByAsin.values()).filter((child) => !recoveredAsins.has(child.asin))"), "append only recovered ASINs not already represented by canonical evidence");
 assert.ok(source.includes("childDetailFetched += 1;"), "count successful detail fetches");
 assert.ok(source.includes("parseAmazonVariationAsinMap(html, url).length > 0"), "Bright Data HTML with an explicit child-ASIN map must count as variant evidence");
 assert.ok(source.includes("hasAmazonVariantEvidence(page.html)"), "retain Bright Data page when it improves child-variant evidence");
