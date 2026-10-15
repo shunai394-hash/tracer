@@ -28,8 +28,9 @@ assert.match(helper, /row.configured === true && row.api_available === true/);
 assert.match(persist, /verification_error: marketplaceIdentity \|\| nativeEvidenceFresh \? null : \(priorVerificationError \|\| "no_unique_canonical_child_variant_match"\)/, "only fresh, fully verified native supply evidence may clear the old configuration error");
 assert.match(discoverCJ, /identity_status: "supply_discovered", identity_confidence: 0/, "supply discovery without canonical identity must not claim perfect identity confidence");
 assert.match(discoverCJ, /title: detail\.title, product_id: null/, "CJ supply discovery must not provisionally attach a canonical product ID before identity is resolved");
-assert.match(discoverCJ, /api_available: false, verification_status: "unverified"/, "unresolved CJ supply must not be marked verified or API-orderable before canonical identity is resolved");
-assert.match(discoverCJ, /orderable: false, price_confirmed: true, inventory_confirmed: true, tracking_available: false/, "unresolved CJ supply must remain blocked from ordering even when price and stock observations exist");
+assert.match(discoverCJ, /api_available: preserveVerifiedOrderPath, verification_status: preserveVerifiedOrderPath \? "verified" : "unverified"/, "seeded refresh may preserve a previously verified supplier order path only behind a strict evidence predicate");
+assert.match(discoverCJ, /api_available: false,[\s\S]*?verification_status: "unverified"/, "new CJ supply must remain unverified until the order path is proven");
+assert.match(discoverCJ, /orderable: false,[\s\S]*?tracking_available: false/, "new CJ supply must remain blocked from ordering even when price and stock observations exist");
 assert.doesNotMatch(discoverCJ, /markVerification\(db, String\(supplierInsert\.data\.id\), \{ status: "verified"/, "discovery must not overwrite the unresolved identity gate with a verified status");
 
 const supplierUpserts = [...discoverCJ.matchAll(/const supplierInsert = await upsertSupplierListing/g)].map((match) => {
@@ -41,12 +42,11 @@ assert.equal(supplierUpserts.length, 2, "both seeded and fresh CJ discovery path
 for (const upsert of supplierUpserts) {
   assert.match(upsert, /product_id: null/, "unresolved CJ supply must not attach a provisional canonical product");
   assert.match(upsert, /identity_status: "supply_discovered"/);
-  assert.match(upsert, /identity_confidence: 0/, "unresolved CJ supply must have zero identity confidence");
-  assert.match(upsert, /api_available: false/);
-  assert.match(upsert, /orderable: false/);
-  assert.match(upsert, /tracking_available: false/);
-  assert.doesNotMatch(upsert, /identity_confidence: 1|api_available: true|orderable: true|tracking_available: cjTrackingAvailable/, "discovery must not claim identity or order-path verification");
+  assert.match(upsert, /identity_confidence: 0/, "unresolved CJ supply must have zero marketplace identity confidence");
+  assert.doesNotMatch(upsert, /identity_confidence: 1|api_available: true|orderable: true|tracking_available: cjTrackingAvailable/, "discovery must not claim marketplace identity or bypass the explicit order-path predicate");
 }
+assert.match(supplierUpserts[0], /api_available: preserveVerifiedOrderPath[\s\S]*?orderable: preserveVerifiedOrderPath[\s\S]*?tracking_available: preserveVerifiedOrderPath/, "seeded refresh may retain orderability only for the exact previously verified product+variant path");
+assert.match(supplierUpserts[1], /api_available: false,[\s\S]*?orderable: false,[\s\S]*?tracking_available: false/, "newly discovered CJ candidates must stay non-orderable");
 
 assert.match(directGate, /\.eq\("identity_status", "linked"\)/, "direct sales-test gate must require canonical supplier identity");
 assert.doesNotMatch(directGate, /identity_status\.eq\.supply_discovered/, "supply discovery alone must never enter direct sales-test selection");
