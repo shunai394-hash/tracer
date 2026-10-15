@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
@@ -229,31 +228,31 @@ export async function GET(request: Request) {
       });
     }
 
-    const { data: readyRows, error: readyError } = await supabase
-      .from("marketplace_bestsellers")
-      .select("id,product_id")
-      .eq("pipeline_stage", "VARIANT_VERIFIED")
-      .eq("pipeline_status", "ready")
-      .not("product_id", "is", null)
-      .order("fetched_at", { ascending: false })
-      .limit(400);
-    if (readyError) throw new Error(readyError.message);
-    const candidateIds = (readyRows ?? []).map((row) => String(row.id));
-    const marketProductIds = Array.from(new Set((readyRows ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)));
-    if (marketProductIds.length > 0) await buildOpportunityInBatches(marketProductIds, 10);
-    const decision = await selectAndPublishSalesTests(candidateIds, 400);
-    const downstream = await promoteGatePassedListings(decision.selectedListingIds);
-
+    // No marketplace fallback: only supplier-native verified offers can feed
+    // TRACER, BASE, and Shopify. Preserve historical marketplace rows untouched.
     if (cronRunId) await supabase.from("cron_runs").update({
       status: "succeeded",
       finished_at: new Date().toISOString(),
       duration_ms: Date.now() - startedAt,
-      processed: supplySelected.considered + candidateIds.length,
+      processed: supplySelected.considered,
       failed: 0,
-      metadata: { phase: "sales_test_publication", mode: "canonical_supply_fast_path", supplyConsidered: supplySelected.considered, supplyPublished: supplySelected.published, supplyRejected: supplySelected.rejected.length, supplyRejectedReasons: supplySelected.rejected.reduce<Record<string, number>>((counts, item) => { for (const reason of item.reasons) counts[reason] = (counts[reason] ?? 0) + 1; return counts; }, {}), supplyRejectedSample: supplySelected.rejected.slice(0, 20), considered: decision.considered, published: decision.published, shopify: downstream.shopify },
+      metadata: {
+        phase: "sales_test_publication",
+        mode: "canonical_supply_fast_path",
+        supplyConsidered: supplySelected.considered,
+        supplyPublished: supplySelected.published,
+        marketplaceFallback: "disabled_supplier_native_only",
+      },
     }).eq("id", cronRunId);
 
-    return NextResponse.json({ ok: true, phase: "sales_test_publication", elapsedMs: Date.now() - startedAt, mode: "canonical_supply_fast_path", candidateCount: candidateIds.length, decision, downstream, nextPhase: "downstream_delivery" });
+    return NextResponse.json({
+      ok: true,
+      phase: "sales_test_publication",
+      skipped: true,
+      reason: "marketplace_sourcing_disabled_supplier_native_only",
+      mode: "canonical_supply_fast_path",
+      supplySelected,
+    });
   } catch (error) {
     if (cronRunId) {
       try { await supabase.from("cron_runs").update({ status: "failed", finished_at: new Date().toISOString(), duration_ms: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error) }).eq("id", cronRunId); } catch (recordError) { console.error("[TRACER CRON RUN RECORD ERROR]", recordError); }
