@@ -236,13 +236,17 @@ export async function GET(request: Request) {
     const deferredSteps = pipeline.steps
       .filter((step) => step.skipped && step.retryable)
       .map((step) => step.name);
+    const technicalDeferredSteps = deferredSteps.filter((name) => name !== "business_readiness");
+    const businessReadinessMissing = pipeline.steps.some((step) => step.name === "business_readiness" && step.skipped);
 
-    if (!pipeline.complete) {
+    if (!pipeline.complete && (technicalDeferredSteps.length > 0 || !businessReadinessMissing)) {
       // Discovery incompleteness is reported, but must not block independent
       // publication of already-linked, in-stock, profitable catalog rows.
+      // A business-readiness-only gap is shown as pipelineComplete=false without
+      // turning the HTTP health result into a technical exception.
       errors.push(
-        deferredSteps.length
-          ? `intelligence_pipeline_incomplete: deferred=${deferredSteps.join(",")}`
+        technicalDeferredSteps.length
+          ? `intelligence_pipeline_incomplete: deferred=${technicalDeferredSteps.join(",")}`
           : "intelligence_pipeline_incomplete",
       );
     }
