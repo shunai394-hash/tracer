@@ -1,4 +1,8 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/bathroom\s*mobile phone box.*waterproof/i, "浴室用 防水スマートフォンホルダー"],
+  [/huawei p40pro.*mobile phone shell|suitable for creative new envelopes.*mobile phone shell/i, "対応機種別 スマートフォンケース"],
+  [/compatible withapple.*tempered glass film.*mobile phone film|tempered glass film.*iphone11promax/i, "対応機種別 画面保護フィルム"],
+  [/ceramic ashtray home bedroom dormitory office/i, "セラミック製 灰皿"],
   [/fashion and nature phoera eyebrow cream 6 colors.*01blonde/i, "PHOERA アイブロウクリーム 01 ブロンド"],
   [/wooden door.*christmas door frame decoration|christmas door frame decoration.*santa claus/i, "クリスマス ドアフレーム飾り"],
   [/office 8.inch wind.driven fan|8.inch wind.driven fan/i, "卓上 8インチ送風ファン"],
@@ -222,6 +226,10 @@ export function localizeProductDescription(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const source = value.normalize("NFKC");
   const rules: Array<[RegExp, string]> = [
+    [/bathroom\s*mobile phone box.*waterproof/i, "浴室やキッチンでスマートフォンを収納するホルダーです。対応機種・寸法・防水性能・取付方法は販売元の仕様をご確認ください。"],
+    [/huawei p40pro.*mobile phone shell|suitable for creative new envelopes.*mobile phone shell/i, "対応機種別のスマートフォンケースです。対応モデル・素材・カメラやボタンの位置は商品バリエーションと販売元の仕様をご確認ください。"],
+    [/compatible withapple.*tempered glass film.*mobile phone film|tempered glass film.*iphone11promax/i, "対応機種別のスマートフォン画面保護フィルムです。対応モデル・フィルム材質・貼付方法・セット内容は販売元の仕様をご確認ください。"],
+    [/ceramic ashtray home bedroom dormitory office/i, "室内などで使うセラミック製灰皿です。寸法・材質・お手入れ方法は販売元の仕様をご確認ください。"],
     [/sedentary backrest integrated chair cushion|integrated chair cushion seat cushion/i, "座面と背もたれを支える一体型チェアクッションです。寸法・中材・対応する椅子の形状は販売元の仕様をご確認ください。"],
     [/nordic pillows cushions home decor|decorative cushions for sofa/i, "ソファや室内の装飾に使うクッションです。寸法・素材・中材・洗濯方法は販売元の仕様をご確認ください。"],
     [/sink drain strainer|hair catchers rubber shower bathtub|silicone bathroom kitchen deodorant plug/i, "シンクや浴室の排水口に使うヘアキャッチャーです。寸法・対応する排水口・素材・お手入れ方法は販売元の仕様をご確認ください。"],
