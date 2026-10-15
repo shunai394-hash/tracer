@@ -6,6 +6,8 @@ const client = await readFile(new URL("../lib/sources/mcp/client.ts", import.met
 const remote = await readFile(new URL("../lib/sources/mcp/remote-client.ts", import.meta.url), "utf8");
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 const collector = await readFile(new URL("../lib/sources/brightdata/client.ts", import.meta.url), "utf8");
+const persistence = await readFile(new URL("../lib/tracer/persist-brightdata.ts", import.meta.url), "utf8");
+const ingestRoute = await readFile(new URL("../app/api/intelligence/brightdata-ingest/route.ts", import.meta.url), "utf8");
 
 assert.match(env, /mcpApiKey:\s*readEnv\("BRIGHTDATA_MCP_API_KEY"\)/);
 assert.match(client, /https:\/\/mcp\.brightdata\.com\/mcp/);
@@ -23,6 +25,19 @@ assert.ok(collector.includes("const lines = unwrapped.split(/\\r?\\n/);"), "Mark
 assert.ok(collector.includes("if (!priceMatch) continue;"), "generic navigation links without a price must not become product candidates");
 assert.ok(collector.includes("Continue to the next supported MCP tool before API fallback"), "one unavailable MCP tool must not abort the remaining tool attempts");
 assert.match(collector, /export function isBrightDataFetchConfigured\(\): boolean/);
+assert.match(collector, /function normalizeCurrency\(/, "Google Shopping currency must be preserved rather than inferred as USD");
+assert.match(collector, /currency: string \| null/);
+assert.match(collector, /brand: string \| null/);
+assert.match(collector, /productRecords = unwrapped\.filter/, "MCP product arrays must be parsed instead of discarded");
+assert.match(collector, /replace\(\/\\s\+\/g, " "\)/, "product titles must collapse actual whitespace");
+assert.match(persistence, /candidate\.brand/, "only source-provided brand values may be used as brand evidence");
+assert.match(persistence, /\\p\{L\}/, "Japanese titles must remain distinct in identity keys");
+assert.match(persistence, /const amount = currency \? parsedAmount : null/, "unknown-currency amounts must not enter normalized prices");
+assert.doesNotMatch(persistence, /currency:\s*"USD"/, "Japanese Google Shopping prices must never be hardcoded as USD");
+assert.match(ingestRoute, /requireAutomationAuth\(request\)/, "Bright Data ingest writes must require automation authentication");
+assert.ok(ingestRoute.indexOf("requireAutomationAuth(request)") < ingestRoute.indexOf("searchGoogleProducts(query)"),
+  "authorization must be checked before calling the paid MCP provider or persisting products");
+assert.match(ingestRoute, /result\.products\.slice\(0, 30\)/, "each ingest call must have a bounded database-write batch");
 assert.match(collector, /candidate\.name === "scrape_as_html"/, "marketplace detail pages must use MCP raw HTML for child-variant parsing");
 assert.match(collector, /Bright Data MCP raw HTML tool is unavailable/, "do not silently claim collection succeeded when MCP HTML and API fallback are unavailable");
 assert.match(client, /mcp\.brightdata\.com\/mcp\?pro=1/, "default hosted endpoint must expose advanced scraping tools");
