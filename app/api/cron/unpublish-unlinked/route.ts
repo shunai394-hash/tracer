@@ -5,6 +5,7 @@ import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-s
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-listings";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { BASE_AUTH_REAUTH_REQUIRED, isBaseAuthenticationFailure } from "@/lib/channels/base-auth-failure";
+import { editBaseItem, fetchBaseItemsSnapshot, isBaseConfigured } from "@/lib/channels/base";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -81,12 +82,103 @@ export async function GET(request: Request) {
     } catch (cause) { errors.push(`base:${cause instanceof Error ? cause.message : String(cause)}`); }
   }
 
+  // BASE also contains legacy items that have no exact TRACER base_item_id mapping.
+  // Use a complete BASE snapshot and the stable TRC-<listing UUID> identifier to
+  // keep only currently publishable TRACER listings. Hide (never delete) a small
+  // bounded batch of visible orphans on each run.
+  let baseOrphans: { snapshotComplete: boolean; visibleChecked: number; attempted: number; hidden: number; failed: number; remainingEstimate: number; skipped?: string } = {
+    snapshotComplete: false, visibleChecked: 0, attempted: 0, hidden: 0, failed: 0, remainingEstimate: 0,
+  };
+  if (!isBaseConfigured()) {
+    baseOrphans.skipped = "base_oauth_not_configured";
+  } else {
+    try {
+      const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: 10 });
+      if (!snapshot.complete) throw new Error("BASE_ITEMS_SNAPSHOT_INCOMPLETE");
+      baseOrphans.snapshotComplete = true;
+
+      const allListings: Array<{
+        id: string;
+        published: boolean | null;
+        supplier_listing_id: string | null;
+        orderable: boolean | null;
+        tracking_available: boolean | null;
+        base_item_id: string | number | null;
+      }> = [];
+      for (let offset = 0; offset < 10_000; offset += 1000) {
+        const { data: page, error: pageError } = await db
+          .from("shop_listings")
+          .select("id,published,supplier_listing_id,orderable,tracking_available,base_item_id")
+          .order("created_at", { ascending: true })
+          .range(offset, offset + 999);
+        if (pageError) throw new Error("TRACER_LISTING_SNAPSHOT_READ_FAILED");
+        allListings.push(...((page ?? []) as typeof allListings));
+        if ((page ?? []).length < 1000) break;
+        if (offset === 9000) throw new Error("TRACER_LISTING_SNAPSHOT_INCOMPLETE");
+      }
+      const statuses = await getPublishableSupplierListingStatuses(allListings.map((row) => row.supplier_listing_id));
+      const eligibleIdentifiers = new Set(allListings
+        .filter((row) => row.published === true && row.orderable === true && row.tracking_available === true
+          && row.supplier_listing_id && statuses.has(String(row.supplier_listing_id)))
+        .map((row) => `TRC-${String(row.id).toLowerCase()}`));
+      const knownBaseIds = new Set(allListings
+        .map((row) => String(row.base_item_id ?? "").trim())
+        .filter(Boolean));
+      const visibleOrphans = snapshot.items.filter((item) => {
+        const visible = item.visible === true || item.visible === 1 || item.visible === "1";
+        const itemId = String(item.item_id ?? "").trim();
+        const identifier = String(item.identifier ?? "").trim().toLowerCase();
+        return visible && itemId && !knownBaseIds.has(itemId) && !eligibleIdentifiers.has(identifier);
+      });
+      baseOrphans.visibleChecked = snapshot.items.filter((item) =>
+        item.visible === true || item.visible === 1 || item.visible === "1"
+      ).length;
+      baseOrphans.remainingEstimate = visibleOrphans.length;
+      for (const item of visibleOrphans.slice(0, 15)) {
+        const itemId = String(item.item_id ?? "").trim();
+        const price = Number(item.price);
+        if (!itemId || !Number.isFinite(price) || price <= 0) {
+          baseOrphans.failed += 1;
+          errors.push(`base_orphan_missing_required_fields:${itemId || "unknown"}`);
+          continue;
+        }
+        baseOrphans.attempted += 1;
+        try {
+          await editBaseItem({
+            itemId,
+            title: String(item.title ?? item.name ?? "商品情報確認中"),
+            detail: String(item.detail ?? item.description ?? ""),
+            price,
+            stock: 0,
+            visible: false,
+          });
+          baseOrphans.hidden += 1;
+        } catch (cause) {
+          baseOrphans.failed += 1;
+          const message = cause instanceof Error ? cause.message : String(cause);
+          errors.push(`base_orphan_hide_failed:${itemId}:${message}`);
+          if (isBaseAuthenticationFailure(message)) {
+            baseAuthReauthorizationRequired = true;
+            break;
+          }
+        }
+      }
+      baseOrphans.remainingEstimate = Math.max(0, visibleOrphans.length - baseOrphans.hidden);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      baseOrphans.skipped = message;
+      errors.push(`base_orphan_reconciliation_failed:${message}`);
+    }
+  }
+
   if (errors.length > 0) {
     console.error("[unpublish-unlinked] external channel reconciliation incomplete", {
       candidatesChecked: (data ?? []).length,
       unlinkedFound: unlinked.length,
       shopifyAttempted: shopifyPending.length,
       baseAttempted: basePending.length,
+      baseOrphanAttempted: baseOrphans.attempted,
+      baseOrphanHidden: baseOrphans.hidden,
       baseAuthReauthorizationRequired,
       errors,
     });
@@ -101,6 +193,7 @@ export async function GET(request: Request) {
     databaseBlocked: needsBlock.length,
     shopifyAttempted: shopifyPending.length,
     baseAttempted: basePending.length,
+    baseOrphans,
     baseAuthReauthorizationRequired,
     shopifyHidden: shopifyResult.hidden ?? null,
     shopifyFailed: shopifyResult.failed ?? null,
