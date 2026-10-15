@@ -78,9 +78,11 @@ assert.ok(demandSupplier.includes("const identityKey = `${sourceSupplierName}::$
 assert.ok(demandSupplier.includes('.eq("identity_key", identityKey)'), "supplier canonical products may only be reused by exact source identity key");
 assert.match(demandSupplier, /Missing stable supplier name or product ID; canonical offer persistence blocked/);
 assert.match(helper, /offset \+= 100/, "identity lookups must batch large supplier ID sets");
-assert.match(shopify, /supplier_identity_unlinked/);
-assert.match(shopify, /hasPublishableSupplierIdentity/);
-assert.match(shopify, /native_cj_verified/);
+assert.doesNotMatch(shopify, /hasPublishableSupplierIdentity/, "supplier verification state must not gate storefront publication");
+assert.doesNotMatch(shopify, /supplier_not_cj/, "profitable linked products from any supplier may be listed");
+assert.match(shopify, /supplier_variant_missing/, "exact supplier product and variant IDs remain required");
+assert.match(shopify, /inventory_not_positive/, "storefront inventory must be positive");
+assert.match(shopify, /profit_not_positive/, "catalog publication requires positive contribution profit");
 assert.match(base, /identityUnlinkedIds/);
 assert.match(base, /base_last_error\.neq\.supplier_identity_unlinked_hidden/);
 assert.match(base, /base_last_error\.neq\.tracer_unpublished_hidden/);
