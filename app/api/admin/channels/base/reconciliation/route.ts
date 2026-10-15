@@ -236,7 +236,16 @@ export async function POST(request: Request) {
     const exactMapped = items.filter((item) => item.exactBaseIdMatchCount === 1).length;
     const unmapped = items.filter((item) => item.exactBaseIdMatchCount === 0).length;
     const ambiguous = items.filter((item) => item.exactBaseIdMatchCount > 1).length;
-    const titleCandidateCount = items.filter((item) => item.exactTitleCandidateCount > 0).length;
+    const titleCandidateCount = items.filter((item) =>
+      item.exactBaseIdMatchCount === 0
+      && item.stableIdentifierMatchCount === 0
+      && item.exactTitleCandidateCount === 1,
+    ).length;
+    const ambiguousTitleCandidateCount = items.filter((item) =>
+      item.exactBaseIdMatchCount === 0
+      && item.stableIdentifierMatchCount === 0
+      && item.exactTitleCandidateCount > 1,
+    ).length;
     const report = {
       schemaVersion: 1,
       generatedAt: new Date().toISOString(),
@@ -250,6 +259,7 @@ export async function POST(request: Request) {
       baseItemsWithoutExactMappingCount: unmapped,
       baseItemsWithAmbiguousExactMappingCount: ambiguous,
       baseItemsWithExactTitleCandidateCount: titleCandidateCount,
+      baseItemsWithAmbiguousExactTitleCandidateCount: ambiguousTitleCandidateCount,
       baseItemsWithExactSupplierIdentifierCandidateCount: items.filter((item) => item.exactSupplierIdentifierMatchCount === 1).length,
       baseItemsWithAmbiguousSupplierIdentifierCandidateCount: items.filter((item) => item.exactSupplierIdentifierMatchCount > 1).length,
       tracerListingsWithoutBaseItemIdCount: listings.filter((row) => !String(row.base_item_id ?? "").trim()).length,
