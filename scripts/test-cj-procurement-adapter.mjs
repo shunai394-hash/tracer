@@ -23,6 +23,7 @@ assert.match(adapter, /payType: 2/);
 assert.match(adapter, /process\.env\.CJ_PAYMENT_FLOW_VERIFIED\?\.trim\(\) === "1"/);
 assert.match(adapter, /isCJLiveOrderingEnabled\(\)/);
 assert.match(adapter, /isCJAutoOrderingEnabled\(\)/);
+assert.match(adapter, /if \(!isCJLiveOrderingEnabled\(\) \|\| !isCJAutoOrderingEnabled\(\) \|\| process\.env\.CJ_PAYMENT_FLOW_VERIFIED\?\.trim\(\) !== "1" \|\| !getCJConfig\(\)\.apiKey\)/, "createOrder itself must fail closed until payment flow is verified");
 assert.match(adapter, /paymentConfirmed: Boolean\(status\.paymentDate/);
 
 assert.doesNotMatch(registry, /normalized === "cj"/, "CJ must no longer be permanently excluded from the adapter registry");
