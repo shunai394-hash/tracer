@@ -127,8 +127,8 @@ function extractShoppingProducts(payload: unknown): BrightDataProductCandidate[]
     const productRecords = unwrapped.filter((item) => {
       if (!item || typeof item !== "object" || Array.isArray(item)) return false;
       const record = item as Record<string, unknown>;
-      const hasTitle = Boolean(findFirstString(record, ["title", "name", "product_name", "productName"]));
-      const hasUrl = Boolean(findFirstString(record, ["link", "url", "product_url", "productUrl", "href"]));
+      const hasTitle = Boolean(findFirstString(record, ["title", "name", "product_name", "productName", "product_title", "productTitle"]));
+      const hasUrl = Boolean(findFirstString(record, ["link", "url", "product_url", "productUrl", "product_link", "productLink", "source_url", "sourceUrl", "href"]));
       return hasTitle && hasUrl;
     });
     if (productRecords.length) return extractShoppingProducts({ products: productRecords });
@@ -257,15 +257,23 @@ function extractShoppingProducts(payload: unknown): BrightDataProductCandidate[]
   }
   if (!unwrapped || typeof unwrapped !== "object") return [];
   const root = unwrapped as Record<string, unknown>;
-  let items: unknown = root.shopping ?? root.shopping_results ?? root.product_results ?? root.products ?? root.results ?? root.organic ?? root.items;
+  let items: unknown = root.shopping ?? root.shopping_results ?? root.product_results ?? root.productResults ?? root.products ?? root.results ?? root.organic ?? root.organic_results ?? root.search_results ?? root.searchResults ?? root.items;
   if (!Array.isArray(items) && typeof root.body === "string") {
     const body = parseJsonText(root.body);
     if (body && typeof body === "object" && !Array.isArray(body)) {
       const bodyRoot = body as Record<string, unknown>;
-      items = bodyRoot.shopping ?? bodyRoot.shopping_results ?? bodyRoot.product_results ?? bodyRoot.products ?? bodyRoot.results ?? bodyRoot.organic ?? bodyRoot.items;
+      items = bodyRoot.shopping ?? bodyRoot.shopping_results ?? bodyRoot.product_results ?? bodyRoot.productResults ?? bodyRoot.products ?? bodyRoot.results ?? bodyRoot.organic ?? bodyRoot.organic_results ?? bodyRoot.search_results ?? bodyRoot.searchResults ?? bodyRoot.items;
     }
   }
-  if (!Array.isArray(items)) return [];
+  if (!Array.isArray(items)) {
+    // MCP may wrap a valid shopping payload in a response envelope.
+    for (const key of ["data", "content", "result", "response", "payload", "body"]) {
+      if (root[key] === undefined) continue;
+      const nested = extractShoppingProducts(root[key]);
+      if (nested.length) return nested;
+    }
+    return [];
+  }
   const products: BrightDataProductCandidate[] = [];
   const seen = new Set<string>();
   for (const item of items) {
