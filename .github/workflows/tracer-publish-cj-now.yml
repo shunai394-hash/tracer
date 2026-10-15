@@ -113,3 +113,4 @@ jobs:
           d=json.load(open("funnel.json"))
           print(json.dumps(d, ensure_ascii=False, indent=2)[:30000])
           PY
+          # Guarded recovery is commit-triggered; endpoint-level quota and publish checks remain authoritative.
