@@ -40,8 +40,13 @@ jobs:
             curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
 
-          # Prevent later annual cron matches from calling CJ or publication endpoints.
-          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] && ! { [ "$schedule_date" = "2026-10-16" ] && [ "$schedule_hour" -lt 1 ]; }; then
+          # This one-time recovery must only run in its scheduled post-cooldown window.
+          # Pushes and manual invocations must not consume supplier quota early.
+          if [ "${GITHUB_EVENT_NAME}" != "schedule" ]; then
+            echo "Waiting for scheduled post-cooldown window; no supplier or publication calls on push/manual trigger."
+            exit 0
+          fi
+          if [ "$schedule_date" != "2026-10-16" ] || [ "$schedule_hour" -ge 1 ]; then
             echo "One-time post-cooldown retry window has passed; skipping before API calls."
             exit 0
           fi
