@@ -130,7 +130,8 @@ assert.match(baseRepair, /\.is\("base_item_id", null\)/, "BASE identity repair m
 assert.doesNotMatch(baseRepair, /\.update\(\{[^}]*published\s*:/, "BASE identity repair must not change publication state");
 // Keep Vercel Cron disabled; guarded 15-minute reconciliation runs through GitHub Actions OIDC.
 assert.doesNotMatch(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/, "use the guarded GitHub Actions reconciliation schedule without a duplicate Vercel cron");
-assert.doesNotMatch(vercel, /"path": "\/api\/cron\/(market-sourcing|supplier-investigation|demand-match)"/, "marketplace-derived collection and matching must not run as sourcing jobs");
+assert.doesNotMatch(vercel, /"path": "\/api\/cron\/(supplier-investigation|demand-match)"/, "supplier discovery and marketplace matching must not run as independent cron sourcing jobs");
+assert.match(vercel, /"path": "\/api\/cron\/market-sourcing"/, "observation-only marketplace collection must stay scheduled to recover canonical child-variant demand evidence");
 assert.match(intelligencePipeline, /marketplace_sourcing_disabled_supplier_native_only/, "patrol must not read marketplace-derived sourcing data");
 assert.doesNotMatch(vercel, /"path": "\/api\/cron\/newfind-retry"/, "out-of-scope NEWFIND retries must not run in the three-site workflow");
 assert.match(intelligencePipeline, /marketplace_sourcing_disabled_supplier_native_only/, "marketplace candidates must not feed publication");
