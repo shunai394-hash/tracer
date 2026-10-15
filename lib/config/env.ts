@@ -109,6 +109,7 @@ export function getBrightDataConfig() {
     apiToken: readEnv("BRIGHTDATA_API_TOKEN"),
     zone: readEnv("BRIGHTDATA_ZONE"),
     mcpUrl: readEnv("BRIGHTDATA_MCP_URL"),
+    mcpApiKey: readEnv("BRIGHTDATA_MCP_API_KEY"),
   };
 }
 
