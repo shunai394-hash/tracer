@@ -12,7 +12,7 @@ assert.ok(source.includes('options.allowNativeCjIdentity === true && isNativeCjS
 assert.ok(source.includes('if (!nativeCjSupplyIdentity && (num(listing.identity_confidence) === null'), "generic identity confidence must not block verified native CJ identity");
 assert.ok(source.includes('identityConfidence: nativeCjSupplyIdentity ? 1 : num(listing.identity_confidence)'), "native CJ evidence must be passed to the sales-test gate");
 assert.ok(source.includes('candidate.price_confirmed === true') && source.includes('candidate.inventory_confirmed === true') && source.includes('candidate.orderable === true') && source.includes('candidate.tracking_available === true') && source.includes('candidate.api_available === true'), "native identity must not bypass price, stock, orderability, tracking or API gates");
-assert.ok(source.includes('profitCalculable: profit.calculable') && source.includes('contributionProfit: profit.contributionProfit'), "contribution-profit gate must remain in the flow");
+assert.ok(source.includes('profitCalculable: supplierShippingKnown && profit.calculable') && source.includes('contributionProfit: supplierShippingKnown ? profit.contributionProfit : null'), "unknown freight must not count as a positive contribution profit");
 assert.ok(source.includes("eligibleSamples: eligible.slice(0, 50)") && source.includes("contributionProfit: item.profit.contributionProfit"), "dry-run must expose eligible evidence for quality review");
 assert.ok(route.includes('const dryRun = new URL(request.url).searchParams.get("dryRun") === "true"'), "dry-run mode must be explicit");
 assert.ok(route.includes('if (!dryRun) {\n      await recoverStaleCronRun'), "dry-run must not create cron lock records");

@@ -60,11 +60,12 @@ export function evaluateSalesTestGate(input: SalesTestGateInput): SalesTestGateR
   else if (!Number.isFinite(input.shippingCost) || input.shippingCost < 0) reasons.push("shipping_invalid");
   if (input.trackingAvailable !== true) reasons.push("tracking_unknown");
   if (input.apiAvailable !== true) reasons.push("supplier_api_unknown");
-  // Margin is information for the merchant's pricing decision, not a listing
-  // veto. Actual supplier order execution retains its separate safety gates.
-  if (!input.profitCalculable || input.currencyMismatch) warnings.push("profit_unknown");
-  if (input.contributionProfit === null || !Number.isFinite(input.contributionProfit)) warnings.push("profit_amount_unknown");
-  else if (input.contributionProfit <= 0) warnings.push("profit_not_positive");
+  // Unknown, zero, and negative contribution profit cannot enter a sales test.
+  // A confirmed supplier variant does not need a marketplace product id, but
+  // it still needs a calculable positive margin after cost, freight, and fees.
+  if (!input.profitCalculable || input.currencyMismatch) reasons.push("profit_unknown");
+  if (input.contributionProfit === null || !Number.isFinite(input.contributionProfit)) reasons.push("profit_amount_unknown");
+  else if (input.contributionProfit <= 0) reasons.push("profit_not_positive");
   if (input.priceConfirmed !== undefined && input.priceConfirmed !== true) reasons.push("price_unconfirmed");
   if (input.inventoryConfirmed !== undefined && input.inventoryConfirmed !== true) reasons.push("inventory_unknown");
   if (input.inventory !== undefined && (input.inventory === null || !Number.isFinite(input.inventory) || input.inventory <= 0)) reasons.push("inventory_zero");
@@ -82,18 +83,26 @@ export function verifySalesTestGateInvariants(): { ok: boolean; cases: Array<{ n
   const invalidPrice = evaluateSalesTestGate({ ...supplyReadyInput(), sellingPrice: 0, requireRank: false });
   const invalidEconomics = evaluateSalesTestGate({ ...supplyReadyInput(), sourceCost: -1, shippingCost: -1, requireRank: false });
   const giftCard = evaluateSalesTestGate({ ...supplyReadyInput(), title: "Amazon Gift Card", requireRank: false });
-  const unknownProfit = evaluateSalesTestGate({ ...supplyReadyInput(), contributionProfit: null, requireRank: false });
+  const unknownProfit = evaluateSalesTestGate({ ...supplyReadyInput(), contributionProfit: null, profitCalculable: false, requireRank: false });
+  const zeroProfit = evaluateSalesTestGate({ ...supplyReadyInput(), contributionProfit: 0, requireRank: false });
   const negativeProfit = evaluateSalesTestGate({ ...supplyReadyInput(), contributionProfit: -250, requireRank: false });
+  const unknownShipping = evaluateSalesTestGate({ ...supplyReadyInput(), shippingCost: null, shippingUnknown: true, requireRank: false });
+  const priceRaisedIntoLoss = evaluateSalesTestGate({ ...supplyReadyInput(), sourceCost: 5000, contributionProfit: -100, requireRank: false });
+  const nativeSupplier = evaluateSalesTestGate({ ...supplyReadyInput(), identityMethod: "cj_supplier_variant", identityLinked: true, requireRank: false });
   const cases = [
-    { name: "complete_observed_product_is_eligible", expected: true, actual: ready.eligible },
+    { name: "complete_observed_product_is_eligible", expected: true, actual: ready.eligible && ready.reasons.length === 0 },
     { name: "english_title_is_not_eligible", expected: true, actual: englishTitle.eligible === false && englishTitle.reasons.includes("japanese_title_required") },
     { name: "supply_ready_is_eligible_without_market_rank", expected: true, actual: supplyReady.eligible },
+    { name: "native_supplier_variant_is_eligible_without_marketplace_id", expected: true, actual: nativeSupplier.eligible },
     { name: "supply_zero_inventory_is_blocked", expected: true, actual: supplyInventoryBlocked.eligible === false && supplyInventoryBlocked.reasons.includes("inventory_zero") },
     { name: "zero_price_is_blocked", expected: true, actual: invalidPrice.eligible === false && invalidPrice.reasons.includes("selling_price_invalid") },
     { name: "negative_costs_are_blocked", expected: true, actual: invalidEconomics.eligible === false && invalidEconomics.reasons.includes("source_cost_invalid") && invalidEconomics.reasons.includes("shipping_invalid") },
     { name: "gift_card_is_blocked", expected: true, actual: giftCard.eligible === false && giftCard.reasons.includes("non_physical_product") },
-    { name: "unknown_profit_warns_without_blocking_listing", expected: true, actual: unknownProfit.eligible && unknownProfit.warnings.includes("profit_amount_unknown") },
-    { name: "negative_profit_warns_without_blocking_listing", expected: true, actual: negativeProfit.eligible && negativeProfit.warnings.includes("profit_not_positive") },
+    { name: "unknown_profit_is_blocked", expected: true, actual: unknownProfit.eligible === false && unknownProfit.reasons.includes("profit_unknown") && unknownProfit.reasons.includes("profit_amount_unknown") },
+    { name: "zero_profit_is_blocked", expected: true, actual: zeroProfit.eligible === false && zeroProfit.reasons.includes("profit_not_positive") },
+    { name: "negative_profit_is_blocked", expected: true, actual: negativeProfit.eligible === false && negativeProfit.reasons.includes("profit_not_positive") },
+    { name: "unknown_shipping_is_blocked", expected: true, actual: unknownShipping.eligible === false && unknownShipping.reasons.includes("shipping_unknown") },
+    { name: "price_change_into_loss_is_blocked", expected: true, actual: priceRaisedIntoLoss.eligible === false && priceRaisedIntoLoss.reasons.includes("profit_not_positive") },
   ];
   return { ok: cases.every((item) => item.actual === item.expected), cases };
 }
