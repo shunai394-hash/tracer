@@ -143,9 +143,10 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
     );
   } catch (error) {
     console.error("[shopify-live-stock-unavailable]", error instanceof Error ? error.message.slice(0, 300) : String(error));
-    // Fail closed: an unverified database snapshot must never be presented as
-    // currently available stock. Retry after the Shopify inventory API recovers.
-    return [];
+    // Preserve the published catalog for display during a temporary Shopify
+    // inventory API outage. Checkout independently rechecks live stock and
+    // rejects orders when the current quantity cannot be verified.
+    return listings;
   }
 
   const staleSoldOut = listings.filter((listing) => {
