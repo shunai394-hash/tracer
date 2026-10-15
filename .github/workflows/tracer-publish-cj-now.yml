@@ -1,12 +1,12 @@
 name: TRACER Publish CJ Products Now
 
-# Production publication trigger: verified supplier sales tests -> Shopify.
-# Retry trigger: publish verified, profitable CJ supply without marketplace barcode dependency.
-# Operational retry: run the bounded, gated production reconciliation after stale supplier evidence was found.
+# Bounded recovery cycle. The application endpoints enforce supplier quota
+# cooldowns and publication eligibility; this workflow must remain manually
+# runnable and must not be tied to a single calendar date.
 on:
   workflow_dispatch:
   schedule:
-    - cron: "5 0 16 10 *"
+    - cron: "5 0 * * *"
   push:
     branches: [main]
 
@@ -34,22 +34,9 @@ jobs:
         run: |
           set -euo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
-          schedule_date="$(date -u +%F)"
-          schedule_hour="$(date -u +%H)"
           token() {
             curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
-
-          # This one-time recovery must only run in its scheduled post-cooldown window.
-          # Pushes and manual invocations must not consume supplier quota early.
-          if [ "${GITHUB_EVENT_NAME}" != "schedule" ]; then
-            echo "Waiting for scheduled post-cooldown window; no supplier or publication calls on push/manual trigger."
-            exit 0
-          fi
-          if [ "$schedule_date" != "2026-10-16" ] || [ "$schedule_hour" -ge 1 ]; then
-            echo "One-time post-cooldown retry window has passed; skipping before API calls."
-            exit 0
-          fi
 
           echo "=== SUPPLIER-NATIVE DISCOVERY (PRIMARY PATH) ==="
           curl -sSf --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/supply-first" > supply-first.json
@@ -73,7 +60,7 @@ jobs:
             python3 - <<PY
           import json
           d=json.load(open("reverify-$i.json"))
-          print(json.dumps({k:d.get(k) for k in ("checked","promoted","noUniqueBarcodeMatch","missingEconomics","nextCursor")}, ensure_ascii=False))
+          print(json.dumps({k:d.get(k) for k in ("checked","promoted","noUniqueBarcodeMatch","missingEconomics","nextCursor","skipped","reason","retryAfter")}, ensure_ascii=False))
           PY
             if [ "$i" -lt 6 ]; then sleep 61; fi
           done
@@ -86,8 +73,6 @@ jobs:
           d=json.load(open("demand-match.json"))
           print(json.dumps(d, ensure_ascii=False, indent=2)[:30000])
           PY
-
-          # The schedule-window guard above is checked once at job start. Do not re-check after the bounded reverify loop, which may cross into the next UTC hour.
 
           echo "=== SALES TEST PUBLICATION ==="
           curl -sSf --max-time 300 -H "Authorization: Bearer $(token)" "$BASE/api/cron/sales-test-publication" > sales.json
@@ -128,8 +113,3 @@ jobs:
           d=json.load(open("funnel.json"))
           print(json.dumps(d, ensure_ascii=False, indent=2)[:30000])
           PY
-
-# Production deploy is now handled by the deterministic Vercel CLI workflow.
-# Manual dispatch is available for a bounded CJ identity reverify + publication cycle.
-# Explicit bounded production recovery cycle; commit message marker enables this run.
-# final-publication-cycle
