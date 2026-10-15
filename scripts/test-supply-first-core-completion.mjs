@@ -12,10 +12,10 @@ for (const required of ["match", "supply_first", "supply_sales_test_select", "sa
   assert.doesNotMatch(source, new RegExp('optionalDiscoverySteps = new Set\\(\\[[^\\]]*"' + required + '"'),
     required + " must remain a core pipeline stage");
 }
-assert.match(source, /supply_discovery_deadline_reached_without_candidates/,
-  "an empty supplier scan that hits its deadline must be explicitly deferred, not reported as a successful completed stage");
+assert.match(source, /supply_discovery_deferred_without_candidates/,
+  "an empty supplier scan that defers must be explicitly retryable, not reported as a completed stage");
 assert.match(source, /supplyFirstResult\?\.deadlineReached === true/,
-  "deadline classification must inspect the scanner's explicit deadlineReached result");
+  "deferred classification must inspect the scanner's explicit deadlineReached result");
 assert.match(source, /Number\(supplyFirstResult\.candidateCount \?\? 0\) === 0/,
   "only empty deadline runs are deferred; partial candidate results remain available to downstream gates");
 
