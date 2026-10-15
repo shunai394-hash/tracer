@@ -13,7 +13,6 @@ import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sal
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import {
   promoteShopListingToNewfind,
-  retryPendingNewfindPromotions,
 } from "@/lib/integration/newfind";
 import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -539,7 +538,8 @@ export async function runIntelligencePipeline(options: {
   }, { downstream: true, budgetMs: 6_000 }));
   // NEWFIND has its own scheduled retry worker. Keep patrol delivery bounded so
   // one slow downstream destination cannot consume the entire patrol timeout.
-  steps.push(await runStep("newfind_retry", () => retryPendingNewfindPromotions(1), { downstream: true, budgetMs: 4_000 }));
+  // Pending delivery retries run in the dedicated five-minute newfind-retry cron.
+  // Do not let downstream schema/cache delays block scoring and channel reconciliation.
 
   steps.push(await runStep("ordering", () => persistReorderRecommendations(), { downstream: true, budgetMs: 15_000 }));
   steps.push(await runStep("test_ready", async () => {
