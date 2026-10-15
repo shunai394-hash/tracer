@@ -25,7 +25,7 @@ const [helper, shopify, base, store, route, vercel, persist, demandCJ, demandSup
 assert.match(helper, /identity_status === "linked"/);
 assert.match(helper, /verificationError === "CJdropshipping is not configured"/, "only the stale CJ configuration error may be ignored when the same row is currently configured and API-available");
 assert.match(helper, /row.configured === true && row.api_available === true/);
-assert.match(persist, /verification_error: nativeEvidenceFresh \? null : \(priorVerificationError && priorVerificationError !== "no_unique_canonical_child_variant_match" \? priorVerificationError : "supplier_native_evidence_pending"\)/, "only fresh, fully verified native supply evidence may clear the old configuration error");
+assert.match(persist, /verification_error: nativeEvidenceFresh \? null : \(priorVerificationError && priorVerificationError !== "no_unique_canonical_child_variant_match" \? priorVerificationError : "supplier_native_evidence_pending"\)/, "only fresh, fully verified native supplier evidence may clear the old configuration error; marketplace identity is not required");
 assert.match(discoverCJ, /identity_status: "supply_discovered", identity_confidence: 0/, "supply discovery without canonical identity must not claim perfect identity confidence");
 assert.match(discoverCJ, /title: detail\.title, product_id: null/, "CJ supply discovery must not provisionally attach a canonical product ID before identity is resolved");
 assert.match(discoverCJ, /api_available: preserveVerifiedOrderPath, verification_status: preserveVerifiedOrderPath \? "verified" : "unverified"/, "seeded refresh may preserve the existing verified order path only behind its strict evidence predicate");
