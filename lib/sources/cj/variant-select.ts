@@ -38,6 +38,14 @@ export function selectVariantMatchingBarcode(
   return matches.length === 1 ? matches[0] : null;
 }
 
+/** Recover only from a unique barcode match or a single available variant. Price is not identity. */
+export function selectRecoverableVariant(variants: CJProductVariant[], barcode: string | null): CJProductVariant | null {
+  const matched = selectVariantMatchingBarcode(variants, barcode);
+  if (matched?.vid) return matched;
+  const single = selectUnambiguousVariant(variants);
+  return single?.vid ? single : null;
+}
+
 export function verifyVariantSelectionInvariants(): {
   ok: boolean;
   cases: Array<{ name: string; expected: boolean; actual: boolean }>;
@@ -67,6 +75,22 @@ export function verifyVariantSelectionInvariants(): {
   ];
 
   const cases = [
+    {
+      name: "ambiguous_variants_are_not_resolved_by_cheapest_price",
+      expected: true,
+      actual: selectRecoverableVariant([
+        { ...one[0], vid: "cheap", sellPrice: "1.00", barcode: "111" },
+        { ...one[0], vid: "dear", sellPrice: "9.00", barcode: "222" },
+      ], null) === null,
+    },
+    {
+      name: "exact_barcode_wins_over_cheapest_price",
+      expected: true,
+      actual: selectRecoverableVariant([
+        { ...one[0], vid: "cheap", sellPrice: "1.00", barcode: "111" },
+        { ...one[0], vid: "dear", sellPrice: "9.00", barcode: "222" },
+      ], "222")?.vid === "dear",
+    },
     {
       name: "single_variant_is_selected",
       expected: true,
