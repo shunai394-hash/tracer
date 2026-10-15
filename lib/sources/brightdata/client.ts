@@ -122,6 +122,14 @@ function unwrapMcpContent(value: unknown): unknown {
 function extractShoppingProducts(payload: unknown): BrightDataProductCandidate[] {
   const unwrapped = unwrapMcpContent(payload);
   if (Array.isArray(unwrapped)) {
+    const productRecords = unwrapped.filter((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+      const record = item as Record<string, unknown>;
+      const hasTitle = Boolean(findFirstString(record, ["title", "name", "product_name", "productName"]));
+      const hasUrl = Boolean(findFirstString(record, ["link", "url", "product_url", "productUrl", "href"]));
+      return hasTitle && hasUrl;
+    });
+    if (productRecords.length) return extractShoppingProducts({ products: productRecords });
     for (const item of unwrapped) {
       const nested = extractShoppingProducts(item);
       if (nested.length) return nested;
