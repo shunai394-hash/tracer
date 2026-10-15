@@ -171,14 +171,15 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const productIds = [...new Set(regularRows.map((row) => String(row.product_id ?? "").trim()).filter(Boolean))];
   const shopEvidenceResult = productIds.length > 0
     ? await db.from("shop_listings")
-        .select("product_id,supplier_name,supplier_product_id,supplier_variant_id")
+        .select("product_id,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id")
         .eq("supplier_name", "cj")
         .in("product_id", productIds)
         .limit(500)
     : { data: [], error: null };
   if (shopEvidenceResult.error) throw new Error("exact TRACER shop-listing evidence read failed: " + shopEvidenceResult.error.message);
   const shopEvidence = (shopEvidenceResult.data ?? []).filter((listing) =>
-    typeof listing.supplier_product_id === "string" && typeof listing.supplier_variant_id === "string"
+    (typeof listing.supplier_listing_id === "string" && listing.supplier_listing_id.trim().length > 0)
+    || (typeof listing.supplier_product_id === "string" && typeof listing.supplier_variant_id === "string")
   );
   const partition = partitionByExactShopListing(regularRows, shopEvidence);
   const matchedWomens = partition.matched.filter((row) => isWomensProductTitle(row.title, row.metadata));
