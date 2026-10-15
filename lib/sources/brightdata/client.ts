@@ -100,6 +100,31 @@ function extractShoppingProducts(payload: unknown): BrightDataProductCandidate[]
     }
     return [];
   }
+  if (typeof unwrapped === "string") {
+    const lines = unwrapped.split(/\\r?\\n/);
+    const products: BrightDataProductCandidate[] = [];
+    const seen = new Set<string>();
+    for (let index = 0; index < lines.length; index += 1) {
+      const match = lines[index].match(/\\[([^\\]]{3,200})\\]\\((https?:\\/\\/[^)\\s]+)\\)/);
+      if (!match) continue;
+      const title = normalizeText(match[1]);
+      const productUrl = normalizeUrl(match[2]);
+      if (!title || !productUrl || seen.has(title)) continue;
+      const context = lines.slice(index, index + 4).join(" ");
+      const priceMatch = context.match(/(?:¥|￥|JPY|US\\$|\\$)\\s*[\\d,]+(?:\\.\\d{1,2})?/i);
+      const sellerMatch = context.match(/(?:from|by|販売元|ショップ)\\s+([^|•]{2,80})/i);
+      seen.add(title);
+      products.push({
+        title,
+        price: priceMatch?.[0]?.replace(/\\s+/g, " ").trim() ?? null,
+        seller: sellerMatch ? normalizeText(sellerMatch[1]) : null,
+        productUrl,
+        imageUrl: null,
+      });
+      if (products.length >= 100) break;
+    }
+    return products;
+  }
   if (!unwrapped || typeof unwrapped !== "object") return [];
   const root = unwrapped as Record<string, unknown>;
   let items: unknown = root.shopping ?? root.shopping_results ?? root.product_results ?? root.products ?? root.results ?? root.organic ?? root.items;
@@ -153,14 +178,20 @@ async function searchViaBrightDataMcp(query: string, shoppingUrl: string): Promi
   try {
     const consumer = getMcpToolConsumer();
     const tools = await consumer.listTools();
-    const preferred = ["web_data_google_shopping", "search_engine", "search_engine_batch", "scrape_as_markdown", "scrape_as_markdown_batch"];
+    const preferred = ["search_engine", "scrape_as_markdown"];
     for (const name of preferred) {
       const tool = tools.find((candidate) => candidate.name === name);
       if (!tool) continue;
-      const call: McpToolCall = { name: tool.name, arguments: mcpArguments(tool, query, shoppingUrl) };
-      const result = await consumer.callTool(call);
-      const products = extractShoppingProducts(result);
-      if (products.length) return products;
+      try {
+        const call: McpToolCall = { name: tool.name, arguments: mcpArguments(tool, query, shoppingUrl) };
+        const result = await consumer.callTool(call);
+        const products = extractShoppingProducts(result);
+        if (products.length) return products;
+      } catch (error) {
+        // A tool can be unavailable for a particular account or reject its
+        // schema. Continue to the next supported MCP tool before API fallback.
+        console.warn("[BRIGHTDATA MCP] tool unavailable", tool.name, error instanceof Error ? error.message : "unknown error");
+      }
     }
     return null;
   } catch (error) {
