@@ -264,7 +264,7 @@ export async function GET(request: Request) {
       try {
         // Existing BASE items are reconciled here too; never let that outlive
         // the function budget.
-        const base = await withinBudget(publishPublishedListingsToBase(3), startedAt + 285_000, "publish_base");
+        const base = await withinBudget(publishPublishedListingsToBase(15), startedAt + 285_000, "publish_base");
       actions.push({
         action: "publish_base",
         attempted: base.attempted,
