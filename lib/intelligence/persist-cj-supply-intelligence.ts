@@ -27,18 +27,23 @@ export type MarketplaceIdentity = { bestsellerId: string; productId: string; can
 
 function normalizeBarcode(value: unknown): string { return typeof value === "string" ? value.trim().replace(/[^0-9]/g, "") : ""; }
 
-async function readSupplierBarcode(args: { supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null }): Promise<string> {
-  // A persisted/listing-level barcode is not proof for this exact variant. Always re-read the live CJ variant.
+async function readSupplierBarcode(args: { supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null }): Promise<{ barcode: string; variant: Awaited<ReturnType<typeof fetchCJVariantByVid>> }> {
+  // One exact-variant lookup returns barcode, SKU and price together. Reuse
+  // this response for supply repair rather than burning a second CJ API call.
+  try {
+    const variant = await fetchCJVariantByVid(args.supplierVariantId);
+    if (variant?.vid === args.supplierVariantId && variant.productId === args.supplierProductId) {
+      return { barcode: normalizeBarcode(variant.barcode), variant };
+    }
+  } catch (error) { console.warn("[cj-supply-identity] queryByVid barcode lookup failed", { error: error instanceof Error ? error.message : String(error) }); }
+  // Product-wide lookup is a fallback only when the exact variant endpoint
+  // fails or returns a different product/variant.
   try {
     const variants = await fetchCJProductVariants(args.supplierProductId, { countryCode: "JP" });
-    const direct = normalizeBarcode(variants.find((item) => item.vid === args.supplierVariantId)?.barcode);
-    if (direct) return direct;
-  } catch (error) { console.warn("[cj-supply-identity] variant barcode lookup failed", { error: error instanceof Error ? error.message : String(error) }); }
-  try {
-    const detailVariant = await fetchCJVariantByVid(args.supplierVariantId);
-    if (detailVariant?.vid === args.supplierVariantId) return normalizeBarcode(detailVariant.barcode);
-  } catch (error) { console.warn("[cj-supply-identity] queryByVid barcode lookup failed", { error: error instanceof Error ? error.message : String(error) }); }
-  return "";
+    const variant = variants.find((item) => item.vid === args.supplierVariantId && item.productId === args.supplierProductId) ?? null;
+    return { barcode: normalizeBarcode(variant?.barcode), variant: null };
+  } catch (error) { console.warn("[cj-supply-identity] variant barcode lookup failed", { supplierProductId: args.supplierProductId, error: error instanceof Error ? error.message : String(error) }); }
+  return { barcode: "", variant: null };
 }
 
 async function resolveMarketplaceIdentityFromBarcode(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string }, freshBarcode: string): Promise<MarketplaceIdentity | null> {
@@ -156,12 +161,12 @@ async function resolveMarketplaceIdentityFromBarcode(args: { db: ReturnType<type
   };
 }
 
-export async function resolveMarketplaceIdentityWithFreshBarcode(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<{ identity: MarketplaceIdentity | null; variantBarcode: string | null }> {
+export async function resolveMarketplaceIdentityWithFreshBarcode(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<{ identity: MarketplaceIdentity | null; variantBarcode: string | null; variantDetails: Awaited<ReturnType<typeof fetchCJVariantByVid>> }> {
   // Fetch the exact CJ variant barcode once, then reuse that same fresh value
   // for both marketplace matching and persistence/diagnostics.
-  const freshBarcode = await readSupplierBarcode(args);
-  const identity = await resolveMarketplaceIdentityFromBarcode(args, freshBarcode);
-  return { identity, variantBarcode: freshBarcode || null };
+  const freshEvidence = await readSupplierBarcode(args);
+  const identity = await resolveMarketplaceIdentityFromBarcode(args, freshEvidence.barcode);
+  return { identity, variantBarcode: freshEvidence.barcode || null, variantDetails: freshEvidence.variant };
 }
 
 export async function resolveMarketplaceIdentity(args: { db: ReturnType<typeof createSupabaseAdminClient>; supplierProductId: string; supplierVariantId: string; variantBarcode?: string | null; supplierIdentifiers?: { gtin?: string | null; jan?: string | null; ean?: string | null; upc?: string | null; mpn?: string | null } | null }): Promise<MarketplaceIdentity | null> {

@@ -63,6 +63,17 @@ assert.match(intelligencePipeline, /freshOrderableSuppliers: freshOrderableSuppl
 assert.match(intelligencePipeline, /publishedOrderableListings/);
 assert.match(intelligencePipeline, /retryable: !businessReady/, "zero orderable supplier/listing counts must keep the pipeline incomplete and retryable");
 assert.match(persist, /last_verified_at: nativeEvidenceFresh \? now : existingListing\.data\?\.last_verified_at \?\? null/, "supplier verification timestamps must advance only when native supplier evidence remains fresh");
+assert.match(persist, /supplier_native_evidence_pending/);
+const reverify = await readFile(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
+assert.match(reverify, /let liveSupplierApiVerified = row\.api_available === true && row\.configured === true/);
+assert.match(reverify, /refreshedFields\.configured = true/);
+assert.match(reverify, /refreshedFields\.api_available = true/);
+assert.match(reverify, /select\("id,product_id,title,sku,cost,shipping_cost/);
+assert.match(reverify, /refreshedFields\.sku = variantDetails\.sku\.trim\(\)/);
+assert.match(reverify, /supplier orderability and tracking capability remain unverified/);
+assert.match(reverify, /supplier orderability and tracking capability remain unverified/);
+assert.doesNotMatch(reverify, /refreshedFields\.tracking_available = true/, "live catalog reads must not manufacture tracking proof");
+assert.match(reverify, /if \(stockCapHoldRecoverable\) \{[\s\S]{0,120}refreshedFields\.orderable = true;/, "only the explicit deployed stock-cap recovery may restore orderable state");
 assert.match(persist, /bestseller_id: null/, "supplier-native CJ persistence must not claim a marketplace parent link");
 assert.match(persist, /identity_status: "supply_discovered"/, "CJ supplier-native identity must remain distinct from cross-marketplace identity");
 assert.doesNotMatch(persist, /orderable: false, tracking_available: false, api_available: false/, "identity recheck must not erase existing supplier order-path evidence");
@@ -120,7 +131,8 @@ assert.match(baseRepair, /\.is\("base_item_id", null\)/, "BASE identity repair m
 assert.doesNotMatch(baseRepair, /\.update\(\{[^}]*published\s*:/, "BASE identity repair must not change publication state");
 // Keep Vercel Cron disabled; guarded 15-minute reconciliation runs through GitHub Actions OIDC.
 assert.doesNotMatch(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/, "use the guarded GitHub Actions reconciliation schedule without a duplicate Vercel cron");
-assert.doesNotMatch(vercel, /"path": "\/api\/cron\/(market-sourcing|supplier-investigation|demand-match)"/, "marketplace-derived collection and matching must not run as sourcing jobs");
+assert.doesNotMatch(vercel, /"path": "\/api\/cron\/(supplier-investigation|demand-match)"/, "supplier discovery and marketplace matching must not run as independent cron sourcing jobs");
+assert.match(vercel, /"path": "\/api\/cron\/market-sourcing"/, "observation-only marketplace collection must stay scheduled to recover canonical child-variant demand evidence");
 assert.match(intelligencePipeline, /marketplace_sourcing_disabled_supplier_native_only/, "patrol must not read marketplace-derived sourcing data");
 assert.doesNotMatch(vercel, /"path": "\/api\/cron\/newfind-retry"/, "out-of-scope NEWFIND retries must not run in the three-site workflow");
 assert.match(intelligencePipeline, /marketplace_sourcing_disabled_supplier_native_only/, "marketplace candidates must not feed publication");

@@ -102,7 +102,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   // This bypasses that row's barcode-related retry backoff, not the API quota or evidence gates.
   const stockCapHeldResult = process.env.TRACER_STOREFRONT_STOCK_CAP_DEPLOYED === "1"
     ? await db.from("supplier_listings")
-        .select("id,product_id,title,cost,shipping_cost,shipping_status,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency,price_confirmed,inventory_confirmed,configured,api_available,orderable,tracking_available,ship_to,verification_error")
+        .select("id,product_id,title,sku,cost,shipping_cost,shipping_status,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency,price_confirmed,inventory_confirmed,configured,api_available,orderable,tracking_available,ship_to,verification_error")
         .eq("supplier", "cj")
         .eq("verification_error", "storefront_stock_cap_deploy_pending")
         .in("verification_status", ["unverified", "retryable", "verified"])
@@ -129,7 +129,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
 
   const buildCandidateQuery = () => db
     .from("supplier_listings")
-    .select("id,product_id,title,cost,shipping_cost,shipping_status,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency,price_confirmed,inventory_confirmed,configured,api_available,orderable,tracking_available,ship_to,verification_error")
+    .select("id,product_id,title,sku,cost,shipping_cost,shipping_status,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency,price_confirmed,inventory_confirmed,configured,api_available,orderable,tracking_available,ship_to,verification_error")
     .eq("supplier", "cj")
     .in("verification_status", ["unverified", "retryable", "verified"])
     .in("identity_method", ["supply_discovered", "none"])
@@ -204,7 +204,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
     const supplierListingId = String(row.id);
     try {
       const listingMetadata = record(row.metadata);
-      const { identity, variantBarcode } = await resolveMarketplaceIdentityWithFreshBarcode({
+      const { identity, variantBarcode, variantDetails: freshVariantDetails } = await resolveMarketplaceIdentityWithFreshBarcode({
         db,
         supplierProductId: String(row.supplier_product_id),
         supplierVariantId: String(row.supplier_variant_id),
@@ -234,19 +234,21 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const missingInventory = !inventoryVerified;
       const missingImage = !imageUrl;
       let shippingQuoteVerified = row.shipping_status === "verified" && shippingCost !== null;
-      let variantDetails: Awaited<ReturnType<typeof fetchCJVariantByVid>> = null;
+      let variantDetails: Awaited<ReturnType<typeof fetchCJVariantByVid>> = freshVariantDetails;
       let productDetails: Awaited<ReturnType<typeof getCJProductDetail>> = null;
       const refreshErrors: string[] = [];
+      let liveSupplierApiVerified = row.api_available === true && row.configured === true;
 
       if (missingCost && currency === "USD") {
         try {
-          variantDetails = await fetchCJVariantByVid(String(row.supplier_variant_id));
+          variantDetails = variantDetails ?? await fetchCJVariantByVid(String(row.supplier_variant_id));
           const exactVariant = variantDetails?.vid === String(row.supplier_variant_id)
             && variantDetails.productId === String(row.supplier_product_id);
           const fetchedCost = exactVariant ? num(variantDetails?.sellPrice) : null;
           if (fetchedCost !== null && fetchedCost > 0) {
             cost = fetchedCost;
             priceVerified = true;
+            liveSupplierApiVerified = true;
           } else if (!exactVariant) refreshErrors.push("cost:returned_variant_or_product_id_mismatch");
         } catch (error) {
           if (isCJQuotaCircuitBlockingError(error)) throw error;
@@ -256,9 +258,10 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       if (missingShipping && currency === "USD") {
         try {
           const fetchedShipping = await calculateCJFreight(String(row.supplier_variant_id), { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 });
-          if (fetchedShipping !== null && Number.isFinite(fetchedShipping) && fetchedShipping > 0) {
+          if (fetchedShipping !== null && Number.isFinite(fetchedShipping) && fetchedShipping >= 0) {
             shippingCost = fetchedShipping;
             shippingQuoteVerified = true;
+            liveSupplierApiVerified = true;
           }
         } catch (error) {
           if (isCJQuotaCircuitBlockingError(error)) throw error;
@@ -271,6 +274,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
           if (fetchedInventory !== null && Number.isFinite(fetchedInventory) && fetchedInventory >= 0) {
             inventory = fetchedInventory;
             inventoryVerified = true;
+            liveSupplierApiVerified = true;
           }
         } catch (error) {
           if (isCJQuotaCircuitBlockingError(error)) throw error;
@@ -280,7 +284,10 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       if (missingImage) {
         try {
           productDetails = await getCJProductDetail(String(row.supplier_product_id));
-          if (productDetails?.id === String(row.supplier_product_id) && isHttpUrl(productDetails.imageUrl)) imageUrl = productDetails.imageUrl.trim();
+          if (productDetails?.id === String(row.supplier_product_id) && isHttpUrl(productDetails.imageUrl)) {
+            imageUrl = productDetails.imageUrl.trim();
+            liveSupplierApiVerified = true;
+          }
           else if (productDetails && productDetails.id !== String(row.supplier_product_id)) refreshErrors.push("image:returned_product_id_mismatch");
         } catch (error) {
           if (isCJQuotaCircuitBlockingError(error)) throw error;
@@ -307,9 +314,22 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         last_identity_reverify_at: checkedAt.toISOString(),
       };
       const refreshedFields: Record<string, unknown> = { metadata: nextListingMetadata };
+      if (liveSupplierApiVerified) {
+        // Backup restoration intentionally invalidated stale supplier capability
+        // flags. Re-enable only the flags proven by successful live CJ reads;
+        // never infer that a real order or tracking flow has been tested.
+        refreshedFields.configured = true;
+        refreshedFields.api_available = true;
+      }
       if (priceVerified && cost !== null) {
         refreshedFields.cost = cost;
         refreshedFields.price_confirmed = true;
+      }
+      if (variantDetails?.vid === String(row.supplier_variant_id)
+        && variantDetails.productId === String(row.supplier_product_id)
+        && typeof variantDetails.sku === "string"
+        && variantDetails.sku.trim()) {
+        refreshedFields.sku = variantDetails.sku.trim();
       }
       if (shippingQuoteVerified && shippingCost !== null) {
         refreshedFields.shipping_cost = shippingCost;
@@ -328,12 +348,18 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const canMarkFreshVerified = priceVerified && cost !== null && cost > 0
         && shippingQuoteVerified && shippingCost !== null
         && inventoryVerified && inventory !== null && inventory > 0
-        && row.configured === true && row.api_available === true
+        && (row.configured === true || liveSupplierApiVerified)
+        && (row.api_available === true || liveSupplierApiVerified)
         && (row.orderable === true || stockCapHoldRecoverable) && row.tracking_available === true
         && Boolean(String(row.supplier_product_id ?? "").trim())
         && Boolean(String(row.supplier_variant_id ?? "").trim())
         && String(row.ship_to ?? "").trim().toUpperCase() === "JP"
-        && (row.verification_error == null || row.verification_error === "" || stockCapHoldRecoverable);
+        && (row.verification_error == null || row.verification_error === "" || stockCapHoldRecoverable
+          || row.verification_error === "Live CJ product/variant and supply data refreshed; supplier orderability and tracking capability remain unverified");
+      if (liveSupplierApiVerified && !canMarkFreshVerified && typeof row.verification_error === "string" && row.verification_error.startsWith("Restored from backup; stale evidence disabled")) {
+        refreshedFields.verification_error = "Live CJ product/variant and supply data refreshed; supplier orderability and tracking capability remain unverified";
+        refreshedFields.verification_status = "retryable";
+      }
       if (canMarkFreshVerified) {
         refreshedFields.verification_status = "verified";
         refreshedFields.last_verified_at = checkedAt.toISOString();

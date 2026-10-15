@@ -30,7 +30,7 @@ export async function repairCjMissingWomenVariants(options: { limit?: number } =
   const limit = Math.max(1, Math.min(options.limit ?? 50, 50));
   const { data: rows, error } = await db
     .from("supplier_listings")
-    .select("id,title,supplier_product_id,supplier_variant_id,verification_status,metadata")
+    .select("id,title,sku,supplier_product_id,supplier_variant_id,verification_status,metadata")
     .eq("supplier", "cj")
     .eq("verification_status", "unverified")
     .is("supplier_variant_id", null)
@@ -63,20 +63,33 @@ export async function repairCjMissingWomenVariants(options: { limit?: number } =
       if (shippingCost === null || !Number.isFinite(shippingCost) || shippingCost < 0) continue;
       const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {};
       const nextMetadata = { ...metadata, variant_recovery: "cj_live_variant_recovery", variant_barcode: variant.barcode ?? metadata.variant_barcode ?? null, variant_sku: variant.sku ?? metadata.variant_sku ?? null, variant_name: variant.nameEn ?? metadata.variant_name ?? null };
+      const checkedAt = new Date().toISOString();
       const { error: updateError } = await db.from("supplier_listings").update({
+        // Persist CJ's actual child-variant SKU in the indexed supplier SKU
+        // field as well as metadata so downstream order mapping can reuse it.
+        sku: variant.sku ?? row.sku ?? null,
         supplier_variant_id: variant.vid,
+        cj_variant_id: variant.vid,
         cost,
+        currency: "USD",
         shipping_cost: shippingCost,
+        ship_to: "JP",
         inventory,
         inventory_confirmed: true,
         price_confirmed: true,
+        configured: true,
         orderable: true,
-        tracking_available: true,
         api_available: true,
+        // A successful catalog/stock/freight lookup does not prove tracking
+        // support. Preserve the existing value until supplier capability is
+        // independently confirmed; never manufacture fulfillment evidence.
         verification_status: "retryable",
-        verification_error: null,
-        metadata: nextMetadata,
-        inventory_checked_at: new Date().toISOString(),
+        verification_error: "Variant, price, stock and Japan freight refreshed; canonical marketplace identity and tracking capability still require verification",
+        shipping_status: "verified",
+        shipping_checked_at: checkedAt,
+        inventory_checked_at: checkedAt,
+        last_verified_at: checkedAt,
+        metadata: { ...nextMetadata, variant_sku: variant.sku ?? metadata.variant_sku ?? null, variant_currency: "USD", variant_recovered_at: checkedAt },
       }).eq("id", supplierListingId);
       if (updateError) throw new Error(updateError.message);
       result.repaired += 1;

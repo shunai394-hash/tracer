@@ -1,4 +1,4 @@
-import { tracerSkuForListing } from "../shopify/order-sku-mapping.ts";
+import { legacyTracerSkusForListing, tracerSkuForListing } from "../shopify/order-sku-mapping.ts";
 
 // Pure Shopify order-line -> shop_listings resolution (no server imports so the
 // regression test can load it directly).
@@ -52,6 +52,7 @@ export function resolveShopifyOrderLines<T extends ShopifyListingIdentity>(
     const hits = listings.filter((listing) =>
       (line.sku !== "" && (
         tracerSkuForListing(listing) === line.sku
+        || legacyTracerSkusForListing(listing).includes(line.sku)
         || listing.id === line.sku
         || (line.sku.startsWith("CJ-") && (
           line.sku === `CJ-${listing.supplier_variant_id || ""}`
