@@ -201,7 +201,6 @@ export function isSupplierLiveOrderingEnabled(supplierName: string): boolean {
 export function isSupplierAutoOrderingEnabled(supplierName: string): boolean {
   const key = supplierName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").toUpperCase();
   if (key === "CJ" || key === "CJDROPSHIPPING") return isCJAutoOrderingEnabled();
-  if (key === "OROSY") return false;
   if (key === "TRACER_INTERNAL") return readEnv("TRACER_INTERNAL_AUTO_ORDERING") === "1";
   return readEnv(`${key}_AUTO_ORDERING`) === "1";
 }
