@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getOnlineStorePublicationId, shopifyGraphQL } from "@/lib/shopify/admin";
+import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +56,7 @@ export async function GET(request: Request) {
     const db = createSupabaseAdminClient();
     const { data: rows, error } = await db
       .from("shop_listings")
-      .select("id, published, pipeline_reason, selection_reasons, selling_price, inventory, orderable, supplier_name, supplier_product_id, supplier_variant_id, shopify_product_id, shopify_variant_id, shopify_sync_status")
+      .select("id, published, pipeline_reason, selection_reasons, selling_price, inventory, orderable, tracking_available, supplier_name, supplier_product_id, supplier_variant_id, shopify_product_id, shopify_variant_id, shopify_sync_status")
       .not("shopify_product_id", "is", null)
       .limit(2000);
     if (error) throw new Error(error.message);
@@ -69,19 +70,30 @@ export async function GET(request: Request) {
       const variant = node?.variants.nodes.find((v) => tail(v.id) === tail(row.shopify_variant_id)) ?? node?.variants.nodes[0];
       const expectedSku = `TRC-${row.id}`.slice(0, 100);
       const gate = Array.isArray(row.selection_reasons) && row.selection_reasons.map(String).includes("sales_test_gate_passed");
+      const expectedStorefrontInventory = toStorefrontStockQuantity(row.inventory, getStorefrontStockCap());
+      const actualLive = node?.status === "ACTIVE" && node?.publishedOnPublication === true;
+      const expectedLive = row.published === true && gate && row.orderable === true && row.tracking_available === true
+        && Number(row.inventory) > 0 && Number(row.selling_price) > 0;
       return {
         listingId: String(row.id),
         existsInShopify: Boolean(node),
+        shopifyProductId: node?.id ?? null,
         shopifyStatus: node?.status ?? null,
         publishedOnOnlineStore: node?.publishedOnPublication ?? null,
         dbPublished: row.published === true,
+        expectedLive,
+        publicationMatches: node ? actualLive === expectedLive : null,
         gatePassed: gate,
         skuMatches: variant ? variant.sku === expectedSku : null,
         variantIdMatches: variant ? !row.shopify_variant_id || tail(variant.id) === tail(row.shopify_variant_id) : null,
         legacyNumericId: /^\d+$/.test(String(row.shopify_product_id ?? "")),
         priceMatches: variant ? Number(variant.price) === Number(row.selling_price) : null,
+        inventoryMatches: variant && variant.inventoryQuantity !== null
+          ? Number(variant.inventoryQuantity) === expectedStorefrontInventory
+          : null,
         shopifyInventory: variant?.inventoryQuantity ?? null,
         dbInventory: row.inventory,
+        expectedStorefrontInventory,
         hasImage: Boolean(node?.featuredMedia),
         supplierVariantId: row.supplier_variant_id ?? null,
         syncStatus: row.shopify_sync_status ?? null,
@@ -106,17 +118,18 @@ export async function GET(request: Request) {
         dbPublishedButNotLiveOnShopify: count((c) => c.dbPublished && !(c.shopifyStatus === "ACTIVE" && c.publishedOnOnlineStore === true)),
         liveOnShopifyButNotDbPublished: count((c) => !c.dbPublished && c.shopifyStatus === "ACTIVE" && c.publishedOnOnlineStore === true),
         liveOnShopifyWithoutGate: count((c) => c.shopifyStatus === "ACTIVE" && c.publishedOnOnlineStore === true && !c.gatePassed),
-        verifiedMapping: count((c) => c.existsInShopify && c.skuMatches === true && c.variantIdMatches === true && c.priceMatches === true && Boolean(c.supplierVariantId)),
+        verifiedMapping: count((c) => c.existsInShopify && c.skuMatches === true && c.variantIdMatches === true && c.priceMatches === true && c.inventoryMatches === true && c.publicationMatches === true && Boolean(c.supplierVariantId)),
         skuMismatch: count((c) => c.skuMatches === false),
         priceMismatch: count((c) => c.priceMatches === false),
-        inventoryMismatch: count((c) => c.shopifyInventory !== null && c.dbInventory !== null && Number(c.shopifyInventory) !== Number(c.dbInventory)),
+        inventoryMismatch: count((c) => c.inventoryMatches === false),
+        publicationMismatch: count((c) => c.publicationMatches === false),
         withoutSupplierVariant: count((c) => !c.supplierVariantId),
         legacyNumericIds: count((c) => c.legacyNumericId),
       },
       samples: {
         dbPublishedButNotLiveOnShopify: checks.filter((c) => c.dbPublished && !(c.shopifyStatus === "ACTIVE" && c.publishedOnOnlineStore === true)).slice(0, 5),
         liveOnShopifyWithoutGate: checks.filter((c) => c.shopifyStatus === "ACTIVE" && c.publishedOnOnlineStore === true && !c.gatePassed).slice(0, 5),
-        mismatches: checks.filter((c) => c.skuMatches === false || c.priceMatches === false).slice(0, 5),
+        mismatches: checks.filter((c) => c.skuMatches === false || c.priceMatches === false || c.inventoryMatches === false || c.publicationMatches === false).slice(0, 5),
       },
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
