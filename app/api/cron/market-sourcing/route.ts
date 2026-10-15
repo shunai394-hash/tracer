@@ -26,19 +26,19 @@ export async function GET(request: Request) {
         finished_at: new Date().toISOString(),
         error: "Recovered stale running record after market-sourcing timeout",
       })
-      .eq("job_name", "market-sourcing")
+      .eq("job_name", "market-sourcing-observation")
       .eq("status", "running")
       .lt("started_at", staleBefore);
 
     const { data: run, error: claimError } = await db.from("cron_runs").insert({
-      job_name: "market-sourcing",
+      job_name: "market-sourcing-observation",
       status: "running",
       metadata: { phase: "market_observation", actor: "vercel-cron" },
     }).select("id").single();
 
     if (claimError) {
       if (claimError.code === "23505") {
-        return NextResponse.json({ ok: true, skipped: true, reason: "cron_already_running", job: "market-sourcing" }, { status: 409 });
+        return NextResponse.json({ ok: true, skipped: true, reason: "cron_already_running", job: "market-sourcing-observation" }, { status: 409 });
       }
       throw new Error(`market_sourcing_run_create_failed:${claimError.message}`);
     }
@@ -46,7 +46,7 @@ export async function GET(request: Request) {
 
     const { data: previousRun, error: previousRunError } = await db.from("cron_runs")
       .select("metadata")
-      .eq("job_name", "market-sourcing")
+      .eq("job_name", "market-sourcing-observation")
       .eq("status", "succeeded")
       .order("started_at", { ascending: false })
       .limit(1)
