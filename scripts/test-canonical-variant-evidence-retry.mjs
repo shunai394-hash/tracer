@@ -1,22 +1,24 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
-const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
-const cursorWrite = source.indexOf('const next = await writeMarketCursor(db, observation, "patrol-ai")');
-const guard = source.indexOf("const emptyCollection = observation.itemCount === 0", cursorWrite);
-const finalReturn = source.indexOf("return { ...observation, cursor, nextCursor: next };", guard);
+const [pipeline, marketSourcingRoute, bestsellerRoute, vercel] = await Promise.all([
+  readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/cron/market-sourcing/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/intelligence/bestsellers/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../vercel.json", import.meta.url), "utf8"),
+]);
 
-assert.ok(cursorWrite >= 0, "market cursor must be persisted before collection/evidence retry decisions");
-assert.ok(guard > cursorWrite, "empty-evidence guard must run after cursor advancement");
-assert.ok(finalReturn > guard, "normal success return must follow the retry guard");
-const guarded = source.slice(guard, finalReturn);
-assert.ok(guarded.includes("observation.canonicalVariantEvidenceParsed === 0"), "zero canonical variant evidence must defer the stage");
-assert.ok(guarded.includes("observation.canonicalVariantEvidenceWriteFailures > 0"), "evidence write failures must be detectable");
-assert.ok(guarded.includes("skipped: true"), "unusable collection must not be treated as a completed stage");
-assert.ok(guarded.includes("retryable: true") || guarded.includes("retryable: !nonBlockingSourceCoverageSkip"), "unusable collection must be retried unless this source intentionally provides observation-only coverage");
-assert.ok(guarded.includes('"canonical_variant_evidence_empty"'), "zero-evidence reason must be explicit");
-assert.ok(guarded.includes('"canonical_variant_evidence_empty_brightdata_not_configured"'), "missing Amazon proxy must have a distinct actionable reason");
-assert.ok(collector.includes("brightDataConfigured: isBrightDataFetchConfigured()"), "collection telemetry must expose whether Amazon proxy retries are configured");
-assert.ok(guarded.includes('"canonical_variant_evidence_write_failed"'), "persistence failure reason must be explicit");
-console.log("PASS: empty or unpersisted canonical variant evidence defers the intelligence pipeline");
+assert.match(pipeline, /marketplace_sourcing_disabled_supplier_native_only/,
+  "the production patrol must explicitly use supplier-native sourcing");
+assert.doesNotMatch(pipeline, /writeMarketCursor|persistMarketplaceBestsellers/,
+  "the production patrol must not read or advance marketplace sourcing cursors");
+assert.doesNotMatch(pipeline, /selectAndPublishSalesTests|promoteShopListingToNewfind/,
+  "the production patrol must not treat marketplace observations as supplier products or publish out-of-scope feeds");
+for (const [name, route] of [["market sourcing cron", marketSourcingRoute], ["bestsellers API", bestsellerRoute]]) {
+  assert.match(route, /marketplace_sourcing_disabled_supplier_native_only/, `${name} must be disabled`);
+  assert.doesNotMatch(route, /persistMarketplaceBestsellers|canonicalVariantEvidenceParsed/,
+    `${name} must not collect marketplace-derived variant evidence`);
+}
+assert.doesNotMatch(vercel, /"path": "\/api\/cron\/market-sourcing"/,
+  "marketplace ranking collection must not run on a production schedule");
+console.log("PASS: supplier-native sourcing only; marketplace evidence is demand-only and not a sales dependency");
