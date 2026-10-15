@@ -17,6 +17,9 @@ try {
     exactBaseIdMappedCount: 1,
     baseItemsWithoutExactMappingCount: 3,
     baseItemsWithAmbiguousExactMappingCount: 0,
+    baseItemsWithExactIdentifierMatchCount: 2,
+    baseItemsWithAmbiguousIdentifierMatchCount: 0,
+    baseItemsWithRepairableIdentifierMatchCount: 1,
     tracerListingsWithoutBaseItemIdCount: 2,
     duplicateBaseItemIdGroupsInTracer: 0,
     items: [
@@ -29,6 +32,8 @@ try {
   await writeFile(input, JSON.stringify(report));
   const run = spawnSync(process.execPath, ["scripts/summarize-base-reconciliation.mjs", input], { encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /"uniqueMatches": 2/);
+  assert.match(run.stdout, /"repairableMissingBaseIds": 1/);
   assert.match(run.stdout, /"none": 1/);
   assert.match(run.stdout, /"exactlyOne": 1/);
   assert.match(run.stdout, /"multiple": 2/);
