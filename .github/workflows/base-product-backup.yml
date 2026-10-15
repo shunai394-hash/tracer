@@ -7,6 +7,9 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/base-product-backup.yml"
+      - "app/api/admin/channels/base/reconciliation/route.ts"
+      - "app/api/admin/channels/base/snapshot/route.ts"
+      - "lib/channels/base-publisher.ts"
 
 permissions:
   contents: read
@@ -129,6 +132,10 @@ jobs:
               "baseItemsWithoutExactMappingCount": d.get("baseItemsWithoutExactMappingCount"),
               "baseItemsWithAmbiguousExactMappingCount": d.get("baseItemsWithAmbiguousExactMappingCount"),
               "baseItemsWithExactTitleCandidateCount": d.get("baseItemsWithExactTitleCandidateCount"),
+              "stableIdentifierCount": sum(1 for item in d.get("items", []) if str(item.get("identifier", "")).startswith("TRC-")),
+              "stableIdentifierListingMatchedCount": sum(1 for item in d.get("items", []) if str(item.get("identifier", "")).startswith("TRC-") and item.get("stableIdentifierMatchCount") == 1),
+              "stableIdentifierBaseItemIdMissingCount": sum(1 for item in d.get("items", []) if str(item.get("identifier", "")).startswith("TRC-") and item.get("stableIdentifierMatchCount") == 1 and item.get("stableIdentifierMatches", [{}])[0].get("existingBaseItemId") is None),
+              "stableIdentifierBaseItemIdConflictCount": sum(1 for item in d.get("items", []) if str(item.get("identifier", "")).startswith("TRC-") and item.get("stableIdentifierMatchCount") == 1 and item.get("stableIdentifierMatches", [{}])[0].get("existingBaseItemId") is not None and str(item.get("stableIdentifierMatches", [{}])[0].get("existingBaseItemId")) != str(item.get("baseItemId"))),
               "tracerListingsWithoutBaseItemIdCount": d.get("tracerListingsWithoutBaseItemIdCount"),
               "duplicateBaseItemIdGroupsInTracer": d.get("duplicateBaseItemIdGroupsInTracer"),
               "generatedAt": d.get("generatedAt"),
