@@ -319,7 +319,13 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
         // even when they omit Schema.org ProductGroup.hasVariant. Resolve those
         // ASINs against each child's own detail page; never inherit the parent's
         // JAN/GTIN, and persist only child pages with a valid concrete barcode.
-        if (item.canonicalVariants.length === 0) {
+        // A ProductGroup can list child nodes without their own barcodes. Those
+        // rows are useful discovery evidence but cannot match a concrete CJ variant.
+        // In that case, resolve explicit child ASINs against their own detail pages.
+        const hasBarcodeBearingChild = item.canonicalVariants.some((variant) =>
+          Boolean(variant.jan || variant.gtin || variant.ean || variant.upc)
+        );
+        if (!hasBarcodeBearingChild) {
           const childAsins = parseAmazonVariationAsinMap(detailHtml, item.productUrl).slice(0, 6);
           variationAsinsFound += childAsins.length;
           childDetailAttempted += childAsins.length;
@@ -360,7 +366,21 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
               },
             };
           }));
-          item.canonicalVariants.push(...recovered.filter((value): value is NonNullable<typeof value> => value !== null));
+          const recoveredBySourceId = new Map(
+            recovered
+              .filter((value): value is NonNullable<typeof value> => value !== null)
+              .map((value) => [value.sourceVariantId, value] as const),
+          );
+          // Replace a barcode-less Schema.org row with the same child ASIN's
+          // independently fetched, barcode-bearing detail evidence. This also
+          // prevents duplicate (bestseller_id, source_variant_id) upsert keys.
+          item.canonicalVariants = item.canonicalVariants.map((variant) =>
+            recoveredBySourceId.get(variant.sourceVariantId) ?? variant
+          );
+          const existingSourceIds = new Set(item.canonicalVariants.map((variant) => variant.sourceVariantId));
+          item.canonicalVariants.push(
+            ...[...recoveredBySourceId.values()].filter((variant) => !existingSourceIds.has(variant.sourceVariantId)),
+          );
         }
         canonicalVariantCount += item.canonicalVariants.length;
         item.brand = detail.brand;
