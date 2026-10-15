@@ -18,7 +18,7 @@ assert.match(collector, /getMcpToolConsumer, isMcpConfigured/);
 assert.match(collector, /consumer\.listTools\(\)/, "product collection must discover the real Bright Data MCP tools");
 assert.match(collector, /consumer\.callTool\(call\)/, "product collection must invoke a discovered Bright Data MCP tool");
 assert.match(collector, /provider: "brightdata_mcp"/, "ingest results must identify successful MCP-backed collection");
-assert.ok(collector.includes('const preferred = ["search_engine", "scrape_as_markdown"];'), "search results must use tools that accept query/search URLs, not a product-detail scraper on a search URL");
+assert.ok(collector.includes('const preferred = ["scrape_as_markdown", "search_engine"];'), "search results must use tools that accept query/search URLs, not a product-detail scraper on a search URL");
 assert.ok(collector.includes("const lines = unwrapped.split(/\\r?\\n/);"), "Markdown product cards must be parsed from Bright Data results");
 assert.ok(collector.includes("Continue to the next supported MCP tool before API fallback"), "one unavailable MCP tool must not abort the remaining tool attempts");
 assert.match(collector, /export function isBrightDataFetchConfigured\(\): boolean/);
