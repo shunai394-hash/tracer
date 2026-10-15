@@ -348,7 +348,8 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         && Boolean(String(row.supplier_product_id ?? "").trim())
         && Boolean(String(row.supplier_variant_id ?? "").trim())
         && String(row.ship_to ?? "").trim().toUpperCase() === "JP"
-        && (row.verification_error == null || row.verification_error === "" || stockCapHoldRecoverable);
+        && (row.verification_error == null || row.verification_error === "" || stockCapHoldRecoverable
+          || row.verification_error === "Live CJ product/variant and supply data refreshed; supplier orderability and tracking capability remain unverified");
       if (liveSupplierApiVerified && !canMarkFreshVerified && typeof row.verification_error === "string" && row.verification_error.startsWith("Restored from backup; stale evidence disabled")) {
         refreshedFields.verification_error = "Live CJ product/variant and supply data refreshed; supplier orderability and tracking capability remain unverified";
         refreshedFields.verification_status = "retryable";
