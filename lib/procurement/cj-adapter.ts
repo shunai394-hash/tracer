@@ -287,12 +287,12 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
   },
 
   async createOrder(input: SupplierOrderInput): Promise<SupplierOrderResult> {
-    if (!isCJLiveOrderingEnabled() || !isCJAutoOrderingEnabled() || !getCJConfig().apiKey) {
+    if (!isCJLiveOrderingEnabled() || !isCJAutoOrderingEnabled() || process.env.CJ_PAYMENT_FLOW_VERIFIED?.trim() !== "1" || !getCJConfig().apiKey) {
       return {
         succeeded: false,
         supplierOrderId: null,
         responseCode: "CJ_LIVE_ORDERING_DISABLED",
-        responseMessage: "CJ live and automatic ordering flags must both be explicitly enabled",
+        responseMessage: "CJ live and automatic ordering flags plus verified payment flow must be explicitly enabled",
         trackingNumber: null,
         raw: null,
       };
