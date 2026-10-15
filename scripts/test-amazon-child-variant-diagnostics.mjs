@@ -24,5 +24,11 @@ assert.ok(cron.includes('"no_canonical_variant_evidence"'), "zero parsed variant
 assert.ok(cron.includes('"write_failed"'), "evidence persistence failures must be reported separately");
 assert.ok(source.includes("const knownBarcodeAsins = new Set("), "fetch children with missing barcodes even when other child rows have valid barcodes");
 assert.ok(testSourceHasUniqueRecoveredMerge(source), "recovered child detail evidence must replace barcode-less rows with the same source variant ID without duplicate upsert keys");
+const genericParserIndex = source.indexOf("item.canonicalVariants = parseCanonicalMarketplaceVariantEvidence(detailHtml, item.productUrl)");
+const amazonBranchIndex = source.indexOf('if (marketplace.marketplace === "amazon.co.jp")');
+assert.ok(genericParserIndex >= 0 && genericParserIndex < amazonBranchIndex, "Schema.org child variants must be parsed for all enriched marketplaces, not only Amazon");
+assert.ok(source.includes("canonicalVariantCount += item.canonicalVariants.length;"), "non-Amazon child evidence must contribute to persisted evidence telemetry");
+assert.ok(source.includes('marketplace.marketplace === "yahoo_shopping" || marketplace.marketplace === "rakuten"'), "Yahoo and Rakuten detail pages must remain in the bounded enrichment path for canonical child extraction");
+
 
 console.log("Amazon child variant diagnostics: extraction, persistence and cron reporting assertions passed");
