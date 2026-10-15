@@ -7,26 +7,9 @@ import { normalizeIdentifier } from "@/lib/market/identifiers";
 import { writeEvidence } from "@/lib/market/evidence-ledger";
 import {
   identifiersFromRecord,
-  matchProductIdentity,
   pickIdentifierQuery,
 } from "@/lib/market/identifiers";
 import { linkInternalSupplyForBestseller } from "@/lib/suppliers/internal-catalog";
-
-const UNCONFIGURED_SUPPLIERS = [
-  "hypersku",
-  "dsers",
-  "zendrop",
-  "syncee",
-] as const;
-
-function asNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
 
 async function enrichAsinOnlyRows(rows: Record<string, unknown>[]): Promise<void> {
   const targets = rows.filter((record) => {
@@ -99,44 +82,6 @@ async function markPipelineState(args: {
     })
     .eq("id", args.bestsellerId);
   if (error) throw new Error(error.message);
-}
-
-async function recordUnconfiguredSupplier(args: {
-  supplier: string;
-  bestsellerId: string;
-  fetchedAt: string;
-}) {
-  const supabase = createSupabaseAdminClient();
-  // One placeholder per (supplier, bestseller) is enough. Re-inserting it on
-  // every investigation pass is what inflated supplier_listings to tens of
-  // thousands of non-orderable rows.
-  const { data: existing } = await supabase
-    .from("supplier_listings")
-    .select("id")
-    .eq("supplier", args.supplier)
-    .eq("bestseller_id", args.bestsellerId)
-    .eq("configured", false)
-    .limit(1);
-  if ((existing ?? []).length > 0) return;
-  await supabase.from("supplier_listings").insert({
-    supplier: args.supplier,
-    bestseller_id: args.bestsellerId,
-    configured: false,
-    api_available: false,
-    identity_status: "unknown",
-    metadata: { note: "api_not_configured" },
-    fetched_at: args.fetchedAt,
-  });
-  await writeEvidence({
-    bestsellerId: args.bestsellerId,
-    source: args.supplier,
-    fetchedAt: args.fetchedAt,
-    fieldName: "api_available",
-    fieldValue: null,
-    evidenceClass: "unknown",
-    confidence: 0,
-    metadata: { note: "supplier_api_not_configured" },
-  });
 }
 
 export async function investigateDropshipForBestsellers(
@@ -216,7 +161,7 @@ export async function investigateDropshipForBestsellers(
       continue;
     }
 
-    // ORO​​SY is intentionally out of scope. Do not create placeholder supplier rows
+    // OROSY is intentionally out of scope. Do not create placeholder supplier rows
     // or block the CJ verification path because an unused supplier is unconfigured.
     noIdentifierOverlap += 1;
     await markPipelineState({
