@@ -137,9 +137,9 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // the localized supplier title and placeholder checks below are authoritative.
     const sourceMetadata = base?.metadata && typeof base.metadata === 'object' && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
     const womenPriority = womenProductPriority({ title: sourceTitle, category: typeof sourceMetadata.category === 'string' ? sourceMetadata.category : null });
-    // Women's relevance is a ranking bonus, not an exclusion rule. All product
-    // categories may be sold when Japanese copy, exact supplier identity,
-    // fulfilment evidence, and positive contribution profit pass.
+    // Women's relevance is a ranking bonus, not an exclusion rule. Margin is
+    // reported for the merchant's pricing decision, not used as a publication veto.
+    // Product identity, Japanese copy and fulfillment evidence remain required.
     if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
     if (!base) reasons.push("product_intelligence_missing"); if (!listing) reasons.push("supplier_listing_missing");
     if (reasons.length > 0) { rejected.push({ productId, reasons, title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
@@ -238,7 +238,8 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // Demand and AI quality scores prioritize the queue; they do not decide
     // whether an otherwise sellable item can be listed. Publication still
     // requires Japanese copy, a real image, exact supplier identity, current
-    // stock/orderability/tracking/API evidence, and positive landed profit.
+    // stock/orderability/tracking/API evidence. Profit and margin remain visible
+    // as estimates and warnings rather than automatic publication restrictions.
     if (reasons.length) { rejected.push({ productId, reasons: Array.from(new Set(reasons)), title: sourceTitle, masterTitle, category: metadataCategory(base.metadata), supplier: String(listing.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority, sellingPrice, sourceCost, internationalShipping: shippingCost, domesticShippingKnown: nativeCjSupplyIdentity, contributionProfit: profit.contributionProfit, contributionMargin: profit.contributionMargin }); continue; }
 
     const womenBonus = womenProductPriority({ title: typeof base.normalized_title === "string" ? base.normalized_title : "", category: typeof metadata.category === "string" ? metadata.category : null }).bonus;
