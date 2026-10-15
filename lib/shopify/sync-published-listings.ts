@@ -5,7 +5,7 @@ import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigure
 import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
-import { toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
+import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 
 type Listing = {
@@ -254,7 +254,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
           const variantId = toShopifyGid("ProductVariant", row.shopify_variant_id);
           const liveQuantity = variantId ? liveStockByVariantId.get(variantId) : undefined;
           if (liveQuantity === undefined) return !variantId;
-          return liveQuantity !== toStorefrontStockQuantity(row.inventory, process.env.SHOPIFY_STOREFRONT_STOCK_CAP);
+          return liveQuantity !== toStorefrontStockQuantity(row.inventory, getStorefrontStockCap());
         }
         if (row.published === false) {
           return listingEligible;
@@ -516,7 +516,7 @@ async function syncListingRows(
       if (!variant?.id) throw new Error("shopify_variant_missing_for_inventory_sync");
       await setShopifyVariantInventory({
         variantId: variant.id,
-        quantity: toStorefrontStockQuantity(row.inventory, process.env.SHOPIFY_STOREFRONT_STOCK_CAP),
+        quantity: toStorefrontStockQuantity(row.inventory, getStorefrontStockCap()),
         reference: `tracer://shop-listing/${row.id}`,
       });
 

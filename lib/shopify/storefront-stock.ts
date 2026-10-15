@@ -1,8 +1,15 @@
 /**
- * Shopify inventory is a conservative storefront cap, not a mirror of the
- * supplier's warehouse quantity. Supplier inventory remains in TRACER and is
- * reverified separately; publishing 38,000 supplier units as Shopify stock
- * would misrepresent the merchant's independently controlled sellable stock.
+ * One shared cap for TRACER, BASE, and Shopify. A legacy channel-specific cap
+ * may be used only as a fallback so channel inventories cannot drift.
+ */
+export function getStorefrontStockCap(env: Record<string, string | undefined> = process.env): string | undefined {
+  return env.STOREFRONT_STOCK_CAP ?? env.SHOPIFY_STOREFRONT_STOCK_CAP ?? env.BASE_STOREFRONT_STOCK_CAP;
+}
+
+/**
+ * Supplier inventory is not a mirror of merchant-controlled storefront stock.
+ * All channels use this same conservative cap and reverify supplier stock
+ * separately before procurement.
  */
 export function toStorefrontStockQuantity(supplierInventory: unknown, configuredCap?: unknown): number {
   const source = typeof supplierInventory === "number"

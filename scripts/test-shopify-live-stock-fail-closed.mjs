@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { hasVerifiedPositiveShopifyStock } from "../lib/shop/live-stock-policy.ts";
-import { toStorefrontStockQuantity } from "../lib/shopify/storefront-stock.ts";
+import { getStorefrontStockCap, toStorefrontStockQuantity } from "../lib/shopify/storefront-stock.ts";
 
 const validVariant = "gid://shopify/ProductVariant/123";
 assert.equal(hasVerifiedPositiveShopifyStock(validVariant, 2), true, "positive verified live quantity is saleable");
@@ -27,7 +27,8 @@ const shopifyReconcile = await readFile(new URL("../app/api/admin/shopify/reconc
 assert.match(store, /shopify_live_stock_unconfigured/, "missing Shopify credentials must fail closed");
 assert.ok(shopifyReconcile.includes('const expectedSku = `TRC-${row.id}`.slice(0, 100);'), "read-only reconciliation must compare Shopify SKU to the shared BASE/TRACER listing ID");
 assert.ok(!shopifyReconcile.includes('const expectedSku = `TRC-${row.supplier_variant_id'), "supplier IDs must not redefine the channel-neutral listing SKU");
-assert.match(shopifySync, /toStorefrontStockQuantity\(row\.inventory, process\.env\.SHOPIFY_STOREFRONT_STOCK_CAP\)/, "supplier inventory must be projected through a bounded storefront cap before writing Shopify stock");
+assert.match(shopifySync, /toStorefrontStockQuantity\(row\.inventory, getStorefrontStockCap\(\)\)/, "supplier inventory must use the same shared cap as BASE");
+assert.equal(getStorefrontStockCap({ STOREFRONT_STOCK_CAP: "7", SHOPIFY_STOREFRONT_STOCK_CAP: "4", BASE_STOREFRONT_STOCK_CAP: "2" }), "7", "all channels must prefer the shared cap");
 assert.match(shopifySync, /if \(row\.published === false\)/, "unpublished catalog-eligible supplier-linked rows must be retried regardless of the legacy pipeline stage");
 assert.match(shopifySync, /shopify_sync_error: "shopify_unpublished_verified"/, "a blocked listing is marked verified only after Shopify unpublish verification succeeds");
 assert.match(shopifySync, /return listingEligible/, "legacy hidden rows must be republished only when supplier identity and all publication gates pass");
@@ -35,7 +36,7 @@ assert.match(shopifySync, /const baseSelect = "[^"]*shopify_sync_status,shopify_
 assert.match(unlinkedRoute, /shopify_sync_status\.eq\.blocked,shopify_sync_error\.neq\.shopify_unpublished_verified/, "unlinked reconciliation must include stale blocked Shopify rows");
 assert.match(unlinkedRoute, /row\.shopify_sync_error !== "shopify_unpublished_verified"/, "unlinked reconciliation must retry unverified external unpublication");
 assert.match(shopifySync, /getLiveShopifyStock\(alreadySyncedVariantIds\)/, "already-synced Shopify products must be checked against actual live inventory before deciding they need no work");
-assert.match(shopifySync, /liveQuantity !== toStorefrontStockQuantity\(row\.inventory, process\.env\.SHOPIFY_STOREFRONT_STOCK_CAP\)/, "inventory drift above or below the storefront cap must trigger bounded reconciliation");
+assert.match(shopifySync, /liveQuantity !== toStorefrontStockQuantity\(row\.inventory, getStorefrontStockCap\(\)\)/, "inventory drift above or below the shared storefront cap must trigger bounded reconciliation");
 assert.match(store, /shopify_live_stock_variant_ids_empty/, "empty live-stock request must not use cached stock");
 assert.doesNotMatch(store, /shopify_live_stock_response_incomplete/, "one missing variant must not suppress every healthy storefront listing");
 assert.match(store, /Missing\/retired variants fail closed per listing below/);
