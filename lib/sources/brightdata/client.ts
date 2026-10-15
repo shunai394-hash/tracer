@@ -178,13 +178,14 @@ function mcpArguments(tool: { name: string; inputSchema?: Record<string, unknown
   const properties = schema.properties && typeof schema.properties === "object"
     ? schema.properties as Record<string, unknown> : {};
   const args: Record<string, unknown> = {};
-  if ((tool.name === "search_engine" || tool.name === "search_engine_batch") && "query" in properties) args.query = query;
-  else if ((tool.name === "search_engine" || tool.name === "search_engine_batch") && "search_query" in properties) args.search_query = query;
+  const searchEngineTool = tool.name === "search_engine" || tool.name === "search_engine_batch";
+  if ("query" in properties) args.query = query;
+  else if ("search_query" in properties) args.search_query = query;
   else if ("url" in properties) args.url = shoppingUrl;
   else if ("urls" in properties) args.urls = [shoppingUrl];
-  else if ("query" in properties) args.query = query;
-  else if ("search_query" in properties) args.search_query = query;
   else throw new BrightDataRequestError(`Bright Data MCP tool ${tool.name} has no supported query/url input`);
+  // Google search tools must receive a query rather than a URL when both are supported.
+  if (searchEngineTool && "query" in properties) args.query = query;
   if ("engine" in properties) args.engine = "google";
   if ("country" in properties) args.country = "JP";
   if ("language" in properties) args.language = "ja";
@@ -201,15 +202,20 @@ async function searchViaBrightDataMcp(query: string, shoppingUrl: string): Promi
     for (const name of preferred) {
       const tool = tools.find((candidate) => candidate.name === name);
       if (!tool) continue;
-      const call: McpToolCall = { name: tool.name, arguments: mcpArguments(tool, query, shoppingUrl) };
-      const result = await consumer.callTool(call);
-      const products = extractShoppingProducts(result);
-      if (products.length) return products;
+      try {
+        const call: McpToolCall = { name: tool.name, arguments: mcpArguments(tool, query, shoppingUrl) };
+        const result = await consumer.callTool(call);
+        const products = extractShoppingProducts(result);
+        if (products.length) return products;
+      } catch {
+        // A provider may expose a tool with a different schema. Continue to
+        // the next discovered tool without logging arguments or credentials.
+      }
     }
     return null;
-  } catch (error) {
+  } catch {
     // Do not log the MCP endpoint: it may contain the authentication token.
-    console.warn("[BRIGHTDATA MCP] search unavailable; trying API fallback", error instanceof Error ? error.message : "unknown error");
+    console.warn("[BRIGHTDATA MCP] tool discovery unavailable; trying API fallback");
     return null;
   }
 }
