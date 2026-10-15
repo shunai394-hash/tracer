@@ -16,6 +16,10 @@ assert.ok(!cron.includes('job_name: "market-sourcing"'), "patrol telemetry must 
 assert.ok(cron.includes("canonicalVariantEvidenceParsed"), "cron must report parsed child-variant evidence");
 assert.ok(cron.includes("export const maxDuration = 300;"), "marketplace detail scraping needs a 300-second runtime budget");
 assert.ok(cron.includes("canonicalVariantEvidenceWritten"), "cron must report persisted child-variant evidence");
+assert.match(collector, /dimensionToAsinMap/, "Amazon child-ASIN variation maps must be parsed");
+assert.match(collector, /child_detail_has_barcode: hasBarcode/, "child-page barcode state must be recorded as evidence");
+assert.doesNotMatch(collector, /if \(!jan && !gtin && !ean && !upc\) return null/,
+  "ASIN-only child evidence must still be persisted; barcode is a separate supplier-linking gate");
 assert.ok(cron.includes('reason: "observation_only"'), "marketplace collection must not publish ranking products or place orders");
 assert.ok(collector.indexOf('source: "amazon_bestsellers_beauty"') < collector.indexOf('source: "rakuten_ranking"') && collector.indexOf('source: "amazon_bestsellers_beauty"') < collector.indexOf('source: "yahoo_shopping_ranking"'), "Amazon child-variant evidence must be collected before broad marketplace rankings");
 assert.ok(vercel.crons.some((entry) => entry.path === "/api/cron/market-sourcing" && entry.schedule === "*/15 * * * *"),
