@@ -34,6 +34,7 @@ type Listing = {
   shopify_variant_id: string | null;
   shopify_handle: string | null;
   shopify_sync_status: string | null;
+  shopify_sync_error: string | null;
   shipping_cost?: number | string | null;
   source_cost?: number | string | null;
   contribution_profit?: number | string | null;
@@ -266,7 +267,8 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
           return status !== "synced";
         }
         if (row.published === false && row.pipeline_stage === "BLOCKED" && row.shopify_product_id) {
-          return status !== "blocked";
+          // A DB status of "blocked" is not proof that the product is no longer published on Shopify.
+          return row.shopify_sync_error !== "shopify_unpublished_verified";
         }
         return false;
       }).slice(0, safeLimit);
@@ -406,7 +408,7 @@ async function syncListingRows(
       await unpublishShopifyProduct(String(row.shopify_product_id));
       await supabase.from("shop_listings").update({
         shopify_sync_status: "blocked",
-        shopify_sync_error: "sales_test_or_supply_gate_not_passed",
+        shopify_sync_error: "shopify_unpublished_verified",
         shopify_synced_at: new Date().toISOString(),
       }).eq("id", row.id);
     } catch (error) {
