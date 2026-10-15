@@ -30,6 +30,7 @@ export async function GET(request: Request) {
       visibleItemsMatchedByStableIdentifier: 0,
       visibleItemsMissingPersistedBaseMapping: 0,
       visibleItemsWithIdentifierConflict: 0,
+      visibleItemsLinked: 0,
       visibleItemsUnlinked: 0,
       visibleItemsWithoutDbMapping: 0,
       visibleItemsWithAmbiguousDbMapping: 0,
