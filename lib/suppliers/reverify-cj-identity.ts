@@ -204,7 +204,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
     const supplierListingId = String(row.id);
     try {
       const listingMetadata = record(row.metadata);
-      const { identity, variantBarcode } = await resolveMarketplaceIdentityWithFreshBarcode({
+      const { identity, variantBarcode, variantDetails: freshVariantDetails } = await resolveMarketplaceIdentityWithFreshBarcode({
         db,
         supplierProductId: String(row.supplier_product_id),
         supplierVariantId: String(row.supplier_variant_id),
@@ -234,14 +234,14 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const missingInventory = !inventoryVerified;
       const missingImage = !imageUrl;
       let shippingQuoteVerified = row.shipping_status === "verified" && shippingCost !== null;
-      let variantDetails: Awaited<ReturnType<typeof fetchCJVariantByVid>> = null;
+      let variantDetails: Awaited<ReturnType<typeof fetchCJVariantByVid>> = freshVariantDetails;
       let productDetails: Awaited<ReturnType<typeof getCJProductDetail>> = null;
       const refreshErrors: string[] = [];
       let liveSupplierApiVerified = row.api_available === true && row.configured === true;
 
       if (missingCost && currency === "USD") {
         try {
-          variantDetails = await fetchCJVariantByVid(String(row.supplier_variant_id));
+          variantDetails = variantDetails ?? await fetchCJVariantByVid(String(row.supplier_variant_id));
           const exactVariant = variantDetails?.vid === String(row.supplier_variant_id)
             && variantDetails.productId === String(row.supplier_product_id);
           const fetchedCost = exactVariant ? num(variantDetails?.sellPrice) : null;
