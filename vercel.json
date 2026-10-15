@@ -19,14 +19,6 @@
       "schedule": "10 12 * * *"
     },
     {
-      "path": "/api/cron/sales-test-publication",
-      "schedule": "11 12 * * *"
-    },
-    {
-      "path": "/api/cron/shopify-publish",
-      "schedule": "14 12 * * *"
-    },
-    {
       "path": "/api/cron/inventory-refresh",
       "schedule": "15 12 * * *"
     },
@@ -79,14 +71,6 @@
       "schedule": "10 18 * * *"
     },
     {
-      "path": "/api/cron/sales-test-publication",
-      "schedule": "11 18 * * *"
-    },
-    {
-      "path": "/api/cron/shopify-publish",
-      "schedule": "14 18 * * *"
-    },
-    {
       "path": "/api/cron/demand-match",
       "schedule": "*/15 * * * *"
     },
@@ -99,10 +83,6 @@
       "schedule": "47 18 * * *"
     },
     {
-      "path": "/api/cron/demand-match",
-      "schedule": "52 18 * * *"
-    },
-    {
       "path": "/api/cron/intelligence",
       "schedule": "57 18 * * *"
     },
@@ -112,7 +92,11 @@
     },
     {
       "path": "/api/cron/sales-test-publication",
-      "schedule": "5 19 * * *"
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/shopify-publish",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
