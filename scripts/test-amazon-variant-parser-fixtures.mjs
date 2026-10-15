@@ -189,7 +189,7 @@ assert.deepEqual(
 
 const serializedMapHtml = String.raw`
 <script>
-var dimensionValuesDisplayData = "{\\"B0CHILD009\\":[\\"Red\\",\\"Large\\"],\\"B0CHILD010\\":[\\"Blue\\"]}";
+var dimensionValuesDisplayData = "{\"B0CHILD009\":[\"Red\",\"Large\"],\"B0CHILD010\":[\"Blue\"]}";
 </script>`;
 assert.deepEqual(
   parseAmazonVariationAsinMap(serializedMapHtml, parentUrl),
