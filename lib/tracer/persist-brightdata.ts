@@ -26,7 +26,7 @@ function normalizeIdentityText(value: string): string {
     .normalize("NFKD")
     .toLowerCase()
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -66,12 +66,6 @@ function validHttpUrl(value: string | null): string | null {
   } catch {
     return null;
   }
-}
-
-function inferBrand(title: string): string | null {
-  const first = normalizeTitle(title).split(" ")[0]?.trim();
-
-  return first || null;
 }
 
 export async function persistBrightDataProducts(
@@ -128,7 +122,7 @@ export async function persistBrightDataProducts(
 
     if (!canonicalName) continue;
 
-    const brandName = inferBrand(canonicalName);
+    const brandName = candidate.brand ? normalizeTitle(candidate.brand) : null;
     const identityKey = buildIdentityKey(brandName, canonicalName);
 
     let brandId: string | null = null;
@@ -254,7 +248,12 @@ export async function persistBrightDataProducts(
 
     const sourceUrl = validHttpUrl(candidate.productUrl);
     const imageUrl = validHttpUrl(candidate.imageUrl);
-    const amount = parsePrice(candidate.price);
+    const currency = typeof candidate.currency === "string" && /^[A-Z]{3}$/.test(candidate.currency)
+      ? candidate.currency
+      : null;
+    const parsedAmount = parsePrice(candidate.price);
+    // Without a known currency, keep the price as raw demand evidence only.
+    const amount = currency ? parsedAmount : null;
 
     const observationResult = await supabase
       .from("observations")
@@ -267,17 +266,20 @@ export async function persistBrightDataProducts(
           query,
           title: candidate.title,
           price: candidate.price,
+          currency: candidate.currency,
+          brand: candidate.brand,
           seller: candidate.seller,
           productUrl: candidate.productUrl,
           imageUrl: candidate.imageUrl,
         },
         normalized_data: {
           title: canonicalName,
+          brand: brandName,
           seller: candidate.seller,
           sourceUrl,
           imageUrl,
           price: amount,
-          currency: amount !== null ? "USD" : null,
+          currency,
         },
         confidence: 0.8,
       })
@@ -297,7 +299,7 @@ export async function persistBrightDataProducts(
         .from("price_observations")
         .insert({
           id: observationResult.data.id,
-          currency: "USD",
+          currency,
           amount,
         });
 
@@ -310,7 +312,6 @@ export async function persistBrightDataProducts(
       pricesCreated += 1;
     }
 
-    const currency = amount !== null ? "USD" : null;
     const currencyAssessment = assessCurrencyConfidence({
       currency,
       price: amount,
