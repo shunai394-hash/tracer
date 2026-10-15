@@ -7,6 +7,7 @@ import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/clie
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { shopifyGraphQL } from "@/lib/shopify/admin";
+import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -119,10 +120,12 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   const { data: listings, error } = await query.order("created_at", { ascending: false }).limit(safeLimit);
   if (error) throw new Error(error.message);
 
-  // Storefront visibility is independent from current supplier verification.
-  // Exact supplier product/variant identity is still required below, while
-  // order-time procurement rechecks current stock, price and API availability.
-  const identityUnlinkedIds = new Set<string>();
+  // Only publish rows whose exact supplier listing is currently eligible for publication.
+  // Missing, unlinked, or unverified supplier evidence must be hidden on BASE.
+  const supplierStatuses = await getPublishableSupplierListingStatuses((listings ?? []).map((listing) => listing.supplier_listing_id));
+  const identityUnlinkedIds = new Set<string>((listings ?? [])
+    .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.supplier_listing_id)))
+    .map((listing) => String(listing.id)));
   const results: BasePublicationResult["results"] = [];
   let unpublishFailed = 0;
 
