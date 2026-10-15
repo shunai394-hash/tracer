@@ -166,13 +166,12 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
   const supabase = createSupabaseAdminClient();
   const now = new Date().toISOString();
   const currencyAssessment = assessCurrencyConfidence({ currency: "USD", price: args.cost, provider: "cj" });
-  // Read the exact live variant barcode once and reuse that same fresh evidence
-  // for identity matching and metadata; the old path fetched it twice per candidate.
-  const freshVariantBarcode = await readSupplierBarcode({ supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId });
-  const marketplaceIdentity = options.identity !== undefined
-    ? options.identity
-    : await resolveMarketplaceIdentityFromBarcode({ db: supabase, supplierProductId: args.supplierProductId, supplierVariantId: args.supplierVariantId }, freshVariantBarcode);
-  const canonicalProductId = marketplaceIdentity?.productId ?? args.productId;
+  // CJ is the source of truth for supplier product/variant identity. Do not
+  // query Amazon/Rakuten/Yahoo-derived marketplace tables to decide whether a
+  // CJ variant can be retained as a supplier offer. The exact live CJ variant
+  // barcode supplied by discovery is optional metadata, never a cross-market gate.
+  const freshVariantBarcode = args.variantBarcode?.trim() || null;
+  const marketplaceIdentity: MarketplaceIdentity | null = null;
   let existingListingMetadata: Record<string, unknown> = {};
   const existingListing = await supabase.from("supplier_listings").select("metadata,product_id,verification_status,shipping_status,configured,price_confirmed,inventory_confirmed,api_available,orderable,tracking_available,inventory,cost,shipping_cost,ship_to,supplier_product_id,supplier_variant_id,verification_error,last_verified_at").eq("id", args.supplierListingId).maybeSingle();
   if (existingListing.error) throw new Error(`CJ supplier listing read failed: ${existingListing.error.message}`);
@@ -194,6 +193,7 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
     }
   }
 
+  const canonicalProductId = nativeCandidateProductId ?? args.productId;
   const priorVerificationError = String(existingListing.data?.verification_error ?? "").trim();
   const priorVerifiedAt = typeof existingListing.data?.last_verified_at === "string" ? Date.parse(existingListing.data.last_verified_at) : NaN;
   const nativeEvidenceFresh = !marketplaceIdentity
@@ -279,9 +279,9 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
     metadata: verifiedMetadata,
   }).eq("id", args.supplierListingId);
   if (evidenceError) throw new Error(`CJ supplier evidence persistence failed: ${evidenceError.message}`);
-  // Retain unmatched supplier candidates for discovery, but do not create a product offer or
-  // claim marketplace identity. Purchasability remains false until the native supply gate passes.
-  if (!marketplaceIdentity) return { offerId: null, intelligenceId: candidateIntelligenceId, identity: null };
+  // Persist a CJ-native offer even without marketplace demand data. This is a
+  // supplier discovery record only; the separate sales/procurement gates still
+  // decide whether the product can be published or ordered.
   const offerPayload = { product_id: canonicalProductId, seller_name: "CJdropshipping", offer_url: null, image_url: args.imageUrl, currency: "USD", price: args.cost, currency_confidence: currencyAssessment.confidence, availability: args.inventory > 0 ? "available" : "unavailable", shipping_price: args.shippingCost, observed_at: now, metadata: { provider: "cj", source: "cj_supply_first", supplier_listing_id: args.supplierListingId, supplier_product_id: args.supplierProductId, supplier_variant_id: args.supplierVariantId, variant_barcode: args.variantBarcode ?? null, inventory: args.inventory, query: args.query, fx_rate: args.fxRate, selling_price_jpy: args.sellingPriceJpy, currency_confidence: currencyAssessment.confidence, currency_confidence_reasons: currencyAssessment.reasons, identity_confidence: marketplaceIdentity?.confidence ?? 0, identity_status: marketplaceIdentity ? "linked" : "supply_discovered", identity_method: marketplaceIdentity?.method ?? "supply_discovered", identity_rationale: marketplaceIdentity?.rationale ?? "CJ supply discovered; marketplace identity not confirmed", demand_evidence_status: "not_observed" } };
   const existingOffer = await supabase.from("product_offers").select("id").eq("product_id", canonicalProductId).eq("seller_name", "CJdropshipping").order("observed_at", { ascending: false }).limit(1).maybeSingle();
   if (existingOffer.error) throw new Error(existingOffer.error.message);
