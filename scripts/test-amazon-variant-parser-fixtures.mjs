@@ -214,4 +214,21 @@ assert.deepEqual(
   "parse a quoted JSON property name from embedded Amazon twister data",
 );
 
+
+const dimensionLabelsHtml = String.raw`
+<script>
+var twisterData = {
+  "dimensionToAsinMap": {"10_7":"B0CHILD013","10_8":"B0CHILD014"},
+  "dimensionValuesDisplayData": {"B0CHILD013":["Black","XL"],"B0CHILD014":["Blue","M"]}
+};
+</script>`;
+assert.deepEqual(
+  parseAmazonVariationAsinMap(dimensionLabelsHtml, parentUrl),
+  [
+    { asin: "B0CHILD013", variationValues: ["Black", "XL"] },
+    { asin: "B0CHILD014", variationValues: ["Blue", "M"] },
+  ],
+  "resolve opaque dimension tuple keys to Amazon's ASIN-specific display labels",
+);
+
 console.log("Amazon variant parser fixtures: passed");
