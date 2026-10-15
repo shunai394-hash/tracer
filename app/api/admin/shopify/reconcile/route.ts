@@ -14,7 +14,10 @@ type ShopifyNode = {
   vendor: string | null;
   publishedOnPublication: boolean;
   totalInventory: number | null;
-  variants: { nodes: Array<{ id: string; sku: string | null; price: string | null; inventoryQuantity: number | null }> };
+  variants: {
+    nodes: Array<{ id: string; sku: string | null; price: string | null; inventoryQuantity: number | null }>;
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+  };
   featuredMedia: { id: string } | null;
 };
 
@@ -32,6 +35,8 @@ export async function GET(request: Request) {
     const publicationId = await getOnlineStorePublicationId();
     const shopify: ShopifyNode[] = [];
     let after: string | null = null;
+    let productsComplete = false;
+    let variantsComplete = true;
     for (let page = 0; page < 8; page += 1) {
       const data: { products: { nodes: ShopifyNode[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } = await shopifyGraphQL(
         `query TracerProducts($after: String, $publicationId: ID!) {
@@ -40,7 +45,10 @@ export async function GET(request: Request) {
               id handle status vendor totalInventory
               publishedOnPublication(publicationId: $publicationId)
               featuredMedia { id }
-              variants(first: 5) { nodes { id sku price inventoryQuantity } }
+              variants(first: 100) {
+                nodes { id sku price inventoryQuantity }
+                pageInfo { hasNextPage endCursor }
+              }
             }
             pageInfo { hasNextPage endCursor }
           }
@@ -48,17 +56,26 @@ export async function GET(request: Request) {
         { after, publicationId },
       );
       shopify.push(...data.products.nodes);
-      if (!data.products.pageInfo.hasNextPage) break;
+      if (data.products.nodes.some((node) => node.variants.pageInfo.hasNextPage)) variantsComplete = false;
+      if (!data.products.pageInfo.hasNextPage) {
+        productsComplete = true;
+        break;
+      }
+      if (!data.products.pageInfo.endCursor) break;
       after = data.products.pageInfo.endCursor;
     }
 
     const db = createSupabaseAdminClient();
-    const { data: rows, error } = await db
+    const { data: fetchedRows, error } = await db
       .from("shop_listings")
       .select("id, published, pipeline_reason, selection_reasons, selling_price, inventory, orderable, supplier_name, supplier_product_id, supplier_variant_id, shopify_product_id, shopify_variant_id, shopify_sync_status")
       .not("shopify_product_id", "is", null)
-      .limit(2000);
+      .order("id", { ascending: true })
+      .limit(2001);
     if (error) throw new Error(error.message);
+    const dbComplete = (fetchedRows ?? []).length <= 2000;
+    const rows = (fetchedRows ?? []).slice(0, 2000);
+    const complete = productsComplete && variantsComplete && dbComplete;
 
     // Legacy rows may hold numeric REST ids; compare on the numeric tail.
     const tail = (id: unknown) => String(id ?? "").split("/").pop() ?? "";
@@ -66,7 +83,11 @@ export async function GET(request: Request) {
     const linkedIds = new Set((rows ?? []).map((row) => tail(row.shopify_product_id)));
     const checks = (rows ?? []).map((row) => {
       const node = byId.get(tail(row.shopify_product_id));
-      const variant = node?.variants.nodes.find((v) => tail(v.id) === tail(row.shopify_variant_id)) ?? node?.variants.nodes[0];
+      const variant = node
+        ? row.shopify_variant_id
+          ? node.variants.nodes.find((v) => tail(v.id) === tail(row.shopify_variant_id))
+          : node.variants.nodes.length === 1 ? node.variants.nodes[0] : undefined
+        : undefined;
       const expectedSku = `TRC-${row.supplier_variant_id || row.supplier_product_id || row.id}`.slice(0, 100);
       const gate = Array.isArray(row.selection_reasons) && row.selection_reasons.map(String).includes("sales_test_gate_passed");
       return {
@@ -90,7 +111,15 @@ export async function GET(request: Request) {
 
     const count = (predicate: (c: (typeof checks)[number]) => boolean) => checks.filter(predicate).length;
     return NextResponse.json({
-      ok: true,
+      ok: complete,
+      complete,
+      completeness: {
+        shopifyProductsComplete: productsComplete,
+        shopifyVariantsComplete: variantsComplete,
+        databaseComplete: dbComplete,
+        shopifyProductPagesCapped: !productsComplete,
+        note: "Counts and mismatch totals must not be treated as final unless complete is true.",
+      },
       generatedAt: new Date().toISOString(),
       shopify: {
         tracerProducts: shopify.length,
@@ -102,6 +131,7 @@ export async function GET(request: Request) {
       },
       db: {
         linkedRows: checks.length,
+        rowsCappedAt2000: !dbComplete,
         missingInShopify: count((c) => !c.existsInShopify),
         dbPublishedButNotLiveOnShopify: count((c) => c.dbPublished && !(c.shopifyStatus === "ACTIVE" && c.publishedOnOnlineStore === true)),
         liveOnShopifyButNotDbPublished: count((c) => !c.dbPublished && c.shopifyStatus === "ACTIVE" && c.publishedOnOnlineStore === true),
