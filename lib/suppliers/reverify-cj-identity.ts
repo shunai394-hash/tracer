@@ -258,7 +258,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       if (missingShipping && currency === "USD") {
         try {
           const fetchedShipping = await calculateCJFreight(String(row.supplier_variant_id), { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 });
-          if (fetchedShipping !== null && Number.isFinite(fetchedShipping) && fetchedShipping > 0) {
+          if (fetchedShipping !== null && Number.isFinite(fetchedShipping) && fetchedShipping >= 0) {
             shippingCost = fetchedShipping;
             shippingQuoteVerified = true;
             liveSupplierApiVerified = true;
