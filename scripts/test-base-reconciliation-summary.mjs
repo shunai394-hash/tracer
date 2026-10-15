@@ -16,6 +16,7 @@ try {
     tracerListingCount: 3,
     exactBaseIdMappedCount: 1,
     baseItemsWithoutExactMappingCount: 3,
+    baseItemsWithAmbiguousExactMappingCount: 0,
     tracerListingsWithoutBaseItemIdCount: 2,
     duplicateBaseItemIdGroupsInTracer: 0,
     items: [
