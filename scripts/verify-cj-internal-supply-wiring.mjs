@@ -78,7 +78,9 @@ assert.match(ingest, /\["schema_org_product_group_has_variant", "schema_org_prod
   "Schema.org hasVariant/isVariantOf children and explicit Amazon child-ASIN-map variants are eligible only after child barcode proof");
 assert.match(catalogSync, /\["schema_org_product_group_has_variant", "schema_org_product_is_variant_of", "amazon_variation_asin_map"\]\.includes\(String\(candidate\.canonical\.evidence_source\)\)/,
   "catalog sync must accept all supported canonical child-evidence sources after exact barcode matching");
-assert.match(intelligence, /const schemaChild = \["schema_org_product_group_has_variant", "schema_org_product_is_variant_of"\]\.includes\(String\(row\.evidence_source\)\)/,\n  "intelligence resolver must accept inverse Schema.org child evidence only with exact barcode matching");\nassert.match(ingest, /const barcodeMethod = \["jan", "gtin", "ean", "upc"\]\.includes\(identity\.method\)/,
+assert.match(intelligence, /const schemaChild = \["schema_org_product_group_has_variant", "schema_org_product_is_variant_of"\]\.includes\(String\(row\.evidence_source\)\)/,
+  "intelligence resolver must accept inverse Schema.org child evidence only with exact barcode matching");
+assert.match(ingest, /const barcodeMethod = \["jan", "gtin", "ean", "upc"\]\.includes\(identity\.method\)/,
   "only exact barcode-family proof may establish supplier-to-child-variant identity");
 assert.match(ingest, /automated_order_creation_verified: false/,
   "live stock/freight verification must not be represented as proof of automated ordering");
