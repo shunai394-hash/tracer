@@ -287,8 +287,10 @@ async function postCJSandboxAction(
     },
   );
   const payload = (await response.json().catch(() => ({}))) as CJSandboxActionResponse;
+  const explicitSuccess = payload.result === true || payload.data === true || payload.code === 200;
   if (
     !response.ok ||
+    !explicitSuccess ||
     payload.result === false ||
     payload.data === false ||
     (typeof payload.code === "number" && payload.code !== 200)
