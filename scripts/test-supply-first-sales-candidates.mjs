@@ -7,6 +7,8 @@ const marketSelector = readFileSync("lib/market/select-sales-tests.ts", "utf8");
 const pricing = readFileSync("lib/market/supply-pricing.ts", "utf8");
 const identity = readFileSync("lib/catalog/canonical-supplier-identity.ts", "utf8");
 const japaneseProduct = readFileSync("lib/intelligence/japanese-product.ts", "utf8");
+const commerceCycle = readFileSync(".github/workflows/tracer-autonomous-commerce-cycle.yml", "utf8");
+const oneShotRecovery = readFileSync(".github/workflows/tracer-one-shot-supply-recovery.yml", "utf8");
 const vercel = JSON.parse(readFileSync("vercel.json", "utf8"));
 
 // The supply-first queue must not require a marketplace identity link: a
