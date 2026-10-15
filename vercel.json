@@ -47,10 +47,6 @@
       "schedule": "13,28,43,58 * * * *"
     },
     {
-      "path": "/api/cron/newfind-retry",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/cron/patrol-ai",
       "schedule": "*/5 * * * *"
     },
