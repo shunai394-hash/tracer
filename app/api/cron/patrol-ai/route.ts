@@ -239,14 +239,17 @@ export async function GET(request: Request) {
     const technicalDeferredSteps = deferredSteps.filter((name) => name !== "business_readiness");
     const businessReadinessMissing = pipeline.steps.some((step) => step.name === "business_readiness" && step.skipped);
 
-    if (!pipeline.complete && (technicalDeferredSteps.length > 0 || !businessReadinessMissing)) {
-      // Discovery incompleteness is reported, but must not block independent
-      // publication of already-linked, in-stock, profitable catalog rows.
-      // A business-readiness-only gap is shown as pipelineComplete=false without
-      // turning the HTTP health result into a technical exception.
+    if (!pipeline.complete) {
+      // Discovery incompleteness must not block independent publication of
+      // already-linked, in-stock, profitable catalog rows, but a patrol with no
+      // verified orderable supplier is not an end-to-end success.
+      const incompleteReasons = [
+        ...(technicalDeferredSteps.length ? [`deferred=${technicalDeferredSteps.join(",")}`] : []),
+        ...(businessReadinessMissing ? ["no_fresh_verified_orderable_supplier"] : []),
+      ];
       errors.push(
-        technicalDeferredSteps.length
-          ? `intelligence_pipeline_incomplete: deferred=${technicalDeferredSteps.join(",")}`
+        incompleteReasons.length
+          ? `intelligence_pipeline_incomplete:${incompleteReasons.join(",")}`
           : "intelligence_pipeline_incomplete",
       );
     }
