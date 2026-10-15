@@ -255,13 +255,19 @@ export function parseCanonicalMarketplaceVariantEvidence(
     if (!isType(variant, "Product")) continue;
     const relations = nodeList(variant.isVariantOf).map(asRecord)
       .filter((relation): relation is Record<string, unknown> => relation !== null);
-    const belongsToProductGroup = relations.some((relation) => {
-      if (isType(relation, "ProductGroup")) return true;
+    const belongsToCanonicalVariantParent = relations.some((relation) => {
+      // Schema.org permits isVariantOf to target either ProductGroup or
+      // ProductModel. Both are explicit child-to-parent relations; resolve
+      // local @id references rather than dropping children with a linked node.
+      if (isType(relation, "ProductGroup") || isType(relation, "ProductModel")) return true;
       const relationId = asString(relation["@id"]);
       const referencedNode = relationId ? nodesById.get(relationId) : null;
-      return Boolean(referencedNode && isType(referencedNode, "ProductGroup"));
+      return Boolean(
+        referencedNode
+        && (isType(referencedNode, "ProductGroup") || isType(referencedNode, "ProductModel")),
+      );
     });
-    if (!belongsToProductGroup) continue;
+    if (!belongsToCanonicalVariantParent) continue;
 
     const url = variantUrl(variant, parentProductUrl);
     const asin = extractAsinFromUrl(url);

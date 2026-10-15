@@ -71,6 +71,31 @@ assert.equal(inverseVariants[0].gtin, "4901234567894");
 assert.equal(inverseVariants[0].evidenceSource, "schema_org_product_is_variant_of");
 assert.equal(inverseVariants[0].rawEvidence.relation, "Product.isVariantOf");
 
+const productModelRelationHtml = `
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    { "@type": "ProductModel", "@id": "https://shop.example.jp/models/model-1", "name": "モデル親" },
+    {
+      "@type": "Product",
+      "@id": "https://shop.example.jp/products/child-1",
+      "isVariantOf": { "@id": "https://shop.example.jp/models/model-1" },
+      "name": "子商品 Mサイズ",
+      "sku": "MODEL-CHILD-M",
+      "gtin13": "4901234567894",
+      "url": "https://shop.example.jp/products/child-1"
+    }
+  ]
+}
+</script>`;
+const productModelVariants = parseCanonicalMarketplaceVariantEvidence(productModelRelationHtml, "https://shop.example.jp/products/parent");
+assert.equal(productModelVariants.length, 1, "accept a child Product whose isVariantOf points to a ProductModel");
+assert.equal(productModelVariants[0].sourceVariantId, "MODEL-CHILD-M");
+assert.equal(productModelVariants[0].gtin, "4901234567894");
+assert.equal(productModelVariants[0].evidenceSource, "schema_org_product_is_variant_of");
+
+
 
 const variationHtml = `
 <script>
