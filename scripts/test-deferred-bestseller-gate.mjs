@@ -10,7 +10,9 @@ console.log("bestseller sales-gate behavior verified");
 
 import { readFileSync } from "node:fs";
 const pipeline = readFileSync("lib/intelligence/run-intelligence-pipeline.ts", "utf8");
-const dropshipBlock = pipeline.match(/runStep\("dropship",[\s\S]*?\n  \}, \{ budgetMs: 30_000 \}\)\)/);
-assert.ok(dropshipBlock, "dropship step must exist");
-assert.match(dropshipBlock[0], /if \(!bestsellerCanFeedSalesGate\)/, "pending marketplace backlog must not bypass the canonical-evidence gate");
-assert.match(dropshipBlock[0], /bestseller_canonical_evidence_deferred/, "deferred marketplace backlog must be explicitly marked retryable");
+const dropshipBlock = pipeline.match(/steps\.push\(\{\s*name: "dropship",[\s\S]*?\n  \}\);/);
+assert.ok(dropshipBlock, "dropship step must remain visible in pipeline telemetry");
+assert.match(dropshipBlock[0], /skipped: true/, "marketplace-ranking procurement path must be disabled");
+assert.match(dropshipBlock[0], /marketplace_rankings_not_used_for_supplier_procurement/, "reason must clearly state rankings are not supplier sources");
+assert.match(pipeline, /dedicated supply-first path[\s\S]*?verifies the exact CJ product\/variant/i, "procurement must use direct CJ supply-first verification");
+assert.doesNotMatch(pipeline, /investigateDropshipForBestsellers/, "ranking candidates must not be passed to supplier investigation");
