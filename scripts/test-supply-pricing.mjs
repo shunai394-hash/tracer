@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { calculateSupplySellingPriceJpy, resolveUnknownShippingAllowanceUsd } from "../lib/market/supply-pricing.ts";
+import {
+  calculateRecommendedSupplySellingPriceJpy,
+  calculateSupplySellingPriceJpy,
+  resolveUnknownShippingAllowanceUsd,
+} from "../lib/market/supply-pricing.ts";
 
 assert.equal(resolveUnknownShippingAllowanceUsd(undefined), 15, "unknown shipping defaults to a non-zero allowance");
 assert.equal(resolveUnknownShippingAllowanceUsd("22.5"), 22.5, "shipping allowance can be configured per business");
@@ -20,7 +24,7 @@ const actualFreight = calculateSupplySellingPriceJpy({
   sourceFxRateToSelling: 150,
   ...fees,
 });
-assert.equal(actualFreight, 4900, "price is derived from actual supplier cost and quoted freight");
+assert.equal(actualFreight, 4900, "a missing price can be suggested from actual supplier cost and quoted freight");
 const estimatedFreight = calculateSupplySellingPriceJpy({
   existingSellingPriceJpy: null,
   sourceCost: 10,
@@ -42,7 +46,7 @@ assert.equal(calculateSupplySellingPriceJpy({
   shippingCost: 4,
   sourceFxRateToSelling: null,
   ...fees,
-}), null, "unknown FX cannot produce a price");
+}), null, "unknown FX cannot produce a suggested price");
 assert.equal(calculateSupplySellingPriceJpy({
   existingSellingPriceJpy: 0,
   sourceCost: 10,
@@ -56,12 +60,26 @@ assert.equal(calculateSupplySellingPriceJpy({
   shippingCost: 4,
   sourceFxRateToSelling: 150,
   ...fees,
-}), 4900, "a stored price below the landed-cost margin floor is raised");
+}), 2500, "merchant-selected price below the target margin is preserved");
 assert.equal(calculateSupplySellingPriceJpy({
   existingSellingPriceJpy: 5200,
   sourceCost: 10,
   shippingCost: 4,
   sourceFxRateToSelling: 150,
   ...fees,
-}), 5200, "a stored price above the margin floor is preserved");
-console.log("Supply landed-price calculation: 7 cases passed");
+}), 5200, "merchant-selected price above the target margin is preserved");
+assert.equal(calculateSupplySellingPriceJpy({
+  existingSellingPriceJpy: 2500,
+  sourceCost: 10,
+  shippingCost: null,
+  sourceFxRateToSelling: null,
+  ...fees,
+}), 2500, "merchant-selected price is preserved even when costs are incomplete");
+assert.equal(calculateRecommendedSupplySellingPriceJpy({
+  existingSellingPriceJpy: 2500,
+  sourceCost: 10,
+  shippingCost: 4,
+  sourceFxRateToSelling: 150,
+  ...fees,
+}), 4900, "recommended target-margin price is calculated separately from the merchant's price");
+console.log("Supply pricing: 9 cases passed");

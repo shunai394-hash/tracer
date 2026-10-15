@@ -11,15 +11,25 @@ export type SupplyPriceInputs = {
   targetContributionMargin?: number;
 };
 
+/**
+ * Return the configured selling price unchanged when one exists.
+ * A target margin is a pricing recommendation, not permission to overwrite
+ * the merchant's chosen price or prevent them from testing a lower price.
+ */
 export function calculateSupplySellingPriceJpy(inputs: SupplyPriceInputs): number | null {
   const existing = inputs.existingSellingPriceJpy;
-  const existingValid = existing !== null && Number.isFinite(existing) && existing > 0;
+  if (existing !== null && Number.isFinite(existing) && existing > 0) return Math.ceil(existing);
+  return calculateRecommendedSupplySellingPriceJpy(inputs);
+}
+
+/** Estimate a suggested price from landed cost, fees and a target contribution margin. */
+export function calculateRecommendedSupplySellingPriceJpy(inputs: SupplyPriceInputs): number | null {
   const { sourceCost, shippingCost, sourceFxRateToSelling } = inputs;
   if (
     sourceCost === null || !Number.isFinite(sourceCost) || sourceCost <= 0 ||
     shippingCost === null || !Number.isFinite(shippingCost) || shippingCost < 0 ||
     sourceFxRateToSelling === null || !Number.isFinite(sourceFxRateToSelling) || sourceFxRateToSelling <= 0
-  ) return existingValid ? Math.ceil(existing) : null;
+  ) return null;
 
   const retainedAfterFees = 1
     - inputs.platformFeeRate
@@ -31,10 +41,8 @@ export function calculateSupplySellingPriceJpy(inputs: SupplyPriceInputs): numbe
   const denominator = retainedAfterFees - targetMargin;
   const landedCostJpy = (sourceCost + shippingCost) * sourceFxRateToSelling;
   if (!Number.isFinite(landedCostJpy) || landedCostJpy <= 0 || !Number.isFinite(denominator) || denominator <= 0) return null;
-  const minimumPrice = Math.ceil((landedCostJpy / denominator) / 100) * 100;
-  return existingValid ? Math.max(Math.ceil(existing), minimumPrice) : minimumPrice;
+  return Math.ceil((landedCostJpy / denominator) / 100) * 100;
 }
-
 
 export function resolveUnknownShippingAllowanceUsd(configured: string | null | undefined): number {
   if (configured == null || configured.trim() === "") return 15;
