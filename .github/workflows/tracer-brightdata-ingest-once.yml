@@ -40,11 +40,17 @@ jobs:
           # Wait for the production alias to finish switching to the merged build.
           sleep 45
           python3 -c 'import json,os; print(json.dumps({"query": os.environ["QUERY"]}, ensure_ascii=False))' > request.json
-          curl --fail-with-body --silent --show-error --max-time 120 \
+          HTTP_STATUS="$(curl --silent --show-error --max-time 120 -o response.json -w '%{http_code}' \
             -H "Authorization: Bearer $OIDC_TOKEN" \
             -H "Content-Type: application/json" \
             --data-binary @request.json \
-            "$BASE/api/intelligence/brightdata-ingest" > response.json
+            "$BASE/api/intelligence/brightdata-ingest")"
+          echo "Bright Data ingest HTTP status: $HTTP_STATUS"
+          cat response.json
+          if [[ "$HTTP_STATUS" != "200" ]]; then
+            echo "Bright Data ingest failed before persistence verification"
+            exit 1
+          fi
           python3 - <<'PY'
           import json
           d = json.load(open("response.json", encoding="utf-8"))

@@ -229,7 +229,7 @@ async function searchViaBrightDataMcp(query: string, shoppingUrl: string): Promi
   try {
     const consumer = getMcpToolConsumer();
     const tools = await consumer.listTools();
-    const preferred = ["scrape_as_markdown", "search_engine"];
+    const preferred = ["scrape_as_markdown", "search_engine", "search_engine_batch"];
     for (const name of preferred) {
       const tool = tools.find((candidate) => candidate.name === name);
       if (!tool) continue;
@@ -260,9 +260,15 @@ export async function searchGoogleProducts(query: string): Promise<BrightDataSea
   if (!normalizedQuery) throw new BrightDataRequestError("Search query is required");
   const shoppingUrl = `https://www.google.com/search?q=${encodeURIComponent(normalizedQuery)}&tbm=shop&hl=ja&gl=jp&brd_json=1`;
 
+  const mcpConfigured = isMcpConfigured();
   const mcpProducts = await searchViaBrightDataMcp(normalizedQuery, shoppingUrl);
   if (mcpProducts?.length) {
     return { query: normalizedQuery, products: mcpProducts, provider: "brightdata_mcp" };
+  }
+  // MCP-only production configuration must never fall through to the unrelated
+  // Bright Data API token/zone path. Return a precise provider error instead.
+  if (mcpConfigured) {
+    throw new BrightDataRequestError("Bright Data MCP was configured but returned no parseable shopping products");
   }
 
   const client = getBrightDataClient();
