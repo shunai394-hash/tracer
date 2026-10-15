@@ -5,10 +5,14 @@ import {
   searchGoogleProducts,
 } from "@/lib/sources/brightdata/client";
 import { persistBrightDataProducts } from "@/lib/tracer/persist-brightdata";
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const authError = await requireAutomationAuth(request);
+  if (authError) return authError;
+
   try {
     const body = await request.json().catch(() => ({}));
     const query = typeof body?.query === "string" ? body.query.trim() : "women handbag";
