@@ -91,7 +91,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   if (!isBaseConfigured()) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
   if (listingIds !== undefined && listingIds.length === 0) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
   const supabase = createSupabaseAdminClient();
-  let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,shopify_product_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons");
+  let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,source_cost,contribution_profit,shopify_product_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons");
   if (listingIds && listingIds.length > 0) {
     // Explicit admin retries can target an exact listing regardless of its
     // current publication status.
@@ -265,10 +265,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     // shipping cost and positive contribution profit are the meaningful checks.
 
     // BASE publication is a sales-channel operation, not procurement authorization.
-    // A listing may be sold on BASE only when the canonical Sales Test Gate has
-    // passed and the currently observed supply is sellable. Automatic purchasing
-    // is evaluated separately at order time; it must never suppress a valid
-    // storefront listing here.
+    // Publication is based on concrete supplier linkage, stock and positive contribution profit. Fulfillment revalidates live availability at order time.
     if (!listing.supplier_product_id || !listing.supplier_variant_id) {
       await supabase.from("shop_listings").update({
         published: false,
@@ -307,6 +304,25 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       }
       await supabase.from("shop_listings").update({ published: false, base_publication_status: listing.base_item_id ? "published" : "blocked", base_publication_lease_until: null, pipeline_stage: "BASE_PUBLICATION", pipeline_status: "blocked", pipeline_reason: shippingCost === null ? "shipping_unknown" : "shipping_invalid", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
       results.push({ listingId, ok: false, skipped: true, error: shippingCost === null ? "shipping_unknown" : "shipping_invalid" }); continue;
+    }
+
+    const sourceCost = listing.source_cost === null || listing.source_cost === undefined ? null : Number(listing.source_cost);
+    const recordedProfit = listing.contribution_profit === null || listing.contribution_profit === undefined ? null : Number(listing.contribution_profit);
+    const contributionProfit = recordedProfit !== null && Number.isFinite(recordedProfit)
+      ? recordedProfit
+      : sourceCost !== null && Number.isFinite(sourceCost) && shippingCost !== null
+        ? price - sourceCost - shippingCost
+        : null;
+    if (contributionProfit === null || !Number.isFinite(contributionProfit) || contributionProfit <= 0) {
+      await supabase.from("shop_listings").update({
+        published: false,
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "blocked",
+        pipeline_reason: contributionProfit === null ? "profit_unknown" : "profit_not_positive",
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      results.push({ listingId, ok: false, skipped: true, error: contributionProfit === null ? "profit_unknown" : "profit_not_positive" });
+      continue;
     }
 
     const availableInventory = typeof listing.inventory === "number" ? Math.floor(listing.inventory) : typeof listing.inventory === "string" && listing.inventory.trim() !== "" ? Math.floor(Number(listing.inventory)) : null;
