@@ -297,7 +297,7 @@ export async function discoverAndCreateCjSupply(
   // verified variants are valid publication candidates and are live rechecked.
   const { data: seededRows, error: seededError } = await db
     .from("supplier_listings")
-    .select("id,product_id,title,metadata,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,next_verification_at,verification_attempts")
+    .select("id,product_id,title,metadata,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,next_verification_at,verification_attempts,configured,api_available,orderable,tracking_available,ship_to,verification_error,last_verified_at")
     .eq("supplier", "cj")
     .not("supplier_product_id", "is", null)
     .not("supplier_variant_id", "is", null)
@@ -341,6 +341,15 @@ export async function discoverAndCreateCjSupply(
     supplierListingId: String(row.id),
     existingProductId: row.product_id ? String(row.product_id) : null,
     attempts: Number(row.verification_attempts ?? 0),
+    verificationStatus: String(row.verification_status ?? ""),
+    configured: row.configured === true,
+    apiAvailable: row.api_available === true,
+    orderable: row.orderable === true,
+    trackingAvailable: row.tracking_available === true,
+    shipTo: String(row.ship_to ?? "").trim().toUpperCase(),
+    supplierProductId: String(row.supplier_product_id ?? ""),
+    supplierVariantId: String(row.supplier_variant_id ?? ""),
+    verificationError: String(row.verification_error ?? "").trim(),
   }));
 
   // Reserve most of the invocation budget for NEW catalog discovery. A
@@ -420,10 +429,33 @@ export async function discoverAndCreateCjSupply(
         });
         continue;
       }
-      // Reuse persisted variant/cost/inventory observations. Only image/title
-      // and live Japan freight consume CJ requests for seeded rows.
-      // Always re-check stock live: a persisted count may be days old and a
-      // Every supply candidate must reflect current CJ stock.
+      // Confirm that this exact variant still belongs to the exact CJ product.
+      // A stale persisted variant ID must never be treated as live identity proof.
+      const seededVariants = await fetchCJProductVariants(candidate.id, { countryCode: "JP" });
+      const seededVariant = seededVariants.find((item) => item.vid === candidate.variantId);
+      if (!seededVariant) {
+        rejected++;
+        if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, {
+          status: "retryable",
+          error: "supplier_variant_not_in_live_product",
+          attempts: seededCandidate.attempts,
+        });
+        items.push({ rejectedStage: "supplier_variant_not_in_live_product", supplierProductId: candidate.id, supplierVariantId: candidate.variantId });
+        continue;
+      }
+      // Price must come from the live exact-variant response, not the stale
+      // supplier-listing/cache price. Stock and Japan freight are rechecked too.
+      const liveCost = Number(seededVariant.sellPrice);
+      if (!Number.isFinite(liveCost) || liveCost <= 0) {
+        rejected++;
+        if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, {
+          status: "retryable",
+          error: "live_variant_price_unavailable",
+          attempts: seededCandidate.attempts,
+        });
+        items.push({ rejectedStage: "live_variant_price_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId });
+        continue;
+      }
       const stock = await fetchCJVariantStock(candidate.variantId);
 
       if (stock === null || stock <= 0) {
@@ -450,17 +482,9 @@ export async function discoverAndCreateCjSupply(
         items.push({ rejectedStage: "jp_freight_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, freight });
         continue;
       }
-      const cost = Number(seededCandidate.cost ?? detail.price ?? cachedPrice);
-      if (!Number.isFinite(cost) || cost <= 0) {
-        rejected++;
-        if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, { status: "retryable", error: "cost_unavailable", attempts: seededCandidate.attempts });
-        items.push({ rejectedStage: "cost_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, cost });
-        continue;
-      }
+      const cost = liveCost;
       const salePrice = yenPrice(cost, freight, fxRate);
-      const seededVariants = await fetchCJProductVariants(candidate.id, { countryCode: "JP" });
-      const seededVariant = seededVariants.find((item) => item.vid === candidate.variantId);
-      const variantBarcode = typeof seededVariant?.barcode === "string" ? seededVariant.barcode : null;
+      const variantBarcode = typeof seededVariant.barcode === "string" ? seededVariant.barcode : null;
       const displayTitle = localizeProductTitle(detail.title, query);
       if (!displayTitle) {
         rejected++;
@@ -482,15 +506,29 @@ export async function discoverAndCreateCjSupply(
         : await db.from("products").insert({ canonical_name: detail.title, identity_key: sourceRef }).select("id").single();
       if (productInsert.error) throw new Error(productInsert.error.message);
       const productId = String(productInsert.data.id);
+      const refreshedAt = new Date().toISOString();
+      const preserveVerifiedOrderPath =
+        seededCandidate.verificationStatus === "verified"
+        && seededCandidate.configured
+        && seededCandidate.apiAvailable
+        && seededCandidate.orderable
+        && seededCandidate.trackingAvailable
+        && seededCandidate.shipTo === "JP"
+        && seededCandidate.supplierProductId === candidate.id
+        && seededCandidate.supplierVariantId === candidate.variantId
+        && (seededCandidate.verificationError === "" || seededCandidate.verificationError === "CJdropshipping is not configured" || seededCandidate.verificationError === "no_unique_canonical_child_variant_match");
       const supplierInsert = await upsertSupplierListing(db, {
-        supplier: "cj", external_id: candidate.variantId, sku: null, title: detail.title, product_id: null,
+        supplier: "cj", external_id: candidate.variantId, sku: seededVariant.sku ?? null, title: detail.title, product_id: null,
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
-        order_method: "cj_api", api_available: false, verification_status: "unverified", shipping_status: "verified", identity_method: "supply_discovered",
+        order_method: "cj_api", api_available: preserveVerifiedOrderPath, verification_status: preserveVerifiedOrderPath ? "verified" : "unverified", shipping_status: "verified", identity_method: "supply_discovered",
         identity_status: "supply_discovered", identity_confidence: 0, configured: true,
         supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
         gtin: normalizeIdentifier("gtin", variantBarcode),
-        orderable: false, price_confirmed: true, inventory_confirmed: true, tracking_available: false,
-        fetched_at: new Date().toISOString(), metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate }
+        orderable: preserveVerifiedOrderPath, price_confirmed: true, inventory_confirmed: true, tracking_available: preserveVerifiedOrderPath,
+        last_verified_at: preserveVerifiedOrderPath ? refreshedAt : undefined,
+        verification_error: preserveVerifiedOrderPath ? null : undefined,
+        next_verification_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        fetched_at: refreshedAt, metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate }
       }, seededCandidate.supplierListingId);
       if (supplierInsert.error) throw new Error(supplierInsert.error.message);
       const intelligence = await persistCjSupplyIntelligence({
@@ -750,6 +788,7 @@ export async function discoverAndCreateCjSupply(
               price_confirmed: true,
               inventory_confirmed: true,
               tracking_available: false,
+              next_verification_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
               fetched_at: now,
               metadata: {
                 source: "cj_supply_first",
