@@ -67,7 +67,7 @@ export async function GET(request: Request) {
     const checks = (rows ?? []).map((row) => {
       const node = byId.get(tail(row.shopify_product_id));
       const variant = node?.variants.nodes.find((v) => tail(v.id) === tail(row.shopify_variant_id)) ?? node?.variants.nodes[0];
-      const expectedSku = `TRC-${row.supplier_variant_id || row.supplier_product_id || row.id}`.slice(0, 100);
+      const expectedSku = `TRC-${row.id}`.slice(0, 100);
       const gate = Array.isArray(row.selection_reasons) && row.selection_reasons.map(String).includes("sales_test_gate_passed");
       return {
         listingId: String(row.id),
