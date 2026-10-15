@@ -10,6 +10,8 @@ const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pi
 const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
 
 assert.ok(cron.includes("persistMarketplaceBestsellers"), "dedicated observation cron must invoke the marketplace collector");
+assert.ok(cron.includes('job_name: "market-sourcing-observation"'), "observation cursor must be isolated from patrol skip records");
+assert.ok(!cron.includes('job_name: "market-sourcing"'), "patrol telemetry must not reset the market-source cursor");
 assert.ok(cron.includes("canonicalVariantEvidenceParsed"), "cron must report parsed child-variant evidence");
 assert.ok(cron.includes("canonicalVariantEvidenceWritten"), "cron must report persisted child-variant evidence");
 assert.ok(cron.includes('reason: "observation_only"'), "marketplace collection must not publish ranking products or place orders");
