@@ -57,7 +57,7 @@ on conflict (bestseller_id, source_variant_id) do update
 set gtin = excluded.gtin, evidence_source = excluded.evidence_source,
     raw_evidence = excluded.raw_evidence, updated_at = now();
 
-do $
+do $$
 declare
   v_count integer;
   v_invalid_rejected boolean := false;
