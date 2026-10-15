@@ -1,12 +1,18 @@
 name: TRACER NEWFIND Retry
 
 on:
-  # Retry writes are manual here; production cadence is owned by Vercel Cron.
+  # Use a single durable five-minute owner; the Vercel cron was not invoking this route in production logs.
+  schedule:
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
   id-token: write
   contents: read
+
+concurrency:
+  group: tracer-newfind-retry
+  cancel-in-progress: false
 
 jobs:
   retry:
