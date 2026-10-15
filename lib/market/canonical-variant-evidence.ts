@@ -435,7 +435,7 @@ export function parseAmazonVariationAsinMap(
     let displayMatch: RegExpExecArray | null;
     while ((displayMatch = displayPattern.exec(html))) {
       let start = displayPattern.lastIndex;
-      while (start < html.length && /\\s/.test(html[start])) start += 1;
+      while (start < html.length && /\s/.test(html[start])) start += 1;
       const extracted = extractBalancedJsonObject(html, start);
       if (!extracted) continue;
       displayPattern.lastIndex = extracted.end;
