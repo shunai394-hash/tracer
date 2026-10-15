@@ -10,7 +10,7 @@ assert.match(env, /mcpApiKey:\s*readEnv\("BRIGHTDATA_MCP_API_KEY"\)/);
 assert.match(client, /https:\/\/mcp\.brightdata\.com\/mcp/);
 assert.match(client, /endpoint\.searchParams\.set\("token", mcpApiKey\)/);
 assert.match(client, /if \(!mcpUrl && !mcpApiKey\) return null/);
-assert.match(client, /Boolean\(getConfiguredEndpoint\(\) !== null\)/);
+assert.match(client, /return getConfiguredEndpoint\(\) !== null/);
 assert.doesNotMatch(client, /console\.(?:log|info|warn|error).*endpoint/i, "the MCP endpoint contains the API token and must never be logged");
 assert.match(remote, /new URL\(options\.endpoint\)/);
 assert.match(packageJson.scripts.prebuild, /test:brightdata-mcp-auth/);
