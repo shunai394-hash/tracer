@@ -22,9 +22,9 @@ import { isAmazonChallengeHtml } from "@/lib/market/amazon-response";
 // Yahoo! Shopping is used only as a Japanese demand signal. Supplier identity,
  // costs, stock, shipping, and orderability must come from the supplier API.
  // Amazon/Rakuten are intentionally excluded from this collection pipeline.
-export const MARKETPLACE_SOURCES = [
+export const MARKETPLACE_SOURCES: Array<{ marketplace: string; url: string; source: string }> = [
   { marketplace: "yahoo_shopping", url: "https://shopping.yahoo.co.jp/ranking/", source: "yahoo_shopping_ranking" },
-] as const;
+];
 
 /**
  * How many collected items per marketplace get a detail-page fetch for
