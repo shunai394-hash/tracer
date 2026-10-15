@@ -54,5 +54,6 @@ const sandboxRoute = read("app/api/cron/cj-sandbox-order-test/route.ts");
 assert.match(sandboxRoute, /CJ_SANDBOX_ORDER_TEST_ENABLED/);
 assert.match(sandboxRoute, /requireAutomationAuth/);
 assert.match(sandboxRoute, /SUPPLIER_LISTING_NOT_FRESH_VERIFIED_FOR_SANDBOX/);
+assert.match(sandboxRoute, /TRACER CJ SANDBOX ORDER TEST COMPLETE/, "sandbox lifecycle success must be observable without logging the tracking number");
 const vercelConfig = JSON.parse(read("vercel.json"));
 assert.doesNotMatch(JSON.stringify(vercelConfig.crons), /cj-sandbox-order-test/, "sandbox order test must never be scheduled automatically");
