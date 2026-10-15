@@ -24,6 +24,8 @@ const BASE_REFRESH_TOKEN = process.env.BASE_REFRESH_TOKEN?.trim() || "";
 
 const BASE_REDIRECT_URI = process.env.BASE_REDIRECT_URI?.trim() || "";
 
+let cachedBaseAccessToken: { token: string; expiresAt: number } | null = null;
+
 function baseOAuthConfigReady(): boolean {
   return Boolean(BASE_CLIENT_ID && BASE_CLIENT_SECRET && BASE_REFRESH_TOKEN && BASE_REDIRECT_URI);
 }
@@ -47,6 +49,9 @@ export function isBaseConfigured() {
 }
 
 async function getBaseAccessToken(): Promise<string> {
+  if (cachedBaseAccessToken && Date.now() < cachedBaseAccessToken.expiresAt - 30_000) {
+    return cachedBaseAccessToken.token;
+  }
   if (!baseOAuthConfigReady()) {
     throw new Error("BASE_OAUTH_CONFIG_INCOMPLETE: configure BASE_CLIENT_ID, BASE_CLIENT_SECRET, BASE_REFRESH_TOKEN, and BASE_REDIRECT_URI");
   }
@@ -80,7 +85,14 @@ async function getBaseAccessToken(): Promise<string> {
   if (typeof accessToken !== "string" || !accessToken.trim()) {
     throw new Error("BASE_OAUTH_REFRESH_FAILED:ACCESS_TOKEN_MISSING");
   }
-  return accessToken.trim();
+  const token = accessToken.trim();
+  const expiresIn = Number(payload?.expires_in);
+  if (Number.isFinite(expiresIn) && expiresIn > 0) {
+    cachedBaseAccessToken = { token, expiresAt: Date.now() + expiresIn * 1000 };
+  } else {
+    cachedBaseAccessToken = null;
+  }
+  return token;
 }
 
 async function requestBase(
