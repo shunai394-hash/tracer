@@ -442,6 +442,27 @@ export async function runIntelligencePipeline(options: {
     discoverAndCreateCjSupply(3, {
       deadlineAt: Math.min(pipelineDeadlineAt - 5_000, Date.now() + 18_000),
     }));
+  // A normal return is not proof that discovery completed: the supplier
+  // scanner can exhaust its own deadline with zero candidates and no throw.
+  // Mark that run deferred/retryable so patrol status cannot claim success.
+  // Keep partial results usable when at least one candidate was actually found.
+  const supplyFirstResult = supplyFirstStep.result && typeof supplyFirstStep.result === "object"
+    ? supplyFirstStep.result as { deadlineReached?: unknown; candidateCount?: unknown; items?: unknown }
+    : null;
+  const supplyFirstEmptyDeadline = supplyFirstResult?.deadlineReached === true
+    && Number(supplyFirstResult.candidateCount ?? 0) === 0
+    && (!Array.isArray(supplyFirstResult.items) || supplyFirstResult.items.length === 0);
+  if (supplyFirstEmptyDeadline) {
+    supplyFirstStep.ok = true;
+    supplyFirstStep.skipped = true;
+    supplyFirstStep.retryable = true;
+    supplyFirstStep.result = {
+      ...supplyFirstResult,
+      skipped: true,
+      retryable: true,
+      reason: "supply_discovery_deadline_reached_without_candidates",
+    };
+  }
   steps.push(supplyFirstStep);
 
   const supplyItems =
