@@ -10,4 +10,4 @@ assert.ok(supplyFirst < marketplace, "supply-first stage marker must remain befo
 assert.match(source, /dedicated_supply_first_cron_owns_live_cj_discovery/);
 assert.doesNotMatch(source, /discoverAndCreateCjSupply\(/, "short patrol must not duplicate live CJ requests");
 assert.match(source, /discoveryCron: "\/api\/cron\/supply-first"/);
-console.log("supply-first discovery priority checks passed");
+console.log("supply-first dedicated-cron ownership checks passed");
