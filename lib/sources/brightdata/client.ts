@@ -178,7 +178,7 @@ async function searchViaBrightDataMcp(query: string, shoppingUrl: string): Promi
   try {
     const consumer = getMcpToolConsumer();
     const tools = await consumer.listTools();
-    const preferred = ["search_engine", "scrape_as_markdown"];
+    const preferred = ["scrape_as_markdown", "search_engine"];
     for (const name of preferred) {
       const tool = tools.find((candidate) => candidate.name === name);
       if (!tool) continue;
