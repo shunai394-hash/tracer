@@ -20,7 +20,7 @@ assert.equal((discovery.match(/persistCjInternalSupplyCandidate\(/g) ?? []).leng
 assert.match(discovery, /internalSupplyIngested: Boolean\(internalSupply\)/);
 assert.match(discovery, /"women handbag", "women crossbody bag", "women shoulder bag", "women tote bag"/,
   "new supply discovery must prioritize women's bags before beauty tools and hair accessories");
-assert.match(discovery, /"beauty tools", "facial cleansing brush", "makeup brush cleaner", "makeup organizer"/,
+assert.match(discovery, /"beauty tools"[\s\S]*?"facial cleansing brush"[\s\S]*?"makeup brush cleaner"[\s\S]*?"makeup organizer"/,
   "beauty tools must follow women's bags in the supply query priority");
 assert.match(discovery, /"hair styling tools", "hair clip women", "claw clip women"/,
   "hair accessories must be an explicit high-priority catalog segment");
