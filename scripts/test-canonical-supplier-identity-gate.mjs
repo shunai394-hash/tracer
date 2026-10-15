@@ -93,6 +93,7 @@ assert.match(base, /supplier_product_id.not.is.null,supplier_variant_id.not.is.n
 assert.match(base, /getPublishableSupplierListingStatuses/, "BASE publication must require a linked or freshly verified native supplier listing");
 assert.match(base, /listing\.orderable !== true/, "BASE publication requires supplier orderability");
 assert.match(base, /listing\.tracking_available !== true/, "BASE publication requires tracking capability");
+assert.match(base, /if \(!isIdentityUnlinked && listing\.published !== true && listing\.base_last_error !== "tracer_unpublished_hidden"\) continue/, "BASE must not skip hiding an unverified supplier item merely because TRACER already marked it unpublished");
 assert.match(base, /profit_not_positive/, "BASE publication requires positive contribution profit");
 assert.match(base, /query\.order\("created_at", \{ ascending: false \}\)/,
   "BASE batches must prioritize new gate-passed listings instead of starving them behind old hidden rows");
