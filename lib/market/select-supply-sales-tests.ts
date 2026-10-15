@@ -55,6 +55,16 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   const observedFx = await getObservedUsdToJpyRate();
   if (productIds.length === 0 || limit <= 0) return { published: 0, publishedListingIds: [], selectedListingIds: [], considered: 0, rejectedCount: 0, rejectionCounts: {}, rejected: [] };
   const uniqueProductIds = Array.from(new Set(productIds));
+  // A listing held for live supplier inventory re-verification must not be
+  // re-published by the next supply-first pass just because its old quote still
+  // looks profitable. Only a separate verification workflow may clear this hold.
+  const { data: heldRows, error: heldRowsError } = await supabase
+    .from("shop_listings")
+    .select("product_id")
+    .in("product_id", uniqueProductIds)
+    .eq("pipeline_reason", "supplier_inventory_reverification_required");
+  if (heldRowsError) throw new Error(heldRowsError.message);
+  const heldProductIds = new Set((heldRows ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean));
   const { data: intelligenceRows, error: intelligenceError } = await supabase.from("opportunity_intelligence").select("product_id,demand_score,search_fit_score,market_gap_score,competition_score,creative_score,selection_score,overall_confidence,selection_eligible,sellability_state,filter_state,profit_state,recommendation_summary,why_now").in("product_id", uniqueProductIds);
   if (intelligenceError) throw new Error(intelligenceError.message);
   const { data: intelligenceBase, error: intelligenceBaseError } = await supabase.from("product_intelligence").select("product_id,normalized_title,image_url,currency,current_price,metadata").in("product_id", uniqueProductIds);
@@ -104,6 +114,16 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   const rejected: SupplySalesTestResult["rejected"] = [];
   const eligible: Array<{ productId: string; listing: Record<string, unknown>; base: Record<string, unknown>; intelligence: Record<string, unknown>; profit: ReturnType<typeof simulateContributionProfit>; quality: number; description: string; shippingAllowanceUsd: number; imageUrl: string }> = [];
   for (const productId of uniqueProductIds) {
+    if (heldProductIds.has(productId)) {
+      const heldListing = listingByProduct.get(productId);
+      rejected.push({
+        productId,
+        reasons: ["supplier_inventory_reverification_required"],
+        title: typeof heldListing?.title === "string" ? heldListing.title : undefined,
+        supplier: typeof heldListing?.supplier === "string" ? heldListing.supplier : undefined,
+      });
+      continue;
+    }
     const reasons: string[] = []; const intelligence = intelligenceByProduct.get(productId) ?? { product_id: productId, demand_score: null, search_fit_score: null, market_gap_score: null, competition_score: null, creative_score: null, selection_score: null, overall_confidence: null, selection_eligible: false, sellability_state: null, filter_state: null, profit_state: null, recommendation_summary: null, why_now: null }; const base = baseByProduct.get(productId); const listing = listingByProduct.get(productId);
     const sourceTitle = (typeof listing?.title === "string" && listing.title.trim()
       ? listing.title
