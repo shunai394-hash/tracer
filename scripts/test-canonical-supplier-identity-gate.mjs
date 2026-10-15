@@ -68,6 +68,9 @@ const reverify = await readFile(new URL("../lib/suppliers/reverify-cj-identity.t
 assert.match(reverify, /let liveSupplierApiVerified = row\.api_available === true && row\.configured === true/);
 assert.match(reverify, /refreshedFields\.configured = true/);
 assert.match(reverify, /refreshedFields\.api_available = true/);
+assert.match(reverify, /select\("id,product_id,title,sku,cost,shipping_cost/);
+assert.match(reverify, /refreshedFields\.sku = variantDetails\.sku\.trim\(\)/);
+assert.match(reverify, /supplier orderability and tracking capability remain unverified/);
 assert.match(reverify, /supplier orderability and tracking capability remain unverified/);
 assert.doesNotMatch(reverify, /refreshedFields\.orderable = true|refreshedFields\.tracking_available = true/, "live catalog reads must not manufacture order or tracking proof");
 assert.match(persist, /bestseller_id: null/, "supplier-native CJ persistence must not claim a marketplace parent link");
