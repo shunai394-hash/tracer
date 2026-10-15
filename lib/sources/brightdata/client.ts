@@ -401,7 +401,9 @@ export async function searchGoogleProducts(query: string): Promise<BrightDataSea
 
 function extractMcpHtml(value: unknown, depth = 0): string | null {
   if (depth > 5 || value == null) return null;
-  const unwrapped = unwrapMcpContent(value);
+  const envelope = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  const mcpPayload = envelope?.structuredContent ?? envelope?.content ?? value;
+  const unwrapped = unwrapMcpContent(mcpPayload);
   if (typeof unwrapped === "string") {
     const text = unwrapped.trim();
     return text.includes("<") && /<html|<!doctype|<script|<div|<body/i.test(text) ? text : null;
