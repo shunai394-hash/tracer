@@ -192,7 +192,7 @@ export async function matchDemandProductsByCategory(): Promise<DemandProductMatc
     .in("signal_type", ["search_volume", "search_result_count"]);
   if (demandCountResult.error) throw new Error(demandCountResult.error.message);
 
-  const demandBatchSize = 40;
+  const demandBatchSize = 100;
   const demandBatchPages = Math.max(1, Math.ceil((demandCountResult.count ?? 0) / demandBatchSize));
   const demandBatchPage = Math.floor(Date.now() / (15 * 60_000)) % demandBatchPages;
   const demandResult = await supabase
