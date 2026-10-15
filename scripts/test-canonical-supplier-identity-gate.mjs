@@ -63,6 +63,13 @@ assert.match(intelligencePipeline, /freshOrderableSuppliers: freshOrderableSuppl
 assert.match(intelligencePipeline, /publishedOrderableListings/);
 assert.match(intelligencePipeline, /retryable: !businessReady/, "zero orderable supplier/listing counts must keep the pipeline incomplete and retryable");
 assert.match(persist, /last_verified_at: nativeEvidenceFresh \? now : existingListing\.data\?\.last_verified_at \?\? null/, "supplier verification timestamps must advance only when native supplier evidence remains fresh");
+assert.match(persist, /supplier_native_evidence_pending/);
+const reverify = await readFile(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
+assert.match(reverify, /let liveSupplierApiVerified = row\.api_available === true && row\.configured === true/);
+assert.match(reverify, /refreshedFields\.configured = true/);
+assert.match(reverify, /refreshedFields\.api_available = true/);
+assert.match(reverify, /supplier orderability and tracking capability remain unverified/);
+assert.doesNotMatch(reverify, /refreshedFields\.orderable = true|refreshedFields\.tracking_available = true/, "live catalog reads must not manufacture order or tracking proof");
 assert.match(persist, /bestseller_id: null/, "supplier-native CJ persistence must not claim a marketplace parent link");
 assert.match(persist, /identity_status: "supply_discovered"/, "CJ supplier-native identity must remain distinct from cross-marketplace identity");
 assert.doesNotMatch(persist, /orderable: false, tracking_available: false, api_available: false/, "identity recheck must not erase existing supplier order-path evidence");
