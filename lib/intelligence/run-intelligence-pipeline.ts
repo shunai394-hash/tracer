@@ -377,9 +377,6 @@ export async function runIntelligencePipeline(options: {
       : [];
 
 
-  // Demand matching runs first. It reads persisted demand/catalog evidence
-  // and does not depend on the current marketplace fetch. Previously the
-  // marketplace stage could consume the budget before matching started.
   // Demand matching runs in its own five-minute cron. Keep broad catalog reads
   // out of this pipeline so slow data reads cannot starve product publication.
 
