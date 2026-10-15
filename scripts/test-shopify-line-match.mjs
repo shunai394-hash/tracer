@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { resolveShopifyOrderLines, shopifyLineIdentity } from "../lib/ordering/shopify-line-match.ts";
+import { getOrderSkuLookup } from "../lib/shopify/order-sku-mapping.ts";
 
 const A = { id: "11111111-1111-4111-8111-111111111111", supplier_variant_id: "2406171151571623500", supplier_product_id: "P-A", shopify_variant_id: "gid://shopify/ProductVariant/46341512069164" };
 const B = { id: "22222222-2222-4222-8222-222222222222", supplier_variant_id: "other", supplier_product_id: "P-B", shopify_variant_id: "gid://shopify/ProductVariant/1" };
@@ -25,6 +26,7 @@ assert.equal(resolve([{ sku: "TRC-P-C" }], [{ id: "33333333-3333-4333-8333-33333
 r = resolve([{ sku: "TRC-missing" }]);
 assert.deepEqual([r.ok, r.reason], [false, "listing_mapping_missing"]);
 assert.equal(resolve([{ sku: "CJ-2406171151571623500" }]).listings[0].id, A.id);
+assert.deepEqual(getOrderSkuLookup(["CJ-2406171151571623500"]).supplierSources, ["2406171151571623500"]);
 assert.equal(resolve([{ sku: "CJ-missing" }]).reason, "listing_mapping_missing");
 // Ambiguous: SKU points to A, Shopify variant id belongs to B.
 r = resolve([{ sku: "TRC-2406171151571623500", variant_id: 1 }]);
