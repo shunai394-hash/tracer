@@ -183,6 +183,36 @@ export async function discoverAndCreateCjSupply(
 }> {
   const db = createSupabaseAdminClient();
 
+  // Do not repeatedly query CJ while the persisted provider quota circuit is open.
+  // The shared CJ client already fails closed, but checking here prevents each
+  // five-minute patrol from re-selecting and rejecting the same seeded candidate.
+  const quotaCircuit = await db
+    .from("cron_runs")
+    .select("metadata")
+    .eq("job_name", "cj-api-quota-circuit")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (quotaCircuit.error) {
+    throw new Error(`CJ quota circuit lookup failed: ${quotaCircuit.error.message}`);
+  }
+  const quotaMetadata = quotaCircuit.data?.metadata && typeof quotaCircuit.data.metadata === "object" && !Array.isArray(quotaCircuit.data.metadata)
+    ? quotaCircuit.data.metadata as Record<string, unknown>
+    : {};
+  const quotaBlockedUntil = typeof quotaMetadata.blockedUntil === "string" ? quotaMetadata.blockedUntil : null;
+  if (quotaBlockedUntil && Date.parse(quotaBlockedUntil) > Date.now()) {
+    return {
+      discovered: 0,
+      published: 0,
+      verified: 0,
+      rejected: 0,
+      candidateCount: 0,
+      eligibleCount: 0,
+      deadlineReached: true,
+      items: [],
+    };
+  }
+
   // Supply discovery is intentionally independent from procurement eligibility.
   // CJ is queried directly below and every candidate is re-verified live for
   // variant, stock, Japan freight and cost. Payment/order-creation gates stay
