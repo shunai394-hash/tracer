@@ -250,6 +250,7 @@ export async function discoverAndCreateCjSupply(
   let discovered = 0;
   let verified = 0;
   let catalogDiscovered = 0;
+  let catalogAttempted = 0;
   let rejected = 0;
   // Once CJ reports an exhausted/unknown quota circuit, stop this invocation.
   // Repeating dozens of searches cannot recover the provider quota and only
@@ -658,7 +659,7 @@ export async function discoverAndCreateCjSupply(
     const pageNumber = page;
     let pageCompleted = true;
     for (const candidate of search.products.map((x) => ({ ...x, variantId: null as string | null }))) {
-      if (catalogDiscovered >= catalogDiscoveryLimit || Date.now() >= deadlineAt) {
+      if (catalogAttempted >= catalogDiscoveryLimit || Date.now() >= deadlineAt) {
         if (Date.now() >= deadlineAt) deadlineReached = true;
         pageCompleted = false;
         break;
@@ -666,6 +667,7 @@ export async function discoverAndCreateCjSupply(
       if (seenSearchProducts.has(candidate.id)) continue;
       seenSearchProducts.add(candidate.id);
       if (existingProducts.has(candidate.id)) continue;
+      catalogAttempted += 1;
       const reject = (stage: string, extra?: Record<string, unknown>) => {
         rejected++;
         items.push({ rejectedStage: stage, supplierProductId: candidate.id, query: pageQuery, page: pageNumber, ...extra });
