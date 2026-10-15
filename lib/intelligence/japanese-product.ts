@@ -102,6 +102,18 @@ const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
   [/girly heart pink watercolor.*wall stickers|pink watercolor.*wall stickers/i, "ピンクのハート柄 ウォールステッカー"],
   [/wall stickers living room wall decoration.*self adhesive paper/i, "リビング向け 壁面デコレーションシール"],
   [/^micron soft toothbrush$/i, "Micron ソフト歯ブラシ"],
+  [/sedentary backrest integrated chair cushion|integrated chair cushion seat cushion/i, "背もたれ一体型 チェアクッション"],
+  [/nordic pillows cushions home decor|decorative cushions for sofa/i, "北欧風 ソファクッション"],
+  [/sink drain strainer|hair catchers rubber shower bathtub|silicone bathroom kitchen deodorant plug/i, "排水口用 シリコンヘアキャッチャー"],
+  [/25 colors double head highlighter pen|highlighters art marker school/i, "両頭蛍光マーカー 25色セット"],
+  [/competitive gaming office waterproof mouse pad/i, "防水 ゲーミングマウスパッド"],
+  [/office leg and foot hammock|travel foot hammock/i, "オフィス・旅行用 フットレストハンモック"],
+  [/kitchen supplies multifunctional brush electric scrubber|electric scrubber rechargeable dishwashing brush/i, "充電式 電動キッチンクリーナー"],
+  [/t-type fiber grinding head nylon wheel|nylon wheel grinding disc/i, "T型 ナイロン研磨ホイール"],
+  [/soft lightweight insulated office lunch tote/i, "保冷ランチトートバッグ"],
+  [/laundry &cleansing set|laundry and cleansing set/i, "ランドリー・洗濯用品セット"],
+  [/rice bucket automatic out household food grade insect proof/i, "防虫仕様 米びつ保存容器"],
+  [/household capacity mute mini office humidification|mini office humidification/i, "静音 コンパクト加湿器"],
   // Broad fallbacks come after motif/material-specific cases so they cannot shadow them.
   [/compatible with apple.*mobile phone case|mobile phone case.*compatible with apple|mobile phone case.*iphone|iphone.*mobile phone case/i, "対応機種別 スマートフォンケース"],
   [/wind chimes.*wall pendant|wall pendant.*dream catcher/i, "装飾ビーズ付き ウィンドチャイム"],
@@ -210,6 +222,19 @@ export function localizeProductDescription(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const source = value.normalize("NFKC");
   const rules: Array<[RegExp, string]> = [
+    [/sedentary backrest integrated chair cushion|integrated chair cushion seat cushion/i, "座面と背もたれを支える一体型チェアクッションです。寸法・中材・対応する椅子の形状は販売元の仕様をご確認ください。"],
+    [/nordic pillows cushions home decor|decorative cushions for sofa/i, "ソファや室内の装飾に使うクッションです。寸法・素材・中材・洗濯方法は販売元の仕様をご確認ください。"],
+    [/sink drain strainer|hair catchers rubber shower bathtub|silicone bathroom kitchen deodorant plug/i, "シンクや浴室の排水口に使うヘアキャッチャーです。寸法・対応する排水口・素材・お手入れ方法は販売元の仕様をご確認ください。"],
+    [/25 colors double head highlighter pen|highlighters art marker school/i, "両頭タイプの蛍光マーカー25色セットです。ペン先の種類・色構成・インク仕様は販売元の仕様をご確認ください。"],
+    [/competitive gaming office waterproof mouse pad/i, "デスクで使う防水タイプのマウスパッドです。寸法・表面素材・対応するマウスは販売元の仕様をご確認ください。"],
+    [/office leg and foot hammock|travel foot hammock/i, "デスク下や移動時に足を支えるハンモック型フットレストです。寸法・取付方法・耐荷重は販売元の仕様をご確認ください。"],
+    [/kitchen supplies multifunctional brush electric scrubber|electric scrubber rechargeable dishwashing brush/i, "キッチンの清掃に使う充電式電動ブラシです。給電方式・付属ブラシ・防水性能・使用上の注意は販売元の仕様をご確認ください。"],
+    [/t-type fiber grinding head nylon wheel|nylon wheel grinding disc/i, "研磨作業に使うナイロン製ホイールです。寸法・取付規格・対応工具・使用条件は販売元の仕様をご確認ください。"],
+    [/soft lightweight insulated office lunch tote/i, "食品やランチ用品を持ち運ぶ保冷トートバッグです。寸法・容量・内側素材・保冷仕様は販売元の仕様をご確認ください。"],
+    [/laundry &cleansing set|laundry and cleansing set/i, "洗濯や衣類のお手入れに使う用品セットです。セット内容・素材・使用方法は販売元の仕様をご確認ください。"],
+    [/rice bucket automatic out household food grade insect proof/i, "米などの食品を保管する防虫仕様の保存容器です。容量・材質・開閉方式・お手入れ方法は販売元の仕様をご確認ください。"],
+    [/household capacity mute mini office humidification|mini office humidification/i, "デスクや室内で使うコンパクトな加湿器です。タンク容量・給電方式・動作音・使用上の注意は販売元の仕様をご確認ください。"],
+
     [/wooden door.*christmas door frame decoration|christmas door frame decoration.*santa claus/i, "クリスマス向けのドアフレーム飾りです。寸法・素材・設置方法・付属品は販売元の仕様をご確認ください。"],
     [/office 8.inch wind.driven fan|8.inch wind.driven fan/i, "デスクや卓上で使う8インチ送風ファンです。寸法・風量・給電方式・安全上の注意は販売元の仕様をご確認ください。"],
     [/cup warmer pad.*3 temperatures adjustable|cup warmer pad.*electric heater mug pad/i, "カップを保温するUSB給電式ウォーマーです。対応カップ・温度設定・給電条件は販売元の仕様をご確認ください。"],
