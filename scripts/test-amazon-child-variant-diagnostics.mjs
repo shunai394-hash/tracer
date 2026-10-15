@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const cron = await readFile(new URL("../app/api/cron/market-sourcing/route.ts", import.meta.url), "utf8");
+const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
 const bestsellerApi = await readFile(new URL("../app/api/intelligence/bestsellers/route.ts", import.meta.url), "utf8");
 const sourceDecision = await readFile(new URL("../app/api/intelligence/source-decision/route.ts", import.meta.url), "utf8");
 const marketObserve = await readFile(new URL("../app/api/intelligence/market-observe/route.ts", import.meta.url), "utf8");
@@ -16,6 +17,7 @@ assert.ok(cron.includes("canonicalVariantEvidenceParsed"), "cron must report par
 assert.ok(cron.includes("export const maxDuration = 300;"), "marketplace detail scraping needs a 300-second runtime budget");
 assert.ok(cron.includes("canonicalVariantEvidenceWritten"), "cron must report persisted child-variant evidence");
 assert.ok(cron.includes('reason: "observation_only"'), "marketplace collection must not publish ranking products or place orders");
+assert.ok(collector.indexOf('source: "amazon_bestsellers_beauty"') < collector.indexOf('source: "rakuten_ranking"') && collector.indexOf('source: "amazon_bestsellers_beauty"') < collector.indexOf('source: "yahoo_shopping_ranking"'), "Amazon child-variant evidence must be collected before broad marketplace rankings");
 assert.ok(vercel.crons.some((entry) => entry.path === "/api/cron/market-sourcing" && entry.schedule === "*/15 * * * *"),
   "market-sourcing must run on a schedule instead of remaining an unreachable route");
 

@@ -19,14 +19,16 @@ import { decodeHtmlBytes } from "@/lib/market/charset";
 import { isAmazonChallengeHtml } from "@/lib/market/amazon-response";
 
 export const MARKETPLACE_SOURCES = [
-  { marketplace: "yahoo_shopping", url: "https://shopping.yahoo.co.jp/ranking/", source: "yahoo_shopping_ranking" },
-  { marketplace: "rakuten", url: "https://ranking.rakuten.co.jp/", source: "rakuten_ranking" },
+  // Amazon detail pages provide canonical child-ASIN evidence needed for exact
+  // supplier-variant matching, so process these sources before broad rankings.
   { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/beauty/", source: "amazon_bestsellers_beauty" },
   { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/", source: "amazon_bestsellers" },
   { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/electronics/", source: "amazon_bestsellers_electronics" },
   { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/kitchen/", source: "amazon_bestsellers_kitchen" },
   { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/home/", source: "amazon_bestsellers_home" },
   { marketplace: "amazon.co.jp", url: "https://www.amazon.co.jp/gp/bestsellers/sports/", source: "amazon_bestsellers_sports" },
+  { marketplace: "rakuten", url: "https://ranking.rakuten.co.jp/", source: "rakuten_ranking" },
+  { marketplace: "yahoo_shopping", url: "https://shopping.yahoo.co.jp/ranking/", source: "yahoo_shopping_ranking" },
 ] as const;
 
 /**
