@@ -7,11 +7,6 @@ import { validateShopifyOrderFinancials } from "@/lib/ordering/shopify-order-fin
 
 export const runtime = "nodejs";
 
-function n(value: unknown): number | null {
-  const x = Number(value);
-  return Number.isFinite(x) ? x : null;
-}
-
 export async function POST(request: Request) {
   const raw = await request.text();
   if (!verifyShopifyWebhookHmac(raw, request.headers.get("x-shopify-hmac-sha256"))) {
