@@ -86,7 +86,7 @@ export async function GET(request: Request) {
   // Use a complete BASE snapshot and the stable TRC-<listing UUID> identifier to
   // keep only currently publishable TRACER listings. Hide (never delete) a small
   // bounded batch of visible orphans on each run.
-  let baseOrphans: { snapshotComplete: boolean; visibleChecked: number; attempted: number; hidden: number; failed: number; remainingEstimate: number; skipped?: string } = {
+  const baseOrphans: { snapshotComplete: boolean; visibleChecked: number; attempted: number; hidden: number; failed: number; remainingEstimate: number; skipped?: string } = {
     snapshotComplete: false, visibleChecked: 0, attempted: 0, hidden: 0, failed: 0, remainingEstimate: 0,
   };
   if (!isBaseConfigured()) {
