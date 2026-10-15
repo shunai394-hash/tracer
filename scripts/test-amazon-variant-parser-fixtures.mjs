@@ -200,4 +200,17 @@ assert.deepEqual(
   "decode a JSON-string-encoded Amazon variation map",
 );
 
+
+const quotedPropertyVariationHtml = String.raw`
+<script>
+var twisterData = {"dimensionToAsinMap":{"[\"Color=Red\",\"Size=M\"]":"B0CHILD011","[\"Color=Blue\",\"Size=L\"]":"B0CHILD012"}};
+</script>`;
+assert.deepEqual(
+  parseAmazonVariationAsinMap(quotedPropertyVariationHtml, parentUrl),
+  [
+    { asin: "B0CHILD011", variationValues: ['["Color=Red","Size=M"]'] },
+    { asin: "B0CHILD012", variationValues: ['["Color=Blue","Size=L"]'] },
+  ],
+  "parse quoted dimensionToAsinMap property keys embedded in Amazon twister data",
+);
 console.log("Amazon variant parser fixtures: passed");
