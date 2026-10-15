@@ -423,6 +423,38 @@ export function parseAmazonVariationAsinMap(
     { name, pattern: new RegExp(`(?:var|let|const)\\s+${name}\\s*=`, "gi") },
     { name, pattern: new RegExp(`${name}[\"']?\\s*:`, "gi") },
   ]);
+  // dimensionToAsinMap uses opaque tuple keys such as "10_7". Resolve those
+  // tuples to customer-facing size/color labels when Amazon also exposes the
+  // ASIN-keyed dimensionValuesDisplayData map in the same page payload.
+  const variationValuesByAsin = new Map<string, string[]>();
+  const displayPatterns = [
+    new RegExp(`(?:var|let|const)\\s+dimensionValuesDisplayData\\s*=`, "gi"),
+    new RegExp(`dimensionValuesDisplayData["']?\\s*:`, "gi"),
+  ];
+  for (const displayPattern of displayPatterns) {
+    let displayMatch: RegExpExecArray | null;
+    while ((displayMatch = displayPattern.exec(html))) {
+      let start = displayPattern.lastIndex;
+      while (start < html.length && /\\s/.test(html[start])) start += 1;
+      const extracted = extractBalancedJsonObject(html, start);
+      if (!extracted) continue;
+      displayPattern.lastIndex = extracted.end;
+      let decodedValue: unknown = extracted.value;
+      for (let decodeAttempt = 0; decodeAttempt < 2 && typeof decodedValue === "string"; decodeAttempt += 1) {
+        try { decodedValue = JSON.parse(decodedValue) as unknown; } catch { break; }
+      }
+      const displayRecord = asRecord(decodedValue);
+      if (!displayRecord) continue;
+      for (const [rawKey, rawValues] of Object.entries(displayRecord)) {
+        const asin = normalizeIdentifier("asin", rawKey);
+        if (!asin || asin === parentAsin) continue;
+        const values = collectDimensionStrings(rawValues)
+          .filter((value) => !normalizeIdentifier("asin", value));
+        if (values.length) variationValuesByAsin.set(asin, values);
+      }
+    }
+  }
+
   for (const { name, pattern } of patterns) {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(html))) {
@@ -448,10 +480,13 @@ export function parseAmazonVariationAsinMap(
           for (const mappedValue of mappedValues) {
             const asin = normalizeIdentifier("asin", mappedValue);
             if (!asin || asin === parentAsin || seen.has(asin)) continue;
-            const variationValues = [
-              rawKey,
-              ...mappedValues.filter((value) => !normalizeIdentifier("asin", value)),
-            ].filter(Boolean);
+            const displayValues = variationValuesByAsin.get(asin) ?? [];
+            const variationValues = displayValues.length
+              ? displayValues
+              : [
+                  rawKey,
+                  ...mappedValues.filter((value) => !normalizeIdentifier("asin", value)),
+                ].filter(Boolean);
             seen.add(asin);
             output.push({ asin, variationValues });
           }
