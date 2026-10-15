@@ -34,10 +34,23 @@ assert.match(env, /return isCJAutoOrderingEnabled\(\)/);
 assert.match(client, /features: "enable_inventory"/);
 assert.match(client, /Number\(inventoryRow\.verifiedWarehouse\) !== 1/);
 assert.match(client, /Number\(inventoryRow\.cjInventory\)/);
-assert.match(order, /body\.payType = input\.payType \?\? 2/);
+assert.match(order, /body\.payType = input\.payType \?\? \(input\.isSandbox \? 3 : 2\)/);
+assert.match(order, /if \(input\.isSandbox\) body\.isSandbox = 1/);
 assert.match(order, /required CJ createOrderV2 field is missing/);
 assert.doesNotMatch(inventoryRefresh, /getAutoProcurementEligibility/,
   "missing auto-order/payment capability must not automatically unpublish products");
 assert.match(inventoryRefresh, /supplier_inventory_capability_missing/);
 
 console.log("CJ procurement adapter contract checks passed (live ordering remains fail-closed until payment proof and explicit flags).");
+
+assert.match(order, /isSandbox\?: boolean/);
+assert.match(order, /postCJSandboxAction\("simulatePay"/);
+assert.match(order, /postCJSandboxAction\("updateStatus"/);
+assert.match(order, /postCJSandboxAction\("updateTrackNumber"/);
+assert.match(adapter, /runCJSandboxOrderLifecycle/);
+assert.match(adapter, /charged: false/);
+assert.match(adapter, /realFulfillment: false/);
+const sandboxRoute = read("app/api/cron/cj-sandbox-order-test/route.ts");
+assert.match(sandboxRoute, /CJ_SANDBOX_ORDER_TEST_ENABLED/);
+assert.match(sandboxRoute, /requireAutomationAuth/);
+assert.match(sandboxRoute, /SUPPLIER_LISTING_NOT_FRESH_VERIFIED_FOR_SANDBOX/);
