@@ -1,7 +1,7 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { persistCjSupplyIntelligence, resolveMarketplaceIdentity } from "@/lib/intelligence/persist-cj-supply-intelligence";
-import { calculateCJFreight, fetchCJProductVariants, fetchCJVariantByVid, fetchCJVariantStock, getCJProductDetail } from "@/lib/sources/cj";
+import { persistCjSupplyIntelligence, resolveMarketplaceIdentityWithFreshBarcode } from "@/lib/intelligence/persist-cj-supply-intelligence";
+import { calculateCJFreight, fetchCJVariantByVid, fetchCJVariantStock, getCJProductDetail } from "@/lib/sources/cj";
 import { isCJQuotaCircuitBlockingError, isCJQuotaExhaustedError } from "@/lib/sources/cj/client";
 import { getCJQuotaCooldownUntil } from "@/lib/sources/cj/rate-limit-policy";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
@@ -63,12 +63,7 @@ async function readCjIdentityProgressCounts(db: ReturnType<typeof createSupabase
 function num(value: unknown): number | null { const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN; return Number.isFinite(parsed) ? parsed : null; }
 function isHttpUrl(value: unknown): value is string { return typeof value === "string" && (value.trim().startsWith("https://") || value.trim().startsWith("http://")); }
 function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
-async function readPersistableBarcode(supplierProductId: string, supplierVariantId: string, persistedBarcode: string | null): Promise<string | null> {
-  const supplied = typeof persistedBarcode === "string" ? persistedBarcode.trim() : "";
-  if (supplied) return supplied;
-  try { const variants = await fetchCJProductVariants(supplierProductId, { countryCode: "JP" }); const found = variants.find((item) => item.vid === supplierVariantId); const barcode = typeof found?.barcode === "string" ? found.barcode.trim() : ""; if (barcode) return barcode; } catch (error) { if (isCJQuotaCircuitBlockingError(error)) throw error; console.warn("[cj-identity-reverify] variant barcode lookup failed", { supplierProductId, supplierVariantId, error: error instanceof Error ? error.message : String(error) }); }
-  try { const variant = await fetchCJVariantByVid(supplierVariantId); const barcode = typeof variant?.barcode === "string" ? variant.barcode.trim() : ""; return barcode || null; } catch (error) { if (isCJQuotaCircuitBlockingError(error)) throw error; console.warn("[cj-identity-reverify] queryByVid barcode lookup failed", { supplierProductId, supplierVariantId, error: error instanceof Error ? error.message : String(error) }); return null; }
-}
+
 export async function reverifyCjSupplyIdentities(options: { limit?: number; deadlineAt?: number; force?: boolean } = {}): Promise<CjIdentityReverifyResult> {
   const db = createSupabaseAdminClient();
   const { data: quotaRuns, error: quotaReadError } = await db
@@ -209,9 +204,13 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
     const supplierListingId = String(row.id);
     try {
       const listingMetadata = record(row.metadata);
-      const persistedBarcode = typeof listingMetadata.variant_barcode === "string" ? listingMetadata.variant_barcode.trim() : null;
-      const variantBarcode = await readPersistableBarcode(String(row.supplier_product_id), String(row.supplier_variant_id), persistedBarcode);
-      const identity = await resolveMarketplaceIdentity({ db, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } });
+      const { identity, variantBarcode } = await resolveMarketplaceIdentityWithFreshBarcode({
+        db,
+        supplierProductId: String(row.supplier_product_id),
+        supplierVariantId: String(row.supplier_variant_id),
+        variantBarcode: typeof listingMetadata.variant_barcode === "string" ? listingMetadata.variant_barcode.trim() : null,
+        supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn },
+      });
       const canonicalProductId = identity?.productId ?? String(row.product_id);
       if (!canonicalProductId) { await db.from("supplier_listings").update({ metadata: { ...listingMetadata, ...(variantBarcode ? { variant_barcode: variantBarcode } : {}), last_identity_reverify_at: new Date().toISOString() } }).eq("id", supplierListingId); return { kind: "no_match" as const, supplierListingId }; }
       const { data: intelligence } = await db.from("product_intelligence").select("image_url,metadata").eq("product_id", canonicalProductId).maybeSingle();

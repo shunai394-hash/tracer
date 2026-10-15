@@ -6,6 +6,8 @@ const source = await readFile(new URL("../lib/suppliers/reverify-cj-identity.ts"
 const identitySource = await readFile(new URL("../lib/intelligence/persist-cj-supply-intelligence.ts", import.meta.url), "utf8");
 const checks = [
   ["exact shop-listing supplier tuples are queried before supplier-only rows", /select\("product_id,supplier_name,supplier_product_id,supplier_variant_id"\)[\s\S]{0,1200}partitionByExactShopListing/],
+  ["reverification reuses the fresh barcode returned by the identity lookup", /const \{ identity, variantBarcode \} = await resolveMarketplaceIdentityWithFreshBarcode/],
+  ["reverification does not perform a duplicate CJ product-variant barcode lookup", /resolveMarketplaceIdentityWithFreshBarcode/],
   ["matched shop-listing suppliers are selected before supplier-only candidates", /const prioritizedRegularRows = \[\.\.\.matchedWomens, \.\.\.matchedOther, \.\.\.unmatchedWomens, \.\.\.unmatchedOther\]/],
   ["reverification telemetry records exact shop-listing coverage", /exactShopListingCandidates: partition\.matched\.length[\s\S]{0,120}supplierOnlyCandidates: partition\.unmatched\.length/],
   ["exact CJ variant price is refreshed by variant ID", /fetchCJVariantByVid\(String\(row\.supplier_variant_id\)\)/],
@@ -31,6 +33,9 @@ const checks = [
 ];
 for (const [name, pattern] of checks) assert.match(source, pattern, name);
 assert.match(identitySource, /const freshVariantBarcode = args\.variantBarcode\?\.trim\(\) \|\| null/, "CJ persistence must reuse the exact variant barcode supplied by live discovery, without an extra provider call");
+assert.match(identitySource, /export async function resolveMarketplaceIdentityWithFreshBarcode/);
+assert.match(identitySource, /const freshBarcode = await readSupplierBarcode\(args\)[\s\S]{0,180}resolveMarketplaceIdentityFromBarcode\(args, freshBarcode\)/);
+assert.doesNotMatch(source, /readPersistableBarcode|fetchCJProductVariants/, "one exact-variant lookup per row avoids duplicate CJ API quota consumption");
 assert.match(identitySource, /variant_barcode: freshVariantBarcode/, "persisted metadata must retain the supplier-native variant barcode");
 const persistBody = identitySource.slice(identitySource.indexOf("export async function persistCjSupplyIntelligence"));
 assert.equal((persistBody.match(/resolveMarketplaceIdentityFromBarcode\(/g) ?? []).length, 0, "CJ supply persistence must not query marketplace identity tables");
