@@ -29,3 +29,4 @@ jobs:
           curl -sSf --max-time 300 -H "Authorization: Bearer $TOKEN" "$BASE/api/cron/sales-test-publication" | tee sales-test-now.json
 
 # Retrigger the guarded Sales Test Gate after the verified Japanese-copy additions.
+# [run-sales-test-now] Run the real publication gate instead of reporting a skipped workflow.
