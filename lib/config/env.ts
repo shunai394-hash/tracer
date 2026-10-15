@@ -102,7 +102,7 @@ export function getFoundationStatus(): FoundationStatus {
     })(),
     stripe: present(readEnv("STRIPE_SECRET_KEY")),
     stripeWebhook: present(readEnv("STRIPE_WEBHOOK_SECRET")),
-    orosy: present(getOrosyConfig().apiKey),
+    orosy: false,
     faire: present(readEnv("FAIRE_ACCESS_TOKEN")),
     dsersMcp: present(readEnv("DSERS_MCP_URL")) && present(readEnv("DSERS_MCP_ACCESS_TOKEN")),
     printful: present(readEnv("PRINTFUL_ACCESS_TOKEN")),
@@ -207,7 +207,7 @@ export function getDropshipSupplierConfig() {
 export function isSupplierConfigured(supplierName: string): boolean {
   const name = supplierName.trim().toLowerCase();
   if (name === "cj" || name === "cjdropshipping") return present(getCJConfig().apiKey);
-  if (name === "orosy") return present(getOrosyConfig().apiKey);
+  if (name === "orosy") return false;
   if (name === "faire") return present(readEnv("FAIRE_ACCESS_TOKEN"));
   if (name === "dsers") return present(readEnv("DSERS_MCP_ACCESS_TOKEN"));
   if (name === "printful") return present(readEnv("PRINTFUL_ACCESS_TOKEN"));
