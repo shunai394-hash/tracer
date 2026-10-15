@@ -11,6 +11,9 @@ assert.match(route, /BASE_SNAPSHOT_INPUT_INCOMPLETE_OR_INVALID/);
 assert.match(route, /BASE_SNAPSHOT_INPUT_ID_MISSING_OR_DUPLICATE/);
 assert.match(route, /shop_listings/);
 assert.match(route, /exactBaseIdMappedCount/);
+assert.match(route, /TRACER_IDENTIFIER/);
+assert.match(route, /exactIdentifierMatchCount/);
+assert.match(route, /baseItemsWithRepairableIdentifierMatchCount/);
 assert.match(route, /baseItemsWithoutExactMappingCount/);
 assert.match(route, /exactTitleCandidateCount/);
 assert.match(route, /never auto-mapped/);
@@ -21,7 +24,7 @@ assert.match(workflow, /body: JSON\.stringify\(\{ snapshot \}\)/);
 assert.match(workflow, /tracer-base-reconciliation-/);
 assert.doesNotMatch(workflow, /actions\/upload-artifact@/);
 assert.match(workflow, /BASE_RECONCILIATION_INCOMPLETE_OR_COUNT_MISMATCH/);
-console.log("BASE/TRACER reconciliation report contract: 17 assertions passed");
+console.log("BASE/TRACER reconciliation report contract: 20 assertions passed");
 
 assert.match(workflow, /summarize-base-reconciliation\.mjs/);
 assert.match(workflow, /Publish sanitized BASE reconciliation summary/);
