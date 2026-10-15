@@ -116,8 +116,8 @@ export async function selectAndPublishSalesTests(
     const bestseller = row as Record<string, unknown>;
     const reasons: string[] = [];
     const sourceTitle = String(bestseller.title ?? '').normalize('NFKC').trim();
-    // Women's relevance is used for ranking, not eligibility; profitable,
-    // correctly identified products from every category remain eligible.
+    // Women's relevance is used for ranking, not eligibility; correctly identified
+    // products from every category remain eligible regardless of target margin.
     if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
     if (reasons.length > 0) {
       await markPipeline(String(bestseller.id), 'SALES_TEST', 'blocked', reasons.join(','));
@@ -258,9 +258,9 @@ export async function selectAndPublishSalesTests(
           : null,
     });
 
-    if (!profit.calculable) reasons.push(profit.incalculableReason ?? "profit_unknown");
+    // Profit is reported and used for ranking, not as a listing veto. Keep
+    // shipping certainty as a separate fulfillment requirement.
     if (profit.shippingUnknown) reasons.push("shipping_unknown");
-    if (profit.contributionProfit !== null && profit.contributionProfit <= 0) reasons.push("profit_not_positive");
 
     if (reasons.length > 0) {
       await markPipeline(String(bestseller.id), "SALES_TEST", "blocked", reasons.join(","));
@@ -286,7 +286,8 @@ export async function selectAndPublishSalesTests(
       const sellabilityState = String(intelligence.sellability_state ?? "");
       if (sellabilityState !== "TEST_READY") reasons.push("sellability_not_ready");
       if (String(intelligence.filter_state ?? "") !== "PASS") reasons.push("intelligence_filter_not_pass");
-      if (String(intelligence.profit_state ?? "") !== "PROFIT_OK") reasons.push("intelligence_profit_not_ok");
+      // AI profit-state is advisory. The merchant controls the sale price;
+      // the actual contribution estimate is stored for pricing decisions.
       if (asNumber(intelligence.demand_score) === null) reasons.push("demand_evidence_missing");
       if (asNumber(intelligence.search_fit_score) === null) reasons.push("search_fit_evidence_missing");
       if (asNumber(intelligence.market_gap_score) === null) reasons.push("market_gap_evidence_missing");
