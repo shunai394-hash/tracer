@@ -159,8 +159,8 @@ export async function createDropshipPurchaseOrdersForShopOrder(
         supplier_product_id: internalProductId,
         supplier_variant_id: internalVariantId,
         cost: internalVariant.cost ?? (internalVariant.internal_supply_products as Record<string, unknown> | null)?.cost ?? null,
-        shipping_cost: internalVariant.shipping_cost ?? (internalVariant.internal_supply_products as Record<string, unknown> | null)?.shipping_cost ?? 0,
-        currency: internalVariant.currency ?? (internalVariant.internal_supply_products as Record<string, unknown> | null)?.currency ?? "JPY",
+        shipping_cost: internalVariant.shipping_cost ?? (internalVariant.internal_supply_products as Record<string, unknown> | null)?.shipping_cost ?? null,
+        currency: internalVariant.currency ?? (internalVariant.internal_supply_products as Record<string, unknown> | null)?.currency ?? null,
         inventory: internalVariant.inventory,
         inventory_confirmed: true,
         tracking_available: internalVariant.tracking_available === true || (internalVariant.internal_supply_products as Record<string, unknown> | null)?.tracking_available === true,
@@ -277,7 +277,7 @@ export async function createDropshipPurchaseOrdersForShopOrder(
             asNumber(listingRow.cost) !== null && asNumber(listingRow.shipping_cost) !== null
               ? (asNumber(listingRow.cost)! + asNumber(listingRow.shipping_cost)!) * (asNumber(row.qty) ?? 0)
               : null,
-          currency: typeof listingRow.currency === "string" ? listingRow.currency : row.currency,
+          currency: typeof listingRow.currency === "string" ? listingRow.currency : null,
           forecast_units: null,
           forecast_profit: gate.estimatedProfit,
           forecast_confidence: null,
