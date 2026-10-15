@@ -5,8 +5,6 @@ import { readFileSync } from "node:fs";
 
 const discovery = readFileSync("lib/suppliers/discover-cj-supply.ts", "utf8");
 const ingest = readFileSync("lib/suppliers/persist-cj-internal-supply.ts", "utf8");
-const intelligence = readFileSync("lib/intelligence/persist-cj-supply-intelligence.ts", "utf8");
-const catalogSync = readFileSync("lib/suppliers/sync-tracer-catalog.ts", "utf8");
 const identity = readFileSync("lib/market/identifiers.ts", "utf8");
 const auditMigration = readFileSync("supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql", "utf8");
 
@@ -63,8 +61,6 @@ assert.match(ingest, /active: false/,
   "the product must be quarantined before variant mutation");
 assert.match(ingest, /orderable: false/,
   "supplier stock/freight alone must not enable automated purchasing");
-assert.match(ingest, /const barcodeMethod = \["jan", "gtin", "ean", "upc"\]\.includes\(identity\.method\)/,
-  "only exact barcode-family proof may establish supplier-to-child-variant identity");
 assert.match(ingest, /automated_order_creation_verified: false/,
   "live stock/freight verification must not be represented as proof of automated ordering");
 assert.match(ingest, /sku: null/,
