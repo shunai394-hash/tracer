@@ -49,7 +49,7 @@ try {
   const invalid = spawnSync(process.execPath, ["scripts/summarize-base-reconciliation.mjs", input], { encoding: "utf8" });
   assert.notEqual(invalid.status, 0);
   assert.match(invalid.stderr, /RECONCILIATION_REPORT_INCOMPLETE/);
-  await writeFile(input, JSON.stringify({ ...report, baseItemCount: 1, baseVisibleCount: 1, baseHiddenCount: 0, exactBaseIdMappedCount: 1, baseItemsWithoutExactMappingCount: 0, baseItemsWithAmbiguousExactMappingCount: 0, items: [{ exactTitleCandidates: [] }] }));
+  await writeFile(input, JSON.stringify({ ...report, baseItemCount: 1, baseVisibleCount: 1, baseHiddenCount: 0, exactBaseIdMappedCount: 1, baseItemsWithoutExactMappingCount: 0, baseItemsWithAmbiguousExactMappingCount: 0, baseItemsWithExactIdentifierMatchCount: 0, baseItemsWithAmbiguousIdentifierMatchCount: 0, baseItemsWithRepairableIdentifierMatchCount: 0, items: [{ exactTitleCandidates: [] }] }));
   const malformed = spawnSync(process.execPath, ["scripts/summarize-base-reconciliation.mjs", input], { encoding: "utf8" });
   assert.notEqual(malformed.status, 0);
   assert.match(malformed.stderr, /RECONCILIATION_CANDIDATE_COUNTS_INVALID/);
