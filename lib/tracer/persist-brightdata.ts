@@ -254,7 +254,14 @@ export async function persistBrightDataProducts(
 
     const sourceUrl = validHttpUrl(candidate.productUrl);
     const imageUrl = validHttpUrl(candidate.imageUrl);
-    const amount = parsePrice(candidate.price);
+    const currency = typeof candidate.currency === "string" && /^[A-Z]{3}$/.test(candidate.currency)
+      ? candidate.currency
+      : null;
+    const parsedAmount = parsePrice(candidate.price);
+    // An amount without a known currency is raw demand evidence only. Never
+    // invent USD for Japanese Google Shopping prices or feed unknown-currency
+    // amounts into downstream price/profit calculations.
+    const amount = currency ? parsedAmount : null;
 
     const observationResult = await supabase
       .from("observations")
@@ -277,7 +284,7 @@ export async function persistBrightDataProducts(
           sourceUrl,
           imageUrl,
           price: amount,
-          currency: amount !== null ? "USD" : null,
+          currency,
         },
         confidence: 0.8,
       })
@@ -297,7 +304,7 @@ export async function persistBrightDataProducts(
         .from("price_observations")
         .insert({
           id: observationResult.data.id,
-          currency: "USD",
+          currency,
           amount,
         });
 
@@ -310,7 +317,6 @@ export async function persistBrightDataProducts(
       pricesCreated += 1;
     }
 
-    const currency = amount !== null ? "USD" : null;
     const currencyAssessment = assessCurrencyConfidence({
       currency,
       price: amount,
