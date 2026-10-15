@@ -12,7 +12,7 @@ const supplierExecution = await readFile(new URL("../lib/ordering/supplier-execu
 const executionRoute = await readFile(new URL("../app/api/cron/dropship-execution/route.ts", import.meta.url), "utf8");
 assert.match(orderControl, /\.in\("order_status", \["placed", "processing", "fulfillment_pending"\]\)/);
 assert.doesNotMatch(orderControl, /\.in\("order_status", \[[^\]]*fulfilled/);
-assert.match(dropship, /supplierIdentityStatus: typeof listingRow\.identity_status === "string" \? listingRow\.identity_status : null/, "PO intent must pass the actual supplier identity state into the gate");
+assert.match(dropship, /isNativeCjSupplierListing\(listingRow\) \? "native_cj_verified" : typeof listingRow\.identity_status === "string" \? listingRow\.identity_status : null/, "PO intent must translate verified exact CJ product+variant evidence into the gate's native identity state");
 assert.match(supplierExecution, /if \(isCjSupplierName\(supplierName\)\)/, "live CJ execution must re-check canonical identity");
 assert.match(supplierExecution, /const uniqueExactVariant = identityRows\?\.length === 1/, "live CJ execution must require one exact supplier product+variant");
 assert.match(supplierExecution, /identity_status === "supply_discovered"[\s\S]*?isNativeCjSupplierListing/, "standalone CJ execution must require fresh verified native-supply evidence");
