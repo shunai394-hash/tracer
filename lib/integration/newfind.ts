@@ -172,13 +172,22 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
   );
   const selected = eligible.slice(0, batch);
 
-  let processed = 0;
-  let failed = 0;
-  for (const listingId of selected) {
-    const result = await promoteShopListingToNewfind(listingId);
-    if (result.ackStatus === "processed" || result.ackStatus === "duplicate") processed += 1;
-    else if (!result.sent) failed += 1;
-  }
+  const results = await Promise.all(selected.map(async (listingId) => {
+    try {
+      return await promoteShopListingToNewfind(listingId);
+    } catch (error) {
+      return {
+        configured: true,
+        sent: false,
+        eventId: eventId(listingId),
+        status: null,
+        ackStatus: null,
+        detail: error instanceof Error ? error.message : String(error),
+      } satisfies NewfindPromotionResult;
+    }
+  }));
+  const processed = results.filter((result) => result.ackStatus === "processed" || result.ackStatus === "duplicate").length;
+  const failed = results.filter((result) => !result.sent).length;
 
   return { attempted: selected.length, processed, failed, windowSize: listingIds.length, schemaBlocked: schemaBlockedIds.size };
 }
