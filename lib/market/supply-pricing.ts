@@ -18,7 +18,7 @@ export type SupplyPriceInputs = {
  */
 export function calculateSupplySellingPriceJpy(inputs: SupplyPriceInputs): number | null {
   const existing = inputs.existingSellingPriceJpy;
-  if (existing !== null && Number.isFinite(existing) && existing > 0) return Math.ceil(existing);
+  if (existing !== null && Number.isFinite(existing) && existing > 0) return existing;
   return calculateRecommendedSupplySellingPriceJpy(inputs);
 }
 
