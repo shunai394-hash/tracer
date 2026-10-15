@@ -25,6 +25,9 @@ assert.match(collector, /function normalizeCurrency\(/, "Google Shopping currenc
 assert.match(collector, /productRecords = unwrapped\.filter/, "MCP product arrays must be parsed, not discarded as empty results");
 assert.match(collector, /replace\(\/\\s\+\/g, " "\)/, "product titles must collapse actual whitespace");
 assert.match(collector, /currency: string \| null/);
+assert.match(collector, /brand: string \| null/);
+assert.match(persistence, /candidate\.brand/, "only source-provided brand values may be used as brand evidence");
+assert.match(persistence, /\\p\{L\}/, "Japanese titles must remain distinct in identity keys");
 assert.match(collector, /candidate\.name === "scrape_as_html"/, "marketplace detail pages must use MCP raw HTML for child-variant parsing");
 assert.match(collector, /Bright Data MCP raw HTML tool is unavailable/, "do not silently claim collection succeeded when MCP HTML and API fallback are unavailable");
 assert.match(client, /mcp\.brightdata\.com\/mcp\?pro=1/, "default hosted endpoint must expose advanced scraping tools");
