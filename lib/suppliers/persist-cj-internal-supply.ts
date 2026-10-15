@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { identifiersFromRecord, matchProductIdentity, marketplaceBarcodeCandidates, normalizeIdentifier } from "@/lib/market/identifiers";
+import { normalizeIdentifier } from "@/lib/market/identifiers";
 
 type CandidateArgs = {
   supplierProductId: string;
