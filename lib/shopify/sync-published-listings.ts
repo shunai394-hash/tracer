@@ -6,6 +6,7 @@ import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapanes
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
+import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 
 type Listing = {
   id: string;
@@ -366,7 +367,11 @@ async function syncListingRows(
     shopify_product_id: toShopifyGid("Product", row.shopify_product_id),
     shopify_variant_id: toShopifyGid("ProductVariant", row.shopify_variant_id),
   }));
-  const candidates = rows.filter((row) => blockReasons(row).length === 0);
+  const supplierStatuses = await getPublishableSupplierListingStatuses(rows.map((row) => row.supplier_listing_id));
+  const candidates = rows.filter((row) =>
+    Boolean(row.supplier_listing_id && supplierStatuses.has(String(row.supplier_listing_id)))
+    && blockReasons(row).length === 0
+  );
   const blocked = rows.filter((row) => !candidates.includes(row));
   const results: ShopifySyncResult = {
     configured: true,
@@ -383,11 +388,11 @@ async function syncListingRows(
         published: false,
         pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
-        pipeline_reason: "sales_test_gate_not_passed",
+        pipeline_reason: "supplier_or_sales_gate_not_passed",
         pipeline_updated_at: new Date().toISOString(),
         published_at: null,
         shopify_sync_status: "blocked",
-        shopify_sync_error: "sales_test_or_supply_or_japanese_gate_not_passed",
+        shopify_sync_error: "supplier_verification_or_sales_gate_not_passed",
         shopify_synced_at: new Date().toISOString(),
       }).eq("id", row.id);
       continue;
@@ -416,7 +421,7 @@ async function syncListingRows(
         published: false,
         pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
-        pipeline_reason: "sales_test_gate_unpublish_failed",
+        pipeline_reason: "supplier_or_sales_gate_unpublish_failed",
         pipeline_updated_at: new Date().toISOString(),
         published_at: null,
         shopify_sync_status: "failed",
