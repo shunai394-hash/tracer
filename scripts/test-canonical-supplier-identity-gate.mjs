@@ -107,7 +107,9 @@ assert.match(unpublishWorkflow, /cron: "\*\/15 \* \* \* \*"/, "guarded unlinked 
 assert.match(unpublishWorkflow, /api\/cron\/unpublish-unlinked/);
 assert.match(unpublishWorkflow, /id-token: write/);
 assert.match(unpublishWorkflow, /timeout-minutes: 13/);
-assert.match(patrolWorkflow, /cron: "\*\/5 \* \* \* \*"/, "production patrol must run every five minutes");
+assert.doesNotMatch(patrolWorkflow, /^\s{2}schedule:/m, "production patrol must not have a duplicate GitHub Actions schedule");
+const vercelPatrolSchedules = JSON.parse(vercel).crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule);
+assert.deepEqual(vercelPatrolSchedules, ["*/5 * * * *"], "the existing Vercel production patrol must still run every five minutes");
 assert.match(patrolWorkflow, /push:/, "core patrol changes must trigger a guarded post-deploy run");
 assert.match(patrolWorkflow, /git merge-base --is-ancestor/);
 assert.match(patrolWorkflow, /pipelineComplete:/);
