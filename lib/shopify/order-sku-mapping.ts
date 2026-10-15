@@ -23,7 +23,9 @@ export function getOrderSkuLookup(skus: string[]): OrderSkuLookup {
   for (const raw of skus) {
     const sku = raw.trim();
     if (!sku) continue;
-    if (sku.startsWith("TRC-")) {
+    // TRC is the current canonical prefix; CJ is retained for listings
+    // created by older supplier-specific publication flows.
+    if (sku.startsWith("TRC-") || sku.startsWith("CJ-")) {
       const source = sku.slice(4);
       if (source) supplierSources.add(source);
       // The generated SKU falls back to the listing UUID only when no supplier
@@ -47,9 +49,13 @@ export function resolveShopifyOrderSkus<T extends OrderSkuListing>(
   listings: T[],
 ): { ok: true; bySku: Map<string, T> } | { ok: false; reason: "listing_mapping_missing" | "listing_mapping_ambiguous"; sku: string } {
   const bySku = new Map<string, T>();
-  for (const sku of skus) {
+  for (const rawSku of skus) {
+    const sku = rawSku.trim();
     const exact = listings.filter((listing) =>
-      tracerSkuForListing(listing) === sku || listing.id === sku,
+      tracerSkuForListing(listing) === sku ||
+      (sku.startsWith("CJ-") && Boolean(listing.supplier_variant_id) &&
+        `CJ-${listing.supplier_variant_id}` === sku) ||
+      listing.id === sku,
     );
     if (exact.length === 0) return { ok: false, reason: "listing_mapping_missing", sku };
     if (exact.length > 1) return { ok: false, reason: "listing_mapping_ambiguous", sku };
