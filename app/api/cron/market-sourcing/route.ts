@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers";
+import { MARKETPLACE_SOURCES } from "@/lib/market/collect-bestsellers";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -67,7 +68,7 @@ export async function GET(request: Request) {
       startIndex,
       batchSize: MARKET_SOURCING_BATCH_SIZE,
     });
-    const nextSourceIndex = observation.hasMore ? observation.sourceIndex : (observation.sourceIndex + 1) % 8;
+    const nextSourceIndex = observation.hasMore ? observation.sourceIndex : (observation.sourceIndex + 1) % MARKETPLACE_SOURCES.length;
     const nextStartIndex = observation.hasMore ? observation.nextIndex : 0;
     const canonicalVariantEvidenceStatus = observation.canonicalVariantEvidenceWriteFailures > 0
       ? "write_failed"
