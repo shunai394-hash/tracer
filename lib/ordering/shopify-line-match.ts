@@ -49,11 +49,12 @@ export function resolveShopifyOrderLines<T extends ShopifyListingIdentity>(
   const resolved: T[] = [];
   for (const [lineIndex, line] of lines.entries()) {
     const variantIds = new Set(line.shopifyVariantIds);
+    const hasSku = line.sku.length > 0;
     const hits = listings.filter((listing) =>
-      (line.sku !== "" && (
+      (hasSku && (
         tracerSkuForListing(listing) === line.sku
-        || legacyTracerSkusForListing(listing).includes(line.sku)
         || listing.id === line.sku
+        || legacyTracerSkusForListing(listing).includes(line.sku)
         || (line.sku.startsWith("CJ-") && (
           line.sku === `CJ-${listing.supplier_variant_id || ""}`
           || (!listing.supplier_variant_id && line.sku === `CJ-${listing.supplier_product_id || ""}`)

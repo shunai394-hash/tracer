@@ -17,7 +17,9 @@ export class BrightDataRequestError extends Error {
 
 export type BrightDataProductCandidate = {
   title: string;
+  brand: string | null;
   price: string | null;
+  currency: string | null;
   seller: string | null;
   productUrl: string | null;
   imageUrl: string | null;
@@ -63,8 +65,36 @@ function normalizeUrl(value: unknown): string | null {
 
 function normalizePrice(value: unknown): string | null {
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    return normalizePrice(record.amount ?? record.value ?? record.price ?? record.text ?? record.formatted);
+  }
   if (typeof value !== "string" || !value.trim()) return null;
   return value.trim();
+}
+
+const SUPPORTED_CURRENCIES = new Set(["JPY", "USD", "EUR", "GBP", "CNY", "CAD", "AUD", "KRW", "TWD", "HKD", "SGD", "INR"]);
+
+function normalizeCurrency(explicitValue: unknown, rawPrice: unknown): string | null {
+  const explicit = normalizeText(
+    typeof explicitValue === "string" ? explicitValue :
+    explicitValue && typeof explicitValue === "object" && !Array.isArray(explicitValue)
+      ? String((explicitValue as Record<string, unknown>).code ?? (explicitValue as Record<string, unknown>).currency ?? "")
+      : "",
+  ).toUpperCase();
+  if (/^[A-Z]{3}$/.test(explicit) && SUPPORTED_CURRENCIES.has(explicit)) return explicit;
+  const priceText = typeof rawPrice === "string"
+    ? rawPrice
+    : rawPrice && typeof rawPrice === "object" && !Array.isArray(rawPrice)
+      ? String((rawPrice as Record<string, unknown>).text ?? (rawPrice as Record<string, unknown>).formatted ?? "")
+      : "";
+  const codeMatch = priceText.match(/\\b(JPY|USD|EUR|GBP|CNY|CAD|AUD|KRW|TWD|HKD|SGD|INR)\\b/i);
+  if (codeMatch && SUPPORTED_CURRENCIES.has(codeMatch[1].toUpperCase())) return codeMatch[1].toUpperCase();
+  if (/[¥￥]/.test(priceText)) return "JPY";
+  if (/€/.test(priceText)) return "EUR";
+  if (/£/.test(priceText)) return "GBP";
+  // "$" is ambiguous across USD/CAD/AUD and is never enough to claim USD.
+  return null;
 }
 
 function findFirstString(record: Record<string, unknown>, keys: string[]): string | null {
@@ -94,6 +124,14 @@ function unwrapMcpContent(value: unknown): unknown {
 function extractShoppingProducts(payload: unknown): BrightDataProductCandidate[] {
   const unwrapped = unwrapMcpContent(payload);
   if (Array.isArray(unwrapped)) {
+    const productRecords = unwrapped.filter((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+      const record = item as Record<string, unknown>;
+      const hasTitle = Boolean(findFirstString(record, ["title", "name", "product_name", "productName"]));
+      const hasUrl = Boolean(findFirstString(record, ["link", "url", "product_url", "productUrl", "href"]));
+      return hasTitle && hasUrl;
+    });
+    if (productRecords.length) return extractShoppingProducts({ products: productRecords });
     for (const item of unwrapped) {
       const nested = extractShoppingProducts(item);
       if (nested.length) return nested;
@@ -115,9 +153,12 @@ function extractShoppingProducts(payload: unknown): BrightDataProductCandidate[]
       if (!priceMatch) continue;
       const sellerMatch = context.match(/(?:from|by|販売元|ショップ)\s+([^|•]{2,80})/i);
       seen.add(title);
+      const price = priceMatch?.[0]?.replace(/\s+/g, " ").trim() ?? null;
       products.push({
         title,
-        price: priceMatch?.[0]?.replace(/\s+/g, " ").trim() ?? null,
+        brand: null,
+        price,
+        currency: normalizeCurrency(null, price),
         seller: sellerMatch ? normalizeText(sellerMatch[1]) : null,
         productUrl,
         imageUrl: null,
@@ -144,12 +185,21 @@ function extractShoppingProducts(payload: unknown): BrightDataProductCandidate[]
     const record = item as Record<string, unknown>;
     const title = normalizeText(findFirstString(record, ["title", "name", "product_name", "productName"]));
     if (!title || seen.has(title)) continue;
-    const price = normalizePrice(record.price ?? record.current_price ?? record.currentPrice ?? record.price_text ?? record.priceText);
+    const rawPrice = record.price ?? record.current_price ?? record.currentPrice ?? record.price_text ?? record.priceText;
+    const price = normalizePrice(rawPrice);
+    const currency = normalizeCurrency(
+      record.currency ?? record.currency_code ?? record.currencyCode ?? record.price_currency ?? record.priceCurrency ??
+        (rawPrice && typeof rawPrice === "object" && !Array.isArray(rawPrice)
+          ? (rawPrice as Record<string, unknown>).currency ?? (rawPrice as Record<string, unknown>).currency_code
+          : null),
+      rawPrice,
+    );
+    const brand = normalizeText(findFirstString(record, ["brand", "brand_name", "brandName", "manufacturer"]));
     const seller = normalizeText(findFirstString(record, ["seller", "merchant", "source", "store", "retailer"]));
     const productUrl = normalizeUrl(record.link ?? record.url ?? record.product_url ?? record.productUrl ?? record.href);
     const imageUrl = normalizeUrl(record.image ?? record.image_url ?? record.imageUrl ?? record.thumbnail ?? record.thumbnail_url ?? record.thumbnailUrl);
     seen.add(title);
-    products.push({ title, price, seller: seller || null, productUrl, imageUrl });
+    products.push({ title, brand: brand || null, price, currency, seller: seller || null, productUrl, imageUrl });
     if (products.length >= 100) break;
   }
   return products;
