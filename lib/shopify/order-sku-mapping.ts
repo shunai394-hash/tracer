@@ -11,10 +11,16 @@ export type OrderSkuLookup = {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-/** Keep in lockstep with lib/shopify/sync-published-listings.ts. */
+/** Stable channel-neutral identity shared with BASE; supplier IDs are provenance, not listing identity. */
 export function tracerSkuForListing(listing: OrderSkuListing): string {
-  const source = listing.supplier_variant_id || listing.supplier_product_id || listing.id;
-  return `TRC-${source}`.slice(0, 100);
+  return `TRC-${listing.id}`.slice(0, 100);
+}
+
+/** Accept existing Shopify SKUs during migration while new syncs use the shared listing ID. */
+function legacyTracerSkusForListing(listing: OrderSkuListing): string[] {
+  return [...new Set([listing.supplier_variant_id, listing.supplier_product_id]
+    .filter((source): source is string => Boolean(source && source.trim()))
+    .map((source) => `TRC-${source}`.slice(0, 100))];
 }
 
 export function getOrderSkuLookup(skus: string[]): OrderSkuLookup {
@@ -50,7 +56,7 @@ export function resolveShopifyOrderSkus<T extends OrderSkuListing>(
   const bySku = new Map<string, T>();
   for (const sku of skus) {
     const exact = listings.filter((listing) =>
-      tracerSkuForListing(listing) === sku || listing.id === sku,
+      tracerSkuForListing(listing) === sku || listing.id === sku || legacyTracerSkusForListing(listing).includes(sku),
     );
     if (exact.length === 0) return { ok: false, reason: "listing_mapping_missing", sku };
     if (exact.length > 1) return { ok: false, reason: "listing_mapping_ambiguous", sku };
