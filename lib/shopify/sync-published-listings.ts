@@ -292,12 +292,9 @@ function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
   if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
   if (!isPublishableCatalogDescription(row.description)) reasons.push("catalog_description_not_publishable");
-  if (!hasPublishableSupplierIdentity(row.identity_status)) reasons.push("supplier_identity_unlinked");
-  if (row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") reasons.push("pipeline_blocked");
-  if (!hasGateProvenance(row)) reasons.push("sales_test_gate_not_passed");
-  if (row.orderable !== true) reasons.push("not_orderable");
-  if (row.tracking_available !== true) reasons.push("tracking_unavailable");
-  if (!(Number(row.inventory) > 0)) reasons.push("inventory_zero_or_unknown");
+  // Publication is a catalog operation. Do not hide a profitable, precisely
+  // linked product merely because live procurement verification is pending.
+  // Order-time fulfillment remains responsible for current stock and API checks.
   if (String(row.currency ?? "").trim().toUpperCase() !== "JPY") reasons.push("currency_not_jpy");
   if (!/^CJ/i.test(String(row.supplier_name ?? ""))) reasons.push("supplier_not_cj");
   if (asNumber(row.shipping_cost) === null) reasons.push("shipping_cost_unknown");
