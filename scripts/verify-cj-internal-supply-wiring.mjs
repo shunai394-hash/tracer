@@ -73,9 +73,9 @@ assert.match(ingest, /from\("marketplace_bestseller_variants"\)/,
   "supplier identity must be compared against independently stored marketplace child variants");
 assert.match(ingest, /marketplace_variant_evidence_id: String\(row\.id\)/,
   "verified links must persist the exact canonical child-variant evidence ID");
-assert.match(ingest, /\["schema_org_product_group_has_variant", "amazon_variation_asin_map"\]\.includes\(String\(item\.row\.evidence_source\)\)/,
+assert.match(ingest, /\["schema_org_product_group_has_variant", "schema_org_product_is_variant_of", "amazon_variation_asin_map"\]\.includes\(String\(item\.row\.evidence_source\)\)/,
   "Schema.org child variants and explicit Amazon child-ASIN-map variants are eligible only after child barcode proof");
-assert.match(catalogSync, /\["schema_org_product_group_has_variant", "amazon_variation_asin_map"\]\.includes\(String\(candidate\.canonical\.evidence_source\)\)/,
+assert.match(catalogSync, /\["schema_org_product_group_has_variant", "schema_org_product_is_variant_of", "amazon_variation_asin_map"\]\.includes\(String\(candidate\.canonical\.evidence_source\)\)/,
   "catalog sync must accept both supported canonical child-evidence sources after exact barcode matching");
 assert.match(ingest, /const barcodeMethod = \["jan", "gtin", "ean", "upc"\]\.includes\(identity\.method\)/,
   "only exact barcode-family proof may establish supplier-to-child-variant identity");
