@@ -5,7 +5,6 @@ import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigure
 import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
-import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 
 type Listing = {
@@ -23,7 +22,6 @@ type Listing = {
   pipeline_reason: string | null;
   selection_reasons: unknown;
   supplier_listing_id: string | null;
-  identity_status?: string | null;
   supplier_product_id: string | null;
   supplier_variant_id: string | null;
   inventory: number | null;
@@ -51,16 +49,8 @@ type ShopifyProductNode = {
   media?: { nodes: Array<{ mediaContentType: string; preview?: { image?: { url: string } | null } | null }> };
 };
 
-function hasGateProvenance(row: Listing): boolean {
-  return Array.isArray(row.selection_reasons)
-    && row.selection_reasons.some((reason) => String(reason) === "sales_test_gate_passed");
-}
-
-function hasPublishableSupplierIdentity(status: string | null | undefined): boolean {
-  return status === "linked" || status === "native_cj_verified";
-}
-
 function asNumber(value: unknown): number | null {
+  if (value === null || value === undefined || (typeof value === "string" && value.trim() === "")) return null;
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -213,7 +203,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
   let query = supabase
     .from("shop_listings")
     .select(baseSelect)
-    .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.true,pipeline_stage.eq.BASE_PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
+    .or("published.eq.true,and(published.eq.false,supplier_product_id.not.is.null,supplier_variant_id.not.is.null)")
     .order("pipeline_updated_at", { ascending: true });
 
   if (listingIds?.length) {
@@ -227,11 +217,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  const supplierStatuses = await getPublishableSupplierListingStatuses((data ?? []).map((row) => row.supplier_listing_id));
-  const rows = ((data ?? []) as Listing[]).map((row) => ({
-    ...row,
-    identity_status: row.supplier_listing_id ? supplierStatuses.get(row.supplier_listing_id) ?? null : null,
-  }));
+  const rows = (data ?? []) as Listing[];
   const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 15);
   let liveStockByVariantId = new Map<string, number>();
   let liveStockReconciliationError: string | null = null;
@@ -254,8 +240,8 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
     : rows.filter((row) => {
         const status = String(row.shopify_sync_status ?? "");
         if (status === "syncing") return false;
-        if (!hasPublishableSupplierIdentity(row.identity_status)) return Boolean(row.shopify_product_id) && status !== "blocked";
-        if (row.published === true && (row.pipeline_stage === "PUBLISHED" || row.pipeline_stage === "BASE_PUBLISHED") && row.pipeline_status === "published") {
+        // Supplier verification/orderability must not suppress catalog publication; exact IDs are checked by blockReasons and order-time fulfillment revalidates availability.
+        if (row.published === true) {
           if (status !== "synced") return true;
           if (liveStockReconciliationError) return false;
           const variantId = toShopifyGid("ProductVariant", row.shopify_variant_id);
@@ -263,12 +249,9 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
           if (liveQuantity === undefined) return !variantId;
           return liveQuantity !== toStorefrontStockQuantity(row.inventory, process.env.SHOPIFY_STOREFRONT_STOCK_CAP);
         }
-        if (row.published === false && row.pipeline_stage === "SELECTED" && row.pipeline_status === "selected") {
-          return status !== "synced";
-        }
-        if (row.published === false && row.pipeline_stage === "BLOCKED" && row.shopify_product_id) {
-          // A DB status of "blocked" is not proof that the product is no longer published on Shopify.
-          return row.shopify_sync_error !== "shopify_unpublished_verified";
+        if (row.published === false) {
+          // Retry any catalog-eligible row, including products hidden by an obsolete workflow gate.
+          return blockReasons(row).length === 0;
         }
         return false;
       }).slice(0, safeLimit);
@@ -290,21 +273,26 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
  */
 function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
+  if (!row.supplier_product_id || !row.supplier_variant_id) reasons.push("supplier_variant_missing");
   if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
   if (!isPublishableCatalogDescription(row.description)) reasons.push("catalog_description_not_publishable");
-  if (!hasPublishableSupplierIdentity(row.identity_status)) reasons.push("supplier_identity_unlinked");
-  if (row.pipeline_stage === "BLOCKED" || row.pipeline_status === "blocked") reasons.push("pipeline_blocked");
-  if (!hasGateProvenance(row)) reasons.push("sales_test_gate_not_passed");
-  if (row.orderable !== true) reasons.push("not_orderable");
-  if (row.tracking_available !== true) reasons.push("tracking_unavailable");
-  if (!(Number(row.inventory) > 0)) reasons.push("inventory_zero_or_unknown");
+  // Publication is a catalog operation. Do not hide a profitable, precisely
+  // linked product merely because live procurement verification is pending.
+  // Order-time fulfillment remains responsible for current stock and API checks.
   if (String(row.currency ?? "").trim().toUpperCase() !== "JPY") reasons.push("currency_not_jpy");
-  if (!/^CJ/i.test(String(row.supplier_name ?? ""))) reasons.push("supplier_not_cj");
   if (asNumber(row.shipping_cost) === null) reasons.push("shipping_cost_unknown");
   if (asNumber(row.source_cost) === null) reasons.push("source_cost_unknown");
-  const contributionProfit = asNumber(row.contribution_profit);
+  const sellingPrice = asNumber(row.selling_price);
+  const sourceCost = asNumber(row.source_cost);
+  const shippingCost = asNumber(row.shipping_cost);
+  const recordedProfit = asNumber(row.contribution_profit);
+  const contributionProfit = recordedProfit ?? (sellingPrice !== null && sourceCost !== null && shippingCost !== null
+    ? sellingPrice - sourceCost - shippingCost
+    : null);
   if (contributionProfit === null) reasons.push("profit_unknown");
   else if (contributionProfit <= 0) reasons.push("profit_not_positive");
+  const inventory = asNumber(row.inventory);
+  if (inventory === null || inventory <= 0) reasons.push("inventory_not_positive");
   return reasons;
 }
 
@@ -335,16 +323,15 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
   const { data, error } = await supabase
     .from("shop_listings")
     .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_error")
-    .or("and(published.eq.true,pipeline_stage.eq.PUBLISHED,pipeline_status.eq.published),and(published.eq.true,pipeline_stage.eq.BASE_PUBLISHED,pipeline_status.eq.published),and(published.eq.false,pipeline_stage.eq.SELECTED,pipeline_status.eq.selected),and(published.eq.false,pipeline_stage.eq.BLOCKED,shopify_product_id.not.is.null)")
+    .or("published.eq.true,and(published.eq.false,supplier_product_id.not.is.null,supplier_variant_id.not.is.null)")
     .or("shopify_sync_status.is.null,shopify_sync_status.neq.syncing")
     .order("shopify_product_id", { ascending: true, nullsFirst: true })
     .order("pipeline_updated_at", { ascending: false })
     .limit(Math.min(Math.max(limit, 1), 1000));
   if (error) throw new Error(error.message);
-  const supplierStatuses = await getPublishableSupplierListingStatuses((data ?? []).map((row) => row.supplier_listing_id));
   const reasonCounts: Record<string, number> = {};
   const rows = ((data ?? []) as Array<Listing & { shopify_sync_error?: string | null }>).map((rawRow) => {
-    const row = { ...rawRow, identity_status: rawRow.supplier_listing_id ? supplierStatuses.get(rawRow.supplier_listing_id) ?? null : null };
+    const row = rawRow;
     const reasons = blockReasons(row);
     if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) reasons.push("image_url_invalid");
     if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");
@@ -460,7 +447,7 @@ async function syncListingRows(
       if (price === null || price <= 0) throw new Error("selling_price_invalid");
       if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) throw new Error("image_url_invalid");
 
-      const shippingText = `日本向け配送：${asNumber(row.shipping_cost) === 0 ? "送料無料" : "送料別（仕入先確認済み）"}。配送状況は追跡可能です。`;
+      const shippingText = `日本向け配送：${asNumber(row.shipping_cost) === 0 ? "送料無料" : "送料別（仕入先条件に従います）"}。配送条件は仕入先の最新情報をご確認ください。`;
       let productInput = {
         title: copy.title,
         descriptionHtml: html(`${copy.description}\n\n${shippingText}`),
