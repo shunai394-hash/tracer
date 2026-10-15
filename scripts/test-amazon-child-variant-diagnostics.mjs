@@ -23,7 +23,6 @@ assert.match(collector, /dimensionToAsinMapMarkerCount: number/, "cron telemetry
 assert.match(collector, /jsonLdScriptTagCount \+= markup\.jsonLdScriptTagCount/, "cron telemetry must record JSON-LD script counts");
 assert.match(collector, /variationMapMarkerCount \+= markup\.variationMapMarkerCount/, "cron telemetry must record variation-map marker counts");
 assert.match(collector, /child_detail_has_barcode: hasBarcode/, "child-page barcode state must be recorded as evidence");
-assert.match(collector, /child_detail_has_barcode: hasBarcode/, "child-page barcode state must be recorded as evidence");
 assert.doesNotMatch(collector, /if \(!jan && !gtin && !ean && !upc\) return null/,
   "ASIN-only child evidence must still be persisted; barcode is a separate supplier-linking gate");
 assert.ok(cron.includes('reason: "observation_only"'), "marketplace collection must not publish ranking products or place orders");
