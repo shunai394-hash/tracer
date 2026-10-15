@@ -283,8 +283,8 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
 }
 
 /**
- * Why a listing may not be written to Shopify. Empty means it passes the same
- * gate, supplier, inventory and economics checks the sync applies.
+ * Why a listing may not be written to Shopify. Empty means it passes the
+ * catalog, supplier identity, inventory, price and fulfillment checks.
  */
 function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
@@ -300,8 +300,8 @@ function blockReasons(row: Listing): string[] {
   if (!/^CJ/i.test(String(row.supplier_name ?? ""))) reasons.push("supplier_not_cj");
   if (asNumber(row.shipping_cost) === null) reasons.push("shipping_cost_unknown");
   if (asNumber(row.source_cost) === null) reasons.push("source_cost_unknown");
-  if (!((asNumber(row.contribution_profit) ?? 0) > 0)) reasons.push("profit_not_positive");
-  if (!((asNumber(row.contribution_margin) ?? 0) > 0)) reasons.push("margin_not_positive");
+  // Profit and margin are advisory values. A merchant-selected price must not
+  // be silently blocked or rewritten just because its margin is low/negative.
   return reasons;
 }
 
