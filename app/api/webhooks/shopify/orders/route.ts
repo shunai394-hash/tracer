@@ -21,16 +21,46 @@ export async function POST(request: Request) {
     if (!externalId) return NextResponse.json({ ok: false, error: "shopify_order_id_missing" }, { status: 400 });
 
     const db = createSupabaseAdminClient();
-    const existing = await db.from("shop_orders").select("id").eq("shopify_order_id", externalId).maybeSingle();
-    if (existing.error) throw new Error(existing.error.message);
-    if (existing.data) return NextResponse.json({ ok: true, duplicate: true, orderId: String(existing.data.id) });
-
     const items = Array.isArray(order.line_items) ? order.line_items as Array<Record<string, unknown>> : [];
     const skus = items.map((item) => String(item.sku ?? "").trim());
-    // Validate every line before creating a parent order; otherwise a missing
-    // SKU on a later line could leave a partial order record behind.
+    // Stable Shopify line IDs are required to repair partial imports without
+    // duplicating order items when Shopify retries a webhook.
     if (!items.length || skus.some((sku) => !sku)) {
       return NextResponse.json({ ok: true, blocked: true, reason: "listing_sku_missing" });
+    }
+    if (items.some((item) => item.id == null || !String(item.id).trim())) {
+      return NextResponse.json({ ok: true, blocked: true, reason: "shopify_line_item_id_missing" });
+    }
+
+    const existing = await db.from("shop_orders").select("id").eq("shopify_order_id", externalId).maybeSingle();
+    if (existing.error) throw new Error(existing.error.message);
+    const existingOrderId = existing.data ? String(existing.data.id) : null;
+    const existingLineItemIds = new Set<string>();
+    if (existingOrderId) {
+      const { data: existingItems, error: existingItemsError } = await db
+        .from("shop_order_items")
+        .select("shopify_line_item_id")
+        .eq("order_id", existingOrderId);
+      if (existingItemsError) throw new Error(existingItemsError.message);
+      for (const row of existingItems ?? []) {
+        if (typeof row.shopify_line_item_id === "string" && row.shopify_line_item_id) {
+          existingLineItemIds.add(row.shopify_line_item_id);
+        }
+      }
+      const incomingLineIds = items.map((item) => String(item.id));
+      if (incomingLineIds.every((id) => existingLineItemIds.has(id))) {
+        return NextResponse.json({ ok: true, duplicate: true, orderId: existingOrderId });
+      }
+      // Legacy rows without stable Shopify IDs cannot be safely auto-repaired:
+      // avoid duplicating them or guessing which incoming line they represent.
+      if ((existingItems ?? []).some((row) => !row.shopify_line_item_id)) {
+        return NextResponse.json({
+          ok: true,
+          blocked: true,
+          reason: "existing_order_items_legacy_id_missing",
+          orderId: existingOrderId,
+        }, { status: 409 });
+      }
     }
 
     // Shopify SKUs are generated as TRC-<supplier_variant_id>, falling back
@@ -72,7 +102,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, blocked: true, reason: resolution.reason, sku: resolution.sku });
     }
     const bySku = resolution.bySku;
-    if (skus.some((sku) => {
+    if (!existingOrderId && skus.some((sku) => {
       const listing = bySku.get(sku);
       return !listing || listing.published !== true || listing.orderable !== true;
     })) {
@@ -85,41 +115,47 @@ export async function POST(request: Request) {
     const customer = (order.customer ?? {}) as Record<string, unknown>;
     const billing = (order.billing_address ?? {}) as Record<string, unknown>;
     const currency = String(order.currency ?? order.presentment_currency ?? "JPY");
-    const inserted = await db.from("shop_orders").insert({
-      listing_id: bySku.get(skus[0])?.id ?? null,
-      status: "placed",
-      payment_method: "shopify",
-      payment_status: paid ? "paid" : "pending",
-      order_status: paid ? "fulfillment_pending" : "pending_payment",
-      paid_at: paid ? new Date().toISOString() : null,
-      customer_name: String(billing.name ?? customer.first_name ?? "Shopify customer"),
-      customer_email: String(order.email ?? customer.email ?? ""),
-      customer_phone: shipping.phone ? String(shipping.phone) : null,
-      shipping_address: String(shipping.address1 ?? ""),
-      shipping_country_code: shipping.country_code ? String(shipping.country_code) : null,
-      shipping_province: shipping.province ? String(shipping.province) : null,
-      shipping_city: shipping.city ? String(shipping.city) : null,
-      shipping_zip: shipping.zip ? String(shipping.zip) : null,
-      shipping_line1: shipping.address1 ? String(shipping.address1) : null,
-      subtotal: n(order.subtotal_price),
-      shipping_cost: null,
-      total: n(order.total_price),
-      currency,
-      metadata: { source: "shopify_webhook", shopify_order_id: externalId },
-      shopify_order_id: externalId,
-      shopify_order_number: order.order_number == null ? null : String(order.order_number),
-      shopify_financial_status: financial,
-      shopify_fulfillment_status: order.fulfillment_status ? String(order.fulfillment_status) : null,
-    }).select("id").single();
-    if (inserted.error) throw new Error(inserted.error.message);
+    let orderId = existingOrderId;
+    if (!orderId) {
+      const inserted = await db.from("shop_orders").insert({
+        listing_id: bySku.get(skus[0])?.id ?? null,
+        status: "placed",
+        payment_method: "shopify",
+        payment_status: paid ? "paid" : "pending",
+        order_status: paid ? "fulfillment_pending" : "pending_payment",
+        paid_at: paid ? new Date().toISOString() : null,
+        customer_name: String(billing.name ?? customer.first_name ?? "Shopify customer"),
+        customer_email: String(order.email ?? customer.email ?? ""),
+        customer_phone: shipping.phone ? String(shipping.phone) : null,
+        shipping_address: String(shipping.address1 ?? ""),
+        shipping_country_code: shipping.country_code ? String(shipping.country_code) : null,
+        shipping_province: shipping.province ? String(shipping.province) : null,
+        shipping_city: shipping.city ? String(shipping.city) : null,
+        shipping_zip: shipping.zip ? String(shipping.zip) : null,
+        shipping_line1: shipping.address1 ? String(shipping.address1) : null,
+        subtotal: n(order.subtotal_price),
+        shipping_cost: null,
+        total: n(order.total_price),
+        currency,
+        metadata: { source: "shopify_webhook", shopify_order_id: externalId },
+        shopify_order_id: externalId,
+        shopify_order_name: String(order.name ?? order.order_number ?? ""),
+        shopify_financial_status: financial,
+        shopify_fulfillment_status: order.fulfillment_status ? String(order.fulfillment_status) : null,
+      }).select("id").single();
+      if (inserted.error) throw new Error(inserted.error.message);
+      orderId = String(inserted.data.id);
+    }
 
     for (const [index, item] of items.entries()) {
       // Use the same normalized SKU used during resolution; Shopify payloads may
       // contain surrounding whitespace even though lookup keys are trimmed.
       const listing = bySku.get(skus[index]);
       if (!listing) throw new Error("listing mapping missing during item insert");
-      const row = await db.from("shop_order_items").insert({
-        order_id: inserted.data.id,
+      const lineItemId = String(item.id);
+      if (existingLineItemIds.has(lineItemId)) continue;
+      const itemPayload = {
+        order_id: orderId,
         listing_id: listing.id,
         product_id: listing.product_id,
         supplier_listing_id: listing.supplier_listing_id ?? null,
@@ -130,12 +166,28 @@ export async function POST(request: Request) {
         qty: n(item.quantity) ?? 0,
         unit_price: n(item.price) ?? n(listing.selling_price),
         currency,
-        shopify_line_item_id: item.id == null ? null : String(item.id),
-      });
-      if (row.error) throw new Error(row.error.message);
+        shopify_line_item_id: lineItemId,
+      };
+      const row = await db.from("shop_order_items").insert(itemPayload).select("id").single();
+      if (row.error) {
+        // Concurrent webhook retries may race on the unique Shopify line ID.
+        // Treat it as idempotent only if the winning row belongs to this order.
+        const { data: lineItem, error: lookupError } = await db
+          .from("shop_order_items")
+          .select("order_id")
+          .eq("shopify_line_item_id", lineItemId)
+          .maybeSingle();
+        if (lookupError) throw new Error(lookupError.message);
+        if (lineItem && String(lineItem.order_id) === orderId) {
+          existingLineItemIds.add(lineItemId);
+          continue;
+        }
+        throw new Error(`shop_order_items_insert_failed:${row.error.message}`);
+      }
+      existingLineItemIds.add(lineItemId);
     }
 
-    return NextResponse.json({ ok: true, orderId: String(inserted.data.id), paid });
+    return NextResponse.json({ ok: true, orderId, paid, repaired: Boolean(existingOrderId) });
   } catch (error) {
     console.error("[TRACER SHOPIFY ORDER WEBHOOK ERROR]", error);
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
