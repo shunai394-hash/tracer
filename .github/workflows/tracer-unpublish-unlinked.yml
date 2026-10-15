@@ -15,7 +15,7 @@ on:
       - "vercel.json"
   workflow_dispatch:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"
 
 permissions:
   contents: read
