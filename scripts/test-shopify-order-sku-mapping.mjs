@@ -27,6 +27,16 @@ test("resolves legacy CJ SKU by exact supplier variant ID", () => {
     "CJ SKU must not silently map a product ID when a variant ID is required");
 });
 
+test("resolves SKU-less Shopify lines by exact Shopify variant ID", () => {
+  const listing = { id: "listing-variant", supplier_variant_id: "supplier-variant", supplier_product_id: "product-7", shopify_variant_id: "4455667788" };
+  const key = "SHOPIFYVARIANT-4455667788";
+  const resolved = resolveShopifyOrderSkus([key], [listing]);
+  assert.equal(resolved.ok, true);
+  if (resolved.ok) assert.equal(resolved.bySku.get(key)?.id, listing.id);
+  assert.equal(resolveShopifyOrderSkus(["SHOPIFYVARIANT-0000000000"], [listing]).ok, false,
+    "variant IDs must match exactly");
+});
+
 test("resolves SKU fallback to supplier product ID", () => {
   const listing = { id: "11111111-1111-4111-8111-111111111111", supplier_variant_id: null, supplier_product_id: "product-7" };
   const sku = tracerSkuForListing(listing);
@@ -72,6 +82,8 @@ test("Shopify webhook writes the deployed order schema and repairs partial item 
   assert.match(webhook, /shopify_order_name:/, "use the existing shopify_order_name column");
   assert.doesNotMatch(webhook, /shopify_order_number:/, "do not write a column absent from the deployed schema");
   assert.match(webhook, /shopify_line_item_id_missing/, "require stable line IDs for idempotent retries");
+  assert.match(webhook, /SHOPIFYVARIANT-\$\{variantId\}/, "allow exact Shopify variant-ID fallback when SKU is absent");
+  assert.match(webhook, /\.in\("shopify_variant_id", shopifyVariantIds\)/, "query the deployed Shopify variant identity column");
   assert.match(webhook, /incomingLineIds\.every\(\(id\) => existingLineItemIds\.has\(id\)\)/,
     "fully imported webhook retries must short-circuit");
   assert.match(webhook, /existing_order_items_legacy_id_missing/,
