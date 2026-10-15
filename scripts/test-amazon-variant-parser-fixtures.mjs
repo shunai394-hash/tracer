@@ -45,6 +45,33 @@ assert.equal(schemaVariants[1].asin, null, "do not invent an ASIN for a child wi
 assert.equal(schemaVariants[1].sku, "SKU-BLUE");
 assert.equal(schemaVariants.some((variant) => variant.asin === "B0PARENT01"), false, "never copy parent ASIN to child");
 
+const inverseRelationHtml = `
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    { "@type": "ProductGroup", "@id": "https://www.amazon.co.jp/dp/B0PARENT01#group", "name": "親商品" },
+    {
+      "@type": "Product",
+      "@id": "https://www.amazon.co.jp/dp/B0CHILD003",
+      "isVariantOf": { "@id": "https://www.amazon.co.jp/dp/B0PARENT01#group" },
+      "name": "子商品 赤 M",
+      "sku": "CHILD-RED-M",
+      "gtin13": "4901234567894",
+      "url": "https://www.amazon.co.jp/dp/B0CHILD003"
+    }
+  ]
+}
+</script>`;
+const inverseVariants = parseCanonicalMarketplaceVariantEvidence(inverseRelationHtml, parentUrl);
+assert.equal(inverseVariants.length, 1, "collect child Product nodes that declare isVariantOf even when ProductGroup.hasVariant is absent");
+assert.equal(inverseVariants[0].sourceVariantId, "B0CHILD003");
+assert.equal(inverseVariants[0].asin, "B0CHILD003");
+assert.equal(inverseVariants[0].gtin, "4901234567894");
+assert.equal(inverseVariants[0].evidenceSource, "schema_org_product_is_variant_of");
+assert.equal(inverseVariants[0].rawEvidence.relation, "Product.isVariantOf");
+
+
 const variationHtml = `
 <script>
 var dimensionValuesDisplayData = {"B0CHILD001":["ブラック","M"],"B0CHILD002":["ブルー","L"]};
@@ -77,6 +104,20 @@ assert.deepEqual(
     { asin: "B0CHILD004", variationValues: ["グリーン", "S"] },
   ],
   "parse complete nested dimension map rather than truncating at the first closing brace",
+);
+
+
+const alternateVariationHtml = `
+<script>
+var asinVariationValues = {"B0CHILD005":["ホワイト","M"],"B0CHILD006":["ブラック","L"]};
+</script>`;
+assert.deepEqual(
+  parseAmazonVariationAsinMap(alternateVariationHtml, parentUrl),
+  [
+    { asin: "B0CHILD005", variationValues: ["ホワイト", "M"] },
+    { asin: "B0CHILD006", variationValues: ["ブラック", "L"] },
+  ],
+  "recognize the alternate explicit asinVariationValues map without weakening child barcode verification",
 );
 
 console.log("Amazon variant parser fixtures: passed");
