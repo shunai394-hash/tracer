@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { getCJQuotaCooldownUntil, isCJQuotaExhausted } from "../lib/sources/cj/rate-limit-policy.ts";
+import { isWithinCjQuotaResetReservation } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 assert.equal(isCJQuotaExhausted({
   code: 1600200,
@@ -17,4 +18,8 @@ assert.equal(
   getCJQuotaCooldownUntil(Date.parse("2026-10-12T00:00:00.000Z")),
   "2026-10-13T00:00:00.000Z",
 );
-console.log("CJ quota policy: 5 assertions passed");
+assert.equal(isWithinCjQuotaResetReservation(new Date("2026-10-15T23:54:00.000Z")), false);
+assert.equal(isWithinCjQuotaResetReservation(new Date("2026-10-15T23:55:00.000Z")), true);
+assert.equal(isWithinCjQuotaResetReservation(new Date("2026-10-16T00:04:00.000Z")), true);
+assert.equal(isWithinCjQuotaResetReservation(new Date("2026-10-16T00:05:00.000Z")), false);
+console.log("CJ quota policy: 9 assertions passed");
