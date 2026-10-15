@@ -58,6 +58,10 @@ assert.doesNotMatch(salesPublicationRoute, /identity_status\.eq\.supply_discover
 assert.match(e2eFunnel, /eq\("identity_status", "linked"\).*eq\("verification_status", "verified"\).*eq\("orderable", true\)/, "readiness funnel must not count unresolved supply as verified and orderable");
 assert.match(intelligencePipeline, /\.eq\("verification_status", "verified"\)[\s\S]*?\.eq\("orderable", true\)/, "supply selection must still require verified, orderable supplier evidence");
 assert.match(intelligencePipeline, /allowNativeCjIdentity:\s*true/, "standalone CJ supply must use the selector’s explicit native-supplier gate rather than pretending marketplace identity is linked");
+assert.match(intelligencePipeline, /name: "business_readiness"/, "patrol completion must include business readiness, not only successful code stages");
+assert.match(intelligencePipeline, /freshOrderableSuppliers: freshOrderableSupplierCount/);
+assert.match(intelligencePipeline, /publishedOrderableListings/);
+assert.match(intelligencePipeline, /retryable: !businessReady/, "zero orderable supplier/listing counts must keep the pipeline incomplete and retryable");
 assert.match(persist, /last_verified_at: nativeEvidenceFresh \? now : existingListing\.data\?\.last_verified_at \?\? null/, "supplier verification timestamps must advance only when native supplier evidence remains fresh");
 assert.match(persist, /bestseller_id: null/, "supplier-native CJ persistence must not claim a marketplace parent link");
 assert.match(persist, /identity_status: "supply_discovered"/, "CJ supplier-native identity must remain distinct from cross-marketplace identity");
