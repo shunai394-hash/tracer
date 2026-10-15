@@ -24,6 +24,37 @@ export async function GET(request: Request) {
 
   try {
     db = createSupabaseAdminClient();
+
+    // Check the persisted CJ quota circuit before creating a new run record or
+    // invoking discovery. Vercel invokes this route every five minutes; while
+    // the provider cooldown is active, those invocations must be cheap no-ops
+    // and must not create misleading "processed 0" catalog runs.
+    const { data: quotaRun, error: quotaReadError } = await db
+      .from("cron_runs")
+      .select("metadata")
+      .eq("job_name", "cj-api-quota-circuit")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (quotaReadError) {
+      throw new Error(`CJ quota circuit lookup failed: ${quotaReadError.message}`);
+    }
+    const quotaMetadata = quotaRun?.metadata && typeof quotaRun.metadata === "object" && !Array.isArray(quotaRun.metadata)
+      ? quotaRun.metadata as Record<string, unknown>
+      : {};
+    const blockedUntil = typeof quotaMetadata.blockedUntil === "string" ? quotaMetadata.blockedUntil : null;
+    if (blockedUntil && Date.parse(blockedUntil) > Date.now()) {
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        reason: "supplier_quota_cooldown",
+        retryable: true,
+        retryAfter: blockedUntil,
+        discoveryInvoked: false,
+        runRecordCreated: false,
+      });
+    }
+
     const { data: run, error: startError } = await db.from("cron_runs").insert({
       job_name: "supply-first",
       status: "running",
