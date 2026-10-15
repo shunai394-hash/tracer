@@ -46,6 +46,20 @@ assert.equal(isPublishableCatalogDescription(localizeProductDescription(nativeHe
 assert.equal(womenProductPriority({ title: nativeHeadbandSource }).isWomenFocused, true);
 assert.equal(isPublishableCatalogTitle("トレンド・beautyアイテム"), false);
 assert.equal(isPublishableCatalogTitle("アフリカンアート柄 シャワーカーテン"), true);
+
+const newlyPublishableSupplyCandidates = [
+  ["bathroom phone holder", "BathroomMobile Phone Box WaterproofStand Toilet Storage Artifact Toilet Bath Rack Kitchen Chase Drama Watching TV", "浴室用 防水スマートフォンホルダー"],
+  ["Huawei phone case", "Suitable For Creative New Envelopes Diagonally Across Huawei P40pro Mobile Phone Shell Mate30 Acrylic Nova5 Protective Sleeve", "対応機種別 スマートフォンケース"],
+  ["screen protector", "Compatible WithApple, Suitable ForApple 12 Tempered Glass FilmIPhone11ProMax Full Screen Coverage Xs Mobile Phone Film 7,8Plus", "対応機種別 画面保護フィルム"],
+  ["ceramic ashtray", "Ceramic Ashtray Home Bedroom Dormitory Office", "セラミック製 灰皿"],
+];
+for (const [name, sourceTitle, expectedTitle] of newlyPublishableSupplyCandidates) {
+  const title = localizeProductTitle(sourceTitle);
+  const description = localizeProductDescription(sourceTitle);
+  assert.equal(title, expectedTitle, `${name}: exact Japanese title mapping`);
+  assert.equal(isPublishableCatalogTitle(title), true, `${name}: title must pass catalog gate`);
+  assert.equal(isPublishableCatalogDescription(description), true, `${name}: description must pass catalog gate`);
+}
 const candidateTitles = [
   ["aroma diffuser", "50ml Aromatherapy Machine Timed Automatic Spraying Fragrance Household Perfume Machine Toilet Deodorizing Air Purifying Diffuser", "タイマー付き 自動噴霧アロマディフューザー"],
   ["resort skirt", "Sun Protection Clothing Beach Seaside Resort Strappy Skirt", "リゾートデザイン ストラップスカート"],
