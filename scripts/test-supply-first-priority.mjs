@@ -13,4 +13,10 @@ assert.match(source, /supplyFirstResult\?\.deadlineReached === true/);
 assert.match(discovery, /reason: "supplier_quota_cooldown"/, "an open CJ quota circuit must report the actual blocker");
 assert.match(discovery, /deadlineReached: false,[\s\S]*?skipped: true,[\s\S]*?retryable: true/, "quota cooldown must be reported as an intentional retryable skip, not a false deadline timeout");
 assert.match(discovery, /retryAfter: quotaBlockedUntil/, "the caller must receive the exact quota-cooldown end time");
+assert.match(discovery, /const seededVariant = seededVariants\.find\(\(item\) => item\.vid === candidate\.variantId\)/, "seeded refresh must verify the exact live CJ product/variant pair");
+assert.match(discovery, /const liveCost = Number\(seededVariant\.sellPrice\)/, "seeded refresh must use current exact-variant price instead of stale persisted cost");
+assert.match(discovery, /const preserveVerifiedOrderPath =[\s\S]*?seededCandidate\.apiAvailable[\s\S]*?seededCandidate\.orderable[\s\S]*?seededCandidate\.trackingAvailable[\s\S]*?seededCandidate\.supplierVariantId === candidate\.variantId/, "only the same previously verified supplier order path may retain orderability");
+assert.match(discovery, /verification_status: preserveVerifiedOrderPath \? "verified" : "unverified"/, "fresh stock/price checks must not invent orderability for a new supplier path");
+assert.match(discovery, /next_verification_at: new Date\(Date\.now\(\) \+ 24 \* 60 \* 60 \* 1000\)\.toISOString\(\)/, "successfully processed supplier rows must advance the due queue instead of starving all later candidates");
+
 console.log("supply-first discovery priority checks passed");
