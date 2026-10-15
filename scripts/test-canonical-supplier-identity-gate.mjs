@@ -102,6 +102,7 @@ assert.match(store, /supplier_identity_unlinked/);
 assert.match(route, /requireAutomationAuth/);
 assert.match(route, /TRACER UNLINKED RECONCILIATION/, "production cleanup progress must be observable with count-only telemetry");
 assert.match(route, /published: false/);
+assert.match(route, /row\.orderable !== true \|\| row\.tracking_available !== true/, "unlinked-channel reconciliation must include supplier offers without an order path or tracking");
 assert.match(route, /base_unpublish_failed/);
 assert.match(route, /shopify_unpublish_failed/);
 assert.match(base, /invalid_request.*break/s, "BASE auth failures must stop the current hide batch");
