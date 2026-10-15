@@ -38,7 +38,7 @@ assert.match(identitySource, /fetchCJVariantByVid\(args\.supplierVariantId\)/, "
 assert.ok(identitySource.indexOf("fetchCJVariantByVid(args.supplierVariantId)") < identitySource.indexOf("fetchCJProductVariants(args.supplierProductId"), "product-wide variant lookup is only a fallback");
 assert.match(source, /variantDetails: freshVariantDetails/);
 assert.match(source, /variantDetails = variantDetails \?\? await fetchCJVariantByVid/);
-assert.match(identitySource, /const freshBarcode = await readSupplierBarcode\(args\)[\s\S]{0,180}resolveMarketplaceIdentityFromBarcode\(args, freshBarcode\)/);
+assert.match(identitySource, /const freshEvidence = await readSupplierBarcode\(args\)[\s\S]{0,180}resolveMarketplaceIdentityFromBarcode\(args, freshEvidence\.barcode\)/);
 assert.doesNotMatch(source, /readPersistableBarcode|fetchCJProductVariants/, "one exact-variant lookup per row avoids duplicate CJ API quota consumption");
 assert.match(identitySource, /variant_barcode: freshVariantBarcode/, "persisted metadata must retain the supplier-native variant barcode");
 const persistBody = identitySource.slice(identitySource.indexOf("export async function persistCjSupplyIntelligence"));
