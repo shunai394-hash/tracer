@@ -1,39 +1,16 @@
-import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { NextResponse } from "next/server";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 
+/** Orosy listing inspection is disabled with the supplier integration. */
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
-
-  try {
-    const supabase = createSupabaseAdminClient();
-
-    const { data, error } = await supabase
-      .from("supplier_listings")
-      .select("*")
-      .eq("supplier", "orosy")
-      .order("created_at", { ascending: false })
-      .limit(20);
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return NextResponse.json({
-      ok: true,
-      count: data?.length ?? 0,
-      listings: data ?? [],
-    });
-  } catch (error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 },
-    );
-  }
+  return NextResponse.json({
+    ok: false,
+    disabled: true,
+    reason: "supplier_disabled_by_product_decision",
+    supplier: "orosy",
+  }, { status: 410 });
 }
