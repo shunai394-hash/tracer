@@ -76,3 +76,5 @@ jobs:
           else
             echo "Shopify live sync skipped: no eligible listings passed the read-only gate."
           fi
+
+# TRACER_ONE_SHOT_SUPPLY_RECOVERY: rerun the bounded end-to-end recovery against the current deployment.
