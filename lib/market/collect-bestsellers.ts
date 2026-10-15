@@ -321,10 +321,17 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
         // barcodes while its explicit ASIN map points to child pages that do
         // expose JAN/GTIN. Merge both channels, deduplicating by child ASIN.
         const childAsins = parseAmazonVariationAsinMap(detailHtml, item.productUrl).slice(0, 6);
-        const knownVariantAsins = new Set(
-          item.canonicalVariants.map((variant) => variant.asin).filter((value): value is string => Boolean(value)),
+        // A child already represented by JSON-LD still needs a child-page fetch
+        // when its JSON-LD node has no barcode; otherwise the very evidence we
+        // need to repair would be skipped. Skip only ASINs whose stored child
+        // record already has a concrete barcode.
+        const knownBarcodeAsins = new Set(
+          item.canonicalVariants
+            .filter((variant) => Boolean(variant.jan || variant.gtin || variant.ean || variant.upc))
+            .map((variant) => variant.asin)
+            .filter((value): value is string => Boolean(value)),
         );
-        const childAsinsToFetch = childAsins.filter((child) => !knownVariantAsins.has(child.asin));
+        const childAsinsToFetch = childAsins.filter((child) => !knownBarcodeAsins.has(child.asin));
         variationAsinsFound += childAsins.length;
         childDetailAttempted += childAsinsToFetch.length;
         const recovered = await Promise.all(childAsinsToFetch.map(async (child) => {
@@ -365,10 +372,30 @@ async function enrichMarketplaceDetails(marketplace: CollectedMarketplace): Prom
           };
         }));
         const recoveredByAsin = new Map(recovered.filter((value): value is NonNullable<typeof value> => value !== null).map((value) => [value.asin, value]));
-        item.canonicalVariants = [
-          ...item.canonicalVariants,
-          ...Array.from(recoveredByAsin.values()),
-        ];
+        const recoveredAsins = new Set<string>();
+        item.canonicalVariants = item.canonicalVariants.map((variant) => {
+          const child = variant.asin ? recoveredByAsin.get(variant.asin) : undefined;
+          if (!child) return variant;
+          recoveredAsins.add(child.asin);
+          // Keep the original ProductGroup evidence provenance while attaching
+          // independently fetched child-page barcode fields to that same row.
+          return {
+            ...variant,
+            jan: variant.jan ?? child.jan,
+            gtin: variant.gtin ?? child.gtin,
+            ean: variant.ean ?? child.ean,
+            upc: variant.upc ?? child.upc,
+            mpn: variant.mpn ?? child.mpn,
+            productUrl: variant.productUrl ?? child.productUrl,
+            rawEvidence: {
+              ...variant.rawEvidence,
+              child_detail_page: child.rawEvidence,
+            },
+          };
+        });
+        item.canonicalVariants.push(
+          ...Array.from(recoveredByAsin.values()).filter((child) => !recoveredAsins.has(child.asin)),
+        );
         canonicalVariantCount += item.canonicalVariants.length;
         item.brand = detail.brand;
         item.model = detail.model;
