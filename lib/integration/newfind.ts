@@ -127,15 +127,15 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
 
   if (error) throw new Error(error.message);
 
-  const schemaReady = isNewfindPromotionReceiverReady();
+  const receiverReady = isNewfindPromotionReceiverReady();
   const schemaBlockedIds = new Set(
     (data ?? [])
-      .filter((row) => !schemaReady && isNewfindPromotionLedgerSchemaBlocked(row.last_error))
+      .filter((row) => !receiverReady && isNewfindPromotionLedgerSchemaBlocked(row.last_error))
       .map((row) => String(row.listing_id)),
   );
   const listingIds = Array.from(new Set((data ?? []).map((row) => String(row.listing_id))))
     .filter((id) => !schemaBlockedIds.has(id));
-  if (!schemaReady) {
+  if (!receiverReady) {
     return {
       attempted: 0,
       processed: 0,
