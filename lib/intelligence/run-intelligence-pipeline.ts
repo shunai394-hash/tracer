@@ -10,7 +10,6 @@ import { persistMarketplaceBestsellers } from "@/lib/market/persist-bestsellers"
 import { investigateDropshipForBestsellers } from "@/lib/suppliers/investigate-dropship";
 import { selectAndPublishSalesTests } from "@/lib/market/select-sales-tests";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
-import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import {
   promoteShopListingToNewfind,
 } from "@/lib/integration/newfind";
@@ -337,38 +336,23 @@ export async function runIntelligencePipeline(options: {
   pipelineTimedOut = false;
   const db = createSupabaseAdminClient();
 
-  // Prioritize supplier-first discovery before marketplace/demand enrichment can consume the patrol budget.
-  // Supply-first is discovery only. It creates canonical product/offer/intelligence
-  // evidence; publication is deferred until the same Opportunity Intelligence
-  // and strict sales-test gates have passed.
-  // Keep each patrol bounded: live CJ stock/freight and identity checks are
-  // network-bound, while Opportunity Intelligence and Sales Test are also
-  // required in the same invocation. Larger backlogs are drained by later patrols.
-  const supplyFirstStep = await runStep("supply_first", () =>
-    discoverAndCreateCjSupply(3, {
-      deadlineAt: Math.min(pipelineDeadlineAt - 5_000, Date.now() + 18_000),
-    }), { budgetMs: 20_000 });
-  // A normal return is not proof that discovery completed: the supplier
-  // scanner can defer on its deadline or quota circuit with zero candidates.
-  // Mark that run deferred/retryable so patrol status cannot claim success.
-  // Keep partial results usable when at least one candidate was actually found.
-  const supplyFirstResult = supplyFirstStep.result && typeof supplyFirstStep.result === "object"
-    ? supplyFirstStep.result as { deadlineReached?: unknown; candidateCount?: unknown; items?: unknown }
-    : null;
-  const supplyFirstEmptyDeadline = supplyFirstResult?.deadlineReached === true
-    && Number(supplyFirstResult.candidateCount ?? 0) === 0
-    && (!Array.isArray(supplyFirstResult.items) || supplyFirstResult.items.length === 0);
-  if (supplyFirstEmptyDeadline) {
-    supplyFirstStep.ok = true;
-    supplyFirstStep.skipped = true;
-    supplyFirstStep.retryable = true;
-    supplyFirstStep.result = {
-      ...supplyFirstResult,
+  // Live CJ catalog discovery runs in /api/cron/supply-first on its own
+  // four-times-daily 4-minute budget. Calling it again from every five-minute
+  // patrol repeatedly hit the 18-second sub-budget, produced deadlineReached
+  // with no candidates, and competed with the same supplier API quota.
+  // Keep the stage explicit for pipeline observability; this patrol consumes
+  // already-persisted verified supplier rows below.
+  const supplyFirstStep: PipelineStepResult = {
+    name: "supply_first",
+    ok: true,
+    skipped: true,
+    retryable: false,
+    result: {
       skipped: true,
-      retryable: true,
-      reason: "supply_discovery_deferred_without_candidates",
-    };
-  }
+      reason: "dedicated_supply_first_cron_owns_live_cj_discovery",
+      discoveryCron: "/api/cron/supply-first",
+    },
+  };
   steps.push(supplyFirstStep);
 
   const supplyItems =

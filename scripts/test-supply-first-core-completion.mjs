@@ -12,16 +12,14 @@ for (const required of ["match", "supply_sales_test_select", "sales_test_select"
   assert.doesNotMatch(source, new RegExp('optionalDiscoverySteps = new Set\\(\\[[^\\]]*"' + required + '"'),
     required + " must remain a core pipeline stage");
 }
-assert.match(source, /supply_discovery_deferred_without_candidates/,
-  "an empty supplier scan that defers must be explicitly retryable, not reported as a completed stage");
-assert.match(source, /supplyFirstResult\?\.deadlineReached === true/,
-  "deferred classification must inspect the scanner's explicit deadlineReached result");
-assert.match(source, /Number\(supplyFirstResult\.candidateCount \?\? 0\) === 0/,
-  "only empty deadline runs are deferred; partial candidate results remain available to downstream gates");
-assert.ok(source.indexOf('runStep("supply_first"') < source.indexOf('runStep("bestsellers"'),
-  "bounded supplier discovery must run before marketplace and demand enrichment can consume the patrol deadline");
-assert.match(source, /discoverAndCreateCjSupply\(3,[\s\S]*?Date\.now\(\) \+ 18_000[\s\S]*?budgetMs: 20_000/,
-  "supplier discovery must have an explicit bounded budget before slower pipeline stages");
+assert.match(source, /dedicated_supply_first_cron_owns_live_cj_discovery/,
+  "the five-minute patrol must leave live CJ discovery to its dedicated, longer-budget cron");
+assert.match(source, /discoveryCron: "\/api\/cron\/supply-first"/,
+  "the skipped patrol stage must point to the actual supplier discovery worker");
+assert.doesNotMatch(source, /discoverAndCreateCjSupply\(/,
+  "the five-minute patrol must not duplicate live CJ API discovery calls");
+assert.ok(source.indexOf('const supplyFirstStep') < source.indexOf('runStep("bestsellers"'),
+  "the supply-first stage remains visible before marketplace and demand enrichment");
 assert.match(source, /verifiedSupplyPages = Math\.max\(1, Math\.ceil\(\(verifiedSupplyCount \?\? 0\) \/ verifiedSupplyPageSize\)\)/,
   "verified supplier candidates must be paginated across the full fresh supplier catalog");
 assert.match(source, /Math\.floor\(Date\.now\(\) \/ 300_000\) % verifiedSupplyPages/,
