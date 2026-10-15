@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyShopifyWebhookHmac } from "@/lib/shopify/admin";
 import { getOrderSkuLookup } from "@/lib/shopify/order-sku-mapping";
 import { resolveShopifyOrderLines, shopifyLineIdentity } from "@/lib/ordering/shopify-line-match";
+import { validateShopifyOrderFinancials } from "@/lib/ordering/shopify-order-financials";
 
 export const runtime = "nodejs";
 
@@ -21,8 +22,13 @@ export async function POST(request: Request) {
     const externalId = String(order.id ?? "");
     if (!externalId) return NextResponse.json({ ok: false, error: "shopify_order_id_missing" }, { status: 400 });
 
-    const db = createSupabaseAdminClient();
     const items = Array.isArray(order.line_items) ? order.line_items as Array<Record<string, unknown>> : [];
+    const financials = validateShopifyOrderFinancials(order, items);
+    if (!financials.ok) {
+      return NextResponse.json({ ok: true, blocked: true, reason: financials.reason }, { status: 422 });
+    }
+
+    const db = createSupabaseAdminClient();
     const lines = items.map((item) => shopifyLineIdentity({ sku: item.sku, variant_id: item.variant_id }));
     const skus = lines.map((line) => line.sku);
     // Each line needs at least one stable identity: the generated SKU or the
@@ -124,7 +130,6 @@ export async function POST(request: Request) {
     const shipping = (order.shipping_address ?? {}) as Record<string, unknown>;
     const customer = (order.customer ?? {}) as Record<string, unknown>;
     const billing = (order.billing_address ?? {}) as Record<string, unknown>;
-    const currency = String(order.currency ?? order.presentment_currency ?? "JPY");
     let orderId = existingOrderId;
     if (!orderId) {
       const inserted = await db.from("shop_orders").insert({
@@ -143,10 +148,10 @@ export async function POST(request: Request) {
         shipping_city: shipping.city ? String(shipping.city) : null,
         shipping_zip: shipping.zip ? String(shipping.zip) : null,
         shipping_line1: shipping.address1 ? String(shipping.address1) : null,
-        subtotal: n(order.subtotal_price),
+        subtotal: financials.subtotal,
         shipping_cost: null,
-        total: n(order.total_price),
-        currency,
+        total: financials.total,
+        currency: financials.currency,
         metadata: { source: "shopify_webhook", shopify_order_id: externalId },
         shopify_order_id: externalId,
         shopify_order_name: String(order.name ?? order.order_number ?? ""),
@@ -172,9 +177,9 @@ export async function POST(request: Request) {
         supplier_product_id: listing.supplier_product_id ?? null,
         supplier_variant_id: listing.supplier_variant_id ?? null,
         title: String(item.title ?? listing.title),
-        qty: n(item.quantity) ?? 0,
-        unit_price: n(item.price) ?? n(listing.selling_price),
-        currency,
+        qty: financials.lineAmounts[index].quantity,
+        unit_price: financials.lineAmounts[index].unitPrice,
+        currency: financials.currency,
         shopify_line_item_id: lineItemId,
       };
       const row = await db.from("shop_order_items").insert(itemPayload).select("id").single();
