@@ -58,6 +58,10 @@ assert.match(sandboxRoute, /SUPPLIER_LISTING_NOT_FRESH_VERIFIED_FOR_SANDBOX/);
 assert.match(sandboxRoute, /TRACER CJ SANDBOX ORDER TEST COMPLETE/, "sandbox lifecycle success must be observable without logging the tracking number");
 const vercelConfig = JSON.parse(read("vercel.json"));
 assert.doesNotMatch(JSON.stringify(vercelConfig.crons), /cj-sandbox-order-test/, "sandbox order test must never be scheduled automatically");
+const sandboxOnceWorkflow = read(".github/workflows/tracer-cj-sandbox-once.yml");
+assert.ok(sandboxOnceWorkflow.includes('cron: "1 0 16 10 *"'), "one-time CJ sandbox lifecycle proof must run in the reserved quota window");
+assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/cj-identity-reverify").map((job) => job.schedule), ["12,27,42,57 * * * *"], "CJ identity re-verification must be offset from catalog discovery");
+assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/supply-first").map((job) => job.schedule), ["30 */6 * * *"], "bounded supply-first discovery must run after the reserved identity window");
 
 const cjReverifySource = read("lib/suppliers/reverify-cj-identity.ts");
 assert.match(cjReverifySource, /verification_error === "storefront_stock_cap_deploy_pending"/, "only the explicit storefront stock-cap hold may be recovered");
