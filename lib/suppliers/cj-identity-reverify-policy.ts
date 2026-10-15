@@ -162,3 +162,9 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
   ];
   return { ok: cases.every((item) => item.actual === item.expected), cases };
 }
+
+/** Reserve the UTC daily quota-reset window for the one-time CJ sandbox lifecycle proof. */
+export function isWithinCjQuotaResetReservation(now: Date = new Date()): boolean {
+  const minuteOfDay = now.getUTCHours() * 60 + now.getUTCMinutes();
+  return minuteOfDay >= (23 * 60 + 55) || minuteOfDay < 5;
+}
