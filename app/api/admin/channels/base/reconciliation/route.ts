@@ -247,7 +247,7 @@ export async function POST(request: Request) {
       && item.exactTitleCandidateCount > 1,
     ).length;
     const report = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       generatedAt: new Date().toISOString(),
       source: "BASE /items + TRACER shop_listings read-only reconciliation",
       complete: complete,
