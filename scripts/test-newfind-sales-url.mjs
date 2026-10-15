@@ -42,9 +42,9 @@ assert.match(source, /Could not find the table .*tracer_promotions.*schema cache
 assert.match(source, /NEWFIND_TRACER_PROMOTION_RECEIVER_READY/,
   "the retry loop must remain paused until the NEWFIND promotion receiver is deployed and confirmed ready");
 assert.match(source, /newfind_promotion_receiver_not_confirmed_ready/,
-  "new promotions must not be sent to NEWFIND until the ledger is confirmed ready");
-assert.ok(source.includes("if (!schemaReady) {"), "the retry batch must stop before sending events while the promotion receiver is not ready");
-assert.ok(reconcile.includes("if (!ledgerReady) {"), "the rescue loop must stop while the promotion receiver is not ready");
+  "new promotions must not be sent to NEWFIND until the promotion receiver is confirmed ready");
+assert.ok(source.includes("if (!receiverReady) {"), "the retry batch must stop before sending events while the promotion receiver is not ready");
+assert.ok(reconcile.includes("if (!receiverReady) {"), "the rescue loop must stop while the promotion receiver is not ready");
 assert.match(source, /schemaBlocked: schemaBlockedIds\.size/,
   "retry telemetry must report promotions paused by the missing ledger");
 assert.match(reconcile, /isNewfindPromotionLedgerSchemaBlocked/,
