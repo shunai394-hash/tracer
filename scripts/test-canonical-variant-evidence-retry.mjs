@@ -14,11 +14,14 @@ assert.doesNotMatch(pipeline, /writeMarketCursor|persistMarketplaceBestsellers/,
   "the production patrol must not read or advance marketplace sourcing cursors");
 assert.doesNotMatch(pipeline, /selectAndPublishSalesTests|promoteShopListingToNewfind/,
   "the production patrol must not treat marketplace observations as supplier products or publish out-of-scope feeds");
-for (const [name, route] of [["market sourcing cron", marketSourcingRoute], ["bestsellers API", bestsellerRoute]]) {
-  assert.match(route, /marketplace_sourcing_disabled_supplier_native_only/, `${name} must be disabled`);
-  assert.doesNotMatch(route, /persistMarketplaceBestsellers|canonicalVariantEvidenceParsed/,
-    `${name} must not collect marketplace-derived variant evidence`);
-}
-assert.doesNotMatch(vercel, /"path": "\/api\/cron\/market-sourcing"/,
-  "marketplace ranking collection must not run on a production schedule");
-console.log("PASS: supplier-native sourcing only; marketplace evidence is demand-only and not a sales dependency");
+assert.match(vercel, /"path": "\/api\/cron\/market-sourcing"/,
+  "the dedicated observation-only market cron remains scheduled for child-variant diagnostics");
+assert.match(marketSourcingRoute, /reason: "observation_only"/,
+  "marketplace observations must never become supplier identity or sales eligibility");
+assert.doesNotMatch(marketSourcingRoute, /selectAndPublishSalesTests|promoteShopListingToNewfind/,
+  "marketplace evidence must not publish products or place orders");
+assert.match(bestsellerRoute, /marketplace_sourcing_disabled_supplier_native_only/,
+  "the public bestsellers API must not act as a sourcing route");
+assert.doesNotMatch(bestsellerRoute, /persistMarketplaceBestsellers|canonicalVariantEvidenceParsed/,
+  "the public bestsellers API must not collect marketplace-derived variants");
+console.log("PASS: supplier-native sourcing only; scheduled marketplace collection is observation-only");
