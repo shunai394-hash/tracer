@@ -58,7 +58,7 @@ export function getFoundationStatus(): FoundationStatus {
     supabaseServiceRole: present(readEnv("SUPABASE_SERVICE_ROLE_KEY")),
     gemini: present(readEnv("GEMINI_API_KEY")),
     brightData: present(readEnv("BRIGHTDATA_API_TOKEN")),
-    brightDataMcp: present(readEnv("BRIGHTDATA_MCP_API_KEY")),
+    brightDataMcp: present(readEnv("BRIGHTDATA_MCP_API_KEY")) || present(readEnv("BRIGHTDATA_MCP_URL")),
     shopify: (() => {
       const hasStaticToken = present(readEnv("SHOPIFY_ADMIN_ACCESS_TOKEN"));
       const hasClientCredentials = present(readEnv("SHOPIFY_CLIENT_ID")) && present(readEnv("SHOPIFY_CLIENT_SECRET"));
