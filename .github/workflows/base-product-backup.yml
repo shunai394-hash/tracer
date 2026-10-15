@@ -67,24 +67,36 @@ jobs:
           const file = `tracer-base-products-${new Date().toISOString().slice(0, 10)}-${process.env.GITHUB_RUN_ID}.json`;
           await writeFile(file, JSON.stringify(snapshot, null, 2), { mode: 0o600 });
 
-          const auditResponse = await fetch(`${audience}/api/admin/channels/base/reconciliation`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${tokenBody.value}`,
-              "Content-Type": "application/json",
-              Accept: "application/json",
-            },
-            body: JSON.stringify({ snapshot }),
-            signal: AbortSignal.timeout(110_000),
-          });
-          if (!auditResponse.ok) {
-            const body = await auditResponse.json().catch(() => ({}));
-            throw new Error(`BASE_RECONCILIATION_HTTP_${auditResponse.status}:${String(body.error ?? "request_failed").slice(0, 100)}`);
+          let report = null;
+          // GitHub push workflows can start before Vercel finishes deploying the
+          // same commit. Retry the read-only report until the new route contract
+          // is live; otherwise the issue could silently contain stale metrics.
+          for (let attempt = 0; attempt < 12; attempt += 1) {
+            const auditResponse = await fetch(`${audience}/api/admin/channels/base/reconciliation`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${tokenBody.value}`,
+                "Content-Type": "application/json",
+                Accept: "application/json",
+              },
+              body: JSON.stringify({ snapshot }),
+              signal: AbortSignal.timeout(110_000),
+            });
+            if (!auditResponse.ok) {
+              const body = await auditResponse.json().catch(() => ({}));
+              throw new Error(`BASE_RECONCILIATION_HTTP_${auditResponse.status}:${String(body.error ?? "request_failed").slice(0, 100)}`);
+            }
+            const candidate = await auditResponse.json();
+            if (candidate.complete !== true || !Array.isArray(candidate.items) || candidate.baseItemCount !== candidate.items.length) {
+              throw new Error("BASE_RECONCILIATION_INCOMPLETE_OR_COUNT_MISMATCH");
+            }
+            if (Object.prototype.hasOwnProperty.call(candidate, "baseItemsWithExactSupplierIdentifierCandidateCount")) {
+              report = candidate;
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 10_000));
           }
-          const report = await auditResponse.json();
-          if (report.complete !== true || !Array.isArray(report.items) || report.baseItemCount !== report.items.length) {
-            throw new Error("BASE_RECONCILIATION_INCOMPLETE_OR_COUNT_MISMATCH");
-          }
+          if (!report) throw new Error("BASE_RECONCILIATION_DEPLOYMENT_NOT_CURRENT");
           const reportFile = `tracer-base-reconciliation-${new Date().toISOString().slice(0, 10)}-${process.env.GITHUB_RUN_ID}.json`;
           await writeFile(reportFile, JSON.stringify(report, null, 2), { mode: 0o600 });
           console.log(JSON.stringify({
