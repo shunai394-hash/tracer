@@ -56,3 +56,9 @@ assert.match(sandboxRoute, /requireAutomationAuth/);
 assert.match(sandboxRoute, /SUPPLIER_LISTING_NOT_FRESH_VERIFIED_FOR_SANDBOX/);
 const vercelConfig = JSON.parse(read("vercel.json"));
 assert.doesNotMatch(JSON.stringify(vercelConfig.crons), /cj-sandbox-order-test/, "sandbox order test must never be scheduled automatically");
+
+const onceWorkflow = read(".github/workflows/cj-sandbox-order-test-once.yml");
+assert.match(onceWorkflow, /branches:\s*\n\s*- main/);
+assert.match(onceWorkflow, /\[run-cj-sandbox-order-test\]/);
+assert.match(onceWorkflow, /cj-sandbox-order-test/);
+assert.doesNotMatch(onceWorkflow, /schedule:/, "the sandbox proof must be one-shot, never scheduled");
