@@ -24,6 +24,13 @@ test("storefront publication is independent from live supplier purchasing", asyn
   assert.match(publish, /tracking_supported", true/);
 });
 
+test("catalog publication is independent of live supplier-ordering capability but still requires a verified profitable offer", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
+  assert.match(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
+  assert.match(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
+  assert.match(publish, /supplier_offer_missing_or_out_of_stock/);
+});
 test("publication and price calculation require fresh verified supplier evidence", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
