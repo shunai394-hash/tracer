@@ -78,7 +78,7 @@ assert.doesNotMatch(oneShotRecovery, /orosy-bulk-import/, "one-shot recovery mus
 const supplyFirstSchedules = vercel.crons.filter((job) => job.path === "/api/cron/supply-first").map((job) => job.schedule);
 assert.deepEqual(supplyFirstSchedules, ["5,35 * * * *"], "supplier-native supply discovery must run every 30 minutes, staggered against CJ identity re-verification");
 const patrolSchedules = vercel.crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule);
-assert.deepEqual(patrolSchedules, ["5,35 * * * *"], "the existing Vercel AI patrol must remain every five minutes");
+assert.deepEqual(patrolSchedules, ["*/5 * * * *"], "the existing Vercel AI patrol must remain every five minutes");
 const githubPatrolWorkflow = readFileSync(".github/workflows/tracer-production-patrol-15m.yml", "utf8");
 assert.doesNotMatch(githubPatrolWorkflow, /^\s{2}schedule:/m, "GitHub Actions must not schedule a second production patrol that races the Vercel Cron");
 assert.match(githubPatrolWorkflow, /if: github\.event_name == 'workflow_dispatch'/, "manual production patrol remains available");
