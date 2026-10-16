@@ -275,7 +275,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         publishedUrl = resolveBasePublicUrl(visibleResponse, externalProductId, basePublicShopUrl)
           ?? resolveBasePublicUrl(baseResponse, externalProductId, basePublicShopUrl);
       } else {
-        const handle = safeSlug(product.source_key + "-" + candidate.id.slice(0, 8));
+        const handle = safeSlug(String(product.source_key).slice(0, 60) + "-" + candidate.id);
         const productId = toShopifyGid("Product", externalProductId);
         const variantId = toShopifyGid("ProductVariant", externalVariantId);
         let recoveredProduct: { id: string; handle: string; variants: { nodes: Array<{ id: string; sku?: string | null }> } } | null = null;
