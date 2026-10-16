@@ -18,7 +18,7 @@ assert.ok(collector.includes("parseAmazonVariationAsinMap"), "Amazon child-ASIN 
 assert.ok(persistence.includes('.from("marketplace_bestseller_variants")'), "canonical child-variant evidence must be persisted to its own table");
 assert.ok(persistence.includes("canonicalVariantEvidenceWriteFailures"), "variant write failures must be counted and returned");
 assert.ok(persistence.includes("canonicalVariantEvidenceWritten"), "only confirmed database writes may count as persisted variants");
-assert.ok(persistence.includes("variant stage already advanced; concurrent replay skipped"), "a concurrent append-only stage advance must not fail the entire observation batch");
+assert.ok(persistence.includes("variant stage already advanced; replay skipped"), "a concurrent append-only stage advance must not fail the entire observation batch");
 assert.doesNotMatch(persistence, /\.from\(["\']tracer_v2_pipeline_events["\']\)/, "the replay path must not directly read the RLS-protected append-only ledger");
 assert.ok(persistence.includes("variants:${sourceItemKey}:${marketplace.fetchedAt}"), "blocked variant evidence attempts must be retryable on a later observation");
 assert.ok(persistence.includes("out_of_order_stage:expected=supplier_matched:received=variant_evidence_saved"), "only the known already-advanced variant replay may be treated as a no-op");
