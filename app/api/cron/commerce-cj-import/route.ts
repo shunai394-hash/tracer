@@ -183,8 +183,16 @@ export async function GET(request: Request) {
           const seen = new Set(candidates.map((item) => item.id));
           const listingIds = (listingOffers ?? []).map((row) => String(row.supplier_product_id ?? "").trim());
           const erroredIds = (failedOffers ?? []).map((row) => String(row.supplier_product_id ?? "").trim());
-          const recoveryIds = [...new Set([...listingIds, ...erroredIds])]
-            .filter((id) => /^\d{10,22}$/.test(id) && !seen.has(id)).slice(0, 2);
+          // The DB query intentionally remains bounded, but do not always retry
+          // the oldest two IDs: failed detail lookups do not mutate supplier evidence
+          // and therefore otherwise starve every later ID in the same result window.
+          const recoveryPool = [...new Set([...listingIds, ...erroredIds])]
+            .filter((id) => /^\d{10,22}$/.test(id) && !seen.has(id));
+          const recoverySlot = Math.floor(Date.now() / 600_000);
+          const recoveryStart = recoveryPool.length ? (recoverySlot * 2) % recoveryPool.length : 0;
+          const recoveryIds = recoveryPool.length > 2
+            ? [recoveryPool[recoveryStart], recoveryPool[(recoveryStart + 1) % recoveryPool.length]]
+            : recoveryPool;
           for (const id of recoveryIds) {
             const detail = await getCJProductDetail(id);
             if (!detail) {
