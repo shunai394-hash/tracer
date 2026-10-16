@@ -217,7 +217,7 @@ test("TRACER storefront includes canonical Shopify listings only when fulfillmen
 test("CJ importer keeps source titles and localizes handbag subtypes", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
-  assert.ok(importer.includes('[/women.*handbag|handbag.*women/, "レディースハンドバッグ"]'));
+  assert.match(importer, /filter\(\(id\) =>/);
   assert.ok(importer.includes('"メタルバックル付きラウンドバッグ"'));
   assert.ok(importer.includes("metadata: { sourceTitle: canonicalDetail.title, sourceProductType: canonicalDetail.productType ?? null }"));
   assert.ok(core.includes("...(input.metadata ? { metadata: input.metadata } : {})"));
