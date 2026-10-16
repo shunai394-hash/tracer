@@ -298,11 +298,16 @@ export async function syncShopifyFulfillments(limit = 25): Promise<ShopifyFulfil
           const syncedAt = new Date().toISOString();
           const marker = { key, trackingNumber: group.trackingNumber, trackingUrl: group.trackingUrl, fulfillmentId, syncedAt };
           const nextGroups = [...syncedGroups.filter((item) => item.key !== key), marker];
-          const { error: stateError } = await supabase.from("commerce_orders").update({
-            raw_payload: { ...rawPayload, tracerShopifyFulfillmentGroups: nextGroups },
-            updated_at: syncedAt,
-          }).eq("id", orderId);
-          if (stateError) throw new Error("commerce_fulfillment_state_persist_failed:" + stateError.message);
+          const stateWrite = await persistOrderStateUpdate(
+            { table: "commerce_orders", id: orderId, context: "commerce_shopify_fulfillment_sync_state" },
+            () => supabase.from("commerce_orders").update({
+              raw_payload: { ...rawPayload, tracerShopifyFulfillmentGroups: nextGroups },
+              updated_at: syncedAt,
+            }).eq("id", orderId),
+          );
+          if (!stateWrite.ok) {
+            throw new Error("commerce_fulfillment_state_persist_failed_manual_reconciliation_required:" + stateWrite.error);
+          }
           syncedGroups = nextGroups;
           result.synced += 1;
           orderSynced = true;
