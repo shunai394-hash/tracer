@@ -7,6 +7,8 @@ import {
 } from "@/lib/config/env";
 import {
   fetchCJVariantByVid,
+  fetchCJVariantStock,
+  fetchCJProductVariants,
   getCJFreightOptions,
   getCJProductDetail,
   searchCJProducts,
@@ -431,7 +433,19 @@ export async function runCJSandboxOrderLifecycle(input: SupplierOrderInput): Pro
   if (variant.productId !== input.supplierProductId) {
     throw new Error(`CJ_SANDBOX_PRODUCT_ID_MISMATCH:expected=${input.supplierProductId}:actual=${variant.productId}:vid=${variant.vid}`);
   }
-  if (variant.inventory === null || variant.inventory < input.quantity || !positiveNumber(variant.sellPrice)) {
+  // queryByVid can prove identity while omitting inventory or price fields.
+  // Re-read the exact child under its canonical parent and use the dedicated
+  // stock endpoint instead of treating missing embedded fields as zero.
+  const [productVariants, liveInventory] = await Promise.all([
+    fetchCJProductVariants(input.supplierProductId),
+    fetchCJVariantStock(input.supplierVariantId),
+  ]);
+  const scopedVariant = productVariants.find((item) => item.vid === input.supplierVariantId);
+  if (!scopedVariant || scopedVariant.productId !== input.supplierProductId) {
+    throw new Error("CJ_SANDBOX_VARIANT_NOT_IN_LIVE_PRODUCT");
+  }
+  const verifiedUnitCostUsd = positiveNumber(variant.sellPrice) ?? positiveNumber(scopedVariant.sellPrice);
+  if (liveInventory === null || liveInventory < input.quantity || !verifiedUnitCostUsd) {
     throw new Error("CJ_SANDBOX_STOCK_OR_PRICE_UNVERIFIED");
   }
   const freight = await chooseFreight(
@@ -490,8 +504,8 @@ export async function runCJSandboxOrderLifecycle(input: SupplierOrderInput): Pro
     realFulfillment: false,
     verifiedSupplierProductId: variant.productId,
     verifiedSupplierVariantId: variant.vid,
-    verifiedUnitCostUsd: positiveNumber(variant.sellPrice)!,
+    verifiedUnitCostUsd,
     verifiedShippingCostUsd: freight.shippingCost,
-    verifiedInventory: variant.inventory!,
+    verifiedInventory: liveInventory,
   };
 }
