@@ -12,6 +12,7 @@ export async function GET(request: Request) {
   try {
     const result = await syncShopifyFulfillments(25);
     const blocked = Boolean(result.blockers?.length);
+    if (blocked) console.warn("[TRACER SHOPIFY FULFILLMENT BLOCKED]", { blockers: result.blockers, considered: result.considered });
     return NextResponse.json(
       { ok: !blocked, phase: "shopify_fulfillment_sync", ...result },
       { status: blocked ? 409 : 200 },
