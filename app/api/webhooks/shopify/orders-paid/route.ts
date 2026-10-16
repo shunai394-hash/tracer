@@ -60,15 +60,50 @@ export async function POST(request: Request) {
       if (!line.id || !Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
         throw new Error("invalid_tracer_line_item");
       }
-      const { data: listing, error: listingError } = await db.from("channel_listings")
-        .select("variant_id").eq("channel", "shopify").eq("external_sku", sku).eq("status", "published").maybeSingle();
-      if (listingError || !listing) throw new Error("tracer_sku_mapping_missing:" + sku);
+      // Prefer the exact SKU saved by the publisher. Older Shopify listings may
+      // still carry TRC-<supplier_variant_id>; resolve that only through an exact,
+      // verified supplier-offer identity, never by title or partial SKU.
+      const exact = await db.from("channel_listings")
+        .select("variant_id").eq("channel", "shopify").eq("external_sku", sku).eq("status", "published");
+      if (exact.error) throw new Error("tracer_sku_mapping_read_failed:" + exact.error.message);
+      let listingRows = exact.data ?? [];
+      let legacyOfferId: string | null = null;
+      if (listingRows.length === 0 && sku.startsWith("TRC-")) {
+        const legacySupplierVariantId = sku.slice(4).trim();
+        if (legacySupplierVariantId) {
+          const legacyOffers = await db.from("supplier_offers")
+            .select("id,variant_id")
+            .eq("supplier_variant_id", legacySupplierVariantId)
+            .eq("source_status", "verified")
+            .eq("tracking_supported", true)
+            .eq("ship_to", "JP")
+            .gt("inventory", 0);
+          if (legacyOffers.error) throw new Error("legacy_supplier_variant_lookup_failed:" + legacyOffers.error.message);
+          const offers = legacyOffers.data ?? [];
+          const variantIds = [...new Set(offers.map((offer) => String(offer.variant_id ?? "")).filter(Boolean))];
+          if (variantIds.length > 1) throw new Error("tracer_sku_mapping_ambiguous:" + sku);
+          if (variantIds.length === 1) {
+            const legacyListings = await db.from("channel_listings")
+              .select("variant_id").eq("channel", "shopify").eq("status", "published")
+              .eq("variant_id", variantIds[0]);
+            if (legacyListings.error) throw new Error("legacy_channel_listing_lookup_failed:" + legacyListings.error.message);
+            listingRows = legacyListings.data ?? [];
+            const offersForVariant = offers.filter((offer) => String(offer.variant_id) === variantIds[0]);
+            if (offersForVariant.length === 1) legacyOfferId = String(offersForVariant[0].id);
+            else if (offersForVariant.length > 1) throw new Error("supplier_offer_mapping_ambiguous:" + sku);
+          }
+        }
+      }
+      const uniqueVariantIds = [...new Set(listingRows.map((row) => String(row.variant_id ?? "")).filter(Boolean))];
+      if (uniqueVariantIds.length === 0) throw new Error("tracer_sku_mapping_missing:" + sku);
+      if (uniqueVariantIds.length > 1) throw new Error("tracer_sku_mapping_ambiguous:" + sku);
+      const variantId = uniqueVariantIds[0];
       const { data: price, error: priceError } = await db.from("commerce_prices")
-        .select("supplier_offer_id").eq("variant_id", listing.variant_id).maybeSingle();
-      if (priceError || !price?.supplier_offer_id) throw new Error("supplier_offer_mapping_missing:" + sku);
+        .select("supplier_offer_id").eq("variant_id", variantId).maybeSingle();
+      if (priceError || (!legacyOfferId && !price?.supplier_offer_id)) throw new Error("supplier_offer_mapping_missing:" + sku);
       canonicalLines.push({
-        externalLineId: String(line.id), variantId: String(listing.variant_id), sku,
-        quantity, unitPrice: Math.round(unitPrice), offerId: String(price.supplier_offer_id)
+        externalLineId: String(line.id), variantId, sku,
+        quantity, unitPrice: Math.round(unitPrice), offerId: legacyOfferId ?? String(price!.supplier_offer_id)
       });
     }
     if (canonicalLines.length === 0) {
