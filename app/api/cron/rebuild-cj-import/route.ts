@@ -12,6 +12,7 @@ import {
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { quoteSellingPrice } from "@/lib/rebuild/commerce-core";
+import { upsertSupplierOffer, recalculatePrice } from "@/lib/commerce/core";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -155,6 +156,46 @@ export async function GET(request: Request) {
                 calculated_at: new Date().toISOString(),
               }, { onConflict: "supplier_variant_id" });
               if (priceError) throw new Error("price_upsert_failed:" + priceError.message);
+
+              // Feed the existing BASE/Shopify publication and paid-order fulfillment
+              // pipeline as well. Those routes use commerce_products/variants/offers,
+              // so importing only tc_* would leave the storefront pipeline empty.
+              const observedAt = new Date().toISOString();
+              const legacy = await upsertSupplierOffer({
+                sourceKey: productKey,
+                titleJa: title,
+                descriptionJa: title + "。日本向け送料を含む価格です。",
+                category: detail.productType ?? null,
+                imageUrl: detail.imageUrl,
+                sourceUrl: "https://cjdropshipping.com/product/" + encodeURIComponent(supplierProductId),
+                sourceVariantKey: supplierProductId + ":" + exact.vid,
+                variantTitleJa: title + variantJa(exact.nameEn),
+                sku: exact.sku ?? null,
+                attributes: { supplierProductId, supplierVariantId: exact.vid, variantName: exact.nameEn ?? null },
+                metadata: { source: "rebuild-cj-import", query, page, exactVariantVerified: true },
+                offer: {
+                  supplierCode: "cj",
+                  supplierProductId,
+                  supplierVariantId: exact.vid,
+                  supplierUrl: "https://cjdropshipping.com/product/" + encodeURIComponent(supplierProductId),
+                  currency: "USD",
+                  unitCost: sourceCost,
+                  shippingCost: Number(shipping),
+                  inventory: Math.floor(Number(stock)),
+                  shipTo: "JP",
+                  trackingSupported: true,
+                  sourceStatus: "verified",
+                  lastCheckedAt: observedAt,
+                  rawData: { query, page, fxRate: fx.rate, stockVerified: true, japanFreightVerified: true, variantSku: exact.sku ?? null, variantBarcode: exact.barcode ?? null },
+                },
+              });
+              await recalculatePrice({
+                variantId: legacy.variantId,
+                offerId: legacy.offerId,
+                exchangeRateToJpy: fx.rate,
+                feeRate: 0.1,
+                targetMarginRate: 0.2,
+              });
               stats.priced++;
             } else {
               stats.skipped++;
