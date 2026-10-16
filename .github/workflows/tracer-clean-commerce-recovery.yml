@@ -106,8 +106,8 @@ jobs:
             [[ "$code" == "200" ]]
           }
           # Publish only fresh, verified, profitable Japanese listings; the bounded import ran once above.
-          call_publish "api/cron/commerce-publish-base" "base-publish.json" || failed=1
-          call_publish "api/cron/commerce-publish-shopify" "shopify-publish.json" || failed=1
+          call_publish "api/cron/commerce-publish-base?limit=100" "base-publish.json" || failed=1
+          call_publish "api/cron/commerce-publish-shopify?limit=100" "shopify-publish.json" || failed=1
           # No supplier purchase is created here; the procurement cron independently requires payment_status=paid.
           echo "Publication pass finished. Any partial failures are recorded in the output JSON above."
           exit "$failed"
