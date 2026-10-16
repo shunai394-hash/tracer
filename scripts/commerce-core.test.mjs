@@ -71,3 +71,12 @@ test("clean commerce cron schedule uses only the new supplier, channel, order, a
   assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
   assert.equal(schedules.has("/api/cron/supply-first"), false);
 });
+
+test("both channels use the shared capped storefront quantity and Japanese title validation", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /getStorefrontStockCap, toStorefrontStockQuantity/);
+  assert.match(publish, /toStorefrontStockQuantity\(offer\.inventory, getStorefrontStockCap\(\)\)/);
+  assert.match(publish, /isJapaneseProductTitle\(title\)/);
+  assert.match(publish, /stock: storefrontStock/);
+  assert.match(publish, /quantity: storefrontStock/);
+});
