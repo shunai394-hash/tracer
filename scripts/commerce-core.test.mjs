@@ -317,8 +317,9 @@ test("complete paid-order retries return idempotently before stale supplier-offe
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   const priorLookup = core.indexOf('select("id,commerce_order_lines(external_line_id,procurement_orders(id))")');
   const completeReturn = core.indexOf('if (complete) return { orderId: String(priorOrder.id), duplicate: true };');
-  const offerValidation = core.indexOf('supplier_offer_verification_stale');
-  assert.ok(priorLookup >= 0, "existing paid orders must be checked before offer validation");
+  const ingestStart = core.indexOf("export async function ingestPaidOrder");
+  const offerValidation = core.indexOf('supplier_offer_verification_stale', ingestStart);
+  assert.ok(priorLookup >= ingestStart, "existing paid orders must be checked inside ingestPaidOrder");
   assert.ok(completeReturn > priorLookup, "complete existing order lines and procurement intents return as duplicate");
   assert.ok(offerValidation > completeReturn, "freshness validation remains mandatory for incomplete order recovery");
 });
