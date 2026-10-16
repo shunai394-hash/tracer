@@ -34,3 +34,12 @@ test("paid-order supplier preflight runs before writing the order record", async
   const orderWrite = core.indexOf('from("commerce_orders").upsert');
   assert.ok(preflight >= 0 && orderWrite > preflight, "invalid or stale supplier offers must be rejected before order persistence");
 });
+
+test("supplier importer never substitutes a search-result product ID for unresolved variant identity", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /fetchCJVariantByVid\(variant\.vid\)/);
+  assert.match(importer, /exactVariant\.vid !== variant\.vid/);
+  assert.match(importer, /canonical_supplier_product_id_unresolved/);
+  assert.match(importer, /supplierProductId === candidate\.id \? detail : await getCJProductDetail\(supplierProductId\)/);
+  assert.match(importer, /supplierProductId,\s*\n\s*supplierVariantId: variant\.vid/);
+});
