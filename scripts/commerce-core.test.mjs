@@ -215,7 +215,7 @@ test("BASE product links never fall back to the generic BASE homepage", async ()
   assert.equal(resolveBasePublicUrl({}, "123", "https://shop.example"), "https://shop.example/items/123");
   assert.equal(resolveBasePublicUrl({}, "123", ""), null);
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
-  assert.match(publish, /resolveBasePublicUrl\(visibleResponse, externalProductId, process\.env\.BASE_PUBLIC_SHOP_URL\)/);
+  assert.match(publish, /resolveBasePublicUrl\(visibleResponse, externalProductId, basePublicShopUrl\)/);
   assert.doesNotMatch(publish, /publishedUrl = "https:\/\/thebase\.com\//);
 });
 
