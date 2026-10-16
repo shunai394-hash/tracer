@@ -25,7 +25,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run one authenticated TRACER_CJ_SANDBOX_ORDER_TEST lifecycle against clean commerce data
+      - name: Run one authenticated TRACER_CJ_SANDBOX_ORDER_TEST lifecycle: create → confirm → simulate payment → tracking
         shell: bash
         run: |
           set -euo pipefail
