@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { calculateSellingPrice } from "../lib/commerce/pricing.mjs";
 import { splitJapaneseAddress } from "../lib/commerce/japanese-address.mjs";
 import { isCanonicalCJNativeId } from "../lib/sources/cj/native-id.mjs";
+import { japaneseCommerceDescription } from "../lib/commerce/japanese-copy.mjs";
 import { resolveBasePublicUrl } from "../lib/commerce/base-public-url.mjs";
 
 test("price calculation preserves positive profit after fees and target margin", () => {
@@ -362,4 +363,14 @@ test("BASE audit waits for exact commerce TRC identifier match support", async (
   assert.match(route, /commerceTrcIdentifierMatchCount: items\.filter/);
   assert.match(workflow, /hasOwnProperty\.call\(candidate, "commerceTrcIdentifierMatchCount"\)/);
   assert.match(workflow, /"commerceTrcIdentifierMatchCount": d\.get\("commerceTrcIdentifierMatchCount"\)/);
+});
+
+
+test("CJ imported products use specific customer-facing Japanese descriptions", async () => {
+  assert.match(japaneseCommerceDescription("メタルバックル付きラウンドバッグ"), /メタルバックルをあしらったラウンドバッグ/);
+  assert.match(japaneseCommerceDescription("日光で色が変わるアセテート製シャーククリップ"), /日光で色の変化を楽しめるアセテート製/);
+  assert.match(japaneseCommerceDescription("メイク用ファンブラシ"), /ファン型のメイクブラシ/);
+  assert.doesNotMatch(japaneseCommerceDescription("レディースハンドバッグ"), /仕入先の最新情報に基づき確認してください/);
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /descriptionJa: japaneseCommerceDescription\(title\)/);
 });
