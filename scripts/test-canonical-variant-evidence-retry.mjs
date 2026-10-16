@@ -37,9 +37,14 @@ assert.doesNotMatch(vercelForBrightData, /"path": "\/api\/cron\/market-sourcing"
 assert.match(bestsellerRouteForBrightData, /marketplace_sourcing_disabled_supplier_native_only/);
 assert.doesNotMatch(bestsellerRouteForBrightData, /persistMarketplaceBestsellers|canonicalVariantEvidenceParsed/);
 
-const recoveryWorkflow = await readFile(new URL("../.github/workflows/tracer-one-shot-supply-recovery.yml", import.meta.url), "utf8");
+const recoveryWorkflow = await readFile(new URL("../.github/workflows/tracer-clean-commerce-recovery.yml", import.meta.url), "utf8");
+const legacyRecoveryWorkflow = await readFile(new URL("../.github/workflows/tracer-one-shot-supply-recovery.yml", import.meta.url), "utf8");
 const healthRoute = await readFile(new URL("../app/api/health/route.ts", import.meta.url), "utf8");
 assert.match(recoveryWorkflow, /\$BASE\/api\/health/);
-assert.match(recoveryWorkflow, /grep -q "\$GITHUB_SHA"/);
+assert.match(recoveryWorkflow, /gitCommitSha/);
+assert.match(recoveryWorkflow, /\$sha" == "\$GITHUB_SHA"/);
 assert.doesNotMatch(recoveryWorkflow, /call_get api\/cron\/market-sourcing/);
+assert.match(legacyRecoveryWorkflow, /if: \$\{\{ false \}\}/,
+  "the old one-shot workflow must not use stale supplier IDs after the reset");
+assert.doesNotMatch(legacyRecoveryWorkflow, /api\/cron\/cj-sandbox-order-test/);
 assert.match(healthRoute, /gitCommitSha: process\.env\.VERCEL_GIT_COMMIT_SHA/);
