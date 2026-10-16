@@ -93,7 +93,11 @@ export async function POST(request: Request) {
     previousError === "CJ_SANDBOX_STOCK_OR_PRICE_UNVERIFIED" ||
     previousError === "CJ_SANDBOX_SHIPPING_UNAVAILABLE" ||
     previousError === "CJ_SANDBOX_COUNTRY_UNVERIFIED";
-  if (previous?.status === "failed" && !previousFailureWasPreOrderOnly) {
+  // A known CREATED(100) -> payment failure is confirmed unpaid and unfulfilled.
+  // Allow one new proof attempt after the status-transition fix; retain the old audit row.
+  const previousFailureWasKnownUnpaidSandboxOnly =
+    previousError === "Current order status is CREATED(100), not UNPAID(200), cannot simulate pay.";
+  if (previous?.status === "failed" && !previousFailureWasPreOrderOnly && !previousFailureWasKnownUnpaidSandboxOnly) {
     return NextResponse.json({
       ok: false,
       error: "CJ_SANDBOX_PREVIOUS_ORDER_MAY_EXIST_REQUIRES_MANUAL_RECONCILIATION",
@@ -115,6 +119,7 @@ export async function POST(request: Request) {
         sandbox: true,
         charged: false,
         realFulfillment: false,
+        retryAfterKnownUnpaidSandboxFailure: previousFailureWasKnownUnpaidSandboxOnly,
       },
     })
     .select("id")
@@ -231,6 +236,7 @@ export async function POST(request: Request) {
       charged: result.charged,
       realFulfillment: result.realFulfillment,
       trackingNumberPresent: Boolean(result.trackingNumber.trim()),
+      retryAfterKnownUnpaidSandboxFailure: previousFailureWasKnownUnpaidSandboxOnly,
     };
     const { error: auditWriteError } = await db.from("cron_runs").update({
       status: "succeeded",
