@@ -196,6 +196,13 @@ export async function GET(request: Request) {
             const shipping = freightResult.status === "fulfilled" ? freightResult.value : null;
             if (stockResult.status === "rejected") stats.errors.push("stock:" + candidate.id + ":" + String(stockResult.reason).slice(0, 100));
             if (freightResult.status === "rejected") stats.errors.push("freight:" + candidate.id + ":" + String(freightResult.reason).slice(0, 100));
+            // A failed/unknown live lookup is not evidence that a previously verified offer is invalid.
+            // Preserve its last known evidence; the freshness gate will stop publication once it expires.
+            // Do not overwrite it with inventory=0, shipping=0, or sourceStatus=error on transient API failures.
+            if (!complianceBlockReason && (stock === null || shipping === null)) {
+              stats.skipped++;
+              continue;
+            }
             const title = japaneseCommerceTitle(canonicalDetail.title, canonicalDetail.productType, supplierProductId === candidate.id ? variants.flatMap((item) => typeof item.nameEn === "string" && item.nameEn.trim().length > 0 ? [item.nameEn] : []) : []) || (supplierProductId === candidate.id ? japaneseCommerceTitle(candidate.title, candidate.productType) : null);
             if (!title) { stats.skipped++; continue; }
             const complianceBlockReason = japaneseCommerceComplianceBlockReason(canonicalDetail.title, canonicalDetail.productType);
