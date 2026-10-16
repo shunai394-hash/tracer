@@ -30,7 +30,7 @@ const reverify = await readFile(new URL("../lib/suppliers/reverify-cj-identity.t
 assert.match(reverify, /const MAX_CANDIDATE_SCAN = 500/);
 assert.match(reverify, /\.limit\(MAX_CANDIDATE_SCAN\)/);
 assert.match(reverify, /buildCandidateQuery\(\)\.gt\("id", priorCursor\)/);
-assert.match(reverify, /nextCursor: scanCursor/);
+assert.match(reverify, /result\.nextCursor = item\.supplierListingId/, "cursor advances only after an actual supplier row is processed");
 const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
 const activeSourceBlock = collector.match(/export const MARKETPLACE_SOURCES = \[([\s\S]*?)\] as const;/)?.[1] ?? "";
 assert.match(activeSourceBlock, /marketplace: "yahoo_shopping"/, "Yahoo! Shopping remains available for demand research");
