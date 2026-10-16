@@ -25,7 +25,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run one authenticated TRACER_CJ_SANDBOX_ORDER_TEST lifecycle: create → confirm → simulate payment → tracking
+      - name: Run one authenticated TRACER_CJ_SANDBOX_ORDER_TEST retry after explicit no-order create failure
         shell: bash
         run: |
           set -euo pipefail
