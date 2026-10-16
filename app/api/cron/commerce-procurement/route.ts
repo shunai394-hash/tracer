@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isCanonicalCjNativeId } from "@/lib/commerce/core";
 import { cjSupplierAdapter } from "@/lib/procurement/cj-adapter";
 import type { SupplierOrderInput } from "@/lib/procurement/types";
 
@@ -133,6 +134,8 @@ export async function GET(request: Request) {
     const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
     if (offerError || !offer ||
       offer.supplier_code !== "cj" ||
+      !isCanonicalCjNativeId(offer.supplier_product_id) ||
+      !isCanonicalCjNativeId(offer.supplier_variant_id) ||
       offer.supplier_product_id !== row.supplier_product_id ||
       offer.supplier_variant_id !== row.supplier_variant_id ||
       offer.source_status !== "verified" || offer.tracking_supported !== true ||
