@@ -6,7 +6,6 @@
     { "path": "/api/cron/commerce-publish-base", "schedule": "10,25,40,55 * * * *" },
     { "path": "/api/cron/commerce-publish-shopify", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/commerce-base-orders", "schedule": "1,16,31,46 * * * *" },
-    { "path": "/api/cron/commerce-procurement", "schedule": "13,28,43,58 * * * *" },
-    { "path": "/api/cron/patrol-ai", "schedule": "*/5 * * * *" }
+    { "path": "/api/cron/commerce-procurement", "schedule": "13,28,43,58 * * * *" }
   ]
 }
