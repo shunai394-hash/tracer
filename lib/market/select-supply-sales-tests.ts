@@ -204,7 +204,19 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
       });
       continue;
     }
-    const reasons: string[] = []; const intelligence = intelligenceByProduct.get(productId) ?? { product_id: productId, demand_score: null, search_fit_score: null, market_gap_score: null, competition_score: null, creative_score: null, selection_score: null, overall_confidence: null, selection_eligible: false, sellability_state: null, filter_state: null, profit_state: null, recommendation_summary: null, why_now: null }; const base = baseByProduct.get(productId); const listing = listingByProduct.get(productId) ?? observedListingByProduct.get(productId);
+    const reasons: string[] = []; const intelligence = intelligenceByProduct.get(productId) ?? { product_id: productId, demand_score: null, search_fit_score: null, market_gap_score: null, competition_score: null, creative_score: null, selection_score: null, overall_confidence: null, selection_eligible: false, sellability_state: null, filter_state: null, profit_state: null, recommendation_summary: null, why_now: null }; const observedBase = baseByProduct.get(productId); const listing = listingByProduct.get(productId) ?? observedListingByProduct.get(productId);
+    // Supplier-native products may not have a product_intelligence row yet.
+    // When the exact supplier listing already carries its own title and image,
+    // use that evidence as a local catalog fallback instead of rejecting it
+    // solely because the enrichment job has not populated product_intelligence.
+    const listingMetadata = listing?.metadata && typeof listing.metadata === "object" && !Array.isArray(listing.metadata) ? listing.metadata as Record<string, unknown> : {};
+    const listingImage = listingMetadata.image_url ?? listingMetadata.imageUrl ?? listingMetadata.product_image_url ?? (Array.isArray(listingMetadata.images) ? listingMetadata.images[0] : null);
+    const base = observedBase ?? (typeof listing?.title === "string" && listing.title.trim() ? {
+      product_id: productId,
+      normalized_title: listing.title,
+      image_url: validHttpUrl(listingImage) ? listingImage : null,
+      metadata: listingMetadata,
+    } as Record<string, unknown> : undefined);
     const sourceTitle = (typeof listing?.title === "string" && listing.title.trim()
       ? listing.title
       : typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
@@ -225,7 +237,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // reported for the merchant's pricing decision, not used as a publication veto.
     // Product identity, Japanese copy and fulfillment evidence remain required.
     if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
-    if (!base) reasons.push("product_intelligence_missing");
+    if (!base) reasons.push("product_intelligence_or_supplier_catalog_missing");
     if (!listing) reasons.push("supplier_listing_missing");
     else {
       if (listing.orderable !== true) reasons.push("supplier_listing_not_orderable");

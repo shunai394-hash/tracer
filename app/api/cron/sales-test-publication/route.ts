@@ -173,7 +173,7 @@ export async function GET(request: Request) {
       .map((row) => {
         const productId = String(row.supplier_product_id ?? "").trim();
         const variantId = String(row.supplier_variant_id ?? "").trim();
-        const sourceRef = productId && variantId ? `cj:${productId}:${variantId}` : "";
+        const sourceRef = productId && variantId ? `cj:product:${productId}:variant:${variantId}` : "";
         return { product_id: nativeProductBySourceRef.get(sourceRef) ?? null };
       })
       .filter((row): row is { product_id: string } => Boolean(row.product_id));
