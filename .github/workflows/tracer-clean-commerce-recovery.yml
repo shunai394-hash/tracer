@@ -80,7 +80,7 @@ jobs:
           PY
             [[ "$code" == "200" ]]
           }
-          # Prove the clean catalog's exact CJ variant → sandbox order → simulated payment → tracking path.
+          # Prove exact CJ variant → sandbox order → confirmOrder → simulated payment → tracking path.
           # The callback persists supplierOrderId before payment so partial failures remain reconcilable.
           call_post "api/cron/commerce-cj-sandbox-test" "cj-sandbox-core.json" 300 || failed=1
           # Do not publish or enable paid live ordering from CI. Real storefront writes stay gated
