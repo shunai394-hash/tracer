@@ -80,8 +80,10 @@ assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/orosy-bulk
 assert.doesNotMatch(commerceCycle, /orosy-bulk-import/, "autonomous commerce workflow must not invoke Orosy");
 assert.doesNotMatch(oneShotRecovery, /orosy-bulk-import/, "one-shot recovery must not invoke Orosy");
 
-const supplyFirstSchedules = vercel.crons.filter((job) => job.path === "/api/cron/supply-first").map((job) => job.schedule);
-assert.deepEqual(supplyFirstSchedules, ["5,35 * * * *"], "supplier-native supply discovery must run every 30 minutes, staggered against CJ identity re-verification");
+const cleanImportSchedules = vercel.crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule);
+assert.deepEqual(cleanImportSchedules, ["*/30 * * * *"], "clean supplier-native discovery must run every 30 minutes");
+assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/supply-first"), [], "legacy supply-first cron must not run beside the clean importer");
+assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/market-sourcing"), [], "legacy marketplace observation cron must not run beside clean supplier discovery");
 const patrolSchedules = vercel.crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule);
 assert.deepEqual(patrolSchedules, ["*/5 * * * *"], "the existing Vercel AI patrol must remain every five minutes");
 const githubPatrolWorkflow = readFileSync(".github/workflows/tracer-production-patrol-15m.yml", "utf8");
