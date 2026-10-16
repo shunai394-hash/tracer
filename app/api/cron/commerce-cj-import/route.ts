@@ -31,6 +31,13 @@ function japaneseCommerceTitle(title: string, productType?: string | null): stri
     [/handbag|purse/, "ハンドバッグ"],
     [/bag strap/, "バッグストラップ"],
     [/face roller/, "フェイスローラー"],
+    [/phone case|mobile phone case|iphone case|smartphone case/, "スマートフォンケース"],
+    [/pet collar|dog leash|cat collar|pet leash/, "ペット用首輪・リード"],
+    [/pet toy|dog toy|cat toy/, "ペット用おもちゃ"],
+    [/pet accessory|pet accessories|dog accessory|cat accessory|pet supplies/, "ペット用品"],
+    [/kitchen organizer|kitchen storage|spice rack|drawer organizer/, "キッチン収納用品"],
+    [/travel organizer|packing cube|luggage organizer|travel pouch/, "旅行用収納ポーチ"],
+    [/necklace|earring|bracelet|jewelry/, "アクセサリー"],
     [/beauty tool|makeup|cosmetic/, "美容ツール"],
   ];
   const specific = rules.find(([pattern]) => pattern.test(source));
@@ -55,7 +62,11 @@ export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   const url = new URL(request.url);
-  const queryOptions = ["women handbag", "beauty tools", "hair accessories women"];
+  const queryOptions = [
+    "women handbag", "beauty tools", "hair accessories women",
+    "phone case", "pet accessories", "kitchen storage",
+    "travel accessories", "jewelry women",
+  ];
   const explicitQuery = url.searchParams.get("q");
   const query = (explicitQuery || queryOptions[Math.floor(Date.now() / 600_000) % queryOptions.length]).trim().slice(0, 100);
   const page = Math.min(1000, Math.max(1, Number(url.searchParams.get("page") || 1)));
