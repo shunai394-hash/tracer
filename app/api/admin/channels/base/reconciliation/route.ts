@@ -210,17 +210,33 @@ export async function POST(request: Request) {
       }
     }
 
+    // The current commerce publisher sets BASE's identifier to a stable
+    // TRC-<24 hex> storefront SKU, while the actual supplier SKU remains on
+    // commerce_variants. Index both identifiers against the same exact row.
+    const commerceListingById = new Map(commerceListingRows.map((row) => [String(row.id), row]));
+    for (const channelRow of commerceRows ?? []) {
+      const listing = commerceListingById.get(String(channelRow.id));
+      if (!listing) continue;
+      addSupplierIdentifier(channelRow.external_sku, listing);
+      const variant = variantById.get(String(channelRow.variant_id));
+      addSupplierIdentifier(variant?.sku, listing);
+    }
+
     const items = typedSnapshotItems.map((item) => {
       const baseItemId = String(item.item_id ?? "");
       const title = String(item.title ?? item.name ?? "");
       const key = normalizedTitle(title);
       const identifier = text(item.identifier);
-      const stableIdentifierMatch = identifier?.match(/^TRC-([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i);
+      const stableIdentifierMatch = identifier?.match(/^TRC-(?:([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})|([0-9a-f]{24}))$/i);
       const stableIdentifierListingId = stableIdentifierMatch?.[1]?.toLowerCase() ?? null;
-      const stableIdentifierListing = stableIdentifierListingId ? byListingId.get(stableIdentifierListingId) ?? null : null;
-      const supplierIdentifierCandidates = identifier && !stableIdentifierListingId
+      const supplierIdentifierCandidates = identifier
         ? (bySupplierIdentifier.get(identifierKey(identifier)) ?? [])
         : [];
+      const stableIdentifierListing = stableIdentifierListingId
+        ? byListingId.get(stableIdentifierListingId) ?? null
+        : stableIdentifierMatch?.[2] && supplierIdentifierCandidates.length === 1
+          ? supplierIdentifierCandidates[0]
+          : null;
       const exactIdListings = byBaseId.get(baseItemId) ?? [];
       const titleCandidates = key ? (byTitle.get(key) ?? []) : [];
       return {
