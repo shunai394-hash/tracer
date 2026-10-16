@@ -62,3 +62,11 @@ const admin = readFileSync("lib/shopify/admin.ts", "utf8");
 test("paid-order webhook HMAC uses the explicit secret or configured Shopify app client secret", () => {
   assert.match(admin, /process\.env\.SHOPIFY_WEBHOOK_SECRET\?\.trim\(\)\s*\|\|\s*process\.env\.SHOPIFY_CLIENT_SECRET\?\.trim\(\)/);
 });
+
+test("paid-order webhook resolves legacy TRC supplier-variant SKUs only by exact verified evidence", () => {
+  const paidWebhook = readFileSync("app/api/webhooks/shopify/orders-paid/route.ts", "utf8");
+  assert.match(paidWebhook, /\.eq\("supplier_variant_id", legacySupplierVariantId\)/);
+  assert.match(paidWebhook, /\.eq\("source_status", "verified"\)/);
+  assert.match(paidWebhook, /tracer_sku_mapping_ambiguous/);
+  assert.match(paidWebhook, /tracer_sku_mapping_missing/);
+});
