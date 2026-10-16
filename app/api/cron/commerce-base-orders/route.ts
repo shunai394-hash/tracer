@@ -3,6 +3,7 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getBaseOrderDetail, isBaseConfigured, listBaseOrders } from "@/lib/channels/base";
 import { ingestPaidOrder } from "@/lib/commerce/core";
+import { splitJapaneseAddress } from "@/lib/commerce/japanese-address.mjs";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -57,6 +58,9 @@ export async function GET(request: Request) {
           });
         }
         if (!lines.length) { result.ignored++; continue; }
+        const prefecture = detail.prefecture ?? detail.order_receiver?.prefecture ?? "";
+        const rawAddress = detail.address ?? detail.order_receiver?.address ?? "";
+        const parsedAddress = splitJapaneseAddress(rawAddress, prefecture);
         const imported = await ingestPaidOrder({
           channel: "base", externalOrderId: String(detail.unique_key),
           totalAmount: Math.round(Number(detail.total ?? 0)),
@@ -65,8 +69,10 @@ export async function GET(request: Request) {
             country: detail.country ?? detail.order_receiver?.country ?? "",
             country_code: detail.country_code ?? detail.order_receiver?.country_code ?? "",
             zip: detail.zip_code ?? detail.order_receiver?.zip_code ?? "",
-            prefecture: detail.prefecture ?? detail.order_receiver?.prefecture ?? "",
-            address: detail.address ?? detail.order_receiver?.address ?? "",
+            prefecture,
+            city: parsedAddress.city,
+            address1: parsedAddress.address1,
+            address: parsedAddress.address1,
             address2: detail.address2 ?? detail.order_receiver?.address2 ?? "",
             phone: detail.tel ?? detail.order_receiver?.tel ?? ""
           },
