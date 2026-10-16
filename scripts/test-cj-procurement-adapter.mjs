@@ -80,6 +80,10 @@ assert.match(cleanSandboxRoute, /from\("commerce_events"\)/);
 assert.match(cleanSandboxRoute, /supplierOrderId: createdOrderId/);
 assert.match(cleanSandboxRoute, /CJ_SANDBOX_ORDER_TEST_ENABLED/);
 assert.match(cleanSandboxRoute, /realFulfillment: false/);
+assert.match(cleanSandboxRoute, /safeCreateFailureRetry/);
+assert.match(cleanSandboxRoute, /previousErrorText\.startsWith\("CJ_SANDBOX_CREATE_FAILED:1603000"\)/);
+assert.match(cleanSandboxRoute, /cj-sandbox-core:retry-1/);
+assert.match(adapter, /created\.responseMessage\.replace\(/, "sandbox create failures must preserve supplier response details");
 
 const sandboxPayment = adapter.indexOf("await simulateCJSandboxPayment(orderId)");
 assert.ok(sandboxPayment >= 0, "CJ sandbox lifecycle must use the documented simulated-payment endpoint");
