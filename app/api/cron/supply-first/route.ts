@@ -80,7 +80,7 @@ export async function GET(request: Request) {
       : null;
     if (cachedSupply?.error) throw new Error(`cached orderable supply lookup failed: ${cachedSupply.error.message}`);
 
-    const supplyFirst = quotaCircuitActive
+    const supplyFirst: { items: unknown[]; discovered?: number; published?: number; rejected?: number; eligibleCount?: number; deadlineReached?: boolean; verified?: number; candidateCount?: number; quotaBlocked?: boolean; retryable?: boolean; retryAfter?: string; reason?: string } = quotaCircuitActive
       ? {
           items: (cachedSupply?.data ?? []).map((row) => ({ productId: String(row.product_id ?? "") })).filter((row) => row.productId),
           discovered: 0,
