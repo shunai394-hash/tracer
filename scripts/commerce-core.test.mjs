@@ -402,7 +402,7 @@ test("BASE reconciliation recognizes commerce-native supplier SKUs without auto-
 test("BASE audit workflow waits for commerce-aware production reconciliation", async () => {
   const route = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
   const workflow = await readFile(new URL("../.github/workflows/base-product-backup.yml", import.meta.url), "utf8");
-  assert.match(route, /commerceChannelListingCount: commerceRows\?\.length \?\? 0/);
+  assert.match(route, /commerceChannelListingCount: commerceRows\.length,/);
   assert.match(workflow, /hasOwnProperty\.call\(candidate, "commerceChannelListingCount"\)/);
   assert.match(workflow, /"commerceChannelListingCount": d\.get\("commerceChannelListingCount"\)/);
 });

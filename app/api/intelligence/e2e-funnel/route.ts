@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { newfindDeliveryOutcome } from "@/lib/integration/newfind-delivery-state";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
@@ -110,7 +111,7 @@ export async function GET(request: Request) {
   const newfindState = (id: string) => {
     const delivery = deliveryByListing.get(id);
     if (!delivery) return "missing";
-    if (delivery.status === "processed" && delivery.ack_status === "processed") return "processed";
+    if (newfindDeliveryOutcome(delivery) === "delivered") return "processed";
     return String(delivery.status ?? "pending");
   };
   const baseToNewfind = tally(gatedOnBase.map((row) => newfindState(String(row.id))));

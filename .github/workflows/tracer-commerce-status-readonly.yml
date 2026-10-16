@@ -16,6 +16,9 @@ on:
       - "app/api/channels/base/diagnostics/route.ts"
       - "app/api/admin/channels/base/snapshot/route.ts"
       - "lib/channels/base.ts"
+      - "app/api/admin/shopify/reconcile/route.ts"
+      - "lib/shopify/catalog-reconcile.ts"
+      - "lib/integration/newfind-delivery-state.ts"
   workflow_dispatch:
 
 permissions:
@@ -80,4 +83,8 @@ jobs:
               "error": d.get("error"),
           }, ensure_ascii=False))
           PY
+          echo "=== Shopify full-store reconcile (read-only) ==="
+          reconcile_code="$(curl -sS -o reconcile.json -w "%{http_code}" --max-time 130 -H "Authorization: Bearer $token" "$BASE/api/admin/shopify/reconcile?variant=3ce7d60e-dc48-4eae-9d5e-485a7348d1d4" || true)"
+          echo "HTTP $reconcile_code"
+          python3 -c 'import json; d=json.load(open("reconcile.json")); print(json.dumps({k: d.get(k) for k in ("ok","error","catalog","shopify","db")}, ensure_ascii=False, indent=1))' || echo "reconcile response was not JSON"
           [[ "$status_code" =~ ^2 ]]

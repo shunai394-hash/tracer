@@ -51,12 +51,14 @@ check("only a processed or duplicate ACK completes delivery", () => {
   assert.equal(newfindCommerceOutcome({ ok: true, status: 202, ackStatus: "queued" }), "sent");
   assert.equal(newfindCommerceOutcome({ ok: false, status: 422, ackStatus: null }), "failed");
   assert.equal(newfindCommerceOutcome(null), "failed");
+  assert.equal(newfindCommerceOutcome({ ok: true, status: 200, ackStatus: null }), "sent");
 });
 
-const [source, patrol, status] = await Promise.all([
+const [source, patrol, status, reconcile] = await Promise.all([
   readFile(new URL("../lib/integration/newfind-commerce.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/admin/commerce/status/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/admin/shopify/reconcile/route.ts", import.meta.url), "utf8"),
 ]);
 check("delivery is gated on the receiver flag, claims by compare-and-set and checks the live TRACER URL first", () => {
   assert.match(source, /NEWFIND_TRACER_PROMOTION_RECEIVER_READY\?\.trim\(\) === "1"/);
@@ -76,7 +78,13 @@ check("patrol runs the commerce delivery within its time budget", () => {
 check("status reports both NEWFIND ledgers without writing", () => {
   assert.match(status, /newfind_promotion_deliveries/);
   assert.match(status, /newfind_commerce_delivery/);
+  assert.match(status, /acknowledged: newfindLegacyProcessed \+ newfindCommerceProcessed/);
   assert.doesNotMatch(status, /\.(insert|update|upsert|delete)\(/);
+  assert.match(reconcile, /SHOPIFY_VENDOR_SCAN_MAX_PAGES/);
+  assert.doesNotMatch(reconcile, /page < 8/);
+  assert.match(reconcile, /countPrecision: vendorPrecision/);
+  assert.match(reconcile, /commerceChannelListings/);
+  assert.match(reconcile, /shopifyStore/);
 });
 
 console.log(`newfind commerce delivery: ${cases} cases passed`);

@@ -44,7 +44,7 @@ export async function GET(request: Request) {
       count("baseItemsTotal", () => listings().not("base_item_id", "is", null)),
       count("cjVerifiedCandidates", () => cj()),
       count("cjVerifiedCandidatesShippingMeasured", () => cj().not("shipping_cost", "is", null).gt("shipping_cost", 0)),
-      count("newfindProcessed", () => deliveries().eq("status", "processed")),
+      count("newfindProcessed", () => deliveries().eq("status", "processed").in("ack_status", ["processed", "duplicate"])),
       count("newfindSent", () => deliveries().eq("status", "sent")),
       count("newfindPending", () => deliveries().eq("status", "pending")),
       count("newfindFailed", () => deliveries().eq("status", "failed")),

@@ -67,7 +67,7 @@ export async function GET(request: Request) {
     shop_listings_published_inventory_unknown: count(db, "shop_listings", (q) => q.eq("published", true).is("inventory", null)),
     shop_listings_published_not_orderable: count(db, "shop_listings", (q) => q.eq("published", true).eq("orderable", false)),
     newfind_deliveries: count(db, "newfind_promotion_deliveries"),
-    newfind_deliveries_processed: count(db, "newfind_promotion_deliveries", (q) => q.eq("status", "processed")),
+    newfind_deliveries_processed: count(db, "newfind_promotion_deliveries", (q) => q.eq("status", "processed").in("ack_status", ["processed", "duplicate"])),
     newfind_deliveries_failed: count(db, "newfind_promotion_deliveries", (q) => q.eq("status", "failed")),
     purchase_orders_supplier_payment_pending: count(db, "purchase_orders", (q) => q.eq("status", "supplier_payment_pending")),
     purchase_orders_supplier_payment_verification_failed: count(db, "purchase_orders", (q) => q.eq("status", "supplier_payment_verification_failed")),

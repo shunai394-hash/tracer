@@ -3,6 +3,7 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
 import { probeBaseReadOnly, isBaseConfigured, BASE_ITEMS_MAX_PAGES } from "@/lib/channels/base";
+import { classifyBaseIdentifier, decideCommerceSkuLink } from "@/lib/channels/base-item-identity";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -35,6 +36,21 @@ export async function GET(request: Request) {
       itemIdentifierPresentCount: probe.items.entries.filter((entry) => Boolean(entry.identifier)).length,
       stableTracerIdentifierCount: probe.items.entries.filter((entry) => /^TRC-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry.identifier ?? "")).length,
       itemIdMissingCount: probe.items.entries.filter((entry) => !entry.itemId).length,
+      duplicateItemCount: probe.items.duplicateItemCount,
+      unmappedVisibleItems: {
+        missingIdentifier: 0,
+        otherIdentifier: 0,
+        legacyUuidRepairable: 0,
+        legacyUuidAlreadyStored: 0,
+        legacyUuidDifferentBaseId: 0,
+        legacyUuidNoRow: 0,
+        commerceSkuRepairable: 0,
+        commerceSkuAlreadyStored: 0,
+        commerceSkuDifferentExternalId: 0,
+        commerceSkuAmbiguous: 0,
+        commerceSkuNoRow: 0,
+        baseItemAlreadyMapped: 0,
+      },
       errorStage: null as string | null,
     };
 
@@ -126,6 +142,7 @@ export async function GET(request: Request) {
             commerceByBaseId.set(key, group);
           }
 
+          const unmappedEntries: typeof visibleEntries = [];
           for (const entry of visibleEntries) {
             const key = String(entry.itemId);
             const legacyMatches = rowsByBaseId.get(key) ?? [];
@@ -133,6 +150,7 @@ export async function GET(request: Request) {
             const totalMatches = legacyMatches.length + commerceMatches.length;
             if (totalMatches === 0) {
               mappingAudit.visibleItemsWithoutDbMapping += 1;
+              unmappedEntries.push(entry);
               continue;
             }
             mappingAudit.visibleItemsMatchedToDatabase += 1;
@@ -166,6 +184,65 @@ export async function GET(request: Request) {
               mappingAudit.visibleItemsUnlinked += 1;
             } else {
               mappingAudit.visibleItemsLinked += 1;
+            }
+          }
+          const reasons = mappingAudit.unmappedVisibleItems;
+          const parsed = unmappedEntries.map((entry) => ({
+            itemId: String(entry.itemId),
+            identity: classifyBaseIdentifier(entry.identifier),
+          }));
+          const legacyIds = [...new Set(parsed.flatMap((row) => row.identity.kind === "legacy_uuid" ? [row.identity.listingId] : []))];
+          const skus = [...new Set(parsed.flatMap((row) => row.identity.kind === "commerce_sku" ? [row.identity.sku] : []))];
+          const legacyRows: Array<{ id: string; base_item_id: string | null }> = [];
+          const skuRows: Array<{ id: string; external_sku: string | null; external_product_id: string | null }> = [];
+          for (let offset = 0; offset < legacyIds.length; offset += 100) {
+            const { data, error } = await db.from("shop_listings").select("id,base_item_id").in("id", legacyIds.slice(offset, offset + 100));
+            if (error) throw new Error("base_unmapped_legacy_lookup_failed");
+            legacyRows.push(...(data ?? []));
+          }
+          for (let offset = 0; offset < skus.length; offset += 100) {
+            const { data, error } = await db.from("channel_listings").select("id,external_sku,external_product_id").eq("channel", "base").in("external_sku", skus.slice(offset, offset + 100));
+            if (error) throw new Error("base_unmapped_sku_lookup_failed");
+            skuRows.push(...(data ?? []));
+          }
+          const legacyById = new Map(legacyRows.map((row) => [String(row.id).toLowerCase(), row]));
+          const listingsBySku = new Map<string, Array<{ id: string; externalProductId: string | null }>>();
+          for (const row of skuRows) {
+            const sku = String(row.external_sku ?? "").toUpperCase();
+            const group = listingsBySku.get(sku) ?? [];
+            group.push({ id: String(row.id), externalProductId: row.external_product_id == null ? null : String(row.external_product_id) });
+            listingsBySku.set(sku, group);
+          }
+          const baseIdsBySku = new Map<string, string[]>();
+          for (const row of parsed) {
+            if (row.identity.kind !== "commerce_sku") continue;
+            const group = baseIdsBySku.get(row.identity.sku) ?? [];
+            group.push(row.itemId);
+            baseIdsBySku.set(row.identity.sku, group);
+          }
+          for (const row of parsed) {
+            if (row.identity.kind === "missing") reasons.missingIdentifier += 1;
+            else if (row.identity.kind === "other") reasons.otherIdentifier += 1;
+            else if (row.identity.kind === "legacy_uuid") {
+              const legacy = legacyById.get(row.identity.listingId);
+              if (!legacy) reasons.legacyUuidNoRow += 1;
+              else if (legacy.base_item_id == null) reasons.legacyUuidRepairable += 1;
+              else if (String(legacy.base_item_id) === row.itemId) reasons.legacyUuidAlreadyStored += 1;
+              else reasons.legacyUuidDifferentBaseId += 1;
+            } else {
+              const sku = row.identity.sku;
+              const decision = decideCommerceSkuLink({
+                baseItemId: row.itemId,
+                listingsForSku: listingsBySku.get(sku) ?? [],
+                otherBaseItemIdsWithSameSku: (baseIdsBySku.get(sku) ?? []).filter((id) => id !== row.itemId),
+                listingIdsAlreadyUsingBaseItem: [],
+              });
+              if (decision.outcome === "repairable") reasons.commerceSkuRepairable += 1;
+              else if (decision.outcome === "already_linked") reasons.commerceSkuAlreadyStored += 1;
+              else if (decision.outcome === "listing_has_different_base_item") reasons.commerceSkuDifferentExternalId += 1;
+              else if (decision.outcome === "no_listing") reasons.commerceSkuNoRow += 1;
+              else if (decision.outcome === "base_item_already_mapped") reasons.baseItemAlreadyMapped += 1;
+              else reasons.commerceSkuAmbiguous += 1;
             }
           }
           mappingAudit.ok = mappingAudit.itemIdMissingCount === 0
@@ -210,6 +287,8 @@ export async function GET(request: Request) {
       itemIdentifierPresentCount: mappingAudit.itemIdentifierPresentCount,
       stableTracerIdentifierCount: mappingAudit.stableTracerIdentifierCount,
       itemIdMissingCount: mappingAudit.itemIdMissingCount,
+      duplicateItemCount: mappingAudit.duplicateItemCount,
+      unmappedVisibleItems: mappingAudit.unmappedVisibleItems,
       mappingAuditErrorStage: mappingAudit.errorStage,
     };
     console.info("[TRACER BASE AUTH PROBE]", result);

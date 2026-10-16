@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { newfindDeliveryOutcome, tallyNewfindDeliveries } from "@/lib/integration/newfind-delivery-state";
 import { isProcurementApprovalRequired } from "@/lib/commerce/procurement-approval";
 import { BASE_ITEMS_MAX_PAGES, isBaseConfigured, probeBaseReadOnly } from "@/lib/channels/base";
 import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
@@ -23,6 +24,18 @@ async function latest(db: Db, table: string, column: string, filter: Filter = (q
   if (error) throw new Error(`${table}_${column}_latest_failed:${error.message}`);
   const value = data ? (data as Record<string, unknown>)[column] : null;
   return typeof value === "string" ? value : null;
+}
+
+/** Reads every row of a filtered query in 1000-row pages (PostgREST caps a single response). */
+async function readAll(db: Db, table: string, columns: string, orderColumn: string, filter: Filter): Promise<Array<Record<string, unknown>>> {
+  const rows: Array<Record<string, unknown>> = [];
+  for (let from = 0; from < 50_000; from += 1000) {
+    const { data, error } = await filter(db.from(table).select(columns)).order(orderColumn, { ascending: true }).range(from, from + 999);
+    if (error) throw new Error(`${table}_read_failed:${error.message}`);
+    rows.push(...((data ?? []) as Array<Record<string, unknown>>));
+    if ((data ?? []).length < 1000) return rows;
+  }
+  throw new Error(`${table}_read_incomplete`);
 }
 
 /** Read-only production counts for TRACER, BASE, Shopify, orders, procurement and tracking. */
@@ -55,6 +68,8 @@ export async function GET(request: Request) {
             pagesScanned: probe.items.pages,
             scanCap: BASE_ITEMS_MAX_PAGES * 100,
             scanComplete: probe.items.complete,
+            missingItemIds: probe.items.missingItemIdCount,
+            duplicateRowsSkipped: probe.items.duplicateItemCount,
             errorStage: probe.items.errorStage,
           };
         } catch (error) {
@@ -76,6 +91,7 @@ export async function GET(request: Request) {
             configured: true,
             totalProducts: live.productsCount.count,
             activeProducts: live.activeProductsCount.count,
+            countSource: "shopify_products_count_api",
             countPrecision: live.productsCount.precision,
             activeCountPrecision: live.activeProductsCount.precision,
           };
@@ -87,8 +103,33 @@ export async function GET(request: Request) {
     if (recentCronRows.error) throw new Error("cron_runs_recent_read_failed:" + recentCronRows.error.message);
     const [failedCronRows, listingErrorRows] = await Promise.all([
       db.from("cron_runs").select("job_name,error").gte("started_at", freshSince).eq("status", "failed").limit(500),
-      db.from("channel_listings").select("channel,last_error").eq("status", "error").limit(500),
+      db.from("channel_listings").select("channel,variant_id,external_product_id,last_error,last_synced_at,commerce_variants(sku,title_ja,supplier_offers(supplier_code,supplier_product_id,supplier_variant_id,source_status,last_checked_at))").eq("status", "error").order("variant_id").limit(500),
     ]);
+    // NEWFIND: count from the rows themselves with one outcome definition
+    // (receiver ACK required), all-time and for the same 24h window.
+    const [legacyDeliveryRows, commerceDeliveryRows, latestPatrol] = await Promise.all([
+      readAll(db, "newfind_promotion_deliveries", "listing_id,status,ack_status,attempts,last_error,updated_at", "listing_id", (q) => q),
+      readAll(db, "commerce_events", "entity_id,status,ack_status:detail->>ackStatus,attempts:detail->>attempts,last_error:detail->>lastError,updated_at:detail->>lastAttemptAt,created_at", "id", (q) => q.eq("event_type", "newfind_commerce_delivery")),
+      db.from("cron_runs").select("started_at,status,actions:metadata->actions").eq("job_name", "patrol-ai").not("finished_at", "is", null)
+        .order("started_at", { ascending: false }).limit(1).maybeSingle(),
+    ]);
+    const patrolActions = Array.isArray(latestPatrol.data?.actions) ? latestPatrol.data.actions as Array<Record<string, unknown>> : [];
+    const latestPatrolNewfind = {
+      startedAt: latestPatrol.data?.started_at ?? null,
+      status: latestPatrol.data?.status ?? null,
+      readError: latestPatrol.error?.message ?? null,
+      actions: patrolActions.filter((action) => String(action.action ?? "").startsWith("newfind")),
+    };
+    const newfindSummary = (rows: Array<Record<string, unknown>>) => {
+      const recent = rows.filter((row) => String(row.updated_at ?? row.created_at ?? "") >= freshSince);
+      return {
+        allTime: tallyNewfindDeliveries(rows),
+        last24Hours: tallyNewfindDeliveries(recent),
+        retried: rows.filter((row) => Number(row.attempts) > 1).length,
+        lastAttemptAt: rows.map((row) => String(row.updated_at ?? "")).filter(Boolean).sort().at(-1) ?? null,
+        failureReasons: tally(rows.filter((row) => newfindDeliveryOutcome(row) === "failed"), "status", "last_error"),
+      };
+    };
     if (failedCronRows.error) throw new Error("cron_runs_failed_read_failed:" + failedCronRows.error.message);
     if (listingErrorRows.error) throw new Error("channel_listings_error_read_failed:" + listingErrorRows.error.message);
     const tally = (rows: Array<Record<string, unknown>>, group: string, reason: string) => {
@@ -103,6 +144,14 @@ export async function GET(request: Request) {
       }
       return [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 30);
     };
+    const legacyNewfind = newfindSummary(legacyDeliveryRows);
+    const commerceNewfind = newfindSummary(commerceDeliveryRows);
+    const newfindLegacyProcessed = legacyNewfind.allTime.delivered;
+    const newfindCommerceProcessed = commerceNewfind.allTime.delivered;
+    const newfindLegacyFailed = legacyNewfind.allTime.failed;
+    const newfindCommerceFailed = commerceNewfind.allTime.failed;
+    const newfindLegacyOpen = legacyNewfind.allTime.open + legacyNewfind.allTime.status_without_ack;
+    const newfindCommerceOpen = commerceNewfind.allTime.open + commerceNewfind.allTime.status_without_ack;
     const latestCronByJob = new Map<string, Record<string, unknown>>();
     for (const row of recentCronRows.data ?? []) {
       const jobName = typeof row.job_name === "string" ? row.job_name : "unknown";
@@ -123,8 +172,6 @@ export async function GET(request: Request) {
       procurementWithTracking, procurementLastSubmitted, procurementLastShipped,
       lastOfferCheck, lastPriceCalculation, approvalRequested, approvalGranted,
       legacyListings, legacyPublished,
-      newfindLegacyProcessed, newfindLegacyFailed, newfindLegacyOpen,
-      newfindCommerceProcessed, newfindCommerceFailed, newfindCommerceOpen, newfindCommerceLast,
     ] = await Promise.all([
       count(db, "commerce_products"), count(db, "commerce_products", q => q.eq("active", true)), count(db, "commerce_variants"),
       count(db, "supplier_offers", q => q.eq("source_status", "discovered")),
@@ -170,13 +217,6 @@ export async function GET(request: Request) {
       count(db, "commerce_events", q => q.eq("event_type", "procurement_approval_requested")),
       count(db, "commerce_events", q => q.eq("event_type", "procurement_approved")),
       count(db, "shop_listings"), count(db, "shop_listings", q => q.eq("published", true)),
-      count(db, "newfind_promotion_deliveries", q => q.eq("status", "processed")),
-      count(db, "newfind_promotion_deliveries", q => q.eq("status", "failed")),
-      count(db, "newfind_promotion_deliveries", q => q.in("status", ["pending", "sending", "sent"])),
-      count(db, "commerce_events", q => q.eq("event_type", "newfind_commerce_delivery").eq("status", "processed")),
-      count(db, "commerce_events", q => q.eq("event_type", "newfind_commerce_delivery").eq("status", "failed")),
-      count(db, "commerce_events", q => q.eq("event_type", "newfind_commerce_delivery").in("status", ["pending", "sending", "sent"])),
-      latest(db, "commerce_events", "created_at", q => q.eq("event_type", "newfind_commerce_delivery")),
     ]);
 
     return NextResponse.json({
@@ -202,12 +242,27 @@ export async function GET(request: Request) {
         approvalRequired: isProcurementApprovalRequired(),
       },
       newfind: {
-        legacyShopListings: { processed: newfindLegacyProcessed, failed: newfindLegacyFailed, open: newfindLegacyOpen },
-        commerceVariants: { processed: newfindCommerceProcessed, failed: newfindCommerceFailed, open: newfindCommerceOpen, lastCreatedAt: newfindCommerceLast },
+        acknowledged: newfindLegacyProcessed + newfindCommerceProcessed,
+        failed: newfindLegacyFailed + newfindCommerceFailed,
+        open: newfindLegacyOpen + newfindCommerceOpen,
+        rule: "acknowledged = status processed AND receiver ack processed|duplicate, counted from the rows. HTTP 200 without that ACK stays open; status_without_ack is never acknowledged.",
+        legacyShopListings: { table: "newfind_promotion_deliveries", ...legacyNewfind },
+        commerceVariants: { table: "commerce_events", eventType: "newfind_commerce_delivery", ...commerceNewfind },
+        latestPatrol: latestPatrolNewfind,
       },
       approvalEvents: { requested: approvalRequested, approved: approvalGranted },
       cronRuns: { last24Hours: cronRunTotal, failedLast24Hours: cronRunFailures, latestByJob: [...latestCronByJob.values()], failuresByJobAndError: tally(failedCronRows.data ?? [], "job_name", "error") },
       listingErrors: tally(listingErrorRows.data ?? [], "channel", "last_error"),
+      listingErrorItems: (listingErrorRows.data ?? []).map((row) => {
+        const variant = (Array.isArray(row.commerce_variants) ? row.commerce_variants[0] : row.commerce_variants) as Record<string, unknown> | null;
+        const offers = (Array.isArray(variant?.supplier_offers) ? variant?.supplier_offers : []) as Array<Record<string, unknown>>;
+        return {
+          channel: row.channel, variantId: row.variant_id, externalProductId: row.external_product_id,
+          sku: variant?.sku ?? null, title: variant?.title_ja ?? null,
+          reason: String(row.last_error ?? "").slice(0, 160), lastSyncedAt: row.last_synced_at,
+          offers: offers.map((offer) => ({ supplier: offer.supplier_code, productId: offer.supplier_product_id, variantId: offer.supplier_variant_id, status: offer.source_status, lastCheckedAt: offer.last_checked_at })),
+        };
+      }),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);

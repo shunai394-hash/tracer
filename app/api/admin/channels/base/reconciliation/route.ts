@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { classifyUnmappedBaseItem } from "@/lib/channels/base-unmapped-classify";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -115,36 +116,44 @@ export async function POST(request: Request) {
     // Read the current commerce-native BASE channel catalog as well as legacy
     // shop_listings. The current publisher writes the BASE SKU into BASE's
     // identifier field and stores the exact BASE item ID in channel_listings.
-    const { data: commerceRows, error: commerceError } = await db
-      .from("channel_listings")
-      .select("id,variant_id,external_product_id,external_sku,status,selling_price")
-      .eq("channel", "base");
-    if (commerceError) throw new Error("TRACER_COMMERCE_CHANNEL_READ_FAILED");
-    const commerceVariantIds = [...new Set((commerceRows ?? []).map((row) => String(row.variant_id ?? "")).filter(Boolean))];
-    const { data: commerceVariants, error: commerceVariantError } = commerceVariantIds.length
-      ? await db.from("commerce_variants").select("id,product_id,source_variant_key,sku,title_ja").in("id", commerceVariantIds)
-      : { data: [], error: null };
-    if (commerceVariantError) throw new Error("TRACER_COMMERCE_VARIANT_READ_FAILED");
-    const commerceProductIds = [...new Set((commerceVariants ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean))];
-    const { data: commerceProducts, error: commerceProductError } = commerceProductIds.length
-      ? await db.from("commerce_products").select("id,source_key,title_ja,active").in("id", commerceProductIds)
-      : { data: [], error: null };
-    if (commerceProductError) throw new Error("TRACER_COMMERCE_PRODUCT_READ_FAILED");
-    const { data: commercePrices, error: commercePriceError } = commerceVariantIds.length
-      ? await db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit").in("variant_id", commerceVariantIds)
-      : { data: [], error: null };
-    if (commercePriceError) throw new Error("TRACER_COMMERCE_PRICE_READ_FAILED");
-    const commerceOfferIds = [...new Set((commercePrices ?? []).map((row) => String(row.supplier_offer_id ?? "")).filter(Boolean))];
-    const { data: commerceOffers, error: commerceOfferError } = commerceOfferIds.length
-      ? await db.from("supplier_offers").select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,source_status,tracking_supported,ship_to,last_checked_at").in("id", commerceOfferIds)
-      : { data: [], error: null };
-    if (commerceOfferError) throw new Error("TRACER_COMMERCE_OFFER_READ_FAILED");
+    // Page every read: PostgREST caps one response at 1000 rows, and long id
+    // lists are split so the request URL stays bounded.
+    const commerceRows: Array<Record<string, unknown>> = [];
+    for (let from = 0; ; from += 1000) {
+      if (from >= 50_000) throw new Error("TRACER_COMMERCE_CHANNEL_SCAN_INCOMPLETE");
+      const { data, error } = await db
+        .from("channel_listings")
+        .select("id,variant_id,external_product_id,external_sku,status,selling_price")
+        .eq("channel", "base")
+        .order("id", { ascending: true })
+        .range(from, from + 999);
+      if (error) throw new Error("TRACER_COMMERCE_CHANNEL_READ_FAILED");
+      commerceRows.push(...((data ?? []) as Array<Record<string, unknown>>));
+      if ((data ?? []).length < 1000) break;
+    }
+    type Chunk = (ids: string[]) => PromiseLike<{ data: unknown[] | null; error: unknown }>;
+    const readIn = async (values: string[], query: Chunk, stage: string) => {
+      const out: Array<Record<string, unknown>> = [];
+      for (let offset = 0; offset < values.length; offset += 100) {
+        const { data, error } = await query(values.slice(offset, offset + 100));
+        if (error) throw new Error(stage);
+        out.push(...((data ?? []) as Array<Record<string, unknown>>));
+      }
+      return out;
+    };
+    const commerceVariantIds = [...new Set(commerceRows.map((row) => String(row.variant_id ?? "")).filter(Boolean))];
+    const commerceVariants = await readIn(commerceVariantIds, (ids) => db.from("commerce_variants").select("id,product_id,source_variant_key,sku,title_ja").in("id", ids), "TRACER_COMMERCE_VARIANT_READ_FAILED");
+    const commerceProductIds = [...new Set(commerceVariants.map((row) => String(row.product_id ?? "")).filter(Boolean))];
+    const commerceProducts = await readIn(commerceProductIds, (ids) => db.from("commerce_products").select("id,source_key,title_ja,active").in("id", ids), "TRACER_COMMERCE_PRODUCT_READ_FAILED");
+    const commercePrices = await readIn(commerceVariantIds, (ids) => db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit").in("variant_id", ids), "TRACER_COMMERCE_PRICE_READ_FAILED");
+    const commerceOfferIds = [...new Set(commercePrices.map((row) => String(row.supplier_offer_id ?? "")).filter(Boolean))];
+    const commerceOffers = await readIn(commerceOfferIds, (ids) => db.from("supplier_offers").select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,source_status,tracking_supported,ship_to,last_checked_at").in("id", ids), "TRACER_COMMERCE_OFFER_READ_FAILED");
 
-    const variantById = new Map((commerceVariants ?? []).map((row) => [String(row.id), row]));
-    const productById = new Map((commerceProducts ?? []).map((row) => [String(row.id), row]));
-    const priceByVariant = new Map((commercePrices ?? []).map((row) => [String(row.variant_id), row]));
-    const offerById = new Map((commerceOffers ?? []).map((row) => [String(row.id), row]));
-    const commerceListingRows: ListingRow[] = (commerceRows ?? []).map((channelRow) => {
+    const variantById = new Map(commerceVariants.map((row) => [String(row.id), row]));
+    const productById = new Map(commerceProducts.map((row) => [String(row.id), row]));
+    const priceByVariant = new Map(commercePrices.map((row) => [String(row.variant_id), row]));
+    const offerById = new Map(commerceOffers.map((row) => [String(row.id), row]));
+    const commerceListingRows: ListingRow[] = commerceRows.map((channelRow) => {
       const variant = variantById.get(String(channelRow.variant_id));
       const product = variant ? productById.get(String(variant.product_id)) : null;
       const price = priceByVariant.get(String(channelRow.variant_id));
@@ -214,7 +223,7 @@ export async function POST(request: Request) {
     // TRC-<24 hex> storefront SKU, while the actual supplier SKU remains on
     // commerce_variants. Index both identifiers against the same exact row.
     const commerceListingById = new Map(commerceListingRows.map((row) => [String(row.id), row]));
-    for (const channelRow of commerceRows ?? []) {
+    for (const channelRow of commerceRows) {
       const listing = commerceListingById.get(String(channelRow.id));
       if (!listing) continue;
       addSupplierIdentifier(channelRow.external_sku, listing);
@@ -239,8 +248,18 @@ export async function POST(request: Request) {
           : null;
       const exactIdListings = byBaseId.get(baseItemId) ?? [];
       const titleCandidates = key ? (byTitle.get(key) ?? []) : [];
+      const unmapped = exactIdListings.length === 0
+        ? classifyUnmappedBaseItem({
+          identifier,
+          stableMatch: stableIdentifierListing ? { listingId: stableIdentifierListing.id, existingBaseItemId: stableIdentifierListing.base_item_id } : null,
+          supplierIdentifierMatches: supplierIdentifierCandidates.map((row) => ({ listingId: row.id, existingBaseItemId: row.base_item_id })),
+          titleMatches: titleCandidates.map((row) => ({ listingId: row.id, existingBaseItemId: row.base_item_id })),
+        })
+        : null;
       return {
         baseItemId,
+        unmappedCategory: unmapped?.category ?? null,
+        safeLinkListingId: unmapped?.safeLinkListingId ?? null,
         identifier,
         stableIdentifierListingId,
         stableIdentifierMatchCount: stableIdentifierListing ? 1 : 0,
@@ -325,8 +344,19 @@ export async function POST(request: Request) {
       && item.stableIdentifierMatchCount === 0
       && item.exactTitleCandidateCount > 1,
     ).length;
+    const unmappedClassification: Record<string, { total: number; visible: number; hidden: number; samples: Array<{ baseItemId: string; identifier: string | null; title: string; visible: boolean | null }> }> = {};
+    for (const item of items) {
+      if (!item.unmappedCategory) continue;
+      const bucket = unmappedClassification[item.unmappedCategory] ??= { total: 0, visible: 0, hidden: 0, samples: [] };
+      bucket.total += 1;
+      if (item.visible === true) bucket.visible += 1;
+      if (item.visible === false) bucket.hidden += 1;
+      if (bucket.samples.length < 10) bucket.samples.push({ baseItemId: item.baseItemId, identifier: item.identifier, title: item.title.slice(0, 80), visible: item.visible });
+    }
     const report = {
-      schemaVersion: 2,
+      schemaVersion: 3,
+      unmappedClassification,
+      safeLinkCandidateCount: items.filter((item) => item.safeLinkListingId).length,
       generatedAt: new Date().toISOString(),
       source: "BASE /items + TRACER shop_listings read-only reconciliation",
       complete: complete,
@@ -334,7 +364,7 @@ export async function POST(request: Request) {
       baseVisibleCount: typedSnapshotItems.filter((item) => visibility(item.visible) === true).length,
       baseHiddenCount: typedSnapshotItems.filter((item) => visibility(item.visible) === false).length,
       tracerListingCount: reconciliationListings.length,
-      commerceChannelListingCount: commerceRows?.length ?? 0,
+      commerceChannelListingCount: commerceRows.length,
       exactBaseIdMappedCount: exactMapped,
       baseItemsWithoutExactMappingCount: unmapped,
       baseItemsWithAmbiguousExactMappingCount: ambiguous,

@@ -34,6 +34,10 @@ on:
         description: "Gate-eligible listings to sync after the read-only checks (0 = read-only). Linked blocked listings are always included for unpublish."
         type: number
         default: 0
+      apply_exact_base_links:
+        description: "1 writes only a missing BASE id when the TRC SKU or listing UUID is unique. 0 is a preview."
+        type: number
+        default: 0
 
 permissions:
   contents: read
@@ -115,8 +119,10 @@ jobs:
           print("repairable samples:", json.dumps([r for r in rows if r.get("outcome") == "repairable_dry_run"][:10], ensure_ascii=False))
           print("blocked samples:", json.dumps([r for r in rows if r.get("outcome") not in ("repairable_dry_run",)][:10], ensure_ascii=False))
           PY
-          echo "=== exact BASE identifier repair preview (read-only) ==="
-          base_repair_code=$(curl -sS -o base-identity-repair.json -w "%{http_code}" --max-time 120 -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" -X POST "$BASE/api/channels/base/identity-repair" -d '{"apply":false,"limit":1000}' || echo 000)
+          echo "=== exact BASE identifier repair preview (read-only unless apply_exact_base_links=1) ==="
+          BASE_APPLY=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.apply_exact_base_links || 0 }}" = "1" ]; then BASE_APPLY=true; fi
+          base_repair_code=$(curl -sS -o base-identity-repair.json -w "%{http_code}" --max-time 120 -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" -X POST "$BASE/api/channels/base/identity-repair" -d "{\"apply\":$BASE_APPLY,\"limit\":1000}" || echo 000)
           echo "=== api/channels/base/identity-repair dry-run HTTP $base_repair_code ==="
           python3 - <<'PY'
           import json
