@@ -17,6 +17,10 @@ const supplyDiscovery = read("lib/suppliers/discover-cj-supply.ts");
 const procurement = read("app/api/cron/commerce-procurement/route.ts");
 
 assert.match(adapter, /name: "cj"/);
+assert.match(commerceImporter, /ヴィンテージPUレザーハンドバッグ/);
+assert.match(commerceImporter, /コーム付きまつげピンセット/);
+assert.match(commerceImporter, /EMSフェイスケア機器/);
+assert.match(commerceImporter, /ゴールドカラーのレディースハンドバッグ/);
 assert.match(adapter, /isCanonicalCjNativeId/);
 assert.match(adapter, /CJ_NATIVE_ID_INVALID/);
 assert.match(procurement, /isCanonicalCjNativeId/);
