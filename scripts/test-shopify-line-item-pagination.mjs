@@ -29,9 +29,9 @@ assert.ok(source.indexOf("while (hasNextPage)") < source.indexOf("const variantI
 assert.ok(source.indexOf("shopify_line_item_duplicate_id") < source.indexOf("const variantIds"),
   "duplicate line IDs must fail before variant mapping or order writes");
 
-// Concurrent runs: a unique external order conflict is reconciled, not retried blindly.
-assert.ok(source.includes('inserted.error?.code === "23505"'));
-assert.ok(source.includes('.eq("shopify_order_id", order.id)'));
+// Concurrent runs: order writes are delegated to the canonical idempotent ingestion path.
+assert.ok(source.includes("await ingestPaidOrder({"), "Shopify imports must use canonical commerce order ingestion");
+assert.ok(source.includes('externalOrderId: canonicalShopifyId(order.id, "Order")'), "Shopify order IDs must be canonicalized before idempotent upsert");
 
 // A Shopify variant may not silently map to the last of several internal listings.
 assert.match(source, /shopify_variant_mapping_ambiguous/);
