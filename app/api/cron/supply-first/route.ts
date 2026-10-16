@@ -12,11 +12,13 @@ import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-// Reserve at least 75 seconds of the 5-minute route budget for opportunity
-// intelligence and channel publication. A 240-second discovery window consumed
-// the whole route and made successfully discovered supply impossible to publish.
-const DISCOVERY_BUDGET_MS = 150_000;
-const DISCOVERY_BATCH_SIZE = 40;
+// Keep supplier discovery bounded so the same invocation has time to finish
+// opportunity scoring and channel sync. The previous batch of 40 routinely
+// crossed its 150-second deadline after ~15 slow CJ candidates and ended as a
+// failed run with no publication attempt. Ten total candidates leave a margin
+// for the 5-minute route's later stages while still refreshing seeded supply.
+const DISCOVERY_BUDGET_MS = 105_000;
+const DISCOVERY_BATCH_SIZE = 10;
 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
