@@ -318,6 +318,7 @@ export async function POST(request: Request) {
       baseVisibleCount: typedSnapshotItems.filter((item) => visibility(item.visible) === true).length,
       baseHiddenCount: typedSnapshotItems.filter((item) => visibility(item.visible) === false).length,
       tracerListingCount: reconciliationListings.length,
+      commerceChannelListingCount: commerceRows?.length ?? 0,
       exactBaseIdMappedCount: exactMapped,
       baseItemsWithoutExactMappingCount: unmapped,
       baseItemsWithAmbiguousExactMappingCount: ambiguous,
