@@ -28,6 +28,9 @@ test("publication and price calculation require fresh verified supplier evidence
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(core, /offer\.source_status !== "verified"/);
+  assert.match(core, /isCanonicalCjNativeId/);
+  assert.match(core, /invalid_cj_native_supplier_ids/);
+  assert.match(publish, /isCanonicalCjNativeId\\(x\\.supplier_product_id\\)/);
   assert.match(core, /offer\.tracking_supported !== true/);
   assert.match(core, /supplier_offer_verification_stale/);
   assert.match(core, /supplier_offer_price_not_fulfillable/);
