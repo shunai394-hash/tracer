@@ -343,6 +343,7 @@ export default async function ProductsPage() {
           })}
         </div>
       )}
+      </section>
     </main>
   );
 }
