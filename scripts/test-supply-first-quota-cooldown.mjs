@@ -9,7 +9,7 @@ assert.ok(quotaCheck >= 0, "supply-first must read the persisted CJ quota circui
 assert.ok(runInsert > quotaCheck, "quota circuit must be checked before creating a run record");
 assert.ok(discoveryCall > quotaCheck, "quota circuit must be checked before supplier discovery");
 const blockedBranch = source.slice(quotaCheck, runInsert);
-assert.match(blockedBranch, /Date\.parse\(blockedUntil\) > Date\.now\(\)/, "only an active cooldown should defer the run");
+assert.match(blockedBranch, /isCJQuotaCircuitActive\(quotaMetadata\)/, "only explicit quota exhaustion should defer the run; legacy ambiguous circuits must be ignored");
 assert.match(blockedBranch, /reason: "supplier_quota_cooldown"/, "cooldown response must expose the reason");
 assert.match(blockedBranch, /discoveryInvoked: false/, "cooldown response must confirm discovery was not invoked");
 assert.match(blockedBranch, /runRecordCreated: false/, "cooldown response must confirm no noisy run record was created");
