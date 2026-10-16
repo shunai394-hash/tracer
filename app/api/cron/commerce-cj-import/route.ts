@@ -203,9 +203,9 @@ export async function GET(request: Request) {
               stats.skipped++;
               continue;
             }
+            const complianceBlockReason = japaneseCommerceComplianceBlockReason(canonicalDetail.title, canonicalDetail.productType);
             const title = japaneseCommerceTitle(canonicalDetail.title, canonicalDetail.productType, supplierProductId === candidate.id ? variants.flatMap((item) => typeof item.nameEn === "string" && item.nameEn.trim().length > 0 ? [item.nameEn] : []) : []) || (supplierProductId === candidate.id ? japaneseCommerceTitle(candidate.title, candidate.productType) : null);
             if (!title) { stats.skipped++; continue; }
-            const complianceBlockReason = japaneseCommerceComplianceBlockReason(canonicalDetail.title, canonicalDetail.productType);
             const saved = await upsertSupplierOffer({
               sourceKey: "cj:" + supplierProductId,
               titleJa: title,
