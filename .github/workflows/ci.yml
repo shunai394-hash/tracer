@@ -61,6 +61,7 @@ jobs:
         run: npm run test:amazon-child-variant-diagnostics
       - name: Test Amazon child identifier fallback
         run: node scripts/test-amazon-child-identifier-retry.mjs
+      - run: node scripts/test-base-snapshot-export.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-base-auth-retry-circuit.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-publishable-title.mjs
       - run: node scripts/test-shopify-copy-quota-fallback.mjs
