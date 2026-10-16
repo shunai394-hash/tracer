@@ -482,6 +482,8 @@ export async function runCJSandboxOrderLifecycle(input: SupplierOrderInput): Pro
   const orderId = created.supplierOrderId?.trim();
   if (!created.succeeded || !orderId) throw new Error(`CJ_SANDBOX_CREATE_FAILED:${created.responseCode ?? "unknown"}`);
 
+  // CJ's simulated-payment endpoint only accepts UNPAID(200), not CREATED(100).
+  await updateCJSandboxOrderStatus(orderId, 200);
   await simulateCJSandboxPayment(orderId);
   const trackingNumber = `SBXTRACER${Date.now()}`;
   await updateCJSandboxTrackingNumber(orderId, trackingNumber);
