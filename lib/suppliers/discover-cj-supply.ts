@@ -891,7 +891,7 @@ export async function discoverAndCreateCjSupply(
       } catch (error) {
         reject("error", { error: error instanceof Error ? error.message : String(error) });
         console.warn("[supply-first] candidate rejected", {
-          productId: supplierProductId,
+          productId: candidate.id,
           error: error instanceof Error ? error.message : String(error),
         });
       }
