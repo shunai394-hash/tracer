@@ -1,7 +1,7 @@
 name: TRACER clean-commerce bounded recovery
 
 # TRACER_CLEAN_COMMERCE_RECOVERY: bounded production recovery requested 2026-10-16; wait for exact production commit before supplier import and gated channel publication.
-# Recovery re-trigger after CJ identity parser fix and batch-size update (2026-10-17).
+# Recovery re-trigger after full-UUID Shopify handle fix; run 10-item passes (2026-10-17).
 
 on:
   push:
