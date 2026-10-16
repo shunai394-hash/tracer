@@ -138,7 +138,7 @@ test("BASE tracking reflection is scheduled after procurement and idempotent per
   assert.equal(config.crons.find((job) => job.path === "/api/cron/commerce-base-fulfillment")?.schedule, "14,29,44,59 * * * *");
   const route = await readFile(new URL("../app/api/cron/commerce-base-fulfillment/route.ts", import.meta.url), "utf8");
   assert.match(route, /from\("commerce_orders"\)/);
-  assert.match(route, /from\("procurement_orders"\)/);
+  assert.match(route, /procurement_orders\(id,status,tracking_number/);
   assert.match(route, /tracerBaseFulfillmentGroups/);
   assert.match(route, /updateBaseOrderItemFulfillment/);
 });
