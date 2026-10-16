@@ -879,7 +879,7 @@ type CJVariantQueryResponse = {
   code?: number;
   result?: boolean;
   message?: string;
-  data?: CJVariantRow[] | {
+  data?: CJVariantRow[] | CJVariantRow | {
     content?: CJVariantRow[];
     variantList?: CJVariantRow[];
     productList?: CJVariantRow[];
@@ -889,7 +889,10 @@ type CJVariantQueryResponse = {
 function extractCJVariantRows(data: CJVariantQueryResponse["data"]): CJVariantRow[] {
   if (Array.isArray(data)) return data;
   if (!data) return [];
-  return data.content ?? data.variantList ?? data.productList ?? [];
+  // queryByVid can return one variant object instead of a collection.
+  if ("vid" in data || "variantId" in data) return [data as CJVariantRow];
+  const container = data as { content?: CJVariantRow[]; variantList?: CJVariantRow[]; productList?: CJVariantRow[] };
+  return container.content ?? container.variantList ?? container.productList ?? [];
 }
 
 function toCJProductVariant(row: CJVariantRow, pid: string): CJProductVariant | null {
