@@ -45,6 +45,10 @@ function positiveNumber(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function isCanonicalCjNativeId(value: string): boolean {
+  return /^[0-9]{10,25}$/.test(value.trim());
+}
+
 function safeMessage(error: unknown): string {
   return error instanceof Error ? error.message.slice(0, 500) : "CJ request failed";
 }
@@ -253,6 +257,9 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
       ["shippingPhone", input.shippingPhone],
     ];
     const missing = required.find(([, value]) => !value?.trim());
+    if (!isCanonicalCjNativeId(input.supplierProductId) || !isCanonicalCjNativeId(input.supplierVariantId)) {
+      return { valid: false, responseCode: "CJ_NATIVE_ID_INVALID", responseMessage: "CJ native product and variant IDs must be numeric supplier IDs" };
+    }
     if (missing) {
       return { valid: false, responseCode: "CJ_PREFLIGHT_INPUT_MISSING", responseMessage: `Missing ${missing[0]}` };
     }
@@ -292,6 +299,9 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
   },
 
   async createOrder(input: SupplierOrderInput): Promise<SupplierOrderResult> {
+    if (!isCanonicalCjNativeId(input.supplierProductId) || !isCanonicalCjNativeId(input.supplierVariantId)) {
+      return { succeeded: false, supplierOrderId: null, responseCode: "CJ_NATIVE_ID_INVALID", responseMessage: "CJ native product and variant IDs must be numeric supplier IDs", trackingNumber: null, raw: null };
+    }
     if (!isCJLiveOrderingEnabled() || !isCJAutoOrderingEnabled() || process.env.CJ_PAYMENT_FLOW_VERIFIED?.trim() !== "1" || !getCJConfig().apiKey) {
       return {
         succeeded: false,
@@ -417,6 +427,9 @@ export async function runCJSandboxOrderLifecycle(
   verifiedShippingCostUsd: number;
   verifiedInventory: number;
 }> {
+  if (!isCanonicalCjNativeId(input.supplierProductId) || !isCanonicalCjNativeId(input.supplierVariantId)) {
+    throw new Error("CJ_NATIVE_ID_INVALID");
+  }
   const required: Array<[string, string | undefined]> = [
     ["supplierProductId", input.supplierProductId],
     ["supplierVariantId", input.supplierVariantId],
