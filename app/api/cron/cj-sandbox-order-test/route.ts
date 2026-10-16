@@ -234,6 +234,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "SANDBOX_AUDIT_CLAIM_FAILED" }, { status: 500 });
   }
   const runId = String(run.id);
+  let createdSupplierOrderId: string | null = null;
   let activeListing = listing;
   const attemptedListingIds: string[] = [];
 
@@ -286,6 +287,7 @@ export async function POST(request: Request) {
           shippingCustomerName: "TRACER SANDBOX TEST",
           email: "sandbox-test@example.invalid",
         }, async (supplierOrderId) => {
+          createdSupplierOrderId = supplierOrderId;
           const { error: orderIdSaveError } = await db.from("cron_runs").update({
             metadata: { phase: "cj_sandbox_order_lifecycle", supplierListingId: activeListing.id, supplierOrderId, sandbox: true, charged: false, realFulfillment: false },
           }).eq("id", runId);
@@ -377,6 +379,7 @@ export async function POST(request: Request) {
       metadata: {
         phase: "cj_sandbox_order_lifecycle",
         supplierListingId: activeListing.id,
+        supplierOrderId: createdSupplierOrderId,
         attemptedListingIds,
         sandbox: true,
         charged: false,
