@@ -83,6 +83,7 @@ jobs:
             [[ "$code" == "200" ]]
           }
           # Prove exact CJ variant → sandbox order → confirmOrder → simulated payment → tracking path.
+          # The route allows only one retry after an explicit create-failure with no supplier order ID.
           # The callback persists supplierOrderId before payment so partial failures remain reconcilable.
           # The health preflight above must match this exact deployed commit before any CJ sandbox call.
           call_post "api/cron/commerce-cj-sandbox-test" "cj-sandbox-core.json" 300 || failed=1
