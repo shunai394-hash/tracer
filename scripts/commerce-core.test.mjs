@@ -120,7 +120,7 @@ test("CJ importer keeps source titles and localizes handbag subtypes", async () 
   assert.ok(core.includes("...(input.metadata ? { metadata: input.metadata } : {})"));
 });
 
-test("BASE Japanese address separates municipality from street without inventing a city", () => {
+test("BASE Japanese address separates municipality from street without inventing a city", async () => {
   assert.deepEqual(splitJapaneseAddress("東京都千代田区丸の内1-1-1", "東京都"), {
     city: "千代田区", address1: "丸の内1-1-1"
   });
