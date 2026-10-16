@@ -100,4 +100,4 @@ jobs:
             echo "Shopify live sync skipped: no eligible listings passed the read-only gate."
           fi
 
-# TRACER_ONE_SHOT_SUPPLY_RECOVERY: rerun bounded recovery after replay-safe pipeline fix.
+# TRACER_ONE_SHOT_SUPPLY_RECOVERY: rerun bounded recovery after replay-safe pipeline fix (PR #832).
