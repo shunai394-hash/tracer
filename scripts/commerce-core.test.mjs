@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { calculateSellingPrice } from "../lib/commerce/pricing.mjs";
+import { splitJapaneseAddress } from "../lib/commerce/japanese-address.mjs";
 
 test("price calculation preserves positive profit after fees and target margin", () => {
   const result = calculateSellingPrice({ unitCostJpy: 2000, shippingCostJpy: 500, feeRate: 0.1, targetMarginRate: 0.2 });
@@ -124,4 +125,27 @@ test("CJ importer keeps source titles and localizes handbag subtypes", async () 
   assert.ok(importer.includes('"メタルバックル付きラウンドバッグ"'));
   assert.ok(importer.includes("metadata: { sourceTitle: canonicalDetail.title, sourceProductType: canonicalDetail.productType ?? null }"));
   assert.ok(core.includes("...(input.metadata ? { metadata: input.metadata } : {})"));
+});
+
+test("BASE Japanese address separates municipality from street without inventing a city", async () => {
+  assert.deepEqual(splitJapaneseAddress("東京都千代田区丸の内1-1-1", "東京都"), {
+    city: "千代田区", address1: "丸の内1-1-1"
+  });
+  assert.deepEqual(splitJapaneseAddress("横浜市中区山下町2-1", "神奈川県"), {
+    city: "横浜市中区", address1: "山下町2-1"
+  });
+  assert.deepEqual(splitJapaneseAddress("address without municipality", "東京都"), {
+    city: "", address1: "address without municipality"
+  });
+  const baseOrders = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
+  assert.match(baseOrders, /city: parsedAddress\.city/);
+  assert.match(baseOrders, /address1: parsedAddress\.address1/);
+});
+
+test("CJ importer serializes stock and freight requests to respect the supplier QPS limit", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  const stockCall = importer.indexOf("await fetchCJVariantStock(variant.vid)");
+  const freightCall = importer.indexOf("await calculateCJFreight(variant.vid, { startCountryCode: \"CN\"");
+  assert.ok(stockCall >= 0 && freightCall > stockCall, "stock must be awaited before the freight request");
+  assert.doesNotMatch(importer, /Promise\.allSettled\(\[\s*fetchCJVariantStock[\s\S]*?calculateCJFreight/s);
 });
