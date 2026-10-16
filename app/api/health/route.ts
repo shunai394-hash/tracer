@@ -1,3 +1,4 @@
+import { isBrightDataFetchConfigured } from "@/lib/sources/brightdata/client";
 import {
   getFoundationStatus,
   isCJAutoOrderingEnabled,
@@ -9,6 +10,7 @@ export const runtime = "nodejs";
 
 export async function GET() {
   const status = getFoundationStatus();
+  const brightDataMcp = isBrightDataFetchConfigured();
   return Response.json({
     ok: true,
     service: "tracer",
@@ -17,7 +19,9 @@ export async function GET() {
       supabasePublic: status.supabasePublic,
       supabaseServiceRole: status.supabaseServiceRole,
       gemini: status.gemini,
-      brightData: status.brightData,
+      brightData: status.brightData || brightDataMcp,
+      brightDataApi: status.brightData,
+      brightDataMcp,
       cj: Boolean(process.env.CJ_API_KEY),
       faire: status.faire,
       dsersMcp: status.dsersMcp,
