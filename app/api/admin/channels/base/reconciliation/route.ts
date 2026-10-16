@@ -342,6 +342,7 @@ export async function POST(request: Request) {
       baseItemsWithAmbiguousExactTitleCandidateCount: ambiguousTitleCandidateCount,
       baseItemsWithExactSupplierIdentifierCandidateCount: items.filter((item) => item.exactSupplierIdentifierMatchCount === 1).length,
       baseItemsWithAmbiguousSupplierIdentifierCandidateCount: items.filter((item) => item.exactSupplierIdentifierMatchCount > 1).length,
+      commerceTrcIdentifierMatchCount: items.filter((item) => /^TRC-[0-9a-f]{24}$/i.test(String(item.identifier ?? "")) && item.stableIdentifierMatchCount === 1).length,
       tracerListingsWithoutBaseItemIdCount: reconciliationListings.filter((row) => !String(row.base_item_id ?? "").trim()).length,
       duplicateBaseItemIdGroupsInTracer: [...byBaseId.entries()].filter(([, rows]) => rows.length > 1).length,
       note: "Exact-title candidates are unverified suggestions only. This report never writes mappings or changes BASE listings.",
