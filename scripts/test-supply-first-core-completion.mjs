@@ -29,12 +29,13 @@ assert.match(source, /\.range\(verifiedSupplyOffset, verifiedSupplyOffset \+ ver
 
 const cronRoute = await readFile(new URL("../app/api/cron/supply-first/route.ts", import.meta.url), "utf8");
 const recoveryWorkflow = await readFile(new URL("../.github/workflows/tracer-one-shot-supply-recovery.yml", import.meta.url), "utf8");
-assert.match(recoveryWorkflow, /supply-first\.json/);
-assert.match(recoveryWorkflow, /supplierListingId/);
-assert.match(recoveryWorkflow, /api\/cron\/cj-sandbox-order-test/);
-assert.doesNotMatch(recoveryWorkflow, /SUPPLIER_LISTING_ID="83eb3a0e-eced-4041-afa5-da57c3084f4c"/,
-  "sandbox recovery must not depend on a supplier listing ID from the pre-reset database");
-assert.match(recoveryWorkflow, /sandbox_failed/);
+assert.match(recoveryWorkflow, /workflow_dispatch:/, "recovery must be manually invoked, not auto-run during deploy");
+assert.match(recoveryWorkflow, /\$BASE\/api\/health/, "recovery must preflight the production health endpoint");
+assert.match(recoveryWorkflow, /grep -q "\$GITHUB_SHA"/, "recovery must verify the deployed commit before write-capable calls");
+assert.match(recoveryWorkflow, /api\/cron\/commerce-cj-import/, "recovery must invoke the canonical CJ importer");
+assert.match(recoveryWorkflow, /api\/cron\/commerce-publish-base/, "recovery must report the BASE publication path");
+assert.match(recoveryWorkflow, /api\/cron\/commerce-publish-shopify/, "recovery must report the Shopify publication path");
+assert.doesNotMatch(recoveryWorkflow, /api\/cron\/cj-sandbox-order-test/, "clean recovery must not invoke the legacy sandbox flow");
 const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
 assert.match(cronRoute, /const DISCOVERY_BUDGET_MS = 150_000/,
   "supplier discovery must reserve route time for downstream opportunity intelligence and channel publication");
@@ -42,6 +43,7 @@ assert.match(cronRoute, /const discoveryIncomplete/);
 assert.match(cronRoute, /status: runStatus/);
 assert.match(cronRoute, /status: discoveryIncomplete \? 503 : 200/);
 assert.ok(cronRoute.includes("supply_first_already_running"));
-assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/supply-first").map((job) => job.schedule), ["5,35 * * * *"]);
+assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule), ["*/30 * * * *"]);
+assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/supply-first"), [], "the legacy supply-first cron must not race the canonical importer");
 
 console.log("Supply-first core completion: optional discovery cooldowns do not block the core cycle; empty deadline runs are deferred");
