@@ -492,3 +492,11 @@ test("supply-first active-run lock conflicts are logged as expected skips, not e
   assert.doesNotMatch(route, /console\.error\("\[TRACER SUPPLY-FIRST RUN LOG START FAILED\]"/);
   assert.match(route, /reason: "supply_first_already_running"/);
 });
+
+
+test("scheduled commerce publication defaults to unpublished recovery to avoid reprocessing live listings", async () => {
+  const baseRoute = await readFile(new URL("../app/api/cron/commerce-publish-base/route.ts", import.meta.url), "utf8");
+  const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
+  assert.match(baseRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/);
+  assert.match(shopifyRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/);
+});
