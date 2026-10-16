@@ -229,6 +229,9 @@ export type BaseOrderDetail = BaseOrderSummary & {
   mail_address?: string;
   tel?: string;
   remark?: string;
+  add_comment?: string;
+  tracking_number?: string;
+  delivery_company_id?: number;
   c_c_payment_transaction?: { status?: string };
   cvs_payment_transaction?: { status?: string };
   bt_payment_transaction?: { status?: string };
