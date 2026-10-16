@@ -104,7 +104,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "usd_jpy_rate_unavailable", imported: 0 }, { status: 503 });
   }
 
-  const stats = { searched: 0, products: 0, variantsAvailable: 0, variants: 0, offers: 0, priced: 0, skipped: 0, errors: [] as string[] };
+  const stats = { searched: 0, products: 0, variantsAvailable: 0, variants: 0, offers: 0, priced: 0, complianceBlocked: 0, skipped: 0, errors: [] as string[] };
   try {
     type ImportCandidate = { id: string; title: string; productType?: string | null; imageUrl?: string | null };
     const requestedProductIds = url.searchParams.has("productIds")
@@ -188,7 +188,7 @@ export async function GET(request: Request) {
             const shipping = freightResult.status === "fulfilled" ? freightResult.value : null;
             if (stockResult.status === "rejected") stats.errors.push("stock:" + candidate.id + ":" + String(stockResult.reason).slice(0, 100));
             if (freightResult.status === "rejected") stats.errors.push("freight:" + candidate.id + ":" + String(freightResult.reason).slice(0, 100));
-            const title = japaneseCommerceTitle(canonicalDetail.title, canonicalDetail.productType, supplierProductId === candidate.id ? variants.map((item) => item.nameEn) : []) || (supplierProductId === candidate.id ? japaneseCommerceTitle(candidate.title, candidate.productType) : null);
+            const title = japaneseCommerceTitle(canonicalDetail.title, canonicalDetail.productType, supplierProductId === candidate.id ? variants.map((item) => item.nameEn).filter((name): name is string => typeof name === "string" && name.trim().length > 0) : []) || (supplierProductId === candidate.id ? japaneseCommerceTitle(candidate.title, candidate.productType) : null);
             if (!title) { stats.skipped++; continue; }
             const complianceBlockReason = japaneseCommerceComplianceBlockReason(canonicalDetail.title, canonicalDetail.productType);
             const saved = await upsertSupplierOffer({
