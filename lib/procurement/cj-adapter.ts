@@ -487,7 +487,8 @@ export async function runCJSandboxOrderLifecycle(
   // Persist the external order ID immediately so a later payment/status failure is reconcilable.
   if (onOrderCreated) await onOrderCreated(orderId);
 
-  // Page-payment mode creates an unpaid sandbox order; sandbox simulatePay advances it to paid without charging real balance.
+  // payType=3 creates only; confirmOrder moves CREATED(100) to UNPAID before simulated payment.
+  await confirmCJSandboxOrder(orderId);
   await simulateCJSandboxPayment(orderId);
   const trackingNumber = `SBXTRACER${Date.now()}`;
   await updateCJSandboxTrackingNumber(orderId, trackingNumber);
