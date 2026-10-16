@@ -1,3 +1,4 @@
+# Post-reset recovery entrypoint: rebuild catalog from live sources and report observed publication counts.
 name: TRACER One-shot supply-to-channel recovery
 
 on:
