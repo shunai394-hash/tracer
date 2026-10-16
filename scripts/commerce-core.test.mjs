@@ -127,6 +127,14 @@ test("procurement revalidates the exact fresh profitable offer and preserves a c
   assert.doesNotMatch(worker, /country_code_v2"\)\.toUpperCase\(\) \|\| "JP"/);
 });
 
+test("Shopify paid-order polling runs automatically as a webhook-independent ingestion path", async () => {
+  const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+  assert.equal(config.crons.find((job) => job.path === "/api/cron/shopify-orders")?.schedule, "*/5 * * * *");
+  const route = await readFile(new URL("../app/api/cron/shopify-orders/route.ts", import.meta.url), "utf8");
+  assert.match(route, /syncPaidShopifyOrders\(25\)/);
+  assert.match(route, /runAutonomousOrderControl/);
+});
+
 test("BASE order ingestion requires the true order_item_id for tracking reflection", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
   assert.match(route, /base_order_item_id_missing_for_fulfillment_mapping/);
