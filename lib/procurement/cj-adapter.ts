@@ -16,8 +16,10 @@ import {
 } from "@/lib/sources/cj";
 import {
   createCJOrderV2,
+  confirmCJSandboxOrder,
   getCJOrderStatus,
   getCJTrackingInfo,
+  listCJSandboxOrders,
   simulateCJSandboxPayment,
   updateCJSandboxOrderStatus,
   updateCJSandboxTrackingNumber,
@@ -400,8 +402,10 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
  * writes purchase/order rows to TRACER's production database.
  */
 export async function runCJSandboxOrderLifecycle(
-  input: SupplierOrderInput,
-  onOrderCreated?: (supplierOrderId: string) => Promise<void>,
+  input: SupplierOrderInput & {
+    existingSandboxOrderId?: string;
+    onOrderCreated?: (order: { supplierOrderId: string; orderNumber: string }) => Promise<void>;
+  },
 ): Promise<{
   supplierOrderId: string;
   status: string;
@@ -464,36 +468,78 @@ export async function runCJSandboxOrderLifecycle(
   const shippingCountry = countryName(input.shippingCountryCode, input.shippingCountry);
   if (!shippingCountry) throw new Error("CJ_SANDBOX_COUNTRY_UNVERIFIED");
 
-  const created = await createCJOrderV2({
-    orderNumber: input.orderNumber,
-    shippingCountryCode: input.shippingCountryCode.toUpperCase(),
-    shippingCountry,
-    shippingProvince: input.shippingProvince,
-    shippingCity: input.shippingCity,
-    shippingAddress: input.shippingAddress,
-    shippingAddress2: input.shippingAddress2,
-    shippingZip: input.shippingZip,
-    shippingPhone: input.shippingPhone,
-    shippingCustomerName: input.shippingCustomerName,
-    email: input.email,
-    logisticName: freight.logisticName,
-    fromCountryCode: freight.countryCode,
-    payType: 3,
-    isSandbox: true,
-    products: [{ vid: variant.vid, quantity: input.quantity }],
-  });
-  const orderId = created.supplierOrderId?.trim();
-  if (!created.succeeded || !orderId) throw new Error(`CJ_SANDBOX_CREATE_FAILED:${created.responseCode ?? "unknown"}`);
-  // Persist the external order ID immediately so a later payment/status failure is reconcilable.
-  if (onOrderCreated) await onOrderCreated(orderId);
+  let orderId = input.existingSandboxOrderId?.trim() ?? "";
+  if (!orderId) {
+    const created = await createCJOrderV2({
+      orderNumber: input.orderNumber,
+      shippingCountryCode: input.shippingCountryCode.toUpperCase(),
+      shippingCountry,
+      shippingProvince: input.shippingProvince,
+      shippingCity: input.shippingCity,
+      shippingAddress: input.shippingAddress,
+      shippingAddress2: input.shippingAddress2,
+      shippingZip: input.shippingZip,
+      shippingPhone: input.shippingPhone,
+      shippingCustomerName: input.shippingCustomerName,
+      email: input.email,
+      logisticName: freight.logisticName,
+      fromCountryCode: freight.countryCode,
+      payType: 3,
+      isSandbox: true,
+      products: [{ vid: variant.vid, quantity: input.quantity }],
+    });
+    orderId = created.supplierOrderId?.trim() ?? "";
+    if (!created.succeeded || !orderId) throw new Error(`CJ_SANDBOX_CREATE_FAILED:${created.responseCode ?? "unknown"}`);
+  }
+  // Persist the supplier order ID before confirmation/payment/tracking can fail.
+  await input.onOrderCreated?.({ supplierOrderId: orderId, orderNumber: input.orderNumber });
 
-  // CJ's simulated-payment endpoint only accepts UNPAID(200), not CREATED(100).
-  await updateCJSandboxOrderStatus(orderId, 200);
-  await simulateCJSandboxPayment(orderId);
-  const trackingNumber = `SBXTRACER${Date.now()}`;
-  await updateCJSandboxTrackingNumber(orderId, trackingNumber);
-  await updateCJSandboxOrderStatus(orderId, 400);
-  await updateCJSandboxOrderStatus(orderId, 500);
+  const statusCode = (status: string | null): number | null => {
+    const normalized = (status ?? "").trim().toUpperCase();
+    const numeric = Number(normalized);
+    if (normalized && Number.isFinite(numeric)) return numeric;
+    const byName: Record<string, number> = {
+      CREATED: 100,
+      IN_CART: 150,
+      UNPAID: 200,
+      PENDING: 300,
+      UNSHIPPED: 300,
+      PROCESSING: 400,
+      SHIPPED: 500,
+      DELIVERED: 600,
+      CLOSED: 700,
+    };
+    return byName[normalized] ?? null;
+  };
+
+  let current = await getCJOrderStatus(orderId);
+  let currentCode = statusCode(current.status);
+  // CJ's documented lifecycle is CREATED(100) -> confirmOrder -> UNPAID(200)
+  // -> simulatePay -> paid(300). simulatePay cannot be called directly on CREATED.
+  if (currentCode === 100 || currentCode === 150) {
+    await confirmCJSandboxOrder(orderId);
+    current = await getCJOrderStatus(orderId);
+    currentCode = statusCode(current.status);
+  }
+  if (currentCode === 200) {
+    await simulateCJSandboxPayment(orderId);
+    current = await getCJOrderStatus(orderId);
+    currentCode = statusCode(current.status);
+  }
+  const paymentConfirmedBeforeTracking = Boolean(current.paymentDate || (current.paymentDateTime && current.paymentDateTime > 0));
+  if (!paymentConfirmedBeforeTracking || currentCode === null || currentCode < 300 || currentCode >= 700) {
+    throw new Error(`CJ_SANDBOX_PAYMENT_STATE_UNVERIFIED:status=${current.status ?? "unknown"}`);
+  }
+
+  const trackingNumber = current.trackingNumber?.trim() || `SBXTRACER${Date.now()}`;
+  if (!current.trackingNumber?.trim()) await updateCJSandboxTrackingNumber(orderId, trackingNumber);
+  if (currentCode >= 300 && currentCode < 400) {
+    await updateCJSandboxOrderStatus(orderId, 400);
+    currentCode = 400;
+  }
+  if (currentCode === 400) {
+    await updateCJSandboxOrderStatus(orderId, 500);
+  }
 
   const observed = await getCJOrderStatus(orderId);
   const normalizedStatus = (observed.status ?? "").trim().toUpperCase();
