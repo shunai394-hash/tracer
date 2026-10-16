@@ -18,5 +18,6 @@ console.log("BASE product snapshot export contract: 10 assertions passed");
 
 assert.match(client, /BASE_ITEMS_MAX_PAGES = 50/);
 assert.match(client, /options\?\.itemMaxPages \?\? BASE_ITEMS_MAX_PAGES/);
+assert.equal((client.match(/Math.min\(BASE_ITEMS_MAX_PAGES/g) ?? []).length, 2, "both BASE item scans must use the 5000-item cap");
 assert.match(route, /itemMaxPages: BASE_ITEMS_MAX_PAGES/);
 console.log("BASE full scan limit contract: 3 assertions passed");
