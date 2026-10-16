@@ -158,7 +158,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   return result;
 }
 
-export async function syncCommerceListings(channel: Channel, limit = 10) {
+export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnpublished = false) {
   // Storefront publication is independent of supplier purchasing. Only the paid-order
   // procurement path is gated by liveOrdering; a sandbox proof must not block listings.
   if (channel === "base" && !isBaseConfigured()) throw new Error("base_oauth_not_configured");
@@ -198,13 +198,20 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
     if (state.status === "error") return 2;
     return 3;
   };
-  const candidates = [...allCandidates].sort((a, b) => {
+  const sortedCandidates = [...allCandidates].sort((a, b) => {
     const priority = rank(a) - rank(b);
     if (priority !== 0) return priority;
     const aTime = stateByVariant.get(a.id)?.last_synced_at ? Date.parse(String(stateByVariant.get(a.id)?.last_synced_at)) : 0;
     const bTime = stateByVariant.get(b.id)?.last_synced_at ? Date.parse(String(stateByVariant.get(b.id)?.last_synced_at)) : 0;
     return aTime - bTime;
-  }).slice(0, Math.min(100, Math.max(1, Math.floor(limit))));
+  });
+  // Recovery runs should publish missing/pending/error listings only. Reprocessing
+  // already-published products repeatedly resets their status to pending and wastes
+  // the channel API budget without increasing the public catalog.
+  const candidatesToProcess = onlyUnpublished
+    ? sortedCandidates.filter((candidate) => stateByVariant.get(candidate.id)?.status !== "published")
+    : sortedCandidates;
+  const candidates = candidatesToProcess.slice(0, Math.min(100, Math.max(1, Math.floor(limit))));
   const results: Array<{ variantId: string; ok: boolean; externalId?: string; error?: string }> = [];
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
