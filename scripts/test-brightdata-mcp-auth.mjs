@@ -24,6 +24,10 @@ assert.match(collector, /provider: "brightdata_mcp"/, "ingest results must ident
 assert.ok(collector.includes('const preferred = ["scrape_as_markdown", "scrape_as_html", "search_engine", "search_engine_batch"];'), "product collection should try the working HTML scraper before search fallback");
 assert.ok(collector.includes("application\\/ld\\+json"), "HTML product search should parse structured Product JSON-LD");
 assert.ok(collector.includes("const collectProducts = (node: unknown, depth = 0)"), "nested Product JSON-LD should be traversed");
+assert.match(collector, /root\.organic_results/);
+assert.match(collector, /for \(const key of \["data", "content", "result", "response", "payload", "body"\]\)/, "nested MCP response envelopes must be traversed to find product results");
+assert.match(collector, /"product_title", "productTitle"/, "provider-specific title keys must be recognized");
+assert.match(collector, /"product_link", "productLink", "source_url", "sourceUrl"/, "provider-specific product URL keys must be recognized");
 assert.ok(collector.includes("const htmlAnchors = [...unwrapped.matchAll"), "HTML-only Google Shopping cards should be parsed when JSON-LD is absent");
 assert.ok(collector.includes('for (const key of ["data", "content", "result", "response", "payload", "body"])'), "nested MCP response envelopes should be searched for product arrays");
 assert.ok(collector.includes('"product_title", "productTitle"'), "alternate product-title keys should be recognized");
