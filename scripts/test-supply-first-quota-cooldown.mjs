@@ -11,6 +11,10 @@ assert.ok(quotaCheck >= 0, "supply-first must read the persisted CJ quota circui
 assert.ok(cachedLookup > quotaCheck && cachedLookup < runInsert, "cached eligibility must be checked before creating a run record");
 assert.ok(runInsert > cachedLookup, "eligible cached supply proceeds into a recorded run");
 assert.ok(discoveryCall > runInsert, "discovery remains available only after the cached-only cooldown branch");
+const runClaimGuard = source.indexOf('reason: duplicateRunningJob ? "supply_first_already_running"');
+assert.ok(runClaimGuard > runInsert && runClaimGuard < discoveryCall, "failed run claim must return before supplier discovery");
+assert.match(source.slice(runInsert, discoveryCall), /startError\.code === "23505"/, "duplicate running jobs must be identified");
+assert.match(source.slice(runInsert, discoveryCall), /discoveryInvoked: false/, "a failed run claim must not invoke supplier discovery");
 const cooldownBranch = source.slice(cachedLookup, runInsert);
 assert.match(cooldownBranch, /price_confirmed", true/, "cached offers require confirmed price");
 assert.match(cooldownBranch, /inventory_confirmed", true/, "cached offers require confirmed stock");
@@ -25,4 +29,4 @@ const supplyCron = vercel.crons.find((cron) => cron.path === "/api/cron/supply-f
 const identityCron = vercel.crons.find((cron) => cron.path === "/api/cron/cj-identity-reverify");
 assert.equal(supplyCron?.schedule, "2,32 * * * *", "supply-first must be staggered away from identity re-verification");
 assert.equal(identityCron?.schedule, "12,27,42,57 * * * *", "identity re-verification schedule remains explicit");
-console.log("Supply-first CJ quota cooldown and schedule: 13 invariants passed");
+console.log("Supply-first CJ cooldown, run claim, and schedule: 16 invariants passed");
