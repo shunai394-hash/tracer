@@ -29,9 +29,9 @@ assert.match(persist, /verification_error: nativeEvidenceFresh \? null : \(prior
 assert.match(persist, /shipping_status: Number\.isFinite\(args\.shippingCost\) && args\.shippingCost > 0[\s\S]{0,100}"verified"/, "a fresh positive Japan freight quote must be persisted as verified shipping evidence independently of orderability");
 assert.match(discoverCJ, /identity_status: "supply_discovered", identity_confidence: 0/, "supply discovery without canonical identity must not claim perfect identity confidence");
 assert.match(discoverCJ, /title: detail\.title, product_id: null/, "CJ supply discovery must not provisionally attach a canonical product ID before identity is resolved");
-assert.match(discoverCJ, /api_available: preserveVerifiedOrderPath, verification_status: preserveVerifiedOrderPath \? "verified" : "unverified"/, "seeded refresh may preserve the existing verified order path only behind its strict evidence predicate");
-assert.match(discoverCJ, /api_available: false,[\s\S]*?verification_status: "unverified"/, "new CJ supply must remain unverified until the order path is proven");
-assert.match(discoverCJ, /orderable: false,[\s\S]*?tracking_available: false/, "new CJ supply must remain blocked from ordering even when price and stock observations exist");
+assert.match(discoverCJ, /const liveOrderPathReady = isCJLiveOrderPathReady\(\)[\s\S]*?orderable: liveOrderPathReady/, "seeded refresh may promote a listing only after fresh exact-variant price, stock, Japan freight and explicit production live-order readiness");
+assert.match(discoverCJ, /api_available: isCJLiveOrderPathReady\(\)/, "new CJ supply must respect the explicit production live-order readiness gate");
+assert.match(discoverCJ, /orderable: isCJLiveOrderPathReady\(\) && Number\.isFinite\(cost\)[\s\S]*?tracking_available: isCJLiveOrderPathReady\(\)/, "new CJ supply may become orderable only with fresh positive price, stock, Japan freight and configured live-order flags");
 assert.doesNotMatch(discoverCJ, /markVerification\(db, String\(supplierInsert\.data\.id\), \{ status: "verified"/, "discovery must not overwrite the unresolved identity gate with a verified status");
 
 const supplierUpserts = [...discoverCJ.matchAll(/const supplierInsert = await upsertSupplierListing/g)].map((match) => {
@@ -44,10 +44,10 @@ for (const upsert of supplierUpserts) {
   assert.match(upsert, /product_id: null/, "unresolved CJ supply must not attach a provisional canonical product");
   assert.match(upsert, /identity_status: "supply_discovered"/);
   assert.match(upsert, /identity_confidence: 0/, "unresolved CJ supply must have zero identity confidence");
-  assert.doesNotMatch(upsert, /identity_confidence: 1|api_available: true|orderable: true|tracking_available: cjTrackingAvailable/, "discovery must not claim identity or order-path verification");
+  assert.doesNotMatch(upsert, /identity_confidence: 1/, "supplier discovery must not claim canonical marketplace identity");
 }
-assert.match(supplierUpserts[0], /api_available: preserveVerifiedOrderPath[\s\S]*?orderable: preserveVerifiedOrderPath[\s\S]*?tracking_available: preserveVerifiedOrderPath/, "seeded refresh may retain orderability only for the exact previously verified product+variant path");
-assert.match(supplierUpserts[1], /api_available: false,[\s\S]*?orderable: false,[\s\S]*?tracking_available: false/, "newly discovered CJ candidates must stay non-orderable");
+assert.match(supplierUpserts[0], /api_available: liveOrderPathReady[\s\S]*?orderable: liveOrderPathReady[\s\S]*?tracking_available: liveOrderPathReady/, "seeded refresh must re-evaluate orderability from fresh exact-variant evidence and the explicit production flags");
+assert.match(supplierUpserts[1], /api_available: isCJLiveOrderPathReady\(\)[\s\S]*?orderable: isCJLiveOrderPathReady\(\) &&[\s\S]*?tracking_available: isCJLiveOrderPathReady\(\)/, "newly discovered CJ candidates may enter the live path only when production flags and fresh supply evidence pass");
 
 assert.match(directGate, /\.eq\("identity_status", "linked"\)/, "direct sales-test gate must require canonical supplier identity");
 assert.doesNotMatch(directGate, /identity_status\.eq\.supply_discovered/, "supply discovery alone must never enter direct sales-test selection");
