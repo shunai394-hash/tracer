@@ -31,6 +31,10 @@ create index if not exists tracer_v2_pipeline_events_stage_outcome_idx
 
 alter table public.tracer_v2_pipeline_events enable row level security;
 
+-- The service-role server client reads prior events to make retries replay-safe.
+-- Keep direct table access unavailable to anon/authenticated clients.
+grant select on table public.tracer_v2_pipeline_events to service_role;
+
 comment on table public.tracer_v2_pipeline_events is
   'Append-only stage evidence for the additive TRACER v2 pipeline. Writes are performed by the server-side service role; never a substitute for external API verification.';
 
