@@ -83,7 +83,7 @@ assert.match(sandboxRoute, /listCJSandboxOrders\("CREATED"\)/);
 assert.match(sandboxRoute, /previousFailureNeedsOrderRecovery/);
 assert.match(sandboxRoute, /supplierOrderId: activeSupplierOrderId/,
   "sandbox failures must retain the created supplier order ID for reconciliation");
-assert.match(sandboxRoute, /TRACER-SANDBOX-\\d\{13\}/,
+assert.match(sandboxRoute, /TRACER-SANDBOX-\d{13}/,
   "recovery must match the unique timestamped order number instead of relying on local guesses");
 
 assert.match(adapter, /fetchCJProductVariants\(input\.supplierProductId\)/, "sandbox lifecycle must resolve price from the exact live child under its parent");
