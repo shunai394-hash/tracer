@@ -12,10 +12,10 @@ import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const DISCOVERY_BUDGET_MS = 240_000;
-// CJ live verification is already deadline-bounded; use the full 4-minute
-// window to recover the remaining real supplier catalog instead of stopping
-// after ten candidates.
+// Reserve at least 75 seconds of the 5-minute route budget for opportunity
+// intelligence and channel publication. A 240-second discovery window consumed
+// the whole route and made successfully discovered supply impossible to publish.
+const DISCOVERY_BUDGET_MS = 150_000;
 const DISCOVERY_BATCH_SIZE = 40;
 
 export async function GET(request: Request) {
