@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { runCJSandboxOrderLifecycle } from "@/lib/procurement/cj-adapter";
 import { isCJQuotaCircuitActive } from "@/lib/sources/cj/rate-limit-policy";
+import { confirmCJSandboxOrder, getCJOrderStatus, listRecentCJSandboxCreatedOrders, simulateCJSandboxPayment, updateCJSandboxOrderStatus, updateCJSandboxTrackingNumber } from "@/lib/sources/cj/create-order";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -76,7 +77,7 @@ export async function POST(request: Request) {
   // Failed attempts are auditable and may be retried only after inspecting the cause.
   const { data: previousRuns, error: previousRunsError } = await db
     .from("cron_runs")
-    .select("status,started_at,metadata,error")
+    .select("id,status,started_at,metadata,error")
     .eq("job_name", "cj-sandbox-order-lifecycle")
     .order("started_at", { ascending: false })
     .limit(1);
@@ -97,6 +98,107 @@ export async function POST(request: Request) {
     previousMetadata.sandbox === true &&
     previousMetadata.charged === false &&
     previousMetadata.realFulfillment === false;
+  if (previous?.status === "failed" && previousFailureWasSafeSandboxTransition) {
+    try {
+      const sinceMs = Math.max(0, Date.parse(String(previous.started_at)) - 5 * 60 * 1000);
+      const recentOrders = await listRecentCJSandboxCreatedOrders(sinceMs);
+      const matches = recentOrders.filter((order) => {
+        const createdAt = Date.parse(String(order.createDate ?? ""));
+        const customer = String(order.shippingCustomerName ?? "").trim();
+        const countryCode = String(order.shippingCountryCode ?? "").toUpperCase();
+        const address = String(order.shippingAddress ?? "");
+        const sameTestRecipient =
+          (!customer || customer === "TRACER SANDBOX TEST") &&
+          (!countryCode || countryCode === "JP") &&
+          (!address || address.includes("1-1 Chiyoda"));
+        const recent = !Number.isFinite(createdAt) || createdAt >= sinceMs;
+        return sameTestRecipient && recent;
+      });
+      if (matches.length !== 1) {
+        return NextResponse.json({
+          ok: false,
+          error: "CJ_SANDBOX_ORDER_RECONCILIATION_AMBIGUOUS",
+          matchedSandboxOrders: matches.length,
+          charged: false,
+          realFulfillment: false,
+        }, { status: 409 });
+      }
+      const orderId = String(matches[0].orderId ?? "").trim();
+      if (!orderId) return NextResponse.json({ ok: false, error: "CJ_SANDBOX_ORDER_ID_MISSING", charged: false, realFulfillment: false }, { status: 409 });
+
+      let observed = await getCJOrderStatus(orderId);
+      let normalized = String(observed.status ?? "").trim().toUpperCase();
+      if (normalized === "100" || normalized === "CREATED") {
+        await confirmCJSandboxOrder(orderId);
+        observed = await getCJOrderStatus(orderId);
+        normalized = String(observed.status ?? "").trim().toUpperCase();
+      }
+      if (normalized === "200" || normalized === "UNPAID") {
+        await simulateCJSandboxPayment(orderId);
+        observed = await getCJOrderStatus(orderId);
+        normalized = String(observed.status ?? "").trim().toUpperCase();
+      }
+      const paid = Boolean(observed.paymentDate || (observed.paymentDateTime && observed.paymentDateTime > 0)) ||
+        ["300", "301", "302", "303", "304", "305", "400", "401", "402", "403", "404", "405", "500", "SHIPPED", "IN_TRANSIT", "UNSHIPPED", "PENDING", "PROCESSING"].includes(normalized);
+      if (!paid) return NextResponse.json({ ok: false, error: "CJ_SANDBOX_PAYMENT_NOT_CONFIRMED", status: normalized, charged: false, realFulfillment: false }, { status: 409 });
+
+      const trackingNumber = String(observed.trackingNumber ?? "").trim() || "SBXTRACER" + Date.now();
+      if (!String(observed.trackingNumber ?? "").trim()) await updateCJSandboxTrackingNumber(orderId, trackingNumber);
+      if (["300", "301", "302", "303", "304", "305", "PENDING", "UNSHIPPED"].includes(normalized)) {
+        await updateCJSandboxOrderStatus(orderId, 400);
+        normalized = "400";
+      }
+      if (["400", "401", "402", "403", "404", "405", "PROCESSING"].includes(normalized)) {
+        await updateCJSandboxOrderStatus(orderId, 500);
+        normalized = "500";
+      }
+      const verified = await getCJOrderStatus(orderId);
+      const verifiedStatus = String(verified.status ?? "").trim().toUpperCase();
+      const verifiedTracking = String(verified.trackingNumber ?? "").trim();
+      const paymentConfirmed = Boolean(verified.paymentDate || (verified.paymentDateTime && verified.paymentDateTime > 0)) ||
+        ["300", "301", "302", "303", "304", "305", "400", "401", "402", "403", "404", "405", "500", "SHIPPED", "IN_TRANSIT", "600", "DELIVERED"].includes(verifiedStatus);
+      const shipped = ["500", "SHIPPED", "IN_TRANSIT", "600", "DELIVERED"].includes(verifiedStatus);
+      if (!paymentConfirmed || !shipped || verifiedTracking !== trackingNumber) {
+        return NextResponse.json({ ok: false, error: "CJ_SANDBOX_RECONCILIATION_NOT_VERIFIED", status: verifiedStatus, trackingNumberPresent: Boolean(verifiedTracking), charged: false, realFulfillment: false }, { status: 409 });
+      }
+
+      const sandboxVerifiedAt = new Date().toISOString();
+      const metadata = {
+        ...previousMetadata,
+        phase: "cj_sandbox_order_lifecycle",
+        supplierListingId: listing.id,
+        supplierOrderId: orderId,
+        supplierStatus: verifiedStatus,
+        paymentConfirmed: true,
+        trackingNumberPresent: true,
+        sandbox: true,
+        charged: false,
+        realFulfillment: false,
+        reconciledAt: sandboxVerifiedAt,
+      };
+      const { error: listingEvidenceError } = await db.from("supplier_listings").update({
+        metadata: {
+          ...(listing.metadata && typeof listing.metadata === "object" && !Array.isArray(listing.metadata) ? listing.metadata as Record<string, unknown> : {}),
+          cj_sandbox_order_path_verified_at: sandboxVerifiedAt,
+          cj_sandbox_order_path_evidence: { supplierOrderId: orderId, supplierStatus: verifiedStatus, paymentConfirmed: true, trackingNumberPresent: true, sandbox: true, charged: false, realFulfillment: false },
+        },
+      }).eq("id", listing.id);
+      if (listingEvidenceError) throw new Error("CJ_SANDBOX_LISTING_EVIDENCE_WRITE_FAILED");
+      const { error: auditError } = await db.from("cron_runs").update({
+        status: "succeeded", finished_at: sandboxVerifiedAt, error: null, processed: 1, failed: 0,
+        metadata,
+      }).eq("id", previous.id);
+      if (auditError) throw new Error("CJ_SANDBOX_AUDIT_RECONCILIATION_WRITE_FAILED");
+      return NextResponse.json({
+        ok: true, phase: "cj_sandbox_order_lifecycle_reconciled", supplierListingId: listing.id,
+        supplierOrderId: orderId, status: verifiedStatus, trackingNumber: verifiedTracking,
+        paymentConfirmed: true, sandbox: true, charged: false, realFulfillment: false,
+      }, { headers: { "Cache-Control": "no-store" } });
+    } catch (reconcileError) {
+      const message = reconcileError instanceof Error ? reconcileError.message : String(reconcileError);
+      return NextResponse.json({ ok: false, error: "CJ_SANDBOX_RECONCILIATION_FAILED:" + message.slice(0, 180), charged: false, realFulfillment: false }, { status: 409 });
+    }
+  }
   const previousFailureWasPreOrderOnly =
     previousError.startsWith("CJ_SANDBOX_NO_VALID_CANDIDATE:") ||
     previousError.startsWith("CJ_SANDBOX_VARIANT_NOT_FOUND:") ||
@@ -135,6 +237,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "SANDBOX_AUDIT_CLAIM_FAILED" }, { status: 500 });
   }
   const runId = String(run.id);
+  let createdSupplierOrderId: string | null = null;
   let activeListing = listing;
   const attemptedListingIds: string[] = [];
 
@@ -186,6 +289,12 @@ export async function POST(request: Request) {
           shippingPhone: "00000000000",
           shippingCustomerName: "TRACER SANDBOX TEST",
           email: "sandbox-test@example.invalid",
+        }, async (supplierOrderId) => {
+          createdSupplierOrderId = supplierOrderId;
+          const { error: orderIdSaveError } = await db.from("cron_runs").update({
+            metadata: { phase: "cj_sandbox_order_lifecycle", supplierListingId: activeListing.id, supplierOrderId, sandbox: true, charged: false, realFulfillment: false },
+          }).eq("id", runId);
+          if (orderIdSaveError) throw new Error("CJ_SANDBOX_ORDER_ID_PERSIST_FAILED");
         });
         break;
       } catch (error) {
@@ -273,6 +382,7 @@ export async function POST(request: Request) {
       metadata: {
         phase: "cj_sandbox_order_lifecycle",
         supplierListingId: activeListing.id,
+        supplierOrderId: createdSupplierOrderId,
         attemptedListingIds,
         sandbox: true,
         charged: false,
