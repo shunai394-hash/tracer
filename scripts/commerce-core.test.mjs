@@ -208,3 +208,13 @@ test("CJ import rotates bounded batches through every child variant", () => {
   assert.deepEqual(selectRotatingVariantBatch(variants, 20, 0), variants);
   assert.deepEqual(selectRotatingVariantBatch([], 3, 0), []);
 });
+
+test("CJ importer persists exact supplier variant IDs and rotates bounded child-variant batches", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /selectRotatingVariantBatch\(variants, variantBatchLimit, variantRunSlot\)/);
+  assert.match(importer, /variantBatchLimit = Math\.min\(6, Math\.max\(1, Number\(url\.searchParams\.get\("variantLimit"\) \|\| 5\)\)\)/);
+  assert.match(importer, /variantsAvailable \+= variants\.length/);
+  assert.match(importer, /sourceVariantKey: exactVariant\.vid/);
+  assert.match(importer, /sku: exactVariant\.sku/);
+  assert.match(importer, /supplierVariantId: exactVariant\.vid/);
+});
