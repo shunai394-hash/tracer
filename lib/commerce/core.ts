@@ -100,7 +100,7 @@ export async function recalculatePrice(input: {
   });
   if (price.expectedProfit <= 0) throw new Error("non_positive_profit");
   const { error: saveError } = await db.from("commerce_prices").upsert({
-    variant_id: input.variantId, currency: "JPY", selling_price: price.sellingPrice,
+    variant_id: input.variantId, supplier_offer_id: input.offerId, currency: "JPY", selling_price: price.sellingPrice,
     fee_amount: price.feeAmount, expected_profit: price.expectedProfit,
     margin_rate: price.marginRate, calculated_at: new Date().toISOString()
   }, { onConflict: "variant_id" });
