@@ -34,4 +34,9 @@ assert.equal(isCjIdentityReverifyDue({
   next_identity_reverify_at: "2026-10-17T07:00:00.000Z",
   missing_supply_evidence_errors: ["cost:timeout"],
 }, now), false);
-console.log("CJ quota and legacy identity retry policy: 13 assertions passed");
+assert.equal(isCjIdentityReverifyDue({
+  next_identity_reverify_at: "2026-10-17T07:00:00.000Z",
+  missing_supply_evidence_errors: ["cost:returned_variant_or_product_id_mismatch"],
+  legacy_parent_id_mismatch_retry_attempted_at: "2026-10-16T06:00:00.000Z",
+}, now), false);
+console.log("CJ quota and legacy identity retry policy: 14 assertions passed");
