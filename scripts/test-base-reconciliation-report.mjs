@@ -40,6 +40,8 @@ assert.match(workflow, /stableIdentifierListingMatchedCount/);
 assert.match(workflow, /stableIdentifierBaseItemIdConflictCount/);
 assert.match(workflow, /stableIdentifierConflictSamples/);
 assert.match(workflow, /exactTitleCandidateListingIds/);
+assert.match(workflow, /existingBaseItemEvidence/);
+assert.match(workflow, /base_items_by_id/);
 assert.match(workflow, /body: JSON\.stringify\(\{ snapshot \}\)/);
 assert.match(workflow, /tracer-base-reconciliation-/);
 assert.doesNotMatch(workflow, /actions\/upload-artifact@/);
