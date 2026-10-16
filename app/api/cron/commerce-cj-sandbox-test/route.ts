@@ -35,8 +35,13 @@ export async function POST(request: Request) {
   if (last?.status === "running") {
     return NextResponse.json({ ok: false, error: "CJ_SANDBOX_LIFECYCLE_ALREADY_RUNNING" }, { status: 409 });
   }
-  if (typeof lastDetail.supplierOrderId === "string" && lastDetail.supplierOrderId.trim()) {
-    return NextResponse.json({ ok: false, error: "CJ_SANDBOX_PREVIOUS_ORDER_MAY_EXIST_REQUIRES_MANUAL_RECONCILIATION" }, { status: 409 });
+  if (last) {
+    return NextResponse.json({
+      ok: false,
+      error: typeof lastDetail.supplierOrderId === "string" && lastDetail.supplierOrderId.trim()
+        ? "CJ_SANDBOX_PREVIOUS_ORDER_MAY_EXIST_REQUIRES_MANUAL_RECONCILIATION"
+        : "CJ_SANDBOX_PREVIOUS_ATTEMPT_REQUIRES_REVIEW",
+    }, { status: 409 });
   }
 
   const cutoff = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
@@ -69,7 +74,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "CJ_SANDBOX_NO_FRESH_PROFITABLE_OFFER" }, { status: 409 });
   }
 
-  const eventKey = "cj-sandbox-core:" + String(selected.id) + ":" + Date.now();
+  // A fixed unique key is the one-shot lock: parallel workflows cannot create duplicate sandbox orders.
+  const eventKey = "cj-sandbox-core:one-shot";
   const baseDetail: Record<string, unknown> = {
     supplierOfferId: selected.id,
     supplierProductId: selected.supplier_product_id,
