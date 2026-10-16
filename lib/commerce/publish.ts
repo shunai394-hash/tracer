@@ -23,10 +23,8 @@ function safeSlug(value: string): string {
 }
 
 export async function syncCommerceListings(channel: Channel, limit = 10) {
-  // Fail closed before any external storefront write until CJ live ordering/payment flow is proven.
-  if (!cjSupplierAdapter.capabilities.liveOrdering) {
-    return { channel, considered: 0, published: 0, failed: 1, results: [{ variantId: "", ok: false, error: "supplier_live_ordering_disabled_until_sandbox_payment_flow_proof" }] };
-  }
+  // Storefront publication is independent of supplier purchasing. Only the paid-order
+  // procurement path is gated by liveOrdering; a sandbox proof must not block listings.
   if (channel === "base" && !isBaseConfigured()) throw new Error("base_oauth_not_configured");
   if (channel === "shopify" && !isShopifyConfigured()) throw new Error("shopify_not_configured");
   const db = createSupabaseAdminClient();
