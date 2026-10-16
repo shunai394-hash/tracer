@@ -72,7 +72,7 @@
     },
     {
       "path": "/api/cron/supply-first",
-      "schedule": "5,35 * * * *"
+      "schedule": "2,32 * * * *"
     },
     {
       "path": "/api/cron/market-sourcing",
