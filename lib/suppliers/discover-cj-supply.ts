@@ -484,7 +484,9 @@ export async function discoverAndCreateCjSupply(
         // keep title/image from the old parent; refetch against the canonical
         // product ID before persisting or publishing this candidate.
         const canonicalDetail = await getCJProductDetail(supplierProductId);
-        if (!canonicalDetail?.title?.trim() || !canonicalDetail.imageUrl?.trim()) {
+        const canonicalTitle = canonicalDetail?.title?.trim() ?? "";
+        const canonicalImageUrl = canonicalDetail?.imageUrl?.trim() ?? "";
+        if (!canonicalTitle || !canonicalImageUrl) {
           rejected++;
           if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, {
             status: "retryable",
@@ -494,7 +496,7 @@ export async function discoverAndCreateCjSupply(
           items.push({ rejectedStage: "canonical_supplier_product_detail_missing", supplierProductId, supplierVariantId: candidate.variantId });
           continue;
         }
-        detail = canonicalDetail;
+        detail = { title: canonicalTitle, imageUrl: canonicalImageUrl, price: canonicalDetail?.price ?? null };
       }
       // Price must come from the live exact-variant response, not the stale
       // supplier-listing/cache price. Stock and Japan freight are rechecked too.
@@ -754,11 +756,13 @@ export async function discoverAndCreateCjSupply(
         const supplierProductId = resolvedVariant.supplierProductId;
         if (supplierProductId !== candidate.id) {
           const canonicalDetail = await getCJProductDetail(supplierProductId);
-          if (!canonicalDetail?.title?.trim() || !canonicalDetail.imageUrl?.trim()) {
+          const canonicalTitle = canonicalDetail?.title?.trim() ?? "";
+          const canonicalImageUrl = canonicalDetail?.imageUrl?.trim() ?? "";
+          if (!canonicalTitle || !canonicalImageUrl) {
             reject("canonical_supplier_product_detail_missing", { supplierProductId, supplierVariantId: variant.vid });
             continue;
           }
-          detail = canonicalDetail;
+          detail = { title: canonicalTitle, imageUrl: canonicalImageUrl, price: canonicalDetail?.price ?? null };
         }
         if (existingProducts.has(supplierProductId)) {
           reject("supplier_product_already_exists", { supplierProductId, supplierVariantId: variant.vid });
