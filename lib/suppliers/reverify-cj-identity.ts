@@ -159,13 +159,19 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   // Force bypasses only the per-row identity retry backoff. The exact stock-cap
   // hold is also due immediately after the explicit deployment flag is set.
   // The CJ API quota circuit and all supplier-evidence gates remain enforced.
-  const allRows = rows.filter((row) =>
-    isCjIdentityReverifyCandidate({
+  const allRows = rows.filter((row) => {
+    const eligible = isCjIdentityReverifyCandidate({
       verificationStatus: row.verification_status,
       identityMethod: row.identity_method,
       supplierVariantId: row.supplier_variant_id,
-    }) && (force || stockCapHoldIds.has(String(row.id)) || isCjIdentityReverifyDue(row.metadata, nowMs))
-  );
+    }) && (force || stockCapHoldIds.has(String(row.id)) || isCjIdentityReverifyDue(row.metadata, nowMs));
+    // CJ product and variant endpoints require numeric IDs. UUIDs restored from
+    // backups are internal placeholders, not CJ identifiers; skip them so they
+    // cannot consume the provider quota needed to verify real products.
+    const validCjIds = /^\\d{10,25}$/.test(String(row.supplier_product_id ?? ""))
+      && /^\\d{10,25}$/.test(String(row.supplier_variant_id ?? ""));
+    return eligible && validCjIds;
+  });
   const stockCapHeld = allRows.filter((row) => stockCapHoldIds.has(String(row.id)));
   const regularRows = allRows.filter((row) => !stockCapHoldIds.has(String(row.id)));
   const productIds = [...new Set(regularRows.map((row) => String(row.product_id ?? "").trim()).filter(Boolean))];
