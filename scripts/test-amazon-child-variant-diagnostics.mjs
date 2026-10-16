@@ -33,8 +33,8 @@ const activeSourceBlock = collector.slice(activeSourceStart, activeSourceEnd);
 assert.match(activeSourceBlock, /yahoo_shopping_ranking/, "Yahoo! Shopping remains demand research only");
 assert.doesNotMatch(activeSourceBlock, /amazon_bestsellers|rakuten_ranking/, "Amazon and Rakuten must not be active demand fetch sources");
 
-assert.ok(vercel.crons.some((entry) => entry.path === "/api/cron/market-sourcing" && entry.schedule === "*/15 * * * *"),
-  "market-sourcing must run on a schedule instead of remaining an unreachable route");
+assert.deepEqual(vercel.crons.filter((entry) => entry.path === "/api/cron/market-sourcing"), [],
+  "market-sourcing must not run on a schedule in the supplier-native rebuild");
 
 for (const [name, source] of [
   ["bestsellers API", bestsellerApi],

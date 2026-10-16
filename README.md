@@ -57,65 +57,25 @@ npx tsc --noEmit
 npm run build
 ```
 
-## Production market-to-publication pipeline
+## Production supplier-to-publication pipeline
 
-TRACER separates **market observation** from **sourcing decisions**:
-
-```text
-Amazon / Rakuten / Yahoo
-        ↓
-market observation
-        ↓
-verified marketplace identifiers
-        ↓
-CJ supplier search
-        ↓
-exact identity / variant confirmation
-        ↓
-exact CJ variant
-        ↓
-variant-level stock verification
-        ↓
-CJ CN → JP freight quote
-        ↓
-contribution-profit gate
-        ↓
-shop_listings.published = true
-        ↓
-/shop
-        ↓
-BASE publication
-        ↓
-BASE order polling
-        ↓
-TRACER fulfillment
-        ↓
-CJ supplier order (explicit live/auto switches)
-        ↓
-NEWFIND product_candidate
-```
-
-The production batch endpoint is:
+TRACER is the source of truth. Supplier-native CJ catalog discovery is separate from optional demand research; marketplace titles or rankings cannot create sellable products or establish supplier identity.
 
 ```text
-GET /api/cron/market-sourcing
+CJ supplier catalog
+  -> exact CJ product + variant ID
+  -> fresh variant stock + price
+  -> live Japan shipping quote
+  -> Japanese product copy + image validation
+  -> landed cost + positive contribution profit
+  -> TRACER listing
+  -> BASE + Shopify reconciliation
+  -> store order import
+  -> supplier preflight + order creation
+  -> supplier status + tracking sync
 ```
 
-Publication recovery is intentionally separated from sourcing:
-
-- `/api/cron/inventory-refresh` — refreshes exact published CJ variant stock.
-- `/api/cron/base-publish` — creates or reconciles BASE items after inventory verification.
-- `/api/cron/base-orders` — imports and re-syncs BASE orders.
-- `/api/cron/supplier-orders` — polls supplier order status and tracking.
-- `/api/cron/newfind-retry` — retries pending, failed, and sent-but-unacknowledged NEWFIND deliveries.
-
-All protected cron/admin automation routes require `CRON_SECRET`. Every request must contain:
-
-```text
-Authorization: Bearer <CRON_SECRET>
-```
-
-Vercel Cron is configured in `vercel.json` and runs the bounded sourcing batch once per day. The batch is intentionally bounded because CJ product search, detail, variant, and freight APIs are rate-limited and consume API points.
+The scheduled supplier discovery endpoint is `/api/cron/supply-first`. Marketplace sourcing is intentionally **not scheduled and not invoked by production recovery workflows**. Legacy market-observation rows are not procurement or publication evidence. Amazon, Rakuten, Yahoo! Shopping, and Orosy are not supplier sources.
 
 ### Publication gates
 
