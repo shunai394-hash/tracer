@@ -439,7 +439,7 @@ export async function fetchBaseItemsSnapshot(options?: {
 }): Promise<{ items: Record<string, unknown>[]; pages: number; complete: boolean }> {
   const token = await getBaseAccessToken();
   const pageLimit = Math.min(100, Math.max(1, Math.floor(options?.itemPageLimit ?? 100)));
-  const maxPages = Math.min(10, Math.max(1, Math.floor(options?.itemMaxPages ?? 10)));
+  const maxPages = Math.min(BASE_ITEMS_MAX_PAGES, Math.max(1, Math.floor(options?.itemMaxPages ?? BASE_ITEMS_MAX_PAGES)));
   const items: Record<string, unknown>[] = [];
   let pages = 0;
   let offset = 0;
