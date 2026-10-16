@@ -89,7 +89,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
       results.push({ variantId: candidate.id, ok: true, externalId: externalProductId });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await db.from("channel_listings").update({ status: "error", last_error: message.slice(0, 1500), last_synced_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", listing.id);
+      const { error: recordError } = await db.from("channel_listings").update({ status: "error", last_error: message.slice(0, 1500), last_synced_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("variant_id", candidate.id).eq("channel", channel);
+      if (recordError) console.error("[commerce-publish] failed to record channel error", { variantId: candidate.id, channel, error: recordError.message });
       results.push({ variantId: candidate.id, ok: false, error: message.slice(0, 300) });
     }
   }
