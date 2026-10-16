@@ -68,6 +68,7 @@ create index if not exists idx_commerce_variants_product on public.commerce_vari
 create index if not exists idx_supplier_offers_variant_stock on public.supplier_offers(variant_id, inventory desc, unit_cost);
 create index if not exists idx_supplier_offers_lookup on public.supplier_offers(supplier_code, supplier_product_id, supplier_variant_id);
 create index if not exists idx_channel_listings_status on public.channel_listings(channel, status, updated_at);
+create unique index if not exists idx_channel_listings_channel_sku on public.channel_listings(channel, external_sku) where external_sku is not null;
 create index if not exists idx_commerce_orders_fulfillment on public.commerce_orders(payment_status, fulfillment_status, received_at);
 create index if not exists idx_procurement_orders_status on public.procurement_orders(status, updated_at);
 create index if not exists idx_commerce_events_entity on public.commerce_events(entity_type, entity_id, created_at desc);
