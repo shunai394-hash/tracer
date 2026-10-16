@@ -146,7 +146,7 @@ assert.doesNotMatch(patrolWorkflow, /^\s{2}schedule:/m, "production patrol must 
 const vercelPatrolSchedules = JSON.parse(vercel).crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule);
 assert.deepEqual(vercelPatrolSchedules, ["*/5 * * * *"], "the existing Vercel production patrol must still run every five minutes");
 const cleanSupplierSchedules = JSON.parse(vercel).crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule);
-assert.deepEqual(cleanSupplierSchedules, ["*/30 * * * *"], "clean supplier discovery must run every 30 minutes");
+assert.deepEqual(cleanSupplierSchedules, ["*/10 * * * *"], "clean supplier discovery must run every 10 minutes");
 assert.deepEqual(JSON.parse(vercel).crons.filter((job) => job.path === "/api/cron/cj-identity-reverify"), [], "legacy identity re-verification must not run against the cleared legacy supplier table");
 assert.match(patrolWorkflow, /push:/, "core patrol changes must trigger a guarded post-deploy run");
 assert.match(patrolWorkflow, /git merge-base --is-ancestor/);
