@@ -377,7 +377,7 @@ async function loadCanonicalCommerceListings(): Promise<ShopListing[]> {
   }
 }
 
-async function recordShopFunnelEvent(args: {
+export async function recordShopFunnelEvent(args: {
   listingId: string;
   eventType: "impression" | "click" | "view" | "add_to_cart" | "checkout" | "purchase";
   qty?: number;
