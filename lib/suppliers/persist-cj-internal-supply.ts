@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isCJLiveOrderPathReady } from "@/lib/config/env";
 import { normalizeIdentifier } from "@/lib/market/identifiers";
 
 type CandidateArgs = {
@@ -105,8 +106,11 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
       fx_rate: args.fxRate,
       selling_price_jpy: args.sellingPriceJpy,
       live_stock_and_japan_freight_verified: true,
+      live_order_path_ready: isCJLiveOrderPathReady(),
       automated_order_creation_verified: false,
-      sale_gate_note: "Supplier order creation remains subject to the live procurement capability gate.",
+      sale_gate_note: isCJLiveOrderPathReady()
+        ? "Production live-order flags and sandbox lifecycle proof are enabled; every paid customer order still requires fresh exact-variant stock, Japan freight, positive profit, and supplier preflight."
+        : "Supplier order creation remains disabled until production live-order flags and sandbox lifecycle proof are enabled.",
     },
     fetched_at: now,
     updated_at: now,
@@ -190,7 +194,10 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     shipping_cost: args.shippingUsd,
     currency: "USD",
     inventory: Math.floor(args.inventory),
-    orderable: false,
+    orderable: isCJLiveOrderPathReady()
+      && Number.isFinite(args.costUsd) && args.costUsd > 0
+      && Number.isFinite(args.shippingUsd) && args.shippingUsd > 0
+      && Number.isFinite(args.inventory) && args.inventory > 0,
     tracking_available: true,
     active: true,
     metadata: {
