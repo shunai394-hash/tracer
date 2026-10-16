@@ -206,14 +206,14 @@ export async function POST(request: Request) {
       .limit(12);
     if (candidateError) throw new Error("CJ_SANDBOX_CANDIDATE_SCAN_FAILED");
 
-    const validCandidate = (candidate: typeof listing) =>
+    const validCandidate = (candidate: typeof requestedListing) =>
       candidate.supplier === "cj" &&
       candidate.configured === true &&
       /^\d{10,25}$/.test(String(candidate.supplier_product_id ?? "")) &&
       /^\d{10,25}$/.test(String(candidate.supplier_variant_id ?? ""));
     const alternatives = (candidateRows ?? []).filter((candidate) =>
-      candidate.id !== listing.id &&
-      validCandidate(candidate as typeof listing) &&
+      candidate.id !== activeListing.id &&
+      validCandidate(candidate as typeof requestedListing) &&
       !(candidate.metadata && typeof candidate.metadata === "object" && !Array.isArray(candidate.metadata)
         && "cj_sandbox_order_path_verified_at" in candidate.metadata)
     );
