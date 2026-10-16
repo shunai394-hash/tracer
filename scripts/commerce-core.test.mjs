@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { calculateSellingPrice } from "../lib/commerce/pricing.mjs";
 import { splitJapaneseAddress } from "../lib/commerce/japanese-address.mjs";
+import { isCanonicalCJNativeId } from "../lib/sources/cj/native-id.mjs";
 
 test("price calculation preserves positive profit after fees and target margin", () => {
   const result = calculateSellingPrice({ unitCostJpy: 2000, shippingCostJpy: 500, feeRate: 0.1, targetMarginRate: 0.2 });
@@ -158,4 +159,15 @@ test("CJ importer serializes stock and freight requests to respect the supplier 
   const freightCall = importer.indexOf("await calculateCJFreight(variant.vid, { startCountryCode: \"CN\"");
   assert.ok(stockCall >= 0 && freightCall > stockCall, "stock must be awaited before the freight request");
   assert.doesNotMatch(importer, /Promise\.allSettled\(\[\s*fetchCJVariantStock[\s\S]*?calculateCJFreight/s);
+});
+
+test("CJ native IDs reject TRACER UUIDs before they enter supplier identity records", async () => {
+  assert.equal(isCanonicalCJNativeId("1439910326744256512"), true);
+  assert.equal(isCanonicalCJNativeId("0AD546B4-E7F4-42BF-BFF1-A742EF8814E3"), false);
+  assert.equal(isCanonicalCJNativeId("3AF9799E-E99E-4088-B408-BD78AF370A32"), false);
+  assert.equal(isCanonicalCJNativeId("12345"), false);
+  assert.equal(isCanonicalCJNativeId(""), false);
+  const client = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
+  assert.match(client, /!isCanonicalCJNativeId\(id\)/);
+  assert.match(client, /CJ variant parent ID is not a canonical native ID/);
 });
