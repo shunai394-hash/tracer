@@ -68,6 +68,7 @@ assert.ok(createdIdCallback >= 0 && createdIdCallback < sandboxConfirmation && s
   "persist created supplier order ID, confirm CREATED→UNPAID, then simulate sandbox payment");
 assert.ok(adapter.includes("await confirmCJSandboxOrder(orderId)"));
 assert.ok(adapter.includes("await simulateCJSandboxPayment(orderId)"));
+assert.match(adapter, /simulateCJSandboxPayment,/);
 assert.ok(!adapter.includes("await payCJSandboxOrderBalance(orderId)"), "sandbox verification must not debit the live CJ balance");
 assert.match(adapter, /payType: 3,/,
   "sandbox order must be create-only before explicit confirmation and simulated payment");
