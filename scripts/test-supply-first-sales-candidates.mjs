@@ -29,6 +29,9 @@ const salesRoute = readFileSync("app/api/cron/sales-test-publication/route.ts", 
 assert.match(salesRoute, /mode: "canonical_supply_fast_path"/, "cron telemetry must name the supply-first path it actually runs");
 assert.doesNotMatch(salesRoute, /mode: "market_linked_sales_test"/, "cron telemetry must not mislabel supply-first runs as market-linked-only");
 assert.match(selector, /options\.allowNativeCjIdentity\s*===\s*true/);
+assert.match(selector, /sourceRefToProductId/, "native supply candidates resolve their TRACER-owned product by deterministic source_ref");
+assert.match(selector, /metadata->>source_ref/, "detached supply listings are queried without writing marketplace identity");
+assert.match(selector, /supplier_listings\.product_id null until marketplace identity is proven/, "detached offers remain detached in the database");
 // Demand/opportunity intelligence is ranking-only, not a listing prerequisite.
 assert.match(selector, /const intelligence = intelligenceByProduct.get\(productId\) \?\?/);
 assert.doesNotMatch(selector, /if \(!intelligence\) reasons\.push\("opportunity_intelligence_missing"\)/);
