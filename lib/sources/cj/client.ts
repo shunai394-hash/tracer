@@ -421,11 +421,14 @@ export async function fetchCJVariantByVid(vid: string): Promise<CJProductVariant
     throw new CJRequestError(payload.message || "CJ variant detail lookup failed");
   }
 
-  const row = extractCJVariantRows(payload.data)[0];
+  const rows = extractCJVariantRows(payload.data);
+  // The queryByVid contract is exact-VID lookup. If CJ wraps multiple rows in
+  // a collection, never trust the first row: select only the requested VID.
+  const row = rows.find((item) => (item.vid?.trim() || item.variantId?.trim()) === normalizedVid);
   if (!row) return null;
 
   const id = row.vid?.trim() || row.variantId?.trim();
-  if (!id) return null;
+  if (id !== normalizedVid) return null;
 
   const verifiedByCountry = new Map<string, { quantity: number; storageId: string | null }>();
   for (const inventoryRow of row.inventories ?? []) {
