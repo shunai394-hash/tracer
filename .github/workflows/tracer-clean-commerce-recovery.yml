@@ -80,6 +80,7 @@ jobs:
           call_get "api/cron/commerce-cj-import?productIds=1732295872995663872,1732293361517735936,2406100641131613800,2406110943541622000&limit=4" "cj-refresh-bags-hair-1.json" 300 || failed=1
           call_get "api/cron/commerce-cj-import?productIds=1715919913287692288,1439910326744256512,2409230148051626500,1606597353589452800&limit=4" "cj-refresh-bags-hair-2.json" 300 || failed=1
           call_get "api/cron/commerce-cj-import?limit=4" "cj-import.json" 300 || failed=1
+          call_get "api/admin/shopify/auth-check" "shopify-auth-check.json" 60 || failed=1
           call_publish() {
             local path="$1" out="$2" t code
             t="$(token)" || { echo "OIDC token failed for $path"; return 1; }
