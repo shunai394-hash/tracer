@@ -112,6 +112,67 @@ export async function POST(request: Request) {
       }
     }
 
+    // Read the current commerce-native BASE channel catalog as well as legacy
+    // shop_listings. The current publisher writes the BASE SKU into BASE's
+    // identifier field and stores the exact BASE item ID in channel_listings.
+    const { data: commerceRows, error: commerceError } = await db
+      .from("channel_listings")
+      .select("id,variant_id,external_product_id,external_sku,status,selling_price")
+      .eq("channel", "base");
+    if (commerceError) throw new Error("TRACER_COMMERCE_CHANNEL_READ_FAILED");
+    const commerceVariantIds = [...new Set((commerceRows ?? []).map((row) => String(row.variant_id ?? "")).filter(Boolean))];
+    const { data: commerceVariants, error: commerceVariantError } = commerceVariantIds.length
+      ? await db.from("commerce_variants").select("id,product_id,source_variant_key,sku,title_ja").in("id", commerceVariantIds)
+      : { data: [], error: null };
+    if (commerceVariantError) throw new Error("TRACER_COMMERCE_VARIANT_READ_FAILED");
+    const commerceProductIds = [...new Set((commerceVariants ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean))];
+    const { data: commerceProducts, error: commerceProductError } = commerceProductIds.length
+      ? await db.from("commerce_products").select("id,source_key,title_ja,active").in("id", commerceProductIds)
+      : { data: [], error: null };
+    if (commerceProductError) throw new Error("TRACER_COMMERCE_PRODUCT_READ_FAILED");
+    const { data: commercePrices, error: commercePriceError } = commerceVariantIds.length
+      ? await db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit").in("variant_id", commerceVariantIds)
+      : { data: [], error: null };
+    if (commercePriceError) throw new Error("TRACER_COMMERCE_PRICE_READ_FAILED");
+    const commerceOfferIds = [...new Set((commercePrices ?? []).map((row) => String(row.supplier_offer_id ?? "")).filter(Boolean))];
+    const { data: commerceOffers, error: commerceOfferError } = commerceOfferIds.length
+      ? await db.from("supplier_offers").select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,source_status,tracking_supported,ship_to,last_checked_at").in("id", commerceOfferIds)
+      : { data: [], error: null };
+    if (commerceOfferError) throw new Error("TRACER_COMMERCE_OFFER_READ_FAILED");
+
+    const variantById = new Map((commerceVariants ?? []).map((row) => [String(row.id), row]));
+    const productById = new Map((commerceProducts ?? []).map((row) => [String(row.id), row]));
+    const priceByVariant = new Map((commercePrices ?? []).map((row) => [String(row.variant_id), row]));
+    const offerById = new Map((commerceOffers ?? []).map((row) => [String(row.id), row]));
+    const commerceListingRows: ListingRow[] = (commerceRows ?? []).map((channelRow) => {
+      const variant = variantById.get(String(channelRow.variant_id));
+      const product = variant ? productById.get(String(variant.product_id)) : null;
+      const price = priceByVariant.get(String(channelRow.variant_id));
+      const offer = price?.supplier_offer_id ? offerById.get(String(price.supplier_offer_id)) : null;
+      const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
+      const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 && Date.now() - checkedAt <= 24 * 60 * 60_000;
+      const exactVariant = Boolean(variant && offer && String(variant.source_variant_key) === String(offer.supplier_variant_id));
+      const orderable = Boolean(exactVariant && offer?.source_status === "verified" && offer?.tracking_supported === true &&
+        offer?.ship_to === "JP" && Number(offer?.inventory) > 0 && fresh &&
+        Number(price?.selling_price) > 0 && Number(price?.expected_profit) > 0);
+      return {
+        id: String(channelRow.id),
+        title: text(variant?.title_ja) ?? text(product?.title_ja),
+        product_id: product ? String(product.id) : null,
+        published: channelRow.status === "published",
+        base_item_id: channelRow.external_product_id == null ? null : String(channelRow.external_product_id),
+        selling_price: channelRow.selling_price as number | null,
+        supplier_name: offer ? String(offer.supplier_code) : null,
+        supplier_listing_id: offer ? String(offer.id) : null,
+        supplier_product_id: offer ? String(offer.supplier_product_id) : null,
+        supplier_variant_id: offer ? String(offer.supplier_variant_id) : null,
+        inventory: offer ? Number(offer.inventory) : null,
+        orderable,
+        base_publication_status: channelRow.status == null ? null : String(channelRow.status),
+      };
+    });
+    const reconciliationListings = [...listings, ...commerceListingRows];
+
     const identifierKey = (value: unknown): string => String(value ?? "").normalize("NFKC").trim().toLocaleLowerCase("en-US");
     const bySupplierIdentifier = new Map<string, ListingRow[]>();
     const addSupplierIdentifier = (value: unknown, listing: ListingRow) => {
@@ -125,8 +186,10 @@ export async function POST(request: Request) {
     const byBaseId = new Map<string, ListingRow[]>();
     const byTitle = new Map<string, ListingRow[]>();
     const byListingId = new Map<string, ListingRow>();
-    for (const listing of listings) {
-      byListingId.set(String(listing.id).toLowerCase(), listing);
+    for (const listing of reconciliationListings) {
+      if (listings.some((legacy) => String(legacy.id) === String(listing.id))) {
+        byListingId.set(String(listing.id).toLowerCase(), listing);
+      }
       addSupplierIdentifier(listing.supplier_listing_id, listing);
       addSupplierIdentifier(listing.supplier_product_id, listing);
       addSupplierIdentifier(listing.supplier_variant_id, listing);
@@ -254,7 +317,7 @@ export async function POST(request: Request) {
       baseItemCount: typedSnapshotItems.length,
       baseVisibleCount: typedSnapshotItems.filter((item) => visibility(item.visible) === true).length,
       baseHiddenCount: typedSnapshotItems.filter((item) => visibility(item.visible) === false).length,
-      tracerListingCount: listings.length,
+      tracerListingCount: reconciliationListings.length,
       exactBaseIdMappedCount: exactMapped,
       baseItemsWithoutExactMappingCount: unmapped,
       baseItemsWithAmbiguousExactMappingCount: ambiguous,
@@ -262,7 +325,7 @@ export async function POST(request: Request) {
       baseItemsWithAmbiguousExactTitleCandidateCount: ambiguousTitleCandidateCount,
       baseItemsWithExactSupplierIdentifierCandidateCount: items.filter((item) => item.exactSupplierIdentifierMatchCount === 1).length,
       baseItemsWithAmbiguousSupplierIdentifierCandidateCount: items.filter((item) => item.exactSupplierIdentifierMatchCount > 1).length,
-      tracerListingsWithoutBaseItemIdCount: listings.filter((row) => !String(row.base_item_id ?? "").trim()).length,
+      tracerListingsWithoutBaseItemIdCount: reconciliationListings.filter((row) => !String(row.base_item_id ?? "").trim()).length,
       duplicateBaseItemIdGroupsInTracer: [...byBaseId.entries()].filter(([, rows]) => rows.length > 1).length,
       note: "Exact-title candidates are unverified suggestions only. This report never writes mappings or changes BASE listings.",
       items,
