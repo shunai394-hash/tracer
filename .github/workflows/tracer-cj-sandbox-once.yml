@@ -1,109 +1,17 @@
-name: TRACER CJ Sandbox Lifecycle — One-Time Verification
+name: Legacy CJ sandbox once workflow (disabled)
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
-  schedule:
-    - cron: "1 0 16 10 *"
 
 permissions:
-  id-token: write
   contents: read
 
-concurrency:
-  group: tracer-cj-sandbox-one-time-20261015
-  cancel-in-progress: false
-
 jobs:
-  sandbox-lifecycle:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'TRACER_CJ_SANDBOX_ORDER_TEST')))
+  disabled:
+    if: ${{ false }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          persist-credentials: false
-
-      - name: Run one authenticated TRACER_CJ_SANDBOX_ORDER_TEST retry after explicit no-order create failure
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ "$(date -u +%F)" != "2026-10-16" ]; then
-            echo "One-time sandbox window has passed; no external request made."
-            exit 0
-          fi
-
-          BASE="https://tracer-pied-alpha.vercel.app"
-
-          get_oidc_token() {
-            curl -sSf --max-time 15 \
-              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" \
-              | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
-          }
-
-          # Wait for the production alias to serve this exact commit before the sandbox request.
-          ready=0
-          for attempt in $(seq 1 36); do
-            code="$(curl -sS -o /tmp/tracer-health.json -w '%{http_code}' --max-time 10 "${BASE}/api/health" || true)"
-            if [ "$code" = "200" ] && grep -q "$GITHUB_SHA" /tmp/tracer-health.json; then
-              ready=1
-              echo "Production serves expected commit $GITHUB_SHA (attempt $attempt)."
-              break
-            fi
-            echo "Waiting for production commit $GITHUB_SHA (HTTP $code; attempt $attempt/36)."
-            sleep 10
-          done
-          if [ "$ready" != "1" ]; then
-            echo "Production did not serve the expected commit; no sandbox order was attempted."
-            exit 1
-          fi
-
-          TOKEN="$(get_oidc_token)"
-          HTTP_CODE="$(curl -sS --max-time 300 -o sandbox-result.json -w '%{http_code}' \
-            -X POST "${BASE}/api/cron/commerce-cj-sandbox-test" \
-            -H "Authorization: Bearer ${TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data '{}')"
-
-          python3 - <<'PY'
-          import json
-          data = json.load(open("sandbox-result.json"))
-          safe = {key: data.get(key) for key in (
-              "ok", "phase", "supplierOfferId", "supplierOrderId",
-              "status", "trackingNumber", "paymentConfirmed",
-              "sandbox", "charged", "realFulfillment", "error"
-          )}
-          print(json.dumps(safe, ensure_ascii=False, indent=2))
-          PY
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "CJ sandbox lifecycle endpoint returned HTTP $HTTP_CODE. No automatic retry is performed to avoid duplicate sandbox orders."
-            exit 1
-          fi
-
-          python3 - <<'PY'
-          import json, sys
-          data = json.load(open("sandbox-result.json"))
-          status = str(data.get("status") or "").strip().upper()
-          valid = (
-              data.get("ok") is True
-              and bool(str(data.get("supplierOrderId") or "").strip())
-              and status in ("500", "SHIPPED", "IN_TRANSIT")
-              and data.get("sandbox") is True
-              and data.get("charged") is False
-              and data.get("realFulfillment") is False
-              and data.get("paymentConfirmed") is True
-              and isinstance(data.get("trackingNumber"), str)
-              and bool(data["trackingNumber"].strip())
-          )
-          if not valid:
-              print("Sandbox lifecycle did not prove payment and tracking invariants; refusing to mark the run successful.")
-              sys.exit(1)
-          print("CJ sandbox create → simulated payment → status transition → tracking proof passed. Live ordering flags remain unchanged.")
-          PY
-
-# TRACER_CJ_SANDBOX_ORDER_TEST: retry after dedicated live stock and parent-scoped price verification.
-
-# TRACER_CJ_SANDBOX_ORDER_TEST: retry after live CN-origin freight fallback.
+      - name: Use the canonical clean-commerce recovery workflow instead
+        run: echo "Disabled legacy sandbox workflow; use .github/workflows/tracer-clean-commerce-recovery.yml."
