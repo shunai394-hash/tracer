@@ -59,8 +59,10 @@ assert.match(ingest, /productPayload\.upc = ids\.upc/);
 assert.match(ingest, /productPayload\.metadata\.supplier_identifier_evidence_source = identifierEvidenceSource/);
 assert.match(ingest, /active: false/,
   "the product must be quarantined before variant mutation");
-assert.match(ingest, /orderable: false/,
-  "supplier stock/freight alone must not enable automated purchasing");
+assert.match(ingest, /orderable: isCJLiveOrderPathReady\(\)[\s\S]*?Number\.isFinite\(args\.inventory\) && args\.inventory > 0/,
+  "a CJ variant is orderable only when production live-order flags are ready and exact-variant stock, cost, and Japan freight are fresh and positive");
+assert.match(ingest, /live_order_path_ready: isCJLiveOrderPathReady\(\)/,
+  "internal supply must record the explicit production live-order readiness decision");
 assert.match(ingest, /automated_order_creation_verified: false/,
   "live stock/freight verification must not be represented as proof of automated ordering");
 assert.match(ingest, /sku: null/,
