@@ -86,13 +86,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "CJ_SANDBOX_LIFECYCLE_ALREADY_VERIFIED" }, { status: 409 });
   }
   const previousError = typeof previous?.error === "string" ? previous.error : "";
+  const previousMetadata = previous?.metadata && typeof previous.metadata === "object" && !Array.isArray(previous.metadata)
+    ? previous.metadata as Record<string, unknown>
+    : {};
+  // A prior sandbox-only order can be retried after this exact pre-payment
+  // transition failure: the old order remained CREATED, no payment was made,
+  // and no real fulfillment occurred. This exception must never apply to live orders.
+  const previousFailureWasSafeSandboxTransition =
+    previousError === "Current order status is CREATED(100), not UNPAID(200), cannot simulate pay." &&
+    previousMetadata.sandbox === true &&
+    previousMetadata.charged === false &&
+    previousMetadata.realFulfillment === false;
   const previousFailureWasPreOrderOnly =
     previousError.startsWith("CJ_SANDBOX_NO_VALID_CANDIDATE:") ||
     previousError.startsWith("CJ_SANDBOX_VARIANT_NOT_FOUND:") ||
     previousError.startsWith("CJ_SANDBOX_PRODUCT_ID_MISMATCH:") ||
     previousError === "CJ_SANDBOX_STOCK_OR_PRICE_UNVERIFIED" ||
     previousError === "CJ_SANDBOX_SHIPPING_UNAVAILABLE" ||
-    previousError === "CJ_SANDBOX_COUNTRY_UNVERIFIED";
+    previousError === "CJ_SANDBOX_COUNTRY_UNVERIFIED" ||
+    previousFailureWasSafeSandboxTransition;
   if (previous?.status === "failed" && !previousFailureWasPreOrderOnly) {
     return NextResponse.json({
       ok: false,
