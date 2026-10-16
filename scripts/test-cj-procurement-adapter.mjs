@@ -16,6 +16,9 @@ const inventoryRefresh = read("app/api/cron/inventory-refresh/route.ts");
 const supplyDiscovery = read("lib/suppliers/discover-cj-supply.ts");
 
 assert.match(adapter, /name: "cj"/);
+assert.match(adapter, /isCanonicalCjNativeId/);
+assert.match(adapter, /CJ_NATIVE_ID_INVALID/);
+assert.match(supplyDiscovery, /invalid_cj_native_supplier_ids/);
 assert.match(adapter, /inventoryByCountry/);
 assert.match(adapter, /Number\.isSafeInteger\(input\.quantity\)/);
 assert.match(adapter, /fromCountryCode: freight\.countryCode/);
