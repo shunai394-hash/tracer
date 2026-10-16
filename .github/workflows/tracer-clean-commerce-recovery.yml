@@ -84,6 +84,7 @@ jobs:
           }
           # Prove exact CJ variant → sandbox order → confirmOrder → simulated payment → tracking path.
           # The callback persists supplierOrderId before payment so partial failures remain reconcilable.
+          # The health preflight above must match this exact deployed commit before any CJ sandbox call.
           call_post "api/cron/commerce-cj-sandbox-test" "cj-sandbox-core.json" 300 || failed=1
           # Do not publish or enable paid live ordering from CI. Real storefront writes stay gated
           # until the operator explicitly enables the production order/payment flags.
