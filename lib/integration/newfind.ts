@@ -26,7 +26,7 @@ function tracerSiteOrigin(): string | null {
   }
 }
 
-async function resolveLiveTracerUrl(slug: string | null): Promise<{ url: string | null; reason: string | null }> {
+export async function resolveLiveTracerUrl(slug: string | null): Promise<{ url: string | null; reason: string | null }> {
   const origin = tracerSiteOrigin();
   if (!origin) return { url: null, reason: "tracer_sales_url_origin_missing" };
   if (!slug) return { url: null, reason: "tracer_sales_url_slug_missing" };

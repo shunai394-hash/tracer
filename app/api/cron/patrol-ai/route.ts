@@ -7,6 +7,7 @@ import { runIntelligencePipeline } from "@/lib/intelligence/run-intelligence-pip
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { rescueUndeliveredGatePassedListings, retryPendingNewfindPromotions } from "@/lib/integration/newfind";
 import { catalogCountsNeedReview } from "@/lib/ops/catalog-count-check";
+import { promoteCommerceListingsToNewfind } from "@/lib/integration/newfind-commerce";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -334,6 +335,23 @@ export async function GET(request: Request) {
       }
     } else {
       actions.push({ action: "newfind_retry", skipped: true, reason: "time_budget" });
+    }
+
+    // Canonical commerce listings (Shopify channel_listings) are not in the
+    // shop_listings ledger above; deliver a few per run with their own ledger.
+    if (Date.now() < startedAt + 250_000) {
+      try {
+        const commerceNewfind = await withinBudget(
+          promoteCommerceListingsToNewfind({ limit: 2, deadlineAt: startedAt + 285_000 }),
+          startedAt + 290_000,
+          "newfind_commerce",
+        );
+        actions.push({ action: "newfind_commerce", result: commerceNewfind });
+      } catch (error) {
+        actions.push({ action: "newfind_commerce", ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+    } else {
+      actions.push({ action: "newfind_commerce", skipped: true, reason: "time_budget" });
     }
 
     const after = await snapshot(db);

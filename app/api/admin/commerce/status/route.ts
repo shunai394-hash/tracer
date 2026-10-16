@@ -37,6 +37,24 @@ export async function GET(request: Request) {
         .gte("started_at", freshSince).order("started_at", { ascending: false }).limit(200),
     ]);
     if (recentCronRows.error) throw new Error("cron_runs_recent_read_failed:" + recentCronRows.error.message);
+    const [failedCronRows, listingErrorRows] = await Promise.all([
+      db.from("cron_runs").select("job_name,error").gte("started_at", freshSince).eq("status", "failed").limit(500),
+      db.from("channel_listings").select("channel,last_error").eq("status", "error").limit(500),
+    ]);
+    if (failedCronRows.error) throw new Error("cron_runs_failed_read_failed:" + failedCronRows.error.message);
+    if (listingErrorRows.error) throw new Error("channel_listings_error_read_failed:" + listingErrorRows.error.message);
+    const tally = (rows: Array<Record<string, unknown>>, group: string, reason: string) => {
+      const counts = new Map<string, { [key: string]: unknown; count: number }>();
+      for (const row of rows) {
+        const groupValue = String(row[group] ?? "unknown");
+        const reasonValue = String(row[reason] ?? "none").replace(/\s+/g, " ").slice(0, 120);
+        const key = groupValue + "\u0000" + reasonValue;
+        const entry = counts.get(key) ?? { [group]: groupValue, reason: reasonValue, count: 0 };
+        entry.count += 1;
+        counts.set(key, entry);
+      }
+      return [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 30);
+    };
     const latestCronByJob = new Map<string, Record<string, unknown>>();
     for (const row of recentCronRows.data ?? []) {
       const jobName = typeof row.job_name === "string" ? row.job_name : "unknown";
@@ -57,6 +75,8 @@ export async function GET(request: Request) {
       procurementWithTracking, procurementLastSubmitted, procurementLastShipped,
       lastOfferCheck, lastPriceCalculation, approvalRequested, approvalGranted,
       legacyListings, legacyPublished,
+      newfindLegacyProcessed, newfindLegacyFailed, newfindLegacyOpen,
+      newfindCommerceProcessed, newfindCommerceFailed, newfindCommerceOpen, newfindCommerceLast,
     ] = await Promise.all([
       count(db, "commerce_products"), count(db, "commerce_products", q => q.eq("active", true)), count(db, "commerce_variants"),
       count(db, "supplier_offers", q => q.eq("source_status", "discovered")),
@@ -102,6 +122,13 @@ export async function GET(request: Request) {
       count(db, "commerce_events", q => q.eq("event_type", "procurement_approval_requested")),
       count(db, "commerce_events", q => q.eq("event_type", "procurement_approved")),
       count(db, "shop_listings"), count(db, "shop_listings", q => q.eq("published", true)),
+      count(db, "newfind_promotion_deliveries", q => q.eq("status", "processed")),
+      count(db, "newfind_promotion_deliveries", q => q.eq("status", "failed")),
+      count(db, "newfind_promotion_deliveries", q => q.in("status", ["pending", "sending", "sent"])),
+      count(db, "commerce_events", q => q.eq("event_type", "newfind_commerce_delivery").eq("status", "processed")),
+      count(db, "commerce_events", q => q.eq("event_type", "newfind_commerce_delivery").eq("status", "failed")),
+      count(db, "commerce_events", q => q.eq("event_type", "newfind_commerce_delivery").in("status", ["pending", "sending", "sent"])),
+      latest(db, "commerce_events", "created_at", q => q.eq("event_type", "newfind_commerce_delivery")),
     ]);
 
     return NextResponse.json({
@@ -124,8 +151,13 @@ export async function GET(request: Request) {
         cancelled: procurementCancelled, withTracking: procurementWithTracking,
         lastSubmittedAt: procurementLastSubmitted, lastShippedAt: procurementLastShipped,
       },
+      newfind: {
+        legacyShopListings: { processed: newfindLegacyProcessed, failed: newfindLegacyFailed, open: newfindLegacyOpen },
+        commerceVariants: { processed: newfindCommerceProcessed, failed: newfindCommerceFailed, open: newfindCommerceOpen, lastCreatedAt: newfindCommerceLast },
+      },
       approvalEvents: { requested: approvalRequested, approved: approvalGranted },
-      cronRuns: { last24Hours: cronRunTotal, failedLast24Hours: cronRunFailures, latestByJob: [...latestCronByJob.values()] },
+      cronRuns: { last24Hours: cronRunTotal, failedLast24Hours: cronRunFailures, latestByJob: [...latestCronByJob.values()], failuresByJobAndError: tally(failedCronRows.data ?? [], "job_name", "error") },
+      listingErrors: tally(listingErrorRows.data ?? [], "channel", "last_error"),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);
