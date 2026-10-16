@@ -13,9 +13,11 @@ export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   const url = new URL(request.url);
-  const query = (url.searchParams.get("q") || "women handbag").trim().slice(0, 100);
+  const queryOptions = ["women handbag", "beauty tools", "phone accessories", "home organization", "kitchen gadgets", "pet accessories", "fitness accessories", "hair accessories women"];
+  const explicitQuery = url.searchParams.get("q");
+  const query = (explicitQuery || queryOptions[Math.floor(Date.now() / 1_800_000) % queryOptions.length]).trim().slice(0, 100);
   const page = Math.min(1000, Math.max(1, Number(url.searchParams.get("page") || 1)));
-  const limit = Math.min(10, Math.max(1, Number(url.searchParams.get("limit") || 3)));
+  const limit = Math.min(10, Math.max(1, Number(url.searchParams.get("limit") || 2)));
   const fx = await getObservedUsdToJpyRate();
   if (!fx || !Number.isFinite(fx.rate) || fx.rate <= 0) {
     return NextResponse.json({ ok: false, error: "usd_jpy_rate_unavailable", imported: 0 }, { status: 503 });
@@ -32,7 +34,7 @@ export async function GET(request: Request) {
         const variants = await fetchCJProductVariants(candidate.id);
         if (!variants.length) { stats.skipped++; continue; }
         stats.products++;
-        for (const variant of variants.slice(0, 3)) {
+        for (const variant of variants.slice(0, 2)) {
           try {
             const cost = Number(variant.sellPrice);
             if (!variant.vid || !Number.isFinite(cost) || cost <= 0) { stats.skipped++; continue; }
