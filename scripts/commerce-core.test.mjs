@@ -483,3 +483,22 @@ test("BASE publication retries recover exact created IDs and refuse ambiguous st
   assert.match(publish, /base_sku_already_mapped_to_other_variant:/);
   assert.doesNotMatch(publish, /external_sku: sku, status: "pending", last_error: null/);
 });
+
+
+test("patrol counts canonical commerce eligibility independently from the legacy listing table", async () => {
+  const patrol = await readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8");
+  assert.match(patrol, /commerce_variants/);
+  assert.match(patrol, /supplier_offers\.source_status", "verified"/);
+  assert.match(patrol, /commerce_prices\.expected_profit", 0/);
+  assert.match(patrol, /eligibleForBase: eligibleVariantIds\.size/);
+  assert.match(patrol, /newEligibleForBase/);
+  assert.match(patrol, /newEligibleForShopify/);
+});
+
+test("CJ catalog importer prioritizes unseen parent products and scans bounded extra pages", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /from\("commerce_products"\)\.select\("source_key"\)\.like\("source_key", "cj:%"\)/);
+  assert.match(importer, /Prefer never-imported CJ parents/);
+  assert.match(importer, /while \(newCandidates\.length < limit && scanPage <= page \+ 2\)/);
+  assert.match(importer, /const fallbackCandidates = \[\.\.\.uniqueSearchProducts\.values\(\)\]\.filter/);
+});
