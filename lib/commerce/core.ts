@@ -180,6 +180,9 @@ export async function ingestPaidOrder(input: {
     const priorLines = asRows(priorOrder.commerce_order_lines);
     const requestedIds = new Set(input.lines.map((line) => line.externalLineId));
     const persistedById = new Map(priorLines.map((line) => [String(line.external_line_id ?? ""), line]));
+    if (priorLines.some((line) => !requestedIds.has(String(line.external_line_id ?? "")))) {
+      throw new Error("order_idempotency_payload_conflict");
+    }
     const matchesSavedPayload = (line: typeof input.lines[number], saved: Record<string, unknown>) =>
       String(saved.variant_id ?? "") === line.variantId &&
       Number(saved.quantity) === line.quantity &&
