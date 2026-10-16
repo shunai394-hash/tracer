@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isCJLiveOrderPathReady } from "@/lib/config/env";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import {
   fetchCJProductVariants,
@@ -581,28 +582,26 @@ export async function discoverAndCreateCjSupply(
       if (productInsert.error) throw new Error(productInsert.error.message);
       const productId = String(productInsert.data.id);
       const refreshedAt = new Date().toISOString();
-      const preserveVerifiedOrderPath =
-        seededCandidate.verificationStatus === "verified"
-        && seededCandidate.configured
-        && seededCandidate.apiAvailable
-        && seededCandidate.orderable
-        && seededCandidate.trackingAvailable
-        && seededCandidate.shipTo === "JP"
-        && seededCandidate.supplierProductId === supplierProductId
-        && seededCandidate.supplierVariantId === candidate.variantId
-        && (seededCandidate.verificationError === "" || seededCandidate.verificationError === "CJdropshipping is not configured" || seededCandidate.verificationError === "no_unique_canonical_child_variant_match");
+      // The row's old flags must not be required to refresh themselves. This
+      // candidate has just passed exact live variant, current price, positive
+      // stock, and Japan-freight checks; promote it only when the explicitly
+      // configured production order path is enabled and sandbox proof is recorded.
+      const liveOrderPathReady = isCJLiveOrderPathReady()
+        && Number.isFinite(cost) && cost > 0
+        && Number.isFinite(freight) && freight > 0
+        && Number.isFinite(stock) && stock > 0;
       const supplierInsert = await upsertSupplierListing(db, {
         supplier: "cj", external_id: candidate.variantId, sku: seededVariant.sku ?? null, title: detail.title, product_id: null,
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
-        order_method: "cj_api", api_available: preserveVerifiedOrderPath, verification_status: preserveVerifiedOrderPath ? "verified" : "unverified", shipping_status: "verified", identity_method: "supply_discovered",
+        order_method: "cj_api", api_available: liveOrderPathReady, verification_status: liveOrderPathReady ? "verified" : "unverified", shipping_status: "verified", identity_method: "supply_discovered",
         identity_status: "supply_discovered", identity_confidence: 0, configured: true,
         supplier_product_id: supplierProductId, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
         gtin: normalizeIdentifier("gtin", variantBarcode),
-        orderable: preserveVerifiedOrderPath, price_confirmed: true, inventory_confirmed: true, tracking_available: preserveVerifiedOrderPath,
-        last_verified_at: preserveVerifiedOrderPath ? refreshedAt : undefined,
-        verification_error: preserveVerifiedOrderPath ? null : undefined,
+        orderable: liveOrderPathReady, price_confirmed: true, inventory_confirmed: true, tracking_available: liveOrderPathReady,
+        last_verified_at: liveOrderPathReady ? refreshedAt : undefined,
+        verification_error: liveOrderPathReady ? null : undefined,
         next_verification_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-        fetched_at: refreshedAt, metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate }
+        fetched_at: refreshedAt, metadata: { source: "cj_supply_first", source_ref: sourceRef, query, fx_rate: fxRate, live_order_path_ready: liveOrderPathReady, sandbox_order_lifecycle_proof_required: true }
       }, seededCandidate.supplierListingId);
       if (supplierInsert.error) throw new Error(supplierInsert.error.message);
       const intelligence = await persistCjSupplyIntelligence({
@@ -881,8 +880,8 @@ export async function discoverAndCreateCjSupply(
               inventory: Math.floor(stock),
               ship_to: "JP",
               order_method: "cj_api",
-              api_available: false,
-              verification_status: "unverified",
+              api_available: isCJLiveOrderPathReady(),
+              verification_status: isCJLiveOrderPathReady() ? "verified" : "unverified",
               identity_method: "supply_discovered",
               identity_status: "supply_discovered",
               identity_confidence: 0,
@@ -891,10 +890,12 @@ export async function discoverAndCreateCjSupply(
               supplier_variant_id: variant.vid,
               cj_variant_id: variant.vid,
               gtin: normalizeIdentifier("gtin", variantBarcode),
-              orderable: false,
+              orderable: isCJLiveOrderPathReady() && Number.isFinite(cost) && cost > 0 && Number.isFinite(stock) && stock > 0 && Number.isFinite(freight) && freight > 0,
               price_confirmed: true,
               inventory_confirmed: true,
-              tracking_available: false,
+              tracking_available: isCJLiveOrderPathReady(),
+              last_verified_at: isCJLiveOrderPathReady() ? now : undefined,
+              verification_error: isCJLiveOrderPathReady() ? null : undefined,
               next_verification_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
               fetched_at: now,
               metadata: {
