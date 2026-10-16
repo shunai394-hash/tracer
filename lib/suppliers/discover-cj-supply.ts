@@ -29,6 +29,15 @@ async function resolveCJVariantProductIdentity(
   variantId: string,
   productScopedVariant?: CJProductVariant | null,
 ): Promise<{ variant: CJProductVariant; supplierProductId: string } | null> {
+  const scopedProductId = productScopedVariant?.productId?.trim();
+  if (productScopedVariant && productScopedVariant.vid === variantId && scopedProductId && scopedProductId !== candidateProductId) {
+    return { variant: productScopedVariant, supplierProductId: scopedProductId };
+  }
+
+  // Some catalog responses omit pid and fall back to the public catalog ID.
+  // Only in that case spend a separate exact-variant lookup to resolve the
+  // orderable product ID. This avoids an unnecessary API call for already
+  // canonical variant rows.
   const liveVariant = await fetchCJVariantByVid(variantId);
   const liveProductId = liveVariant?.productId?.trim();
   if (!liveVariant || liveVariant.vid !== variantId || !liveProductId) return null;
