@@ -168,8 +168,8 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
     // CJ product and variant endpoints require numeric IDs. UUIDs restored from
     // backups are internal placeholders, not CJ identifiers; skip them so they
     // cannot consume the provider quota needed to verify real products.
-    const validCjIds = /^\\d{10,25}$/.test(String(row.supplier_product_id ?? ""))
-      && /^\\d{10,25}$/.test(String(row.supplier_variant_id ?? ""));
+    const validCjIds = /^\d{10,25}$/.test(String(row.supplier_product_id ?? ""))
+      && /^\d{10,25}$/.test(String(row.supplier_variant_id ?? ""));
     return eligible && validCjIds;
   });
   const stockCapHeld = allRows.filter((row) => stockCapHoldIds.has(String(row.id)));
