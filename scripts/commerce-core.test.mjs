@@ -223,6 +223,11 @@ test("BASE product links never fall back to the generic BASE homepage", async ()
 });
 
 
+test("Shopify fulfillment sync iterates the fulfillmentOrders nodes array", async () => {
+  const source = await readFile(new URL("../lib/shopify/sync-fulfillments.ts", import.meta.url), "utf8");
+  assert.match(source, /data\.order\.fulfillmentOrders\.nodes\s*\.filter\(/);
+  assert.doesNotMatch(source, /data\.order\.fulfillmentOrders\s*\.filter\(/);
+});
 test("Shopify paid webhook is signature-verified, idempotent, and writes canonical commerce orders", async () => {
   const webhook = await readFile(new URL("../app/api/webhooks/shopify/orders-paid/route.ts", import.meta.url), "utf8");
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
