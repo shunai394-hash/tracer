@@ -140,9 +140,11 @@ export async function POST(request: Request) {
     const candidates = [listing, ...alternatives.slice(0, 2)];
     let result: Awaited<ReturnType<typeof runCJSandboxOrderLifecycle>> | null = null;
     let lastPreOrderFailure = "";
+    const attemptedListingIds: string[] = [];
 
     for (const candidate of candidates) {
       activeListing = candidate as typeof listing;
+      attemptedListingIds.push(String(activeListing.id));
       try {
         result = await runCJSandboxOrderLifecycle({
           supplierProductId: String(activeListing.supplier_product_id),
@@ -207,6 +209,7 @@ export async function POST(request: Request) {
     const auditMetadata = {
       phase: "cj_sandbox_order_lifecycle",
       supplierListingId: activeListing.id,
+      attemptedListingIds,
       supplierOrderId: result.supplierOrderId,
       supplierStatus: result.status,
       paymentConfirmed: result.paymentConfirmed,
@@ -243,7 +246,8 @@ export async function POST(request: Request) {
       error: detail,
       metadata: {
         phase: "cj_sandbox_order_lifecycle",
-        supplierListingId,
+        supplierListingId: activeListing.id,
+        attemptedListingIds,
         sandbox: true,
         charged: false,
         realFulfillment: false,
