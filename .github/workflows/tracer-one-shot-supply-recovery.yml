@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   recover:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'TRACER_CLEAN_COMMERCE_RECOVERY'))
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'TRACER_ONE_SHOT_SUPPLY_RECOVERY'))
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -26,6 +26,22 @@ jobs:
               "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
+          wait_for_deployment() {
+            for attempt in $(seq 1 20); do
+              t="$(token)" || { sleep 15; continue; }
+              code="$(curl -sS -o /tmp/health.json -w "%{http_code}" --max-time 10 \
+                -H "Authorization: Bearer $t" "$BASE/api/health" || true)"
+              if [ "$code" = "200" ] && grep -q "$GITHUB_SHA" /tmp/health.json; then
+                echo "Production is serving $GITHUB_SHA"
+                return 0
+              fi
+              echo "Waiting for production deployment $GITHUB_SHA (attempt $attempt, HTTP $code)"
+              sleep 15
+            done
+            echo "Production did not serve $GITHUB_SHA; skip recovery to avoid acting on an older deployment"
+            return 1
+          }
+
           call_get() {
             local path="$1" max_time="$2" t code
             t="$(token)" || { echo "OIDC token failed for $path"; return 1; }
@@ -58,6 +74,7 @@ except Exception:
 PY
           }
 
+          wait_for_deployment || exit 0
           call_post "api/cron/cj-sandbox-order-test" '{"supplierListingId":"d970c5d9-0662-4894-bfe6-4e377819666d"}' 300 || true
           call_get "api/cron/commerce-cj-import?q=women%20handbag&limit=3" 300 || true
           call_get "api/cron/commerce-publish-base?limit=3" 120 || true
