@@ -35,3 +35,5 @@ const supplyFirstRoute = await readFile(new URL("../app/api/cron/supply-first/ro
 assert.match(supplyFirstRoute, /const discoveryIncomplete =\s*[\s\S]*?supplyFirst\.quotaBlocked === true[\s\S]*?supplyFirst\.deadlineReached === true[\s\S]*?supplyFirst\.retryable === true && verifiedProductIds\.length === 0/, "quota, deadline, and retryable empty discovery must be incomplete");
 assert.match(supplyFirstRoute, /status: runStatus[\s\S]*?failed: runFailureCount/, "persisted run status and failure count must reflect incomplete discovery");
 assert.match(supplyFirstRoute, /ok: !discoveryIncomplete[\s\S]*?status: discoveryIncomplete \? 503 : 200/, "the HTTP response must not report an incomplete run as successful");
+const vercelConfig = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+assert.ok(vercelConfig.crons.some((entry) => entry.path === "/api/cron/supply-first" && entry.schedule === "*/5 * * * *"), "supplier discovery must run every five minutes, matching its quota-circuit and deadline design");
