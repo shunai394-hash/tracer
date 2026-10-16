@@ -255,7 +255,9 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
 
 export 
 async function loadCanonicalCommerceListings(): Promise<ShopListing[]> {
-  if (!isCJLiveOrderingEnabled()) return [];
+  // Catalog visibility is separate from TRACER's own CJ auto-procurement capability.
+  // These rows always link to the already-published Shopify product; keep orderable=false
+  // until live supplier ordering/payment is explicitly verified.
   const supabase = createSupabaseAdminClient();
   const freshAfter = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
   const { data: channelRows, error: channelError } = await supabase
@@ -345,7 +347,7 @@ async function loadCanonicalCommerceListings(): Promise<ShopListing[]> {
       sellingPrice: asNumber(price.selling_price),
       currency: "JPY",
       inventory: toStorefrontStockQuantity(Number(offer.inventory), getStorefrontStockCap()),
-      orderable: true,
+      orderable: isCJLiveOrderingEnabled(),
       trackingAvailable: true,
       selectionReasons: ["仕入先在庫確認済み", "日本向け配送確認済み", "利益計算済み"],
       productId: String(product.id),
