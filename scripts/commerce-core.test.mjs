@@ -46,6 +46,19 @@ test("Supabase nested relations normalize object, array, and null shapes", () =>
   assert.deepEqual(asRelationRows(undefined), []);
 });
 
+test("bounded recovery processes only unpublished channel listings", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  const baseRoute = await readFile(new URL("../app/api/cron/commerce-publish-base/route.ts", import.meta.url), "utf8");
+  const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
+  const workflow = await readFile(new URL("../.github/workflows/tracer-clean-commerce-recovery.yml", import.meta.url), "utf8");
+  assert.match(publish, /onlyUnpublished = false/);
+  assert.match(publish, /sortedCandidates\.filter\(\(candidate\) => stateByVariant\.get\(candidate\.id\)\?\.status !== "published"\)/);
+  assert.match(baseRoute, /onlyUnpublished/);
+  assert.match(shopifyRoute, /onlyUnpublished/);
+  assert.match(workflow, /commerce-publish-base\?limit=10&onlyUnpublished=true/);
+  assert.match(workflow, /commerce-publish-shopify\?limit=10&onlyUnpublished=true/);
+});
+
 test("stale listing eligibility uses batched supplier, price, and variant reads", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   const start = publish.indexOf("async function unpublishUnfulfillableListings");
@@ -56,6 +69,10 @@ test("stale listing eligibility uses batched supplier, price, and variant reads"
   assert.match(audit, /from\("supplier_offers"\)[\s\S]*?\.in\("variant_id", variantIds\)/);
   assert.match(audit, /from\("commerce_variants"\)[\s\S]*?\.in\("id", variantIds\)/);
   assert.doesNotMatch(audit, /for \(const listing of checkableListings\)[\s\S]*?db\.from\("commerce_prices"\)/);
+  assert.match(audit, /\.eq\("status", "published"\)/, "already-hidden error rows must not consume the bounded scan");
+  assert.match(audit, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)\.limit\(20\)/);
+  assert.match(audit, /stale_listing_check_timestamp_failed/);
+  assert.match(publish, /markCheckedError/);
 });
 
 test("publication matches each JPY price to its own verified supplier offer across relation shapes", async () => {
@@ -197,11 +214,7 @@ test("Shopify fulfillment tracking sync runs automatically after procurement", a
   const route = await readFile(new URL("../app/api/cron/shopify-fulfillment/route.ts", import.meta.url), "utf8");
   assert.match(route, /syncShopifyFulfillments\(25\)/);
 });
-test("legacy AI patrol remains scheduled alongside the canonical commerce pipeline", async () => {
-  const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
-  assert.equal(config.crons.find((job) => job.path === "/api/cron/patrol-ai")?.schedule, "*/5 * * * *");
-});
-test("clean commerce cron schedule preserves patrol and includes the canonical supplier, channel, order, and procurement routes", async () => {
+test("clean commerce cron schedule includes canonical supplier, channel, order, and procurement routes without legacy patrol", async () => {
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
   const schedules = new Map(config.crons.map((job) => [job.path, job.schedule]));
   assert.equal(schedules.get("/api/cron/commerce-cj-import"), "*/10 * * * *");
@@ -209,7 +222,7 @@ test("clean commerce cron schedule preserves patrol and includes the canonical s
   assert.equal(schedules.get("/api/cron/commerce-publish-shopify"), "*/15 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,16,31,46 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-procurement"), "13,28,43,58 * * * *");
-  assert.equal(schedules.get("/api/cron/patrol-ai"), "*/5 * * * *", "preserve the existing five-minute patrol cron");
+  assert.equal(schedules.has("/api/cron/patrol-ai"), false, "canonical commerce cron must not duplicate the legacy patrol");
   assert.equal(schedules.has("/api/cron/market-sourcing"), false);
   assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
   assert.equal(schedules.has("/api/cron/supply-first"), false);

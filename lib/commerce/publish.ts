@@ -29,14 +29,15 @@ function safeSlug(value: string): string {
 async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<typeof createSupabaseAdminClient>) {
   const result = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
   const { data: listings, error } = await db.from("channel_listings")
-    .select("id,variant_id,external_product_id,external_variant_id,status,last_error")
-    .eq("channel", channel).in("status", ["published", "error"])
-    .not("external_product_id", "is", null).limit(500);
+    .select("id,variant_id,external_product_id,external_variant_id,status,last_error,last_synced_at")
+    .eq("channel", channel).eq("status", "published")
+    .not("external_product_id", "is", null)
+    .order("last_synced_at", { ascending: true, nullsFirst: true }).limit(20);
   if (error) throw new Error("stale_listing_read_failed:" + error.message);
 
-  const checkableListings = (listings ?? []).filter((listing) =>
-    !(listing.status === "error" && String(listing.last_error ?? "").startsWith("supplier_offer_no_longer_fulfillable:")),
-  );
+  // Only inspect currently published listings. Already-hidden error rows must not
+  // occupy the bounded batch and starve later products.
+  const checkableListings = listings ?? [];
   result.checked = checkableListings.length;
   const variantIds = [...new Set(checkableListings.map((listing) => String(listing.variant_id)).filter(Boolean))];
   if (variantIds.length === 0) return result;
@@ -92,7 +93,16 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           offer.source_status === "verified" && nativeIdsValid && offer.tracking_supported === true &&
           offer.ship_to === "JP" && fresh && Number(offer.inventory) > 0);
       };
-      if (offers.some(offerIsValid)) continue;
+      if (offers.some(offerIsValid)) {
+        // Rotate healthy rows to the back of the next bounded scan.
+        const checkedAt = new Date().toISOString();
+        const { error: markCheckedError } = await db.from("channel_listings").update({
+          last_synced_at: checkedAt,
+          updated_at: checkedAt,
+        }).eq("id", listing.id);
+        if (markCheckedError) throw new Error("stale_listing_check_timestamp_failed:" + markCheckedError.message);
+        continue;
+      }
 
       const offer = offers[0] ?? null;
       const price = (offer ? prices.find((candidate) => candidate.supplier_offer_id === offer.id) : null) ?? prices[0] ?? null;
@@ -158,7 +168,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   return result;
 }
 
-export async function syncCommerceListings(channel: Channel, limit = 10) {
+export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnpublished = false) {
   // Storefront publication is independent of supplier purchasing. Only the paid-order
   // procurement path is gated by liveOrdering; a sandbox proof must not block listings.
   if (channel === "base" && !isBaseConfigured()) throw new Error("base_oauth_not_configured");
@@ -198,13 +208,20 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
     if (state.status === "error") return 2;
     return 3;
   };
-  const candidates = [...allCandidates].sort((a, b) => {
+  const sortedCandidates = [...allCandidates].sort((a, b) => {
     const priority = rank(a) - rank(b);
     if (priority !== 0) return priority;
     const aTime = stateByVariant.get(a.id)?.last_synced_at ? Date.parse(String(stateByVariant.get(a.id)?.last_synced_at)) : 0;
     const bTime = stateByVariant.get(b.id)?.last_synced_at ? Date.parse(String(stateByVariant.get(b.id)?.last_synced_at)) : 0;
     return aTime - bTime;
-  }).slice(0, Math.min(100, Math.max(1, Math.floor(limit))));
+  });
+  // Recovery runs should publish missing/pending/error listings only. Reprocessing
+  // already-published products repeatedly resets their status to pending and wastes
+  // the channel API budget without increasing the public catalog.
+  const candidatesToProcess = onlyUnpublished
+    ? sortedCandidates.filter((candidate) => stateByVariant.get(candidate.id)?.status !== "published")
+    : sortedCandidates;
+  const candidates = candidatesToProcess.slice(0, Math.min(100, Math.max(1, Math.floor(limit))));
   const results: Array<{ variantId: string; ok: boolean; externalId?: string; error?: string }> = [];
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
@@ -268,7 +285,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
         publishedUrl = resolveBasePublicUrl(visibleResponse, externalProductId, basePublicShopUrl)
           ?? resolveBasePublicUrl(baseResponse, externalProductId, basePublicShopUrl);
       } else {
-        const handle = safeSlug(product.source_key + "-" + candidate.id.slice(0, 8));
+        // Use the full stable variant UUID in the handle. Eight characters collided in the live catalog,
+        // and Shopify rejects a duplicate handle even when the SKU differs.
+        const handle = safeSlug(product.source_key + "-" + candidate.id.replace(/-/g, ""));
         const productId = toShopifyGid("Product", externalProductId);
         const variantId = toShopifyGid("ProductVariant", externalVariantId);
         let recoveredProduct: { id: string; handle: string; variants: { nodes: Array<{ id: string; sku?: string | null }> } } | null = null;
