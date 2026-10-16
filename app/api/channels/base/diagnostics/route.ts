@@ -26,6 +26,7 @@ export async function GET(request: Request) {
     const mappingAudit = {
       ok: false,
       visibleItemsMatchedToDatabase: 0,
+      visibleItemsManagedByCommerce: 0,
       visibleItemsLinked: 0,
       visibleItemsUnlinked: 0,
       visibleItemsWithoutDbMapping: 0,
@@ -69,18 +70,78 @@ export async function GET(request: Request) {
             (listingRows ?? []).map((row) => row.supplier_listing_id),
           );
 
+          // The active commerce pipeline uses channel_listings/commerce_variants/
+          // supplier_offers, not the retired shop_listings table. Include both
+          // representations so diagnostics don't falsely report zero managed
+          // BASE items after the commerce migration.
+          const { data: commerceRows, error: commerceError } = await db
+            .from("channel_listings")
+            .select("id,variant_id,external_product_id,status")
+            .eq("channel", "base")
+            .in("external_product_id", externalIds);
+          if (commerceError) throw new Error("base_commerce_mapping_db_read_failed");
+          const variantIds = [...new Set((commerceRows ?? []).map((row) => String(row.variant_id ?? "")).filter(Boolean))];
+          const { data: variants, error: variantsError } = variantIds.length
+            ? await db.from("commerce_variants").select("id,product_id,source_variant_key,sku").in("id", variantIds)
+            : { data: [], error: null };
+          if (variantsError) throw new Error("base_commerce_variant_read_failed");
+          const { data: prices, error: pricesError } = variantIds.length
+            ? await db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit").in("variant_id", variantIds)
+            : { data: [], error: null };
+          if (pricesError) throw new Error("base_commerce_price_read_failed");
+          const offerIds = [...new Set((prices ?? []).map((row) => String(row.supplier_offer_id ?? "")).filter(Boolean))];
+          const { data: offers, error: offersError } = offerIds.length
+            ? await db.from("supplier_offers").select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,source_status,tracking_supported,ship_to,last_checked_at").in("id", offerIds)
+            : { data: [], error: null };
+          if (offersError) throw new Error("base_commerce_offer_read_failed");
+
+          const variantById = new Map((variants ?? []).map((row) => [String(row.id), row]));
+          const priceByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), row]));
+          const offerById = new Map((offers ?? []).map((row) => [String(row.id), row]));
+          const commerceByBaseId = new Map<string, Array<{ listingId: string; variantId: string; status: string | null }>>();
+          for (const row of commerceRows ?? []) {
+            const key = String(row.external_product_id ?? "");
+            const group = commerceByBaseId.get(key) ?? [];
+            group.push({ listingId: String(row.id), variantId: String(row.variant_id), status: row.status == null ? null : String(row.status) });
+            commerceByBaseId.set(key, group);
+          }
+
           for (const entry of visibleEntries) {
-            const matches = rowsByBaseId.get(String(entry.itemId)) ?? [];
-            if (matches.length === 0) {
+            const key = String(entry.itemId);
+            const legacyMatches = rowsByBaseId.get(key) ?? [];
+            const commerceMatches = commerceByBaseId.get(key) ?? [];
+            const totalMatches = legacyMatches.length + commerceMatches.length;
+            if (totalMatches === 0) {
               mappingAudit.visibleItemsWithoutDbMapping += 1;
               continue;
             }
             mappingAudit.visibleItemsMatchedToDatabase += 1;
-            if (matches.length > 1) {
+            if (totalMatches > 1) {
               mappingAudit.visibleItemsWithAmbiguousDbMapping += 1;
               continue;
             }
-            const supplierId = matches[0].supplier_listing_id;
+
+            if (commerceMatches.length === 1) {
+              mappingAudit.visibleItemsManagedByCommerce += 1;
+              const listing = commerceMatches[0];
+              const variant = variantById.get(listing.variantId);
+              const price = priceByVariant.get(listing.variantId);
+              const offer = price?.supplier_offer_id ? offerById.get(String(price.supplier_offer_id)) : null;
+              const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
+              const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 && Date.now() - checkedAt <= 24 * 60 * 60_000;
+              const exactVariant = Boolean(variant && offer && String(variant.source_variant_key) === String(offer.supplier_variant_id));
+              const fulfillable = Boolean(
+                listing.status === "published" && exactVariant &&
+                offer?.source_status === "verified" && offer?.tracking_supported === true &&
+                offer?.ship_to === "JP" && Number(offer?.inventory) > 0 && fresh &&
+                Number(price?.selling_price) > 0 && Number(price?.expected_profit) > 0
+              );
+              if (fulfillable) mappingAudit.visibleItemsLinked += 1;
+              else mappingAudit.visibleItemsUnlinked += 1;
+              continue;
+            }
+
+            const supplierId = legacyMatches[0].supplier_listing_id;
             if (!supplierId || !linkedSupplierIds.has(supplierId)) {
               mappingAudit.visibleItemsUnlinked += 1;
             } else {
@@ -121,6 +182,7 @@ export async function GET(request: Request) {
       itemErrorStage: probe.items.errorStage,
       mappingAuditOk: mappingAudit.ok,
       visibleItemsMatchedToDatabase: mappingAudit.visibleItemsMatchedToDatabase,
+      visibleItemsManagedByCommerce: mappingAudit.visibleItemsManagedByCommerce,
       visibleItemsLinked: mappingAudit.visibleItemsLinked,
       visibleItemsUnlinked: mappingAudit.visibleItemsUnlinked,
       visibleItemsWithoutDbMapping: mappingAudit.visibleItemsWithoutDbMapping,
