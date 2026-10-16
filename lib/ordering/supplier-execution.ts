@@ -1,4 +1,5 @@
 import "server-only";
+import { isProcurementApprovalRequired } from "@/lib/commerce/procurement-approval";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
@@ -440,7 +441,9 @@ export async function executeSupplierPurchaseOrder(
   }
 
   const autoOrdering = isSupplierAutoOrderingEnabled(supplierName);
-  if (!po.human_confirmed_at && !autoOrdering) {
+  // Per-order human approval stays mandatory even when auto-ordering is on,
+  // unless COMMERCE_PROCUREMENT_REQUIRE_APPROVAL is explicitly "0".
+  if (!po.human_confirmed_at && (!autoOrdering || isProcurementApprovalRequired())) {
     return {
       purchaseOrderId,
       supplierName,
