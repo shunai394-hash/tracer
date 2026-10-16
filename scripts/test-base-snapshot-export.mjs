@@ -15,3 +15,8 @@ assert.match(client, /BASE_ITEMS_SNAPSHOT_INCOMPLETE/);
 assert.match(client, /BASE_ITEMS_SNAPSHOT_ID_MISSING_OR_DUPLICATE/);
 assert.match(client, /new Set\(ids\)\.size !== ids\.length/);
 console.log("BASE product snapshot export contract: 10 assertions passed");
+
+assert.match(client, /BASE_ITEMS_MAX_PAGES = 50/);
+assert.match(client, /options\?\.itemMaxPages \?\? BASE_ITEMS_MAX_PAGES/);
+assert.match(route, /itemMaxPages: BASE_ITEMS_MAX_PAGES/);
+console.log("BASE full scan limit contract: 3 assertions passed");
