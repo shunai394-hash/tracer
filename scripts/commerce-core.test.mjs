@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { selectRotatingVariantBatch } from "../lib/commerce/variant-batch.ts";
+import { asRelationRows } from "../lib/commerce/relation-rows.ts";
 import { readFile } from "node:fs/promises";
 import { calculateSellingPrice } from "../lib/commerce/pricing.mjs";
 import { splitJapaneseAddress } from "../lib/commerce/japanese-address.mjs";
@@ -37,9 +38,18 @@ test("catalog publication is independent of live supplier-ordering capability bu
   assert.match(publish, /supplier_offer_missing_or_out_of_stock/);
 });
 
-test("publication matches each JPY price to its own verified supplier offer when nested relations are one-to-many", async () => {
+test("Supabase nested relations normalize object, array, and null shapes", () => {
+  const row = { id: "price-1" };
+  assert.deepEqual(asRelationRows(row), [row]);
+  assert.deepEqual(asRelationRows([row]), [row]);
+  assert.deepEqual(asRelationRows(null), []);
+  assert.deepEqual(asRelationRows(undefined), []);
+});
+
+test("publication matches each JPY price to its own verified supplier offer across relation shapes", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
-  assert.match(publish, /commerce_prices: Array</);
+  assert.match(publish, /asRelationRows\(candidate\.supplier_offers\)/);
+  assert.match(publish, /asRelationRows\(candidate\.commerce_prices\)/);
   assert.match(publish, /const validOfferIds = new Set\(validOffers\.map\(\(x\) => x\.id\)\)/);
   assert.match(publish, /validOfferIds\.has\(x\.supplier_offer_id\) && x\.currency === "JPY"/);
   assert.match(publish, /validOffers\.find\(\(x\) => x\.id === price\.supplier_offer_id\)/);
