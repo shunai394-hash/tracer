@@ -229,12 +229,9 @@ export async function collectMarketplaceBestsellers(options: { sourceIndex?: num
         continue;
       }
 
-      const items: ParsedBestseller[] =
-        source.marketplace === "amazon.co.jp"
-          ? parseAmazonBestsellersHtml(html).map(enrichAmazon)
-          : source.marketplace === "rakuten"
-            ? parseRakutenRankingHtml(html)
-            : parseYahooRankingHtml(html);
+      // The active observation source list is deliberately Yahoo-only.
+      // Keep this parser selection aligned with that compile-time source set.
+      const items: ParsedBestseller[] = parseYahooRankingHtml(html);
 
       // Ranking/listing pages never carry a barcode themselves (Amazon,
       // Rakuten and Yahoo all omit JAN from the grid view), so identity
