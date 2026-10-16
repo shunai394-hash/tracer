@@ -40,6 +40,12 @@ assert.equal(localizeProductTitle("Ceramic Ashtray Home Bedroom Dormitory Office
 assert.equal(localizeProductTitle("BathroomMobile Phone Box WaterproofStand Toilet Storage Artifact Toilet Bath Rack Kitchen Chase Drama Watching TV"), "防水ケース付き バスルーム用スマホホルダー");
 assert.equal(localizeProductTitle("Suitable For Creative New Envelopes Diagonally Across Huawei P40pro Mobile Phone Shell Mate30 Acrylic Nova5 Protective Sleeve"), "Huawei対応 アクリルスマホケース");
 assert.equal(localizeProductTitle("Compatible WithApple, Suitable ForApple 12 Tempered Glass FilmIPhone11ProMax Full Screen Coverage Xs Mobile Phone Film 7,8Plus"), "iPhone用 強化ガラス保護フィルム");
+assert.equal(localizeProductTitle("Comma Facial Brush Soft Hair Face Cleaning Facial Cleansing Massage Brush (Comma Facial Brush Soft Hair Face Cleaning Facial Cleansing Massage Brush Bamboo charcoal protrusions)"), "竹炭突起付き フェイス洗顔ブラシ");
+assert.equal(localizeProductTitle("Simple Retro Small Handbag Women (Simple Retro Small Handbag Women Wine Red)"), "レトロデザイン レディースミニハンドバッグ");
+assert.equal(localizeProductTitle("Harajuku Canvas Bags Students Handbag With Pockets Preppy Buckpack Shoulder Bag For Women Shoolbags Black"), "ポケット付き キャンバスリュック レディース");
+for (const title of ["竹炭突起付き フェイス洗顔ブラシ", "レトロデザイン レディースミニハンドバッグ", "ポケット付き キャンバスリュック レディース"]) {
+  assert.equal(isPublishableCatalogTitle(title), true, title);
+}
 for (const source of [
   "Ceramic Ashtray Home Bedroom Dormitory Office",
   "BathroomMobile Phone Box WaterproofStand Toilet Storage Artifact Toilet Bath Rack Kitchen Chase Drama Watching TV",
