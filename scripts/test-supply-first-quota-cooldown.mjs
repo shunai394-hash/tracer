@@ -16,4 +16,7 @@ assert.match(source, /\.eq\("tracking_available", true\)/, "cached offers must h
 assert.match(source, /\.gt\("inventory", 0\)/, "cached offers must have positive inventory");
 assert.match(source, /reason: "cj_quota_cooldown_using_cached_orderable_supply"/, "cooldown response must explain that cached orderable supply is being used");
 assert.match(source, /selectAndPublishSupplySalesTests\(verifiedProductIds/, "cached offers must pass through the standard profitability and publication selector");
+assert.match(source, /const discoveryIncomplete = !quotaCircuitActive/, "a deliberate quota cooldown must not be recorded as a failed discovery run");
+assert.match(source, /discoveryStatus: quotaCircuitActive \? "skipped_quota_cooldown" : runStatus/, "the run log must distinguish cooldown from a completed discovery");
+assert.match(source, /const runFailureCount = quotaCircuitActive \? 0/, "expected cooldown rejections must not inflate failed-run counts");
 console.log("Supply-first CJ quota cooldown: 8 invariants passed");
