@@ -11,6 +11,7 @@ const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
   [/summer woven hollowed handbag for women/i, "透かし編み サマーハンドバッグ"],
   [/affordable luxury fashion cowhide handbag women/i, "牛革 レディースハンドバッグ"],
   [/johnature retro embossing women handbag/i, "型押しレザー レトロハンドバッグ"],
+  [/halloween shark claw clip.*ghost pumpkin black cat print hair accessory for women girls party cosplay/i, "おばけ・かぼちゃ柄 シャーク型ヘアクリップ"],
   [/facial spot scanning machine mini home mole spotting apparatus/i, "家庭用 フェイススポットケア機器"],
   [/ceramic ashtray home bedroom dormitory office/i, "セラミック製 卓上灰皿"],
   [/bathroommobile phone box waterproofstand|bathroom.*mobile phone box.*waterproof.*stand/i, "防水ケース付き バスルーム用スマホホルダー"],
