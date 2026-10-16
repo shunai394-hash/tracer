@@ -729,7 +729,7 @@ export async function discoverAndCreateCjSupply(
       try {
         // listV2 already carries title/image/price; a separate detail call
         // only spent one rate-limited CJ request per candidate.
-        const detail = { title: candidate.title, imageUrl: candidate.imageUrl, price: candidate.price };
+        let detail = { title: candidate.title, imageUrl: candidate.imageUrl, price: candidate.price };
 
         const variants = await fetchCJProductVariants(candidate.id);
         // In supply-first the CJ variant itself is the sellable item, so a
@@ -752,6 +752,14 @@ export async function discoverAndCreateCjSupply(
         }
         const variant = resolvedVariant.variant;
         const supplierProductId = resolvedVariant.supplierProductId;
+        if (supplierProductId !== candidate.id) {
+          const canonicalDetail = await getCJProductDetail(supplierProductId);
+          if (!canonicalDetail?.title?.trim() || !canonicalDetail.imageUrl?.trim()) {
+            reject("canonical_supplier_product_detail_missing", { supplierProductId, supplierVariantId: variant.vid });
+            continue;
+          }
+          detail = canonicalDetail;
+        }
         if (existingProducts.has(supplierProductId)) {
           reject("supplier_product_already_exists", { supplierProductId, supplierVariantId: variant.vid });
           continue;
