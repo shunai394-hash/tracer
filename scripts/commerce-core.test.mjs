@@ -68,3 +68,13 @@ test("clean commerce cron schedule uses only the new supplier, channel, order, a
   assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
   assert.equal(schedules.has("/api/cron/supply-first"), false);
 });
+
+test("storefront publication is blocked until supplier live ordering and payment are verified", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  const adapter = await readFile(new URL("../lib/procurement/cj-adapter.ts", import.meta.url), "utf8");
+  assert.match(publish, /cjSupplierAdapter\.capabilities\.liveOrdering/);
+  assert.match(publish, /supplier_live_ordering_not_verified/);
+  assert.match(adapter, /CJ_PAYMENT_FLOW_VERIFIED/);
+  assert.match(adapter, /isCJLiveOrderingEnabled\(\)/);
+  assert.match(adapter, /isCJAutoOrderingEnabled\(\)/);
+});
