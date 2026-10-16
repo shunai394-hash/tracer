@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { calculateSellingPrice } from "../lib/commerce/pricing.mjs";
 import { splitJapaneseAddress } from "../lib/commerce/japanese-address.mjs";
 import { isCanonicalCJNativeId } from "../lib/sources/cj/native-id.mjs";
+import { resolveBasePublicUrl } from "../lib/commerce/base-public-url.mjs";
 
 test("price calculation preserves positive profit after fees and target margin", () => {
   const result = calculateSellingPrice({ unitCostJpy: 2000, shippingCostJpy: 500, feeRate: 0.1, targetMarginRate: 0.2 });
@@ -180,4 +181,16 @@ test("CJ native IDs reject TRACER UUIDs before they enter supplier identity reco
   const client = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
   assert.match(client, /!isCanonicalCJNativeId\(id\)/);
   assert.match(client, /CJ variant parent ID is not a canonical native ID/);
+});
+
+test("BASE product links never fall back to the generic BASE homepage", async () => {
+  assert.equal(
+    resolveBasePublicUrl({ item: { item_url: "https://shop.example/items/123" } }, "123", ""),
+    "https://shop.example/items/123"
+  );
+  assert.equal(resolveBasePublicUrl({}, "123", "https://shop.example"), "https://shop.example/items/123");
+  assert.equal(resolveBasePublicUrl({}, "123", ""), null);
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /resolveBasePublicUrl\(visibleResponse, externalProductId, process\.env\.BASE_PUBLIC_SHOP_URL\)/);
+  assert.doesNotMatch(publish, /publishedUrl = "https:\/\/thebase\.com\//);
 });
