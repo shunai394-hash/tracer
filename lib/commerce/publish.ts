@@ -5,14 +5,17 @@ import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigure
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isCanonicalCjNativeId } from "@/lib/commerce/core";
+import { asRelationRows } from "@/lib/commerce/relation-rows";
 import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
 
 type Channel = "base" | "shopify";
+type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
+type CommercePriceRow = { supplier_offer_id: string; currency: string; selling_price: number; expected_profit: number; fee_amount: number; margin_rate: number };
 type Candidate = {
   id: string; source_variant_key: string; title_ja: string; sku: string | null;
   commerce_products: { id: string; source_key: string; title_ja: string; description_ja: string; image_url: string | null; active: boolean };
-  supplier_offers: Array<{ id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null }>;
-  commerce_prices: Array<{ supplier_offer_id: string; currency: string; selling_price: number; expected_profit: number; fee_amount: number; margin_rate: number }>;
+  supplier_offers: SupplierOfferRow[] | SupplierOfferRow | null;
+  commerce_prices: CommercePriceRow[] | CommercePriceRow | null;
 };
 
 function safeUrl(value: unknown): string | null {
@@ -162,10 +165,10 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
   const results: Array<{ variantId: string; ok: boolean; externalId?: string; error?: string }> = [];
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
-    const validOffers = [...(candidate.supplier_offers ?? [])]
+    const validOffers = asRelationRows(candidate.supplier_offers)
       .filter((x) => x.ship_to === "JP" && x.source_status === "verified" && x.tracking_supported === true && (x.supplier_code !== "cj" || (isCanonicalCjNativeId(x.supplier_product_id) && isCanonicalCjNativeId(x.supplier_variant_id))) && typeof x.last_checked_at === "string" && Date.parse(x.last_checked_at) <= Date.now() + 5 * 60_000 && Date.now() - Date.parse(x.last_checked_at) <= 24 * 60 * 60_000 && Number(x.inventory) > 0 && Number(x.unit_cost) >= 0 && Number(x.shipping_cost) >= 0);
     const validOfferIds = new Set(validOffers.map((x) => x.id));
-    const price = [...(candidate.commerce_prices ?? [])]
+    const price = asRelationRows(candidate.commerce_prices)
       .filter((x) => validOfferIds.has(x.supplier_offer_id) && x.currency === "JPY" && Number(x.selling_price) > 0 && Number(x.expected_profit) > 0)
       .sort((a, b) => Number(b.expected_profit) - Number(a.expected_profit))[0];
     const offer = price ? validOffers.find((x) => x.id === price.supplier_offer_id) : undefined;
