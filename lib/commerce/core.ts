@@ -29,9 +29,16 @@ export function calculateSellingPrice(input: {
   }
   if (feeRate + targetMarginRate >= 1) throw new Error("invalid_rate");
   const base = unitCostJpy + shippingCostJpy + fixedFeeJpy;
-  const sellingPrice = Math.ceil(base / (1 - feeRate - targetMarginRate));
-  const feeAmount = Math.ceil(sellingPrice * feeRate) + fixedFeeJpy;
-  const expectedProfit = sellingPrice - unitCostJpy - shippingCostJpy - feeAmount;
+  let sellingPrice = Math.ceil(base / (1 - feeRate - targetMarginRate));
+  let feeAmount = 0;
+  let expectedProfit = 0;
+  for (let i = 0; i < 10000; i++) {
+    feeAmount = Math.ceil(sellingPrice * feeRate) + fixedFeeJpy;
+    expectedProfit = sellingPrice - unitCostJpy - shippingCostJpy - feeAmount;
+    if (expectedProfit > 0 && expectedProfit / sellingPrice >= targetMarginRate) break;
+    sellingPrice += 1;
+  }
+  if (expectedProfit <= 0 || expectedProfit / sellingPrice < targetMarginRate) throw new Error("price_calculation_did_not_converge");
   return { sellingPrice, feeAmount, expectedProfit, marginRate: expectedProfit / sellingPrice };
 }
 
