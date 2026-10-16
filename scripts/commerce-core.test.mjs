@@ -46,6 +46,18 @@ test("Supabase nested relations normalize object, array, and null shapes", () =>
   assert.deepEqual(asRelationRows(undefined), []);
 });
 
+test("stale listing eligibility uses batched supplier, price, and variant reads", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  const start = publish.indexOf("async function unpublishUnfulfillableListings");
+  const end = publish.indexOf("export async function syncCommerceListings", start);
+  const audit = publish.slice(start, end);
+  assert.match(audit, /Promise\.all\(\[/);
+  assert.match(audit, /from\("commerce_prices"\)[\s\S]*?\.in\("variant_id", variantIds\)/);
+  assert.match(audit, /from\("supplier_offers"\)[\s\S]*?\.in\("variant_id", variantIds\)/);
+  assert.match(audit, /from\("commerce_variants"\)[\s\S]*?\.in\("id", variantIds\)/);
+  assert.doesNotMatch(audit, /for \(const listing of checkableListings\)[\s\S]*?db\.from\("commerce_prices"\)/);
+});
+
 test("publication matches each JPY price to its own verified supplier offer across relation shapes", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /asRelationRows\(candidate\.supplier_offers\)/);
