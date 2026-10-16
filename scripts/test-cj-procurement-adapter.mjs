@@ -61,10 +61,13 @@ assert.match(order, /postCJSandboxAction\("updateTrackNumber"/);
 assert.match(adapter, /runCJSandboxOrderLifecycle/);
 assert.match(adapter, /onOrderCreated\?: \(supplierOrderId: string\) => Promise<void>/, "sandbox lifecycle must allow immediate persistence of a created external order ID");
 const createdIdCallback = adapter.indexOf("if (onOrderCreated) await onOrderCreated(orderId)");
-const unpaidTransition = adapter.indexOf("await updateCJSandboxOrderStatus(orderId, 200)");
+const orderConfirmation = adapter.indexOf("await confirmCJSandboxOrder(orderId)");
 const paymentSimulation = adapter.indexOf("await simulateCJSandboxPayment(orderId)");
-assert.ok(createdIdCallback >= 0 && createdIdCallback < unpaidTransition && unpaidTransition < paymentSimulation,
-  "persist created supplier order ID, transition to UNPAID(200), then simulate payment");
+assert.ok(createdIdCallback >= 0 && createdIdCallback < orderConfirmation && orderConfirmation < paymentSimulation,
+  "persist created supplier order ID, call CJ confirmOrder, then simulate sandbox payment");
+assert.match(order, /shopping\/order\/confirmOrder/);
+assert.match(order, /method: "PATCH"/);
+assert.doesNotMatch(adapter, /updateCJSandboxOrderStatus\(orderId, 200\)/);
 const cleanSandboxRoute = read("app/api/cron/commerce-cj-sandbox-test/route.ts");
 assert.match(cleanSandboxRoute, /from\("supplier_offers"\)/);
 assert.match(cleanSandboxRoute, /from\("commerce_events"\)/);
@@ -72,9 +75,9 @@ assert.match(cleanSandboxRoute, /supplierOrderId: createdOrderId/);
 assert.match(cleanSandboxRoute, /CJ_SANDBOX_ORDER_TEST_ENABLED/);
 assert.match(cleanSandboxRoute, /realFulfillment: false/);
 
-const sandboxTransition = adapter.indexOf("await updateCJSandboxOrderStatus(orderId, 200)");
+const sandboxConfirmation = adapter.indexOf("await confirmCJSandboxOrder(orderId)");
 const sandboxPayment = adapter.indexOf("await simulateCJSandboxPayment(orderId)");
-assert.ok(sandboxTransition >= 0 && sandboxTransition < sandboxPayment, "CJ sandbox order must transition CREATED(100) to UNPAID(200) before simulated payment");
+assert.ok(sandboxConfirmation >= 0 && sandboxConfirmation < sandboxPayment, "CJ sandbox order must be confirmed before simulated payment");
 assert.match(adapter, /charged: false/);
 assert.match(adapter, /realFulfillment: false/);
 const sandboxRoute = read("app/api/cron/cj-sandbox-order-test/route.ts");
