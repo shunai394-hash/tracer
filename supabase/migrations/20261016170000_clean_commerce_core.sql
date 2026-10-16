@@ -54,7 +54,7 @@ create table if not exists public.commerce_order_lines (
 create table if not exists public.procurement_orders (
  id uuid primary key default gen_random_uuid(), order_line_id uuid not null unique references public.commerce_order_lines(id) on delete cascade,
  supplier_code text not null, supplier_product_id text not null, supplier_variant_id text not null, quantity integer not null check(quantity > 0),
- status text not null default 'pending' check(status in ('pending','submitted','confirmed','shipped','failed','cancelled')),
+ status text not null default 'pending' check(status in ('pending','processing','submitted','confirmed','shipped','failed','cancelled')),
  external_order_id text unique, tracking_number text, tracking_url text, last_error text, submitted_at timestamptz, shipped_at timestamptz,
  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
@@ -70,6 +70,8 @@ create index if not exists idx_supplier_offers_lookup on public.supplier_offers(
 create index if not exists idx_channel_listings_status on public.channel_listings(channel, status, updated_at);
 create unique index if not exists idx_channel_listings_channel_sku on public.channel_listings(channel, external_sku) where external_sku is not null;
 create index if not exists idx_commerce_orders_fulfillment on public.commerce_orders(payment_status, fulfillment_status, received_at);
+alter table public.procurement_orders drop constraint if exists procurement_orders_status_check;
+alter table public.procurement_orders add constraint procurement_orders_status_check check (status in ('pending','processing','submitted','confirmed','shipped','failed','cancelled'));
 create index if not exists idx_procurement_orders_status on public.procurement_orders(status, updated_at);
 create index if not exists idx_commerce_events_entity on public.commerce_events(entity_type, entity_id, created_at desc);
 alter table public.commerce_products enable row level security;
