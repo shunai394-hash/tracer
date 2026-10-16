@@ -92,3 +92,5 @@ jobs:
           PY
 
 # TRACER_CJ_SANDBOX_ORDER_TEST: retry after dedicated live stock and parent-scoped price verification.
+
+# TRACER_CJ_SANDBOX_ORDER_TEST: retry after live CN-origin freight fallback.
