@@ -81,8 +81,10 @@ const vercelConfig = JSON.parse(read("vercel.json"));
 assert.doesNotMatch(JSON.stringify(vercelConfig.crons), /cj-sandbox-order-test/, "sandbox order test must never be scheduled automatically");
 const sandboxOnceWorkflow = read(".github/workflows/tracer-cj-sandbox-once.yml");
 assert.ok(sandboxOnceWorkflow.includes('cron: "1 0 16 10 *"'), "one-time CJ sandbox lifecycle proof must run in the reserved quota window");
-assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/cj-identity-reverify").map((job) => job.schedule), ["12,27,42,57 * * * *"], "CJ identity re-verification must be offset from catalog discovery");
-assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/supply-first").map((job) => job.schedule), ["5,35 * * * *"], "supply-first discovery must run on the 30-minute cadence staggered against identity re-verification");
+assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule), ["*/30 * * * *"], "clean supplier-native discovery must run on the bounded 30-minute cadence");
+assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/commerce-procurement").map((job) => job.schedule), ["13,28,43,58 * * * *"], "clean procurement reconciliation must use its own staggered cadence");
+assert.equal(vercelConfig.crons.some((job) => job.path === "/api/cron/cj-identity-reverify"), false, "legacy identity re-verification is not scheduled in the clean commerce core");
+assert.equal(vercelConfig.crons.some((job) => job.path === "/api/cron/supply-first"), false, "legacy supply-first is not scheduled in the clean commerce core");
 
 const cjReverifySource = read("lib/suppliers/reverify-cj-identity.ts");
 assert.match(cjReverifySource, /verification_error === "storefront_stock_cap_deploy_pending"/, "only the explicit storefront stock-cap hold may be recovered");
