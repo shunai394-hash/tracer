@@ -29,6 +29,8 @@ assert.match(baseClient, /itemMaxPages/);
 // The production BASE shop has more than 1,000 items; read-only scans must be
 // able to finish (cap 50 pages x 100) or the mapping audit never runs.
 assert.match(baseClient, /export const BASE_ITEMS_MAX_PAGES = 50;/);
+assert.match(baseClient, /options\?\.itemMaxPages \?\? BASE_ITEMS_MAX_PAGES/);
+assert.equal((baseClient.match(/options\?\.itemMaxPages \?\? BASE_ITEMS_MAX_PAGES/g) ?? []).length, 2, "BASE diagnostics and snapshots default to the full 5,000-item scan");
 assert.doesNotMatch(baseClient, /Math\.min\(10, Math\.max\(1, Math\.floor\(options\?\.itemMaxPages/);
 assert.match(base, /probeBaseReadOnly\(\{ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES \}\)/);
 assert.match(shopify, /probeShopifyAuth/);
