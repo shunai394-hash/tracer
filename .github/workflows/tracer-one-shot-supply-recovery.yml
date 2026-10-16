@@ -62,6 +62,10 @@ jobs:
               print(open(sys.argv[1]).read()[:1000])
           PY
           }
+          # Log only non-secret OIDC claims to diagnose application-level 401s; never print the token.
+          echo "=== GitHub OIDC claim diagnostics (token omitted) ==="
+          token | python3 -c 'import base64,json,sys; t=sys.stdin.read().strip().split("."); p=t[1]+"="*((4-len(t[1])%4)%4); d=json.loads(base64.urlsafe_b64decode(p)); print(json.dumps({k:d.get(k) for k in ("iss","aud","repository","ref","workflow_ref","exp","nbf")},ensure_ascii=False))'
+
           # Re-verify supplier identity first; no catalog row is published from backup/stale evidence.
           call_get "api/cron/cj-identity-reverify?limit=25&force=1" 300 cj-identity-reverify.json || true
 
