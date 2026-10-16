@@ -19,7 +19,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BASE=https://tracer-self.vercel.app
+          BASE=https://tracer-pied-alpha.vercel.app
           ready=0
           for attempt in $(seq 1 36); do
             code="$(curl -sS -o /tmp/health.json -w "%{http_code}" --max-time 10 "$BASE/api/health" || true)"
@@ -38,11 +38,11 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          BASE=https://tracer-self.vercel.app
+          BASE=https://tracer-pied-alpha.vercel.app
           token() {
             curl --fail-with-body --silent --show-error \
               -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" |
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
           call_get() {
