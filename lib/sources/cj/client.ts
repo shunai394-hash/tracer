@@ -8,7 +8,7 @@ import {
   type CJProductVariant,
 } from "@/lib/sources/cj/variant-select";
 import { firstCJImageUrl, parseCJStockData } from "@/lib/sources/cj/parse";
-import { getCJQuotaCooldownUntil, isCJQuotaExhausted } from "@/lib/sources/cj/rate-limit-policy";
+import { getCJQuotaCooldownUntil, isCJQuotaCircuitActive, isCJQuotaExhausted } from "@/lib/sources/cj/rate-limit-policy";
 
 export { selectUnambiguousVariant, verifyVariantSelectionInvariants };
 export type { CJProductVariant };
@@ -202,9 +202,9 @@ export async function waitForCJRateLimit(): Promise<void> {
     const blockedUntil = circuitMetadata && typeof circuitMetadata === "object" && !Array.isArray(circuitMetadata)
       ? (circuitMetadata as Record<string, unknown>).blockedUntil
       : null;
-    if (quotaCircuitIsOpen(blockedUntil)) {
-      localCJQuotaBlockedUntil = blockedUntil;
-      throw new CJRequestError(`CJ API quota cooldown active until ${blockedUntil}`, "CJ_QUOTA_EXHAUSTED");
+    if (isCJQuotaCircuitActive(circuitMetadata)) {
+      if (typeof blockedUntil === "string") localCJQuotaBlockedUntil = blockedUntil;
+      throw new CJRequestError(`CJ API quota cooldown active until ${String(blockedUntil)}`, "CJ_QUOTA_EXHAUSTED");
     }
     const { data, error } = await db.rpc("claim_cj_api_slot", {
       p_min_interval_ms: 1_100,
@@ -267,7 +267,7 @@ export async function fetchCJWithRateLimit(
     });
 
     if (isCJQuotaExhausted(diagnostic)) {
-      const blockedUntil = await persistCJQuotaCircuit("provider_points_remaining_zero");
+      const blockedUntil = await persistCJQuotaCircuit("provider_explicit_daily_points_exhausted");
       throw new CJRequestError(
         `${diagnostic.message || "CJ API quota exhausted"}; cooldown until ${blockedUntil}`,
         "CJ_QUOTA_EXHAUSTED",
