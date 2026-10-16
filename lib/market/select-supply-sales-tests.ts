@@ -107,12 +107,17 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // Parse the labeled segments rather than positional split indexes: using
     // parts[1] here returned the literal word "product", causing every detached
     // supplier listing lookup to miss and reject valid supply as missing.
-    const match = /^cj:product:([^:]+):variant:(.+)$/.exec(sourceRef);
+    // Support both the newer labeled identity and the legacy persisted
+    // "cj:<productId>:<variantId>" identity used by existing products.
+    // Production cron data showed the legacy form; parsing it as labeled-only
+    // silently removed every matching supplier listing and blocked publication.
+    const labeledMatch = /^cj:product:([^:]+):variant:(.+)$/.exec(sourceRef);
+    const legacyMatch = /^cj:([^:]+):([^:]+)$/.exec(sourceRef);
     return {
       sourceRef,
       productId: sourceRefToProductId.get(sourceRef) ?? null,
-      supplierProductId: match?.[1] ?? "",
-      supplierVariantId: match?.[2] ?? "",
+      supplierProductId: labeledMatch?.[1] ?? legacyMatch?.[1] ?? "",
+      supplierVariantId: labeledMatch?.[2] ?? legacyMatch?.[2] ?? "",
     };
   }).filter((item) => item.productId && item.supplierProductId && item.supplierVariantId);
   const detachedSupplierProductIds = [...new Set(sourceIdentityPairs.map((item) => item.supplierProductId))];
