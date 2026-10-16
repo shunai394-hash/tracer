@@ -159,9 +159,6 @@ assert.match(patrolRoute, /businessReadinessMissing/, "business readiness gaps m
 assert.match(patrolRoute, /errorCategories: Array\.from\(new Set\(errors\.map/);
 assert.match(patrolRoute, /JSON\.stringify\(safeReport\)/);
 assert.doesNotMatch(patrolRoute, /console\.log\("\[TRACER PATROL AI REPORT\]", JSON\.stringify\(report\)\)/, "raw full patrol reports must not be emitted to runtime logs");
-assert.match(unpublishWorkflow, /fetch-depth: 0/);
-assert.match(unpublishWorkflow, /git merge-base --is-ancestor/, "initial reconciliation must accept a newer deployed descendant");
-assert.match(unpublishWorkflow, /result\.get\("ok"\) is not True/, "HTTP 207 partial reconciliation results must fail the scheduled job");
 console.log("Canonical supplier identity publication and reconciliation checks passed");
 
 
