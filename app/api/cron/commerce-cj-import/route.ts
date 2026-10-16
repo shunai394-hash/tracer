@@ -72,9 +72,9 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
 
 function japaneseVariantSuffix(nameEn: unknown): string {
   const source = String(nameEn ?? "").toLowerCase();
-  const colorCount = source.match(/\\b([0-9]+)\\s*color\\b/);
+  const colorCount = source.match(/\b([0-9]+)\s*color\b/);
   if (colorCount) return "（" + colorCount[1] + "色）";
-  const styleNumber = source.match(/\\b([0-9]+)\\s*\\.?\\s*style\\b/);
+  const styleNumber = source.match(/\b([0-9]+)\s*\.?\s*style\b/);
   if (styleNumber) return "（スタイル" + styleNumber[1] + "）";
   const colors: Array<[RegExp, string]> = [
     [/yellow/, "イエロー"], [/white/, "ホワイト"], [/black/, "ブラック"],
