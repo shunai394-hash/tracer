@@ -85,7 +85,7 @@ assert.deepEqual(cleanImportSchedules, ["*/10 * * * *"], "clean supplier-native 
 assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/supply-first"), [], "legacy supply-first cron must not run beside the clean importer");
 assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/market-sourcing"), [], "legacy marketplace observation cron must not run beside clean supplier discovery");
 const patrolSchedules = vercel.crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule);
-assert.deepEqual(patrolSchedules, [], "legacy AI patrol must not run beside the clean commerce pipeline");
+assert.deepEqual(patrolSchedules, ["*/5 * * * *"], "production AI patrol monitors clean commerce readiness every five minutes");
 const githubPatrolWorkflow = readFileSync(".github/workflows/tracer-production-patrol-15m.yml", "utf8");
 assert.doesNotMatch(githubPatrolWorkflow, /^\s{2}schedule:/m, "GitHub Actions must not schedule a second production patrol that races the Vercel Cron");
 assert.match(githubPatrolWorkflow, /if: github\.event_name == 'workflow_dispatch'/, "manual production patrol remains available");
