@@ -56,22 +56,59 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   const observedFx = await getObservedUsdToJpyRate();
   if (productIds.length === 0 || limit <= 0) return { published: 0, publishedListingIds: [], selectedListingIds: [], considered: 0, rejectedCount: 0, rejectionCounts: {}, rejected: [] };
   const uniqueProductIds = Array.from(new Set(productIds));
-  // A listing held for live supplier inventory re-verification must not be
-  // re-published by the next supply-first pass just because its old quote still
-  // looks profitable. Only a separate verification workflow may clear this hold.
+  // Supply-first items have their own TRACER products, but intentionally keep
+  // supplier_listings.product_id null until marketplace identity is proven.
+  // Resolve that internal association through deterministic source_ref /
+  // products.identity_key without writing a canonical marketplace link.
+  const { data: productIdentityRows, error: productIdentityError } = await supabase
+    .from("products")
+    .select("id,identity_key")
+    .in("id", uniqueProductIds);
+  if (productIdentityError) throw new Error(productIdentityError.message);
+  const sourceRefToProductId = new Map<string, string>();
+  for (const row of productIdentityRows ?? []) {
+    if (typeof row.identity_key === "string" && row.identity_key.trim()) sourceRefToProductId.set(row.identity_key, String(row.id));
+  }
+  const sourceRefs = [...sourceRefToProductId.keys()];
+
+  // Apply live inventory holds to linked and detached supply rows alike.
   const { data: heldRows, error: heldRowsError } = await supabase
     .from("supplier_listings")
     .select("product_id")
     .in("product_id", uniqueProductIds)
     .eq("verification_error", "storefront_stock_cap_deploy_pending");
   if (heldRowsError) throw new Error(heldRowsError.message);
+  const { data: heldDetachedRows, error: heldDetachedError } = sourceRefs.length
+    ? await supabase.from("supplier_listings").select("metadata").in("metadata->>source_ref", sourceRefs).eq("verification_error", "storefront_stock_cap_deploy_pending")
+    : { data: [], error: null };
+  if (heldDetachedError) throw new Error(heldDetachedError.message);
   const heldProductIds = new Set((heldRows ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean));
+  for (const row of heldDetachedRows ?? []) {
+    const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {};
+    const sourceRef = typeof metadata.source_ref === "string" ? metadata.source_ref : "";
+    const productId = sourceRefToProductId.get(sourceRef);
+    if (productId) heldProductIds.add(productId);
+  }
+
   const { data: intelligenceRows, error: intelligenceError } = await supabase.from("opportunity_intelligence").select("product_id,demand_score,search_fit_score,market_gap_score,competition_score,creative_score,selection_score,overall_confidence,selection_eligible,sellability_state,filter_state,profit_state,recommendation_summary,why_now").in("product_id", uniqueProductIds);
   if (intelligenceError) throw new Error(intelligenceError.message);
   const { data: intelligenceBase, error: intelligenceBaseError } = await supabase.from("product_intelligence").select("product_id,normalized_title,image_url,currency,current_price,metadata").in("product_id", uniqueProductIds);
   if (intelligenceBaseError) throw new Error(intelligenceBaseError.message);
-  const { data: listings, error: listingError } = await supabase.from("supplier_listings").select("*").in("product_id", uniqueProductIds).order("fetched_at", { ascending: false, nullsFirst: false });
-  if (listingError) throw new Error(listingError.message);
+  const { data: linkedListings, error: linkedListingError } = await supabase.from("supplier_listings").select("*").in("product_id", uniqueProductIds).order("fetched_at", { ascending: false, nullsFirst: false });
+  if (linkedListingError) throw new Error(linkedListingError.message);
+  const { data: detachedListings, error: detachedListingError } = sourceRefs.length
+    ? await supabase.from("supplier_listings").select("*").in("metadata->>source_ref", sourceRefs).order("fetched_at", { ascending: false, nullsFirst: false })
+    : { data: [], error: null };
+  if (detachedListingError) throw new Error(detachedListingError.message);
+  const listingsById = new Map<string, Record<string, unknown>>();
+  for (const row of linkedListings ?? []) listingsById.set(String(row.id), row as Record<string, unknown>);
+  for (const row of detachedListings ?? []) {
+    const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {};
+    const sourceRef = typeof metadata.source_ref === "string" ? metadata.source_ref : "";
+    const productId = sourceRefToProductId.get(sourceRef);
+    listingsById.set(String(row.id), productId && !row.product_id ? { ...(row as Record<string, unknown>), product_id: productId } : row as Record<string, unknown>);
+  }
+  const listings = [...listingsById.values()];
 
   const intelligenceByProduct = new Map((intelligenceRows ?? []).map((row) => [String(row.product_id), row as Record<string, unknown>]));
   const baseByProduct = new Map((intelligenceBase ?? []).map((row) => [String(row.product_id), row as Record<string, unknown>]));
