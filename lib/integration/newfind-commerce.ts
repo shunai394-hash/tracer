@@ -70,9 +70,18 @@ export async function promoteCommerceListingsToNewfind(options: { limit?: number
     else if (decision.reason === "already_processed") result.alreadyProcessed += 1;
     else result.skipped[decision.reason] = (result.skipped[decision.reason] ?? 0) + 1;
   }
-  // Never-sent variants first, then the longest-waiting retries.
+  // Recover known duplicate-key intake failures first: the receiver now has
+  // URL-based idempotent recovery, so retrying these old failed deliveries clears
+  // the integration backlog instead of letting hundreds of never-sent variants
+  // starve the repaired rows.
+  const deliveryPriority = (item: typeof sendable[number]) => {
+    const lastError = item.decision.detail.lastError ?? "";
+    if (item.decision.fromStatus === "failed" && /duplicate key value violates unique constraint|discovery insert failed/i.test(lastError)) return 0;
+    if (item.decision.fromStatus === "missing") return 1;
+    return 2;
+  };
   sendable.sort((a, b) =>
-    Number(b.decision.fromStatus === "missing") - Number(a.decision.fromStatus === "missing")
+    deliveryPriority(a) - deliveryPriority(b)
     || String(a.decision.detail.lastAttemptAt ?? "").localeCompare(String(b.decision.detail.lastAttemptAt ?? "")));
 
   const selected = sendable.slice(0, limit);
