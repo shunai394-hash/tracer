@@ -279,6 +279,12 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
     identity_confidence: 0,
     cost: args.cost,
     shipping_cost: args.shippingCost,
+    shipping_status: Number.isFinite(args.shippingCost) && args.shippingCost > 0
+      ? "verified"
+      : (existingListing.data?.shipping_status ?? "unknown"),
+    ship_to: Number.isFinite(args.shippingCost) && args.shippingCost > 0
+      ? "JP"
+      : (existingListing.data?.ship_to ?? null),
     inventory: args.inventory,
     price_confirmed: Number.isFinite(args.cost) && args.cost >= 0,
     inventory_confirmed: Number.isFinite(args.inventory) && args.inventory >= 0,
