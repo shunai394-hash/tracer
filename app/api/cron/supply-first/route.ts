@@ -156,7 +156,7 @@ export async function GET(request: Request) {
           candidateCount: Number(supplyFirst.candidateCount ?? 0),
           discovered: Number(supplyFirst.discovered ?? 0),
           verified: Number(supplyFirst.verified ?? verifiedProductIds.length),
-          published: Number(supplyFirst.published ?? 0),
+          published: 0, // discoverAndCreateCjSupply currently does not publish listings
           retryAfter: typeof supplyFirst.retryAfter === "string" ? supplyFirst.retryAfter : null,
           opportunityIntelligence: {
             skipped: typeof opportunityIntelligence === "object" && opportunityIntelligence !== null && "skipped" in opportunityIntelligence
