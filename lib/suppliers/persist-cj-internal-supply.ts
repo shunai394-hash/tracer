@@ -47,7 +47,7 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     throw new Error("cj_internal_supply_missing_supplier_identity");
   }
   if (!Number.isFinite(args.costUsd) || args.costUsd <= 0
-    || !Number.isFinite(args.shippingUsd) || args.shippingUsd <= 0
+    || !Number.isFinite(args.shippingUsd) || args.shippingUsd < 0
     || !Number.isFinite(args.inventory) || args.inventory <= 0
     || !Number.isFinite(args.sellingPriceJpy) || args.sellingPriceJpy <= 0) {
     throw new Error("cj_internal_supply_live_commercial_data_invalid");
