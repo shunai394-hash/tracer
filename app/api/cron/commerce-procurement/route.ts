@@ -11,6 +11,7 @@ import {
   isProcurementApprovalRequired,
   procurementApprovalEventKey,
 } from "@/lib/commerce/procurement-approval";
+import { legacyPurchaseConflictForCommerceOrder } from "@/lib/commerce/cross-pipeline-guard";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -119,7 +120,7 @@ export async function GET(request: Request) {
   const approvalRequired = isProcurementApprovalRequired();
 
   const { data: pending, error: pendingError } = await db.from("procurement_orders")
-    .select("id,supplier_code,supplier_product_id,supplier_variant_id,quantity,status,commerce_order_lines!inner(id,variant_id,supplier_offer_id,quantity,commerce_orders!inner(id,external_order_id,payment_status,customer_name,shipping_address,raw_payload))")
+    .select("id,supplier_code,supplier_product_id,supplier_variant_id,quantity,status,commerce_order_lines!inner(id,variant_id,supplier_offer_id,quantity,commerce_orders!inner(id,channel,external_order_id,payment_status,customer_name,shipping_address,raw_payload))")
     .eq("supplier_code", "cj").eq("status", "pending").limit(10);
   if (pendingError) return NextResponse.json({ ok: false, ...result, error: "procurement_pending_read_failed:" + pendingError.message }, { status: 500 });
 
@@ -205,6 +206,15 @@ export async function GET(request: Request) {
         }, { onConflict: "event_key", ignoreDuplicates: true });
         continue;
       }
+    }
+
+    // The legacy pipeline may have ingested the same customer order; never
+    // buy it twice from the supplier.
+    const crossPipeline = await legacyPurchaseConflictForCommerceOrder(str(order, "channel"), str(order, "external_order_id"), db);
+    if (crossPipeline.conflict) {
+      result.blocked++;
+      result.errors.push(String(row.id) + ":" + crossPipeline.reason);
+      continue;
     }
 
     const { data: claim, error: claimError } = await db.from("procurement_orders")

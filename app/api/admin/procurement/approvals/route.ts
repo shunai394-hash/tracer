@@ -8,6 +8,10 @@ import {
   isProcurementApprovalRequired,
   procurementApprovalEventKey,
 } from "@/lib/commerce/procurement-approval";
+import {
+  commerceProcurementConflictForShopOrder,
+  legacyPurchaseConflictForCommerceOrder,
+} from "@/lib/commerce/cross-pipeline-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -113,11 +117,15 @@ export async function POST(request: Request) {
     if (kind === "purchase_order") {
       const db = createSupabaseAdminClient();
       const { data: po, error } = await db.from("purchase_orders")
-        .select("id,supplier_name,supplier_product_id,supplier_variant_id,qty,status,fulfillment_kind,human_confirmed_at,supplier_order_id")
+        .select("id,shop_order_id,supplier_name,supplier_product_id,supplier_variant_id,qty,status,fulfillment_kind,human_confirmed_at,supplier_order_id")
         .eq("id", id).maybeSingle();
       if (error) throw new Error("purchase_order_read_failed:" + error.message);
       if (!po) return NextResponse.json({ ok: false, error: "purchase_order_not_found" }, { status: 404 });
-      if (!apply) return NextResponse.json({ ok: true, apply: false, purchaseOrder: po });
+      const duplicate = po.shop_order_id
+        ? await commerceProcurementConflictForShopOrder(String(po.shop_order_id), db)
+        : { conflict: false, reason: null, references: [] as string[] };
+      if (!apply) return NextResponse.json({ ok: true, apply: false, purchaseOrder: po, duplicate });
+      if (duplicate.conflict) return NextResponse.json({ ok: false, error: "cross_pipeline_duplicate", duplicate }, { status: 409 });
       const confirmed = await confirmPurchaseOrderForLiveExecution({ purchaseOrderId: id, confirmedBy: approvedBy });
       return NextResponse.json({ ok: confirmed.confirmed, apply: true, ...confirmed }, { status: confirmed.confirmed ? 200 : 409 });
     }
@@ -125,7 +133,9 @@ export async function POST(request: Request) {
     const summary = await procurementSummary(id);
     if (!summary) return NextResponse.json({ ok: false, error: "procurement_order_not_found" }, { status: 404 });
     if (summary.status !== "pending") return NextResponse.json({ ok: false, error: "procurement_order_not_pending", summary }, { status: 409 });
-    if (!apply) return NextResponse.json({ ok: true, apply: false, summary });
+    const duplicate = await legacyPurchaseConflictForCommerceOrder(String(summary.customerOrder.channel ?? ""), String(summary.customerOrder.externalOrderId ?? ""));
+    if (!apply) return NextResponse.json({ ok: true, apply: false, summary, duplicate });
+    if (duplicate.conflict) return NextResponse.json({ ok: false, error: "cross_pipeline_duplicate", duplicate }, { status: 409 });
 
     const detail = buildProcurementApprovalDetail({
       id,

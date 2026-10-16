@@ -85,4 +85,18 @@ check("status workflow only issues GET requests", () => {
   assert.doesNotMatch(statusWorkflow, /-X (POST|PUT|PATCH|DELETE)|--data|-d '/);
 });
 
+check("both pipelines refuse a supplier purchase the other pipeline already placed or approved", () => {
+  const conflict = route.indexOf("legacyPurchaseConflictForCommerceOrder(");
+  const claim = route.indexOf(".update({ status: \"processing\"");
+  assert.ok(conflict > 0 && conflict < claim);
+  assert.match(legacy, /commerceProcurementConflictForShopOrder\(String\(po\.shop_order_id\)\)/);
+  assert.match(admin, /cross_pipeline_duplicate/);
+});
+const guard = await readFile(new URL("../lib/commerce/cross-pipeline-guard.ts", import.meta.url), "utf8");
+check("cross-pipeline guard fails closed on lookup errors and matches both Shopify id forms", () => {
+  assert.match(guard, /legacy_order_lookup_failed/);
+  assert.match(guard, /return \{ conflict: true, reason: "legacy_purchase_lookup_failed:/);
+  assert.match(guard, /gid:\/\/shopify\/Order\/\$\{numeric\}/);
+});
+
 console.log(`procurement approval gate: ${cases} cases passed`);
