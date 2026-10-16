@@ -115,6 +115,10 @@ test("procurement revalidates the exact fresh profitable offer and preserves a c
   assert.doesNotMatch(worker, /country_code_v2"\)\.toUpperCase\(\) \|\| "JP"/);
 });
 
+test("five-minute AI patrol remains scheduled alongside canonical commerce jobs", async () => {
+  const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+  assert.equal(config.crons.find((job) => job.path === "/api/cron/patrol-ai")?.schedule, "*/5 * * * *");
+});
 test("clean commerce cron schedule uses only the new supplier, channel, order, and procurement routes", async () => {
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
   const schedules = new Map(config.crons.map((job) => [job.path, job.schedule]));
