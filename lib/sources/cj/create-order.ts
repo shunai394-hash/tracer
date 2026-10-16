@@ -303,6 +303,41 @@ async function postCJSandboxAction(
   return payload;
 }
 
+export async function confirmCJSandboxOrder(orderId: string): Promise<void> {
+  const id = orderId.trim();
+  if (!id) throw new CJRequestError("CJ sandbox order ID is empty", "CJ_SANDBOX_ORDER_ID_MISSING");
+  const token = await getAccessTokenForOrder();
+  const response = await fetchCJWithRateLimit(
+    "https://developers.cjdropshipping.com/api2.0/v1/shopping/order/confirmOrder",
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "CJ-Access-Token": token,
+      },
+      body: JSON.stringify({ orderId: id }),
+      cache: "no-store",
+    },
+  );
+  const payload = (await response.json().catch(() => ({}))) as {
+    code?: number;
+    result?: boolean;
+    message?: string;
+    data?: unknown;
+  };
+  if (
+    !response.ok ||
+    payload.result === false ||
+    (typeof payload.code === "number" && payload.code !== 200) ||
+    !(payload.result === true || payload.code === 200 || payload.data === id)
+  ) {
+    throw new CJRequestError(
+      payload.message || `CJ order confirmation failed with HTTP ${response.status}`,
+      "CJ_ORDER_CONFIRM_FAILED",
+    );
+  }
+}
+
 export async function simulateCJSandboxPayment(orderId: string): Promise<void> {
   const id = orderId.trim();
   if (!id) throw new CJRequestError("CJ sandbox order ID is empty", "CJ_SANDBOX_ORDER_ID_MISSING");
@@ -311,7 +346,7 @@ export async function simulateCJSandboxPayment(orderId: string): Promise<void> {
 
 export async function updateCJSandboxOrderStatus(
   orderId: string,
-  targetStatus: 200 | 400 | 500 | 600 | 700,
+  targetStatus: 400 | 500 | 600 | 700,
 ): Promise<void> {
   const id = orderId.trim();
   if (!id) throw new CJRequestError("CJ sandbox order ID is empty", "CJ_SANDBOX_ORDER_ID_MISSING");
