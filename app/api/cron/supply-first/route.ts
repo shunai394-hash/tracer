@@ -92,7 +92,7 @@ export async function GET(request: Request) {
           candidateCount: cachedSupply?.data?.length ?? 0,
           quotaBlocked: true,
           retryable: true,
-          retryAfter: blockedUntil,
+          retryAfter: blockedUntil ?? undefined,
           reason: "cj_quota_cooldown_using_cached_orderable_supply",
         }
       : await discoverAndCreateCjSupply(DISCOVERY_BATCH_SIZE, {
