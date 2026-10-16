@@ -47,18 +47,6 @@ export type ShopifyOrderSyncResult = {
   errors: Array<{ shopifyOrderId: string; error: string }>;
 };
 
-function fullAddress(address: ShopifyOrder["shippingAddress"]): string {
-  if (!address) return "";
-  return [
-    address.zip,
-    address.country,
-    address.province,
-    address.city,
-    address.address1,
-    address.address2,
-  ].filter(Boolean).join(" ");
-}
-
 function canonicalShopifyId(value: string, resource: "Order" | "LineItem"): string {
   const prefix = "gid://shopify/" + resource + "/";
   const id = value.startsWith(prefix) ? value.slice(prefix.length) : value;
