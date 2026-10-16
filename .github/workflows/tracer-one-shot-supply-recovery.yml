@@ -14,7 +14,7 @@ jobs:
   recover:
     if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'TRACER_ONE_SHOT_SUPPLY_RECOVERY')))
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 25
     steps:
       - name: Run bounded supply discovery, gate, BASE and Shopify batch
         shell: bash
@@ -51,7 +51,6 @@ jobs:
 
           # Re-verify the existing bounded CJ batch early so later discovery calls cannot consume the full job budget first.
           call_get "api/cron/cj-identity-reverify?limit=25&force=1" 300 cj-identity-reverify.json || true
-          call_get api/cron/supplier-investigation 240 supplier-investigation.json || true
           call_get api/cron/intelligence 300 intelligence.json || true
 
           echo "=== CJ supply discovery (will fail closed during provider cooldown) ==="
@@ -63,6 +62,7 @@ jobs:
 
           call_get api/cron/sales-test-publication 300 sales-test.json || true
           call_get api/cron/base-publish 60 base-publish.json || true
+          call_get api/intelligence/publication-report 60 publication-report.json || true
 
           echo "=== Shopify dry run ==="
           T="$(token)"
