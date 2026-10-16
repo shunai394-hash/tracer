@@ -290,6 +290,7 @@ test("BASE order polling only imports confirmed paid orders and maps published c
 test("procurement submits only paid orders with complete shipping and exact current profitable CJ offer", async () => {
   const worker = await readFile(new URL("../app/api/cron/commerce-procurement/route.ts", import.meta.url), "utf8");
   assert.match(worker, /order\.payment_status !== "paid"/);
+  assert.match(worker, /shippingCountryCode\.toUpperCase\(\) !== "JP"/);
   assert.match(worker, /shippingAddress_or_line_incomplete|shipping_address_or_line_incomplete/);
   assert.match(worker, /offer\.source_status !== "verified"/);
   assert.match(worker, /offer\.inventory\) < input\.quantity/);
