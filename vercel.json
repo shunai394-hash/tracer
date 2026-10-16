@@ -33,10 +33,6 @@
     {
       "path": "/api/cron/shopify-orders",
       "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/patrol-ai",
-      "schedule": "*/5 * * * *"
     }
   ]
 }
