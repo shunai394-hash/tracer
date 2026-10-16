@@ -699,8 +699,12 @@ export async function discoverAndCreateCjSupply(
   let queryIndex = cursor.queryIndex % queries.length;
   let page = cursor.page;
   let pagesScanned = 0;
+  // Advance the persisted cursor after a small number of search pages. Scanning
+  // two pages for every configured query made a no-new-products pass exceed the
+  // route deadline while repeatedly seeing already-ingested CJ IDs.
+  const MAX_CATALOG_SEARCH_PAGES_PER_RUN = 5;
   const seenSearchProducts = new Set<string>();
-  while (!cjQuotaBlocked && catalogDiscovered < catalogDiscoveryLimit && pagesScanned < queries.length * 2) {
+  while (!cjQuotaBlocked && catalogDiscovered < catalogDiscoveryLimit && pagesScanned < MAX_CATALOG_SEARCH_PAGES_PER_RUN) {
     if (Date.now() >= deadlineAt) {
       deadlineReached = true;
       break;
