@@ -13,6 +13,7 @@ const env = read("lib/config/env.ts");
 const client = read("lib/sources/cj/client.ts");
 const order = read("lib/sources/cj/create-order.ts");
 const inventoryRefresh = read("app/api/cron/inventory-refresh/route.ts");
+const supplyDiscovery = read("lib/suppliers/discover-cj-supply.ts");
 
 assert.match(adapter, /name: "cj"/);
 assert.match(adapter, /inventoryByCountry/);
@@ -31,6 +32,12 @@ assert.match(registry, /normalized === "superdelivery"/);
 assert.match(init, /registerSupplierAdapter\(cjSupplierAdapter\)/);
 assert.match(env, /return isCJLiveOrderingEnabled\(\)/);
 assert.match(env, /return isCJAutoOrderingEnabled\(\)/);
+
+assert.match(supplyDiscovery, /async function resolveCJVariantProductIdentity/);
+assert.match(supplyDiscovery, /fetchCJVariantByVid\(variantId\)/);
+assert.match(supplyDiscovery, /const supplierProductId = resolvedSeededVariant!\.supplierProductId/);
+assert.match(supplyDiscovery, /const supplierProductId = resolvedVariant\.supplierProductId/);
+assert.doesNotMatch(supplyDiscovery, /supplier_product_id: candidate\.id/, "supplier listings must persist the exact variant endpoint's canonical product ID");
 
 assert.match(client, /features: "enable_inventory"/);
 assert.match(client, /Number\(inventoryRow\.verifiedWarehouse\) !== 1/);
