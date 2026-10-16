@@ -5,6 +5,7 @@ import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigure
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isCanonicalCjNativeId } from "@/lib/commerce/core";
+import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
 
 type Channel = "base" | "shopify";
 type Candidate = {
@@ -182,12 +183,14 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
       let externalVariantId = listing.external_variant_id ? String(listing.external_variant_id) : null;
       let publishedUrl: string | null = null;
       if (channel === "base") {
+        let baseResponse: unknown = null;
         const itemId = externalProductId;
         if (itemId) {
-          await editBaseItem({ itemId, title, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: false });
+          baseResponse = await editBaseItem({ itemId, title, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: false });
           externalProductId = itemId;
         } else {
           const response = await createBaseItem({ title, identifier: sku, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: false });
+          baseResponse = response;
           const returned = response.item?.item_id ?? response.item_id;
           externalProductId = String(returned ?? "");
           if (!externalProductId) throw new Error("base_item_id_missing");
@@ -200,8 +203,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
         }
         await addBaseItemImage({ itemId: externalProductId, imageNo: 1, imageUrl });
         // Only make the item visible after the external ID and image are saved.
-        await editBaseItem({ itemId: externalProductId, title, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: true });
-        publishedUrl = "https://thebase.com/";
+        const visibleResponse = await editBaseItem({ itemId: externalProductId, title, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: true });
+        publishedUrl = resolveBasePublicUrl(visibleResponse, externalProductId, process.env.BASE_PUBLIC_SHOP_URL)
+          ?? resolveBasePublicUrl(baseResponse, externalProductId, process.env.BASE_PUBLIC_SHOP_URL);
       } else {
         const handle = safeSlug(product.source_key + "-" + candidate.id.slice(0, 8));
         const productId = toShopifyGid("Product", externalProductId);
