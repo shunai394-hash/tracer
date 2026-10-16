@@ -62,19 +62,17 @@ assert.match(order, /postCJSandboxAction\("updateTrackNumber"/);
 assert.match(adapter, /runCJSandboxOrderLifecycle/);
 assert.match(adapter, /onOrderCreated\?: \(supplierOrderId: string\) => Promise<void>/, "sandbox lifecycle must allow immediate persistence of a created external order ID");
 const createdIdCallback = adapter.indexOf("if (onOrderCreated) await onOrderCreated(orderId)");
-const paymentSimulation = adapter.indexOf("await simulateCJSandboxPayment(orderId)");
-assert.ok(createdIdCallback >= 0 && createdIdCallback < paymentSimulation,
-  "persist created supplier order ID before simulating sandbox payment");
-const sandboxPaymentIndex = adapter.indexOf("await simulateCJSandboxPayment(orderId)");
-assert.ok(sandboxPaymentIndex >= 0, "sandbox lifecycle must call simulatePay");
-const sandboxConfirmation = adapter.indexOf("await confirmCJSandboxOrder(orderId)");
-assert.ok(sandboxConfirmation >= 0 && sandboxConfirmation < sandboxPaymentIndex,
-  "payType=3 sandbox order must be confirmed before simulated payment");
+const sandboxBalancePayment = adapter.indexOf("await payCJSandboxOrderBalance(orderId)");
+assert.ok(createdIdCallback >= 0 && createdIdCallback < sandboxBalancePayment,
+  "persist created supplier order ID before sandbox balance payment");
+assert.match(adapter, /await payCJSandboxOrderBalance\\(orderId\\)/);
+assert.doesNotMatch(adapter, /await confirmCJSandboxOrder\\(orderId\\)|await simulateCJSandboxPayment\\(orderId\\)/,
+  "payType=3 sandbox orders must use balance payment, not an unsupported status transition");
 assert.match(adapter, /payType: 3,/,
-  "sandbox order must be created without initiating payment, then explicitly confirmed");
-assert.match(order, /shopping\/order\/confirmOrder/);
+  "sandbox order must be created without initiating payment before the balance-payment step");
+assert.match(order, /shopping\\/order\\/confirmOrder/);
 assert.match(order, /method: "PATCH"/);
-assert.doesNotMatch(adapter, /updateCJSandboxOrderStatus\(orderId, 200\)/);
+assert.doesNotMatch(adapter, /updateCJSandboxOrderStatus\\(orderId, 200\\)/);
 const cleanSandboxRoute = read("app/api/cron/commerce-cj-sandbox-test/route.ts");
 assert.match(cleanSandboxRoute, /from\("supplier_offers"\)/);
 assert.match(cleanSandboxRoute, /from\("commerce_events"\)/);
@@ -86,11 +84,9 @@ assert.match(cleanSandboxRoute, /previousErrorText\.startsWith\("CJ_SANDBOX_CREA
 assert.match(cleanSandboxRoute, /cj-sandbox-core:retry-1/);
 assert.match(adapter, /created\.responseMessage\.replace\(/, "sandbox create failures must preserve supplier response details");
 
-const sandboxPayment = adapter.indexOf("await simulateCJSandboxPayment(orderId)");
-assert.ok(sandboxPayment >= 0, "CJ sandbox lifecycle must use the documented simulated-payment endpoint");
 assert.match(adapter, /charged: false/);
 assert.match(adapter, /fromCountryCode: freight\.countryCode,\s+payType: 3,\s+isSandbox: true/,
-  "sandbox order must use create-only mode before explicit confirmation");
+  "sandbox order must use create-only mode before balance payment");
 assert.match(adapter, /realFulfillment: false/);
 const sandboxRoute = read("app/api/cron/cj-sandbox-order-test/route.ts");
 assert.match(sandboxRoute, /CJ_SANDBOX_ORDER_TEST_ENABLED/);
