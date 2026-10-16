@@ -30,7 +30,7 @@ assert.match(persist, /shipping_status: Number\.isFinite\(args\.shippingCost\) &
 assert.match(discoverCJ, /identity_status: "supply_discovered", identity_confidence: 0/, "supply discovery without canonical identity must not claim perfect identity confidence");
 assert.match(discoverCJ, /title: displayTitle, product_id: null/, "CJ supply discovery must persist a Japanese display title without attaching an unrelated marketplace product");
 assert.match(discoverCJ, /source_title: detail\.title/, "original supplier title must be retained separately from Japanese storefront copy");
-const nativeEvidenceBlock = persist.split("const nativeEvidenceFresh =")[1]?.split("\\n\\n  let candidateIntelligenceId")[0] ?? "";
+const nativeEvidenceBlock = persist.split("const nativeEvidenceFresh =")[1]?.split("\n\n  let candidateIntelligenceId")[0] ?? "";
 assert.ok(nativeEvidenceBlock.length > 0, "fresh CJ evidence predicate must be inspectable");
 assert.doesNotMatch(nativeEvidenceBlock, /verification_status === "verified"|priorVerifiedAt/, "fresh live evidence must be able to clear stale verification state instead of requiring the old status to already be verified");
 assert.match(persist, /isSpecificJapaneseProductTitle\(existingCandidate\.data\.normalized_title\)/, "generic existing intelligence titles must be replaced with specific Japanese supplier copy");
