@@ -397,7 +397,7 @@ test("CJ imported products use specific customer-facing Japanese descriptions", 
 
 test("CJ transient stock or freight lookup failures do not overwrite previously verified supplier offers", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  const guard = importer.indexOf("if (!complianceBlockReason && (stock === null || shipping === null))");
+  const guard = importer.indexOf("if (stock === null || shipping === null)");
   const save = importer.indexOf("const saved = await upsertSupplierOffer", guard);
   assert.ok(guard >= 0 && save > guard, "unknown live evidence must skip before supplier offer upsert");
   assert.match(importer, /Do not overwrite it with inventory=0, shipping=0, or sourceStatus=error on transient API failures/);
