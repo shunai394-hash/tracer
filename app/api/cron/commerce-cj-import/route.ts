@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { isCJQuotaCircuitActive } from "@/lib/sources/cj/rate-limit-policy";
 import { searchCJProducts, getCJProductDetail, fetchCJProductVariants, fetchCJVariantByVid, fetchCJVariantStock, calculateCJFreight } from "@/lib/sources/cj";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
@@ -108,6 +109,30 @@ async function recordCjExclusion(identity: string, reason: string, detail: Recor
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
+  const db = createSupabaseAdminClient();
+  const { data: quotaRun, error: quotaReadError } = await db
+    .from("cron_runs")
+    .select("metadata")
+    .eq("job_name", "cj-api-quota-circuit")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (quotaReadError) {
+    return NextResponse.json({ ok: false, error: "CJ_QUOTA_CIRCUIT_LOOKUP_FAILED", imported: 0 }, { status: 500 });
+  }
+  const quotaMetadata = quotaRun?.metadata && typeof quotaRun.metadata === "object" && !Array.isArray(quotaRun.metadata)
+    ? quotaRun.metadata as Record<string, unknown>
+    : {};
+  const blockedUntil = typeof quotaMetadata.blockedUntil === "string" ? quotaMetadata.blockedUntil : null;
+  if (isCJQuotaCircuitActive(quotaMetadata)) {
+    return NextResponse.json({
+      ok: true,
+      skipped: true,
+      reason: "cj_daily_api_points_cooldown",
+      retryAfter: blockedUntil,
+      imported: 0,
+    }, { status: 202 });
+  }
   const url = new URL(request.url);
   // Keep discovery aligned with the user's catalog priorities:
   // women's bags first, then beauty tools, then hair accessories.
@@ -154,7 +179,6 @@ export async function GET(request: Request) {
     } else {
       const results = await searchCJProducts(query, { page, size: Math.min(20, limit * 2) });
       stats.searched = results.products.length;
-      const db = createSupabaseAdminClient();
       const { data: knownProducts, error: knownProductsError } = await db
         .from("commerce_products").select("source_key").like("source_key", "cj:%").limit(5000);
       if (knownProductsError) throw new Error("known_cj_catalog_read_failed:" + knownProductsError.message);

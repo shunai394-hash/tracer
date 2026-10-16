@@ -518,3 +518,14 @@ test("scheduled commerce publication defaults to unpublished recovery to avoid r
   assert.match(baseRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/);
   assert.match(shopifyRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/);
 });
+
+
+test("clean commerce CJ importer respects the shared daily-points cooldown before provider calls", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /isCJQuotaCircuitActive/);
+  assert.match(importer, /CJ_QUOTA_CIRCUIT_LOOKUP_FAILED/);
+  assert.match(importer, /reason: "cj_daily_api_points_cooldown"/);
+  assert.match(importer, /return NextResponse\.json\([\s\S]*?status: 202/);
+  assert.ok(importer.indexOf("isCJQuotaCircuitActive(quotaMetadata)") < importer.indexOf("searchCJProducts(query"),
+    "the quota circuit must stop CJ calls before search begins");
+});
