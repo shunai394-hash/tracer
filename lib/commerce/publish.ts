@@ -7,7 +7,7 @@ type Channel = "base" | "shopify";
 type Candidate = {
   id: string; source_variant_key: string; title_ja: string; sku: string | null;
   commerce_products: { id: string; source_key: string; title_ja: string; description_ja: string; image_url: string | null; active: boolean };
-  supplier_offers: Array<{ id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; inventory: number; ship_to: string; tracking_supported: boolean }>;
+  supplier_offers: Array<{ id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null }>;
   commerce_prices: { supplier_offer_id: string; currency: string; selling_price: number; expected_profit: number; fee_amount: number; margin_rate: number };
 };
 
@@ -24,8 +24,10 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
   if (channel === "shopify" && !isShopifyConfigured()) throw new Error("shopify_not_configured");
   const db = createSupabaseAdminClient();
   const { data, error } = await db.from("commerce_variants")
-    .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported),commerce_prices!inner(supplier_offer_id,currency,selling_price,expected_profit,fee_amount,margin_rate)")
+    .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,currency,selling_price,expected_profit,fee_amount,margin_rate)")
     .eq("commerce_products.active", true).eq("supplier_offers.ship_to", "JP")
+    .eq("supplier_offers.source_status", "verified").eq("supplier_offers.tracking_supported", true)
+    .gte("supplier_offers.last_checked_at", new Date(Date.now() - 24 * 60 * 60_000).toISOString())
     .gt("supplier_offers.inventory", 0).eq("commerce_prices.currency", "JPY")
     .gt("commerce_prices.expected_profit", 0).order("updated_at", { ascending: false })
     .limit(Math.min(100, Math.max(1, Math.floor(limit))));
@@ -35,7 +37,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
     const offer = [...(candidate.supplier_offers ?? [])]
-      .filter((x) => x.id === candidate.commerce_prices.supplier_offer_id && x.ship_to === "JP" && Number(x.inventory) > 0 && Number(x.unit_cost) >= 0 && Number(x.shipping_cost) >= 0)[0];
+      .filter((x) => x.id === candidate.commerce_prices.supplier_offer_id && x.ship_to === "JP" && x.source_status === "verified" && x.tracking_supported === true && typeof x.last_checked_at === "string" && Date.parse(x.last_checked_at) <= Date.now() + 5 * 60_000 && Date.now() - Date.parse(x.last_checked_at) <= 24 * 60 * 60_000 && Number(x.inventory) > 0 && Number(x.unit_cost) >= 0 && Number(x.shipping_cost) >= 0)[0];
     const price = candidate.commerce_prices;
     const imageUrl = safeUrl(product.image_url);
     if (!offer || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0) {
