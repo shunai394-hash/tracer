@@ -32,6 +32,7 @@ assert.match(registry, /normalized === "superdelivery"/);
 assert.match(init, /registerSupplierAdapter\(cjSupplierAdapter\)/);
 assert.match(env, /return isCJLiveOrderingEnabled\(\)/);
 assert.match(env, /return isCJAutoOrderingEnabled\(\)/);
+assert.match(client, /if \("vid" in data \|\| "variantId" in data\) return \[data as CJVariantRow\]/, "queryByVid must normalize a single-object response instead of treating the exact variant as missing");
 
 assert.match(supplyDiscovery, /async function resolveCJVariantProductIdentity/);
 assert.match(supplyDiscovery, /fetchCJVariantByVid\(variantId\)/);
