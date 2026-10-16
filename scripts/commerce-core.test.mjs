@@ -118,3 +118,11 @@ test("CJ importer keeps source titles and localizes handbag subtypes", async () 
   assert.ok(importer.includes("metadata: { sourceTitle: canonicalDetail.title, sourceProductType: canonicalDetail.productType ?? null }"));
   assert.ok(core.includes("...(input.metadata ? { metadata: input.metadata } : {})"));
 });
+
+test("CJ importer serializes stock and freight requests to respect the supplier QPS limit", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  const stockCall = importer.indexOf("await fetchCJVariantStock(variant.vid)");
+  const freightCall = importer.indexOf("await calculateCJFreight(variant.vid, { startCountryCode: \"CN\"");
+  assert.ok(stockCall >= 0 && freightCall > stockCall, "stock must be awaited before the freight request");
+  assert.doesNotMatch(importer, /Promise\.allSettled\(\[\s*fetchCJVariantStock[\s\S]*?calculateCJFreight/s);
+});
