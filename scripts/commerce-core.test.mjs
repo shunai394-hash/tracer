@@ -59,6 +59,7 @@ test("BASE listing URLs resolve from the authenticated shop profile when API edi
   assert.match(base, /\/users\/me/);
   assert.match(base, /payload\?\.user/);
   assert.match(base, /userRecord\?\.shop_url/);
+  assert.match(base, /url\.protocol === "https:" \|\| url\.protocol === "http:"/);
   assert.match(publish, /getBasePublicShopUrl\(\)/);
   assert.match(publish, /resolveBasePublicUrl\(visibleResponse, externalProductId, basePublicShopUrl\)/);
 });
