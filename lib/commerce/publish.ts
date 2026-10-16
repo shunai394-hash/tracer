@@ -1,6 +1,6 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { addBaseItemImage, createBaseItem, editBaseItem, isBaseConfigured } from "@/lib/channels/base";
+import { addBaseItemImage, createBaseItem, editBaseItem, getBasePublicShopUrl, isBaseConfigured } from "@/lib/channels/base";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, updateShopifyProduct } from "@/lib/shopify/admin";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
@@ -118,6 +118,17 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
   if (channel === "base" && !isBaseConfigured()) throw new Error("base_oauth_not_configured");
   if (channel === "shopify" && !isShopifyConfigured()) throw new Error("shopify_not_configured");
   const db = createSupabaseAdminClient();
+  let basePublicShopUrl = process.env.BASE_PUBLIC_SHOP_URL?.trim() ?? "";
+  if (channel === "base" && !basePublicShopUrl) {
+    try {
+      basePublicShopUrl = (await getBasePublicShopUrl()) ?? "";
+    } catch (error) {
+      // A missing public URL must never block publication; it only omits the outbound URL in our dashboard.
+      console.warn("[commerce-publish] BASE public shop URL lookup failed", {
+        error: error instanceof Error ? error.message.slice(0, 160) : String(error).slice(0, 160),
+      });
+    }
+  }
   const staleListings = await unpublishUnfulfillableListings(channel, db);
   const { data, error } = await db.from("commerce_variants")
     .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,currency,selling_price,expected_profit,fee_amount,margin_rate)")
@@ -204,8 +215,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
         await addBaseItemImage({ itemId: externalProductId, imageNo: 1, imageUrl });
         // Only make the item visible after the external ID and image are saved.
         const visibleResponse = await editBaseItem({ itemId: externalProductId, title, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: true });
-        publishedUrl = resolveBasePublicUrl(visibleResponse, externalProductId, process.env.BASE_PUBLIC_SHOP_URL)
-          ?? resolveBasePublicUrl(baseResponse, externalProductId, process.env.BASE_PUBLIC_SHOP_URL);
+        publishedUrl = resolveBasePublicUrl(visibleResponse, externalProductId, basePublicShopUrl)
+          ?? resolveBasePublicUrl(baseResponse, externalProductId, basePublicShopUrl);
       } else {
         const handle = safeSlug(product.source_key + "-" + candidate.id.slice(0, 8));
         const productId = toShopifyGid("Product", externalProductId);

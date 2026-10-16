@@ -52,6 +52,15 @@ test("patrol readiness and snapshots include canonical commerce tables after leg
   assert.match(patrol, /publishedCommerceListings/);
   assert.match(patrol, /supplierProcurementOrders/);
 });
+test("BASE listing URLs resolve from the authenticated shop profile when API edit responses omit links", async () => {
+  const base = await readFile(new URL("../lib/channels/base.ts", import.meta.url), "utf8");
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(base, /getBasePublicShopUrl/);
+  assert.match(base, /\/users\/me/);
+  assert.match(base, /payload\?\.shop_url/);
+  assert.match(publish, /getBasePublicShopUrl\(\)/);
+  assert.match(publish, /resolveBasePublicUrl\(visibleResponse, externalProductId, basePublicShopUrl\)/);
+});
 test("product dashboard displays the canonical commerce catalog instead of legacy zero counts", async () => {
   const page = await readFile(new URL("../app/products/page.tsx", import.meta.url), "utf8");
   assert.match(page, /from\("commerce_products"\)/);
@@ -206,7 +215,7 @@ test("BASE product links never fall back to the generic BASE homepage", async ()
   assert.equal(resolveBasePublicUrl({}, "123", "https://shop.example"), "https://shop.example/items/123");
   assert.equal(resolveBasePublicUrl({}, "123", ""), null);
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
-  assert.match(publish, /resolveBasePublicUrl\(visibleResponse, externalProductId, process\.env\.BASE_PUBLIC_SHOP_URL\)/);
+  assert.match(publish, /resolveBasePublicUrl\(visibleResponse, externalProductId, basePublicShopUrl\)/);
   assert.doesNotMatch(publish, /publishedUrl = "https:\/\/thebase\.com\//);
 });
 

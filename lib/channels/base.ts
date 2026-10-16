@@ -48,6 +48,34 @@ export function isBaseConfigured() {
   return baseOAuthConfigReady();
 }
 
+export async function getBasePublicShopUrl(): Promise<string | null> {
+  const token = await getBaseAccessToken();
+  const response = await fetch(`${BASE_API_URL}/users/me`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const text = await response.text();
+  let payload: Record<string, unknown> | null = null;
+  try {
+    payload = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    payload = null;
+  }
+  if (!response.ok) {
+    throw new Error(`BASE_SHOP_URL_LOOKUP_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
+  }
+  const value = payload?.shop_url;
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "https:" ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
 async function getBaseAccessToken(): Promise<string> {
   if (cachedBaseAccessToken && Date.now() < cachedBaseAccessToken.expiresAt - 30_000) {
     return cachedBaseAccessToken.token;
