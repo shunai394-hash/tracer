@@ -61,21 +61,33 @@ jobs:
           if (!tokenResponse.ok) throw new Error("OIDC_TOKEN_REQUEST_FAILED:" + tokenResponse.status);
           const tokenBody = await tokenResponse.json();
           if (typeof tokenBody.value !== "string" || !tokenBody.value) throw new Error("OIDC_TOKEN_MISSING");
-          const response = await fetch(audience + "/api/channels/base/duplicate-cleanup", {
-            method: "POST",
-            headers: { Authorization: "Bearer " + tokenBody.value, "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify({ apply: true, limit: 100 }),
-            signal: AbortSignal.timeout(110000),
+          const endpoint = audience + "/api/channels/base/duplicate-cleanup";
+          const headers = { Authorization: "Bearer " + tokenBody.value, "Content-Type": "application/json", Accept: "application/json" };
+          const preflightResponse = await fetch(endpoint, {
+            method: "POST", headers, body: JSON.stringify({ apply: false, limit: 65 }), signal: AbortSignal.timeout(110000),
+          });
+          const preflight = await preflightResponse.json().catch(() => ({}));
+          if (!preflightResponse.ok || preflight.ok !== true || preflight.duplicateHideCandidates > 65) {
+            throw new Error("BASE_DUPLICATE_CLEANUP_PREFLIGHT_FAILED");
+          }
+          console.log(JSON.stringify({
+            stage: "read-only preflight", httpStatus: preflightResponse.status,
+            duplicateSkuGroups: preflight.duplicateSkuGroups, duplicateHideCandidates: preflight.duplicateHideCandidates,
+          }, null, 2));
+          const response = await fetch(endpoint, {
+            method: "POST", headers, body: JSON.stringify({ apply: true, limit: 65 }), signal: AbortSignal.timeout(110000),
           });
           const result = await response.json().catch(() => ({}));
           await writeFile("base-duplicate-cleanup-result.json", JSON.stringify(result, null, 2), { mode: "0600" });
           console.log(JSON.stringify({
-            httpStatus: response.status, ok: result.ok === true, snapshotComplete: result.snapshotComplete,
+            stage: "apply", httpStatus: response.status, ok: result.ok === true, snapshotComplete: result.snapshotComplete,
             duplicateSkuGroups: result.duplicateSkuGroups, duplicateHideCandidates: result.duplicateHideCandidates,
             duplicateHidden: result.duplicateHidden, duplicateHideFailed: result.duplicateHideFailed,
             deferredByLimit: result.deferredByLimit, sample: (result.results || []).slice(0, 10),
           }, null, 2));
-          if (!response.ok || result.ok !== true || result.duplicateHideFailed > 0) throw new Error("BASE_DUPLICATE_CLEANUP_FAILED");
+          if (!response.ok || result.ok !== true || result.duplicateHideFailed > 0 || result.deferredByLimit > 0 || result.duplicateHideCandidates > 65) {
+            throw new Error("BASE_DUPLICATE_CLEANUP_FAILED");
+          }
           NODE
           python3 - <<'PY' > base-duplicate-cleanup-summary.md
           import json
