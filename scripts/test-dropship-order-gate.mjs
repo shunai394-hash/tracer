@@ -18,6 +18,11 @@ assert.match(supplierExecution, /const uniqueExactVariant = identityRows\?\.leng
 assert.match(supplierExecution, /identity_status === "supply_discovered"[\s\S]*?isNativeCjSupplierListing/, "standalone CJ execution must require fresh verified native-supply evidence");
 assert.match(supplierExecution, /supplier_identity_lookup_failed/);
 assert.match(supplierExecution, /supplier_identity_unlinked_or_ambiguous/);
+assert.match(supplierExecution, /isCJQuotaCircuitActive\(quotaMetadata\)/, "live CJ purchase must respect the persisted daily-points cooldown");
+assert.ok(
+  supplierExecution.indexOf("if (isCJQuotaCircuitActive(quotaMetadata))") < supplierExecution.indexOf("adapter.getVariant("),
+  "CJ quota cooldown must block provider refresh before any order API call",
+);
 assert.match(executionRoute, /externalLiveOrderCapableSupplierCount/, "scheduled order execution must expose whether any external supplier can actually accept live orders");
 assert.match(executionRoute, /internalOrderableVariantCount/, "scheduled order execution must report orderable internal variant count");
 assert.match(executionRoute, /internalOrderableVariantQueryOk/, "readiness query failure must be distinguishable from zero orderable variants");
