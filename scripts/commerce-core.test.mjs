@@ -433,6 +433,29 @@ test("CJ imported products use specific customer-facing Japanese descriptions", 
 });
 
 
+test("Shopify publication adopts an existing TRACER product by exact SKU before creating another handle", async () => {
+  const publisher = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publisher, /sku:" \+ sku/);
+  assert.match(publisher, /shopify_sku_ambiguous/);
+  assert.match(publisher, /candidate\.id\.slice\(0, 8\)/);
+  assert.match(publisher, /shopify_legacy_handle_sku_mismatch/);
+});
+
+test("failed supplier procurement retries only when no supplier order id exists", async () => {
+  const worker = await readFile(new URL("../app/api/cron/commerce-procurement/route.ts", import.meta.url), "utf8");
+  assert.match(worker, /\.eq\("status", "failed"\)/);
+  assert.match(worker, /\.is\("external_order_id", null\)/);
+  assert.match(worker, /retry_count/);
+  assert.match(worker, /retryCount >= 3/);
+});
+
+test("CJ import records exclusion reasons without treating a missing freight quote as a verified offer", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /cj_import_exclusion/);
+  assert.match(importer, /japan_freight_unconfirmed/);
+  assert.match(importer, /japanese_title_unavailable/);
+});
+
 test("CJ transient stock or freight lookup failures do not overwrite previously verified supplier offers", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   const guard = importer.indexOf("if (stock === null || shipping === null)");

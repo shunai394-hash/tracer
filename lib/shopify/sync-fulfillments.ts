@@ -44,6 +44,20 @@ export async function syncShopifyFulfillments(limit = 25): Promise<ShopifyFulfil
   const grantedScopes = await getShopifyGrantedScopes();
   const missingScopes = requiredScopes.filter((scope) => !grantedScopes.includes(scope));
   if (missingScopes.length > 0) {
+    const blocker = `shopify_required_scopes_missing:${missingScopes.join(",")}`;
+    try {
+      const db = createSupabaseAdminClient();
+      await db.from("commerce_events").upsert({
+        event_key: "shopify-fulfillment-scopes-missing",
+        event_type: "shopify_fulfillment_blocked",
+        entity_type: "shopify_app",
+        entity_id: "fulfillment",
+        status: "blocked",
+        detail: { missingScopes, recordedAt: new Date().toISOString() },
+      }, { onConflict: "event_key" });
+    } catch (error) {
+      console.error("[shopify-fulfillment] scope blocker was not recorded", error instanceof Error ? error.message.slice(0, 160) : String(error));
+    }
     return {
       configured: true,
       considered: 0,
@@ -51,7 +65,7 @@ export async function syncShopifyFulfillments(limit = 25): Promise<ShopifyFulfil
       skipped: 0,
       failed: 0,
       errors: [],
-      blockers: [`shopify_required_scopes_missing:${missingScopes.join(",")}`],
+      blockers: [blocker],
     };
   }
 

@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isProcurementApprovalRequired } from "@/lib/commerce/procurement-approval";
+import { BASE_ITEMS_MAX_PAGES, isBaseConfigured, probeBaseReadOnly } from "@/lib/channels/base";
+import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 type Db = ReturnType<typeof createSupabaseAdminClient>;
 type Filter = (query: any) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -30,11 +33,56 @@ export async function GET(request: Request) {
   try {
     const db = createSupabaseAdminClient();
     const freshSince = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const [cronRunTotal, cronRunFailures, recentCronRows] = await Promise.all([
+    const [cronRunTotal, cronRunFailures, recentCronRows, baseLive, shopifyLive] = await Promise.all([
       count(db, "cron_runs", q => q.gte("started_at", freshSince)),
       count(db, "cron_runs", q => q.gte("started_at", freshSince).eq("status", "failed")),
       db.from("cron_runs").select("job_name,status,started_at,finished_at,processed,failed")
         .gte("started_at", freshSince).order("started_at", { ascending: false }).limit(200),
+      (async () => {
+        if (!isBaseConfigured()) return { ok: false, configured: false, error: "base_oauth_not_configured" };
+        try {
+          const probe = await probeBaseReadOnly({ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES });
+          return {
+            ok: probe.orders.apiStatus === 200 && probe.items.apiStatus === 200 && probe.items.complete,
+            configured: true,
+            ordersApiStatus: probe.orders.apiStatus,
+            ordersReturned: probe.orders.countReturned,
+            itemsApiStatus: probe.items.apiStatus,
+            itemsScanned: probe.items.countReturned,
+            visibleItems: probe.items.visibleCount,
+            hiddenItems: probe.items.hiddenCount,
+            unknownVisibility: probe.items.unknownVisibilityCount,
+            pagesScanned: probe.items.pages,
+            scanCap: BASE_ITEMS_MAX_PAGES * 100,
+            scanComplete: probe.items.complete,
+            errorStage: probe.items.errorStage,
+          };
+        } catch (error) {
+          return { ok: false, configured: true, error: error instanceof Error ? error.message.split(":")[0].slice(0, 100) : "base_probe_failed" };
+        }
+      })(),
+      (async () => {
+        if (!isShopifyConfigured()) return { ok: false, configured: false, error: "shopify_admin_api_not_configured" };
+        try {
+          const live = await shopifyGraphQL<{
+            productsCount: { count: number; precision: "EXACT" | "AT_LEAST" };
+            activeProductsCount: { count: number; precision: "EXACT" | "AT_LEAST" };
+          }>(`query TracerReadOnlyCommerceStatus {
+            productsCount(limit: 10000) { count precision }
+            activeProductsCount: productsCount(query: "status:active", limit: 10000) { count precision }
+          }`);
+          return {
+            ok: live.productsCount.precision === "EXACT" && live.activeProductsCount.precision === "EXACT",
+            configured: true,
+            totalProducts: live.productsCount.count,
+            activeProducts: live.activeProductsCount.count,
+            countPrecision: live.productsCount.precision,
+            activeCountPrecision: live.activeProductsCount.precision,
+          };
+        } catch (error) {
+          return { ok: false, configured: true, error: error instanceof Error ? error.message.split("\n")[0].slice(0, 160) : "shopify_probe_failed" };
+        }
+      })(),
     ]);
     if (recentCronRows.error) throw new Error("cron_runs_recent_read_failed:" + recentCronRows.error.message);
     const [failedCronRows, listingErrorRows] = await Promise.all([
@@ -132,7 +180,7 @@ export async function GET(request: Request) {
     ]);
 
     return NextResponse.json({
-      ok: true, readOnly: true, generatedAt: new Date().toISOString(),
+      ok: baseLive.ok && shopifyLive.ok, readOnly: true, generatedAt: new Date().toISOString(),
       catalog: { products, activeProducts, variants },
       supplierOffers: { discovered: offersDiscovered, verified: offersVerified, unavailable: offersUnavailable, error: offersError, cjFreshOrderable, lastCheckedAt: lastOfferCheck },
       prices: { total: prices, profitableJpy: profitablePrices, lastCalculatedAt: lastPriceCalculation },
@@ -141,6 +189,7 @@ export async function GET(request: Request) {
         shopify: { total: shopifyTotal, published: shopifyPublished, pending: shopifyPending, hidden: shopifyHidden, error: shopifyError, withoutExternalId: shopifyWithoutExternalId, lastSyncedAt: shopifyLastSynced },
         legacyBase: { shopListings: legacyListings, published: legacyPublished },
       },
+      livePlatforms: { base: baseLive, shopify: shopifyLive },
       orders: {
         base: { total: baseOrders, paid: basePaid, shipped: baseShipped, lastReceivedAt: baseLastOrder },
         shopify: { total: shopifyOrders, paid: shopifyPaid, shipped: shopifyShipped, lastReceivedAt: shopifyLastOrder },
@@ -150,6 +199,7 @@ export async function GET(request: Request) {
         confirmed: procurementConfirmed, shipped: procurementShipped, failed: procurementFailed,
         cancelled: procurementCancelled, withTracking: procurementWithTracking,
         lastSubmittedAt: procurementLastSubmitted, lastShippedAt: procurementLastShipped,
+        approvalRequired: isProcurementApprovalRequired(),
       },
       newfind: {
         legacyShopListings: { processed: newfindLegacyProcessed, failed: newfindLegacyFailed, open: newfindLegacyOpen },

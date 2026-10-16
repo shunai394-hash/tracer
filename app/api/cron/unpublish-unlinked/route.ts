@@ -5,7 +5,7 @@ import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-s
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-listings";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { BASE_AUTH_REAUTH_REQUIRED, isBaseAuthenticationFailure } from "@/lib/channels/base-auth-failure";
-import { editBaseItem, fetchBaseItemsSnapshot, isBaseConfigured } from "@/lib/channels/base";
+import { BASE_ITEMS_MAX_PAGES, editBaseItem, fetchBaseItemsSnapshot, isBaseConfigured } from "@/lib/channels/base";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -93,7 +93,7 @@ export async function GET(request: Request) {
     baseOrphans.skipped = "base_oauth_not_configured";
   } else {
     try {
-      const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: 10 });
+      const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES });
       if (!snapshot.complete) throw new Error("BASE_ITEMS_SNAPSHOT_INCOMPLETE");
       baseOrphans.snapshotComplete = true;
 
