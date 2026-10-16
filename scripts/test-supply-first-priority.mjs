@@ -15,7 +15,7 @@ assert.match(source, /discoveryCron: "\/api\/cron\/supply-first"/);
 assert.match(discovery, /reason: "supplier_quota_cooldown"/, "an open CJ quota circuit must report the actual blocker");
 assert.match(discovery, /deadlineReached: false,[\s\S]*?skipped: true,[\s\S]*?retryable: true/, "quota cooldown must be reported as an intentional retryable skip, not a false deadline timeout");
 assert.match(discovery, /retryAfter: quotaBlockedUntil/, "the caller must receive the exact quota-cooldown end time");
-assert.match(discovery, /const seededVariant = seededVariants\.find\(\(item\) => item\.vid === candidate\.variantId\)/, "seeded refresh must verify the exact live CJ product/variant pair");
+assert.match(discovery, /const productScopedVariant = seededVariants\.find\(\(item\) => item\.vid === candidate\.variantId\) \?\? null[\s\S]*?resolveCJVariantProductIdentity\(candidate\.id, candidate\.variantId, productScopedVariant\)/, "seeded refresh must resolve the exact live CJ product/variant pair through canonical identity validation");
 assert.match(discovery, /const liveCost = Number\(seededVariant\.sellPrice\)/, "seeded refresh must use current exact-variant price instead of stale persisted cost");
 assert.match(discovery, /const preserveVerifiedOrderPath =[\s\S]*?seededCandidate\.apiAvailable[\s\S]*?seededCandidate\.orderable[\s\S]*?seededCandidate\.trackingAvailable[\s\S]*?seededCandidate\.supplierVariantId === candidate\.variantId/, "only the same previously verified supplier order path may retain orderability");
 assert.match(discovery, /seededCandidate\.verificationError === ""[\s\S]*?no_unique_canonical_child_variant_match/, "only known recoverable verification errors may be cleared after fresh evidence");
