@@ -4,6 +4,7 @@ import { addBaseItemImage, createBaseItem, editBaseItem, isBaseConfigured } from
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, updateShopifyProduct } from "@/lib/shopify/admin";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+import { isCanonicalCjNativeId } from "@/lib/commerce/core";
 
 type Channel = "base" | "shopify";
 type Candidate = {
@@ -147,7 +148,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
     const offer = [...(candidate.supplier_offers ?? [])]
-      .filter((x) => x.id === candidate.commerce_prices.supplier_offer_id && x.ship_to === "JP" && x.source_status === "verified" && x.tracking_supported === true && typeof x.last_checked_at === "string" && Date.parse(x.last_checked_at) <= Date.now() + 5 * 60_000 && Date.now() - Date.parse(x.last_checked_at) <= 24 * 60 * 60_000 && Number(x.inventory) > 0 && Number(x.unit_cost) >= 0 && Number(x.shipping_cost) >= 0)[0];
+      .filter((x) => x.id === candidate.commerce_prices.supplier_offer_id && x.ship_to === "JP" && x.source_status === "verified" && x.tracking_supported === true && (x.supplier_code !== "cj" || (isCanonicalCjNativeId(x.supplier_product_id) && isCanonicalCjNativeId(x.supplier_variant_id))) && typeof x.last_checked_at === "string" && Date.parse(x.last_checked_at) <= Date.now() + 5 * 60_000 && Date.now() - Date.parse(x.last_checked_at) <= 24 * 60 * 60_000 && Number(x.inventory) > 0 && Number(x.unit_cost) >= 0 && Number(x.shipping_cost) >= 0)[0];
     const price = candidate.commerce_prices;
     const imageUrl = safeUrl(product.image_url);
     if (!offer || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0) {
