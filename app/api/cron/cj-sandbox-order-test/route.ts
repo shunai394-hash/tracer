@@ -172,7 +172,10 @@ export async function POST(request: Request) {
       status: "running",
       metadata: {
         phase: "cj_sandbox_order_lifecycle",
-        supplierListingId,
+        supplierListingId: effectiveSupplierListingId,
+        resumedFromPreviousRunId: resumedFromPreviousRunId ?? null,
+        supplierOrderId: existingSandboxOrderId ?? null,
+        orderNumber: recoveredOrderNumber ?? null,
         sandbox: true,
         charged: false,
         realFulfillment: false,
@@ -184,7 +187,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "SANDBOX_AUDIT_CLAIM_FAILED" }, { status: 500 });
   }
   const runId = String(run.id);
-  let activeListing = listing;
+  let activeSupplierOrderId: string | null = existingSandboxOrderId ?? null;
+  let activeOrderNumber: string | null = recoveredOrderNumber ?? null;
   const attemptedListingIds: string[] = [];
 
   try {
@@ -213,18 +217,41 @@ export async function POST(request: Request) {
       !(candidate.metadata && typeof candidate.metadata === "object" && !Array.isArray(candidate.metadata)
         && "cj_sandbox_order_path_verified_at" in candidate.metadata)
     );
-    const candidates = [listing, ...alternatives.slice(0, 2)];
+    const candidates = existingSandboxOrderId ? [activeListing] : [activeListing, ...alternatives.slice(0, 2)];
     let result: Awaited<ReturnType<typeof runCJSandboxOrderLifecycle>> | null = null;
     let lastPreOrderFailure = "";
 
     for (const candidate of candidates) {
-      activeListing = candidate as typeof listing;
+      activeListing = candidate as typeof requestedListing;
       attemptedListingIds.push(String(activeListing.id));
       try {
         result = await runCJSandboxOrderLifecycle({
           supplierProductId: String(activeListing.supplier_product_id),
           supplierVariantId: String(activeListing.supplier_variant_id),
-          orderNumber: `TRACER-SANDBOX-${Date.now()}`,
+          orderNumber: existingSandboxOrderId && candidate.id === effectiveSupplierListingId && recoveredOrderNumber
+            ? recoveredOrderNumber
+            : `TRACER-SANDBOX-${Date.now()}`,
+          existingSandboxOrderId: existingSandboxOrderId && candidate.id === effectiveSupplierListingId
+            ? existingSandboxOrderId
+            : undefined,
+          onOrderCreated: async ({ supplierOrderId, orderNumber }) => {
+            activeSupplierOrderId = supplierOrderId;
+            activeOrderNumber = orderNumber;
+            const { error: orderIdAuditError } = await db.from("cron_runs").update({
+              metadata: {
+                phase: "cj_sandbox_order_lifecycle",
+                supplierListingId: activeListing.id,
+                attemptedListingIds,
+                supplierOrderId,
+                orderNumber,
+                resumedFromPreviousRunId: resumedFromPreviousRunId ?? null,
+                sandbox: true,
+                charged: false,
+                realFulfillment: false,
+              },
+            }).eq("id", runId);
+            if (orderIdAuditError) throw new Error("CJ_SANDBOX_ORDER_ID_AUDIT_WRITE_FAILED");
+          },
           quantity: 1,
           shippingCountryCode: "JP",
           shippingCountry: "Japan",
@@ -286,6 +313,8 @@ export async function POST(request: Request) {
       supplierListingId: activeListing.id,
       attemptedListingIds,
       supplierOrderId: result.supplierOrderId,
+      orderNumber: activeOrderNumber,
+      resumedFromPreviousRunId: resumedFromPreviousRunId ?? null,
       supplierStatus: result.status,
       paymentConfirmed: result.paymentConfirmed,
       sandbox: result.sandbox,
@@ -323,6 +352,9 @@ export async function POST(request: Request) {
         phase: "cj_sandbox_order_lifecycle",
         supplierListingId: activeListing.id,
         attemptedListingIds,
+        supplierOrderId: activeSupplierOrderId,
+        orderNumber: activeOrderNumber,
+        resumedFromPreviousRunId: resumedFromPreviousRunId ?? null,
         sandbox: true,
         charged: false,
         realFulfillment: false,
