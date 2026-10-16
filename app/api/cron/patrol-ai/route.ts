@@ -7,6 +7,7 @@ import { runIntelligencePipeline } from "@/lib/intelligence/run-intelligence-pip
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { rescueUndeliveredGatePassedListings, retryPendingNewfindPromotions } from "@/lib/integration/newfind";
 import { catalogCountsNeedReview } from "@/lib/ops/catalog-count-check";
+import { promoteCommerceListingsToNewfind } from "@/lib/integration/newfind-commerce";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -26,6 +27,9 @@ type Snapshot = {
   commerceVariants: number;
   verifiedCommerceOffers: number;
   publishedCommerceListings: number;
+  publishedBaseCommerceListings: number;
+  publishedShopifyCommerceListings: number;
+  unpublishedCommerceListings: number;
   commerceOrders: number;
   supplierProcurementOrders: number;
 };
@@ -47,11 +51,14 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
     .eq("source_status", "verified").eq("tracking_supported", true).eq("ship_to", "JP")
     .gt("inventory", 0).gte("last_checked_at", freshCutoff);
   const publishedCommerceListingsQuery = db.from("channel_listings").select("*", { count: "exact", head: true }).eq("status", "published");
+  const publishedBaseCommerceListingsQuery = db.from("channel_listings").select("*", { count: "exact", head: true }).eq("channel", "base").eq("status", "published");
+  const publishedShopifyCommerceListingsQuery = db.from("channel_listings").select("*", { count: "exact", head: true }).eq("channel", "shopify").eq("status", "published");
+  const unpublishedCommerceListingsQuery = db.from("channel_listings").select("*", { count: "exact", head: true }).neq("status", "published");
   const commerceOrdersQuery = db.from("commerce_orders").select("*", { count: "exact", head: true });
   const supplierProcurementOrdersQuery = db.from("procurement_orders").select("*", { count: "exact", head: true });
 
-  const [productsResult, supplierListingsResult, orderableSuppliersResult, shopListingsResult, publishedListingsResult, eligibilityListingsResult, onBaseResult, basePublishedResult, ordersResult, commerceProductsResult, commerceVariantsResult, verifiedCommerceOffersResult, publishedCommerceListingsResult, commerceOrdersResult, supplierProcurementOrdersResult] =
-    await Promise.all([productsQuery, supplierListingsQuery, orderableSuppliersQuery, shopListingsQuery, publishedListingsQuery, eligibilityListingsQuery, onBaseQuery, basePublishedQuery, ordersQuery, commerceProductsQuery, commerceVariantsQuery, verifiedCommerceOffersQuery, publishedCommerceListingsQuery, commerceOrdersQuery, supplierProcurementOrdersQuery]);
+  const [productsResult, supplierListingsResult, orderableSuppliersResult, shopListingsResult, publishedListingsResult, eligibilityListingsResult, onBaseResult, basePublishedResult, ordersResult, commerceProductsResult, commerceVariantsResult, verifiedCommerceOffersResult, publishedCommerceListingsResult, publishedBaseCommerceListingsResult, publishedShopifyCommerceListingsResult, unpublishedCommerceListingsResult, commerceOrdersResult, supplierProcurementOrdersResult] =
+    await Promise.all([productsQuery, supplierListingsQuery, orderableSuppliersQuery, shopListingsQuery, publishedListingsQuery, eligibilityListingsQuery, onBaseQuery, basePublishedQuery, ordersQuery, commerceProductsQuery, commerceVariantsQuery, verifiedCommerceOffersQuery, publishedCommerceListingsQuery, publishedBaseCommerceListingsQuery, publishedShopifyCommerceListingsQuery, unpublishedCommerceListingsQuery, commerceOrdersQuery, supplierProcurementOrdersQuery]);
 
   const results = [
     ["products", productsResult], ["supplier_listings", supplierListingsResult], ["supplier_listings(orderable)", orderableSuppliersResult],
@@ -59,6 +66,8 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
     ["shop_listings(on_base)", onBaseResult], ["shop_listings(base_published)", basePublishedResult], ["shop_orders", ordersResult],
     ["commerce_products", commerceProductsResult], ["commerce_variants", commerceVariantsResult],
     ["supplier_offers(verified_fresh)", verifiedCommerceOffersResult], ["channel_listings(published)", publishedCommerceListingsResult],
+    ["channel_listings(base_published)", publishedBaseCommerceListingsResult], ["channel_listings(shopify_published)", publishedShopifyCommerceListingsResult],
+    ["channel_listings(unpublished)", unpublishedCommerceListingsResult],
     ["commerce_orders", commerceOrdersResult], ["procurement_orders", supplierProcurementOrdersResult],
   ] as const;
 
@@ -98,6 +107,9 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
     commerceVariants: commerceVariantsResult.count ?? 0,
     verifiedCommerceOffers: verifiedCommerceOffersResult.count ?? 0,
     publishedCommerceListings: publishedCommerceListingsResult.count ?? 0,
+    publishedBaseCommerceListings: publishedBaseCommerceListingsResult.count ?? 0,
+    publishedShopifyCommerceListings: publishedShopifyCommerceListingsResult.count ?? 0,
+    unpublishedCommerceListings: unpublishedCommerceListingsResult.count ?? 0,
     commerceOrders: commerceOrdersResult.count ?? 0,
     supplierProcurementOrders: supplierProcurementOrdersResult.count ?? 0,
   };
@@ -334,6 +346,23 @@ export async function GET(request: Request) {
       }
     } else {
       actions.push({ action: "newfind_retry", skipped: true, reason: "time_budget" });
+    }
+
+    // Canonical commerce listings (Shopify channel_listings) are not in the
+    // shop_listings ledger above; deliver a few per run with their own ledger.
+    if (Date.now() < startedAt + 250_000) {
+      try {
+        const commerceNewfind = await withinBudget(
+          promoteCommerceListingsToNewfind({ limit: 2, deadlineAt: startedAt + 285_000 }),
+          startedAt + 290_000,
+          "newfind_commerce",
+        );
+        actions.push({ action: "newfind_commerce", result: commerceNewfind });
+      } catch (error) {
+        actions.push({ action: "newfind_commerce", ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+    } else {
+      actions.push({ action: "newfind_commerce", skipped: true, reason: "time_budget" });
     }
 
     const after = await snapshot(db);

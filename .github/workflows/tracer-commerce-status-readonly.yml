@@ -1,5 +1,9 @@
 name: TRACER Commerce Status (read-only)
 
+# Prints production counts for the TRACER commerce pipeline (catalog,
+# supplier offers, prices, BASE/Shopify listings, orders, procurement,
+# tracking, approval queue) and the newest timestamp each stage wrote.
+# Read-only: GET requests only, counts only, no customer data.
 on:
   push:
     branches:
@@ -7,6 +11,8 @@ on:
     paths:
       - ".github/workflows/tracer-commerce-status-readonly.yml"
       - "app/api/admin/commerce/status/route.ts"
+      - "app/api/admin/procurement/approvals/route.ts"
+      - "lib/commerce/procurement-approval.ts"
       - "app/api/channels/base/diagnostics/route.ts"
       - "app/api/admin/channels/base/snapshot/route.ts"
       - "lib/channels/base.ts"
@@ -25,33 +31,53 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Checkout commit history for deployment ancestry check
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Wait for production deployment
         if: github.event_name == 'push'
         shell: bash
         run: |
           set -euo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
-          git init status-check
-          cd status-check
-          git remote add origin https://github.com/${GITHUB_REPOSITORY}.git
-          git fetch --depth=100 origin main
+          git fetch origin main --quiet
           for i in $(seq 1 20); do
             token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
             sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
-            echo "attempt $i: production commit=$sha expected=$GITHUB_SHA"
+            echo "attempt $i: production commit=$sha expected-or-ancestor=$GITHUB_SHA"
             if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
-            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              exit 0
+            fi
             sleep 15
           done
           echo "Production is not at this commit or a descendant of it."
           exit 1
-      - name: Read production commerce counts (no writes)
+      - name: Commerce status and approval queue (read-only)
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
           token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
-          code="$(curl -sS -o status.json -w "%{http_code}" --max-time 70 -H "Authorization: Bearer $token" "$BASE/api/admin/commerce/status" || true)"
-          echo "=== production commerce status HTTP $code ==="
+          status_code="$(curl -sS -o status.json -w "%{http_code}" --max-time 110 -H "Authorization: Bearer $token" "$BASE/api/admin/commerce/status" || true)"
+          approvals_code="$(curl -sS -o approvals.json -w "%{http_code}" --max-time 70 -H "Authorization: Bearer $token" "$BASE/api/admin/procurement/approvals" || true)"
+          echo "=== commerce status HTTP $status_code ==="
           python3 -c 'import json; print(json.dumps(json.load(open("status.json")), ensure_ascii=False, indent=2))' || echo "status response was not JSON"
-          [[ "$code" =~ ^2 ]]
+          echo "=== approval queue HTTP $approvals_code (counts only) ==="
+          python3 - <<'PY'
+          import json
+          try:
+              d = json.load(open("approvals.json"))
+          except Exception:
+              print("approvals response was not JSON"); raise SystemExit(0)
+          print(json.dumps({
+              "ok": d.get("ok"),
+              "approvalRequired": d.get("approvalRequired"),
+              "procurementAwaitingApproval": len(d.get("procurement") or []),
+              "legacyPurchaseOrdersUnconfirmed": len(d.get("legacyPurchaseOrders") or []),
+              "error": d.get("error"),
+          }, ensure_ascii=False))
+          PY
+          [[ "$status_code" =~ ^2 ]]

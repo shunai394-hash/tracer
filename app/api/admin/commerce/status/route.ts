@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isProcurementApprovalRequired } from "@/lib/commerce/procurement-approval";
+import { BASE_ITEMS_MAX_PAGES, isBaseConfigured, probeBaseReadOnly } from "@/lib/channels/base";
+import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 type Db = ReturnType<typeof createSupabaseAdminClient>;
 type Filter = (query: any) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -30,13 +33,76 @@ export async function GET(request: Request) {
   try {
     const db = createSupabaseAdminClient();
     const freshSince = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const [cronRunTotal, cronRunFailures, recentCronRows] = await Promise.all([
+    const [cronRunTotal, cronRunFailures, recentCronRows, baseLive, shopifyLive] = await Promise.all([
       count(db, "cron_runs", q => q.gte("started_at", freshSince)),
       count(db, "cron_runs", q => q.gte("started_at", freshSince).eq("status", "failed")),
       db.from("cron_runs").select("job_name,status,started_at,finished_at,processed,failed")
         .gte("started_at", freshSince).order("started_at", { ascending: false }).limit(200),
+      (async () => {
+        if (!isBaseConfigured()) return { ok: false, configured: false, error: "base_oauth_not_configured" };
+        try {
+          const probe = await probeBaseReadOnly({ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES });
+          return {
+            ok: probe.orders.apiStatus === 200 && probe.items.apiStatus === 200 && probe.items.complete,
+            configured: true,
+            ordersApiStatus: probe.orders.apiStatus,
+            ordersReturned: probe.orders.countReturned,
+            itemsApiStatus: probe.items.apiStatus,
+            itemsScanned: probe.items.countReturned,
+            visibleItems: probe.items.visibleCount,
+            hiddenItems: probe.items.hiddenCount,
+            unknownVisibility: probe.items.unknownVisibilityCount,
+            pagesScanned: probe.items.pages,
+            scanCap: BASE_ITEMS_MAX_PAGES * 100,
+            scanComplete: probe.items.complete,
+            errorStage: probe.items.errorStage,
+          };
+        } catch (error) {
+          return { ok: false, configured: true, error: error instanceof Error ? error.message.split(":")[0].slice(0, 100) : "base_probe_failed" };
+        }
+      })(),
+      (async () => {
+        if (!isShopifyConfigured()) return { ok: false, configured: false, error: "shopify_admin_api_not_configured" };
+        try {
+          const live = await shopifyGraphQL<{
+            productsCount: { count: number; precision: "EXACT" | "AT_LEAST" };
+            activeProductsCount: { count: number; precision: "EXACT" | "AT_LEAST" };
+          }>(`query TracerReadOnlyCommerceStatus {
+            productsCount(limit: 10000) { count precision }
+            activeProductsCount: productsCount(query: "status:active", limit: 10000) { count precision }
+          }`);
+          return {
+            ok: live.productsCount.precision === "EXACT" && live.activeProductsCount.precision === "EXACT",
+            configured: true,
+            totalProducts: live.productsCount.count,
+            activeProducts: live.activeProductsCount.count,
+            countPrecision: live.productsCount.precision,
+            activeCountPrecision: live.activeProductsCount.precision,
+          };
+        } catch (error) {
+          return { ok: false, configured: true, error: error instanceof Error ? error.message.split("\n")[0].slice(0, 160) : "shopify_probe_failed" };
+        }
+      })(),
     ]);
     if (recentCronRows.error) throw new Error("cron_runs_recent_read_failed:" + recentCronRows.error.message);
+    const [failedCronRows, listingErrorRows] = await Promise.all([
+      db.from("cron_runs").select("job_name,error").gte("started_at", freshSince).eq("status", "failed").limit(500),
+      db.from("channel_listings").select("channel,last_error").eq("status", "error").limit(500),
+    ]);
+    if (failedCronRows.error) throw new Error("cron_runs_failed_read_failed:" + failedCronRows.error.message);
+    if (listingErrorRows.error) throw new Error("channel_listings_error_read_failed:" + listingErrorRows.error.message);
+    const tally = (rows: Array<Record<string, unknown>>, group: string, reason: string) => {
+      const counts = new Map<string, { [key: string]: unknown; count: number }>();
+      for (const row of rows) {
+        const groupValue = String(row[group] ?? "unknown");
+        const reasonValue = String(row[reason] ?? "none").replace(/\s+/g, " ").slice(0, 120);
+        const key = groupValue + "\u0000" + reasonValue;
+        const entry = counts.get(key) ?? { [group]: groupValue, reason: reasonValue, count: 0 };
+        entry.count += 1;
+        counts.set(key, entry);
+      }
+      return [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 30);
+    };
     const latestCronByJob = new Map<string, Record<string, unknown>>();
     for (const row of recentCronRows.data ?? []) {
       const jobName = typeof row.job_name === "string" ? row.job_name : "unknown";
@@ -57,6 +123,8 @@ export async function GET(request: Request) {
       procurementWithTracking, procurementLastSubmitted, procurementLastShipped,
       lastOfferCheck, lastPriceCalculation, approvalRequested, approvalGranted,
       legacyListings, legacyPublished,
+      newfindLegacyProcessed, newfindLegacyFailed, newfindLegacyOpen,
+      newfindCommerceProcessed, newfindCommerceFailed, newfindCommerceOpen, newfindCommerceLast,
     ] = await Promise.all([
       count(db, "commerce_products"), count(db, "commerce_products", q => q.eq("active", true)), count(db, "commerce_variants"),
       count(db, "supplier_offers", q => q.eq("source_status", "discovered")),
@@ -102,10 +170,17 @@ export async function GET(request: Request) {
       count(db, "commerce_events", q => q.eq("event_type", "procurement_approval_requested")),
       count(db, "commerce_events", q => q.eq("event_type", "procurement_approved")),
       count(db, "shop_listings"), count(db, "shop_listings", q => q.eq("published", true)),
+      count(db, "newfind_promotion_deliveries", q => q.eq("status", "processed")),
+      count(db, "newfind_promotion_deliveries", q => q.eq("status", "failed")),
+      count(db, "newfind_promotion_deliveries", q => q.in("status", ["pending", "sending", "sent"])),
+      count(db, "commerce_events", q => q.eq("event_type", "newfind_commerce_delivery").eq("status", "processed")),
+      count(db, "commerce_events", q => q.eq("event_type", "newfind_commerce_delivery").eq("status", "failed")),
+      count(db, "commerce_events", q => q.eq("event_type", "newfind_commerce_delivery").in("status", ["pending", "sending", "sent"])),
+      latest(db, "commerce_events", "created_at", q => q.eq("event_type", "newfind_commerce_delivery")),
     ]);
 
     return NextResponse.json({
-      ok: true, readOnly: true, generatedAt: new Date().toISOString(),
+      ok: baseLive.ok && shopifyLive.ok, readOnly: true, generatedAt: new Date().toISOString(),
       catalog: { products, activeProducts, variants },
       supplierOffers: { discovered: offersDiscovered, verified: offersVerified, unavailable: offersUnavailable, error: offersError, cjFreshOrderable, lastCheckedAt: lastOfferCheck },
       prices: { total: prices, profitableJpy: profitablePrices, lastCalculatedAt: lastPriceCalculation },
@@ -114,6 +189,7 @@ export async function GET(request: Request) {
         shopify: { total: shopifyTotal, published: shopifyPublished, pending: shopifyPending, hidden: shopifyHidden, error: shopifyError, withoutExternalId: shopifyWithoutExternalId, lastSyncedAt: shopifyLastSynced },
         legacyBase: { shopListings: legacyListings, published: legacyPublished },
       },
+      livePlatforms: { base: baseLive, shopify: shopifyLive },
       orders: {
         base: { total: baseOrders, paid: basePaid, shipped: baseShipped, lastReceivedAt: baseLastOrder },
         shopify: { total: shopifyOrders, paid: shopifyPaid, shipped: shopifyShipped, lastReceivedAt: shopifyLastOrder },
@@ -123,9 +199,15 @@ export async function GET(request: Request) {
         confirmed: procurementConfirmed, shipped: procurementShipped, failed: procurementFailed,
         cancelled: procurementCancelled, withTracking: procurementWithTracking,
         lastSubmittedAt: procurementLastSubmitted, lastShippedAt: procurementLastShipped,
+        approvalRequired: isProcurementApprovalRequired(),
+      },
+      newfind: {
+        legacyShopListings: { processed: newfindLegacyProcessed, failed: newfindLegacyFailed, open: newfindLegacyOpen },
+        commerceVariants: { processed: newfindCommerceProcessed, failed: newfindCommerceFailed, open: newfindCommerceOpen, lastCreatedAt: newfindCommerceLast },
       },
       approvalEvents: { requested: approvalRequested, approved: approvalGranted },
-      cronRuns: { last24Hours: cronRunTotal, failedLast24Hours: cronRunFailures, latestByJob: [...latestCronByJob.values()] },
+      cronRuns: { last24Hours: cronRunTotal, failedLast24Hours: cronRunFailures, latestByJob: [...latestCronByJob.values()], failuresByJobAndError: tally(failedCronRows.data ?? [], "job_name", "error") },
+      listingErrors: tally(listingErrorRows.data ?? [], "channel", "last_error"),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);
