@@ -27,7 +27,7 @@ assert.match(collector, /child_detail_has_barcode: hasBarcode/, "child-page barc
 assert.doesNotMatch(collector, /if \(!jan && !gtin && !ean && !upc\) return null/,
   "ASIN-only child evidence must still be persisted; barcode is a separate supplier-linking gate");
 assert.ok(cron.includes('reason: "observation_only"'), "marketplace collection must not publish ranking products or place orders");
-const activeSourceStart = collector.indexOf("export const MARKETPLACE_SOURCES = [");
+const activeSourceStart = collector.indexOf("export const MARKETPLACE_SOURCES");
 const activeSourceEnd = collector.indexOf("] as const;", activeSourceStart);
 const activeSourceBlock = collector.slice(activeSourceStart, activeSourceEnd);
 assert.match(activeSourceBlock, /yahoo_shopping_ranking/, "Yahoo! Shopping remains demand research only");
