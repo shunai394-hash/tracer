@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { syncPaidShopifyOrders } from "@/lib/shopify/sync-orders";
-import { runAutonomousOrderControl } from "@/lib/ordering/autonomous-control";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -12,21 +11,12 @@ export async function GET(request: Request) {
 
   try {
     const imported = await syncPaidShopifyOrders(25);
-    // Retry the control plane even when no new order was imported. Use a
-    // per-invocation key: an hourly key would return the prior completed run
-    // and silently skip retries on subsequent polls in the same hour.
-    const invocationId =
-      request.headers.get("x-vercel-id") ?? crypto.randomUUID();
-    const automation = await runAutonomousOrderControl(
-      `shopify-orders:${invocationId}`,
-    );
-
     return NextResponse.json({
-      ok: true,
-      phase: "shopify_order_ingestion",
+      ok: imported.failed === 0,
+      phase: "canonical_shopify_order_ingestion",
       imported,
-      automation,
-    });
+      procurement: "canonical commerce-procurement cron owns supplier submission",
+    }, { status: imported.failed ? 207 : 200 });
   } catch (error) {
     return NextResponse.json(
       {
