@@ -39,11 +39,14 @@ test("paid-order supplier preflight runs before writing the order record", async
 
 test("supplier importer never substitutes a search-result product ID for unresolved variant identity", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  assert.match(importer, /fetchCJVariantByVid\(variant\.vid\)/);
+  assert.match(importer, /const exactVariant = await fetchCJVariantByVid\(variant\.vid\)/);
   assert.match(importer, /exactVariant\.vid !== variant\.vid/);
   assert.match(importer, /canonical_supplier_product_id_unresolved/);
+  assert.match(importer, /canonical_supplier_variant_price_unresolved/);
+  assert.doesNotMatch(importer, /if \(!supplierProductId\)\s*\{\s*const exactVariant/, "a non-empty parent ID from product search is not proof of the live canonical parent");
   assert.match(importer, /supplierProductId === candidate\.id \? detail : await getCJProductDetail\(supplierProductId\)/);
-  assert.match(importer, /supplierProductId,\s*\n\s*supplierVariantId: variant\.vid/);
+  assert.match(importer, /supplierVariantId: exactVariant\.vid/);
+  assert.match(importer, /const queryOptions = \["women handbag", "beauty tools", "hair accessories women"\]/, "CJ discovery must follow the requested category priorities");
 });
 
 test("procurement revalidates the exact fresh profitable offer and preserves a created supplier order ID", async () => {
