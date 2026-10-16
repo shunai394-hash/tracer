@@ -79,7 +79,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "usd_jpy_rate_unavailable", imported: 0 }, { status: 503 });
   }
 
-  const stats = { searched: 0, products: 0, variants: 0, offers: 0, priced: 0, skipped: 0, errors: [] as string[] };
+  const stats = { searched: 0, products: 0, variantsAvailable: 0, variants: 0, offers: 0, priced: 0, skipped: 0, errors: [] as string[] };
   try {
     type ImportCandidate = { id: string; title: string; productType?: string | null; imageUrl?: string | null };
     const requestedProductIds = url.searchParams.has("productIds")
