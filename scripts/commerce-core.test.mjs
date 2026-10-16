@@ -102,7 +102,7 @@ test("clean commerce cron schedule uses only the new supplier, channel, order, a
   assert.equal(schedules.get("/api/cron/commerce-publish-shopify"), "*/15 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,16,31,46 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-procurement"), "13,28,43,58 * * * *");
-  assert.equal(schedules.get("/api/cron/patrol-ai"), "*/5 * * * *");
+  assert.equal(schedules.has("/api/cron/patrol-ai"), false, "legacy patrol must not run beside the clean commerce pipeline");
   assert.equal(schedules.has("/api/cron/market-sourcing"), false);
   assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
   assert.equal(schedules.has("/api/cron/supply-first"), false);
