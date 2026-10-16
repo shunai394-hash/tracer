@@ -170,7 +170,7 @@ export async function GET(request: Request) {
       shopifyOrders, shopifyPaid, shopifyShipped, shopifyLastOrder,
       procurementPending, procurementProcessing, procurementSubmitted, procurementConfirmed, procurementShipped, procurementFailed, procurementCancelled,
       procurementWithTracking, procurementLastSubmitted, procurementLastShipped,
-      lastOfferCheck, lastPriceCalculation, approvalRequested, approvalGranted,
+      lastOfferCheck, lastPriceCalculation, approvalRequested, approvalGranted, baseUnmappedOrderItems,
       legacyListings, legacyPublished,
     ] = await Promise.all([
       count(db, "commerce_products"), count(db, "commerce_products", q => q.eq("active", true)), count(db, "commerce_variants"),
@@ -216,6 +216,7 @@ export async function GET(request: Request) {
       latest(db, "commerce_prices", "calculated_at"),
       count(db, "commerce_events", q => q.eq("event_type", "procurement_approval_requested")),
       count(db, "commerce_events", q => q.eq("event_type", "procurement_approved")),
+      count(db, "commerce_events", q => q.eq("event_type", "base_order_unmapped_item").eq("status", "needs_review")),
       count(db, "shop_listings"), count(db, "shop_listings", q => q.eq("published", true)),
     ]);
 
@@ -231,7 +232,7 @@ export async function GET(request: Request) {
       },
       livePlatforms: { base: baseLive, shopify: shopifyLive },
       orders: {
-        base: { total: baseOrders, paid: basePaid, shipped: baseShipped, lastReceivedAt: baseLastOrder },
+        base: { total: baseOrders, paid: basePaid, shipped: baseShipped, lastReceivedAt: baseLastOrder, unmappedItemsNeedingReview: baseUnmappedOrderItems },
         shopify: { total: shopifyOrders, paid: shopifyPaid, shipped: shopifyShipped, lastReceivedAt: shopifyLastOrder },
       },
       procurement: {

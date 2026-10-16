@@ -107,4 +107,15 @@ check("status and funnel share the NEWFIND outcome rule; reconciliation pages ch
   assert.match(baseWorkflow, /candidate\.schemaVersion >= 3/);
 });
 
+const baseOrders = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
+check("a paid BASE line for an unlinked item is recorded for review, never silently dropped or procured", () => {
+  const unlinked = baseOrders.slice(baseOrders.indexOf("if (!listing) {"), baseOrders.indexOf("const { data: price"));
+  assert.match(unlinked, /result\.unmappedItems\+\+/);
+  assert.match(unlinked, /event_type: BASE_UNMAPPED_ORDER_ITEM_EVENT/);
+  assert.match(unlinked, /status: "needs_review"/);
+  assert.doesNotMatch(unlinked, /ingestPaidOrder|address|first_name|tel/);
+  assert.match(baseOrders, /const healthy = result\.failed === 0 && result\.unmappedItems === 0;/);
+  assert.match(statusRoute, /unmappedItemsNeedingReview: baseUnmappedOrderItems/);
+});
+
 console.log(`catalog reconciliation: ${cases} cases passed`);
