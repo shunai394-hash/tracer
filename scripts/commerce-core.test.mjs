@@ -46,7 +46,7 @@ test("supplier importer never substitutes a search-result product ID for unresol
   assert.doesNotMatch(importer, /if \(!supplierProductId\)\s*\{\s*const exactVariant/, "a non-empty parent ID from product search is not proof of the live canonical parent");
   assert.match(importer, /supplierProductId === candidate\.id \? detail : await getCJProductDetail\(supplierProductId\)/);
   assert.match(importer, /supplierVariantId: exactVariant\.vid/);
-  assert.match(importer, /const queryOptions = \["women handbag", "beauty tools", "hair accessories women"\]/, "CJ discovery must follow the requested category priorities");
+  assert.match(importer, /const queryOptions = \["women handbag", "beauty tools", .*"hair accessories women"\]/, "CJ discovery must rotate across broad product categories including the requested priorities");
 });
 
 test("procurement revalidates the exact fresh profitable offer and preserves a created supplier order ID", async () => {
