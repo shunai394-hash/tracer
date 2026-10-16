@@ -114,7 +114,7 @@ export async function POST(request: Request) {
   try {
     const { data: candidateRows, error: candidateError } = await db
       .from("supplier_listings")
-      .select("id,supplier,supplier_product_id,supplier_variant_id,configured,cost,shipping_cost,currency,inventory,ship_to,shipping_status,price_confirmed,inventory_confirmed,last_verified_at,metadata")
+      .select("id,supplier,supplier_product_id,supplier_variant_id,configured,cost,shipping_cost,currency,inventory,ship_to,shipping_status,price_confirmed,inventory_confirmed,metadata")
       .eq("supplier", "cj")
       .eq("configured", true)
       .eq("price_confirmed", true)
@@ -122,7 +122,7 @@ export async function POST(request: Request) {
       .eq("shipping_status", "verified")
       .eq("ship_to", "JP")
       .gt("inventory", 0)
-      .order("last_verified_at", { ascending: false })
+      .order("id", { ascending: true })
       .limit(12);
     if (candidateError) throw new Error("CJ_SANDBOX_CANDIDATE_SCAN_FAILED");
 
