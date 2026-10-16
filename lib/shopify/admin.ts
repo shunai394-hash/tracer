@@ -350,7 +350,7 @@ export function verifyShopifyWebhookHmac(rawBody: string, hmacHeader: string | n
   return expected.length === received.length && crypto.timingSafeEqual(expected, received);
 }
 
-const TRACER_TAGS = ["TRACER", "tracer-sales-test-gate"];
+const TRACER_TAGS = ["TRACER"];
 
 export async function createShopifyProduct(input: { title: string; descriptionHtml: string; handle: string; price: number; sku: string; imageUrl?: string | null }): Promise<ShopifyProduct> {
   const data = await shopifyGraphQL<{
