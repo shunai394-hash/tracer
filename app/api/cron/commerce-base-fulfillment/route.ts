@@ -16,10 +16,6 @@ function array(value: unknown): unknown[] {
 function afterpayPayment(value: unknown): boolean {
   return ["bnpl", "bnpl_installment", "atobarai"].includes(String(value ?? "").toLowerCase());
 }
-function carrierName(value: unknown): string {
-  const row = record(value);
-  return String(row.logisticName ?? row.logisticsName ?? row.carrier ?? row.deliveryCompany ?? "").trim();
-}
 
 /** Reflect supplier tracking into BASE for paid canonical orders, idempotently per order line + tracking number. */
 export async function GET(request: Request) {
@@ -71,23 +67,25 @@ export async function GET(request: Request) {
         try {
           if (afterpay) {
             if (!deliveryCompanies) deliveryCompanies = await listBaseDeliveryCompanies();
-            const rawCarrier = carrierName(procurement.response_payload);
-            const carrier = deliveryCompanies.find((company) => rawCarrier && company.name.toLowerCase().includes(rawCarrier.toLowerCase()))
-              ?? deliveryCompanies.find((company) => /その他|other/i.test(company.name));
+            const carrier = deliveryCompanies.find((company) => /その他|other/i.test(company.name));
             if (!carrier) {
               result.blocked++;
               result.errors.push(orderId + ":base_afterpay_delivery_company_mapping_missing");
               continue;
             }
-            await updateBaseOrderItemFulfillment({
-              orderItemId: externalLineId,
-              trackingNumber,
-              atobarai: true,
-              deliveryCompanyId: carrier.delivery_company_id,
-            });
+            try {
+              await updateBaseOrderItemFulfillment({
+                orderItemId: externalLineId,
+                trackingNumber,
+                atobarai: true,
+                deliveryCompanyId: carrier.delivery_company_id,
+              });
+            } catch (updateError) {
+              const detail = await getBaseOrderDetail(externalOrderId);
+              if (String(detail.tracking_number ?? "") !== trackingNumber) throw updateError;
+            }
           } else {
-            const rawCarrier = carrierName(procurement.response_payload) || "CJ配送";
-            const comment = "[配送業者]" + rawCarrier + " [送り状番号]" + trackingNumber;
+            const comment = "[配送業者]CJ配送 [送り状番号]" + trackingNumber;
             try {
               await updateBaseOrderItemFulfillment({ orderItemId: externalLineId, trackingNumber, addComment: comment });
             } catch (updateError) {
