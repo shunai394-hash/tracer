@@ -31,6 +31,9 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
     [/hair tie|rubber band.*hair|hair rope/, "レディース ヘアゴム・ヘアロープ"],
     [/color changing in the sun.*acetate shark clip|acetate shark clip.*shark clip/, "日光で色が変わるアセテート製シャーククリップ"],
     [/pu leather headband.*ponytail clip|ponytail clip.*pu leather headband/, "PUレザー調ヘッドバンド付きポニーテールクリップ"],
+    [/double bangs.*hairpin|double bangs.*hairband/, "ダブルバング風ヘアアクセサリー"],
+    [/gold alloy hair clips.*geometric|geometric openwork clips/, "幾何学模様のメタルヘアクリップ"],
+    [/metal hair clips.*pearl.*rhinestone|pearl.*rhinestone.*hairpins/, "パール・ラインストーン付きメタルヘアクリップ"],
     [/women vintage pu handbag|vintage pu handbag/, "ヴィンテージPUレザーハンドバッグ"],
     [/new fashion personalized handbag/, "パーソナライズドハンドバッグ"],
     [/high temperature disinfection cabinet/, "美容器具用高温消毒キャビネット"],
@@ -69,6 +72,10 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
 
 function japaneseVariantSuffix(nameEn: unknown): string {
   const source = String(nameEn ?? "").toLowerCase();
+  const colorCount = source.match(/\\b([0-9]+)\\s*color\\b/);
+  if (colorCount) return "（" + colorCount[1] + "色）";
+  const styleNumber = source.match(/\\b([0-9]+)\\s*\\.?\\s*style\\b/);
+  if (styleNumber) return "（スタイル" + styleNumber[1] + "）";
   const colors: Array<[RegExp, string]> = [
     [/yellow/, "イエロー"], [/white/, "ホワイト"], [/black/, "ブラック"],
     [/pink/, "ピンク"], [/blue/, "ブルー"], [/green/, "グリーン"],
