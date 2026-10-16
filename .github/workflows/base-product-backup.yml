@@ -161,6 +161,7 @@ jobs:
           if len(files) != 1:
               raise SystemExit("BASE_RECONCILIATION_REPORT_FILE_MISSING_OR_AMBIGUOUS")
           d = json.load(open(files[0], encoding="utf-8"))
+          base_items_by_id = {str(item.get("baseItemId", "")): item for item in d.get("items", [])}
           summary = {
               "complete": d.get("complete"),
               "baseItemCount": d.get("baseItemCount"),
@@ -191,7 +192,14 @@ jobs:
                       "orderable": (item.get("stableIdentifierMatches") or [{}])[0].get("orderable"),
                       "supplierVariantId": (item.get("stableIdentifierMatches") or [{}])[0].get("supplierVariantId"),
                       "exactBaseIdMatchCount": item.get("exactBaseIdMatchCount"),
-                      "exactTitleCandidateListingIds": [candidate.get("listingId") for candidate in (item.get("exactTitleCandidates") or [])[:5]]
+                      "exactTitleCandidateListingIds": [candidate.get("listingId") for candidate in (item.get("exactTitleCandidates") or [])[:5]],
+                      "existingBaseItemEvidence": {
+                          "identifier": (base_items_by_id.get(str((item.get("stableIdentifierMatches") or [{}])[0].get("existingBaseItemId"))) or {}).get("identifier"),
+                          "title": str((base_items_by_id.get(str((item.get("stableIdentifierMatches") or [{}])[0].get("existingBaseItemId"))) or {}).get("title", ""))[:100],
+                          "visible": (base_items_by_id.get(str((item.get("stableIdentifierMatches") or [{}])[0].get("existingBaseItemId"))) or {}).get("visible"),
+                          "listingId": (((base_items_by_id.get(str((item.get("stableIdentifierMatches") or [{}])[0].get("existingBaseItemId"))) or {}).get("stableIdentifierMatches") or [{}])[0]).get("listingId"),
+                          "stableIdentifierMatchCount": (base_items_by_id.get(str((item.get("stableIdentifierMatches") or [{}])[0].get("existingBaseItemId"))) or {}).get("stableIdentifierMatchCount")
+                      }
                   }
                   for item in d.get("items", [])
                   if str(item.get("identifier", "")).startswith("TRC-")
