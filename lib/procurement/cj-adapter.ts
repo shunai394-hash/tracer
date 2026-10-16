@@ -399,7 +399,10 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
  * against a CJ sandbox order. It does not use the live-order flags and never
  * writes purchase/order rows to TRACER's production database.
  */
-export async function runCJSandboxOrderLifecycle(input: SupplierOrderInput): Promise<{
+export async function runCJSandboxOrderLifecycle(
+  input: SupplierOrderInput,
+  onOrderCreated?: (supplierOrderId: string) => Promise<void>,
+): Promise<{
   supplierOrderId: string;
   status: string;
   trackingNumber: string;
@@ -481,6 +484,8 @@ export async function runCJSandboxOrderLifecycle(input: SupplierOrderInput): Pro
   });
   const orderId = created.supplierOrderId?.trim();
   if (!created.succeeded || !orderId) throw new Error(`CJ_SANDBOX_CREATE_FAILED:${created.responseCode ?? "unknown"}`);
+  // Persist the external order ID immediately so a later payment/status failure is reconcilable.
+  if (onOrderCreated) await onOrderCreated(orderId);
 
   // CJ's simulated-payment endpoint only accepts UNPAID(200), not CREATED(100).
   await updateCJSandboxOrderStatus(orderId, 200);
