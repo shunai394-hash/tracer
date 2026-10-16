@@ -31,7 +31,7 @@ assert.match(route, /Math\.max\(1, Math\.min\(500, Math\.floor\(requestedDryRunL
 assert.match(route, /selectAndPublishSupplySalesTests\(candidateProductIds, dryRun \? 100 : 50/, "live publication must be bounded and large enough to advance qualified products on every patrol");
 assert.ok(route.includes("for (let i = 0; i < candidateProductIds.length; i += 100)") && route.includes("const missingOpportunityIds = candidateProductIds.filter("), "dry-run must bound intelligence reads as well as the final selector");
 assert.ok(workflow.includes("--max-time 90") && workflow.includes("request_timeout_or_no_response"), "workflow must report dry-run timeouts without dropping the auth report");
-assert.ok(route.includes('.in("shipping_status", ["verified", "estimated"])') && route.includes('.eq("price_confirmed", true)') && route.includes('.eq("api_available", true)'), "native supplier query admits verified or explicitly estimated shipping while retaining price and API evidence gates");
+assert.ok(route.includes('.eq("shipping_status", "verified")') && route.includes('.eq("price_confirmed", true)') && route.includes('.eq("api_available", true)'), "native supplier query requires verified Japan shipping while retaining price and API evidence gates");
 assert.ok(workflow.includes('$BASE/api/cron/sales-test-publication?dryRun=true'), "production workflow must run a no-write supply dry run");
 assert.ok(workflow.includes('"supplyDryRun": supply_dry_run') || workflow.includes('"supplyDryRun": supplyDryRun'), "diagnostic issue must preserve the supply dry-run result");
 assert.ok(workflow.includes('"app/api/cron/sales-test-publication/route.ts"'), "route changes must trigger production diagnostics after deployment");
