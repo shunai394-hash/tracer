@@ -72,9 +72,10 @@ assert.match(cleanSandboxRoute, /supplierOrderId: createdOrderId/);
 assert.match(cleanSandboxRoute, /CJ_SANDBOX_ORDER_TEST_ENABLED/);
 assert.match(cleanSandboxRoute, /realFulfillment: false/);
 
-const sandboxTransition = adapter.indexOf("await updateCJSandboxOrderStatus(orderId, 200)");
+const sandboxTransition = adapter.indexOf("await confirmCJSandboxOrder(orderId)");
 const sandboxPayment = adapter.indexOf("await simulateCJSandboxPayment(orderId)");
-assert.ok(sandboxTransition >= 0 && sandboxTransition < sandboxPayment, "CJ sandbox order must transition CREATED(100) to UNPAID(200) before simulated payment");
+assert.ok(sandboxTransition >= 0 && sandboxTransition < sandboxPayment, "CJ sandbox order must be confirmed from CREATED(100) to UNPAID(200) before simulated payment");
+assert.doesNotMatch(adapter, /updateCJSandboxOrderStatus\(orderId, 200\)/, "sandbox updateStatus only supports forward states 400/500/600/700");
 assert.match(adapter, /charged: false/);
 assert.match(adapter, /realFulfillment: false/);
 const sandboxRoute = read("app/api/cron/cj-sandbox-order-test/route.ts");
