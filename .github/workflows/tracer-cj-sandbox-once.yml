@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   sandbox-lifecycle:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'TRACER_CJ_SANDBOX_ORDER_TEST')))
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'TRACER_CJ_SANDBOX_ORDER_TEST')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -35,7 +35,7 @@ jobs:
           fi
 
           BASE="https://tracer-pied-alpha.vercel.app"
-          SUPPLIER_LISTING_ID="83eb3a0e-eced-4041-afa5-da57c3084f4c"
+          SUPPLIER_LISTING_ID="e7cc08b5-9039-4c21-9906-a60130e76ab1"
 
           get_oidc_token() {
             curl -sSf --max-time 15 \
@@ -44,8 +44,20 @@ jobs:
               | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
 
-          # Wait for the production deployment triggered by this workflow merge.
-          sleep 60
+          # Wait until production serves the exact commit that contains the status-transition fix.
+          ready=0
+          for attempt in $(seq 1 36); do
+            code="$(curl -sS -o /tmp/sandbox-health.json -w "%{http_code}" --max-time 10 "$BASE/api/health" || true)"
+            sha="$(python3 -c 'import json; d=json.load(open("/tmp/sandbox-health.json")); print(d.get("gitCommitSha") or "")' 2>/dev/null || true)"
+            if [[ "$code" == "200" && "$sha" == "$GITHUB_SHA" ]]; then
+              echo "Production serves sandbox fix commit $GITHUB_SHA."
+              ready=1
+              break
+            fi
+            echo "Waiting for sandbox fix deployment: HTTP=$code sha=$sha attempt=$attempt/36"
+            sleep 10
+          done
+          [[ "$ready" == "1" ]] || { echo "Production did not serve the sandbox fix within 6 minutes."; exit 1; }
 
           TOKEN="$(get_oidc_token)"
           HTTP_CODE="$(curl -sS --max-time 90 -o sandbox-result.json -w '%{http_code}' \

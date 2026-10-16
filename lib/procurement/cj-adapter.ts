@@ -484,7 +484,20 @@ export async function runCJSandboxOrderLifecycle(input: SupplierOrderInput): Pro
 
   // CJ's simulated-payment endpoint only accepts UNPAID(200), not CREATED(100).
   await updateCJSandboxOrderStatus(orderId, 200);
-  await simulateCJSandboxPayment(orderId);
+  // CJ sandbox createOrderV2 can return CREATED(100); simulated payment requires UNPAID(200).
+  // Transition explicitly and preserve the created order ID on every post-create failure.
+  try {
+    await updateCJSandboxOrderStatus(orderId, 200);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message.slice(0, 160) : "status transition failed";
+    throw new Error(`CJ_SANDBOX_PREPAY_STATUS_TRANSITION_FAILED:supplierOrderId=${orderId}:${detail}`);
+  }
+  try {
+    await simulateCJSandboxPayment(orderId);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message.slice(0, 160) : "payment simulation failed";
+    throw new Error(`CJ_SANDBOX_PAYMENT_SIMULATION_FAILED:supplierOrderId=${orderId}:${detail}`);
+  }
   const trackingNumber = `SBXTRACER${Date.now()}`;
   await updateCJSandboxTrackingNumber(orderId, trackingNumber);
   await updateCJSandboxOrderStatus(orderId, 400);
