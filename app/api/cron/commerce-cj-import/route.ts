@@ -57,9 +57,9 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const queryOptions = ["women handbag", "beauty tools", "hair accessories women"];
   const explicitQuery = url.searchParams.get("q");
-  const query = (explicitQuery || queryOptions[Math.floor(Date.now() / 1_800_000) % queryOptions.length]).trim().slice(0, 100);
+  const query = (explicitQuery || queryOptions[Math.floor(Date.now() / 600_000) % queryOptions.length]).trim().slice(0, 100);
   const page = Math.min(1000, Math.max(1, Number(url.searchParams.get("page") || 1)));
-  const limit = Math.min(10, Math.max(1, Number(url.searchParams.get("limit") || 2)));
+  const limit = Math.min(10, Math.max(1, Number(url.searchParams.get("limit") || 4)));
   const fx = await getObservedUsdToJpyRate();
   if (!fx || !Number.isFinite(fx.rate) || fx.rate <= 0) {
     return NextResponse.json({ ok: false, error: "usd_jpy_rate_unavailable", imported: 0 }, { status: 503 });
