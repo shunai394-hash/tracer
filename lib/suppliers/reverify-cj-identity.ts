@@ -324,8 +324,14 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const sellingPriceJpy = storedSellingPriceJpy ?? (landedCostJpy !== null && Number.isFinite(landedCostJpy) && landedCostJpy >= 0 ? Math.ceil(Math.max(1980, landedCostJpy * 2.5) / 100) * 100 : null);
 
       const checkedAt = new Date();
+      const legacyParentIdMismatch = Array.isArray(listingMetadata.missing_supply_evidence_errors)
+        && listingMetadata.missing_supply_evidence_errors.includes("cost:returned_variant_or_product_id_mismatch");
       const nextListingMetadata = {
         ...listingMetadata,
+        ...(legacyParentIdMismatch ? {
+          missing_supply_evidence_errors: (listingMetadata.missing_supply_evidence_errors as unknown[]).filter((value) => value !== "cost:returned_variant_or_product_id_mismatch"),
+          legacy_parent_id_mismatch_retry_attempted_at: checkedAt.toISOString(),
+        } : {}),
         ...(variantBarcode ? { variant_barcode: variantBarcode, variant_barcode_raw: variantBarcode } : {}),
         ...(imageUrl ? { image_url: imageUrl } : {}),
         ...(cost !== null ? { recovered_cost_at: missingCost ? checkedAt.toISOString() : listingMetadata.recovered_cost_at } : {}),
@@ -458,7 +464,15 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const { data: latest } = await db.from("supplier_listings").select("metadata").eq("id", supplierListingId).maybeSingle();
       const latestMetadata = record(latest?.metadata);
       const checkedAt = new Date();
-      await db.from("supplier_listings").update({ metadata: { ...latestMetadata, last_identity_reverify_at: checkedAt.toISOString(), next_identity_reverify_at: new Date(checkedAt.getTime() + ERROR_RETRY_MS).toISOString(), identity_hold_reason: "reverify_error" } }).eq("id", supplierListingId);
+      const legacyParentIdMismatch = Array.isArray(latestMetadata.missing_supply_evidence_errors)
+        && latestMetadata.missing_supply_evidence_errors.includes("cost:returned_variant_or_product_id_mismatch");
+      await db.from("supplier_listings").update({ metadata: {
+        ...latestMetadata,
+        ...(legacyParentIdMismatch ? { legacy_parent_id_mismatch_retry_attempted_at: checkedAt.toISOString() } : {}),
+        last_identity_reverify_at: checkedAt.toISOString(),
+        next_identity_reverify_at: new Date(checkedAt.getTime() + ERROR_RETRY_MS).toISOString(),
+        identity_hold_reason: "reverify_error",
+      } }).eq("id", supplierListingId);
       return { kind: "error" as const, supplierListingId, error: rowError instanceof Error ? rowError.message : String(rowError) };
     }
   };
