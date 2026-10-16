@@ -1,5 +1,6 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { cjSupplierAdapter } from "@/lib/procurement/cj-adapter";
 import { addBaseItemImage, createBaseItem, editBaseItem, isBaseConfigured } from "@/lib/channels/base";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, updateShopifyProduct } from "@/lib/shopify/admin";
 
@@ -20,6 +21,10 @@ function safeSlug(value: string): string {
 }
 
 export async function syncCommerceListings(channel: Channel, limit = 10) {
+  // Fail closed before any external storefront write until CJ live ordering/payment flow is proven.
+  if (!cjSupplierAdapter.capabilities.liveOrdering) {
+    return { channel, considered: 0, published: 0, failed: 1, results: [{ variantId: "", ok: false, error: "supplier_live_ordering_disabled_until_sandbox_payment_flow_proof" }] };
+  }
   if (channel === "base" && !isBaseConfigured()) throw new Error("base_oauth_not_configured");
   if (channel === "shopify" && !isShopifyConfigured()) throw new Error("shopify_not_configured");
   const db = createSupabaseAdminClient();
