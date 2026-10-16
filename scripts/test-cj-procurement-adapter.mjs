@@ -65,12 +65,12 @@ const createdIdCallback = adapter.indexOf("if (onOrderCreated) await onOrderCrea
 const paymentSimulation = adapter.indexOf("await simulateCJSandboxPayment(orderId)");
 assert.ok(createdIdCallback >= 0 && createdIdCallback < paymentSimulation,
   "persist created supplier order ID before simulating sandbox payment");
-const sandboxConfirmation = adapter.indexOf("await confirmCJSandboxOrder(orderId)");
 const sandboxPaymentIndex = adapter.indexOf("await simulateCJSandboxPayment(orderId)");
-assert.ok(sandboxConfirmation >= 0 && sandboxConfirmation < sandboxPaymentIndex,
-  "payType=3 sandbox order must be confirmed via PATCH confirmOrder before simulatePay");
-assert.match(adapter, /payType: 3,/,
-  "sandbox order must be created without initiating payment, then explicitly confirmed");
+assert.ok(sandboxPaymentIndex >= 0, "sandbox lifecycle must call simulatePay");
+assert.doesNotMatch(adapter, /await confirmCJSandboxOrder\(orderId\)/,
+  "sandbox page-payment mode must avoid the unsupported UNPAID status transition");
+assert.match(adapter, /payType: 1,/,
+  "legacy page-payment mode is allowed only for sandbox verification");
 assert.match(order, /shopping\/order\/confirmOrder/);
 assert.match(order, /method: "PATCH"/);
 assert.doesNotMatch(adapter, /updateCJSandboxOrderStatus\(orderId, 200\)/);
