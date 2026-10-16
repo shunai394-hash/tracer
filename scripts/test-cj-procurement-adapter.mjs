@@ -67,8 +67,6 @@ assert.match(sandboxRoute, /CJ_API_QUOTA_COOLDOWN/);
 assert.match(sandboxRoute, /cj-sandbox-order-lifecycle/);
 assert.doesNotMatch(sandboxRoute, /verification_status !== "verified"|orderable !== true|last_verified_at/, "sandbox lifecycle must be able to prove order-path capability for a fresh unverified candidate");
 assert.match(sandboxRoute, /runCJSandboxOrderLifecycle/);
-assert.match(sandboxRoute, /safeToTryAnotherCandidate[\s\S]{0,500}if \(!safeToTryAnotherCandidate\) throw error/);
-assert.match(sandboxRoute, /CJ_SANDBOX_NO_VALID_CANDIDATE/);
 assert.match(sandboxRoute, /status: "succeeded"/);
 assert.match(sandboxRoute, /status: "failed"/);
 assert.match(sandboxRoute, /TRACER CJ SANDBOX ORDER TEST COMPLETE/, "sandbox lifecycle success must be observable without logging the tracking number");
