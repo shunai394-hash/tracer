@@ -97,7 +97,7 @@ export async function POST(request: Request) {
       status: "running",
       metadata: {
         phase: "cj_sandbox_order_lifecycle",
-        supplierListingId: activeListing.id,
+        supplierListingId,
         sandbox: true,
         charged: false,
         realFulfillment: false,
@@ -110,6 +110,7 @@ export async function POST(request: Request) {
   }
   const runId = String(run.id);
   let activeListing = listing;
+  const attemptedListingIds: string[] = [];
 
   try {
     const { data: candidateRows, error: candidateError } = await db
@@ -140,7 +141,6 @@ export async function POST(request: Request) {
     const candidates = [listing, ...alternatives.slice(0, 2)];
     let result: Awaited<ReturnType<typeof runCJSandboxOrderLifecycle>> | null = null;
     let lastPreOrderFailure = "";
-    const attemptedListingIds: string[] = [];
 
     for (const candidate of candidates) {
       activeListing = candidate as typeof listing;
