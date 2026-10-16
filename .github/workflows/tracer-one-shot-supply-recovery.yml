@@ -114,3 +114,4 @@ jobs:
           fi
 
 # TRACER_ONE_SHOT_SUPPLY_RECOVERY: bounded production wiring proof; no sandbox order unless a fresh verified listing ID is returned.
+# Canonical parent-product identity fix is deployed; rerun bounded proof against the latest production build.
