@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { runCJSandboxOrderLifecycle } from "@/lib/procurement/cj-adapter";
+import { isCJQuotaCircuitActive } from "@/lib/sources/cj/rate-limit-policy";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
     ? quotaRun.metadata as Record<string, unknown>
     : {};
   const blockedUntil = typeof quotaMetadata.blockedUntil === "string" ? quotaMetadata.blockedUntil : null;
-  if (blockedUntil && Date.parse(blockedUntil) > Date.now()) {
+  if (isCJQuotaCircuitActive(quotaMetadata)) {
     return NextResponse.json({ ok: false, error: "CJ_API_QUOTA_COOLDOWN", retryAfter: blockedUntil }, { status: 409 });
   }
 
