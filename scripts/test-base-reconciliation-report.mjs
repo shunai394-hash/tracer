@@ -47,3 +47,13 @@ assert.match(workflow, /tracer-base-reconciliation-/);
 assert.doesNotMatch(workflow, /actions\/upload-artifact@/);
 assert.match(workflow, /BASE_RECONCILIATION_INCOMPLETE_OR_COUNT_MISMATCH/);
 console.log("BASE/TRACER reconciliation report contract: 17 assertions passed");
+
+const duplicateCleanup = await readFile(new URL("../app/api/channels/base/duplicate-cleanup/route.ts", import.meta.url), "utf8");
+assert.match(duplicateCleanup, /COMMERCE_SKU/);
+assert.match(duplicateCleanup, /listingRows\.length !== 1/);
+assert.match(duplicateCleanup, /canonical\.visible !== true \|\| duplicate\.visible !== true/);
+assert.match(duplicateCleanup, /price !== duplicatePrice/);
+assert.match(duplicateCleanup, /stock !== duplicateStock/);
+assert.match(duplicateCleanup, /commerceMappedIds\.has\(duplicateId\) \|\| legacyMappedIds\.has\(duplicateId\)/);
+assert.match(duplicateCleanup, /stock: 0, visible: false/);
+assert.match(duplicateCleanup, /deleted: 0/);
