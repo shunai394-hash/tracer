@@ -402,3 +402,12 @@ test("CJ transient stock or freight lookup failures do not overwrite previously 
   assert.ok(guard >= 0 && save > guard, "unknown live evidence must skip before supplier offer upsert");
   assert.match(importer, /Do not overwrite it with inventory=0, shipping=0, or sourceStatus=error on transient API failures/);
 });
+
+
+test("scheduled CJ imports retry a bounded batch of previously failed canonical supplier product IDs", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /from\("supplier_offers"\)[\s\S]*?\.eq\("source_status", "error"\)/);
+  assert.match(importer, /\.filter\(\(id\) => \/\^\\\\d\{10,22\}\$\/.test\(id\) && !seen\.has\(id\)\)/);
+  assert.match(importer, /\.slice\(0, 2\)/);
+  assert.match(importer, /failed_offer_recovery_read/);
+});
