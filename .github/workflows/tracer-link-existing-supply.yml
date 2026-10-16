@@ -1,5 +1,5 @@
 name: TRACER Link Existing Verified Supply
-# Prioritize bounded linkage of existing verified supply so more real products can pass publication gates.
+# Prioritize bounded linkage of existing verified supply so more real products can pass publication gates. Recovery retrigger 2026-10-16.
 
 on:
   push:
