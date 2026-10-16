@@ -340,7 +340,9 @@ export async function getShopifyGrantedScopes(): Promise<string[]> {
 }
 
 export function verifyShopifyWebhookHmac(rawBody: string, hmacHeader: string | null): boolean {
-  const secret = process.env.SHOPIFY_WEBHOOK_SECRET?.trim();
+  // Shopify signs webhook payloads with the app client secret. Allow a dedicated override,
+  // but fall back to the already-configured client secret when the override is absent.
+  const secret = process.env.SHOPIFY_WEBHOOK_SECRET?.trim() || process.env.SHOPIFY_CLIENT_SECRET?.trim();
   if (!secret || !hmacHeader) return false;
   const digest = crypto.createHmac("sha256", secret).update(rawBody, "utf8").digest("base64");
   const expected = Buffer.from(digest, "utf8");
