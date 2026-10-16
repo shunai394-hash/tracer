@@ -892,7 +892,8 @@ function extractCJVariantRows(data: CJVariantQueryResponse["data"]): CJVariantRo
   // queryByVid can return a single variant object rather than a collection.
   // Normalize it so the exact VID and parent product ID remain available.
   if ("vid" in data || "variantId" in data) return [data as CJVariantRow];
-  return data.content ?? data.variantList ?? data.productList ?? [];
+  const container = data as { content?: CJVariantRow[]; variantList?: CJVariantRow[]; productList?: CJVariantRow[] };
+  return container.content ?? container.variantList ?? container.productList ?? [];
 }
 
 function toCJProductVariant(row: CJVariantRow, pid: string): CJProductVariant | null {
