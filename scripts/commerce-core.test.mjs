@@ -98,3 +98,13 @@ test("both channels use the shared capped storefront quantity and Japanese title
   assert.match(publish, /stock: storefrontStock/);
   assert.match(publish, /quantity: storefrontStock/);
 });
+
+test("clean sandbox recovery permits only a bounded no-order retry and supplies a distinct door-number field", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-cj-sandbox-test/route.ts", import.meta.url), "utf8");
+  assert.match(route, /last\?\.event_key === "cj-sandbox-core:retry-1"/);
+  assert.match(route, /cj-sandbox-core:retry-2/);
+  assert.match(route, /previousErrorText\.startsWith\("CJ_SANDBOX_CREATE_FAILED:1603000"\)/);
+  assert.match(route, /shippingAddress: "1-1"/);
+  assert.match(route, /shippingAddress2: "Chiyoda"/);
+  assert.match(route, /supplierOrderId/);
+});
