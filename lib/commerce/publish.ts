@@ -95,13 +95,24 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
       let publishedUrl: string | null = null;
       if (channel === "base") {
         const itemId = externalProductId;
-        const response = itemId
-          ? await editBaseItem({ itemId, title, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: true })
-          : await createBaseItem({ title, identifier: sku, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: true });
-        const returned = response.item?.item_id ?? response.item_id;
-        externalProductId = String(returned ?? itemId ?? "");
-        if (!externalProductId) throw new Error("base_item_id_missing");
-        if (!itemId) await addBaseItemImage({ itemId: externalProductId, imageNo: 1, imageUrl });
+        if (itemId) {
+          await editBaseItem({ itemId, title, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: false });
+          externalProductId = itemId;
+        } else {
+          const response = await createBaseItem({ title, identifier: sku, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: false });
+          const returned = response.item?.item_id ?? response.item_id;
+          externalProductId = String(returned ?? "");
+          if (!externalProductId) throw new Error("base_item_id_missing");
+          // Persist the external ID before image upload so retries edit this item instead of creating duplicates.
+          const { error: saveCreatedIdError } = await db.from("channel_listings").update({
+            external_product_id: externalProductId, external_sku: sku, status: "pending",
+            last_error: null, updated_at: new Date().toISOString()
+          }).eq("id", listing.id);
+          if (saveCreatedIdError) throw new Error("base_created_item_id_save_failed:" + saveCreatedIdError.message);
+        }
+        await addBaseItemImage({ itemId: externalProductId, imageNo: 1, imageUrl });
+        // Only make the item visible after the external ID and image are saved.
+        await editBaseItem({ itemId: externalProductId, title, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: true });
         publishedUrl = "https://thebase.com/";
       } else {
         const handle = safeSlug(product.source_key + "-" + candidate.id.slice(0, 8));
