@@ -112,6 +112,7 @@ export async function GET(request: Request) {
     if (order.payment_status !== "paid") { result.blocked++; continue; }
     const address = obj(order.shipping_address);
     const input = buildInput(row, line, order, address);
+    if (input.shippingCountryCode.toUpperCase() !== "JP") { result.blocked++; result.errors.push(String(row.id) + ":shipping_country_not_supported:" + input.shippingCountryCode); continue; }
     const required = [input.supplierProductId, input.supplierVariantId, input.shippingCountryCode, input.shippingProvince, input.shippingCity, input.shippingAddress, input.shippingZip, input.shippingPhone, input.shippingCustomerName];
     if (required.some((value) => !String(value ?? "").trim()) || !Number.isSafeInteger(input.quantity) || input.quantity < 1) {
       result.blocked++;
