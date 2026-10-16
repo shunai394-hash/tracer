@@ -33,7 +33,7 @@ assert.match(reverify, /buildCandidateQuery\(\)\.gt\("id", priorCursor\)/);
 assert.match(reverify, /result\.nextCursor = item\.supplierListingId/, "reverify cursor advances only after an actual candidate is processed");
 assert.match(reverify, /sort\(\(a, b\) => String\(a\.id\)\.localeCompare\(String\(b\.id\)\)\)/, "cursor batches must be ordered to avoid skipping unprocessed supplier rows");
 const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
-const activeSourceStart = collector.indexOf("export const MARKETPLACE_SOURCES = [");
+const activeSourceStart = collector.indexOf("export const MARKETPLACE_SOURCES");
 const activeSourceEnd = collector.indexOf("] as const;", activeSourceStart);
 const activeSourceBlock = collector.slice(activeSourceStart, activeSourceEnd);
 assert.match(activeSourceBlock, /yahoo_shopping_ranking/);
