@@ -57,65 +57,32 @@ npx tsc --noEmit
 npm run build
 ```
 
-## Production market-to-publication pipeline
+## Production supplier-to-publication pipeline
 
-TRACER separates **market observation** from **sourcing decisions**:
-
-```text
-Amazon / Rakuten / Yahoo
-        ↓
-market observation
-        ↓
-verified marketplace identifiers
-        ↓
-CJ supplier search
-        ↓
-exact identity / variant confirmation
-        ↓
-exact CJ variant
-        ↓
-variant-level stock verification
-        ↓
-CJ CN → JP freight quote
-        ↓
-contribution-profit gate
-        ↓
-shop_listings.published = true
-        ↓
-/shop
-        ↓
-BASE publication
-        ↓
-BASE order polling
-        ↓
-TRACER fulfillment
-        ↓
-CJ supplier order (explicit live/auto switches)
-        ↓
-NEWFIND product_candidate
-```
-
-The production batch endpoint is:
+TRACER is the source of truth. Supplier-native CJ catalog discovery is separate from optional demand research; marketplace titles or rankings cannot create sellable products or establish supplier identity.
 
 ```text
-GET /api/cron/market-sourcing
+CJ supplier catalog
+  -> exact CJ product + variant ID
+  -> fresh variant stock + price
+  -> live Japan shipping quote
+  -> Japanese product copy + image validation
+  -> landed cost + positive contribution profit
+  -> TRACER listing (single source of truth)
+  -> BASE + Shopify reconciliation
+  -> store order import
+  -> supplier preflight + order creation
+  -> supplier status + tracking sync
 ```
 
-Publication recovery is intentionally separated from sourcing:
+The scheduled supplier discovery endpoint is `/api/cron/supply-first`. Marketplace sourcing is intentionally **not scheduled and not invoked by the production recovery workflows**; legacy market-observation rows are not a source for procurement or publication. Amazon, Rakuten, Yahoo! Shopping, and Orosy are not supplier sources.
 
-- `/api/cron/inventory-refresh` — refreshes exact published CJ variant stock.
-- `/api/cron/base-publish` — creates or reconciles BASE items after inventory verification.
-- `/api/cron/base-orders` — imports and re-syncs BASE orders.
-- `/api/cron/supplier-orders` — polls supplier order status and tracking.
-- `/api/cron/newfind-retry` — retries pending, failed, and sent-but-unacknowledged NEWFIND deliveries.
+### Publication and ordering boundaries
 
-All protected cron/admin automation routes require `CRON_SECRET`. Every request must contain:
-
-```text
-Authorization: Bearer <CRON_SECRET>
-```
-
-Vercel Cron is configured in `vercel.json` and runs the bounded sourcing batch once per day. The batch is intentionally bounded because CJ product search, detail, variant, and freight APIs are rate-limited and consume API points.
+- A product must have an exact, live CJ product/variant relationship, current stock and price, a verified Japan shipping quote, a usable image and Japanese listing copy, and positive contribution profit before publication.
+- TRACER owns listing eligibility. BASE and Shopify are synchronized only from TRACER-approved listings; title-only matching is not sufficient.
+- Supplier orders require fresh order preflight, a verified orderable variant, explicit production flags, and a proven payment flow. A successful catalog lookup or storefront publication is not proof of a successful supplier order.
+- A reset database must be repopulated from CJ supplier-native evidence. Legacy market rows must not be counted as supplier listings or publishable inventory.
 
 ### Publication gates
 
