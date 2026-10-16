@@ -8,6 +8,10 @@ export type OfferInput = {
   inventory: number; shipTo?: string; trackingSupported: boolean; sourceStatus?: "discovered" | "verified" | "unavailable" | "error"; lastCheckedAt?: string | null; rawData?: Record<string, unknown>;
 };
 
+export function isCanonicalCjNativeId(value: unknown): value is string {
+  return typeof value === "string" && /^\d{10,25}$/.test(value.trim());
+}
+
 const required = (value: unknown, field: string) => {
   const result = String(value ?? "").trim();
   if (!result) throw new Error("missing_" + field);
@@ -53,6 +57,9 @@ export async function upsertSupplierOffer(input: {
   const supplierCode = required(input.offer.supplierCode, "supplier_code").toLowerCase();
   const supplierProductId = required(input.offer.supplierProductId, "supplier_product_id");
   const supplierVariantId = required(input.offer.supplierVariantId, "supplier_variant_id");
+  if (supplierCode === "cj" && (!isCanonicalCjNativeId(supplierProductId) || !isCanonicalCjNativeId(supplierVariantId))) {
+    throw new Error("invalid_cj_native_supplier_ids");
+  }
   if (!Number.isFinite(input.offer.unitCost) || input.offer.unitCost < 0) throw new Error("invalid_unit_cost");
   if (!Number.isFinite(input.offer.shippingCost) || input.offer.shippingCost < 0) throw new Error("invalid_shipping_cost");
   if (!Number.isInteger(input.offer.inventory) || input.offer.inventory < 0) throw new Error("invalid_inventory");
@@ -93,9 +100,12 @@ export async function recalculatePrice(input: {
   if (!Number.isFinite(input.exchangeRateToJpy) || input.exchangeRateToJpy <= 0) throw new Error("invalid_exchange_rate");
   const db = createSupabaseAdminClient();
   const { data: offer, error } = await db.from("supplier_offers")
-    .select("id,variant_id,currency,unit_cost,shipping_cost,inventory,ship_to,source_status,tracking_supported,last_checked_at")
+    .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,currency,unit_cost,shipping_cost,inventory,ship_to,source_status,tracking_supported,last_checked_at")
     .eq("id", input.offerId).eq("variant_id", input.variantId).single();
   if (error || !offer) throw new Error("supplier_offer_not_found:" + (error?.message ?? ""));
+  if (offer.supplier_code === "cj" && (!isCanonicalCjNativeId(offer.supplier_product_id) || !isCanonicalCjNativeId(offer.supplier_variant_id))) {
+    throw new Error("invalid_cj_native_supplier_ids");
+  }
   if (offer.source_status !== "verified") throw new Error("supplier_offer_not_verified");
   if (offer.tracking_supported !== true) throw new Error("supplier_tracking_not_verified");
   if (offer.ship_to !== "JP") throw new Error("supplier_does_not_ship_to_japan");
@@ -129,7 +139,13 @@ export async function getPublicationCandidates(channel: CommerceChannel, limit =
     .gt("commerce_prices.expected_profit", 0).order("updated_at", { ascending: false })
     .limit(Math.min(500, Math.max(1, Math.floor(limit))));
   if (error) throw new Error("publication_candidates_failed:" + error.message);
-  return (data ?? []).map((row) => ({ ...row, channel }));
+  return (data ?? []).filter((row) => {
+    const offers = Array.isArray(row.supplier_offers) ? row.supplier_offers : [row.supplier_offers];
+    return offers.some((offer) => offer && (
+      offer.supplier_code !== "cj" ||
+      (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id))
+    ));
+  }).map((row) => ({ ...row, channel }));
 }
 
 /** Persist paid orders and procurement intents idempotently; supplier submission happens in a separate worker. */
@@ -156,6 +172,9 @@ export async function ingestPaidOrder(input: {
       .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,ship_to,tracking_supported,source_status,last_checked_at")
       .eq("id", line.offerId).eq("variant_id", line.variantId).single();
     if (offerError || !offer) throw new Error("order_line_supplier_offer_missing");
+    if (offer.supplier_code === "cj" && (!isCanonicalCjNativeId(offer.supplier_product_id) || !isCanonicalCjNativeId(offer.supplier_variant_id))) {
+      throw new Error("invalid_cj_native_supplier_ids");
+    }
     if (offer.source_status !== "verified" || offer.tracking_supported !== true || offer.ship_to !== "JP") throw new Error("supplier_offer_not_fulfillable");
     const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
     if (!Number.isFinite(checkedAt) || checkedAt > Date.now() + 5 * 60_000 || Date.now() - checkedAt > 24 * 60 * 60_000) throw new Error("supplier_offer_verification_stale");
