@@ -82,6 +82,24 @@ jobs:
 
           echo "=== CJ supply discovery (will fail closed during provider cooldown) ==="
           call_get api/cron/supply-first 300 supply-first.json || true
+          # A scheduled supply-first cron may already own the route. Wait for it to finish
+          # rather than skipping this recovery pass and losing the fresh supplier listing IDs.
+          for retry in 1 2 3 4 5; do
+            if ! python3 - <<'PY'
+          import json,sys
+          try:
+              d=json.load(open("supply-first.json"))
+          except Exception:
+              d={}
+          sys.exit(0 if d.get("reason") == "supply_first_already_running" else 1)
+          PY
+            then
+              break
+            fi
+            echo "Supply-first is already running; wait 30 seconds before retry $retry/5."
+            sleep 30
+            call_get api/cron/supply-first 300 supply-first.json || true
+          done
 
           # Use only a listing ID returned by this exact live discovery pass.
           # The sandbox route re-checks product/variant, price, stock, JP freight,
