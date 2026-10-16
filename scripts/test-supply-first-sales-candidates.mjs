@@ -12,6 +12,9 @@ assert.match(internalSupply, /Number\.isFinite\(args\.shippingUsd\) \|\| args\.s
 const commerceCycle = readFileSync(".github/workflows/tracer-autonomous-commerce-cycle.yml", "utf8");
 const oneShotRecovery = readFileSync(".github/workflows/tracer-one-shot-supply-recovery.yml", "utf8");
 const vercel = JSON.parse(readFileSync("vercel.json", "utf8"));
+const patrol = readFileSync("app/api/cron/patrol-ai/route.ts", "utf8");
+assert.match(patrol, /\["PUBLISHED", "BASE_PUBLISHED", "SHOPIFY_PUBLISHED"\]/, "patrol eligibility metrics must recognize current publication stages");
+assert.match(patrol, /"profitable_supplier_linked_catalog"/, "patrol eligibility metrics must recognize the current publisher reason");
 
 // The supply-first queue must not require a marketplace identity link: a
 // standalone CJ catalog item can be sellable once its own exact variant and
