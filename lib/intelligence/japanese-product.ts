@@ -1,4 +1,9 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/comma facial brush soft hair face cleaning facial cleansing massage brush/i, "竹炭突起付き フェイス洗顔ブラシ"],
+  [/simple retro small handbag women/i, "レトロデザイン レディースミニハンドバッグ"],
+  [/harajuku canvas bags students handbag with pockets preppy buckpack shoulder bag for women shoolbags/i, "ポケット付き キャンバスリュック レディース"],
+  [/luggage bags for women handbag oxford.*fitness gym shoulder bag waterproof sports travel backpack/i, "防水オックスフォード生地 トラベルバッグ レディース"],
+  [/new folding cosmetic bag large capacity portable handbag waterproof travel storage washing bag for women/i, "大容量 防水トラベルコスメポーチ"],
   [/facial spot scanning machine mini home mole spotting apparatus/i, "家庭用 フェイススポットケア機器"],
   [/ceramic ashtray home bedroom dormitory office/i, "セラミック製 卓上灰皿"],
   [/bathroommobile phone box waterproofstand|bathroom.*mobile phone box.*waterproof.*stand/i, "防水ケース付き バスルーム用スマホホルダー"],
