@@ -156,7 +156,7 @@ export async function GET(request: Request) {
           const seen = new Set(candidates.map((item) => item.id));
           const recoveryIds = [...new Set((failedOffers ?? [])
             .map((row) => String(row.supplier_product_id ?? "").trim())
-            .filter((id) => /^\\d{10,22}$/.test(id) && !seen.has(id)))].slice(0, 2);
+            .filter((id) => /^\d{10,22}$/.test(id) && !seen.has(id)))].slice(0, 2);
           for (const id of recoveryIds) {
             const detail = await getCJProductDetail(id);
             if (!detail) {
