@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   recover:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'TRACER_CLEAN_COMMERCE_RECOVERY'))
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
