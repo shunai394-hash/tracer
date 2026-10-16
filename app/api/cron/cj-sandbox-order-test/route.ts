@@ -132,7 +132,7 @@ export async function POST(request: Request) {
       }
       if (normalized === "200" || normalized === "UNPAID") {
         await simulateCJSandboxPayment(orderId);
-        observed = await (await import("@/lib/procurement/cj-adapter")).cjSupplierAdapter.getOrderStatus(orderId);
+        observed = await getCJOrderStatus(orderId);
         normalized = String(observed.status ?? "").trim().toUpperCase();
       }
       const paid = Boolean(observed.paymentDate || (observed.paymentDateTime && observed.paymentDateTime > 0)) ||
