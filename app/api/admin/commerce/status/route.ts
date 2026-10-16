@@ -30,6 +30,21 @@ export async function GET(request: Request) {
   try {
     const db = createSupabaseAdminClient();
     const freshSince = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const [cronRunTotal, cronRunFailures, recentCronRows] = await Promise.all([
+      count(db, "cron_runs", q => q.gte("started_at", freshSince)),
+      count(db, "cron_runs", q => q.gte("started_at", freshSince).eq("status", "failed")),
+      db.from("cron_runs").select("job_name,status,started_at,finished_at,processed,failed")
+        .gte("started_at", freshSince).order("started_at", { ascending: false }).limit(200),
+    ]);
+    if (recentCronRows.error) throw new Error("cron_runs_recent_read_failed:" + recentCronRows.error.message);
+    const latestCronByJob = new Map<string, Record<string, unknown>>();
+    for (const row of recentCronRows.data ?? []) {
+      const jobName = typeof row.job_name === "string" ? row.job_name : "unknown";
+      if (!latestCronByJob.has(jobName)) latestCronByJob.set(jobName, {
+        jobName, status: row.status, startedAt: row.started_at, finishedAt: row.finished_at,
+        processed: row.processed ?? 0, failed: row.failed ?? 0,
+      });
+    }
     const [
       products, activeProducts, variants,
       offersDiscovered, offersVerified, offersUnavailable, offersError, cjFreshOrderable,
@@ -110,6 +125,7 @@ export async function GET(request: Request) {
         lastSubmittedAt: procurementLastSubmitted, lastShippedAt: procurementLastShipped,
       },
       approvalEvents: { requested: approvalRequested, approved: approvalGranted },
+      cronRuns: { last24Hours: cronRunTotal, failedLast24Hours: cronRunFailures, latestByJob: [...latestCronByJob.values()] },
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);
