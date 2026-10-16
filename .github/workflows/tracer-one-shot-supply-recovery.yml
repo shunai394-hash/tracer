@@ -70,9 +70,9 @@ jobs:
           # Re-verify supplier identity first; no catalog row is published from backup/stale evidence.
           call_get "api/cron/cj-identity-reverify?limit=25&force=1" 300 cj-identity-reverify.json || true
 
-          echo "=== Market recovery (after supplier re-verification) ==="
-          call_get api/cron/market-sourcing 300 market-sourcing.json || true
-          # The market-sourcing route collects demand and persists canonical child-variant evidence.
+          echo "=== Supplier-native intelligence refresh (marketplace sourcing intentionally skipped) ==="
+          # Do not repopulate the clean database from Yahoo/Amazon/Rakuten marketplace observations.
+          # Demand-research sources are out of scope for this recovery pass; CJ is the supplier catalog source.
           call_get api/cron/intelligence 300 intelligence.json || true
 
           echo "=== CJ supply discovery (will fail closed during provider cooldown) ==="
