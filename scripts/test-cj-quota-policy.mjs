@@ -40,6 +40,9 @@ assert.equal(isCjIdentityReverifyDue({
   missing_supply_evidence_errors: ["cost:returned_variant_or_product_id_mismatch"],
   legacy_parent_id_mismatch_retry_attempted_at: "2026-10-16T06:00:00.000Z",
 }, now), false);
+const cjClient = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
+assert.ok(cjClient.includes("AbortSignal.timeout(20_000)"), "CJ requests must have a finite timeout");
+assert.ok(cjClient.includes("AbortSignal.any([init.signal, timeoutSignal])"), "CJ requests must preserve caller cancellation");
 const sandboxRoute = await readFile(new URL("../app/api/cron/cj-sandbox-order-test/route.ts", import.meta.url), "utf8");
 assert.ok(sandboxRoute.includes("isCJQuotaCircuitActive(quotaMetadata)"));
 assert.ok(!sandboxRoute.includes("blockedUntil && Date.parse(blockedUntil) > Date.now()"));

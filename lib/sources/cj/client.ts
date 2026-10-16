@@ -245,7 +245,13 @@ export async function fetchCJWithRateLimit(
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     await waitForCJRateLimit();
 
-    const response = await fetch(input, init);
+    // Bound every supplier request so a stalled CJ endpoint cannot hold the
+    // four-minute discovery budget open indefinitely. Preserve caller cancellation.
+    const timeoutSignal = AbortSignal.timeout(20_000);
+    const signal = init?.signal
+      ? AbortSignal.any([init.signal, timeoutSignal])
+      : timeoutSignal;
+    const response = await fetch(input, { ...init, signal });
     if (response.status !== 429) {
       return response;
     }

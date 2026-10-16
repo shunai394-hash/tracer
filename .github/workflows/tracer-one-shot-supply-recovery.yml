@@ -78,9 +78,62 @@ jobs:
           echo "=== CJ supply discovery (will fail closed during provider cooldown) ==="
           call_get api/cron/supply-first 300 supply-first.json || true
 
-          # Do not run an order lifecycle against a stale hard-coded supplierListingId.
-          # The sandbox lifecycle must be invoked only after the current run returns a freshly verified listing ID.
-          echo "=== CJ sandbox order lifecycle skipped: no fresh verified listing ID is supplied by this workflow ==="
+          # Use only a listing ID returned by this exact live discovery pass.
+          # The sandbox route re-checks product/variant, price, stock, JP freight,
+          # and is explicitly no-charge/non-fulfilling; never retry an uncertain order.
+          echo "=== CJ sandbox order lifecycle: fresh discovery candidate only ==="
+          sandbox_listing_id="$(python3 - <<'PY'
+          import json
+          try:
+              data = json.load(open("supply-first.json"))
+          except Exception:
+              data = {}
+          supply = data.get("supplyFirst") or {}
+          for item in supply.get("items") or []:
+              listing_id = str(item.get("supplierListingId") or "").strip()
+              if listing_id and str(item.get("supplierProductId") or "").strip() and str(item.get("supplierVariantId") or "").strip():
+                  print(listing_id)
+                  break
+          PY
+          )"
+          sandbox_failed=0
+          if [[ -n "$sandbox_listing_id" ]]; then
+            T="$(token)"
+            SANDBOX_CODE="$(curl -sS -o cj-sandbox-result.json -w "%{http_code}" --max-time 90 \
+              -X POST "$BASE/api/cron/cj-sandbox-order-test" \
+              -H "Authorization: Bearer $T" \
+              -H "Content-Type: application/json" \
+              --data "$(python3 -c 'import json,sys; print(json.dumps({"supplierListingId":sys.argv[1]}))' "$sandbox_listing_id")" || true)"
+            echo "CJ sandbox lifecycle HTTP $SANDBOX_CODE"
+            python3 - <<'PY'
+          import json
+          try:
+              d = json.load(open("cj-sandbox-result.json"))
+          except Exception:
+              d = {}
+          keys = ("ok", "phase", "supplierListingId", "supplierOrderId", "status", "trackingNumber", "paymentConfirmed", "sandbox", "charged", "realFulfillment", "error", "retryAfter")
+          print(json.dumps({k: d.get(k) for k in keys}, ensure_ascii=False))
+          valid = (
+              d.get("ok") is True
+              and bool(str(d.get("supplierOrderId") or "").strip())
+              and str(d.get("status") or "").upper() in ("500", "SHIPPED", "IN_TRANSIT")
+              and d.get("sandbox") is True
+              and d.get("charged") is False
+              and d.get("realFulfillment") is False
+              and d.get("paymentConfirmed") is True
+              and bool(str(d.get("trackingNumber") or "").strip())
+          )
+          with open("cj-sandbox-valid.txt", "w") as f:
+              f.write("1" if valid else "0")
+          PY
+            if [[ "$(cat cj-sandbox-valid.txt)" != "1" ]]; then
+              sandbox_failed=1
+              echo "CJ sandbox lifecycle was not proven; no automatic retry will occur."
+            fi
+          else
+            sandbox_failed=1
+            echo "No fresh supplierListingId returned by this discovery pass; sandbox lifecycle was not attempted."
+          fi
 
           call_get api/cron/sales-test-publication 300 sales-test.json || true
           call_get api/cron/base-publish 60 base-publish.json || true
@@ -111,6 +164,10 @@ jobs:
           PY
           else
             echo "Shopify live sync skipped: no eligible listings passed the read-only gate."
+          fi
+          if [[ "$sandbox_failed" -ne 0 ]]; then
+            echo "Recovery ran, but the guarded no-charge CJ sandbox lifecycle remains unproven."
+            exit 1
           fi
 
 # TRACER_ONE_SHOT_SUPPLY_RECOVERY: bounded production wiring proof; no sandbox order unless a fresh verified listing ID is returned.

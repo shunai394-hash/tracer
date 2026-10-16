@@ -28,7 +28,16 @@ assert.match(source, /\.range\(verifiedSupplyOffset, verifiedSupplyOffset \+ ver
   "rotating supplier candidate pages must be bounded");
 
 const cronRoute = await readFile(new URL("../app/api/cron/supply-first/route.ts", import.meta.url), "utf8");
+const recoveryWorkflow = await readFile(new URL("../.github/workflows/tracer-one-shot-supply-recovery.yml", import.meta.url), "utf8");
+assert.match(recoveryWorkflow, /supply-first\.json/);
+assert.match(recoveryWorkflow, /supplierListingId/);
+assert.match(recoveryWorkflow, /api\/cron\/cj-sandbox-order-test/);
+assert.doesNotMatch(recoveryWorkflow, /SUPPLIER_LISTING_ID="83eb3a0e-eced-4041-afa5-da57c3084f4c"/,
+  "sandbox recovery must not depend on a supplier listing ID from the pre-reset database");
+assert.match(recoveryWorkflow, /sandbox_failed/);
 const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+assert.match(cronRoute, /const DISCOVERY_BUDGET_MS = 150_000/,
+  "supplier discovery must reserve route time for downstream opportunity intelligence and channel publication");
 assert.match(cronRoute, /const discoveryIncomplete/);
 assert.match(cronRoute, /status: runStatus/);
 assert.match(cronRoute, /status: discoveryIncomplete \? 503 : 200/);
