@@ -49,6 +49,33 @@ export async function GET(request: Request) {
       : {};
     const blockedUntil = typeof quotaMetadata.blockedUntil === "string" ? quotaMetadata.blockedUntil : null;
     const quotaCircuitActive = isCJQuotaCircuitActive(quotaMetadata);
+    // Inspect the cache before creating a run. If the provider is cooling down
+    // and no fully verified offers exist, return a truthful no-op without
+    // generating another misleading zero-product run record.
+    const cachedSupply = quotaCircuitActive
+      ? await db.from("supplier_listings")
+          .select("product_id")
+          .eq("price_confirmed", true)
+          .eq("inventory_confirmed", true)
+          .eq("orderable", true)
+          .eq("tracking_available", true)
+          .eq("api_available", true)
+          .gt("inventory", 0)
+          .limit(DISCOVERY_BATCH_SIZE)
+      : null;
+    if (cachedSupply?.error) throw new Error(`cached orderable supply lookup failed: ${cachedSupply.error.message}`);
+    if (quotaCircuitActive && (cachedSupply?.data?.length ?? 0) === 0) {
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        reason: "supplier_quota_cooldown_no_verified_cached_supply",
+        retryable: true,
+        retryAfter: blockedUntil,
+        discoveryInvoked: false,
+        runRecordCreated: false,
+        cachedEligibleCount: 0,
+      });
+    }
 
     const { data: run, error: startError } = await db.from("cron_runs").insert({
       job_name: "supply-first",
@@ -63,21 +90,6 @@ export async function GET(request: Request) {
     } else if (run?.id) {
       runId = String(run.id);
     }
-
-    // During CJ quota cooldown, do not call the provider. Reconsider only persisted
-    // offers with explicit live price, stock, orderability, tracking, and API evidence.
-    const cachedSupply = quotaCircuitActive
-      ? await db.from("supplier_listings")
-          .select("product_id")
-          .eq("price_confirmed", true)
-          .eq("inventory_confirmed", true)
-          .eq("orderable", true)
-          .eq("tracking_available", true)
-          .eq("api_available", true)
-          .gt("inventory", 0)
-          .limit(DISCOVERY_BATCH_SIZE)
-      : null;
-    if (cachedSupply?.error) throw new Error(`cached orderable supply lookup failed: ${cachedSupply.error.message}`);
 
     const supplyFirst: {
       items: unknown[];
