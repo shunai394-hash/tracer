@@ -24,6 +24,25 @@ function yenPrice(costUsd: number, shippingUsd: number, fx: number): number {
   return Math.ceil(withMargin / 100) * 100;
 }
 
+async function resolveCJVariantProductIdentity(
+  candidateProductId: string,
+  variantId: string,
+  productScopedVariant?: CJProductVariant | null,
+): Promise<{ variant: CJProductVariant; supplierProductId: string } | null> {
+  const liveVariant = await fetchCJVariantByVid(variantId);
+  const liveProductId = liveVariant?.productId?.trim();
+  if (!liveVariant || liveVariant.vid !== variantId || !liveProductId) return null;
+  if (!productScopedVariant && liveProductId !== candidateProductId) return null;
+  if (productScopedVariant && productScopedVariant.vid !== variantId) return null;
+
+  return {
+    variant: productScopedVariant
+      ? { ...productScopedVariant, productId: liveProductId }
+      : liveVariant,
+    supplierProductId: liveProductId,
+  };
+}
+
 function priorityWomenSupplyCategory(title: unknown, metadata: unknown): number {
   const record = metadata && typeof metadata === "object" && !Array.isArray(metadata)
     ? metadata as Record<string, unknown>
@@ -434,16 +453,9 @@ export async function discoverAndCreateCjSupply(
       // Confirm that this exact variant still belongs to the exact CJ product.
       // A stale persisted variant ID must never be treated as live identity proof.
       const seededVariants = await fetchCJProductVariants(candidate.id, { countryCode: "JP" });
-      let seededVariant: CJProductVariant | null = seededVariants.find((item) => item.vid === candidate.variantId) ?? null;
-      // The public catalog ID and the orderable variant's product ID can use
-      // different CJ ID namespaces. If the product-scoped list does not return
-      // the saved variant, resolve by exact variant ID and use its returned pid.
-      if (!seededVariant) {
-        const liveVariantById = await fetchCJVariantByVid(candidate.variantId);
-        if (liveVariantById?.vid === candidate.variantId && liveVariantById.productId === candidate.id) {
-          seededVariant = liveVariantById;
-        }
-      }
+      const productScopedVariant = seededVariants.find((item) => item.vid === candidate.variantId) ?? null;
+      const resolvedSeededVariant = await resolveCJVariantProductIdentity(candidate.id, candidate.variantId, productScopedVariant);
+      const seededVariant = resolvedSeededVariant?.variant ?? null;
       if (!seededVariant) {
         rejected++;
         if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, {
@@ -454,7 +466,7 @@ export async function discoverAndCreateCjSupply(
         items.push({ rejectedStage: "supplier_variant_not_in_live_product", supplierProductId: candidate.id, supplierVariantId: candidate.variantId });
         continue;
       }
-      const supplierProductId = seededVariant.productId?.trim() || candidate.id;
+      const supplierProductId = resolvedSeededVariant!.supplierProductId;
       // Price must come from the live exact-variant response, not the stale
       // supplier-listing/cache price. Stock and Japan freight are rechecked too.
       const liveCost = Number(seededVariant.sellPrice);
@@ -694,17 +706,23 @@ export async function discoverAndCreateCjSupply(
         // In supply-first the CJ variant itself is the sellable item, so a
         // multi-variant product is not ambiguous: pick one concrete variant
         // (cheapest priced) and name it explicitly in the listing title.
-        const variant =
+        const selectedVariant =
           (candidate.variantId
             ? variants.find((x) => x.vid === candidate.variantId)
             : null) ??
           selectUnambiguousVariant(variants) ??
           selectSupplyFirstVariant(variants);
-        if (!variant?.vid) {
+        if (!selectedVariant?.vid) {
           reject("variant_unavailable", { variantCount: variants.length });
           continue;
         }
-        const supplierProductId = variant.productId?.trim() || candidate.id;
+        const resolvedVariant = await resolveCJVariantProductIdentity(candidate.id, selectedVariant.vid, selectedVariant);
+        if (!resolvedVariant) {
+          reject("canonical_supplier_product_id_unresolved", { candidateProductId: candidate.id, supplierVariantId: selectedVariant.vid });
+          continue;
+        }
+        const variant = resolvedVariant.variant;
+        const supplierProductId = resolvedVariant.supplierProductId;
         if (existingProducts.has(supplierProductId)) {
           reject("supplier_product_already_exists", { supplierProductId, supplierVariantId: variant.vid });
           continue;
