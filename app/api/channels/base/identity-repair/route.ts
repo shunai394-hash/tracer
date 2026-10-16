@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchBaseItemsSnapshot, isBaseConfigured, BASE_ITEMS_MAX_PAGES } from "@/lib/channels/base";
+import { classifyBaseIdentifier, decideCommerceSkuLink } from "@/lib/channels/base-item-identity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
     if (!snapshot.complete) {
       return NextResponse.json({ ok: false, error: "BASE_ITEMS_SNAPSHOT_INCOMPLETE" }, { status: 502 });
     }
-    const items = snapshot.items.slice(0, limit).map((item) => ({
+    const items = snapshot.items.map((item) => ({
       baseItemId: String(item.item_id ?? ""),
       identifier: typeof item.identifier === "string" ? item.identifier.trim() : "",
     })).filter((item) => item.baseItemId);
@@ -189,6 +190,87 @@ export async function POST(request: Request) {
       }
     }
 
+    const skuGroups = new Map<string, string[]>();
+    for (const item of items) {
+      const identity = classifyBaseIdentifier(item.identifier);
+      if (identity.kind !== "commerce_sku") continue;
+      const group = skuGroups.get(identity.sku) ?? [];
+      group.push(item.baseItemId);
+      skuGroups.set(identity.sku, group);
+    }
+    const skuList = [...skuGroups.keys()];
+    const skuListings: Array<{ id: string; external_sku: string | null; external_product_id: string | null }> = [];
+    for (let offset = 0; offset < skuList.length; offset += 100) {
+      const { data, error } = await db.from("channel_listings")
+        .select("id,external_sku,external_product_id")
+        .eq("channel", "base")
+        .in("external_sku", skuList.slice(offset, offset + 100));
+      if (error) throw new Error("base_commerce_sku_lookup_failed");
+      skuListings.push(...(data ?? []));
+    }
+    const listingsBySku = new Map<string, Array<{ id: string; externalProductId: string | null }>>();
+    for (const row of skuListings) {
+      const sku = String(row.external_sku ?? "").toUpperCase();
+      const group = listingsBySku.get(sku) ?? [];
+      group.push({ id: String(row.id), externalProductId: row.external_product_id == null ? null : String(row.external_product_id) });
+      listingsBySku.set(sku, group);
+    }
+    const candidateBaseIds = [...new Set([...skuGroups.values()].flat())];
+    const existingBaseLinks: Array<{ id: string; external_product_id: string | null }> = [];
+    for (let offset = 0; offset < candidateBaseIds.length; offset += 100) {
+      const { data, error } = await db.from("channel_listings")
+        .select("id,external_product_id")
+        .eq("channel", "base")
+        .in("external_product_id", candidateBaseIds.slice(offset, offset + 100));
+      if (error) throw new Error("base_commerce_existing_link_lookup_failed");
+      existingBaseLinks.push(...(data ?? []));
+    }
+    const listingIdsByBaseItem = new Map<string, string[]>();
+    for (const row of existingBaseLinks) {
+      const key = String(row.external_product_id ?? "");
+      const group = listingIdsByBaseItem.get(key) ?? [];
+      group.push(String(row.id));
+      listingIdsByBaseItem.set(key, group);
+    }
+    let commerceRepairable = 0;
+    let commerceRepaired = 0;
+    for (const [sku, baseItemIds] of skuGroups) {
+      for (const baseItemId of baseItemIds) {
+        const decision = decideCommerceSkuLink({
+          baseItemId,
+          listingsForSku: listingsBySku.get(sku) ?? [],
+          otherBaseItemIdsWithSameSku: baseItemIds.filter((id) => id !== baseItemId),
+          listingIdsAlreadyUsingBaseItem: listingIdsByBaseItem.get(baseItemId) ?? [],
+        });
+        if (decision.outcome !== "repairable" || !decision.listingId) {
+          if (decision.outcome === "ambiguous_sku" || decision.outcome === "ambiguous_base_item" || decision.outcome === "base_item_already_mapped") {
+            ambiguous += 1;
+          }
+          continue;
+        }
+        if (!apply) {
+          commerceRepairable += 1;
+          repairable += 1;
+          results.push({ baseItemId, listingId: decision.listingId, source: ["exact_commerce_sku"], outcome: "repairable_dry_run" });
+          continue;
+        }
+        const { data: updated, error } = await db.from("channel_listings")
+          .update({ external_product_id: baseItemId, updated_at: new Date().toISOString() })
+          .eq("id", decision.listingId)
+          .eq("channel", "base")
+          .is("external_product_id", null)
+          .select("id")
+          .maybeSingle();
+        if (error || !updated) {
+          results.push({ baseItemId, listingId: decision.listingId, source: ["exact_commerce_sku"], outcome: error ? "update_failed" : "changed_concurrently" });
+        } else {
+          commerceRepaired += 1;
+          repaired += 1;
+          results.push({ baseItemId, listingId: decision.listingId, source: ["exact_commerce_sku"], outcome: "commerce_external_id_repaired" });
+        }
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       apply,
@@ -204,6 +286,8 @@ export async function POST(request: Request) {
       uniqueEvidencePairs: candidates.length,
       repairable,
       repaired,
+      commerceRepairable,
+      commerceRepaired,
       ambiguous,
       listingNotFound,
       listingAlreadyLinked,

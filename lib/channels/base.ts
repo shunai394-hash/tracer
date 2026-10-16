@@ -303,6 +303,7 @@ export type BaseReadOnlyProbeResult = {
     pages: number;
     complete: boolean;
     errorStage: string | null;
+    duplicateItemCount: number;
     entries: Array<{ itemId: string | null; identifier: string | null; visible: boolean | null }>;
   };
 };
@@ -354,6 +355,7 @@ export async function probeBaseReadOnly(options?: {
       pages: 0,
       complete: false,
       errorStage: null,
+      duplicateItemCount: 0,
       entries: [],
     },
   };
@@ -361,6 +363,7 @@ export async function probeBaseReadOnly(options?: {
   const pageLimit = Math.min(100, Math.max(1, Math.floor(options?.itemPageLimit ?? 100)));
   const maxPages = Math.min(BASE_ITEMS_MAX_PAGES, Math.max(1, Math.floor(options?.itemMaxPages ?? BASE_ITEMS_MAX_PAGES)));
   let offset = 0;
+  const seenItemIds = new Set<string>();
   for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
     try {
       const payload = await requestJson(
@@ -371,7 +374,6 @@ export async function probeBaseReadOnly(options?: {
       const rows = payload.items as Array<{ visible?: boolean | number | string }>;
       result.items.apiStatus = 200;
       result.items.pages += 1;
-      result.items.countReturned += rows.length;
       for (const item of rows) {
         const raw = item as { item_id?: string | number; identifier?: unknown };
         const rawId = raw.item_id;
@@ -382,6 +384,12 @@ export async function probeBaseReadOnly(options?: {
           : item.visible === false || item.visible === 0 || item.visible === "0"
             ? false
             : null;
+        if (itemId && seenItemIds.has(itemId)) {
+          result.items.duplicateItemCount += 1;
+          continue;
+        }
+        if (itemId) seenItemIds.add(itemId);
+        result.items.countReturned += 1;
         result.items.entries.push({ itemId, identifier, visible });
         if (visible === true) {
           result.items.visibleCount += 1;
@@ -467,7 +475,14 @@ export async function fetchBaseItemsSnapshot(options?: {
     if (rows.length !== payload.items.length) {
       throw new Error("BASE_ITEMS_SNAPSHOT_ROW_INVALID");
     }
-    items.push(...rows);
+    const seenItemIds = new Set(items.map((item) => String(item.item_id ?? "")).filter(Boolean));
+    for (const row of rows) {
+      const id = String(row.item_id ?? "");
+      if (!id) throw new Error("BASE_ITEMS_SNAPSHOT_ID_MISSING_OR_DUPLICATE");
+      if (seenItemIds.has(id)) continue;
+      seenItemIds.add(id);
+      items.push(row);
+    }
     pages += 1;
     if (rows.length < pageLimit) {
       complete = true;
@@ -476,7 +491,7 @@ export async function fetchBaseItemsSnapshot(options?: {
     offset += rows.length;
   }
 
-  if (!complete) throw new Error("BASE_ITEMS_SNAPSHOT_INCOMPLETE");
+  if (!complete) throw new Error(`BASE_ITEMS_SNAPSHOT_INCOMPLETE:pages=${pages}:maxPages=${maxPages}`);
   const ids = items.map((item) => String(item.item_id ?? "")).filter(Boolean);
   if (ids.length !== items.length || new Set(ids).size !== ids.length) {
     throw new Error("BASE_ITEMS_SNAPSHOT_ID_MISSING_OR_DUPLICATE");
