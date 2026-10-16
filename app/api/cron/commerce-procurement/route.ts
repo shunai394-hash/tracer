@@ -24,7 +24,7 @@ function customerName(order: Record<string, unknown>, address: Record<string, un
   return [str(address, "first_name", "firstName"), str(address, "last_name", "lastName")].filter(Boolean).join(" ");
 }
 function buildInput(row: Record<string, unknown>, line: Record<string, unknown>, order: Record<string, unknown>, address: Record<string, unknown>): SupplierOrderInput {
-  const countryCode = str(address, "country_code", "countryCode", "country_code_v2").toUpperCase() || "JP";
+  const countryCode = str(address, "country_code", "countryCode", "country_code_v2").toUpperCase();
   const name = customerName(order, address);
   return {
     supplierName: "cj",
@@ -97,7 +97,7 @@ export async function GET(request: Request) {
   }
 
   const { data: pending, error: pendingError } = await db.from("procurement_orders")
-    .select("id,supplier_code,supplier_product_id,supplier_variant_id,quantity,status,commerce_order_lines!inner(id,commerce_orders!inner(id,external_order_id,payment_status,customer_name,shipping_address,raw_payload))")
+    .select("id,supplier_code,supplier_product_id,supplier_variant_id,quantity,status,commerce_order_lines!inner(id,variant_id,supplier_offer_id,quantity,commerce_orders!inner(id,external_order_id,payment_status,customer_name,shipping_address,raw_payload))")
     .eq("supplier_code", "cj").eq("status", "pending").limit(10);
   if (pendingError) return NextResponse.json({ ok: false, ...result, error: "procurement_pending_read_failed:" + pendingError.message }, { status: 500 });
 
@@ -117,16 +117,51 @@ export async function GET(request: Request) {
       result.errors.push(String(row.id) + ":shipping_address_or_line_incomplete");
       continue;
     }
+
+    // Recheck the exact offer and its stored profitable price immediately before
+    // any external order call. A paid webhook may have been delayed or retried.
+    const offerId = str(line, "supplier_offer_id");
+    const variantId = str(line, "variant_id");
+    if (!offerId || !variantId || str(line, "id") === "") {
+      result.blocked++;
+      result.errors.push(String(row.id) + ":canonical_order_line_mapping_missing");
+      continue;
+    }
+    const { data: offer, error: offerError } = await db.from("supplier_offers")
+      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,ship_to,tracking_supported,source_status,last_checked_at")
+      .eq("id", offerId).eq("variant_id", variantId).maybeSingle();
+    const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
+    if (offerError || !offer ||
+      offer.supplier_code !== "cj" ||
+      offer.supplier_product_id !== row.supplier_product_id ||
+      offer.supplier_variant_id !== row.supplier_variant_id ||
+      offer.source_status !== "verified" || offer.tracking_supported !== true ||
+      offer.ship_to !== "JP" || Number(offer.inventory) < input.quantity ||
+      !Number.isFinite(checkedAt) || checkedAt > Date.now() + 5 * 60_000 || Date.now() - checkedAt > 24 * 60 * 60_000) {
+      result.blocked++;
+      result.errors.push(String(row.id) + ":supplier_offer_not_fresh_and_fulfillable");
+      continue;
+    }
+    const { data: price, error: priceError } = await db.from("commerce_prices")
+      .select("supplier_offer_id,expected_profit").eq("variant_id", variantId).maybeSingle();
+    if (priceError || !price || price.supplier_offer_id !== offerId || Number(price.expected_profit) <= 0) {
+      result.blocked++;
+      result.errors.push(String(row.id) + ":exact_supplier_offer_price_missing_or_unprofitable");
+      continue;
+    }
+
     const { data: claim, error: claimError } = await db.from("procurement_orders")
       .update({ status: "processing", updated_at: new Date().toISOString(), last_error: null })
       .eq("id", row.id).eq("status", "pending").select("id").maybeSingle();
     if (claimError) { result.failed++; result.errors.push(String(row.id) + ":claim_failed:" + claimError.message); continue; }
     if (!claim) continue;
+    let createdSupplierOrderId: string | null = null;
     try {
       const validation = await cjSupplierAdapter.validateOrderInput?.(input);
       if (!validation?.valid) throw new Error(validation?.responseCode + ":" + (validation?.responseMessage ?? "supplier_preflight_missing"));
       const created = await cjSupplierAdapter.createOrder(input);
       if (!created.succeeded || !created.supplierOrderId) throw new Error(created.responseCode + ":" + (created.responseMessage ?? "supplier_order_not_confirmed"));
+      createdSupplierOrderId = created.supplierOrderId;
       const { error: saveError } = await db.from("procurement_orders").update({
         status: "submitted", external_order_id: created.supplierOrderId, submitted_at: new Date().toISOString(),
         updated_at: new Date().toISOString(), last_error: null
@@ -136,9 +171,23 @@ export async function GET(request: Request) {
       result.submitted++;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await db.from("procurement_orders").update({ status: "failed", last_error: message.slice(0, 1500), updated_at: new Date().toISOString() }).eq("id", row.id).eq("status", "processing");
-      result.failed++;
-      result.errors.push(String(row.id) + ":" + message.slice(0, 160));
+      if (createdSupplierOrderId) {
+        // Once CJ has returned an order ID, never downgrade to retryable/failed:
+        // repair the local state or leave "processing" for manual reconciliation.
+        const { error: repairError } = await db.from("procurement_orders").update({
+          status: "submitted", external_order_id: createdSupplierOrderId,
+          submitted_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+          last_error: "post_create_state_repair:" + message.slice(0, 1000)
+        }).eq("id", row.id).eq("status", "processing");
+        result.failed++;
+        result.errors.push(String(row.id) + (repairError
+          ? ":supplier_order_created_but_state_repair_failed_leave_processing"
+          : ":supplier_order_created_state_repaired_check_order_status"));
+      } else {
+        await db.from("procurement_orders").update({ status: "failed", last_error: message.slice(0, 1500), updated_at: new Date().toISOString() }).eq("id", row.id).eq("status", "processing");
+        result.failed++;
+        result.errors.push(String(row.id) + ":" + message.slice(0, 160));
+      }
     }
   }
   return NextResponse.json({ ok: result.failed === 0, ...result }, { status: result.failed ? 207 : 200 });
