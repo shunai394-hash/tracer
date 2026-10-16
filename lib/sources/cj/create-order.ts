@@ -303,6 +303,94 @@ async function postCJSandboxAction(
   return payload;
 }
 
+export type CJSandboxOrderListItem = {
+  orderId: string;
+  orderNumber: string;
+  status: string;
+  isSandbox: boolean;
+  createdAt: string;
+  variantIds: string[];
+};
+
+export async function listCJSandboxOrders(status: "CREATED" | "UNPAID" = "CREATED"): Promise<CJSandboxOrderListItem[]> {
+  const token = await getAccessTokenForOrder();
+  const params = new URLSearchParams({ pageNum: "1", pageSize: "50", status });
+  const response = await fetchCJWithRateLimit(
+    `https://developers.cjdropshipping.com/api2.0/v1/shopping/order/list?${params.toString()}`,
+    { method: "GET", headers: { "CJ-Access-Token": token }, cache: "no-store" },
+  );
+  const payload = await response.json().catch(() => ({})) as {
+    code?: number;
+    result?: boolean;
+    message?: string;
+    data?: unknown;
+  };
+  if (!response.ok || payload.result === false || (typeof payload.code === "number" && payload.code !== 200)) {
+    throw new CJRequestError(payload.message || `CJ order list failed with HTTP ${response.status}`, "CJ_ORDER_LIST_FAILED");
+  }
+
+  const data = payload.data;
+  const rows: unknown[] = Array.isArray(data)
+    ? data
+    : data && typeof data === "object"
+      ? (() => {
+          const record = data as Record<string, unknown>;
+          for (const key of ["content", "list", "orders", "records"]) {
+            if (Array.isArray(record[key])) return record[key] as unknown[];
+          }
+          return [];
+        })()
+      : [];
+
+  return rows.flatMap((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+    const row = value as Record<string, unknown>;
+    const productList = Array.isArray(row.productList)
+      ? row.productList.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object" && !Array.isArray(item)))
+      : [];
+    const orderId = String(row.orderId ?? row.cjOrderId ?? row.cjOrderCode ?? row.id ?? "").trim();
+    const orderNumber = String(
+      row.orderNumber ??
+      productList.find((item) => typeof item.orderNumber === "string" && item.orderNumber.trim())?.orderNumber ??
+      "",
+    ).trim();
+    if (!orderId) return [];
+    return [{
+      orderId,
+      orderNumber,
+      status: String(row.orderStatus ?? row.status ?? "").trim().toUpperCase(),
+      isSandbox: Number(row.isSandbox ?? 0) === 1,
+      createdAt: String(row.createDate ?? row.createdAt ?? row.createTime ?? "").trim(),
+      variantIds: productList.map((item) => String(item.vid ?? item.variantId ?? "").trim()).filter(Boolean),
+    }];
+  });
+}
+
+export async function confirmCJSandboxOrder(orderId: string): Promise<void> {
+  const id = orderId.trim();
+  if (!id) throw new CJRequestError("CJ sandbox order ID is empty", "CJ_SANDBOX_ORDER_ID_MISSING");
+  const token = await getAccessTokenForOrder();
+  const response = await fetchCJWithRateLimit(
+    "https://developers.cjdropshipping.com/api2.0/v1/shopping/order/confirmOrder",
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "CJ-Access-Token": token },
+      body: JSON.stringify({ orderId: id }),
+      cache: "no-store",
+    },
+  );
+  const payload = await response.json().catch(() => ({})) as {
+    code?: number;
+    result?: boolean;
+    data?: unknown;
+    message?: string;
+  };
+  const success = payload.code === 200 || payload.result === true || String(payload.data ?? "") === id;
+  if (!response.ok || !success || payload.result === false || (typeof payload.code === "number" && payload.code !== 200)) {
+    throw new CJRequestError(payload.message || `CJ sandbox order confirmation failed with HTTP ${response.status}`, "CJ_SANDBOX_CONFIRM_FAILED");
+  }
+}
+
 export async function simulateCJSandboxPayment(orderId: string): Promise<void> {
   const id = orderId.trim();
   if (!id) throw new CJRequestError("CJ sandbox order ID is empty", "CJ_SANDBOX_ORDER_ID_MISSING");
