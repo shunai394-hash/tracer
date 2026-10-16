@@ -31,6 +31,13 @@ test("catalog publication is independent of live supplier-ordering capability bu
   assert.match(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
   assert.match(publish, /supplier_offer_missing_or_out_of_stock/);
 });
+test("stale published listings are hidden when supplier stock or verification disappears", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /unpublishUnfulfillableListings\(channel, db\)/);
+  assert.match(publish, /stock: 0, visible: false/);
+  assert.match(publish, /status: "DRAFT"/);
+  assert.match(publish, /supplier_offer_no_longer_fulfillable:/);
+});
 test("publication and price calculation require fresh verified supplier evidence", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
