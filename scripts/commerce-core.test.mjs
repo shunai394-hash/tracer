@@ -372,5 +372,5 @@ test("CJ imported products use specific customer-facing Japanese descriptions", 
   assert.match(japaneseCommerceDescription("メイク用ファンブラシ"), /ファン型のメイクブラシ/);
   assert.doesNotMatch(japaneseCommerceDescription("レディースハンドバッグ"), /仕入先の最新情報に基づき確認してください/);
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  assert.match(importer, /descriptionJa: japaneseCommerceDescription\\(title\\)/);
+  assert.match(importer, /descriptionJa: japaneseCommerceDescription\(title\)/);
 });
