@@ -1,7 +1,7 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { addBaseItemImage, createBaseItem, editBaseItem, isBaseConfigured } from "@/lib/channels/base";
-import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, toShopifyGid, updateShopifyProduct } from "@/lib/shopify/admin";
+import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, updateShopifyProduct } from "@/lib/shopify/admin";
 
 type Channel = "base" | "shopify";
 type Candidate = {
@@ -91,9 +91,24 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
         const handle = safeSlug(product.source_key + "-" + candidate.id.slice(0, 8));
         const productId = toShopifyGid("Product", externalProductId);
         const variantId = toShopifyGid("ProductVariant", externalVariantId);
+        let recoveredProduct: { id: string; handle: string; variants: { nodes: Array<{ id: string; sku?: string | null }> } } | null = null;
+        if (!productId || !variantId) {
+          // Recover an external create whose response was lost before the DB ID was saved.
+          const found = await shopifyGraphQL<{ products: { nodes: Array<{ id: string; handle: string; vendor?: string | null; tags?: string[]; variants: { nodes: Array<{ id: string; sku?: string | null }> } }> } }>(
+            `query CommerceRecoverByHandle($query: String!) { products(first: 5, query: $query) { nodes { id handle vendor tags variants(first: 10) { nodes { id sku } } } } }`,
+            { query: "handle:" + handle },
+          );
+          recoveredProduct = (found.products?.nodes ?? []).find((item) =>
+            (item.vendor === "TRACER" || (item.tags ?? []).includes("TRACER")) &&
+            (item.variants?.nodes ?? []).some((variant) => variant.sku === sku)
+          ) ?? null;
+        }
+        const recoveredVariantId = recoveredProduct?.variants.nodes.find((variant) => variant.sku === sku)?.id ?? null;
         const productResult = productId && variantId
           ? await updateShopifyProduct({ productId, title, descriptionHtml: description, handle, price: Number(price.selling_price), variantId, sku, imageUrl: null })
-          : await createShopifyProduct({ title, descriptionHtml: description, handle, price: Number(price.selling_price), sku, imageUrl });
+          : recoveredProduct && recoveredVariantId
+            ? await updateShopifyProduct({ productId: recoveredProduct.id, title, descriptionHtml: description, handle, price: Number(price.selling_price), variantId: recoveredVariantId, sku, imageUrl: null })
+            : await createShopifyProduct({ title, descriptionHtml: description, handle, price: Number(price.selling_price), sku, imageUrl });
         externalProductId = productResult.id;
         const variant = productResult.variants?.nodes?.[0];
         if (!variant?.id) throw new Error("shopify_variant_id_missing");
