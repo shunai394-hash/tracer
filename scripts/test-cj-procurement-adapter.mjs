@@ -69,6 +69,7 @@ assert.doesNotMatch(sandboxRoute, /verification_status !== "verified"|orderable 
 assert.match(sandboxRoute, /runCJSandboxOrderLifecycle/);
 assert.match(adapter, /fetchCJProductVariants\(input\.supplierProductId\)/, "sandbox lifecycle must resolve price from the exact live child under its parent");
 assert.match(adapter, /fetchCJVariantStock\(input\.supplierVariantId\)/, "sandbox lifecycle must use the dedicated live stock endpoint when queryByVid omits inventory");
+assert.match(adapter, /const sourceCountries = warehouses\.length \? warehouses\.map\(\(warehouse\) => warehouse\.countryCode\) : \["CN"\]/, "sandbox freight lookup must fall back to a live CN-origin quote when warehouse rows are omitted");
 assert.match(adapter, /const verifiedUnitCostUsd = positiveNumber\(variant\.sellPrice\) \?\? positiveNumber\(scopedVariant\.sellPrice\)/);
 assert.match(sandboxRoute, /status: "succeeded"/);
 assert.match(sandboxRoute, /status: "failed"/);
