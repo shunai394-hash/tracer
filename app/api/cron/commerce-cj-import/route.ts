@@ -11,6 +11,7 @@ export const maxDuration = 300;
 function japaneseCommerceTitle(title: string, productType?: string | null): string | null {
   const source = (String(title ?? "") + " " + String(productType ?? "")).toLowerCase();
   const rules: Array<[RegExp, string]> = [
+    [/women role play hair accessories|role play hair accessories/, "レディース コスプレ用ヘアアクセサリー"],
     [/fan brush|makeup brush|make-up brush|cosmetic brush|tartaric acid brush/, "メイクブラシ"],
     [/hair claw|hair clip/, "ヘアクリップ"],
     [/headband|hair band/, "ヘアバンド"],
