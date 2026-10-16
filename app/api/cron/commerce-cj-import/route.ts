@@ -63,6 +63,8 @@ export async function GET(request: Request) {
                 currency: "USD", unitCost: cost, shippingCost: shipping ?? 0,
                 inventory: stock === null ? 0 : Math.max(0, Math.floor(stock)), shipTo: "JP",
                 trackingSupported: true,
+                sourceStatus: stock !== null && shipping !== null ? "verified" : "error",
+                lastCheckedAt: new Date().toISOString(),
                 rawData: { query, page, productId: candidate.id, variantId: variant.vid, stockKnown: stock !== null, shippingKnown: shipping !== null, fxRate: fx.rate },
               },
             });
