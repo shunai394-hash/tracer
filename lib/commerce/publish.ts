@@ -33,27 +33,73 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
     .eq("channel", channel).in("status", ["published", "error"])
     .not("external_product_id", "is", null).limit(500);
   if (error) throw new Error("stale_listing_read_failed:" + error.message);
-  for (const listing of listings ?? []) {
-    if (listing.status === "error" && String(listing.last_error ?? "").startsWith("supplier_offer_no_longer_fulfillable:")) continue;
-    result.checked++;
+
+  const checkableListings = (listings ?? []).filter((listing) =>
+    !(listing.status === "error" && String(listing.last_error ?? "").startsWith("supplier_offer_no_longer_fulfillable:")),
+  );
+  result.checked = checkableListings.length;
+  const variantIds = [...new Set(checkableListings.map((listing) => String(listing.variant_id)).filter(Boolean))];
+  if (variantIds.length === 0) return result;
+
+  // Batch all reads before the external unpublish loop. The old per-listing pattern
+  // made 1,000+ sequential Supabase requests for a 500-listing audit and timed out
+  // before it could publish new products.
+  const [pricesRead, offersRead, variantsRead] = await Promise.all([
+    db.from("commerce_prices")
+      .select("variant_id,supplier_offer_id,currency,selling_price,expected_profit,calculated_at")
+      .in("variant_id", variantIds)
+      .order("calculated_at", { ascending: false }),
+    db.from("supplier_offers")
+      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,source_status,tracking_supported,ship_to,last_checked_at")
+      .in("variant_id", variantIds)
+      .order("last_checked_at", { ascending: false }),
+    db.from("commerce_variants")
+      .select("id,title_ja,commerce_products!inner(title_ja,description_ja)")
+      .in("id", variantIds),
+  ]);
+  if (pricesRead.error) throw new Error("stale_price_batch_read_failed:" + pricesRead.error.message);
+  if (offersRead.error) throw new Error("stale_supplier_offer_batch_read_failed:" + offersRead.error.message);
+  if (variantsRead.error) throw new Error("stale_variant_batch_read_failed:" + variantsRead.error.message);
+
+  type StalePrice = { variant_id: string; supplier_offer_id: string | null; currency: string; selling_price: number; expected_profit: number; calculated_at: string | null };
+  type StaleOffer = { id: string; variant_id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; inventory: number; source_status: string; tracking_supported: boolean; ship_to: string; last_checked_at: string | null };
+  type StaleVariant = { id: string; title_ja: string | null; commerce_products: { title_ja?: string | null; description_ja?: string | null } | Array<{ title_ja?: string | null; description_ja?: string | null }> | null };
+  const pricesByVariant = new Map<string, StalePrice[]>();
+  for (const price of (pricesRead.data ?? []) as StalePrice[]) {
+    const rows = pricesByVariant.get(price.variant_id) ?? [];
+    rows.push(price);
+    pricesByVariant.set(price.variant_id, rows);
+  }
+  const offersByVariant = new Map<string, StaleOffer[]>();
+  for (const offer of (offersRead.data ?? []) as StaleOffer[]) {
+    const rows = offersByVariant.get(offer.variant_id) ?? [];
+    rows.push(offer);
+    offersByVariant.set(offer.variant_id, rows);
+  }
+  const variantsById = new Map(((variantsRead.data ?? []) as StaleVariant[]).map((variant) => [variant.id, variant]));
+
+  for (const listing of checkableListings) {
     try {
-      const { data: price, error: priceError } = await db.from("commerce_prices")
-        .select("supplier_offer_id,selling_price,expected_profit")
-        .eq("variant_id", listing.variant_id).maybeSingle();
-      if (priceError) throw new Error("price_read_failed:" + priceError.message);
-      const { data: offer, error: offerError } = price?.supplier_offer_id
-        ? await db.from("supplier_offers").select("supplier_code,supplier_product_id,supplier_variant_id,inventory,source_status,tracking_supported,ship_to,last_checked_at")
-            .eq("id", price.supplier_offer_id).maybeSingle()
-        : { data: null, error: null };
-      if (offerError) throw new Error("supplier_offer_read_failed:" + offerError.message);
+      const prices = pricesByVariant.get(String(listing.variant_id)) ?? [];
+      const offers = offersByVariant.get(String(listing.variant_id)) ?? [];
+      const offerIsValid = (offer: StaleOffer) => {
+        const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
+        const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 && Date.now() - checkedAt <= 24 * 60 * 60_000;
+        const nativeIdsValid = offer.supplier_code !== "cj" ||
+          (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
+        const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id);
+        return Boolean(price && price.currency === "JPY" && Number(price.selling_price) > 0 && Number(price.expected_profit) > 0 &&
+          offer.source_status === "verified" && nativeIdsValid && offer.tracking_supported === true &&
+          offer.ship_to === "JP" && fresh && Number(offer.inventory) > 0);
+      };
+      if (offers.some(offerIsValid)) continue;
+
+      const offer = offers[0] ?? null;
+      const price = (offer ? prices.find((candidate) => candidate.supplier_offer_id === offer.id) : null) ?? prices[0] ?? null;
       const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
       const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 && Date.now() - checkedAt <= 24 * 60 * 60_000;
       const nativeIdsValid = offer?.supplier_code !== "cj" ||
-        (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
-      const valid = Boolean(offer && price && offer.source_status === "verified" &&
-        nativeIdsValid && offer.tracking_supported === true && offer.ship_to === "JP" && fresh &&
-        Number(offer.inventory) > 0 && Number(price.selling_price) > 0 && Number(price.expected_profit) > 0);
-      if (valid) continue;
+        (isCanonicalCjNativeId(offer?.supplier_product_id) && isCanonicalCjNativeId(offer?.supplier_variant_id));
       const reason = !offer ? "supplier_offer_missing" :
         !nativeIdsValid ? "supplier_native_ids_invalid" :
         offer.source_status !== "verified" ? "supplier_offer_not_verified" :
@@ -61,12 +107,10 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
         offer.ship_to !== "JP" ? "supplier_not_shipping_to_japan" :
         !fresh ? "supplier_verification_stale" :
         Number(offer.inventory) <= 0 ? "supplier_out_of_stock" :
-        !price || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0 ? "price_not_profitable" : "supplier_offer_invalid";
-      const { data: variant, error: variantError } = await db.from("commerce_variants")
-        .select("title_ja,commerce_products!inner(title_ja,description_ja)")
-        .eq("id", listing.variant_id).maybeSingle();
-      if (variantError) throw new Error("product_title_read_failed:" + variantError.message);
-      const product = variant?.commerce_products as unknown as { title_ja?: string; description_ja?: string } | null;
+        !price || price.currency !== "JPY" || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0 ? "price_not_profitable" : "supplier_offer_invalid";
+
+      const variant = variantsById.get(String(listing.variant_id));
+      const product = asRelationRows(variant?.commerce_products)[0] ?? null;
       const title = String(variant?.title_ja || product?.title_ja || "TRACER商品");
       const detail = String(product?.description_ja || title);
       if (channel === "base") {
@@ -94,7 +138,6 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
               reference: "stale-supplier-offer:" + String(listing.variant_id),
             });
           } catch (inventoryError) {
-            // Drafting the product is the primary safety action; retain a visible diagnostic if inventory reset also fails.
             result.errors.push(String(listing.id) + ":inventory_zero_failed:" + (inventoryError instanceof Error ? inventoryError.message : String(inventoryError)).slice(0, 120));
           }
         }
