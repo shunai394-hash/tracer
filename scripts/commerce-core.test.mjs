@@ -70,7 +70,7 @@ test("stale listing eligibility uses batched supplier, price, and variant reads"
   assert.match(audit, /from\("commerce_variants"\)[\s\S]*?\.in\("id", variantIds\)/);
   assert.doesNotMatch(audit, /for \(const listing of checkableListings\)[\s\S]*?db\.from\("commerce_prices"\)/);
   assert.match(audit, /\.eq\("status", "published"\)/, "already-hidden error rows must not consume the bounded scan");
-  assert.match(audit, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)\.limit\(20\)/);
+  assert.match(audit, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)\.limit\(5\)/);
   assert.match(audit, /stale_listing_check_timestamp_failed/);
   assert.match(publish, /markCheckedError/);
 });
