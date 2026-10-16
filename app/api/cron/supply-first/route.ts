@@ -61,7 +61,7 @@ export async function GET(request: Request) {
       metadata: { actor: "vercel-cron", batchSize: DISCOVERY_BATCH_SIZE, deadlineMs: DISCOVERY_BUDGET_MS },
     }).select("id").maybeSingle();
     if (startError) {
-      console.error("[TRACER SUPPLY-FIRST RUN LOG START FAILED]", { stage: "cron_run_insert", code: startError.code ?? null });
+      console.info("[TRACER SUPPLY-FIRST RUN SKIPPED]", { reason: "active_run_lock_conflict", stage: "cron_run_insert", code: startError.code ?? null });
       if (startError.code === "23505") {
         return NextResponse.json({
           ok: true,
