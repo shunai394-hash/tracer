@@ -141,6 +141,10 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   const intelligenceByProduct = new Map((intelligenceRows ?? []).map((row) => [String(row.product_id), row as Record<string, unknown>]));
   const baseByProduct = new Map((intelligenceBase ?? []).map((row) => [String(row.product_id), row as Record<string, unknown>]));
   const listingByProduct = new Map<string, Record<string, unknown>>();
+  // Keep the best observed listing for diagnostics even when it is not yet
+  // orderable. Otherwise a real supplier row with incomplete fulfillment proof
+  // is mislabeled as "supplier_listing_missing", hiding the actionable blocker.
+  const observedListingByProduct = new Map<string, Record<string, unknown>>();
   const identifierGradeMethods = new Set(["asin", "jan", "gtin", "ean", "upc", "mpn", "brand_mpn", "tracer_catalog"]);
   const listingCandidatesByProduct = new Map<string, Record<string, unknown>[]>();
   for (const row of listings ?? []) {
@@ -152,6 +156,9 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     listingCandidatesByProduct.set(key, bucket);
   }
   for (const [productId, candidates] of listingCandidatesByProduct) {
+    const observedBest = candidates.reduce<Record<string, unknown> | null>((current, candidate) =>
+      !current || listingQuality(candidate) > listingQuality(current) ? candidate : current, null);
+    if (observedBest) observedListingByProduct.set(productId, observedBest);
     // A stale/unverified supplier row must not mask a different, currently
     // verified variant for the same canonical product. Prefer only rows that
     // already satisfy the live supply/identity prerequisites, then rank those.
@@ -191,7 +198,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
       });
       continue;
     }
-    const reasons: string[] = []; const intelligence = intelligenceByProduct.get(productId) ?? { product_id: productId, demand_score: null, search_fit_score: null, market_gap_score: null, competition_score: null, creative_score: null, selection_score: null, overall_confidence: null, selection_eligible: false, sellability_state: null, filter_state: null, profit_state: null, recommendation_summary: null, why_now: null }; const base = baseByProduct.get(productId); const listing = listingByProduct.get(productId);
+    const reasons: string[] = []; const intelligence = intelligenceByProduct.get(productId) ?? { product_id: productId, demand_score: null, search_fit_score: null, market_gap_score: null, competition_score: null, creative_score: null, selection_score: null, overall_confidence: null, selection_eligible: false, sellability_state: null, filter_state: null, profit_state: null, recommendation_summary: null, why_now: null }; const base = baseByProduct.get(productId); const listing = listingByProduct.get(productId) ?? observedListingByProduct.get(productId);
     const sourceTitle = (typeof listing?.title === "string" && listing.title.trim()
       ? listing.title
       : typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
@@ -212,7 +219,15 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // reported for the merchant's pricing decision, not used as a publication veto.
     // Product identity, Japanese copy and fulfillment evidence remain required.
     if (/(暮らしの便利アイテム|トレンド[・ -]*seeded_dueアイテム|商品アイデンティティが未確定|^未分類$|^商品$|^item$|^product$)/i.test(sourceTitle)) reasons.push('generic_non_merchandisable_title');
-    if (!base) reasons.push("product_intelligence_missing"); if (!listing) reasons.push("supplier_listing_missing");
+    if (!base) reasons.push("product_intelligence_missing");
+    if (!listing) reasons.push("supplier_listing_missing");
+    else {
+      if (listing.orderable !== true) reasons.push("supplier_listing_not_orderable");
+      if (listing.api_available !== true) reasons.push("supplier_order_api_unverified");
+      if (listing.tracking_available !== true) reasons.push("supplier_tracking_unverified");
+      if (listing.price_confirmed !== true) reasons.push("supplier_price_unverified");
+      if (listing.inventory_confirmed !== true || (num(listing.inventory) ?? 0) <= 0) reasons.push("supplier_inventory_unverified");
+    }
     if (reasons.length > 0) { rejected.push({ productId, reasons, title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
     if (!base || !listing) { rejected.push({ productId, reasons: ["required_catalog_or_supplier_data_missing"], title: sourceTitle, masterTitle, category: metadataCategory(base?.metadata), supplier: String(listing?.supplier ?? "unknown"), categoryPriority: womenPriority.categoryPriority }); continue; }
     const supplierMetadata = listing.metadata && typeof listing.metadata === "object" && !Array.isArray(listing.metadata)
