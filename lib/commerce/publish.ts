@@ -21,12 +21,99 @@ function safeSlug(value: string): string {
   return value.normalize("NFKC").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120) || "tracer-item";
 }
 
+async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<typeof createSupabaseAdminClient>) {
+  const result = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
+  const { data: listings, error } = await db.from("channel_listings")
+    .select("id,variant_id,external_product_id,external_variant_id,status,last_error")
+    .eq("channel", channel).in("status", ["published", "error"])
+    .not("external_product_id", "is", null).limit(500);
+  if (error) throw new Error("stale_listing_read_failed:" + error.message);
+  for (const listing of listings ?? []) {
+    if (listing.status === "error" && String(listing.last_error ?? "").startsWith("supplier_offer_no_longer_fulfillable:")) continue;
+    result.checked++;
+    try {
+      const { data: price, error: priceError } = await db.from("commerce_prices")
+        .select("supplier_offer_id,selling_price,expected_profit")
+        .eq("variant_id", listing.variant_id).maybeSingle();
+      if (priceError) throw new Error("price_read_failed:" + priceError.message);
+      const { data: offer, error: offerError } = price?.supplier_offer_id
+        ? await db.from("supplier_offers").select("inventory,source_status,tracking_supported,ship_to,last_checked_at")
+            .eq("id", price.supplier_offer_id).maybeSingle()
+        : { data: null, error: null };
+      if (offerError) throw new Error("supplier_offer_read_failed:" + offerError.message);
+      const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
+      const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 && Date.now() - checkedAt <= 24 * 60 * 60_000;
+      const valid = Boolean(offer && price && offer.source_status === "verified" &&
+        offer.tracking_supported === true && offer.ship_to === "JP" && fresh &&
+        Number(offer.inventory) > 0 && Number(price.selling_price) > 0 && Number(price.expected_profit) > 0);
+      if (valid) continue;
+      const reason = !offer ? "supplier_offer_missing" :
+        offer.source_status !== "verified" ? "supplier_offer_not_verified" :
+        offer.tracking_supported !== true ? "tracking_not_verified" :
+        offer.ship_to !== "JP" ? "supplier_not_shipping_to_japan" :
+        !fresh ? "supplier_verification_stale" :
+        Number(offer.inventory) <= 0 ? "supplier_out_of_stock" :
+        !price || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0 ? "price_not_profitable" : "supplier_offer_invalid";
+      const { data: variant, error: variantError } = await db.from("commerce_variants")
+        .select("title_ja,commerce_products!inner(title_ja,description_ja)")
+        .eq("id", listing.variant_id).maybeSingle();
+      if (variantError) throw new Error("product_title_read_failed:" + variantError.message);
+      const product = variant?.commerce_products as unknown as { title_ja?: string; description_ja?: string } | null;
+      const title = String(variant?.title_ja || product?.title_ja || "TRACER商品");
+      const detail = String(product?.description_ja || title);
+      if (channel === "base") {
+        await editBaseItem({
+          itemId: String(listing.external_product_id), title, detail,
+          price: Math.max(1, Math.round(Number(price?.selling_price) || 1)),
+          stock: 0, visible: false,
+        });
+      } else {
+        const productId = toShopifyGid("Product", String(listing.external_product_id));
+        if (!productId) throw new Error("shopify_product_id_missing");
+        const updated = await shopifyGraphQL<{
+          productUpdate: { product: { id: string; status: string } | null; userErrors: Array<{ message: string }> };
+        }>(
+          "mutation TracerHideUnfulfillable($input: ProductUpdateInput!) { productUpdate(product: $input) { product { id status } userErrors { message } } }",
+          { input: { id: productId, status: "DRAFT" } },
+        );
+        if (updated.productUpdate.userErrors.length || !updated.productUpdate.product) {
+          throw new Error("shopify_unpublish_failed:" + (updated.productUpdate.userErrors.map((x) => x.message).join("; ") || "product_missing"));
+        }
+        if (listing.external_variant_id) {
+          try {
+            await setShopifyVariantInventory({
+              variantId: String(listing.external_variant_id), quantity: 0,
+              reference: "stale-supplier-offer:" + String(listing.variant_id),
+            });
+          } catch (inventoryError) {
+            // Drafting the product is the primary safety action; retain a visible diagnostic if inventory reset also fails.
+            result.errors.push(String(listing.id) + ":inventory_zero_failed:" + (inventoryError instanceof Error ? inventoryError.message : String(inventoryError)).slice(0, 120));
+          }
+        }
+      }
+      const { error: saveError } = await db.from("channel_listings").update({
+        status: "error",
+        last_error: "supplier_offer_no_longer_fulfillable:" + reason,
+        last_synced_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", listing.id);
+      if (saveError) throw new Error("stale_listing_state_save_failed:" + saveError.message);
+      result.unpublished++;
+    } catch (error) {
+      result.failed++;
+      result.errors.push(String(listing.id) + ":" + (error instanceof Error ? error.message : String(error)).slice(0, 180));
+    }
+  }
+  return result;
+}
+
 export async function syncCommerceListings(channel: Channel, limit = 10) {
   // Storefront publication is independent of supplier purchasing. Only the paid-order
   // procurement path is gated by liveOrdering; a sandbox proof must not block listings.
   if (channel === "base" && !isBaseConfigured()) throw new Error("base_oauth_not_configured");
   if (channel === "shopify" && !isShopifyConfigured()) throw new Error("shopify_not_configured");
   const db = createSupabaseAdminClient();
+  const staleListings = await unpublishUnfulfillableListings(channel, db);
   const { data, error } = await db.from("commerce_variants")
     .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,currency,selling_price,expected_profit,fee_amount,margin_rate)")
     .eq("commerce_products.active", true).eq("supplier_offers.ship_to", "JP")
@@ -156,5 +243,5 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
       results.push({ variantId: candidate.id, ok: false, error: message.slice(0, 300) });
     }
   }
-  return { channel, considered: candidates.length, published: results.filter((x) => x.ok).length, failed: results.filter((x) => !x.ok).length, results };
+  return { channel, staleListings, considered: candidates.length, published: results.filter((x) => x.ok).length, failed: results.filter((x) => !x.ok).length + staleListings.failed, results };
 }
