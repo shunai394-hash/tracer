@@ -13,6 +13,7 @@ import { initializeProcurement } from "@/lib/procurement/init";
 import { persistOrderStateUpdate } from "@/lib/ordering/status-write";
 import { checkKillSwitch } from "@/lib/ops/kill-switch";
 import { isNativeCjSupplierListing } from "@/lib/catalog/canonical-supplier-identity";
+import { isCJQuotaCircuitActive } from "@/lib/sources/cj/rate-limit-policy";
 import { getObservedFxRate } from "@/lib/intelligence/fx";
 import {
   evaluateDropshipOrderGate,
@@ -113,6 +114,35 @@ export async function executeSupplierPurchaseOrder(
       reason: `purchase_order_status_${po.status}`,
       gate: null,
     };
+  }
+
+  // CJ daily API-point exhaustion blocks all supplier refresh/order calls until
+  // the persisted cooldown expires. Keep the paid customer order pending for a
+  // safe retry instead of repeatedly calling a provider that cannot process it.
+  if (isCjSupplierName(supplierName)) {
+    const { data: quotaRun, error: quotaReadError } = await supabase
+      .from("cron_runs")
+      .select("metadata")
+      .eq("job_name", "cj-api-quota-circuit")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (quotaReadError) {
+      return {
+        purchaseOrderId, supplierName, attempted: false, succeeded: false,
+        supplierOrderId: null, reason: "supplier_quota_circuit_lookup_failed", gate: null,
+      };
+    }
+    const quotaMetadata = quotaRun?.metadata && typeof quotaRun.metadata === "object" && !Array.isArray(quotaRun.metadata)
+      ? quotaRun.metadata as Record<string, unknown>
+      : {};
+    if (isCJQuotaCircuitActive(quotaMetadata)) {
+      const blockedUntil = typeof quotaMetadata.blockedUntil === "string" ? quotaMetadata.blockedUntil : null;
+      return {
+        purchaseOrderId, supplierName, attempted: false, succeeded: false,
+        supplierOrderId: null, reason: blockedUntil ? `supplier_quota_cooldown_until:${blockedUntil}` : "supplier_quota_cooldown", gate: null,
+      };
+    }
   }
 
   // CJ supply discovery is not enough to authorize a customer-order purchase.
