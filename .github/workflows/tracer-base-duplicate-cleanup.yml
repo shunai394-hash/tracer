@@ -28,7 +28,7 @@ jobs:
 
       - name: Wait until production serves this commit
         env:
-          TARGET_SHA: \${{ github.sha }}
+          TARGET_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -46,7 +46,7 @@ jobs:
 
       - name: Run guarded duplicate cleanup
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
