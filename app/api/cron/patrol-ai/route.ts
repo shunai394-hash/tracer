@@ -22,6 +22,12 @@ type Snapshot = {
   onBase: number;
   basePublished: number;
   orders: number;
+  commerceProducts: number;
+  commerceVariants: number;
+  verifiedCommerceOffers: number;
+  publishedCommerceListings: number;
+  commerceOrders: number;
+  supplierProcurementOrders: number;
 };
 
 async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promise<Snapshot> {
@@ -34,14 +40,26 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
   const onBaseQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).not("base_item_id", "is", null);
   const basePublishedQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).not("base_item_id", "is", null).eq("base_publication_status", "published").eq("published", true);
   const ordersQuery = db.from("shop_orders").select("*", { count: "exact", head: true });
+  const commerceProductsQuery = db.from("commerce_products").select("*", { count: "exact", head: true });
+  const commerceVariantsQuery = db.from("commerce_variants").select("*", { count: "exact", head: true });
+  const freshCutoff = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+  const verifiedCommerceOffersQuery = db.from("supplier_offers").select("*", { count: "exact", head: true })
+    .eq("source_status", "verified").eq("tracking_supported", true).eq("ship_to", "JP")
+    .gt("inventory", 0).gte("last_checked_at", freshCutoff);
+  const publishedCommerceListingsQuery = db.from("channel_listings").select("*", { count: "exact", head: true }).eq("status", "published");
+  const commerceOrdersQuery = db.from("commerce_orders").select("*", { count: "exact", head: true });
+  const supplierProcurementOrdersQuery = db.from("procurement_orders").select("*", { count: "exact", head: true });
 
-  const [productsResult, supplierListingsResult, orderableSuppliersResult, shopListingsResult, publishedListingsResult, eligibilityListingsResult, onBaseResult, basePublishedResult, ordersResult] =
-    await Promise.all([productsQuery, supplierListingsQuery, orderableSuppliersQuery, shopListingsQuery, publishedListingsQuery, eligibilityListingsQuery, onBaseQuery, basePublishedQuery, ordersQuery]);
+  const [productsResult, supplierListingsResult, orderableSuppliersResult, shopListingsResult, publishedListingsResult, eligibilityListingsResult, onBaseResult, basePublishedResult, ordersResult, commerceProductsResult, commerceVariantsResult, verifiedCommerceOffersResult, publishedCommerceListingsResult, commerceOrdersResult, supplierProcurementOrdersResult] =
+    await Promise.all([productsQuery, supplierListingsQuery, orderableSuppliersQuery, shopListingsQuery, publishedListingsQuery, eligibilityListingsQuery, onBaseQuery, basePublishedQuery, ordersQuery, commerceProductsQuery, commerceVariantsQuery, verifiedCommerceOffersQuery, publishedCommerceListingsQuery, commerceOrdersQuery, supplierProcurementOrdersQuery]);
 
   const results = [
     ["products", productsResult], ["supplier_listings", supplierListingsResult], ["supplier_listings(orderable)", orderableSuppliersResult],
     ["shop_listings", shopListingsResult], ["shop_listings(published)", publishedListingsResult], ["shop_listings(eligibility)", eligibilityListingsResult],
     ["shop_listings(on_base)", onBaseResult], ["shop_listings(base_published)", basePublishedResult], ["shop_orders", ordersResult],
+    ["commerce_products", commerceProductsResult], ["commerce_variants", commerceVariantsResult],
+    ["supplier_offers(verified_fresh)", verifiedCommerceOffersResult], ["channel_listings(published)", publishedCommerceListingsResult],
+    ["commerce_orders", commerceOrdersResult], ["procurement_orders", supplierProcurementOrdersResult],
   ] as const;
 
   for (const [label, result] of results) {
@@ -76,6 +94,12 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
     onBase: onBaseResult.count ?? 0,
     basePublished: basePublishedResult.count ?? 0,
     orders: ordersResult.count ?? 0,
+    commerceProducts: commerceProductsResult.count ?? 0,
+    commerceVariants: commerceVariantsResult.count ?? 0,
+    verifiedCommerceOffers: verifiedCommerceOffersResult.count ?? 0,
+    publishedCommerceListings: publishedCommerceListingsResult.count ?? 0,
+    commerceOrders: commerceOrdersResult.count ?? 0,
+    supplierProcurementOrders: supplierProcurementOrdersResult.count ?? 0,
   };
 }
 
@@ -317,6 +341,9 @@ export async function GET(request: Request) {
       newPublishedListings: after.publishedListings - before.publishedListings,
       newBasePublished: after.basePublished - before.basePublished,
       newOrders: after.orders - before.orders,
+      newCommercePublishedListings: after.publishedCommerceListings - before.publishedCommerceListings,
+      newCommerceOrders: after.commerceOrders - before.commerceOrders,
+      newSupplierProcurementOrders: after.supplierProcurementOrders - before.supplierProcurementOrders,
       testReady: pipeline.steps.find((step) => step.name === "test_ready")?.result ?? null,
     };
 
@@ -334,7 +361,7 @@ export async function GET(request: Request) {
       errors,
       message: errors.length
         ? "AI巡回でフルIntelligence Pipelineを実行しましたが、未解決エラーがあります。"
-        : progress.newPublishedListings > 0
+        : progress.newPublishedListings > 0 || progress.newCommercePublishedListings > 0
           ? "AI巡回でフルIntelligence Pipelineを実行し、新規公開まで進みました。"
           : "AI巡回でフルIntelligence Pipelineを実行しました。今回は新規公開条件を満たす商品はありませんでした。",
     };
