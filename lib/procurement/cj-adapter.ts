@@ -96,13 +96,15 @@ async function chooseFreight(
     .filter((item) => /^[A-Z]{2}$/.test(item.countryCode) && item.quantity >= quantity)
     .sort((a, b) => b.quantity - a.quantity)
     .slice(0, 2);
-
-  if (warehouses.length === 0) return null;
+  // queryByVid may omit warehouse-level inventory even when the dedicated
+  // stock endpoint confirms stock. In that case, use CJ's documented CN
+  // freight origin and require a live logistic quote; never invent a carrier.
+  const sourceCountries = warehouses.length ? warehouses.map((warehouse) => warehouse.countryCode) : ["CN"];
 
   const choices: FreightChoice[] = [];
-  for (const warehouse of warehouses) {
+  for (const countryCode of sourceCountries) {
     const options = await getCJFreightOptions(supplierVariantId, {
-      startCountryCode: warehouse.countryCode,
+      startCountryCode: countryCode,
       endCountryCode: destinationCountryCode,
       zip: destinationPostalCode,
       quantity,
@@ -114,7 +116,7 @@ async function chooseFreight(
         option.shippingCost >= 0
       ) {
         choices.push({
-          countryCode: warehouse.countryCode,
+          countryCode,
           logisticName: option.logisticName,
           shippingCost: option.shippingCost,
           arrivalTime: option.arrivalTime,
