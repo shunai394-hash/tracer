@@ -41,6 +41,8 @@ assert.equal(isCjIdentityReverifyDue({
   legacy_parent_id_mismatch_retry_attempted_at: "2026-10-16T06:00:00.000Z",
 }, now), false);
 const cjClient = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
+assert.ok(cjClient.includes("const minIntervalMs = 2_000"), "local fallback must allow a wider gap than CJ’s one-QPS ceiling");
+assert.ok(cjClient.includes("p_min_interval_ms: 2_000"), "the shared Supabase slot must enforce the same conservative interval");
 assert.ok(cjClient.includes("AbortSignal.timeout(20_000)"), "CJ requests must have a finite timeout");
 assert.ok(cjClient.includes("AbortSignal.any([init.signal, timeoutSignal])"), "CJ requests must preserve caller cancellation");
 const sandboxRoute = await readFile(new URL("../app/api/cron/cj-sandbox-order-test/route.ts", import.meta.url), "utf8");

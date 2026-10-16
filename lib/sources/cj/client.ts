@@ -166,7 +166,7 @@ async function waitForLocalCJRateLimit(): Promise<void> {
 
   await previous;
 
-  const minIntervalMs = 1_100;
+  const minIntervalMs = 2_000;
   const waitMs = Math.max(0, minIntervalMs - (Date.now() - lastCJRequestAt));
   if (waitMs > 0) {
     await new Promise((resolve) => setTimeout(resolve, waitMs));
@@ -207,7 +207,7 @@ export async function waitForCJRateLimit(): Promise<void> {
       throw new CJRequestError(`CJ API quota cooldown active until ${String(blockedUntil)}`, "CJ_QUOTA_EXHAUSTED");
     }
     const { data, error } = await db.rpc("claim_cj_api_slot", {
-      p_min_interval_ms: 1_100,
+      p_min_interval_ms: 2_000,
     });
     if (!error) {
       const waitMs = Math.max(0, Number(data ?? 0));
