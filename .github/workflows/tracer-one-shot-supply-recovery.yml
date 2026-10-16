@@ -117,3 +117,5 @@ jobs:
 # Canonical parent-product identity fix is deployed; rerun bounded proof against the latest production build.
 
 # TRACER_ONE_SHOT_SUPPLY_RECOVERY: execute bounded recovery with canonical CJ variant-parent resolution.
+
+# TRACER_ONE_SHOT_SUPPLY_RECOVERY: re-run after product-scoped CJ variant parent fallback fix.
