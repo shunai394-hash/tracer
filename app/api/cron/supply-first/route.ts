@@ -86,10 +86,35 @@ export async function GET(request: Request) {
       metadata: { actor: "vercel-cron", batchSize: DISCOVERY_BATCH_SIZE, deadlineMs: DISCOVERY_BUDGET_MS },
     }).select("id").maybeSingle();
     if (startError) {
-      console.error("[TRACER SUPPLY-FIRST RUN LOG START FAILED]", { stage: "cron_run_insert", code: startError.code ?? null });
-    } else if (run?.id) {
-      runId = String(run.id);
+      const duplicateRunningJob = startError.code === "23505";
+      console.warn("[TRACER SUPPLY-FIRST RUN CLAIM FAILED]", {
+        stage: "cron_run_insert",
+        code: startError.code ?? null,
+        duplicateRunningJob,
+      });
+      // Multiple production deployments can invoke the same cron around a
+      // deployment transition. If the unique running-job claim fails, do not
+      // continue into CJ calls without owning the run.
+      return NextResponse.json({
+        ok: false,
+        skipped: true,
+        reason: duplicateRunningJob ? "supply_first_already_running" : "supply_first_run_claim_failed",
+        retryable: true,
+        discoveryInvoked: false,
+        runRecordCreated: false,
+      }, { status: 503 });
     }
+    if (!run?.id) {
+      return NextResponse.json({
+        ok: false,
+        skipped: true,
+        reason: "supply_first_run_claim_missing_id",
+        retryable: true,
+        discoveryInvoked: false,
+        runRecordCreated: false,
+      }, { status: 503 });
+    }
+    runId = String(run.id);
 
     const supplyFirst: {
       items: unknown[];
