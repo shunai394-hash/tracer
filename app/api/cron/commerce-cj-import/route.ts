@@ -199,7 +199,7 @@ export async function GET(request: Request) {
             // A failed/unknown live lookup is not evidence that a previously verified offer is invalid.
             // Preserve its last known evidence; the freshness gate will stop publication once it expires.
             // Do not overwrite it with inventory=0, shipping=0, or sourceStatus=error on transient API failures.
-            if (!complianceBlockReason && (stock === null || shipping === null)) {
+            if (stock === null || shipping === null) {
               stats.skipped++;
               continue;
             }
