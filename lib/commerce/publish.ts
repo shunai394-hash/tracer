@@ -2,6 +2,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { addBaseItemImage, createBaseItem, editBaseItem, isBaseConfigured } from "@/lib/channels/base";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, updateShopifyProduct } from "@/lib/shopify/admin";
+import { cjSupplierAdapter } from "@/lib/procurement/cj-adapter";
 
 type Channel = "base" | "shopify";
 type Candidate = {
