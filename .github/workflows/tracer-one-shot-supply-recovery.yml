@@ -18,6 +18,22 @@ jobs:
         run: |
           set -uo pipefail
           BASE=https://tracer-self.vercel.app
+          # Never run write-capable recovery calls against a stale production deployment.
+          ready=0
+          for attempt in $(seq 1 36); do
+            code="$(curl -sS -o /tmp/tracer-health.json -w "%{http_code}" --max-time 10 "$BASE/api/health" || true)"
+            if [[ "$code" == "200" ]] && grep -q "$GITHUB_SHA" /tmp/tracer-health.json; then
+              ready=1
+              echo "Production serves expected commit $GITHUB_SHA (attempt $attempt)."
+              break
+            fi
+            echo "Waiting for production to serve expected commit $GITHUB_SHA (HTTP $code; attempt $attempt/36)."
+            sleep 10
+          done
+          if [[ "$ready" != "1" ]]; then
+            echo "Production deployment did not serve the expected commit; aborting recovery."
+            exit 1
+          fi
           token() {
             curl --fail-with-body --silent --show-error \
               -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
