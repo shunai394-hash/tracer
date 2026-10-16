@@ -39,6 +39,9 @@ test("publication and price calculation require fresh verified supplier evidence
   assert.match(publish, /supplier_offer_missing_or_out_of_stock/);
   assert.match(publish, /createBaseItem\(\{[^}]*stock: storefrontStock/s, "first BASE publication must obey the same inventory cap as updates");
   assert.doesNotMatch(publish, /createBaseItem\(\{[^}]*stock: Number\(offer\.inventory\)/s, "raw supplier inventory must never be exposed to the storefront");
+  assert.match(publish, /base_created_item_id_save_failed/);
+  assert.match(publish, /Only make the item visible after the external ID and image are saved/);
+  assert.doesNotMatch(publish, /createBaseItem\(\{[^}]*visible: true/s, "new BASE items must stay hidden until image setup succeeds");
 });
 
 test("paid-order supplier preflight runs before writing the order record", async () => {
