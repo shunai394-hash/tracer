@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 
 const route = await readFile(new URL("../app/api/admin/channels/base/snapshot/route.ts", import.meta.url), "utf8");
 const client = await readFile(new URL("../lib/channels/base.ts", import.meta.url), "utf8");
+const workflow = await readFile(new URL("../.github/workflows/base-product-backup.yml", import.meta.url), "utf8");
 
 assert.match(route, /requireAutomationAuth/);
 assert.match(route, /fetchBaseItemsSnapshot/);
@@ -21,3 +22,7 @@ assert.match(client, /options\?\.itemMaxPages \?\? BASE_ITEMS_MAX_PAGES/);
 assert.equal((client.match(/Math.min\(BASE_ITEMS_MAX_PAGES/g) ?? []).length, 2, "both BASE item scans must use the 5000-item cap");
 assert.match(route, /itemMaxPages: BASE_ITEMS_MAX_PAGES/);
 console.log("BASE full scan limit contract: 3 assertions passed");
+assert.match(workflow, /Wait until production serves this commit/);
+assert.ok(workflow.indexOf("Wait until production serves this commit") < workflow.indexOf("Request a short-lived GitHub OIDC token for Vercel"), "BASE scan must wait for the production deployment before requesting its snapshot");
+assert.match(workflow, /timeout-minutes: 15/);
+console.log("BASE backup deployment-order contract: 3 assertions passed");
