@@ -84,4 +84,6 @@ assert.match(cjReverifySource, /refreshedFields\.verification_error = null/);
 
 assert.match(cjReverifySource, /eq\("verification_error", "storefront_stock_cap_deploy_pending"\)/, "explicit stock-cap holds must be queried even when the normal identity retry backoff is in the future");
 assert.match(cjReverifySource, /stockCapHoldIds\.has\(String\(row\.id\)\)/, "only exact stock-cap holds may bypass the per-row retry backoff");
-assert.match(cjReverifySource, /selectedStockCapHeld/, "stock-cap holds must be prioritized within the bounded re-verification batch");
+assert.match(cjReverifySource, /sort\(\(a, b\) => String\(a\.id\)\.localeCompare\(String\(b\.id\)\)\)/, "re-verification batches must follow ascending IDs so the cursor cannot skip unprocessed rows");
+assert.match(cjReverifySource, /validCjIds = \/\^\\d\{10,25\}\$\//, "backup UUID placeholders must not consume live CJ API quota");
+assert.match(cjReverifySource, /result\.nextCursor = item\.supplierListingId/, "cursor must advance only after a row is actually processed");
