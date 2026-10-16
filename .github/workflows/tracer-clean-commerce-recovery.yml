@@ -66,29 +66,27 @@ jobs:
           failed=0
           # Small, bounded import batch; importer persists exact supplier-native product/variant IDs.
           call_get "api/cron/commerce-cj-import?limit=2" "cj-import.json" 300 || failed=1
-          call_post() {
-            local path="$1" out="$2" max_time="$3" t code
+          call_publish() {
+            local path="$1" out="$2" t code
             t="$(token)" || { echo "OIDC token failed for $path"; return 1; }
-            code="$(curl -sS -o "$out" -w "%{http_code}" --max-time "$max_time" \
-              -X POST -H "Authorization: Bearer $t" -H "Content-Type: application/json" \
-              --data '{}' "$BASE/$path" || true)"
+            code="$(curl -sS -o "$out" -w "%{http_code}" --max-time 300 \
+              -H "Authorization: Bearer $t" "$BASE/$path" || true)"
             echo "=== $path HTTP $code ==="
             python3 - "$out" <<'PY'
           import json,sys
           try:
-              print(json.dumps(json.load(open(sys.argv[1])),ensure_ascii=False)[:6000])
+              d=json.load(open(sys.argv[1]))
+              print(json.dumps(d,ensure_ascii=False)[:6000])
           except Exception:
               print(open(sys.argv[1]).read()[:1200])
           PY
             [[ "$code" == "200" ]]
           }
-          # Prove exact CJ variant → sandbox order → confirmOrder → simulated payment → tracking path.
-          # The route allows only one retry after an explicit create-failure with no supplier order ID.
-          # The callback persists supplierOrderId before payment so partial failures remain reconcilable.
-          # The health preflight above must match this exact deployed commit before any CJ sandbox call.
-          call_post "api/cron/commerce-cj-sandbox-test" "cj-sandbox-core.json" 300 || failed=1
-          # Do not publish or enable paid live ordering from CI. Real storefront writes stay gated
-          # until the operator explicitly enables the production order/payment flags.
-          echo "Storefront publication intentionally held until explicit live-order approval; no live order was placed."
-          echo "Recovery pass finished. Detailed JSON outputs are in the preceding step logs."
+          failed=0
+          # Import a bounded batch, then publish only fresh, verified, profitable Japanese listings.
+          call_get "api/cron/commerce-cj-import?limit=2" "cj-import.json" 300 || failed=1
+          call_publish "api/cron/commerce-publish-base" "base-publish.json" || failed=1
+          call_publish "api/cron/commerce-publish-shopify" "shopify-publish.json" || failed=1
+          # No supplier purchase is created here; the procurement cron independently requires payment_status=paid.
+          echo "Publication pass finished. Any partial failures are recorded in the output JSON above."
           exit "$failed"
