@@ -202,11 +202,17 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   // rows follow, so they cannot consume the initial recovery batches.
   const prioritizedRegularRows = [...matchedWomens, ...matchedOther, ...unmatchedWomens, ...unmatchedOther];
   const beforeCounts = await readCjIdentityProgressCounts(db);
-  const selectedStockCapHeld = stockCapHeld.slice(0, Math.min(limit, stockCapHeld.length));
-  const remainingForRegular = Math.max(0, limit - selectedStockCapHeld.length);
-  const selectedRows = [...selectedStockCapHeld, ...prioritizedRegularRows.slice(0, remainingForRegular)];
+  // The cursor is an ID cursor, so rows must be processed in ascending ID order.
+  // The previous priority-group selection could process low IDs after high IDs,
+  // while advancing the cursor to the end of the full scan and repeatedly retrying
+  // the same first batch. Keep the bounded batch cursor-safe; prioritize on later
+  // batches by continuing from the last completed ID.
+  const selectedRows = allRows
+    .slice()
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+    .slice(0, limit);
   const womensRows = [...matchedWomens, ...unmatchedWomens];
-  const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, remediationQueued: [], errors: [], promotedListings: [], nextCursor: scanCursor, quotaBlockedUntil: null, progress: { before: beforeCounts, after: beforeCounts } };
+  const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, remediationQueued: [], errors: [], promotedListings: [], nextCursor: priorCursor, quotaBlockedUntil: null, progress: { before: beforeCounts, after: beforeCounts } };
   const processRow = async (row: NonNullable<typeof rows>[number]) => {
     const supplierListingId = String(row.id);
     try {
@@ -447,6 +453,9 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
     const results = await Promise.all(batch.map(processRow));
     for (const item of results) {
       result.checked += 1;
+      // Advance only to an actually processed row. If the deadline interrupts a
+      // batch, the next invocation resumes after the last completed supplier ID.
+      result.nextCursor = item.supplierListingId;
       if (item.kind === "promoted") {
         result.promoted += 1;
         result.promotedListings.push({ supplierListingId: item.supplierListingId, bestsellerId: item.bestsellerId, method: item.method });
@@ -484,7 +493,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   if (quotaExhausted || circuitBlocked) result.nextCursor = priorCursor;
   result.progress.after = await readCjIdentityProgressCounts(db);
   const now = new Date().toISOString();
-  const { error: runInsertError } = await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: "exact_shop_listing_then_womens_priority", candidateCount: total, exactShopListingCandidates: partition.matched.length, supplierOnlyCandidates: partition.unmatched.length, womensCandidates: womensRows.length, womensSelected: selectedRows.filter((row) => isWomensProductTitle(row.title, row.metadata)).length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, progress: result.progress, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
+  const { error: runInsertError } = await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: "ascending_supplier_id_cursor_safe", candidateCount: total, exactShopListingCandidates: partition.matched.length, supplierOnlyCandidates: partition.unmatched.length, womensCandidates: womensRows.length, womensSelected: selectedRows.filter((row) => isWomensProductTitle(row.title, row.metadata)).length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, progress: result.progress, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
   if (runInsertError) throw new Error("CJ identity progress audit persistence failed: " + runInsertError.message);
   return result;
 }
