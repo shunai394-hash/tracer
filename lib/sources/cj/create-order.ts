@@ -349,9 +349,11 @@ export async function listCJSandboxOrders(status: "CREATED" | "UNPAID" = "CREATE
       ? row.productList.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object" && !Array.isArray(item)))
       : [];
     const orderId = String(row.orderId ?? row.cjOrderId ?? row.cjOrderCode ?? row.id ?? "").trim();
+    // CJ documents productList[].orderNumber as the original store order number.
+    // Prefer it over any provider-level order number when recovering a TRACER sandbox order.
     const orderNumber = String(
-      row.orderNumber ??
       productList.find((item) => typeof item.orderNumber === "string" && item.orderNumber.trim())?.orderNumber ??
+      row.orderNumber ??
       "",
     ).trim();
     if (!orderId) return [];
