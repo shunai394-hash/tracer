@@ -92,6 +92,10 @@ assert.match(adapter, /const verifiedUnitCostUsd = positiveNumber\(variant\.sell
 assert.match(sandboxRoute, /status: "succeeded"/);
 assert.match(sandboxRoute, /status: "failed"/);
 assert.match(sandboxRoute, /CJ_SANDBOX_PREVIOUS_ORDER_MAY_EXIST_REQUIRES_MANUAL_RECONCILIATION/);
+assert.match(sandboxRoute, /previousFailureWasSafeSandboxTransition/);
+assert.match(sandboxRoute, /previousMetadata\.sandbox === true/);
+assert.match(sandboxRoute, /previousMetadata\.charged === false/);
+assert.match(sandboxRoute, /previousMetadata\.realFulfillment === false/);
 assert.match(sandboxRoute, /TRACER CJ SANDBOX ORDER TEST COMPLETE/, "sandbox lifecycle success must be observable without logging the tracking number");
 const vercelConfig = JSON.parse(read("vercel.json"));
 assert.doesNotMatch(JSON.stringify(vercelConfig.crons), /cj-sandbox-order-test/, "sandbox order test must never be scheduled automatically");
