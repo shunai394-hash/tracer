@@ -469,7 +469,9 @@ test("scheduled CJ imports retry a bounded batch of previously failed canonical 
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /from\("supplier_offers"\)[\s\S]*?\.eq\("source_status", "error"\)/);
   assert.match(importer, /supplier_product_id/);
-  assert.match(importer, /\.slice\(0, 2\)/);
+  assert.match(importer, /const recoveryPool = \[\.\.\.new Set\(\[\.\.\.listingIds, \.\.\.erroredIds\]\)\]/);
+  assert.match(importer, /const recoveryStart = recoveryPool\.length \? \(recoverySlot \* 2\) % recoveryPool\.length : 0/);
+  assert.match(importer, /const recoveryIds = recoveryPool\.length > 2/);
   assert.match(importer, /failed_offer_recovery_read/);
 });
 
