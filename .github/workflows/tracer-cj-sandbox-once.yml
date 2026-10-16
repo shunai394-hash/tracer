@@ -19,7 +19,7 @@ jobs:
   sandbox-lifecycle:
     if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'TRACER_CJ_SANDBOX_ORDER_TEST')))
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -35,7 +35,7 @@ jobs:
           fi
 
           BASE="https://tracer-pied-alpha.vercel.app"
-          SUPPLIER_LISTING_ID="83eb3a0e-eced-4041-afa5-da57c3084f4c"
+          SUPPLIER_LISTING_ID="08fea725-b259-495a-ab7a-b500ce7f956f"
 
           get_oidc_token() {
             curl -sSf --max-time 15 \
@@ -44,8 +44,22 @@ jobs:
               | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
 
-          # Wait for the production deployment triggered by this workflow merge.
-          sleep 60
+          # Wait for the production alias to serve this exact commit before the sandbox request.
+          ready=0
+          for attempt in $(seq 1 36); do
+            code="$(curl -sS -o /tmp/tracer-health.json -w '%{http_code}' --max-time 10 "${BASE}/api/health" || true)"
+            if [ "$code" = "200" ] && grep -q "$GITHUB_SHA" /tmp/tracer-health.json; then
+              ready=1
+              echo "Production serves expected commit $GITHUB_SHA (attempt $attempt)."
+              break
+            fi
+            echo "Waiting for production commit $GITHUB_SHA (HTTP $code; attempt $attempt/36)."
+            sleep 10
+          done
+          if [ "$ready" != "1" ]; then
+            echo "Production did not serve the expected commit; no sandbox order was attempted."
+            exit 1
+          fi
 
           TOKEN="$(get_oidc_token)"
           HTTP_CODE="$(curl -sS --max-time 90 -o sandbox-result.json -w '%{http_code}' \
