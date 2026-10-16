@@ -33,6 +33,7 @@ assert.doesNotMatch(salesRoute, /mode: "market_linked_sales_test"/, "cron teleme
 assert.match(salesRoute, /nativeSourceRefs/);
 assert.ok(salesRoute.includes("`cj:product:${productId}:variant:${variantId}`"));
 assert.match(salesRoute, /nativeProductBySourceRef\.get\(sourceRef\)/);
+assert.match(salesRoute, /const sourceRef = productId && variantId \? `cj:product:\$\{productId\}:variant:\$\{variantId\}` : ""/, "native CJ product lookup must use the same labeled source_ref format as product identity_key");
 const nativeCjPublicationBlock = salesRoute.slice(salesRoute.indexOf("const { data: nativeCjSupplyRows"), salesRoute.indexOf("const verifiedSupplyIds"));
 assert.doesNotMatch(nativeCjPublicationBlock, /\.not\("product_id",\s*"is",\s*null\)/, "standalone CJ supply resolves its TRACER product only by exact source_ref");
 assert.match(selector, /options\.allowNativeCjIdentity\s*===\s*true/);
