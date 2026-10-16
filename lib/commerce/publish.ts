@@ -30,9 +30,28 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
     .gte("supplier_offers.last_checked_at", new Date(Date.now() - 24 * 60 * 60_000).toISOString())
     .gt("supplier_offers.inventory", 0).eq("commerce_prices.currency", "JPY")
     .gt("commerce_prices.expected_profit", 0).order("updated_at", { ascending: false })
-    .limit(Math.min(100, Math.max(1, Math.floor(limit))));
+    .limit(500);
   if (error) throw new Error("commerce_candidates_read_failed:" + error.message);
-  const candidates = (data ?? []) as unknown as Candidate[];
+  const allCandidates = (data ?? []) as unknown as Candidate[];
+  const { data: listingStates, error: stateError } = await db.from("channel_listings")
+    .select("variant_id,status,last_synced_at").eq("channel", channel)
+    .in("variant_id", allCandidates.map((row) => row.id));
+  if (stateError) throw new Error("commerce_listing_state_read_failed:" + stateError.message);
+  const stateByVariant = new Map((listingStates ?? []).map((row) => [String(row.variant_id), row]));
+  const rank = (row: Candidate) => {
+    const state = stateByVariant.get(row.id);
+    if (!state) return 0;
+    if (state.status === "pending") return 1;
+    if (state.status === "error") return 2;
+    return 3;
+  };
+  const candidates = [...allCandidates].sort((a, b) => {
+    const priority = rank(a) - rank(b);
+    if (priority !== 0) return priority;
+    const aTime = stateByVariant.get(a.id)?.last_synced_at ? Date.parse(String(stateByVariant.get(a.id)?.last_synced_at)) : 0;
+    const bTime = stateByVariant.get(b.id)?.last_synced_at ? Date.parse(String(stateByVariant.get(b.id)?.last_synced_at)) : 0;
+    return aTime - bTime;
+  }).slice(0, Math.min(100, Math.max(1, Math.floor(limit))));
   const results: Array<{ variantId: string; ok: boolean; externalId?: string; error?: string }> = [];
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
