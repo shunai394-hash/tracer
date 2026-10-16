@@ -84,4 +84,5 @@ assert.match(cjReverifySource, /refreshedFields\.verification_error = null/);
 
 assert.match(cjReverifySource, /eq\("verification_error", "storefront_stock_cap_deploy_pending"\)/, "explicit stock-cap holds must be queried even when the normal identity retry backoff is in the future");
 assert.match(cjReverifySource, /stockCapHoldIds\.has\(String\(row\.id\)\)/, "only exact stock-cap holds may bypass the per-row retry backoff");
-assert.match(cjReverifySource, /selectedStockCapHeld/, "stock-cap holds must be prioritized within the bounded re-verification batch");
+assert.match(cjReverifySource, /const stockCapHoldIds = new Set\(stockCapHeldRows\.map\(\(row\) => String\(row\.id\)\)\)/, "explicit stock-cap holds must be tracked by exact supplier-listing ID");
+assert.match(cjReverifySource, /for \(const row of stockCapHeldRows\) rowsById\.set\(String\(row\.id\), row/, "explicit stock-cap holds must be included in the bounded identity re-verification candidate set");
