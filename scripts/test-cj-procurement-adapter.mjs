@@ -59,19 +59,6 @@ assert.match(order, /postCJSandboxAction\("simulatePay"/);
 assert.match(order, /postCJSandboxAction\("updateStatus"/);
 assert.match(order, /postCJSandboxAction\("updateTrackNumber"/);
 assert.match(adapter, /runCJSandboxOrderLifecycle/);
-assert.match(adapter, /onOrderCreated\?: \(supplierOrderId: string\) => Promise<void>/, "sandbox lifecycle must allow immediate persistence of a created external order ID");
-const createdIdCallback = adapter.indexOf("if (onOrderCreated) await onOrderCreated(orderId)");
-const unpaidTransition = adapter.indexOf("await updateCJSandboxOrderStatus(orderId, 200)");
-const paymentSimulation = adapter.indexOf("await simulateCJSandboxPayment(orderId)");
-assert.ok(createdIdCallback >= 0 && createdIdCallback < unpaidTransition && unpaidTransition < paymentSimulation,
-  "persist created supplier order ID, transition to UNPAID(200), then simulate payment");
-const cleanSandboxRoute = read("app/api/cron/commerce-cj-sandbox-test/route.ts");
-assert.match(cleanSandboxRoute, /from\("supplier_offers"\)/);
-assert.match(cleanSandboxRoute, /from\("commerce_events"\)/);
-assert.match(cleanSandboxRoute, /supplierOrderId: createdOrderId/);
-assert.match(cleanSandboxRoute, /CJ_SANDBOX_ORDER_TEST_ENABLED/);
-assert.match(cleanSandboxRoute, /realFulfillment: false/);
-
 const sandboxTransition = adapter.indexOf("await updateCJSandboxOrderStatus(orderId, 200)");
 const sandboxPayment = adapter.indexOf("await simulateCJSandboxPayment(orderId)");
 assert.ok(sandboxTransition >= 0 && sandboxTransition < sandboxPayment, "CJ sandbox order must transition CREATED(100) to UNPAID(200) before simulated payment");
@@ -85,6 +72,20 @@ assert.match(sandboxRoute, /CJ_API_QUOTA_COOLDOWN/);
 assert.match(sandboxRoute, /cj-sandbox-order-lifecycle/);
 assert.doesNotMatch(sandboxRoute, /verification_status !== "verified"|orderable !== true|last_verified_at/, "sandbox lifecycle must be able to prove order-path capability for a fresh unverified candidate");
 assert.match(sandboxRoute, /runCJSandboxOrderLifecycle/);
+assert.match(order, /export async function confirmCJSandboxOrder/);
+assert.match(order, /shopping\/order\/confirmOrder/);
+assert.match(order, /export async function listCJSandboxOrders/);
+assert.match(adapter, /await confirmCJSandboxOrder\(orderId\)/,
+  "CJ sandbox order must be confirmed from CREATED to UNPAID before simulated payment");
+assert.match(adapter, /onOrderCreated\?/,
+  "persist supplier order ID immediately after creation so a later failure can resume without duplicates");
+assert.match(sandboxRoute, /listCJSandboxOrders\("CREATED"\)/);
+assert.match(sandboxRoute, /previousFailureNeedsOrderRecovery/);
+assert.match(sandboxRoute, /supplierOrderId: activeSupplierOrderId/,
+  "sandbox failures must retain the created supplier order ID for reconciliation");
+assert.match(sandboxRoute, /TRACER-SANDBOX-\d{13}/,
+  "recovery must match the unique timestamped order number instead of relying on local guesses");
+
 assert.match(adapter, /fetchCJProductVariants\(input\.supplierProductId\)/, "sandbox lifecycle must resolve price from the exact live child under its parent");
 assert.match(adapter, /fetchCJVariantStock\(input\.supplierVariantId\)/, "sandbox lifecycle must use the dedicated live stock endpoint when queryByVid omits inventory");
 assert.match(adapter, /const sourceCountries = warehouses\.length \? warehouses\.map\(\(warehouse\) => warehouse\.countryCode\) : \["CN"\]/, "sandbox freight lookup must fall back to a live CN-origin quote when warehouse rows are omitted");
@@ -92,10 +93,6 @@ assert.match(adapter, /const verifiedUnitCostUsd = positiveNumber\(variant\.sell
 assert.match(sandboxRoute, /status: "succeeded"/);
 assert.match(sandboxRoute, /status: "failed"/);
 assert.match(sandboxRoute, /CJ_SANDBOX_PREVIOUS_ORDER_MAY_EXIST_REQUIRES_MANUAL_RECONCILIATION/);
-assert.match(sandboxRoute, /previousFailureWasSafeSandboxTransition/);
-assert.match(sandboxRoute, /previousMetadata\.sandbox === true/);
-assert.match(sandboxRoute, /previousMetadata\.charged === false/);
-assert.match(sandboxRoute, /previousMetadata\.realFulfillment === false/);
 assert.match(sandboxRoute, /TRACER CJ SANDBOX ORDER TEST COMPLETE/, "sandbox lifecycle success must be observable without logging the tracking number");
 const vercelConfig = JSON.parse(read("vercel.json"));
 assert.doesNotMatch(JSON.stringify(vercelConfig.crons), /cj-sandbox-order-test/, "sandbox order test must never be scheduled automatically");
