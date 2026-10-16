@@ -9,7 +9,7 @@ export type OfferInput = {
 };
 
 export function isCanonicalCjNativeId(value: unknown): value is string {
-  return typeof value === "string" && /^\\d{10,25}$/.test(value.trim());
+  return typeof value === "string" && /^\d{10,25}$/.test(value.trim());
 }
 
 const required = (value: unknown, field: string) => {
