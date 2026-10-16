@@ -52,3 +52,17 @@ test("procurement revalidates the exact fresh profitable offer and preserves a c
   assert.match(worker, /supplier_order_created_but_state_repair_failed_leave_processing/);
   assert.doesNotMatch(worker, /country_code_v2"\)\.toUpperCase\(\) \|\| "JP"/);
 });
+
+test("clean commerce cron schedule uses only the new supplier, channel, order, and procurement routes", async () => {
+  const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+  const schedules = new Map(config.crons.map((job) => [job.path, job.schedule]));
+  assert.equal(schedules.get("/api/cron/commerce-cj-import"), "*/30 * * * *");
+  assert.equal(schedules.get("/api/cron/commerce-publish-base"), "10,25,40,55 * * * *");
+  assert.equal(schedules.get("/api/cron/commerce-publish-shopify"), "*/15 * * * *");
+  assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,16,31,46 * * * *");
+  assert.equal(schedules.get("/api/cron/commerce-procurement"), "13,28,43,58 * * * *");
+  assert.equal(schedules.get("/api/cron/patrol-ai"), "*/5 * * * *");
+  assert.equal(schedules.has("/api/cron/market-sourcing"), false);
+  assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
+  assert.equal(schedules.has("/api/cron/supply-first"), false);
+});
