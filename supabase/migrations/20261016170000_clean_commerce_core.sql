@@ -23,6 +23,7 @@ create table if not exists public.supplier_offers (
 );
 create table if not exists public.commerce_prices (
  variant_id uuid primary key references public.commerce_variants(id) on delete cascade,
+ supplier_offer_id uuid not null references public.supplier_offers(id) on delete cascade,
  currency text not null default 'JPY' check(currency = 'JPY'), selling_price integer not null check(selling_price > 0),
  fee_amount integer not null default 0 check(fee_amount >= 0), expected_profit integer not null,
  margin_rate numeric(7,4) not null, calculated_at timestamptz not null default now()
