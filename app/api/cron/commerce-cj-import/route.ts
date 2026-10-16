@@ -188,7 +188,7 @@ export async function GET(request: Request) {
             const shipping = freightResult.status === "fulfilled" ? freightResult.value : null;
             if (stockResult.status === "rejected") stats.errors.push("stock:" + candidate.id + ":" + String(stockResult.reason).slice(0, 100));
             if (freightResult.status === "rejected") stats.errors.push("freight:" + candidate.id + ":" + String(freightResult.reason).slice(0, 100));
-            const title = japaneseCommerceTitle(canonicalDetail.title, canonicalDetail.productType, supplierProductId === candidate.id ? variants.map((item) => item.nameEn).filter((name): name is string => typeof name === "string" && name.trim().length > 0) : []) || (supplierProductId === candidate.id ? japaneseCommerceTitle(candidate.title, candidate.productType) : null);
+            const title = japaneseCommerceTitle(canonicalDetail.title, canonicalDetail.productType, supplierProductId === candidate.id ? variants.map((item) => item.nameEn).filter((name): name is string => typeof name === "string").filter((name): name is string => typeof name === "string" && name.trim().length > 0) : []) || (supplierProductId === candidate.id ? japaneseCommerceTitle(candidate.title, candidate.productType) : null);
             if (!title) { stats.skipped++; continue; }
             const complianceBlockReason = japaneseCommerceComplianceBlockReason(canonicalDetail.title, canonicalDetail.productType);
             const saved = await upsertSupplierOffer({
