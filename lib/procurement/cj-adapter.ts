@@ -427,7 +427,10 @@ export async function runCJSandboxOrderLifecycle(input: SupplierOrderInput): Pro
   if (!countryName(input.shippingCountryCode, input.shippingCountry)) throw new Error("CJ_SANDBOX_COUNTRY_UNVERIFIED");
 
   const variant = await fetchCJVariantByVid(input.supplierVariantId);
-  if (!variant || variant.productId !== input.supplierProductId) throw new Error("CJ_SANDBOX_VARIANT_MISMATCH");
+  if (!variant) throw new Error(`CJ_SANDBOX_VARIANT_NOT_FOUND:vid=${input.supplierVariantId}`);
+  if (variant.productId !== input.supplierProductId) {
+    throw new Error(`CJ_SANDBOX_PRODUCT_ID_MISMATCH:expected=${input.supplierProductId}:actual=${variant.productId}:vid=${variant.vid}`);
+  }
   if (variant.inventory === null || variant.inventory < input.quantity || !positiveNumber(variant.sellPrice)) {
     throw new Error("CJ_SANDBOX_STOCK_OR_PRICE_UNVERIFIED");
   }
