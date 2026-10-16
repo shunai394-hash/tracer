@@ -15,6 +15,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
+      - name: Wait for production to serve this exact commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          ready=0
+          for attempt in $(seq 1 36); do
+            code="$(curl -sS -o /tmp/health.json -w "%{http_code}" --max-time 10 "$BASE/api/health" || true)"
+            if [[ "$code" == "200" ]] && grep -q "$GITHUB_SHA" /tmp/health.json; then
+              echo "Production is serving expected commit $GITHUB_SHA."
+              ready=1
+              break
+            fi
+            echo "Waiting for production commit $GITHUB_SHA (HTTP=$code, attempt=$attempt/36)"
+            sleep 10
+          done
+          [[ "$ready" == "1" ]] || { echo "Production did not serve this commit within 6 minutes."; exit 1; }
+
       - name: Run bounded clean commerce recovery
         shell: bash
         run: |
@@ -58,8 +76,7 @@ except Exception:
 PY
           }
 
-          call_post "api/cron/cj-sandbox-order-test" '{"supplierListingId":"d970c5d9-0662-4894-bfe6-4e377819666d"}' 300 || true
-          call_get "api/cron/commerce-cj-import?q=women%20handbag&limit=3" 300 || true
+          call_get "api/cron/rebuild-cj-import?q=women%20handbag&limit=3" 300 || true
           call_get "api/cron/commerce-publish-base?limit=3" 120 || true
           call_get "api/cron/commerce-publish-shopify?limit=3" 120 || true
           call_get "api/cron/commerce-base-orders" 120 || true
