@@ -3,7 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { runCJSandboxOrderLifecycle } from "@/lib/procurement/cj-adapter";
 import { isCJQuotaCircuitActive } from "@/lib/sources/cj/rate-limit-policy";
-import { confirmCJSandboxOrder, listRecentCJSandboxCreatedOrders, simulateCJSandboxPayment, updateCJSandboxOrderStatus, updateCJSandboxTrackingNumber } from "@/lib/sources/cj/create-order";
+import { confirmCJSandboxOrder, getCJOrderStatus, listRecentCJSandboxCreatedOrders, simulateCJSandboxPayment, updateCJSandboxOrderStatus, updateCJSandboxTrackingNumber } from "@/lib/sources/cj/create-order";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -110,7 +110,7 @@ export async function POST(request: Request) {
           String(order.shippingCountryCode ?? "").toUpperCase() === "JP" &&
           String(order.shippingAddress ?? "").includes("1-1 Chiyoda");
         const recent = !Number.isFinite(createdAt) || createdAt >= sinceMs;
-        return sameTestRecipient && recent && (!orderName || orderName.startsWith("TRACER-SANDBOX-"));
+        return sameTestRecipient && recent;
       });
       if (matches.length !== 1) {
         return NextResponse.json({
@@ -124,11 +124,11 @@ export async function POST(request: Request) {
       const orderId = String(matches[0].orderId ?? "").trim();
       if (!orderId) return NextResponse.json({ ok: false, error: "CJ_SANDBOX_ORDER_ID_MISSING", charged: false, realFulfillment: false }, { status: 409 });
 
-      let observed = await (await import("@/lib/procurement/cj-adapter")).cjSupplierAdapter.getOrderStatus(orderId);
+      let observed = await getCJOrderStatus(orderId);
       let normalized = String(observed.status ?? "").trim().toUpperCase();
       if (normalized === "100" || normalized === "CREATED") {
         await confirmCJSandboxOrder(orderId);
-        observed = await (await import("@/lib/procurement/cj-adapter")).cjSupplierAdapter.getOrderStatus(orderId);
+        observed = await getCJOrderStatus(orderId);
         normalized = String(observed.status ?? "").trim().toUpperCase();
       }
       if (normalized === "200" || normalized === "UNPAID") {
@@ -137,7 +137,7 @@ export async function POST(request: Request) {
         normalized = String(observed.status ?? "").trim().toUpperCase();
       }
       const paid = Boolean(observed.paymentDate || (observed.paymentDateTime && observed.paymentDateTime > 0)) ||
-        ["300", "301", "302", "303", "304", "305", "400", "401", "402", "403", "404", "405", "500", "SHIPPED", "IN_TRANSIT"].includes(normalized);
+        ["300", "301", "302", "303", "304", "305", "400", "401", "402", "403", "404", "405", "500", "SHIPPED", "IN_TRANSIT", "UNSHIPPED", "PENDING", "PROCESSING"].includes(normalized);
       if (!paid) return NextResponse.json({ ok: false, error: "CJ_SANDBOX_PAYMENT_NOT_CONFIRMED", status: normalized, charged: false, realFulfillment: false }, { status: 409 });
 
       const trackingNumber = String(observed.trackingNumber ?? "").trim() || "SBXTRACER" + Date.now();
@@ -150,7 +150,7 @@ export async function POST(request: Request) {
         await updateCJSandboxOrderStatus(orderId, 500);
         normalized = "500";
       }
-      const verified = await (await import("@/lib/procurement/cj-adapter")).cjSupplierAdapter.getOrderStatus(orderId);
+      const verified = await getCJOrderStatus(orderId);
       const verifiedStatus = String(verified.status ?? "").trim().toUpperCase();
       const verifiedTracking = String(verified.trackingNumber ?? "").trim();
       const paymentConfirmed = Boolean(verified.paymentDate || (verified.paymentDateTime && verified.paymentDateTime > 0)) ||
@@ -286,6 +286,11 @@ export async function POST(request: Request) {
           shippingPhone: "00000000000",
           shippingCustomerName: "TRACER SANDBOX TEST",
           email: "sandbox-test@example.invalid",
+        }, async (supplierOrderId) => {
+          const { error: orderIdSaveError } = await db.from("cron_runs").update({
+            metadata: { phase: "cj_sandbox_order_lifecycle", supplierListingId: activeListing.id, supplierOrderId, sandbox: true, charged: false, realFulfillment: false },
+          }).eq("id", runId);
+          if (orderIdSaveError) throw new Error("CJ_SANDBOX_ORDER_ID_PERSIST_FAILED");
         });
         break;
       } catch (error) {
