@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { getCJQuotaCooldownUntil, isCJQuotaCircuitActive, isCJQuotaExhausted } from "../lib/sources/cj/rate-limit-policy.ts";
 import { isWithinCjQuotaResetReservation } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 import { isCjIdentityReverifyDue } from "../lib/suppliers/cj-identity-reverify-policy.ts";
@@ -39,4 +40,7 @@ assert.equal(isCjIdentityReverifyDue({
   missing_supply_evidence_errors: ["cost:returned_variant_or_product_id_mismatch"],
   legacy_parent_id_mismatch_retry_attempted_at: "2026-10-16T06:00:00.000Z",
 }, now), false);
-console.log("CJ quota and legacy identity retry policy: 14 assertions passed");
+const sandboxRoute = await readFile(new URL("../app/api/cron/cj-sandbox-order-test/route.ts", import.meta.url), "utf8");
+assert.ok(sandboxRoute.includes("isCJQuotaCircuitActive(quotaMetadata)"));
+assert.ok(!sandboxRoute.includes("blockedUntil && Date.parse(blockedUntil) > Date.now()"));
+console.log("CJ quota and legacy identity retry policy: 16 assertions passed");
