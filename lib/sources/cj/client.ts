@@ -253,16 +253,31 @@ export async function fetchCJWithRateLimit(
       ? AbortSignal.any([init.signal, timeoutSignal])
       : timeoutSignal;
     const response = await fetch(input, { ...init, signal });
-    if (response.status !== 429) {
-      return response;
-    }
-
+    // CJ can report daily-point exhaustion in a non-429 JSON response (often
+    // HTTP 200 with result=false). Inspect a clone before returning the response
+    // so the global circuit opens for every explicit points-exhaustion signal.
     const diagnosticResponse = response.clone();
     let diagnostic: { code?: number; result?: boolean; message?: string; pointsInfo?: unknown } = {};
     try {
       diagnostic = (await diagnosticResponse.json()) as typeof diagnostic;
     } catch {
       // Keep the original response available to the caller.
+    }
+
+    if (isCJQuotaExhausted(diagnostic)) {
+      const blockedUntil = await persistCJQuotaCircuit("provider_explicit_daily_points_exhausted");
+      console.warn("[cj] daily API points exhausted; circuit opened", {
+        code: diagnostic.code,
+        blockedUntil,
+      });
+      throw new CJRequestError(
+        `${diagnostic.message || "CJ API quota exhausted"}; cooldown until ${blockedUntil}`,
+        "CJ_QUOTA_EXHAUSTED",
+      );
+    }
+
+    if (response.status !== 429) {
+      return response;
     }
 
     console.warn("[cj] HTTP 429", {
@@ -272,14 +287,6 @@ export async function fetchCJWithRateLimit(
       message: diagnostic.message,
       pointsInfo: diagnostic.pointsInfo,
     });
-
-    if (isCJQuotaExhausted(diagnostic)) {
-      const blockedUntil = await persistCJQuotaCircuit("provider_explicit_daily_points_exhausted");
-      throw new CJRequestError(
-        `${diagnostic.message || "CJ API quota exhausted"}; cooldown until ${blockedUntil}`,
-        "CJ_QUOTA_EXHAUSTED",
-      );
-    }
 
     if (attempt === maxAttempts) {
       return response;
