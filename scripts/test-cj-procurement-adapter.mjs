@@ -82,6 +82,10 @@ assert.match(cleanSandboxRoute, /realFulfillment: false/);
 assert.match(cleanSandboxRoute, /safeCreateFailureRetry/);
 assert.match(cleanSandboxRoute, /previousErrorText\.startsWith\("CJ_SANDBOX_CREATE_FAILED:1603000"\)/);
 assert.match(cleanSandboxRoute, /cj-sandbox-core:retry-1/);
+assert.match(cleanSandboxRoute, /cj-sandbox-core:retry-2/);
+assert.match(cleanSandboxRoute, /shippingAddress: "1-1-1 Chiyoda"/);
+assert.match(cleanSandboxRoute, /shippingAddress2: "Sandbox Test Building 101"/);
+assert.match(cleanSandboxRoute, /error\.message\.slice\(0, 800\)/);
 assert.match(adapter, /created\.responseMessage\.replace\(/, "sandbox create failures must preserve supplier response details");
 
 assert.match(adapter, /charged: false/);
