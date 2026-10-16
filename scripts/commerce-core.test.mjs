@@ -483,3 +483,12 @@ test("BASE publication retries recover exact created IDs and refuse ambiguous st
   assert.match(publish, /base_sku_already_mapped_to_other_variant:/);
   assert.doesNotMatch(publish, /external_sku: sku, status: "pending", last_error: null/);
 });
+
+
+test("supply-first active-run lock conflicts are logged as expected skips, not errors", async () => {
+  const route = await readFile(new URL("../app/api/cron/supply-first/route.ts", import.meta.url), "utf8");
+  assert.match(route, /TRACER SUPPLY-FIRST RUN SKIPPED/);
+  assert.match(route, /active_run_lock_conflict/);
+  assert.doesNotMatch(route, /console\.error\("\[TRACER SUPPLY-FIRST RUN LOG START FAILED\]"/);
+  assert.match(route, /reason: "supply_first_already_running"/);
+});
