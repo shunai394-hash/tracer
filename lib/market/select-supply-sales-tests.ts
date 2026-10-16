@@ -96,17 +96,45 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   if (intelligenceBaseError) throw new Error(intelligenceBaseError.message);
   const { data: linkedListings, error: linkedListingError } = await supabase.from("supplier_listings").select("*").in("product_id", uniqueProductIds).order("fetched_at", { ascending: false, nullsFirst: false });
   if (linkedListingError) throw new Error(linkedListingError.message);
-  const { data: detachedListings, error: detachedListingError } = sourceRefs.length
-    ? await supabase.from("supplier_listings").select("*").in("metadata->>source_ref", sourceRefs).order("fetched_at", { ascending: false, nullsFirst: false })
+  // PostgREST JSON-path filters on metadata->>source_ref have behaved
+  // inconsistently for the detached supply-first rows. Resolve the same
+  // deterministic CJ identity through indexed scalar columns instead, then
+  // reconstruct the source_ref in memory. This keeps supplier identity exact
+  // without linking a CJ item to an unrelated marketplace product.
+  const sourceIdentityPairs = sourceRefs.map((sourceRef) => {
+    const parts = sourceRef.split(":");
+    return {
+      sourceRef,
+      productId: sourceRefToProductId.get(sourceRef) ?? null,
+      supplierProductId: parts.length >= 3 ? parts[1] : "",
+      supplierVariantId: parts.length >= 3 ? parts.slice(2).join(":") : "",
+    };
+  }).filter((item) => item.productId && item.supplierProductId && item.supplierVariantId);
+  const detachedSupplierProductIds = [...new Set(sourceIdentityPairs.map((item) => item.supplierProductId))];
+  const { data: detachedListings, error: detachedListingError } = detachedSupplierProductIds.length
+    ? await supabase.from("supplier_listings").select("*")
+        .eq("supplier", "cj")
+        .in("supplier_product_id", detachedSupplierProductIds)
+        .order("fetched_at", { ascending: false, nullsFirst: false })
     : { data: [], error: null };
   if (detachedListingError) throw new Error(detachedListingError.message);
+  const sourceRefBySupplierIdentity = new Map(
+    sourceIdentityPairs.map((item) => [`${item.supplierProductId}:${item.supplierVariantId}`, item]),
+  );
   const listingsById = new Map<string, Record<string, unknown>>();
   for (const row of linkedListings ?? []) listingsById.set(String(row.id), row as Record<string, unknown>);
   for (const row of detachedListings ?? []) {
     const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {};
-    const sourceRef = typeof metadata.source_ref === "string" ? metadata.source_ref : "";
-    const productId = sourceRefToProductId.get(sourceRef);
-    listingsById.set(String(row.id), productId && !row.product_id ? { ...(row as Record<string, unknown>), product_id: productId } : row as Record<string, unknown>);
+    const metadataSourceRef = typeof metadata.source_ref === "string" ? metadata.source_ref : "";
+    const sourceRef = metadataSourceRef || `cj:${String(row.supplier_product_id ?? "")}:${String(row.supplier_variant_id ?? "")}`;
+    const identityPair = sourceIdentityPairs.find((item) => item.sourceRef === sourceRef)
+      ?? sourceRefBySupplierIdentity.get(`${String(row.supplier_product_id ?? "")}:${String(row.supplier_variant_id ?? "")}`);
+    const productId = identityPair?.productId ?? sourceRefToProductId.get(sourceRef);
+    if (productId) {
+      listingsById.set(String(row.id), !row.product_id
+        ? { ...(row as Record<string, unknown>), product_id: productId }
+        : row as Record<string, unknown>);
+    }
   }
   const listings = [...listingsById.values()];
 
