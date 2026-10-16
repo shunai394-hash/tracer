@@ -21,10 +21,6 @@
     {
       "path": "/api/cron/commerce-procurement",
       "schedule": "13,28,43,58 * * * *"
-    },
-    {
-      "path": "/api/cron/patrol-ai",
-      "schedule": "*/5 * * * *"
     }
   ]
 }
