@@ -23,6 +23,8 @@ test("publication and price calculation require fresh verified supplier evidence
   assert.match(core, /offer\.tracking_supported !== true/);
   assert.match(core, /supplier_offer_verification_stale/);
   assert.match(core, /supplier_offer_price_not_fulfillable/);
+  assert.match(core, /const quantityByOffer = new Map<string, number>\(\)/);
+  assert.match(core, /quantityByOffer\.get\(line\.offerId\)/);
   assert.match(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
   assert.match(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
   assert.match(publish, /supplier_offer_missing_or_out_of_stock/);
