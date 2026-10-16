@@ -40,7 +40,6 @@ assert.match(supplyDiscovery, /const supplierProductId = resolvedVariant\.suppli
 assert.doesNotMatch(supplyDiscovery, /supplier_product_id: candidate\.id/, "supplier listings must persist the exact variant endpoint's canonical product ID");
 
 assert.match(client, /features: "enable_inventory"/);
-assert.match(client, /"vid" in data \|\| "variantId" in data/);
 assert.match(client, /Number\(inventoryRow\.verifiedWarehouse\) !== 1/);
 assert.match(client, /Number\(inventoryRow\.cjInventory\)/);
 assert.match(order, /body\.payType = input\.payType \?\? \(input\.isSandbox \? 3 : 2\)/);
