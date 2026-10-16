@@ -127,6 +127,15 @@ test("procurement revalidates the exact fresh profitable offer and preserves a c
   assert.doesNotMatch(worker, /country_code_v2"\)\.toUpperCase\(\) \|\| "JP"/);
 });
 
+test("BASE tracking reflection is scheduled after procurement and idempotent per order line", async () => {
+  const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+  assert.equal(config.crons.find((job) => job.path === "/api/cron/commerce-base-fulfillment")?.schedule, "14,29,44,59 * * * *");
+  const route = await readFile(new URL("../app/api/cron/commerce-base-fulfillment/route.ts", import.meta.url), "utf8");
+  assert.match(route, /from\("commerce_orders"\)/);
+  assert.match(route, /from\("procurement_orders"\)/);
+  assert.match(route, /tracerBaseFulfillmentGroups/);
+  assert.match(route, /updateBaseOrderItemFulfillment/);
+});
 test("Shopify fulfillment tracking sync runs automatically after procurement", async () => {
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
   assert.equal(config.crons.find((job) => job.path === "/api/cron/shopify-fulfillment")?.schedule, "7,22,37,52 * * * *");
