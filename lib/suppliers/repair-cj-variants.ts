@@ -30,11 +30,13 @@ export async function repairCjMissingWomenVariants(options: { limit?: number } =
   const limit = Math.max(1, Math.min(options.limit ?? 50, 50));
   const { data: rows, error } = await db
     .from("supplier_listings")
-    .select("id,title,sku,supplier_product_id,supplier_variant_id,verification_status,metadata")
+    .select("id,title,sku,supplier_product_id,supplier_variant_id,verification_status,verification_attempts,next_verification_at,metadata")
     .eq("supplier", "cj")
-    .eq("verification_status", "unverified")
+    .in("verification_status", ["unverified", "retryable"])
     .is("supplier_variant_id", null)
     .not("supplier_product_id", "is", null)
+    .or(`next_verification_at.is.null,next_verification_at.lte.${new Date().toISOString()}`)
+    .order("next_verification_at", { ascending: true, nullsFirst: true })
     .order("id", { ascending: true })
     .limit(500);
   if (error) throw new Error(`CJ missing-variant candidate query failed: ${error.message}`);
@@ -45,22 +47,40 @@ export async function repairCjMissingWomenVariants(options: { limit?: number } =
   for (const row of womenRows) {
     const supplierListingId = String(row.id);
     const supplierProductId = String(row.supplier_product_id);
+    const attempts = Math.max(0, Number(row.verification_attempts ?? 0));
+    const deferCandidate = async (reason: string, delayMs = Math.min(7 * 86_400_000, 6 * 3_600_000 * 2 ** Math.min(attempts, 5))) => {
+      const { error: deferError } = await db.from("supplier_listings").update({
+        verification_status: "retryable",
+        verification_error: reason,
+        verification_attempts: attempts + 1,
+        next_verification_at: new Date(Date.now() + delayMs).toISOString(),
+      }).eq("id", supplierListingId);
+      if (deferError) throw new Error(`candidate backoff write failed: ${deferError.message}`);
+    };
     try {
       const variants = await fetchCJProductVariants(supplierProductId, { countryCode: "JP" });
       const variant = selectRecoverableVariant(variants, knownVariantBarcode(row.metadata));
       if (!variant?.vid) {
         result.noVariant += 1;
+        await deferCandidate("CJ product has no unambiguous recoverable child variant");
         continue;
       }
       const inventory = await fetchCJVariantStock(variant.vid);
       if (inventory === null || inventory <= 0) {
         result.noStock += 1;
+        await deferCandidate("CJ child variant has no confirmed positive stock", 24 * 3_600_000);
         continue;
       }
       const cost = Number(variant.sellPrice);
-      if (!Number.isFinite(cost) || cost <= 0) continue;
+      if (!Number.isFinite(cost) || cost <= 0) {
+        await deferCandidate("CJ child variant has no confirmed positive cost");
+        continue;
+      }
       const shippingCost = await calculateCJFreight(variant.vid, { endCountryCode: "JP", quantity: 1 });
-      if (shippingCost === null || !Number.isFinite(shippingCost) || shippingCost < 0) continue;
+      if (shippingCost === null || !Number.isFinite(shippingCost) || shippingCost < 0) {
+        await deferCandidate("CJ Japan freight quote unavailable");
+        continue;
+      }
       const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {};
       const nextMetadata = { ...metadata, variant_recovery: "cj_live_variant_recovery", variant_barcode: variant.barcode ?? metadata.variant_barcode ?? null, variant_sku: variant.sku ?? metadata.variant_sku ?? null, variant_name: variant.nameEn ?? metadata.variant_name ?? null };
       const checkedAt = new Date().toISOString();
