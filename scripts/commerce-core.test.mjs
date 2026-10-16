@@ -37,6 +37,8 @@ test("publication and price calculation require fresh verified supplier evidence
   assert.match(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
   assert.match(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
   assert.match(publish, /supplier_offer_missing_or_out_of_stock/);
+  assert.match(publish, /createBaseItem\(\{[^}]*stock: storefrontStock/s, "first BASE publication must obey the same inventory cap as updates");
+  assert.doesNotMatch(publish, /createBaseItem\(\{[^}]*stock: Number\(offer\.inventory\)/s, "raw supplier inventory must never be exposed to the storefront");
 });
 
 test("paid-order supplier preflight runs before writing the order record", async () => {
