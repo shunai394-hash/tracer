@@ -21,16 +21,16 @@ assert.match(discovery, /if \(!liveVariant \|\| liveVariant\.vid !== variantId \
 assert.match(discovery, /const liveCost = Number\(seededVariant\.sellPrice\)/, "seeded refresh must use current exact-variant price instead of stale persisted cost");
 assert.match(discovery, /const liveProductId = liveVariant\?\.productId\?\.trim\(\)[\s\S]*?supplierProductId: liveProductId/, "exact live variant lookup must resolve the canonical parent product even when the seeded catalog ID is stale");
 assert.match(discovery, /if \(supplierProductId !== candidate\.id\) \{[\s\S]*?getCJProductDetail\(supplierProductId\)[\s\S]*?detail = \{ title: canonicalTitle, imageUrl: canonicalImageUrl/, "a corrected parent product ID must have its own live title/image re-fetched before use");
-assert.match(discovery, /const preserveVerifiedOrderPath =[\s\S]*?seededCandidate\.apiAvailable[\s\S]*?seededCandidate\.orderable[\s\S]*?seededCandidate\.trackingAvailable[\s\S]*?seededCandidate\.supplierVariantId === candidate\.variantId/, "only the same previously verified supplier order path may retain orderability");
+assert.match(discovery, /const liveOrderPathReady = isCJLiveOrderPathReady\(\)[\s\S]*?Number\.isFinite\(stock\) && stock > 0/, "fresh exact-variant price, stock and Japan freight may promote a listing only when the explicit production live-order path is ready");
 assert.match(discovery, /seededCandidate\.verificationError === ""[\s\S]*?no_unique_canonical_child_variant_match/, "only known recoverable verification errors may be cleared after fresh evidence");
-assert.match(discovery, /verification_status: preserveVerifiedOrderPath \? "verified" : "unverified"/, "fresh stock/price checks must not invent orderability for a new supplier path");
+assert.match(discovery, /verification_status: liveOrderPathReady \? "verified" : "unverified"/, "verification status must reflect fresh supply checks plus explicit live-order readiness");
 assert.match(discovery, /next_verification_at: new Date\(Date\.now\(\) \+ 24 \* 60 \* 60 \* 1000\)\.toISOString\(\)/, "successfully processed supplier rows must advance the due queue instead of starving all later candidates");
 assert.match(discovery, /seededVerificationLimit = Math\.min\(5, Math\.max\(0, limit\)\)/, "a bounded batch of existing due suppliers must be refreshed before new-catalog discovery");
 assert.match(discovery, /catalogDiscoveryLimit = Math\.max\(0, limit - seededChecked\)/, "seeded refresh attempts must consume the same bounded run budget instead of multiplying provider calls");
 assert.match(discovery, /catalogDiscovered < catalogDiscoveryLimit/, "new catalog discovery must use only the remaining per-run candidate budget");
 assert.match(discovery, /let catalogAttempted = 0;[\s\S]*?if \(catalogAttempted >= catalogDiscoveryLimit[\s\S]*?catalogAttempted \+= 1;/, "rejected or unavailable new candidates must still consume the bounded attempt budget");
 
-assert.match(discovery, /api_available: preserveVerifiedOrderPath[\s\S]*?orderable: preserveVerifiedOrderPath[\s\S]*?tracking_available: preserveVerifiedOrderPath/, "new candidates must not inherit an existing supplier order path");
+assert.match(discovery, /api_available: liveOrderPathReady[\s\S]*?orderable: liveOrderPathReady[\s\S]*?tracking_available: liveOrderPathReady/, "order-path flags must be recomputed from fresh supply evidence and configured production readiness");
 assert.match(cronRoute, /job_name: "supply-first"/, "the dedicated supplier cron must write an auditable run record");
 assert.match(cronRoute, /status: "running"/);
 assert.match(cronRoute, /const runStatus = discoveryIncomplete \? "failed" : "succeeded"/, "incomplete discovery must not be reported as succeeded");
