@@ -8,8 +8,6 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 
 /** Read-only probe. Never returns item IDs, order IDs, customer data, or credentials. */
-export const maxDuration = 120;
-
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
