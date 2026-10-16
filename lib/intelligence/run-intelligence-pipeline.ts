@@ -526,9 +526,45 @@ export async function runIntelligencePipeline(options: {
     .eq("orderable", true)
     .gt("inventory", 0);
   if (publishedOrderableListingError) throw new Error(`business readiness listing count failed: ${publishedOrderableListingError.message}`);
-  const freshOrderableSupplierCount = verifiedSupplyCount ?? 0;
-  const publishedOrderableListings = publishedOrderableListingCount ?? 0;
-  const businessReady = freshOrderableSupplierCount > 0 && publishedOrderableListings > 0;
+  // The clean commerce pipeline is the current source of truth for BASE/Shopify.
+  // The legacy supplier_listings/shop_listings tables may be empty after reset even
+  // when exact CJ offers and published channel_listings are healthy.
+  const canonicalFreshCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { data: canonicalOffers, error: canonicalOffersError } = await db
+    .from("supplier_offers")
+    .select("id,variant_id")
+    .eq("source_status", "verified")
+    .eq("tracking_supported", true)
+    .eq("ship_to", "JP")
+    .gt("inventory", 0)
+    .gte("last_checked_at", canonicalFreshCutoff)
+    .limit(1000);
+  if (canonicalOffersError) throw new Error("canonical business readiness offer read failed: " + canonicalOffersError.message);
+  const canonicalOfferById = new Map((canonicalOffers ?? []).map((offer) => [String(offer.id), String(offer.variant_id)]));
+  const { data: canonicalPrices, error: canonicalPricesError } = await db
+    .from("commerce_prices")
+    .select("variant_id,supplier_offer_id,selling_price,expected_profit")
+    .gt("selling_price", 0)
+    .gt("expected_profit", 0)
+    .limit(1000);
+  if (canonicalPricesError) throw new Error("canonical business readiness price read failed: " + canonicalPricesError.message);
+  const canonicalValidVariantIds = new Set((canonicalPrices ?? [])
+    .filter((price) => canonicalOfferById.get(String(price.supplier_offer_id)) === String(price.variant_id))
+    .map((price) => String(price.variant_id)));
+  const { data: canonicalPublishedRows, error: canonicalPublishedError } = canonicalValidVariantIds.size
+    ? await db.from("channel_listings")
+        .select("id,variant_id,channel")
+        .eq("status", "published")
+        .in("variant_id", [...canonicalValidVariantIds])
+        .limit(1000)
+    : { data: [], error: null };
+  if (canonicalPublishedError) throw new Error("canonical business readiness listing read failed: " + canonicalPublishedError.message);
+  const canonicalPublishedCount = (canonicalPublishedRows ?? []).length;
+  const freshOrderableSupplierCount = Math.max(verifiedSupplyCount ?? 0, canonicalValidVariantIds.size);
+  const publishedOrderableListings = Math.max(publishedOrderableListingCount ?? 0, canonicalPublishedCount);
+  const businessReady =
+    ((verifiedSupplyCount ?? 0) > 0 && (publishedOrderableListingCount ?? 0) > 0) ||
+    canonicalPublishedCount > 0;
   steps.push({
     name: "business_readiness",
     ok: true,
@@ -538,6 +574,9 @@ export async function runIntelligencePipeline(options: {
       ready: businessReady,
       freshOrderableSuppliers: freshOrderableSupplierCount,
       publishedOrderableListings,
+      canonicalVerifiedVariants: canonicalValidVariantIds.size,
+      canonicalPublishedListings: canonicalPublishedCount,
+      readinessSource: canonicalPublishedCount > 0 ? "clean_commerce" : "legacy",
       reason: businessReady
         ? null
         : freshOrderableSupplierCount === 0
