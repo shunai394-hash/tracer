@@ -107,12 +107,13 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // Parse the labeled segments rather than positional split indexes: using
     // parts[1] here returned the literal word "product", causing every detached
     // supplier listing lookup to miss and reject valid supply as missing.
-    const match = /^cj:product:([^:]+):variant:(.+)$/.exec(sourceRef);
+    const labeledMatch = /^cj:product:([^:]+):variant:(.+)$/.exec(sourceRef);
+    const legacyMatch = /^cj:([^:]+):([^:]+)$/.exec(sourceRef);
     return {
       sourceRef,
       productId: sourceRefToProductId.get(sourceRef) ?? null,
-      supplierProductId: match?.[1] ?? "",
-      supplierVariantId: match?.[2] ?? "",
+      supplierProductId: labeledMatch?.[1] ?? legacyMatch?.[1] ?? "",
+      supplierVariantId: labeledMatch?.[2] ?? legacyMatch?.[2] ?? "",
     };
   }).filter((item) => item.productId && item.supplierProductId && item.supplierVariantId);
   const detachedSupplierProductIds = [...new Set(sourceIdentityPairs.map((item) => item.supplierProductId))];
