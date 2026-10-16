@@ -6,6 +6,8 @@ import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { hasVerifiedPositiveShopifyStock } from "@/lib/shop/live-stock-policy";
+import { isCJLiveOrderingEnabled } from "@/lib/config/env";
+import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -46,6 +48,7 @@ export type ShopListing = {
   shopifyProductId: string | null;
   shopifyHandle: string | null;
   shopifySyncStatus: string | null;
+  canonicalCommerce?: boolean;
 };
 
 function mapListing(row: Record<string, unknown>): ShopListing {
@@ -73,6 +76,7 @@ function mapListing(row: Record<string, unknown>): ShopListing {
     shopifyProductId: row.shopify_product_id ? String(row.shopify_product_id) : null,
     shopifyHandle: typeof row.shopify_handle === "string" ? row.shopify_handle : null,
     shopifySyncStatus: typeof row.shopify_sync_status === "string" ? row.shopify_sync_status : null,
+    canonicalCommerce: false,
   };
 }
 
@@ -198,7 +202,12 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
     .limit(1800);
 
   if (error) throw new Error(error.message);
-  const listings = (await loadLiveListings((data ?? []) as Record<string, unknown>[])).filter((listing) => hasJapaneseText(listing.title) && isPublishableCatalogTitle(listing.title) && isPublishableCatalogDescription(listing.description));
+  const legacyListings = (await loadLiveListings((data ?? []) as Record<string, unknown>[])).filter((listing) => hasJapaneseText(listing.title) && isPublishableCatalogTitle(listing.title) && isPublishableCatalogDescription(listing.description));
+  const canonicalListings = await loadCanonicalCommerceListings();
+  const byVariant = new Map<string, ShopListing>();
+  for (const listing of legacyListings) if (listing.shopifyVariantId) byVariant.set(listing.shopifyVariantId, listing);
+  for (const listing of canonicalListings) if (listing.shopifyVariantId) byVariant.set(listing.shopifyVariantId, listing);
+  const listings = [...byVariant.values()];
   return listings
     .map((listing) => {
       const priority = womenProductPriority({ title: listing.title, category: listing.description });
@@ -226,7 +235,11 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
     .maybeSingle();
 
   if (error) throw new Error(error.message);
-  if (!data) return null;
+  if (!data) {
+    if (!isListingId) return null;
+    const canonical = await loadCanonicalCommerceListings();
+    return canonical.find((listing) => listing.id === slug) ?? null;
+  }
 
   const listing = mapListing(data as Record<string, unknown>);
   if (!listing.supplierListingId || !listing.shopifyProductId || !listing.shopifyVariantId || !listing.shopifyHandle) return null;
@@ -240,12 +253,150 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
   return listing;
 }
 
-export async function recordShopFunnelEvent(args: {
+export 
+async function loadCanonicalCommerceListings(): Promise<ShopListing[]> {
+  if (!isCJLiveOrderingEnabled()) return [];
+  const supabase = createSupabaseAdminClient();
+  const freshAfter = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+  const { data: channelRows, error: channelError } = await supabase
+    .from("channel_listings")
+    .select("id,variant_id,external_product_id,external_variant_id,external_sku,published_url,status,channel,updated_at")
+    .eq("channel", "shopify")
+    .eq("status", "published")
+    .not("external_product_id", "is", null)
+    .not("external_variant_id", "is", null)
+    .not("published_url", "is", null)
+    .order("updated_at", { ascending: false })
+    .limit(1800);
+  if (channelError) throw new Error(channelError.message);
+  const rows = (channelRows ?? []) as Record<string, unknown>[];
+  if (rows.length === 0) return [];
+  const variantIds = [...new Set(rows.map((row) => String(row.variant_id ?? "")).filter(Boolean))];
+  const [{ data: variants, error: variantError }, { data: offers, error: offerError }, { data: prices, error: priceError }] = await Promise.all([
+    supabase.from("commerce_variants")
+      .select("id,product_id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,category,active)")
+      .in("id", variantIds)
+      .eq("commerce_products.active", true),
+    supabase.from("supplier_offers")
+      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,ship_to,tracking_supported,source_status,last_checked_at")
+      .in("variant_id", variantIds)
+      .eq("source_status", "verified")
+      .eq("tracking_supported", true)
+      .eq("ship_to", "JP")
+      .gt("inventory", 0)
+      .gte("last_checked_at", freshAfter),
+    supabase.from("commerce_prices")
+      .select("variant_id,supplier_offer_id,currency,selling_price,expected_profit,margin_rate")
+      .in("variant_id", variantIds)
+      .eq("currency", "JPY")
+      .gt("selling_price", 0)
+      .gt("expected_profit", 0),
+  ]);
+  if (variantError) throw new Error(variantError.message);
+  if (offerError) throw new Error(offerError.message);
+  if (priceError) throw new Error(priceError.message);
+  const variantsById = new Map<string, Record<string, unknown>>();
+  for (const variant of (variants ?? []) as Record<string, unknown>[]) variantsById.set(String(variant.id), variant);
+  const validOffers = (offers ?? []) as Record<string, unknown>[];
+  const validPrices = (prices ?? []) as Record<string, unknown>[];
+  const candidates: ShopListing[] = [];
+
+  for (const channel of rows) {
+    const variantId = String(channel.variant_id ?? "");
+    const variant = variantsById.get(variantId);
+    if (!variant) continue;
+    const rawProduct = variant.commerce_products;
+    const product = (Array.isArray(rawProduct) ? rawProduct[0] : rawProduct) as Record<string, unknown> | null;
+    if (!product || product.active !== true) continue;
+    const price = validPrices.find((item) => String(item.variant_id) === variantId && String(item.supplier_offer_id));
+    if (!price) continue;
+    const offer = validOffers.find((item) => String(item.id) === String(price.supplier_offer_id) && String(item.variant_id) === variantId);
+    if (!offer || Number(offer.inventory) <= 0) continue;
+    const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
+    if (!Number.isFinite(checkedAt) || Date.now() - checkedAt > 24 * 60 * 60_000 || checkedAt > Date.now() + 5 * 60_000) continue;
+    const title = String(variant.title_ja || product.title_ja || "").trim();
+    const description = typeof product.description_ja === "string" ? product.description_ja : null;
+    const imageUrl = typeof product.image_url === "string" ? product.image_url : null;
+    if (!title || !description || !imageUrl || !hasJapaneseText(title) || !isPublishableCatalogTitle(title) || !isPublishableCatalogDescription(description)) continue;
+    try {
+      const image = new URL(imageUrl);
+      if (image.protocol !== "https:" && image.protocol !== "http:") continue;
+    } catch {
+      continue;
+    }
+    const publishedUrl = String(channel.published_url ?? "");
+    let handle: string | null = null;
+    try {
+      const parsed = new URL(publishedUrl);
+      const match = parsed.pathname.match(/\/products\/([^/]+)/);
+      handle = match?.[1] ? decodeURIComponent(match[1]) : null;
+    } catch {
+      handle = null;
+    }
+    const shopifyVariantId = String(channel.external_variant_id ?? "");
+    const shopifyProductId = String(channel.external_product_id ?? "");
+    if (!handle || !/^gid:\/\/shopify\/ProductVariant\/\d+$/.test(shopifyVariantId) || !/^gid:\/\/shopify\/Product\/\d+$/.test(shopifyProductId)) continue;
+    candidates.push({
+      id: variantId,
+      slug: variantId,
+      title,
+      description,
+      imageUrl,
+      sellingPrice: asNumber(price.selling_price),
+      currency: "JPY",
+      inventory: toStorefrontStockQuantity(Number(offer.inventory), getStorefrontStockCap()),
+      orderable: true,
+      trackingAvailable: true,
+      selectionReasons: ["仕入先在庫確認済み", "日本向け配送確認済み", "利益計算済み"],
+      productId: String(product.id),
+      bestsellerId: null,
+      supplierListingId: String(offer.id),
+      supplierName: String(offer.supplier_code ?? "CJ"),
+      supplierProductId: String(offer.supplier_product_id),
+      supplierVariantId: String(offer.supplier_variant_id),
+      shopifyVariantId,
+      shopifyProductId,
+      shopifyHandle: handle,
+      shopifySyncStatus: "synced",
+      canonicalCommerce: true,
+    });
+  }
+  if (candidates.length === 0) return [];
+
+  try {
+    const liveStock = await getLiveShopifyStock(candidates.map((listing) => listing.shopifyVariantId).filter((id): id is string => Boolean(id)));
+    return candidates.flatMap((listing) => {
+      const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : undefined;
+      if (!hasVerifiedPositiveShopifyStock(listing.shopifyVariantId, live)) return [];
+      const supplierStock = listing.inventory;
+      return [{ ...listing, inventory: toStorefrontStockQuantity(Math.min(supplierStock, live ?? 0), getStorefrontStockCap()) }];
+    });
+  } catch (error) {
+    console.error("[canonical-commerce-live-stock-unavailable]", error instanceof Error ? error.message.slice(0, 300) : String(error));
+    return candidates;
+  }
+}
+
+async function recordShopFunnelEvent(args: {
   listingId: string;
   eventType: "impression" | "click" | "view" | "add_to_cart" | "checkout" | "purchase";
   qty?: number;
 }): Promise<void> {
   const supabase = createSupabaseAdminClient();
+  const { data: legacyListing, error: lookupError } = await supabase.from("shop_listings").select("id").eq("id", args.listingId).maybeSingle();
+  if (lookupError) throw new Error(lookupError.message);
+  if (!legacyListing) {
+    const { error } = await supabase.from("commerce_events").insert({
+      event_key: "shop-funnel:" + args.listingId + ":" + args.eventType + ":" + Date.now() + ":" + Math.random().toString(36).slice(2, 10),
+      event_type: "shop_" + args.eventType,
+      entity_type: "commerce_variant",
+      entity_id: args.listingId,
+      status: "ok",
+      detail: { qty: args.qty ?? 1 },
+    });
+    if (error) throw new Error(error.message);
+    return;
+  }
   const { error } = await supabase.from("shop_funnel_events").insert({
     listing_id: args.listingId,
     event_type: args.eventType,
