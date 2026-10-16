@@ -89,8 +89,8 @@ assert.match(adapter, /created\.responseMessage\.replace\(/, "sandbox create fai
 const sandboxPayment = adapter.indexOf("await simulateCJSandboxPayment(orderId)");
 assert.ok(sandboxPayment >= 0, "CJ sandbox lifecycle must use the documented simulated-payment endpoint");
 assert.match(adapter, /charged: false/);
-assert.match(adapter, /fromCountryCode: freight\.countryCode,\s+payType: 1,\s+isSandbox: true/,
-  "deprecated page-payment mode must remain restricted to sandbox verification");
+assert.match(adapter, /fromCountryCode: freight\.countryCode,\s+payType: 3,\s+isSandbox: true/,
+  "sandbox order must use create-only mode before explicit confirmation");
 assert.match(adapter, /realFulfillment: false/);
 const sandboxRoute = read("app/api/cron/cj-sandbox-order-test/route.ts");
 assert.match(sandboxRoute, /CJ_SANDBOX_ORDER_TEST_ENABLED/);
