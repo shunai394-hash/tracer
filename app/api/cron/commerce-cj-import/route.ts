@@ -36,17 +36,20 @@ export async function GET(request: Request) {
         stats.products++;
         for (const variant of variants.slice(0, 2)) {
           try {
-            const cost = Number(variant.sellPrice);
-            if (!variant.vid || !Number.isFinite(cost) || cost <= 0) { stats.skipped++; continue; }
-            let supplierProductId = String(variant.productId ?? "").trim();
-            if (!supplierProductId) {
-              const exactVariant = await fetchCJVariantByVid(variant.vid);
-              if (!exactVariant || exactVariant.vid !== variant.vid || !String(exactVariant.productId ?? "").trim()) {
-                stats.skipped++;
-                stats.errors.push("canonical_supplier_product_id_unresolved:" + candidate.id + ":" + variant.vid);
-                continue;
-              }
-              supplierProductId = String(exactVariant.productId).trim();
+            if (!variant.vid) { stats.skipped++; continue; }
+            // Always resolve the exact live VID. Product-scoped results may carry a stale or backup parent ID.
+            const exactVariant = await fetchCJVariantByVid(variant.vid);
+            if (!exactVariant || exactVariant.vid !== variant.vid || !String(exactVariant.productId ?? "").trim()) {
+              stats.skipped++;
+              stats.errors.push("canonical_supplier_product_id_unresolved:" + candidate.id + ":" + variant.vid);
+              continue;
+            }
+            const supplierProductId = String(exactVariant.productId).trim();
+            const cost = Number(exactVariant.sellPrice);
+            if (!Number.isFinite(cost) || cost <= 0) {
+              stats.skipped++;
+              stats.errors.push("canonical_supplier_variant_price_unresolved:" + supplierProductId + ":" + exactVariant.vid);
+              continue;
             }
             const canonicalDetail = supplierProductId === candidate.id ? detail : await getCJProductDetail(supplierProductId);
             if (!canonicalDetail) {
