@@ -21,6 +21,8 @@ assert.match(commerceImporter, /ヴィンテージPUレザーハンドバッグ/
 assert.match(commerceImporter, /コーム付きまつげピンセット/);
 assert.match(commerceImporter, /EMSフェイスケア機器/);
 assert.match(commerceImporter, /ゴールドカラーのレディースハンドバッグ/);
+assert.match(commerceImporter, /japan_compliance_unverified_disinfection_cabinet/);
+assert.match(commerceImporter, /complianceBlocked/);
 assert.match(adapter, /isCanonicalCjNativeId/);
 assert.match(adapter, /CJ_NATIVE_ID_INVALID/);
 assert.match(procurement, /isCanonicalCjNativeId/);
