@@ -81,7 +81,7 @@ assert.doesNotMatch(commerceCycle, /orosy-bulk-import/, "autonomous commerce wor
 assert.doesNotMatch(oneShotRecovery, /orosy-bulk-import/, "one-shot recovery must not invoke Orosy");
 
 const cleanImportSchedules = vercel.crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule);
-assert.deepEqual(cleanImportSchedules, ["*/30 * * * *"], "clean supplier-native discovery must run every 30 minutes");
+assert.deepEqual(cleanImportSchedules, ["*/10 * * * *"], "clean supplier-native discovery must run every 10 minutes");
 assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/supply-first"), [], "legacy supply-first cron must not run beside the clean importer");
 assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/market-sourcing"), [], "legacy marketplace observation cron must not run beside clean supplier discovery");
 const patrolSchedules = vercel.crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule);
