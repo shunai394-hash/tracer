@@ -62,17 +62,17 @@ jobs:
           fi
 
           TOKEN="$(get_oidc_token)"
-          HTTP_CODE="$(curl -sS --max-time 90 -o sandbox-result.json -w '%{http_code}' \
-            -X POST "${BASE}/api/cron/cj-sandbox-order-test" \
+          HTTP_CODE="$(curl -sS --max-time 300 -o sandbox-result.json -w '%{http_code}' \
+            -X POST "${BASE}/api/cron/commerce-cj-sandbox-test" \
             -H "Authorization: Bearer ${TOKEN}" \
             -H "Content-Type: application/json" \
-            --data "{\"supplierListingId\":\"${SUPPLIER_LISTING_ID}\"}")"
+            --data '{}')"
 
           python3 - <<'PY'
           import json
           data = json.load(open("sandbox-result.json"))
           safe = {key: data.get(key) for key in (
-              "ok", "phase", "supplierListingId", "supplierOrderId",
+              "ok", "phase", "supplierOfferId", "supplierOrderId",
               "status", "trackingNumber", "paymentConfirmed",
               "sandbox", "charged", "realFulfillment", "error"
           )}
