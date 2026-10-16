@@ -23,6 +23,14 @@
       "schedule": "13,28,43,58 * * * *"
     },
     {
+      "path": "/api/cron/supply-first",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/cj-variant-repair",
+      "schedule": "20 */6 * * *"
+    },
+    {
       "path": "/api/cron/patrol-ai",
       "schedule": "*/5 * * * *"
     }
