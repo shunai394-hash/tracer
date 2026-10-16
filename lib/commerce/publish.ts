@@ -1,6 +1,6 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { addBaseItemImage, createBaseItem, editBaseItem, getBasePublicShopUrl, isBaseConfigured } from "@/lib/channels/base";
+import { addBaseItemImage, createBaseItem, editBaseItem, fetchBaseItemsSnapshot, getBasePublicShopUrl, isBaseConfigured, BASE_ITEMS_MAX_PAGES } from "@/lib/channels/base";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, updateShopifyProduct } from "@/lib/shopify/admin";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
@@ -197,7 +197,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   if (error) throw new Error("commerce_candidates_read_failed:" + error.message);
   const allCandidates = (data ?? []) as unknown as Candidate[];
   const { data: listingStates, error: stateError } = await db.from("channel_listings")
-    .select("variant_id,status,last_synced_at").eq("channel", channel)
+    .select("variant_id,status,last_synced_at,external_product_id,last_error").eq("channel", channel)
     .in("variant_id", allCandidates.map((row) => row.id));
   if (stateError) throw new Error("commerce_listing_state_read_failed:" + stateError.message);
   const stateByVariant = new Map((listingStates ?? []).map((row) => [String(row.variant_id), row]));
@@ -222,6 +222,23 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     ? sortedCandidates.filter((candidate) => stateByVariant.get(candidate.id)?.status !== "published")
     : sortedCandidates;
   const candidates = candidatesToProcess.slice(0, Math.min(100, Math.max(1, Math.floor(limit))));
+  type BaseSnapshotItem = Record<string, unknown>;
+  let baseSnapshotItems: BaseSnapshotItem[] | null = null;
+  let baseSnapshotFailure: string | null = null;
+  if (channel === "base" && candidates.some((candidate) => !stateByVariant.get(candidate.id)?.external_product_id)) {
+    try {
+      const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES });
+      if (snapshot.complete !== true || !Array.isArray(snapshot.items)) throw new Error("base_create_recovery_snapshot_incomplete");
+      baseSnapshotItems = snapshot.items as unknown as BaseSnapshotItem[];
+    } catch (error) {
+      baseSnapshotFailure = error instanceof Error ? error.message.slice(0, 200) : String(error).slice(0, 200);
+    }
+  }
+  const baseItemsById = new Map<string, BaseSnapshotItem>();
+  for (const item of baseSnapshotItems ?? []) {
+    const id = String(item.item_id ?? "").trim();
+    if (id) baseItemsById.set(id, item);
+  }
   const results: Array<{ variantId: string; ok: boolean; externalId?: string; error?: string }> = [];
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
@@ -249,15 +266,48 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     }
     const description = (product.description_ja || title + "。商品仕様・配送条件は仕入先の最新情報をご確認ください。").trim();
     const sku = "TRC-" + candidate.id.replace(/-/g, "").slice(0, 24).toUpperCase();
+    let baseCreateIdNeedsRecovery: string | null = null;
     try {
       const { data: listing, error: listingError } = await db.from("channel_listings").upsert({
         variant_id: candidate.id, channel, selling_price: Math.round(Number(price.selling_price)),
-        external_sku: sku, status: "pending", last_error: null, updated_at: new Date().toISOString()
-      }, { onConflict: "channel,variant_id" }).select("id,external_product_id,external_variant_id").single();
+        external_sku: sku, status: "pending", updated_at: new Date().toISOString()
+      }, { onConflict: "channel,variant_id" }).select("id,external_product_id,external_variant_id,last_error").single();
       if (listingError || !listing) throw new Error("listing_claim_failed:" + (listingError?.message ?? "no_row"));
       let externalProductId = listing.external_product_id ? String(listing.external_product_id) : null;
       let externalVariantId = listing.external_variant_id ? String(listing.external_variant_id) : null;
       let publishedUrl: string | null = null;
+      if (channel === "base" && !externalProductId) {
+        const markerId = String(listing.last_error ?? "").match(/^base_create_id_persist_failed:([^:]+)(?::|$)/)?.[1] ?? null;
+        let recoveredId = markerId;
+        if (markerId && baseSnapshotItems && !baseItemsById.has(markerId)) throw new Error("base_create_marker_item_not_found:" + markerId);
+        if (!recoveredId) {
+          if (!baseSnapshotItems) throw new Error("base_create_recovery_snapshot_unavailable:" + (baseSnapshotFailure ?? "unknown"));
+          const exactMatches = baseSnapshotItems.filter((item) => String(item.identifier ?? "").trim().toUpperCase() === sku);
+          if (exactMatches.length > 1) throw new Error("base_identifier_ambiguous:" + sku);
+          if (exactMatches.length === 1) recoveredId = String(exactMatches[0].item_id ?? "").trim() || null;
+        }
+        if (recoveredId) {
+          baseCreateIdNeedsRecovery = recoveredId;
+          const [skuLinks, idLinks] = await Promise.all([
+            db.from("channel_listings").select("id,variant_id,external_product_id").eq("channel", "base").eq("external_sku", sku),
+            db.from("channel_listings").select("id,variant_id").eq("channel", "base").eq("external_product_id", recoveredId),
+          ]);
+          if (skuLinks.error) throw new Error("base_recovery_sku_link_read_failed:" + skuLinks.error.message);
+          if (idLinks.error) throw new Error("base_recovery_item_link_read_failed:" + idLinks.error.message);
+          if ((skuLinks.data ?? []).some((row) => String(row.id) !== String(listing.id) && String(row.variant_id) !== String(candidate.id))) throw new Error("base_sku_already_mapped_to_other_variant:" + sku);
+          if ((idLinks.data ?? []).some((row) => String(row.id) !== String(listing.id) && String(row.variant_id) !== String(candidate.id))) throw new Error("base_item_already_mapped_to_other_variant:" + recoveredId);
+          const { data: recovered, error: recoverError } = await db.from("channel_listings")
+            .update({ external_product_id: recoveredId, last_error: null, updated_at: new Date().toISOString() })
+            .eq("id", listing.id).is("external_product_id", null).select("id").maybeSingle();
+          if (recoverError) throw new Error("base_existing_item_id_save_failed:" + recoverError.message);
+          if (!recovered) {
+            const { data: current, error: currentError } = await db.from("channel_listings").select("external_product_id").eq("id", listing.id).maybeSingle();
+            if (currentError || String(current?.external_product_id ?? "") !== recoveredId) throw new Error("base_existing_item_id_recovery_race:" + recoveredId);
+          }
+          externalProductId = recoveredId;
+          baseCreateIdNeedsRecovery = null;
+        }
+      }
       if (channel === "base") {
         let baseResponse: unknown = null;
         const itemId = externalProductId;
@@ -270,12 +320,14 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           const returned = response.item?.item_id ?? response.item_id;
           externalProductId = String(returned ?? "");
           if (!externalProductId) throw new Error("base_item_id_missing");
-          // Persist the external ID before image upload so retries edit this item instead of creating duplicates.
+          // Preserve the exact returned ID if persistence fails; the next run can recover it.
+          baseCreateIdNeedsRecovery = externalProductId;
           const { error: saveCreatedIdError } = await db.from("channel_listings").update({
             external_product_id: externalProductId, external_sku: sku, status: "pending",
             last_error: null, updated_at: new Date().toISOString()
           }).eq("id", listing.id);
           if (saveCreatedIdError) throw new Error("base_created_item_id_save_failed:" + saveCreatedIdError.message);
+          baseCreateIdNeedsRecovery = null;
         }
         await addBaseItemImage({ itemId: externalProductId, imageNo: 1, imageUrl });
         // Only make the item visible after the external ID and image are saved.
@@ -352,7 +404,10 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       results.push({ variantId: candidate.id, ok: true, externalId: externalProductId });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const { error: recordError } = await db.from("channel_listings").update({ status: "error", last_error: message.slice(0, 1500), last_synced_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("variant_id", candidate.id).eq("channel", channel);
+      const recoverableBaseError = channel === "base" && baseCreateIdNeedsRecovery
+        ? ("base_create_id_persist_failed:" + baseCreateIdNeedsRecovery + ":" + message).slice(0, 1500)
+        : message.slice(0, 1500);
+      const { error: recordError } = await db.from("channel_listings").update({ status: "error", last_error: recoverableBaseError, last_synced_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("variant_id", candidate.id).eq("channel", channel);
       if (recordError) console.error("[commerce-publish] failed to record channel error", { variantId: candidate.id, channel, error: recordError.message });
       results.push({ variantId: candidate.id, ok: false, error: message.slice(0, 300) });
     }
