@@ -44,6 +44,14 @@ jobs:
           # Run the dedicated collector so child-ASIN evidence and displayable variation labels are written before the sales gate.
           call_get api/cron/market-sourcing-observation 300 market-observation.json || true
 
+          # Re-verify the existing bounded CJ batch early so later discovery calls cannot consume the full job budget first.
+          call_get "api/cron/cj-identity-reverify?limit=25&force=1" 300 cj-identity-reverify.json || true
+          call_get api/cron/supplier-investigation 240 supplier-investigation.json || true
+          call_get api/cron/intelligence 300 intelligence.json || true
+
+          echo "=== CJ supply discovery (will fail closed during provider cooldown) ==="
+          call_get api/cron/supply-first 300 supply-first.json || true
+
           echo "=== CJ sandbox order lifecycle (no charge / no real fulfillment) ==="
           T="$(token)" || { echo "OIDC token failed for CJ sandbox lifecycle"; exit 1; }
           CODE="$(curl -sS -o cj-sandbox.json -w "%{http_code}" --max-time 90 -H "Authorization: Bearer $T" -H "Content-Type: application/json" -X POST "$BASE/api/cron/cj-sandbox-order-test" -d '{"supplierListingId":"9a6eec53-9585-4c28-84a5-d7b879b8e44c"}' || true)"
@@ -56,14 +64,6 @@ jobs:
           except Exception:
               print(open("cj-sandbox.json").read()[:1000])
           PY
-
-          # Re-verify the existing bounded CJ batch early so later discovery calls cannot consume the full job budget first.
-          call_get "api/cron/cj-identity-reverify?limit=25&force=1" 300 cj-identity-reverify.json || true
-          call_get api/cron/supplier-investigation 240 supplier-investigation.json || true
-          call_get api/cron/intelligence 300 intelligence.json || true
-
-          echo "=== CJ supply discovery (will fail closed during provider cooldown) ==="
-          call_get api/cron/supply-first 300 supply-first.json || true
 
           call_get api/cron/sales-test-publication 300 sales-test.json || true
           call_get api/cron/base-publish 60 base-publish.json || true
