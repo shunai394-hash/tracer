@@ -1,5 +1,7 @@
 name: TRACER clean-commerce bounded recovery
 
+# Post-reset rebuild: wait for the exact production commit before supplier imports or channel writes.
+
 on:
   push:
     branches: [main]
