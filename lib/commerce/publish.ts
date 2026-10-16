@@ -1,14 +1,14 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { addBaseItemImage, createBaseItem, editBaseItem, isBaseConfigured } from "@/lib/channels/base";
-import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, updateShopifyProduct } from "@/lib/shopify/admin";
+import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, toShopifyGid, updateShopifyProduct } from "@/lib/shopify/admin";
 
 type Channel = "base" | "shopify";
 type Candidate = {
   id: string; source_variant_key: string; title_ja: string; sku: string | null;
   commerce_products: { id: string; source_key: string; title_ja: string; description_ja: string; image_url: string | null; active: boolean };
   supplier_offers: Array<{ id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; inventory: number; ship_to: string; tracking_supported: boolean }>;
-  commerce_prices: { currency: string; selling_price: number; expected_profit: number; fee_amount: number; margin_rate: number };
+  commerce_prices: { supplier_offer_id: string; currency: string; selling_price: number; expected_profit: number; fee_amount: number; margin_rate: number };
 };
 
 function safeUrl(value: unknown): string | null {
@@ -24,7 +24,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
   if (channel === "shopify" && !isShopifyConfigured()) throw new Error("shopify_not_configured");
   const db = createSupabaseAdminClient();
   const { data, error } = await db.from("commerce_variants")
-    .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported),commerce_prices!inner(currency,selling_price,expected_profit,fee_amount,margin_rate)")
+    .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported),commerce_prices!inner(supplier_offer_id,currency,selling_price,expected_profit,fee_amount,margin_rate)")
     .eq("commerce_products.active", true).eq("supplier_offers.ship_to", "JP")
     .gt("supplier_offers.inventory", 0).eq("commerce_prices.currency", "JPY")
     .gt("commerce_prices.expected_profit", 0).order("updated_at", { ascending: false })
@@ -35,8 +35,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
     const offer = [...(candidate.supplier_offers ?? [])]
-      .filter((x) => x.ship_to === "JP" && Number(x.inventory) > 0 && Number(x.unit_cost) >= 0 && Number(x.shipping_cost) >= 0)
-      .sort((a, b) => Number(a.unit_cost) + Number(a.shipping_cost) - Number(b.unit_cost) - Number(b.shipping_cost))[0];
+      .filter((x) => x.id === candidate.commerce_prices.supplier_offer_id && x.ship_to === "JP" && Number(x.inventory) > 0 && Number(x.unit_cost) >= 0 && Number(x.shipping_cost) >= 0)[0];
     const price = candidate.commerce_prices;
     const imageUrl = safeUrl(product.image_url);
     if (!offer || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0) {
