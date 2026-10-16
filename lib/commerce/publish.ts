@@ -31,7 +31,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   const { data: listings, error } = await db.from("channel_listings")
     .select("id,variant_id,external_product_id,external_variant_id,status,last_error")
     .eq("channel", channel).in("status", ["published", "error"])
-    .not("external_product_id", "is", null).limit(500);
+    .not("external_product_id", "is", null).limit(20);
   if (error) throw new Error("stale_listing_read_failed:" + error.message);
 
   const checkableListings = (listings ?? []).filter((listing) =>
