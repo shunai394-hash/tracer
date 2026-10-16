@@ -255,7 +255,7 @@ export async function discoverAndCreateCjSupply(
       retryable: true,
       reason: "supplier_quota_cooldown",
       quotaBlocked: true,
-      retryAfter: quotaBlockedUntil,
+      retryAfter: quotaBlockedUntil ?? undefined,
       items: [],
     };
   }
