@@ -16,6 +16,15 @@ test("rejects negative costs", () => {
   assert.throws(() => calculateSellingPrice({ unitCostJpy: -1, shippingCostJpy: 0, feeRate: 0.1 }), /invalid_unitCostJpy/);
 });
 
+test("external storefront publication is blocked until CJ live order/payment proof is enabled", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /cjSupplierAdapter\.capabilities\.liveOrdering/);
+  assert.match(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
+  const gateIndex = publish.indexOf("supplier_live_ordering_disabled_until_sandbox_payment_flow_proof");
+  const externalWriteIndex = publish.indexOf("await createBaseItem");
+  assert.ok(gateIndex >= 0 && externalWriteIndex > gateIndex, "the live-order gate must run before any external storefront write");
+});
+
 test("publication and price calculation require fresh verified supplier evidence", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
