@@ -36,6 +36,15 @@ test("catalog publication is independent of live supplier-ordering capability bu
   assert.match(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
   assert.match(publish, /supplier_offer_missing_or_out_of_stock/);
 });
+
+test("publication matches each JPY price to its own verified supplier offer when nested relations are one-to-many", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /commerce_prices: Array</);
+  assert.match(publish, /const validOfferIds = new Set\(validOffers\.map\(\(x\) => x\.id\)\)/);
+  assert.match(publish, /validOfferIds\.has\(x\.supplier_offer_id\) && x\.currency === "JPY"/);
+  assert.match(publish, /validOffers\.find\(\(x\) => x\.id === price\.supplier_offer_id\)/);
+  assert.doesNotMatch(publish, /candidate\.commerce_prices\.supplier_offer_id/);
+});
 test("stale published listings are hidden when supplier stock or verification disappears", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /unpublishUnfulfillableListings\(channel, db\)/);
