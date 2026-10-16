@@ -560,7 +560,7 @@ export async function discoverAndCreateCjSupply(
       let internalSupplyError: string | null = null;
       try {
         internalSupply = await persistCjInternalSupplyCandidate({
-          supplierProductId: candidate.id,
+          supplierProductId,
           supplierVariantId: candidate.variantId,
           supplierSku: seededVariant?.sku ?? null,
           title: displayTitle,
@@ -841,7 +841,7 @@ export async function discoverAndCreateCjSupply(
         let internalSupplyError: string | null = null;
         try {
           internalSupply = await persistCjInternalSupplyCandidate({
-            supplierProductId: candidate.id,
+            supplierProductId,
             supplierVariantId: variant.vid,
             supplierSku: variant.sku ?? null,
             title: displayTitle,
@@ -872,7 +872,7 @@ export async function discoverAndCreateCjSupply(
           offerId: intelligence.offerId,
           intelligenceId: intelligence.intelligenceId,
           title: displayTitle,
-          supplierProductId: candidate.id,
+          supplierProductId,
           supplierVariantId: variant.vid,
           costUsd: cost,
           freightUsd: freight,
