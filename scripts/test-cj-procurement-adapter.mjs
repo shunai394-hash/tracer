@@ -75,7 +75,7 @@ assert.match(sandboxRoute, /TRACER CJ SANDBOX ORDER TEST COMPLETE/, "sandbox lif
 const vercelConfig = JSON.parse(read("vercel.json"));
 assert.doesNotMatch(JSON.stringify(vercelConfig.crons), /cj-sandbox-order-test/, "sandbox order test must never be scheduled automatically");
 const sandboxOnceWorkflow = read(".github/workflows/tracer-cj-sandbox-once.yml");
-assert.ok(sandboxOnceWorkflow.includes('cron: "15 8 16 10 *"'), "one-time CJ sandbox lifecycle proof must run after the canonical variant recovery window");
+assert.ok(sandboxOnceWorkflow.includes('cron: "50 7 16 10 *"'), "one-time CJ sandbox lifecycle proof must run after the 07:42 canonical variant recovery window");
 assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/cj-identity-reverify").map((job) => job.schedule), ["12,27,42,57 * * * *"], "CJ identity re-verification must be offset from catalog discovery");
 assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/supply-first").map((job) => job.schedule), ["5,35 * * * *"], "supply-first discovery must run on the 30-minute cadence staggered against identity re-verification");
 
