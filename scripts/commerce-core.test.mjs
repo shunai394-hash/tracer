@@ -166,9 +166,9 @@ test("Shopify fulfillment tracking sync runs automatically after procurement", a
   const route = await readFile(new URL("../app/api/cron/shopify-fulfillment/route.ts", import.meta.url), "utf8");
   assert.match(route, /syncShopifyFulfillments\(25\)/);
 });
-test("five-minute AI patrol remains scheduled alongside canonical commerce jobs", async () => {
+test("legacy AI patrol is not scheduled alongside the canonical commerce pipeline", async () => {
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
-  assert.equal(config.crons.find((job) => job.path === "/api/cron/patrol-ai")?.schedule, "*/5 * * * *");
+  assert.equal(config.crons.some((job) => job.path === "/api/cron/patrol-ai"), false);
 });
 test("clean commerce cron schedule uses only the new supplier, channel, order, and procurement routes", async () => {
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
@@ -178,7 +178,7 @@ test("clean commerce cron schedule uses only the new supplier, channel, order, a
   assert.equal(schedules.get("/api/cron/commerce-publish-shopify"), "*/15 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,16,31,46 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-procurement"), "13,28,43,58 * * * *");
-  assert.equal(schedules.get("/api/cron/patrol-ai"), "*/5 * * * *", "required AI patrol cron must remain enabled");
+  assert.equal(schedules.has("/api/cron/patrol-ai"), false, "legacy patrol must not compete with canonical commerce jobs");
   assert.equal(schedules.has("/api/cron/market-sourcing"), false);
   assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
   assert.equal(schedules.has("/api/cron/supply-first"), false);
