@@ -21,7 +21,7 @@ export type CJOrderProduct = {
   storeLineItemId?: string;
 };
 
-export type CJCreateOrderInput = {
+type CJCreateOrderInputBase = {
   orderNumber: string;
   shippingCountryCode: string;
   shippingProvince: string;
@@ -39,12 +39,14 @@ export type CJCreateOrderInput = {
   fromCountryCode?: string;
   /** Required by CJ createOrderV2. Human-readable destination country. */
   shippingCountry?: string;
-  /** CJ payment mode: 2 = automatic balance payment, 3 = create-only. */
-  payType?: 2 | 3;
-  /** Explicitly create a CJ sandbox order; omitted for all live orders. */
-  isSandbox?: boolean;
   products: CJOrderProduct[];
 };
+
+/** Page-payment mode is permitted only for explicit sandbox orders; live orders use payType 2 or 3. */
+export type CJCreateOrderInput = CJCreateOrderInputBase & (
+  | { isSandbox: true; payType?: 1 | 2 | 3 }
+  | { isSandbox?: false; payType?: 2 | 3 }
+);
 
 type CJCreateOrderResponse = {
   code?: number;
@@ -113,6 +115,9 @@ export async function createCJOrderV2(
 ): Promise<CJCreateOrderResult> {
   if (input.products.length === 0) {
     throw new CJRequestError("order has no line items");
+  }
+  if (input.payType === 1 && input.isSandbox !== true) {
+    throw new CJRequestError("CJ_PAGE_PAYMENT_DISABLED_FOR_LIVE_ORDER");
   }
 
   // Fail closed before obtaining a CJ access token. These are official
