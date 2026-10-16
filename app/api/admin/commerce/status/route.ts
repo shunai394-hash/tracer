@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isProcurementApprovalRequired } from "@/lib/commerce/procurement-approval";
+import { BASE_ITEMS_MAX_PAGES, isBaseConfigured, probeBaseReadOnly } from "@/lib/channels/base";
+import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 type Db = ReturnType<typeof createSupabaseAdminClient>;
 type Filter = (query: any) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -50,6 +52,49 @@ export async function GET(request: Request) {
       shipped: await count(db, "commerce_orders", (q) => q.eq("channel", name).eq("fulfillment_status", "shipped")),
       lastReceivedAt: await latest(db, "commerce_orders", "received_at", (q) => q.eq("channel", name)),
     });
+    // Query the live storefront APIs read-only as well as the internal mapping DB.
+    // A DB "published" row alone does not prove the item exists on the platform.
+    const [baseLive, shopifyLive] = await Promise.all([
+      (async () => {
+        if (!isBaseConfigured()) return { ok: false, configured: false, error: "base_oauth_not_configured" };
+        try {
+          const probe = await probeBaseReadOnly({ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES });
+          return {
+            ok: probe.orders.apiStatus === 200 && probe.items.apiStatus === 200 && probe.items.complete,
+            configured: true,
+            ordersApiStatus: probe.orders.apiStatus,
+            ordersReturned: probe.orders.countReturned,
+            itemsApiStatus: probe.items.apiStatus,
+            itemsScanned: probe.items.countReturned,
+            visibleItems: probe.items.visibleCount,
+            hiddenItems: probe.items.hiddenCount,
+            unknownVisibility: probe.items.unknownVisibilityCount,
+            pagesScanned: probe.items.pages,
+            scanCap: BASE_ITEMS_MAX_PAGES * 100,
+            scanComplete: probe.items.complete,
+            errorStage: probe.items.errorStage,
+          };
+        } catch (error) {
+          return { ok: false, configured: true, error: error instanceof Error ? error.message.split(":")[0].slice(0, 100) : "base_probe_failed" };
+        }
+      })(),
+      (async () => {
+        if (!isShopifyConfigured()) return { ok: false, configured: false, error: "shopify_admin_api_not_configured" };
+        try {
+          const live = await shopifyGraphQL<{
+            productsCount: { count: number };
+            activeProductsCount: { count: number };
+          }>(`query TracerReadOnlyCommerceStatus {
+            productsCount(limit: 1) { count }
+            activeProductsCount: productsCount(query: "status:active", limit: 1) { count }
+          }`);
+          return { ok: true, configured: true, totalProducts: live.productsCount.count, activeProducts: live.activeProductsCount.count };
+        } catch (error) {
+          return { ok: false, configured: true, error: error instanceof Error ? error.message.split("\\n")[0].slice(0, 160) : "shopify_probe_failed" };
+        }
+      })(),
+    ]);
+
     const procurementStatuses = ["pending", "processing", "submitted", "confirmed", "shipped", "failed", "cancelled"] as const;
     const procurement: Record<string, number> = {};
     for (const status of procurementStatuses) procurement[status] = await count(db, "procurement_orders", (q) => q.eq("status", status));
@@ -58,7 +103,7 @@ export async function GET(request: Request) {
     for (const status of offerStatuses) offers[status] = await count(db, "supplier_offers", (q) => q.eq("source_status", status));
 
     return NextResponse.json({
-      ok: true,
+      ok: baseLive.ok && shopifyLive.ok,
       readOnly: true,
       generatedAt: new Date().toISOString(),
       catalog: {
@@ -77,6 +122,7 @@ export async function GET(request: Request) {
         profitable: await count(db, "commerce_prices", (q) => q.eq("currency", "JPY").gt("expected_profit", 0)),
       },
       channels: { base: await channel("base"), shopify: await channel("shopify") },
+      livePlatforms: { base: baseLive, shopify: shopifyLive },
       orders: { base: await orders("base"), shopify: await orders("shopify") },
       procurement: {
         byStatus: procurement,

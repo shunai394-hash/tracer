@@ -29,8 +29,16 @@ assert.match(baseClient, /itemMaxPages/);
 // The production BASE shop has more than 1,000 items; read-only scans must be
 // able to finish (cap 50 pages x 100) or the mapping audit never runs.
 assert.match(baseClient, /export const BASE_ITEMS_MAX_PAGES = 50;/);
+assert.match(baseClient, /options\?\.itemMaxPages \?\? BASE_ITEMS_MAX_PAGES/);
+assert.equal((baseClient.match(/options\?\.itemMaxPages \?\? BASE_ITEMS_MAX_PAGES/g) ?? []).length, 2, "BASE diagnostics and snapshots default to the full 5,000-item scan");
 assert.doesNotMatch(baseClient, /Math\.min\(10, Math\.max\(1, Math\.floor\(options\?\.itemMaxPages/);
 assert.match(base, /probeBaseReadOnly\(\{ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES \}\)/);
+const commerceStatus = await readFile(new URL("../app/api/admin/commerce/status/route.ts", import.meta.url), "utf8");
+assert.match(commerceStatus, /readOnly: true/);
+assert.match(commerceStatus, /livePlatforms: \{ base: baseLive, shopify: shopifyLive \}/);
+assert.match(commerceStatus, /probeBaseReadOnly\(\{ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES \}\)/);
+assert.match(commerceStatus, /productsCount\(query: "status:active"/);
+assert.match(commerceStatus, /Cache-Control": "no-store"/);
 assert.match(shopify, /probeShopifyAuth/);
 assert.match(shopify, /const scopeReady = adminApi\.ok === true[\s\S]*?adminApi\.missingScopes\.length === 0/);
 assert.match(shopify, /ok: shopifyProbe\.ok && scopeReady/);
