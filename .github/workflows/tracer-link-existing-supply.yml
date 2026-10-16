@@ -11,6 +11,9 @@ on:
       - "lib/suppliers/persist-cj-internal-supply.ts"
       - "lib/intelligence/persist-cj-supply-intelligence.ts"
       - "lib/intelligence/japanese-product.ts"
+      - "lib/sources/cj/client.ts"
+      - "lib/sources/cj/rate-limit-policy.ts"
+      - "scripts/test-cj-quota-policy.mjs"
       - "lib/config/env.ts"
       - "app/api/cron/supply-first/route.ts"
   workflow_dispatch:
