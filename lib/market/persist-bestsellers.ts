@@ -213,26 +213,41 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
       const variantStageOutcome = variantEvidenceWriteVerified
         ? "completed"
         : "blocked";
-      const variantStage = await persistTracerV2Stage({
-        productKey: tracerV2ProductKey,
-        stage: "variant_evidence_saved",
-        outcome: variantStageOutcome,
-        idempotencyKey: `variants:${sourceItemKey}:${marketplace.fetchedAt}`,
-        externalId: variantStageOutcome === "completed" ? String(variantEvidenceRows.length) : null,
-        reason: variantStageOutcome === "blocked"
-          ? variantEvidenceRows.length === 0
-            ? "no_canonical_variant_evidence"
-            : "canonical_variant_evidence_not_fully_persisted"
-          : null,
-        evidence: {
-          parsed: variantEvidenceRows.length,
-          written: variantEvidenceWriteCount,
-          marketplace: marketplace.marketplace,
-          source: marketplace.source,
-        },
-      });
-      if (!variantStage.ok) {
-        throw new Error(`tracer_v2_variant_stage_failed:${variantStage.reason ?? "unknown"}`);
+      // Observation runs revisit the same source item. The v2 pipeline is append-only
+      // and ordered, so a previously completed variant stage must not be replayed with
+      // a new fetched_at-based idempotency key (that would incorrectly try to move
+      // the stage backwards from supplier_matched to variant_evidence_saved).
+      const { data: priorVariantStage, error: priorVariantStageError } = await supabase
+        .from("tracer_v2_pipeline_events")
+        .select("id")
+        .eq("product_key", tracerV2ProductKey)
+        .eq("stage", "variant_evidence_saved")
+        .eq("outcome", "completed")
+        .limit(1)
+        .maybeSingle();
+      if (priorVariantStageError) throw new Error(priorVariantStageError.message);
+      if (!priorVariantStage) {
+        const variantStage = await persistTracerV2Stage({
+          productKey: tracerV2ProductKey,
+          stage: "variant_evidence_saved",
+          outcome: variantStageOutcome,
+          idempotencyKey: `variants:${sourceItemKey}`,
+          externalId: variantStageOutcome === "completed" ? String(variantEvidenceRows.length) : null,
+          reason: variantStageOutcome === "blocked"
+            ? variantEvidenceRows.length === 0
+              ? "no_canonical_variant_evidence"
+              : "canonical_variant_evidence_not_fully_persisted"
+            : null,
+          evidence: {
+            parsed: variantEvidenceRows.length,
+            written: variantEvidenceWriteCount,
+            marketplace: marketplace.marketplace,
+            source: marketplace.source,
+          },
+        });
+        if (!variantStage.ok) {
+          throw new Error(`tracer_v2_variant_stage_failed:${variantStage.reason ?? "unknown"}`);
+        }
       }
 
       let productId: string | null = null;
