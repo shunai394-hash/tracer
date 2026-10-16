@@ -41,7 +41,8 @@
     "test:supply-first-quota-cooldown": "node scripts/test-supply-first-quota-cooldown.mjs",
     "test:brightdata-mcp-auth": "node scripts/test-brightdata-mcp-auth.mjs",
     "test:tracer-v2-contract": "node --experimental-strip-types --no-warnings scripts/tracer-v2-pipeline-contract.test.mjs",
-    "test:commerce-core": "node --test scripts/commerce-core.test.mjs"
+    "test:commerce-core": "node --test scripts/commerce-core.test.mjs",
+    "test:cj-procurement-adapter": "node scripts/test-cj-procurement-adapter.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
