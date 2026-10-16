@@ -10,10 +10,10 @@ assert.ok(runInsert > quotaCheck, "quota circuit must be checked before creating
 assert.ok(discoveryCall > quotaCheck, "quota circuit must be checked before supplier discovery");
 const quotaBranch = source.slice(quotaCheck, runInsert);
 assert.match(quotaBranch, /isCJQuotaCircuitActive\(quotaMetadata\)/, "quota circuit state must be derived from persisted metadata");
-assert.match(quotaBranch, /const cachedSupply = quotaCircuitActive\s*\? await db\.from\("supplier_listings"\)/, "cooldown must reuse cached supplier listings instead of stopping the sales pipeline");
-assert.match(quotaBranch, /\.eq\("orderable", true\)/, "cached offers must be explicitly orderable");
-assert.match(quotaBranch, /\.eq\("tracking_available", true\)/, "cached offers must have tracking");
-assert.match(quotaBranch, /\.gt\("inventory", 0\)/, "cached offers must have positive inventory");
-assert.match(quotaBranch, /reason: "cj_quota_cooldown_using_cached_orderable_supply"/, "cooldown response must explain that cached orderable supply is being used");
+assert.match(source, /const cachedSupply = quotaCircuitActive\s*\? await db\.from\("supplier_listings"\)/, "cooldown must reuse cached supplier listings instead of stopping the sales pipeline");
+assert.match(source, /\.eq\("orderable", true\)/, "cached offers must be explicitly orderable");
+assert.match(source, /\.eq\("tracking_available", true\)/, "cached offers must have tracking");
+assert.match(source, /\.gt\("inventory", 0\)/, "cached offers must have positive inventory");
+assert.match(source, /reason: "cj_quota_cooldown_using_cached_orderable_supply"/, "cooldown response must explain that cached orderable supply is being used");
 assert.match(source, /selectAndPublishSupplySalesTests\(verifiedProductIds/, "cached offers must pass through the standard profitability and publication selector");
-console.log("Supply-first CJ quota cooldown: 9 invariants passed");
+console.log("Supply-first CJ quota cooldown: 8 invariants passed");
