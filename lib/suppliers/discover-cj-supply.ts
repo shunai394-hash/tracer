@@ -419,9 +419,19 @@ export async function discoverAndCreateCjSupply(
       const cachedTitle = String(cachedProduct?.title ?? "").trim();
       const cachedImageUrl = String(cachedProduct?.image_url ?? "").trim();
       const cachedPrice = Number(cachedProduct?.price);
-      let detail = cachedTitle && cachedImageUrl
+      type ProductDetail = { title: string; imageUrl: string; price: number | null };
+      let detail: ProductDetail | null = cachedTitle && cachedImageUrl
         ? { title: cachedTitle, imageUrl: cachedImageUrl, price: Number.isFinite(cachedPrice) ? cachedPrice : null }
-        : await getCJProductDetail(candidate.id);
+        : null;
+      if (!detail) {
+        const liveDetail = await getCJProductDetail(candidate.id);
+        const title = liveDetail?.title?.trim() ?? "";
+        const imageUrl = liveDetail?.imageUrl?.trim() ?? "";
+        if (title && imageUrl) {
+          const parsedPrice = Number(liveDetail?.price);
+          detail = { title, imageUrl, price: Number.isFinite(parsedPrice) ? parsedPrice : null };
+        }
+      }
 
       // Some CJ product-query responses are empty even though the product is
       // still discoverable through listV2. Do not discard an otherwise
@@ -496,8 +506,10 @@ export async function discoverAndCreateCjSupply(
           items.push({ rejectedStage: "canonical_supplier_product_detail_missing", supplierProductId, supplierVariantId: candidate.variantId });
           continue;
         }
-        detail = { title: canonicalTitle, imageUrl: canonicalImageUrl, price: canonicalDetail?.price ?? null };
+        const canonicalPrice = Number(canonicalDetail?.price);
+        detail = { title: canonicalTitle, imageUrl: canonicalImageUrl, price: Number.isFinite(canonicalPrice) ? canonicalPrice : null };
       }
+      if (!detail) continue;
       // Price must come from the live exact-variant response, not the stale
       // supplier-listing/cache price. Stock and Japan freight are rechecked too.
       const liveCost = Number(seededVariant.sellPrice);
@@ -731,7 +743,11 @@ export async function discoverAndCreateCjSupply(
       try {
         // listV2 already carries title/image/price; a separate detail call
         // only spent one rate-limited CJ request per candidate.
-        let detail = { title: candidate.title, imageUrl: candidate.imageUrl, price: candidate.price };
+        let detail: { title: string; imageUrl: string; price: number | null } = {
+          title: candidate.title,
+          imageUrl: candidate.imageUrl,
+          price: Number.isFinite(Number(candidate.price)) ? Number(candidate.price) : null,
+        };
 
         const variants = await fetchCJProductVariants(candidate.id);
         // In supply-first the CJ variant itself is the sellable item, so a
@@ -762,7 +778,8 @@ export async function discoverAndCreateCjSupply(
             reject("canonical_supplier_product_detail_missing", { supplierProductId, supplierVariantId: variant.vid });
             continue;
           }
-          detail = { title: canonicalTitle, imageUrl: canonicalImageUrl, price: canonicalDetail?.price ?? null };
+          const canonicalPrice = Number(canonicalDetail?.price);
+          detail = { title: canonicalTitle, imageUrl: canonicalImageUrl, price: Number.isFinite(canonicalPrice) ? canonicalPrice : null };
         }
         if (existingProducts.has(supplierProductId)) {
           reject("supplier_product_already_exists", { supplierProductId, supplierVariantId: variant.vid });
