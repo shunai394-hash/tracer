@@ -7,6 +7,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: tracer-clean-commerce-recovery
+  cancel-in-progress: false
+
 permissions:
   id-token: write
   contents: read
@@ -30,6 +34,14 @@ jobs:
               echo "Production is serving expected commit $GITHUB_SHA."
               ready=1
               break
+            fi
+            if [[ "$code" == "200" && -n "$sha" ]]; then
+              git fetch --no-tags origin main
+              if git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+                echo "Production is serving descendant commit $sha, which includes $GITHUB_SHA."
+                ready=1
+                break
+              fi
             fi
             echo "Waiting for deployment: HTTP=$code sha=$sha attempt=$attempt/36"
             sleep 10
