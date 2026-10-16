@@ -303,9 +303,10 @@ export type BaseReadOnlyProbeResult = {
     pages: number;
     complete: boolean;
     errorStage: string | null;
-    /** Rows whose item_id was missing, or repeated across pages (offsets shifted mid-scan). Either makes the scan incomplete. */
+    /** Rows repeated across pages (an insert shifted offsets); skipped, not counted twice. */
+    duplicateItemCount: number;
+    /** Rows without an item_id; they cannot be matched to TRACER. */
     missingItemIdCount: number;
-    duplicateItemIdCount: number;
     entries: Array<{ itemId: string | null; identifier: string | null; visible: boolean | null }>;
   };
 };
@@ -357,16 +358,16 @@ export async function probeBaseReadOnly(options?: {
       pages: 0,
       complete: false,
       errorStage: null,
+      duplicateItemCount: 0,
       missingItemIdCount: 0,
-      duplicateItemIdCount: 0,
       entries: [],
     },
   };
-  const seenItemIds = new Set<string>();
 
   const pageLimit = Math.min(100, Math.max(1, Math.floor(options?.itemPageLimit ?? 100)));
   const maxPages = Math.min(BASE_ITEMS_MAX_PAGES, Math.max(1, Math.floor(options?.itemMaxPages ?? BASE_ITEMS_MAX_PAGES)));
   let offset = 0;
+  const seenItemIds = new Set<string>();
   for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
     try {
       const payload = await requestJson(
@@ -377,20 +378,23 @@ export async function probeBaseReadOnly(options?: {
       const rows = payload.items as Array<{ visible?: boolean | number | string }>;
       result.items.apiStatus = 200;
       result.items.pages += 1;
-      result.items.countReturned += rows.length;
       for (const item of rows) {
         const raw = item as { item_id?: string | number; identifier?: unknown };
         const rawId = raw.item_id;
         const itemId = rawId == null || String(rawId).trim() === "" ? null : String(rawId);
         if (!itemId) result.items.missingItemIdCount += 1;
-        else if (seenItemIds.has(itemId)) result.items.duplicateItemIdCount += 1;
-        else seenItemIds.add(itemId);
         const identifier = typeof raw.identifier === "string" && raw.identifier.trim() ? raw.identifier.trim() : null;
         const visible = item.visible === true || item.visible === 1 || item.visible === "1"
           ? true
           : item.visible === false || item.visible === 0 || item.visible === "0"
             ? false
             : null;
+        if (itemId && seenItemIds.has(itemId)) {
+          result.items.duplicateItemCount += 1;
+          continue;
+        }
+        if (itemId) seenItemIds.add(itemId);
+        result.items.countReturned += 1;
         result.items.entries.push({ itemId, identifier, visible });
         if (visible === true) {
           result.items.visibleCount += 1;
@@ -422,10 +426,6 @@ export async function probeBaseReadOnly(options?: {
     } catch (error) {
       result.items.errorStage = (error instanceof Error ? error.message : "BASE_ITEMS_PROBE_FAILED").split(":")[0].slice(0, 100);
     }
-  }
-  if (result.items.missingItemIdCount > 0 || result.items.duplicateItemIdCount > 0) {
-    result.items.complete = false;
-    result.items.errorStage ??= "BASE_ITEMS_ID_MISSING_OR_DUPLICATE";
   }
 
   return result;
@@ -491,7 +491,14 @@ export async function fetchBaseItemsSnapshot(options?: {
     if (rows.length !== payload.items.length) {
       throw new Error("BASE_ITEMS_SNAPSHOT_ROW_INVALID");
     }
-    items.push(...rows);
+    const seenItemIds = new Set(items.map((item) => String(item.item_id ?? "")).filter(Boolean));
+    for (const row of rows) {
+      const id = String(row.item_id ?? "");
+      if (!id) throw new Error("BASE_ITEMS_SNAPSHOT_ID_MISSING_OR_DUPLICATE");
+      if (seenItemIds.has(id)) continue;
+      seenItemIds.add(id);
+      items.push(row);
+    }
     pages += 1;
     if (rows.length < pageLimit) {
       complete = true;
@@ -512,7 +519,7 @@ export async function fetchBaseItemsSnapshot(options?: {
     if (Array.isArray(payload?.items) && payload.items.length === 0) complete = true;
   }
 
-  if (!complete) throw new Error("BASE_ITEMS_SNAPSHOT_INCOMPLETE");
+  if (!complete) throw new Error(`BASE_ITEMS_SNAPSHOT_INCOMPLETE:pages=${pages}:maxPages=${maxPages}`);
   const ids = items.map((item) => String(item.item_id ?? "")).filter(Boolean);
   if (ids.length !== items.length || new Set(ids).size !== ids.length) {
     throw new Error("BASE_ITEMS_SNAPSHOT_ID_MISSING_OR_DUPLICATE");

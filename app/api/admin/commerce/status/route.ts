@@ -69,8 +69,7 @@ export async function GET(request: Request) {
             scanCap: BASE_ITEMS_MAX_PAGES * 100,
             scanComplete: probe.items.complete,
             missingItemIds: probe.items.missingItemIdCount,
-            duplicateItemIds: probe.items.duplicateItemIdCount,
-            uniqueItemIds: probe.items.countReturned - probe.items.missingItemIdCount - probe.items.duplicateItemIdCount,
+            duplicateRowsSkipped: probe.items.duplicateItemCount,
             errorStage: probe.items.errorStage,
           };
         } catch (error) {
@@ -145,6 +144,14 @@ export async function GET(request: Request) {
       }
       return [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 30);
     };
+    const legacyNewfind = newfindSummary(legacyDeliveryRows);
+    const commerceNewfind = newfindSummary(commerceDeliveryRows);
+    const newfindLegacyProcessed = legacyNewfind.allTime.delivered;
+    const newfindCommerceProcessed = commerceNewfind.allTime.delivered;
+    const newfindLegacyFailed = legacyNewfind.allTime.failed;
+    const newfindCommerceFailed = commerceNewfind.allTime.failed;
+    const newfindLegacyOpen = legacyNewfind.allTime.open + legacyNewfind.allTime.status_without_ack;
+    const newfindCommerceOpen = commerceNewfind.allTime.open + commerceNewfind.allTime.status_without_ack;
     const latestCronByJob = new Map<string, Record<string, unknown>>();
     for (const row of recentCronRows.data ?? []) {
       const jobName = typeof row.job_name === "string" ? row.job_name : "unknown";
@@ -235,9 +242,12 @@ export async function GET(request: Request) {
         approvalRequired: isProcurementApprovalRequired(),
       },
       newfind: {
-        definition: "delivered = status processed AND receiver ack processed|duplicate; status_without_ack is never counted as delivered",
-        legacyShopListings: newfindSummary(legacyDeliveryRows),
-        commerceVariants: newfindSummary(commerceDeliveryRows),
+        acknowledged: newfindLegacyProcessed + newfindCommerceProcessed,
+        failed: newfindLegacyFailed + newfindCommerceFailed,
+        open: newfindLegacyOpen + newfindCommerceOpen,
+        rule: "acknowledged = status processed AND receiver ack processed|duplicate, counted from the rows. HTTP 200 without that ACK stays open; status_without_ack is never acknowledged.",
+        legacyShopListings: { table: "newfind_promotion_deliveries", ...legacyNewfind },
+        commerceVariants: { table: "commerce_events", eventType: "newfind_commerce_delivery", ...commerceNewfind },
         latestPatrol: latestPatrolNewfind,
       },
       approvalEvents: { requested: approvalRequested, approved: approvalGranted },

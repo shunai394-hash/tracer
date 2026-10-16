@@ -159,19 +159,32 @@ export async function GET(request: Request) {
       // API failures can be retried instead of leaving those offers errored forever.
       try {
         const db = createSupabaseAdminClient();
-        const { data: failedOffers, error: failedOffersError } = await db.from("supplier_offers")
-          .select("supplier_product_id")
-          .eq("supplier_code", "cj")
-          .eq("source_status", "error")
-          .order("updated_at", { ascending: true })
-          .limit(30);
-        if (failedOffersError) {
-          stats.errors.push("failed_offer_recovery_read:" + failedOffersError.message.slice(0, 120));
+        const [{ data: failedOffers, error: failedOffersError }, { data: listingErrors, error: listingErrorsError }] = await Promise.all([
+          db.from("supplier_offers")
+            .select("supplier_product_id")
+            .eq("supplier_code", "cj")
+            .eq("source_status", "error")
+            .order("updated_at", { ascending: true })
+            .limit(30),
+          db.from("channel_listings")
+            .select("variant_id")
+            .eq("status", "error")
+            .like("last_error", "supplier_offer_no_longer_fulfillable:%")
+            .order("updated_at", { ascending: true })
+            .limit(20),
+        ]);
+        const listingVariantIds = [...new Set((listingErrors ?? []).map((row) => String(row.variant_id ?? "")).filter(Boolean))];
+        const { data: listingOffers, error: listingOffersError } = listingVariantIds.length
+          ? await db.from("supplier_offers").select("supplier_product_id").eq("supplier_code", "cj").in("variant_id", listingVariantIds.slice(0, 20))
+          : { data: [], error: null };
+        if (failedOffersError || listingErrorsError || listingOffersError) {
+          stats.errors.push("failed_offer_recovery_read:" + (failedOffersError?.message ?? listingErrorsError?.message ?? listingOffersError?.message ?? "read_failed").slice(0, 120));
         } else {
           const seen = new Set(candidates.map((item) => item.id));
-          const recoveryIds = [...new Set((failedOffers ?? [])
-            .map((row) => String(row.supplier_product_id ?? "").trim())
-            .filter((id) => /^\d{10,22}$/.test(id) && !seen.has(id)))].slice(0, 2);
+          const listingIds = (listingOffers ?? []).map((row) => String(row.supplier_product_id ?? "").trim());
+          const erroredIds = (failedOffers ?? []).map((row) => String(row.supplier_product_id ?? "").trim());
+          const recoveryIds = [...new Set([...listingIds, ...erroredIds])]
+            .filter((id) => /^\d{10,22}$/.test(id) && !seen.has(id)).slice(0, 2);
           for (const id of recoveryIds) {
             const detail = await getCJProductDetail(id);
             if (!detail) {

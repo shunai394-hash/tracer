@@ -1,0 +1,75 @@
+import assert from "node:assert/strict";
+import { classifyBaseIdentifier, decideCommerceSkuLink } from "../lib/channels/base-item-identity.ts";
+import { nextShopifyVendorPage, SHOPIFY_VENDOR_SCAN_MAX_PAGES } from "../lib/shopify/catalog-scan.ts";
+
+assert.deepEqual(classifyBaseIdentifier(null), { kind: "missing" });
+assert.deepEqual(classifyBaseIdentifier("  "), { kind: "missing" });
+assert.deepEqual(classifyBaseIdentifier("plain-sku"), { kind: "other" });
+assert.deepEqual(
+  classifyBaseIdentifier("TRC-7a10656f-5907-47a9-a636-a174f3ebad63"),
+  { kind: "legacy_uuid", listingId: "7a10656f-5907-47a9-a636-a174f3ebad63" },
+);
+assert.deepEqual(
+  classifyBaseIdentifier("trc-3ce7d60edc484eae9d5e485a"),
+  { kind: "commerce_sku", sku: "TRC-3CE7D60EDC484EAE9D5E485A" },
+);
+
+const listing = { id: "listing-1", externalProductId: null };
+assert.equal(decideCommerceSkuLink({
+  baseItemId: "100",
+  listingsForSku: [listing],
+  otherBaseItemIdsWithSameSku: [],
+  listingIdsAlreadyUsingBaseItem: [],
+}).outcome, "repairable");
+assert.equal(decideCommerceSkuLink({
+  baseItemId: "100",
+  listingsForSku: [{ id: "listing-1", externalProductId: "100" }],
+  otherBaseItemIdsWithSameSku: [],
+  listingIdsAlreadyUsingBaseItem: ["listing-1"],
+}).outcome, "already_linked");
+assert.equal(decideCommerceSkuLink({
+  baseItemId: "100",
+  listingsForSku: [{ id: "listing-1", externalProductId: "999" }],
+  otherBaseItemIdsWithSameSku: [],
+  listingIdsAlreadyUsingBaseItem: [],
+}).outcome, "listing_has_different_base_item");
+assert.equal(decideCommerceSkuLink({
+  baseItemId: "100",
+  listingsForSku: [listing, { id: "listing-2", externalProductId: null }],
+  otherBaseItemIdsWithSameSku: [],
+  listingIdsAlreadyUsingBaseItem: [],
+}).outcome, "ambiguous_sku");
+assert.equal(decideCommerceSkuLink({
+  baseItemId: "100",
+  listingsForSku: [listing],
+  otherBaseItemIdsWithSameSku: ["200"],
+  listingIdsAlreadyUsingBaseItem: [],
+}).outcome, "ambiguous_base_item");
+assert.equal(decideCommerceSkuLink({
+  baseItemId: "100",
+  listingsForSku: [],
+  otherBaseItemIdsWithSameSku: [],
+  listingIdsAlreadyUsingBaseItem: [],
+}).outcome, "no_listing");
+assert.equal(decideCommerceSkuLink({
+  baseItemId: "100",
+  listingsForSku: [listing],
+  otherBaseItemIdsWithSameSku: [],
+  listingIdsAlreadyUsingBaseItem: ["other-listing"],
+}).outcome, "base_item_already_mapped");
+
+assert.equal(SHOPIFY_VENDOR_SCAN_MAX_PAGES, 100);
+assert.deepEqual(nextShopifyVendorPage({
+  pageIndex: 0, maxPages: 100, hasNextPage: false, endCursor: null, previousCursor: null,
+}), { action: "complete" });
+assert.deepEqual(nextShopifyVendorPage({
+  pageIndex: 7, maxPages: 8, hasNextPage: true, endCursor: "cursor-8", previousCursor: "cursor-7",
+}), { action: "incomplete", reason: "page_cap" });
+assert.equal(nextShopifyVendorPage({
+  pageIndex: 0, maxPages: 100, hasNextPage: true, endCursor: "cursor-2", previousCursor: null,
+}).action, "continue");
+assert.deepEqual(nextShopifyVendorPage({
+  pageIndex: 1, maxPages: 100, hasNextPage: true, endCursor: "same", previousCursor: "same",
+}), { action: "incomplete", reason: "cursor_stuck" });
+
+console.log("BASE identifier and Shopify page scan: 16 cases passed");

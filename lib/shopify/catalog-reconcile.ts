@@ -11,6 +11,7 @@ export type ShopifyCatalogNode = {
   status: string;
   vendor: string | null;
   publishedOnPublication: boolean;
+  totalInventory?: number | null;
   variants: Array<{ id: string; sku: string | null; price: string | null }>;
 };
 
@@ -97,6 +98,8 @@ export function reconcileShopifyCatalog(input: {
       draft: nodes.filter((node) => node.status === "DRAFT").length,
       archived: nodes.filter((node) => node.status === "ARCHIVED").length,
       liveOnOnlineStore: nodes.filter(live).length,
+      inStock: nodes.filter((node) => Number(node.totalInventory) > 0).length,
+      activeInStock: nodes.filter((node) => node.status === "ACTIVE" && Number(node.totalInventory) > 0).length,
     },
     tracerVendor: { total: tracerVendor.length, active: tracerVendor.filter((node) => node.status === "ACTIVE").length, live: tracerVendor.filter(live).length },
     commerceChannelListings: {

@@ -3,6 +3,7 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getOnlineStorePublicationId, shopifyGraphQL } from "@/lib/shopify/admin";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
+import { nextShopifyVendorPage, SHOPIFY_VENDOR_SCAN_MAX_PAGES } from "@/lib/shopify/catalog-scan";
 import { reconcileShopifyCatalog, type CommerceShopifyRow } from "@/lib/shopify/catalog-reconcile";
 
 export const runtime = "nodejs";
@@ -32,15 +33,16 @@ export async function GET(request: Request) {
 
   try {
     const publicationId = await getOnlineStorePublicationId();
-    // Scan the whole store to the last page (no fixed page cap), then keep
-    // vendor TRACER products for the legacy checks below.
+    // Scan the whole store (vendor TRACER is a subset of it), so the store,
+    // vendor and DB populations come from one complete, paginated read.
     const storeNodes: ShopifyNode[] = [];
     let after: string | null = null;
-    let scanComplete = false;
-    const deadline = Date.now() + 90_000;
-    for (let page = 0; page < 200 && Date.now() < deadline; page += 1) {
+    let vendorPages = 0;
+    let vendorScanComplete = false;
+    let vendorScanStop: "complete" | "page_cap" | "cursor_stuck" = "page_cap";
+    for (let page = 0; page < SHOPIFY_VENDOR_SCAN_MAX_PAGES; page += 1) {
       let data: { products: { nodes: ShopifyNode[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } | null = null;
-      for (let attempt = 0; attempt < 6 && !data; attempt += 1) {
+      for (let attempt = 0; !data; attempt += 1) {
         try {
           data = await shopifyGraphQL(
             `query TracerStoreProducts($after: String, $publicationId: ID!) {
@@ -49,7 +51,7 @@ export async function GET(request: Request) {
                   id handle status vendor totalInventory
                   publishedOnPublication(publicationId: $publicationId)
                   featuredMedia { id }
-                  variants(first: 3) { nodes { id sku price inventoryQuantity } }
+                  variants(first: 5) { nodes { id sku price inventoryQuantity } }
                 }
                 pageInfo { hasNextPage endCursor }
               }
@@ -57,17 +59,50 @@ export async function GET(request: Request) {
             { after, publicationId },
           );
         } catch (error) {
-          if (!/throttl/i.test(error instanceof Error ? error.message : String(error)) || attempt === 5) throw error;
+          // Throttling is a rate limit, not a failed scan: wait and retry the same page.
+          if (attempt >= 5 || !/throttl/i.test(error instanceof Error ? error.message : String(error))) throw error;
           await new Promise((resolve) => setTimeout(resolve, 2_000 * (attempt + 1)));
         }
       }
-      if (!data) break;
       storeNodes.push(...data.products.nodes);
-      if (!data.products.pageInfo.hasNextPage) { scanComplete = true; break; }
-      if (!data.products.pageInfo.endCursor || data.products.pageInfo.endCursor === after) break;
-      after = data.products.pageInfo.endCursor;
+      vendorPages += 1;
+      const step = nextShopifyVendorPage({
+        pageIndex: page,
+        maxPages: SHOPIFY_VENDOR_SCAN_MAX_PAGES,
+        hasNextPage: data.products.pageInfo.hasNextPage,
+        endCursor: data.products.pageInfo.endCursor,
+        previousCursor: after,
+      });
+      if (step.action === "continue") {
+        after = step.cursor;
+        continue;
+      }
+      vendorScanComplete = step.action === "complete";
+      vendorScanStop = step.action === "complete" ? "complete" : step.reason;
+      break;
     }
     const shopify = storeNodes.filter((node) => node.vendor === "TRACER");
+
+    const storeCounts = await shopifyGraphQL<{
+      productsCount: { count: number; precision: "EXACT" | "AT_LEAST" };
+      activeProductsCount: { count: number; precision: "EXACT" | "AT_LEAST" };
+    }>(`query TracerStoreCounts {
+      productsCount(limit: 10000) { count precision }
+      activeProductsCount: productsCount(query: "status:active", limit: 10000) { count precision }
+    }`);
+    const handleCollisionSku = "TRC-3CE7D60EDC484EAE9D5E485A";
+    let skuNodes: Array<{ id: string; sku: string | null; product: { id: string; handle: string } | null }> = [];
+    let skuRecoveryError: string | null = null;
+    try {
+      const skuRecovery = await shopifyGraphQL<{
+        productVariants: { nodes: Array<{ id: string; sku: string | null; product: { id: string; handle: string } | null }> };
+      }>(`query TracerSkuRecovery($query: String!) {
+        productVariants(first: 5, query: $query) { nodes { id sku product { id handle } } }
+      }`, { query: "sku:" + handleCollisionSku });
+      skuNodes = skuRecovery.productVariants.nodes.filter((node) => node.sku === handleCollisionSku);
+    } catch (error) {
+      skuRecoveryError = error instanceof Error ? error.message.split("\n")[0].slice(0, 180) : "sku_lookup_failed";
+    }
 
     const db = createSupabaseAdminClient();
     const { data: rows, error } = await db
@@ -77,28 +112,31 @@ export async function GET(request: Request) {
       .limit(10000);
     if (error) throw new Error(error.message);
 
-    const commerceRows: CommerceShopifyRow[] = [];
-    for (let from = 0; ; from += 1000) {
-      if (from >= 50_000) throw new Error("commerce_channel_scan_incomplete");
-      const { data: page, error: commerceError } = await db.from("channel_listings")
-        .select("variant_id,external_product_id,external_variant_id,external_sku,status,selling_price")
-        .eq("channel", "shopify").order("id", { ascending: true }).range(from, from + 999);
-      if (commerceError) throw new Error(commerceError.message);
-      commerceRows.push(...((page ?? []) as CommerceShopifyRow[]));
-      if ((page ?? []).length < 1000) break;
-    }
-    const catalog = reconcileShopifyCatalog({
-      nodes: storeNodes.map((node) => ({ ...node, variants: node.variants.nodes })),
-      scanComplete,
-      commerceRows,
-      probeVariantIds: new URL(request.url).searchParams.getAll("variant").filter((id) => /^[0-9a-f-]{36}$/i.test(id)).slice(0, 20),
-      legacyRows: (rows ?? []).map((row) => ({ id: String(row.id), shopify_product_id: row.shopify_product_id == null ? null : String(row.shopify_product_id) })),
-    });
-
     // Legacy rows may hold numeric REST ids; compare on the numeric tail.
     const tail = (id: unknown) => String(id ?? "").split("/").pop() ?? "";
     const byId = new Map(shopify.map((node) => [tail(node.id), node]));
     const linkedIds = new Set((rows ?? []).map((row) => tail(row.shopify_product_id)));
+    const commerceRows: Array<CommerceShopifyRow & { id: string }> = [];
+    for (let from = 0; ; from += 1000) {
+      if (from >= 50_000) throw new Error("commerce_channel_scan_incomplete");
+      const { data: page, error: commerceError } = await db.from("channel_listings")
+        .select("id,variant_id,external_product_id,external_variant_id,external_sku,status,selling_price")
+        .eq("channel", "shopify")
+        .order("id", { ascending: true })
+        .range(from, from + 999);
+      if (commerceError) throw new Error(commerceError.message);
+      commerceRows.push(...((page ?? []) as Array<CommerceShopifyRow & { id: string }>));
+      if ((page ?? []).length < 1000) break;
+    }
+    const commerceIds = new Set(commerceRows.map((row) => tail(row.external_product_id)).filter(Boolean));
+    const catalog = reconcileShopifyCatalog({
+      nodes: storeNodes.map((node) => ({ ...node, variants: node.variants.nodes })),
+      scanComplete: vendorScanComplete,
+      commerceRows,
+      legacyRows: (rows ?? []).map((row) => ({ id: String(row.id), shopify_product_id: row.shopify_product_id == null ? null : String(row.shopify_product_id) })),
+      probeVariantIds: ["3ce7d60e-dc48-4eae-9d5e-485a7348d1d4", ...new URL(request.url).searchParams.getAll("variant")]
+        .filter((id, index, all) => /^[0-9a-f-]{36}$/i.test(id) && all.indexOf(id) === index).slice(0, 20),
+    });
     const checks = (rows ?? []).map((row) => {
       const node = byId.get(tail(row.shopify_product_id));
       const variant = node?.variants.nodes.find((v) => tail(v.id) === tail(row.shopify_variant_id)) ?? node?.variants.nodes[0];
@@ -135,18 +173,49 @@ export async function GET(request: Request) {
     });
 
     const count = (predicate: (c: (typeof checks)[number]) => boolean) => checks.filter(predicate).length;
+    const vendorPrecision = vendorScanComplete ? "EXACT" : "AT_LEAST";
     return NextResponse.json({
-      ok: true,
+      ok: vendorScanComplete && storeCounts.productsCount.precision === "EXACT" && storeCounts.activeProductsCount.precision === "EXACT",
       generatedAt: new Date().toISOString(),
       catalog,
+      shopifyStore: {
+        scope: "all_products",
+        totalProducts: storeCounts.productsCount.count,
+        activeProducts: storeCounts.activeProductsCount.count,
+        countPrecision: storeCounts.productsCount.precision,
+        activeCountPrecision: storeCounts.activeProductsCount.precision,
+      },
       shopify: {
-        scanComplete,
+        scope: "vendor:TRACER",
+        scanComplete: vendorScanComplete,
+        scanStop: vendorScanStop,
+        pages: vendorPages,
+        pageCap: SHOPIFY_VENDOR_SCAN_MAX_PAGES,
+        countPrecision: vendorPrecision,
         tracerProducts: shopify.length,
         active: shopify.filter((n) => n.status === "ACTIVE").length,
         publishedOnOnlineStore: shopify.filter((n) => n.publishedOnPublication).length,
         activeAndPublished: shopify.filter((n) => n.status === "ACTIVE" && n.publishedOnPublication).length,
         withoutImage: shopify.filter((n) => !n.featuredMedia).length,
         notLinkedInDb: shopify.filter((n) => !linkedIds.has(tail(n.id))).length,
+        notLinkedToLegacyShopListings: shopify.filter((n) => !linkedIds.has(tail(n.id))).length,
+        matchedToCommerceChannelListings: shopify.filter((n) => commerceIds.has(tail(n.id))).length,
+        notLinkedToCommerceChannelListings: shopify.filter((n) => !commerceIds.has(tail(n.id))).length,
+      },
+      skuRecovery: {
+        variantId: "3ce7d60e-dc48-4eae-9d5e-485a7348d1d4",
+        sku: handleCollisionSku,
+        matches: skuNodes.length,
+        ambiguous: skuNodes.length > 1,
+        productId: skuNodes.length === 1 ? skuNodes[0].product?.id ?? null : null,
+        shopifyVariantId: skuNodes.length === 1 ? skuNodes[0].id : null,
+        handle: skuNodes.length === 1 ? skuNodes[0].product?.handle ?? null : null,
+        error: skuRecoveryError,
+      },
+      commerceChannelListings: {
+        rows: commerceRows.length,
+        published: commerceRows.filter((row) => row.status === "published").length,
+        withExternalProductId: commerceRows.filter((row) => row.external_product_id).length,
       },
       db: {
         linkedRows: checks.length,

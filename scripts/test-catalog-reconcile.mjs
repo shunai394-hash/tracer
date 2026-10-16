@@ -40,14 +40,14 @@ const commerceRow = (n, patch = {}) => ({
 });
 check("Shopify counts keep store, vendor, commerce and legacy populations apart", () => {
   const result = reconcileShopifyCatalog({
-    nodes: [node(1), node(2, { variants: [{ id: "gid://shopify/ProductVariant/2", sku: "TRC-000000000000000000000002", price: "900" }] }), node(3, { vendor: "Other", variants: [{ id: "x", sku: "ABC", price: "1" }] }), node(4, { status: "DRAFT" }), node(5, { variants: [{ id: "y", sku: "TRC-000000000000000000000001", price: "1000" }] })],
+    nodes: [node(1, { totalInventory: 3 }), node(2, { variants: [{ id: "gid://shopify/ProductVariant/2", sku: "TRC-000000000000000000000002", price: "900" }] }), node(3, { vendor: "Other", variants: [{ id: "x", sku: "ABC", price: "1" }] }), node(4, { status: "DRAFT" }), node(5, { variants: [{ id: "y", sku: "TRC-000000000000000000000001", price: "1000" }] })],
     scanComplete: true,
     commerceRows: [commerceRow(1), commerceRow(2), commerceRow(9)],
     legacyRows: [{ id: "l1", shopify_product_id: "4" }],
     probeVariantIds: ["v1", "v404"],
   });
   assert.equal(result.scan.precision, "EXACT");
-  assert.deepEqual(result.store, { total: 5, active: 4, draft: 1, archived: 0, liveOnOnlineStore: 4 });
+  assert.deepEqual(result.store, { total: 5, active: 4, draft: 1, archived: 0, liveOnOnlineStore: 4, inStock: 1, activeInStock: 1 });
   assert.deepEqual(result.tracerVendor, { total: 4, active: 3, live: 3 });
   assert.equal(result.commerceChannelListings.verified, 1);
   assert.equal(result.commerceChannelListings.priceMismatch, 1);
@@ -84,7 +84,9 @@ const [shopifyRoute, repairRoute, baseLib, statusRoute, funnel, reconciliationRo
 ].map((path) => readFile(new URL(path, import.meta.url), "utf8")));
 check("Shopify reconcile scans to the last page instead of stopping at 800", () => {
   assert.doesNotMatch(shopifyRoute, /page < 8;/);
-  assert.match(shopifyRoute, /if \(!data\.products\.pageInfo\.hasNextPage\) \{ scanComplete = true; break; \}/);
+  assert.match(shopifyRoute, /nextShopifyVendorPage\(/);
+  assert.match(shopifyRoute, /products\(first: 100, after: \$after, sortKey: ID\)/);
+  assert.match(shopifyRoute, /scanComplete: vendorScanComplete/);
   assert.doesNotMatch(shopifyRoute, /\.(insert|update|upsert|delete)\(/);
 });
 check("BASE identity repair evaluates the whole snapshot; limit only bounds writes", () => {
@@ -93,7 +95,8 @@ check("BASE identity repair evaluates the whole snapshot; limit only bounds writ
 });
 check("BASE scans confirm the end at the cap and reject duplicate or missing ids", () => {
   assert.match(baseLib, /items\?limit=1&offset=\$\{offset\}/);
-  assert.match(baseLib, /BASE_ITEMS_ID_MISSING_OR_DUPLICATE/);
+  assert.match(baseLib, /result\.items\.duplicateItemCount \+= 1;/);
+  assert.match(baseLib, /BASE_ITEMS_SNAPSHOT_ID_MISSING_OR_DUPLICATE/);
 });
 check("status and funnel share the NEWFIND outcome rule; reconciliation pages channel_listings", () => {
   assert.match(statusRoute, /tallyNewfindDeliveries\(rows\)/);
