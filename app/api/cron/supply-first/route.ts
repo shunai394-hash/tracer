@@ -70,8 +70,22 @@ export async function GET(request: Request) {
     }).select("id").maybeSingle();
     if (startError) {
       console.error("[TRACER SUPPLY-FIRST RUN LOG START FAILED]", { stage: "cron_run_insert", code: startError.code ?? null });
-    } else if (run?.id) {
+      if (startError.code === "23505" && String(startError.message ?? "").includes("cron_runs_one_running_job_uq")) {
+        return NextResponse.json({
+          ok: true,
+          skipped: true,
+          reason: "supply_first_already_running",
+          retryable: true,
+          discoveryInvoked: false,
+          runRecordCreated: false,
+        }, { status: 202 });
+      }
+      throw new Error("supply_first_run_record_insert_failed");
+    }
+    if (run?.id) {
       runId = String(run.id);
+    } else {
+      throw new Error("supply_first_run_record_missing_id");
     }
 
     const supplyFirst = await discoverAndCreateCjSupply(DISCOVERY_BATCH_SIZE, {
