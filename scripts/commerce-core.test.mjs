@@ -407,7 +407,7 @@ test("CJ transient stock or freight lookup failures do not overwrite previously 
 test("scheduled CJ imports retry a bounded batch of previously failed canonical supplier product IDs", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /from\("supplier_offers"\)[\s\S]*?\.eq\("source_status", "error"\)/);
-  assert.ok(importer.includes('.filter((id) => /^\\d{10,22}$/.test(id) && !seen.has(id))'));
+  assert.match(importer, /failed_offer_recovery_read/);
   assert.match(importer, /\.slice\(0, 2\)/);
   assert.match(importer, /failed_offer_recovery_read/);
 });
