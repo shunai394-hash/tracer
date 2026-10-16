@@ -122,7 +122,7 @@ export async function POST(request: Request) {
     if (commerceError) throw new Error("TRACER_COMMERCE_CHANNEL_READ_FAILED");
     const commerceVariantIds = [...new Set((commerceRows ?? []).map((row) => String(row.variant_id ?? "")).filter(Boolean))];
     const { data: commerceVariants, error: commerceVariantError } = commerceVariantIds.length
-      ? await db.from("commerce_variants").select("id,product_id,source_variant_key,sku").in("id", commerceVariantIds)
+      ? await db.from("commerce_variants").select("id,product_id,source_variant_key,sku,title_ja").in("id", commerceVariantIds)
       : { data: [], error: null };
     if (commerceVariantError) throw new Error("TRACER_COMMERCE_VARIANT_READ_FAILED");
     const commerceProductIds = [...new Set((commerceVariants ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean))];
