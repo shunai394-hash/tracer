@@ -8,7 +8,7 @@ const pricing = readFileSync("lib/market/supply-pricing.ts", "utf8");
 const identity = readFileSync("lib/catalog/canonical-supplier-identity.ts", "utf8");
 const japaneseProduct = readFileSync("lib/intelligence/japanese-product.ts", "utf8");
 const internalSupply = readFileSync("lib/suppliers/persist-cj-internal-supply.ts", "utf8");
-assert.match(internalSupply, /Number\\.isFinite\\(args\\.shippingUsd\\) \\|\\| args\\.shippingUsd < 0/, "verified zero-cost supplier freight is valid; only negative or non-finite freight is rejected");
+assert.match(internalSupply, /Number\.isFinite\(args\.shippingUsd\) \|\| args\.shippingUsd < 0/, "verified zero-cost supplier freight is valid; only negative or non-finite freight is rejected");
 const commerceCycle = readFileSync(".github/workflows/tracer-autonomous-commerce-cycle.yml", "utf8");
 const oneShotRecovery = readFileSync(".github/workflows/tracer-one-shot-supply-recovery.yml", "utf8");
 const vercel = JSON.parse(readFileSync("vercel.json", "utf8"));
