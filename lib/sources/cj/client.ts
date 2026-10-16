@@ -600,36 +600,47 @@ export async function getCJFreightOptions(
   const payload = (await response.json()) as {
     result?: boolean;
     message?: string;
-    data?: Array<{
-      logisticName?: string;
-      logisticPrice?: number | string | null;
-      totalPostageFee?: number | string | null;
-      logisticAging?: string | null;
-    }>;
+    data?: unknown;
   };
 
   if (payload.result === false) {
     throw new CJRequestError(payload.message || "CJ freight options lookup failed");
   }
 
-  return (payload.data ?? [])
+  const rows: unknown[] = Array.isArray(payload.data)
+    ? payload.data
+    : payload.data && typeof payload.data === "object"
+      ? Object.values(payload.data as Record<string, unknown>).flatMap((value) =>
+          Array.isArray(value) ? value : [value],
+        )
+      : [];
+  return rows
     .map((row) => {
-      const name = typeof row.logisticName === "string" ? row.logisticName.trim() : "";
-      const total = Number(row.totalPostageFee);
-      const simple = Number(row.logisticPrice);
+      if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+      const record = row as Record<string, unknown>;
+      const name = typeof record.logisticName === "string" ? record.logisticName.trim() : "";
+      const readPrice = (value: unknown): number | null => {
+        if (typeof value === "number") return Number.isFinite(value) && value > 0 ? value : null;
+        if (typeof value === "string" && value.trim()) {
+          const parsed = Number(value);
+          return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+        }
+        return null;
+      };
       const shippingCost =
-        Number.isFinite(total) && total > 0
-          ? total
-          : Number.isFinite(simple) && simple > 0
-            ? simple
-            : null;
+        readPrice(record.totalPostageFee) ??
+        readPrice(record.logisticPrice) ??
+        readPrice(record.totalFreight) ??
+        readPrice(record.shippingCost) ??
+        readPrice(record.freightAmount) ??
+        readPrice(record.price);
       if (!name || shippingCost === null) return null;
       return {
         logisticName: name,
         shippingCost,
         arrivalTime:
-          typeof row.logisticAging === "string" && row.logisticAging.trim()
-            ? row.logisticAging.trim()
+          typeof record.logisticAging === "string" && record.logisticAging.trim()
+            ? record.logisticAging.trim()
             : null,
       };
     })
