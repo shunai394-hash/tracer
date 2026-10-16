@@ -315,13 +315,15 @@ test("Shopify fulfillment sync iterates the fulfillmentOrders nodes array", asyn
 });
 test("complete paid-order retries return idempotently before stale supplier-offer validation", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
-  const priorLookup = core.indexOf('select("id,commerce_order_lines(external_line_id,procurement_orders(id))")');
+  const priorLookup = core.indexOf('select("id,commerce_order_lines(external_line_id,variant_id,quantity,unit_price,sku,supplier_offer_id,procurement_orders(id))")');
   const completeReturn = core.indexOf('if (complete) return { orderId: String(priorOrder.id), duplicate: true };');
   const ingestStart = core.indexOf("export async function ingestPaidOrder");
   const offerValidation = core.indexOf('supplier_offer_verification_stale', ingestStart);
   assert.ok(priorLookup >= ingestStart, "existing paid orders must be checked inside ingestPaidOrder");
   assert.ok(completeReturn > priorLookup, "complete existing order lines and procurement intents return as duplicate");
   assert.ok(offerValidation > completeReturn, "freshness validation remains mandatory for incomplete order recovery");
+  assert.ok(core.includes('throw new Error("order_idempotency_payload_conflict")'), "changed payloads must not be accepted as duplicate orders");
+  assert.ok(core.includes("matchesSavedPayload(line, saved)"), "duplicate detection must compare persisted line identity and amounts");
 });
 
 test("Shopify paid webhook is signature-verified, idempotent, and writes canonical commerce orders", async () => {
