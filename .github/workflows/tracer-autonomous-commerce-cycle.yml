@@ -55,8 +55,8 @@ jobs:
           # Publish only through the canonical sales-test gate.
           call "/api/cron/sales-test-publication" 300 publish-first.json
 
-          # Refresh supply and intelligence without making them a publication bypass.
-          call "/api/cron/market-sourcing" 60 market-sourcing.json
+          # Refresh supplier-native supply and intelligence without marketplace-derived product creation.
+          # Marketplace sourcing is intentionally excluded from the rebuild pipeline.
           call "/api/cron/supplier-investigation" 180 supplier-investigation.json
           call "/api/cron/intelligence" 300 intelligence.json
 
