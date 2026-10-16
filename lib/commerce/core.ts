@@ -1,0 +1,200 @@
+import "server-only";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+
+export type CommerceChannel = "base" | "shopify";
+export type OfferInput = {
+  supplierCode: string; supplierProductId: string; supplierVariantId: string;
+  supplierUrl?: string | null; currency: string; unitCost: number; shippingCost: number;
+  inventory: number; shipTo?: string; trackingSupported: boolean; sourceStatus?: "discovered" | "verified" | "unavailable" | "error"; lastCheckedAt?: string | null; rawData?: Record<string, unknown>;
+};
+
+const required = (value: unknown, field: string) => {
+  const result = String(value ?? "").trim();
+  if (!result) throw new Error("missing_" + field);
+  return result;
+};
+
+export function calculateSellingPrice(input: {
+  unitCostJpy: number; shippingCostJpy: number; feeRate: number;
+  fixedFeeJpy?: number; targetMarginRate?: number;
+}) {
+  const unitCostJpy = input.unitCostJpy;
+  const shippingCostJpy = input.shippingCostJpy;
+  const feeRate = input.feeRate;
+  const fixedFeeJpy = input.fixedFeeJpy ?? 0;
+  const targetMarginRate = input.targetMarginRate ?? 0.2;
+  const values = { unitCostJpy, shippingCostJpy, feeRate, fixedFeeJpy, targetMarginRate };
+  for (const [key, value] of Object.entries(values)) {
+    if (!Number.isFinite(value) || value < 0) throw new Error("invalid_" + key);
+  }
+  if (feeRate + targetMarginRate >= 1) throw new Error("invalid_rate");
+  const base = unitCostJpy + shippingCostJpy + fixedFeeJpy;
+  let sellingPrice = Math.ceil(base / (1 - feeRate - targetMarginRate));
+  let feeAmount = 0;
+  let expectedProfit = 0;
+  for (let i = 0; i < 10000; i++) {
+    feeAmount = Math.ceil(sellingPrice * feeRate) + fixedFeeJpy;
+    expectedProfit = sellingPrice - unitCostJpy - shippingCostJpy - feeAmount;
+    if (expectedProfit > 0 && expectedProfit / sellingPrice >= targetMarginRate) break;
+    sellingPrice += 1;
+  }
+  if (expectedProfit <= 0 || expectedProfit / sellingPrice < targetMarginRate) throw new Error("price_calculation_did_not_converge");
+  return { sellingPrice, feeAmount, expectedProfit, marginRate: expectedProfit / sellingPrice };
+}
+
+/** Canonical upsert: supplier-native product and variant IDs remain first-class keys. */
+export async function upsertSupplierOffer(input: {
+  sourceKey: string; titleJa: string; descriptionJa?: string; brand?: string | null;
+  category?: string | null; imageUrl?: string | null; sourceUrl?: string | null;
+  sourceVariantKey: string; variantTitleJa?: string; sku?: string | null;
+  attributes?: Record<string, unknown>; offer: OfferInput;
+}) {
+  const sourceKey = required(input.sourceKey, "source_key");
+  const supplierCode = required(input.offer.supplierCode, "supplier_code").toLowerCase();
+  const supplierProductId = required(input.offer.supplierProductId, "supplier_product_id");
+  const supplierVariantId = required(input.offer.supplierVariantId, "supplier_variant_id");
+  if (!Number.isFinite(input.offer.unitCost) || input.offer.unitCost < 0) throw new Error("invalid_unit_cost");
+  if (!Number.isFinite(input.offer.shippingCost) || input.offer.shippingCost < 0) throw new Error("invalid_shipping_cost");
+  if (!Number.isInteger(input.offer.inventory) || input.offer.inventory < 0) throw new Error("invalid_inventory");
+  const supabase = createSupabaseAdminClient();
+  const { data: product, error: productError } = await supabase.from("commerce_products").upsert({
+    source_key: sourceKey, title_ja: required(input.titleJa, "title_ja"),
+    description_ja: input.descriptionJa ?? "", brand: input.brand ?? null, category: input.category ?? null,
+    image_url: input.imageUrl ?? null, source_url: input.sourceUrl ?? null, updated_at: new Date().toISOString()
+  }, { onConflict: "source_key" }).select("id").single();
+  if (productError || !product) throw new Error("product_upsert_failed:" + (productError?.message ?? "no_row"));
+  const { data: variant, error: variantError } = await supabase.from("commerce_variants").upsert({
+    product_id: product.id, source_variant_key: required(input.sourceVariantKey, "source_variant_key"),
+    title_ja: input.variantTitleJa ?? "標準", sku: input.sku ?? null, attributes: input.attributes ?? {},
+    updated_at: new Date().toISOString()
+  }, { onConflict: "product_id,source_variant_key" }).select("id").single();
+  if (variantError || !variant) throw new Error("variant_upsert_failed:" + (variantError?.message ?? "no_row"));
+  const { data: offer, error: offerError } = await supabase.from("supplier_offers").upsert({
+    variant_id: variant.id, supplier_code: supplierCode, supplier_product_id: supplierProductId,
+    supplier_variant_id: supplierVariantId, supplier_url: input.offer.supplierUrl ?? null,
+    currency: required(input.offer.currency, "currency").toUpperCase(), unit_cost: input.offer.unitCost,
+    shipping_cost: input.offer.shippingCost, inventory: input.offer.inventory, ship_to: input.offer.shipTo ?? "JP",
+    tracking_supported: input.offer.trackingSupported, source_status: input.offer.sourceStatus ?? "discovered",
+    last_checked_at: input.offer.lastCheckedAt ?? null, raw_data: input.offer.rawData ?? {},
+    updated_at: new Date().toISOString()
+  }, { onConflict: "supplier_code,supplier_product_id,supplier_variant_id" }).select("id").single();
+  if (offerError || !offer) throw new Error("offer_upsert_failed:" + (offerError?.message ?? "no_row"));
+  return { productId: product.id as string, variantId: variant.id as string, offerId: offer.id as string };
+}
+
+export async function recalculatePrice(input: {
+  variantId: string; offerId: string; exchangeRateToJpy: number; feeRate: number;
+  fixedFeeJpy?: number; targetMarginRate?: number;
+}) {
+  if (!Number.isFinite(input.exchangeRateToJpy) || input.exchangeRateToJpy <= 0) throw new Error("invalid_exchange_rate");
+  const db = createSupabaseAdminClient();
+  const { data: offer, error } = await db.from("supplier_offers")
+    .select("id,variant_id,currency,unit_cost,shipping_cost,inventory,ship_to,source_status,tracking_supported,last_checked_at")
+    .eq("id", input.offerId).eq("variant_id", input.variantId).single();
+  if (error || !offer) throw new Error("supplier_offer_not_found:" + (error?.message ?? ""));
+  if (offer.source_status !== "verified") throw new Error("supplier_offer_not_verified");
+  if (offer.tracking_supported !== true) throw new Error("supplier_tracking_not_verified");
+  if (offer.ship_to !== "JP") throw new Error("supplier_does_not_ship_to_japan");
+  if (Number(offer.inventory) <= 0) throw new Error("supplier_out_of_stock");
+  const lastCheckedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
+  if (!Number.isFinite(lastCheckedAt) || lastCheckedAt > Date.now() + 5 * 60_000 || Date.now() - lastCheckedAt > 24 * 60 * 60_000) throw new Error("supplier_offer_verification_stale");
+  const price = calculateSellingPrice({
+    unitCostJpy: Math.ceil(Number(offer.unit_cost) * input.exchangeRateToJpy),
+    shippingCostJpy: Math.ceil(Number(offer.shipping_cost) * input.exchangeRateToJpy),
+    feeRate: input.feeRate, fixedFeeJpy: input.fixedFeeJpy, targetMarginRate: input.targetMarginRate
+  });
+  if (price.expectedProfit <= 0) throw new Error("non_positive_profit");
+  const { error: saveError } = await db.from("commerce_prices").upsert({
+    variant_id: input.variantId, supplier_offer_id: input.offerId, currency: "JPY", selling_price: price.sellingPrice,
+    fee_amount: price.feeAmount, expected_profit: price.expectedProfit,
+    margin_rate: price.marginRate, calculated_at: new Date().toISOString()
+  }, { onConflict: "variant_id" });
+  if (saveError) throw new Error("price_upsert_failed:" + saveError.message);
+  return price;
+}
+
+/** Channel state is independent. No identity_status flag is used to suppress a valid catalog listing. */
+export async function getPublicationCandidates(channel: CommerceChannel, limit = 100) {
+  const db = createSupabaseAdminClient();
+  const { data, error } = await db.from("commerce_variants")
+    .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported,source_status),commerce_prices!inner(currency,selling_price,expected_profit,fee_amount,margin_rate)")
+    .eq("commerce_products.active", true).gt("supplier_offers.inventory", 0)
+    .eq("supplier_offers.source_status", "verified").eq("supplier_offers.tracking_supported", true)
+    .gte("supplier_offers.last_checked_at", new Date(Date.now() - 24 * 60 * 60_000).toISOString())
+    .eq("supplier_offers.ship_to", "JP").eq("commerce_prices.currency", "JPY")
+    .gt("commerce_prices.expected_profit", 0).order("updated_at", { ascending: false })
+    .limit(Math.min(500, Math.max(1, Math.floor(limit))));
+  if (error) throw new Error("publication_candidates_failed:" + error.message);
+  return (data ?? []).map((row) => ({ ...row, channel }));
+}
+
+/** Persist paid orders and procurement intents idempotently; supplier submission happens in a separate worker. */
+export async function ingestPaidOrder(input: {
+  channel: CommerceChannel; externalOrderId: string; totalAmount: number; customerName?: string | null;
+  shippingAddress: Record<string, unknown>; rawPayload: Record<string, unknown>;
+  lines: Array<{ externalLineId: string; variantId: string; sku?: string | null; quantity: number; unitPrice: number; offerId: string }>;
+}) {
+  required(input.externalOrderId, "external_order_id");
+  if (!Number.isFinite(input.totalAmount) || input.totalAmount < 0 || input.lines.length === 0) throw new Error("invalid_order");
+  for (const line of input.lines) {
+    required(line.externalLineId, "external_line_id"); required(line.variantId, "variant_id"); required(line.offerId, "offer_id");
+    if (!Number.isInteger(line.quantity) || line.quantity <= 0 || !Number.isFinite(line.unitPrice) || line.unitPrice < 0) throw new Error("invalid_order_line");
+  }
+  const db = createSupabaseAdminClient();
+  const quantityByOffer = new Map<string, number>();
+  for (const line of input.lines) {
+    quantityByOffer.set(line.offerId, (quantityByOffer.get(line.offerId) ?? 0) + line.quantity);
+  }
+  // Validate every supplier offer before persisting a paid order or procurement intent.
+  // Aggregate repeated order lines so split lines cannot oversell one supplier offer.
+  for (const line of input.lines) {
+    const { data: offer, error: offerError } = await db.from("supplier_offers")
+      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,ship_to,tracking_supported,source_status,last_checked_at")
+      .eq("id", line.offerId).eq("variant_id", line.variantId).single();
+    if (offerError || !offer) throw new Error("order_line_supplier_offer_missing");
+    if (offer.source_status !== "verified" || offer.tracking_supported !== true || offer.ship_to !== "JP") throw new Error("supplier_offer_not_fulfillable");
+    const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
+    if (!Number.isFinite(checkedAt) || checkedAt > Date.now() + 5 * 60_000 || Date.now() - checkedAt > 24 * 60 * 60_000) throw new Error("supplier_offer_verification_stale");
+    if (Number(offer.inventory) < (quantityByOffer.get(line.offerId) ?? line.quantity)) throw new Error("supplier_offer_not_fulfillable");
+    const { data: price, error: priceError } = await db.from("commerce_prices")
+      .select("supplier_offer_id,expected_profit").eq("variant_id", line.variantId).single();
+    if (priceError || !price || price.supplier_offer_id !== line.offerId || Number(price.expected_profit) <= 0) throw new Error("supplier_offer_price_not_fulfillable");
+  }
+  const { data: order, error } = await db.from("commerce_orders").upsert({
+    channel: input.channel, external_order_id: input.externalOrderId, total_amount: Math.round(input.totalAmount),
+    payment_status: "paid", fulfillment_status: "procurement_pending", customer_name: input.customerName ?? null,
+    shipping_address: input.shippingAddress, raw_payload: input.rawPayload, updated_at: new Date().toISOString()
+  }, { onConflict: "channel,external_order_id", ignoreDuplicates: true }).select("id").maybeSingle();
+  if (error) throw new Error("order_upsert_failed:" + error.message);
+  let orderId: string;
+  let duplicate = false;
+  if (order) {
+    orderId = order.id as string;
+  } else {
+    const { data: existing, error: lookupError } = await db.from("commerce_orders").select("id")
+      .eq("channel", input.channel).eq("external_order_id", input.externalOrderId).single();
+    if (lookupError || !existing) throw new Error("order_idempotency_lookup_failed:" + (lookupError?.message ?? ""));
+    orderId = existing.id as string;
+    duplicate = true;
+  }
+  // Reconcile lines on retries so a prior partial write can be repaired.
+  for (const line of input.lines) {
+    const { data: savedLine, error: lineError } = await db.from("commerce_order_lines").upsert({
+      order_id: orderId, variant_id: line.variantId, external_line_id: line.externalLineId,
+      sku: line.sku ?? null, quantity: line.quantity, unit_price: Math.round(line.unitPrice), supplier_offer_id: line.offerId
+    }, { onConflict: "order_id,external_line_id" }).select("id").single();
+    if (lineError || !savedLine) throw new Error("order_line_upsert_failed:" + (lineError?.message ?? ""));
+    const { data: offer, error: offerError } = await db.from("supplier_offers")
+      .select("supplier_code,supplier_product_id,supplier_variant_id,inventory,ship_to")
+      .eq("id", line.offerId).eq("variant_id", line.variantId).single();
+    if (offerError || !offer) throw new Error("order_line_supplier_offer_missing");
+    if (Number(offer.inventory) < line.quantity || offer.ship_to !== "JP") throw new Error("supplier_offer_not_fulfillable");
+    const { error: poError } = await db.from("procurement_orders").upsert({
+      order_line_id: savedLine.id, supplier_code: offer.supplier_code,
+      supplier_product_id: offer.supplier_product_id, supplier_variant_id: offer.supplier_variant_id,
+      quantity: line.quantity, status: "pending"
+    }, { onConflict: "order_line_id", ignoreDuplicates: true });
+    if (poError) throw new Error("procurement_create_failed:" + poError.message);
+  }
+  return { orderId, duplicate };
+}

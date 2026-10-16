@@ -1,11 +1,6 @@
-# Post-reset recovery entrypoint: rebuild catalog from live sources and report observed publication counts.
-name: TRACER One-shot supply-to-channel recovery
+name: Clean commerce recovery
 
 on:
-  push:
-    branches: [main]
-  schedule:
-    - cron: "20 0 17 10 *"
   workflow_dispatch:
 
 permissions:
@@ -14,188 +9,40 @@ permissions:
 
 jobs:
   recover:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'TRACER_ONE_SHOT_SUPPLY_RECOVERY')))
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - name: Run bounded supply discovery, gate, BASE and Shopify batch
+      - name: Run bounded clean commerce recovery
         shell: bash
         run: |
           set -uo pipefail
-          if [[ "$GITHUB_EVENT_NAME" == "schedule" && "$(date -u +%F)" != "2026-10-17" ]]; then
-            echo "Skipping annual cron outside the one-time recovery date."
-            exit 0
-          fi
-          BASE=https://tracer-pied-alpha.vercel.app
-          # Vercel deploys and reassigns this production alias asynchronously after push.
-          # Wait until the new deployment is routable before calling protected cron routes.
-          ready=0
-          for attempt in $(seq 1 36); do
-            code="$(curl -sS -o /tmp/tracer-preflight.txt -w "%{http_code}" --max-time 10 "$BASE/api/health" || true)"
-            if [[ "$code" == "200" ]] && grep -q "$GITHUB_SHA" /tmp/tracer-preflight.txt; then
-              ready=1
-              echo "Production alias serves expected commit $GITHUB_SHA (attempt $attempt)."
-              break
-            fi
-            echo "Waiting for production alias to serve expected commit $GITHUB_SHA (HTTP $code; attempt $attempt/36). Waiting 10 seconds."
-            sleep 10
-          done
-          if [[ "$ready" != "1" ]]; then
-            echo "Production deployment did not become routable within 6 minutes."
-            exit 1
-          fi
+          BASE=https://tracer-self.vercel.app
           token() {
-            curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
           call_get() {
-            local path="$1" max_time="$2" out="$3"
-            local t code
+            local path="$1" max_time="$2" t code
             t="$(token)" || { echo "OIDC token failed for $path"; return 1; }
-            code="$(curl -sS -o "$out" -w "%{http_code}" --max-time "$max_time" -H "Authorization: Bearer $t" "$BASE/$path" || true)"
+            code="$(curl -sS -o /tmp/response.json -w "%{http_code}" --max-time "$max_time" \
+              -H "Authorization: Bearer $t" "$BASE/$path" || true)"
             echo "=== $path HTTP $code ==="
-            python3 - "$out" <<'PY'
-          import json,sys
+            python3 - <<'PY'
+          import json
           try:
-              d=json.load(open(sys.argv[1]))
-              for k in ("ok","elapsedMs","supplyFirst","selected","published","failed","reason","error","checked","promoted","supplierVerified","noUniqueBarcodeMatch","missingEconomics","quotaBlockedUntil","retryAfter","counts"):
-                  if k in d: print(k, json.dumps(d[k],ensure_ascii=False)[:2500])
+              d=json.load(open("/tmp/response.json"))
+              print(json.dumps(d,ensure_ascii=False)[:5000])
           except Exception:
-              print(open(sys.argv[1]).read()[:1000])
+              print(open("/tmp/response.json").read()[:1000])
           PY
           }
-          # The hostname may still route to the previous deployment even after it answers HTTP.
-          # Give the production alias time to move to this commit before invoking write-capable routes.
-          echo "Waiting 60 seconds for the current production deployment to become active."
-          sleep 60
-
-          # Log only non-secret OIDC claims to diagnose application-level 401s; never print the token.
-          echo "=== GitHub OIDC claim diagnostics (token omitted) ==="
-          token | python3 -c 'import base64,json,sys; t=sys.stdin.read().strip().split("."); p=t[1]+"="*((4-len(t[1])%4)%4); d=json.loads(base64.urlsafe_b64decode(p)); print(json.dumps({k:d.get(k) for k in ("iss","aud","repository","ref","workflow_ref","exp","nbf")},ensure_ascii=False))'
-
-          # Re-verify supplier identity first; no catalog row is published from backup/stale evidence.
-          call_get "api/cron/cj-identity-reverify?limit=25&force=1" 300 cj-identity-reverify.json || true
-
-          echo "=== Supplier-native intelligence refresh (marketplace sourcing intentionally skipped) ==="
-          # Do not recreate marketplace-derived products after a clean database reset.
-          call_get api/cron/intelligence 300 intelligence.json || true
-
-          echo "=== CJ supply discovery (will fail closed during provider cooldown) ==="
-          call_get api/cron/supply-first 300 supply-first.json || true
-          # A scheduled supply-first cron may already own the route. Wait for it to finish
-          # rather than skipping this recovery pass and losing the fresh supplier listing IDs.
-          for retry in 1 2 3 4 5; do
-            if ! python3 - <<'PY'
-          import json,sys
-          try:
-              d=json.load(open("supply-first.json"))
-          except Exception:
-              d={}
-          sys.exit(0 if d.get("reason") == "supply_first_already_running" else 1)
-          PY
-            then
-              break
-            fi
-            echo "Supply-first is already running; wait 30 seconds before retry $retry/5."
-            sleep 30
-            call_get api/cron/supply-first 300 supply-first.json || true
-          done
-
-          # Use only a listing ID returned by this exact live discovery pass.
-          # The sandbox route re-checks product/variant, price, stock, JP freight,
-          # and is explicitly no-charge/non-fulfilling; never retry an uncertain order.
-          echo "=== CJ sandbox order lifecycle: fresh discovery candidate only ==="
-          sandbox_listing_id="$(python3 - <<'PY'
-          import json
-          try:
-              data = json.load(open("supply-first.json"))
-          except Exception:
-              data = {}
-          supply = data.get("supplyFirst") or {}
-          for item in supply.get("items") or []:
-              listing_id = str(item.get("supplierListingId") or "").strip()
-              if listing_id and str(item.get("supplierProductId") or "").strip() and str(item.get("supplierVariantId") or "").strip():
-                  print(listing_id)
-                  break
-          PY
-          )"
-          sandbox_failed=0
-          if [[ -n "$sandbox_listing_id" ]]; then
-            T="$(token)"
-            SANDBOX_CODE="$(curl -sS -o cj-sandbox-result.json -w "%{http_code}" --max-time 90 \
-              -X POST "$BASE/api/cron/cj-sandbox-order-test" \
-              -H "Authorization: Bearer $T" \
-              -H "Content-Type: application/json" \
-              --data "$(python3 -c 'import json,sys; print(json.dumps({"supplierListingId":sys.argv[1]}))' "$sandbox_listing_id")" || true)"
-            echo "CJ sandbox lifecycle HTTP $SANDBOX_CODE"
-            python3 - <<'PY'
-          import json
-          try:
-              d = json.load(open("cj-sandbox-result.json"))
-          except Exception:
-              d = {}
-          keys = ("ok", "phase", "supplierListingId", "supplierOrderId", "status", "trackingNumber", "paymentConfirmed", "sandbox", "charged", "realFulfillment", "error", "retryAfter")
-          print(json.dumps({k: d.get(k) for k in keys}, ensure_ascii=False))
-          valid = (
-              d.get("ok") is True
-              and bool(str(d.get("supplierOrderId") or "").strip())
-              and str(d.get("status") or "").upper() in ("500", "SHIPPED", "IN_TRANSIT")
-              and d.get("sandbox") is True
-              and d.get("charged") is False
-              and d.get("realFulfillment") is False
-              and d.get("paymentConfirmed") is True
-              and bool(str(d.get("trackingNumber") or "").strip())
-          )
-          with open("cj-sandbox-valid.txt", "w") as f:
-              f.write("1" if valid else "0")
-          PY
-            if [[ "$(cat cj-sandbox-valid.txt)" != "1" ]]; then
-              sandbox_failed=1
-              echo "CJ sandbox lifecycle was not proven; no automatic retry will occur."
-            fi
-          else
-            sandbox_failed=1
-            echo "No fresh supplierListingId returned by this discovery pass; sandbox lifecycle was not attempted."
-          fi
-
-          call_get api/cron/sales-test-publication 300 sales-test.json || true
-          call_get api/cron/base-publish 60 base-publish.json || true
-          call_get api/intelligence/publication-report 60 publication-report.json || true
-
-          echo "=== Shopify dry run ==="
-          T="$(token)"
-          CODE="$(curl -sS -o shopify-preview.json -w "%{http_code}" --max-time 120 -H "Authorization: Bearer $T" -H "Content-Type: application/json" -X POST "$BASE/api/admin/shopify/sync" -d '{"dryRun":true,"limit":1000}' || true)"
-          echo "Shopify preview HTTP $CODE"
-          python3 - <<'PY'
-          import json
-          d=json.load(open("shopify-preview.json"))
-          rows=d.get("rows") or []
-          eligible=[r["listingId"] for r in rows if r.get("eligible")][:10]
-          print(json.dumps({"ok":d.get("ok"),"considered":d.get("considered"),"eligible":d.get("eligible"),"reasonCounts":d.get("reasonCounts"),"batchSize":len(eligible)},ensure_ascii=False))
-          json.dump({"listingIds":eligible,"limit":10},open("shopify-batch.json","w"))
-          PY
-          N="$(python3 -c 'import json; print(len(json.load(open("shopify-batch.json"))["listingIds"]))')"
-          if [ "$N" -gt 0 ]; then
-            echo "=== Shopify gated live batch: $N listings ==="
-            T="$(token)"
-            CODE="$(curl -sS -o shopify-sync.json -w "%{http_code}" --max-time 130 -H "Authorization: Bearer $T" -H "Content-Type: application/json" -X POST "$BASE/api/admin/shopify/sync" -d @shopify-batch.json || true)"
-            echo "Shopify live sync HTTP $CODE"
-            python3 - <<'PY'
-          import json
-          d=json.load(open("shopify-sync.json"))
-          print(json.dumps({k:d.get(k) for k in ("ok","configured","considered","synced","failed","errors")},ensure_ascii=False)[:5000])
-          PY
-          else
-            echo "Shopify live sync skipped: no eligible listings passed the read-only gate."
-          fi
-          if [[ "$sandbox_failed" -ne 0 ]]; then
-            echo "Recovery ran, but the guarded no-charge CJ sandbox lifecycle remains unproven."
-            exit 1
-          fi
-
-# TRACER_ONE_SHOT_SUPPLY_RECOVERY: bounded production wiring proof; no sandbox order unless a fresh verified listing ID is returned.
-# Canonical parent-product identity fix is deployed; rerun bounded proof against the latest production build.
-
-# TRACER_ONE_SHOT_SUPPLY_RECOVERY: execute bounded recovery with canonical CJ variant-parent resolution.
-
-# TRACER_ONE_SHOT_SUPPLY_RECOVERY: re-run after product-scoped CJ variant parent fallback fix.
+          # Discovery and pricing only. Publication refuses to create customer-facing
+          # listings until the supplier's live order/payment path is explicitly verified.
+          call_get "api/cron/commerce-cj-import?q=women%20handbag&limit=3" 300 || true
+          call_get "api/cron/commerce-publish-base?limit=3" 120 || true
+          call_get "api/cron/commerce-publish-shopify?limit=3" 120 || true
+          call_get "api/cron/commerce-base-orders" 120 || true
+          call_get "api/cron/commerce-procurement" 300 || true
