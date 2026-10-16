@@ -18,6 +18,7 @@ import {
   createCJOrderV2,
   getCJOrderStatus,
   getCJTrackingInfo,
+  markCJSandboxOrderUnpaid,
   simulateCJSandboxPayment,
   updateCJSandboxOrderStatus,
   updateCJSandboxTrackingNumber,
@@ -486,7 +487,7 @@ export async function runCJSandboxOrderLifecycle(input: SupplierOrderInput): Pro
   // simulation endpoint requires UNPAID(200), so make that transition
   // explicitly before attempting simulated payment.
   try {
-    await updateCJSandboxOrderStatus(orderId, 200);
+    await markCJSandboxOrderUnpaid(orderId);
   } catch (error) {
     const detail = error instanceof Error ? error.message.slice(0, 160) : "status transition failed";
     throw new Error(`CJ_SANDBOX_PREPAY_STATUS_TRANSITION_FAILED:supplierOrderId=${orderId}:${detail}`);
