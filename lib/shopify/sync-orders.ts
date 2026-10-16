@@ -2,6 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
+import { ingestPaidOrder } from "@/lib/commerce/core";
 
 type ShopifyOrder = {
   id: string;
@@ -75,8 +76,8 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
   let after: string | null = null;
   let hasNextOrdersPage = true;
 
-  // Search newest paid orders first and skip orders already imported. Without
-  // this outer pagination, the same first page can starve all later orders.
+  // Polling must use the same canonical order ledger as the paid webhook.
+  // Do not create a second legacy order that can trigger a duplicate purchase.
   while (hasNextOrdersPage && orders.length < maxNewOrders) {
     const data: {
       orders: {
@@ -89,24 +90,20 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         pageInfo: { hasNextPage: boolean; endCursor: string | null };
       };
     }>(
-      `query PaidOrders($first: Int!, $after: String) {
+      \`query PaidOrders($first: Int!, $after: String) {
         orders(first: $first, after: $after, query: "financial_status:paid status:open fulfillment_status:unfulfilled", sortKey: CREATED_AT, reverse: true) {
           nodes {
             id name email phone displayFinancialStatus displayFulfillmentStatus createdAt cancelledAt
             totalPriceSet { shopMoney { amount currencyCode } }
             shippingAddress { name address1 address2 city province zip country countryCodeV2 phone }
             lineItems(first: 100) {
-              nodes {
-                id title quantity
-                originalUnitPriceSet { shopMoney { amount currencyCode } }
-                variant { id sku }
-              }
+              nodes { id title quantity originalUnitPriceSet { shopMoney { amount currencyCode } } variant { id sku } }
               pageInfo { hasNextPage endCursor }
             }
           }
           pageInfo { hasNextPage endCursor }
         }
-      }`,
+      }\`,
       { first: 100, after },
     );
 
@@ -114,11 +111,12 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
     scannedOrders += pageOrders.length;
     if (pageOrders.length > 0) {
       const { data: existingRows, error: existingRowsError } = await supabase
-        .from("shop_orders")
-        .select("shopify_order_id")
-        .in("shopify_order_id", pageOrders.map((order) => order.id));
-      if (existingRowsError) throw new Error(existingRowsError.message);
-      const existingIds = new Set((existingRows ?? []).map((row) => String(row.shopify_order_id)));
+        .from("commerce_orders")
+        .select("external_order_id")
+        .eq("channel", "shopify")
+        .in("external_order_id", pageOrders.map((order) => order.id));
+      if (existingRowsError) throw new Error("shopify_canonical_order_lookup_failed:" + existingRowsError.message);
+      const existingIds = new Set((existingRows ?? []).map((row) => String(row.external_order_id)));
       for (const order of pageOrders) {
         if (!existingIds.has(order.id) && orders.length < maxNewOrders) orders.push(order);
       }
@@ -132,14 +130,11 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
     after = nextCursor;
   }
 
-  // Shopify paginates nested lineItems independently from the orders connection.
-  // Resolve every page before any local DB read/write so a cursor failure cannot
-  // leave a partial order that looks imported.
   for (const order of orders) {
-    let after = order.lineItems.pageInfo.endCursor;
+    let cursor = order.lineItems.pageInfo.endCursor;
     let hasNextPage = order.lineItems.pageInfo.hasNextPage;
     while (hasNextPage) {
-      if (!after) throw new Error(`shopify_line_items_cursor_missing:${order.id}`);
+      if (!cursor) throw new Error("shopify_line_items_cursor_missing:" + order.id);
       const nextPage = await shopifyGraphQL<{
         order: {
           lineItems: {
@@ -148,204 +143,161 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
           };
         } | null;
       }>(
-        `query PaidOrderLineItems($id: ID!, $first: Int!, $after: String!) {
+        \`query PaidOrderLineItems($id: ID!, $first: Int!, $after: String!) {
           order(id: $id) {
             lineItems(first: $first, after: $after) {
-              nodes {
-                id title quantity
-                originalUnitPriceSet { shopMoney { amount currencyCode } }
-                variant { id sku }
-              }
+              nodes { id title quantity originalUnitPriceSet { shopMoney { amount currencyCode } } variant { id sku } }
               pageInfo { hasNextPage endCursor }
             }
           }
-        }`,
-        { id: order.id, first: 100, after },
+        }\`,
+        { id: order.id, first: 100, after: cursor },
       );
       const connection = nextPage.order?.lineItems;
-      if (!connection) throw new Error(`shopify_line_items_page_missing:${order.id}`);
+      if (!connection) throw new Error("shopify_line_items_page_missing:" + order.id);
       order.lineItems.nodes.push(...connection.nodes);
-      const nextCursor = connection.pageInfo.endCursor;
-      if (connection.pageInfo.hasNextPage && (!nextCursor || nextCursor === after)) {
-        throw new Error(`shopify_line_items_cursor_not_advancing:${order.id}`);
+      const nextCursor: string | null = connection.pageInfo.endCursor;
+      if (connection.pageInfo.hasNextPage && (!nextCursor || nextCursor === cursor)) {
+        throw new Error("shopify_line_items_cursor_not_advancing:" + order.id);
       }
       hasNextPage = connection.pageInfo.hasNextPage;
-      after = nextCursor;
+      cursor = nextCursor;
     }
 
     const seenLineItemIds = new Set<string>();
     for (const item of order.lineItems.nodes) {
-      if (seenLineItemIds.has(item.id)) throw new Error(`shopify_line_item_duplicate_id:${order.id}:${item.id}`);
+      if (seenLineItemIds.has(item.id)) throw new Error("shopify_line_item_duplicate_id:" + order.id + ":" + item.id);
       seenLineItemIds.add(item.id);
     }
   }
 
   const result: ShopifyOrderSyncResult = {
-    configured: true,
-    fetched: scannedOrders,
-    imported: 0,
-    skipped: 0,
-    failed: 0,
-    orderIds: [],
-    errors: [],
+    configured: true, fetched: scannedOrders, imported: 0, skipped: 0, failed: 0, orderIds: [], errors: [],
   };
+  const tracerItemsByOrder = new Map<string, ShopifyOrder["lineItems"]["nodes"]>();
   const variantIds = Array.from(new Set(
-    orders.flatMap((order) => order.lineItems.nodes.map((item) => item.variant?.id).filter(Boolean)),
+    orders.flatMap((order) => {
+      const tracerItems = order.lineItems.nodes.filter((item) => String(item.variant?.sku ?? "").startsWith("TRC-"));
+      tracerItemsByOrder.set(order.id, tracerItems);
+      return tracerItems.map((item) => item.variant?.id).filter((id): id is string => Boolean(id));
+    }),
   ));
-  const { data: listings, error: listingError } = variantIds.length
-    ? await supabase
-        .from("shop_listings")
-        .select("id,product_id,title,shopify_product_id,shopify_variant_id,supplier_variant_id,supplier_product_id")
-        .in("shopify_variant_id", variantIds)
-    : { data: [], error: null };
-  if (listingError) throw new Error(listingError.message);
 
-  const listingByVariant = new Map<string, Record<string, unknown>>();
+  const { data: listings, error: listingError } = variantIds.length
+    ? await supabase.from("channel_listings")
+        .select("variant_id,external_variant_id,external_sku,status")
+        .eq("channel", "shopify").eq("status", "published")
+        .in("external_variant_id", variantIds)
+    : { data: [], error: null };
+  if (listingError) throw new Error("shopify_canonical_listing_lookup_failed:" + listingError.message);
+
+  const listingByExternalVariant = new Map<string, { variantId: string; sku: string }>();
   for (const row of listings ?? []) {
-    const variantId = String(row.shopify_variant_id ?? "").trim();
-    if (!variantId) continue;
-    const existing = listingByVariant.get(variantId);
-    if (existing && String(existing.id) !== String(row.id)) {
-      // A Shopify variant must resolve to exactly one internal listing. Picking
-      // the last duplicate silently attaches a paid order to the wrong product.
-      throw new Error(`shopify_variant_mapping_ambiguous:${variantId}`);
+    const externalVariantId = String(row.external_variant_id ?? "").trim();
+    if (!externalVariantId) continue;
+    const existing = listingByExternalVariant.get(externalVariantId);
+    if (existing && existing.variantId !== String(row.variant_id)) {
+      throw new Error("shopify_variant_mapping_ambiguous:" + externalVariantId);
     }
-    listingByVariant.set(variantId, row as Record<string, unknown>);
+    listingByExternalVariant.set(externalVariantId, {
+      variantId: String(row.variant_id),
+      sku: String(row.external_sku ?? ""),
+    });
+  }
+
+  const internalVariantIds = Array.from(new Set([...listingByExternalVariant.values()].map((row) => row.variantId)));
+  const { data: prices, error: priceError } = internalVariantIds.length
+    ? await supabase.from("commerce_prices").select("variant_id,supplier_offer_id").in("variant_id", internalVariantIds)
+    : { data: [], error: null };
+  if (priceError) throw new Error("shopify_canonical_price_lookup_failed:" + priceError.message);
+  const offerByVariant = new Map<string, string>();
+  for (const row of prices ?? []) {
+    const variantId = String(row.variant_id);
+    const offerId = String(row.supplier_offer_id ?? "");
+    if (!offerId) continue;
+    if (offerByVariant.has(variantId) && offerByVariant.get(variantId) !== offerId) {
+      throw new Error("shopify_variant_supplier_offer_ambiguous:" + variantId);
+    }
+    offerByVariant.set(variantId, offerId);
   }
 
   for (const order of orders) {
-    let insertedOrderId: string | null = null;
     try {
-      // Do not turn a cancelled, partially fulfilled, or already fulfilled
-      // Shopify order into a new procurement job. Query filters are backed by
-      // explicit response checks because supplier execution is irreversible.
-      if (order.cancelledAt) {
+      if (order.cancelledAt || order.displayFinancialStatus !== "PAID" || order.displayFulfillmentStatus !== "UNFULFILLED") {
         result.skipped += 1;
         continue;
       }
-      if (order.displayFinancialStatus !== "PAID") {
+      const tracerItems = tracerItemsByOrder.get(order.id) ?? [];
+      if (!tracerItems.length) {
         result.skipped += 1;
         continue;
       }
-      if (order.displayFulfillmentStatus !== "UNFULFILLED") {
-        result.skipped += 1;
-        continue;
+      const address = order.shippingAddress;
+      if (!address || !String(address.countryCodeV2 ?? "").trim() ||
+          !String(address.province ?? "").trim() || !String(address.city ?? "").trim() ||
+          !String(address.address1 ?? "").trim() || !String(address.zip ?? "").trim() ||
+          !String(address.phone ?? order.phone ?? "").trim() ||
+          !String(address.name ?? order.email ?? "").trim()) {
+        throw new Error("shopify_shipping_address_incomplete");
       }
-
-      const { data: existing, error: existingError } = await supabase
-        .from("shop_orders")
-        .select("id")
-        .eq("shopify_order_id", order.id)
-        .maybeSingle();
-      if (existingError) throw new Error(existingError.message);
-      if (existing) {
-        result.skipped += 1;
-        result.orderIds.push(String(existing.id));
-        continue;
-      }
-
-      const address = fullAddress(order.shippingAddress);
-      const customerName = order.shippingAddress?.name || order.email || "Shopify customer";
-      const customerEmail = order.email || "shopify-order@invalid.local";
-      const phone = order.shippingAddress?.phone || order.phone || null;
       const total = finitePositiveNumber(order.totalPriceSet.shopMoney.amount);
       if (total === null) throw new Error("shopify_total_invalid");
-      if (!address) throw new Error("shopify_shipping_address_missing");
-      if (!order.lineItems.nodes.length) throw new Error("shopify_line_items_missing");
 
-      const mappedItems = order.lineItems.nodes.map((item) => {
-        const listing = item.variant?.id ? listingByVariant.get(item.variant.id) : undefined;
-        return { item, listing };
+      const canonicalLines = tracerItems.map((item) => {
+        if (!item.variant?.id || !String(item.variant.sku ?? "").startsWith("TRC-")) {
+          throw new Error("shopify_tracer_variant_id_or_sku_missing:" + item.id);
+        }
+        const listing = listingByExternalVariant.get(item.variant.id);
+        if (!listing) throw new Error("shopify_canonical_variant_not_mapped:" + item.variant.sku);
+        const offerId = offerByVariant.get(listing.variantId);
+        if (!offerId) throw new Error("shopify_canonical_supplier_offer_missing:" + item.variant.sku);
+        const quantity = Number(item.quantity);
+        const unitPrice = finitePositiveNumber(item.originalUnitPriceSet.shopMoney.amount);
+        if (!Number.isSafeInteger(quantity) || quantity <= 0) throw new Error("shopify_line_item_quantity_invalid:" + item.id);
+        if (unitPrice === null || !item.originalUnitPriceSet.shopMoney.currencyCode) {
+          throw new Error("shopify_line_item_price_or_currency_invalid:" + item.id);
+        }
+        return {
+          externalLineId: item.id,
+          variantId: listing.variantId,
+          sku: listing.sku || item.variant.sku,
+          quantity,
+          unitPrice: Math.round(unitPrice),
+          offerId,
+        };
       });
-      const unmapped = mappedItems.filter(({ listing }) => !listing);
-      if (unmapped.length) {
-        throw new Error(`shopify_variant_not_mapped:${unmapped.map(({ item }) => item.variant?.sku || item.id).join(",")}`);
-      }
 
-      for (const { item } of mappedItems) {
-        if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
-          throw new Error(`shopify_line_item_quantity_invalid:${item.id}`);
-        }
-        if (finitePositiveNumber(item.originalUnitPriceSet.shopMoney.amount) === null) {
-          throw new Error(`shopify_line_item_price_invalid:${item.id}`);
-        }
-        if (!item.originalUnitPriceSet.shopMoney.currencyCode) {
-          throw new Error(`shopify_line_item_currency_missing:${item.id}`);
-        }
-      }
-
-      const primaryListing = mappedItems[0]?.listing;
-      const inserted = await supabase
-        .from("shop_orders")
-        .insert({
-          listing_id: primaryListing?.id ?? null,
-          status: "placed",
-          payment_method: "shopify",
-          payment_status: "paid",
-          order_status: "fulfillment_pending",
-          customer_name: customerName,
-          customer_email: customerEmail,
-          customer_phone: phone,
-          shipping_address: address,
-          subtotal: total,
-          shipping_cost: 0,
-          total,
+      const imported = await ingestPaidOrder({
+        channel: "shopify",
+        externalOrderId: order.id,
+        totalAmount: Math.round(total),
+        customerName: address.name || order.email || null,
+        shippingAddress: {
+          country: address.country ?? "",
+          country_code: address.countryCodeV2,
+          country_code_v2: address.countryCodeV2,
+          province: address.province,
+          city: address.city,
+          address1: address.address1,
+          address2: address.address2 ?? "",
+          zip: address.zip,
+          phone: address.phone || order.phone || "",
+          email: order.email ?? "",
+        },
+        rawPayload: {
+          source: "shopify_paid_order_poll",
+          name: order.name,
+          createdAt: order.createdAt,
           currency: order.totalPriceSet.shopMoney.currencyCode,
-          notes: `Shopify ${order.name}`,
-          shopify_order_id: order.id,
-          shopify_order_name: order.name,
-          shopify_fulfillment_status: order.displayFulfillmentStatus,
-          shopify_financial_status: order.displayFinancialStatus,
-          shopify_synced_at: new Date().toISOString(),
-          paid_at: new Date().toISOString(),
-          metadata: {
-            source: "shopify",
-            created_at: order.createdAt,
-            country_code: order.shippingAddress?.countryCodeV2,
-          },
-        })
-        .select("id")
-        .single();
-      if (inserted.error?.code === "23505") {
-        // Another sync worker may have inserted the same external order after
-        // our earlier lookup. Reconcile the winner instead of retrying blindly.
-        const { data: racedOrder, error: racedOrderError } = await supabase
-          .from("shop_orders")
-          .select("id")
-          .eq("shopify_order_id", order.id)
-          .maybeSingle();
-        if (racedOrderError) throw new Error(racedOrderError.message);
-        if (racedOrder?.id) {
-          result.skipped += 1;
-          result.orderIds.push(String(racedOrder.id));
-          continue;
-        }
-      }
-      if (inserted.error || !inserted.data) throw new Error(inserted.error?.message ?? "shop_order_insert_failed");
-      insertedOrderId = String(inserted.data.id);
-
-      const itemRows = mappedItems.map(({ item, listing }) => ({
-        order_id: inserted.data.id,
-        listing_id: listing?.id ?? null,
-        product_id: listing?.product_id ?? null,
-        title: item.title,
-        qty: item.quantity,
-        unit_price: Number(item.originalUnitPriceSet.shopMoney.amount),
-        currency: item.originalUnitPriceSet.shopMoney.currencyCode,
-      }));
-      const itemInsert = await supabase.from("shop_order_items").insert(itemRows);
-      if (itemInsert.error) {
-        await supabase.from("shop_orders").delete().eq("id", inserted.data.id).eq("shopify_order_id", order.id);
-        insertedOrderId = null;
-        throw new Error(`shop_order_items_insert_failed:${itemInsert.error.message}`);
-      }
-
-      result.imported += 1;
-      result.orderIds.push(inserted.data.id);
+          displayFinancialStatus: order.displayFinancialStatus,
+          displayFulfillmentStatus: order.displayFulfillmentStatus,
+        },
+        lines: canonicalLines,
+      });
+      if (imported.duplicate) result.skipped += 1;
+      else result.imported += 1;
+      result.orderIds.push(imported.orderId);
     } catch (error) {
-      if (insertedOrderId) {
-        await supabase.from("shop_orders").delete().eq("id", insertedOrderId).eq("shopify_order_id", order.id);
-      }
       result.failed += 1;
       result.errors.push({
         shopifyOrderId: order.id,
