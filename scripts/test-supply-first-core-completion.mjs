@@ -42,6 +42,7 @@ assert.match(cronRoute, /const discoveryIncomplete/);
 assert.match(cronRoute, /status: runStatus/);
 assert.match(cronRoute, /status: discoveryIncomplete \? 503 : 200/);
 assert.ok(cronRoute.includes("supply_first_already_running"));
-assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/supply-first").map((job) => job.schedule), ["5,35 * * * *"]);
+assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/supply-first").map((job) => job.schedule), ["0 */6 * * *"]);
+assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/cj-variant-repair").map((job) => job.schedule), ["20 */6 * * *"]);
 
 console.log("Supply-first core completion: optional discovery cooldowns do not block the core cycle; empty deadline runs are deferred");
