@@ -57,3 +57,8 @@ test("Shopify webhook writes the deployed order schema and repairs partial item 
   assert.match(webhook, /shop_order_items_insert_failed:/,
     "surface an item write failure so Shopify retries can repair the order");
 });
+
+const admin = readFileSync("lib/shopify/admin.ts", "utf8");
+test("Shopify webhook HMAC accepts the configured app client secret when no override exists", () => {
+  assert.match(admin, /process\\.env\\.SHOPIFY_WEBHOOK_SECRET\\?\\.trim\\(\\) \\|\\| process\\.env\\.SHOPIFY_CLIENT_SECRET\\?\\.trim\\(\\)/);
+});
