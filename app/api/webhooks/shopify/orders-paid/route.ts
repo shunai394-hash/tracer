@@ -68,7 +68,7 @@ export async function POST(request: Request) {
       if (priceError || !price?.supplier_offer_id) throw new Error("supplier_offer_mapping_missing:" + sku);
       canonicalLines.push({
         externalLineId: String(line.id), variantId: String(listing.variant_id), sku,
-        quantity, unitPrice: Math.round(unitPrice * 100) / 100, offerId: String(price.supplier_offer_id)
+        quantity, unitPrice: Math.round(unitPrice), offerId: String(price.supplier_offer_id)
       });
     }
     if (canonicalLines.length === 0) {
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
     const customerName = [customer?.first_name, customer?.last_name].filter(Boolean).join(" ").trim() || null;
     const order = await ingestPaidOrder({
       channel: "shopify", externalOrderId: String(payload.id),
-      totalAmount: Math.round(Number(payload.total_price ?? 0) * 100) / 100,
+      totalAmount: Math.round(Number(payload.total_price ?? 0)),
       customerName,
       shippingAddress: payload.shipping_address && typeof payload.shipping_address === "object" ? payload.shipping_address : {},
       rawPayload: payload,
