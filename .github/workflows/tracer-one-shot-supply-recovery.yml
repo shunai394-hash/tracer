@@ -58,6 +58,21 @@ except Exception:
 PY
           }
 
+          # Refuse every external write unless the stable production alias serves this exact commit.
+          health_token="$(token)" || exit 1
+          health_code="$(curl -sS -o /tmp/health.json -w "%{http_code}" --max-time 30 \
+            -H "Authorization: Bearer $health_token" "$BASE/api/health" || true)"
+          if [[ "$health_code" != "200" ]]; then
+            echo "Production health check failed with HTTP $health_code; stopping before supplier or storefront writes."
+            cat /tmp/health.json || true
+            exit 1
+          fi
+          grep -q "\"gitCommitSha\":\"$GITHUB_SHA\"" /tmp/health.json || {
+            echo "Production deployment SHA does not match this workflow commit; stopping before supplier or storefront writes."
+            cat /tmp/health.json
+            exit 1
+          }
+
           call_post "api/cron/cj-sandbox-order-test" '{"supplierListingId":"d970c5d9-0662-4894-bfe6-4e377819666d"}' 300 || true
           call_get "api/cron/commerce-cj-import?q=women%20handbag&limit=3" 300 || true
           call_get "api/cron/commerce-publish-base?limit=3" 120 || true
