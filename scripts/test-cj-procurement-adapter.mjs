@@ -70,9 +70,9 @@ assert.doesNotMatch(adapter, /await confirmCJSandboxOrder\\(orderId\\)|await sim
   "payType=3 sandbox orders must use balance payment, not an unsupported status transition");
 assert.match(adapter, /payType: 3,/,
   "sandbox order must be created without initiating payment before the balance-payment step");
-assert.match(order, /shopping\\/order\\/confirmOrder/);
+assert.match(order, /shopping\/order\/confirmOrder/);
 assert.match(order, /method: "PATCH"/);
-assert.doesNotMatch(adapter, /updateCJSandboxOrderStatus\\(orderId, 200\\)/);
+assert.doesNotMatch(adapter, /updateCJSandboxOrderStatus\(orderId, 200\)/);
 const cleanSandboxRoute = read("app/api/cron/commerce-cj-sandbox-test/route.ts");
 assert.match(cleanSandboxRoute, /from\("supplier_offers"\)/);
 assert.match(cleanSandboxRoute, /from\("commerce_events"\)/);
