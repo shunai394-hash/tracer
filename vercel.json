@@ -3,7 +3,7 @@
   "buildCommand": "npm run build",
   "crons": [
     {
-      "path": "/api/cron/rebuild-cj-import",
+      "path": "/api/cron/commerce-cj-import",
       "schedule": "*/30 * * * *"
     },
     {
