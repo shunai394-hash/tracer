@@ -79,7 +79,7 @@ test("procurement revalidates the exact fresh profitable offer and preserves a c
 test("clean commerce cron schedule uses only the new supplier, channel, order, and procurement routes", async () => {
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
   const schedules = new Map(config.crons.map((job) => [job.path, job.schedule]));
-  assert.equal(schedules.get("/api/cron/commerce-cj-import"), "*/30 * * * *");
+  assert.equal(schedules.get("/api/cron/rebuild-cj-import"), "*/30 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-publish-base"), "10,25,40,55 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-publish-shopify"), "*/15 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,16,31,46 * * * *");
