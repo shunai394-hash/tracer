@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import {
   fetchCJProductVariants,
+  fetchCJVariantByVid,
   fetchCJVariantStock,
   getCJProductDetail,
   searchCJProducts,
@@ -433,7 +434,14 @@ export async function discoverAndCreateCjSupply(
       // Confirm that this exact variant still belongs to the exact CJ product.
       // A stale persisted variant ID must never be treated as live identity proof.
       const seededVariants = await fetchCJProductVariants(candidate.id, { countryCode: "JP" });
-      const seededVariant = seededVariants.find((item) => item.vid === candidate.variantId);
+      let seededVariant: CJProductVariant | null = seededVariants.find((item) => item.vid === candidate.variantId) ?? null;
+      // The public catalog ID and the orderable variant's product ID can use
+      // different CJ ID namespaces. If the product-scoped list does not return
+      // the saved variant, resolve by exact variant ID and use its returned pid.
+      if (!seededVariant) {
+        const liveVariantById = await fetchCJVariantByVid(candidate.variantId);
+        if (liveVariantById?.vid === candidate.variantId) seededVariant = liveVariantById;
+      }
       if (!seededVariant) {
         rejected++;
         if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, {
@@ -444,6 +452,7 @@ export async function discoverAndCreateCjSupply(
         items.push({ rejectedStage: "supplier_variant_not_in_live_product", supplierProductId: candidate.id, supplierVariantId: candidate.variantId });
         continue;
       }
+      const supplierProductId = seededVariant.productId?.trim() || candidate.id;
       // Price must come from the live exact-variant response, not the stale
       // supplier-listing/cache price. Stock and Japan freight are rechecked too.
       const liveCost = Number(seededVariant.sellPrice);
@@ -470,7 +479,7 @@ export async function discoverAndCreateCjSupply(
         }
         items.push({
           rejectedStage: "live_inventory_unavailable",
-          supplierProductId: candidate.id,
+          supplierProductId,
           supplierVariantId: candidate.variantId,
           stock,
         });
@@ -495,7 +504,7 @@ export async function discoverAndCreateCjSupply(
         items.push({ rejectedStage: "japanese_display_title_unavailable", supplierProductId: candidate.id, supplierVariantId: candidate.variantId, sourceTitle: detail.title });
         continue;
       }
-      const sourceRef = `cj:${candidate.id}:${candidate.variantId}`;
+      const sourceRef = `cj:${supplierProductId}:${candidate.variantId}`;
       // Keep the product this supplier listing already belongs to (a listed
       // product must not be split into a second product row).
       const existingProduct = seededCandidate.existingProductId
@@ -515,7 +524,7 @@ export async function discoverAndCreateCjSupply(
         && seededCandidate.orderable
         && seededCandidate.trackingAvailable
         && seededCandidate.shipTo === "JP"
-        && seededCandidate.supplierProductId === candidate.id
+        && seededCandidate.supplierProductId === supplierProductId
         && seededCandidate.supplierVariantId === candidate.variantId
         && (seededCandidate.verificationError === "" || seededCandidate.verificationError === "CJdropshipping is not configured" || seededCandidate.verificationError === "no_unique_canonical_child_variant_match");
       const supplierInsert = await upsertSupplierListing(db, {
@@ -523,7 +532,7 @@ export async function discoverAndCreateCjSupply(
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
         order_method: "cj_api", api_available: preserveVerifiedOrderPath, verification_status: preserveVerifiedOrderPath ? "verified" : "unverified", shipping_status: "verified", identity_method: "supply_discovered",
         identity_status: "supply_discovered", identity_confidence: 0, configured: true,
-        supplier_product_id: candidate.id, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
+        supplier_product_id: supplierProductId, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
         gtin: normalizeIdentifier("gtin", variantBarcode),
         orderable: preserveVerifiedOrderPath, price_confirmed: true, inventory_confirmed: true, tracking_available: preserveVerifiedOrderPath,
         last_verified_at: preserveVerifiedOrderPath ? refreshedAt : undefined,
@@ -539,7 +548,7 @@ export async function discoverAndCreateCjSupply(
         cost,
         shippingCost: freight,
         supplierListingId: String(supplierInsert.data.id),
-        supplierProductId: candidate.id,
+        supplierProductId,
         supplierVariantId: candidate.variantId,
         inventory: Math.floor(stock),
         query,
@@ -580,7 +589,7 @@ export async function discoverAndCreateCjSupply(
         offerId: intelligence.offerId,
         intelligenceId: intelligence.intelligenceId,
         title: displayTitle,
-        supplierProductId: candidate.id,
+        supplierProductId,
         supplierVariantId: candidate.variantId,
         costUsd: cost,
         freightUsd: freight,
@@ -693,6 +702,11 @@ export async function discoverAndCreateCjSupply(
           reject("variant_unavailable", { variantCount: variants.length });
           continue;
         }
+        const supplierProductId = variant.productId?.trim() || candidate.id;
+        if (existingProducts.has(supplierProductId)) {
+          reject("supplier_product_already_exists", { supplierProductId, supplierVariantId: variant.vid });
+          continue;
+        }
 
         const stock = await fetchCJVariantStock(variant.vid);
         if (stock === null || stock <= 0) {
@@ -728,7 +742,7 @@ export async function discoverAndCreateCjSupply(
 
         const salePrice = yenPrice(cost, freight, fxRate);
         const variantBarcode = typeof variant.barcode === "string" ? variant.barcode : null;
-        const sourceRef = `cj:${candidate.id}:${variant.vid}`;
+        const sourceRef = `cj:${supplierProductId}:${variant.vid}`;
         const identityKey = sourceRef;
         const now = new Date().toISOString();
 
@@ -784,7 +798,7 @@ export async function discoverAndCreateCjSupply(
               identity_status: "supply_discovered",
               identity_confidence: 0,
               configured: true,
-              supplier_product_id: candidate.id,
+              supplier_product_id: supplierProductId,
               supplier_variant_id: variant.vid,
               cj_variant_id: variant.vid,
               gtin: normalizeIdentifier("gtin", variantBarcode),
@@ -815,7 +829,7 @@ export async function discoverAndCreateCjSupply(
           cost,
           shippingCost: freight,
           supplierListingId,
-          supplierProductId: candidate.id,
+          supplierProductId,
           supplierVariantId: variant.vid,
           inventory: Math.floor(stock),
           query,
@@ -848,6 +862,7 @@ export async function discoverAndCreateCjSupply(
             error: internalSupplyError,
           });
         }
+        existingProducts.add(supplierProductId);
         discovered++;
         verified++;
         catalogDiscovered++;
@@ -876,7 +891,7 @@ export async function discoverAndCreateCjSupply(
       } catch (error) {
         reject("error", { error: error instanceof Error ? error.message : String(error) });
         console.warn("[supply-first] candidate rejected", {
-          productId: candidate.id,
+          productId: supplierProductId,
           error: error instanceof Error ? error.message : String(error),
         });
       }
