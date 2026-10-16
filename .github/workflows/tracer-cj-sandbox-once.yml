@@ -35,7 +35,6 @@ jobs:
           fi
 
           BASE="https://tracer-pied-alpha.vercel.app"
-          SUPPLIER_LISTING_ID="08fea725-b259-495a-ab7a-b500ce7f956f"
 
           get_oidc_token() {
             curl -sSf --max-time 15 \
