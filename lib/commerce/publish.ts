@@ -32,7 +32,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
     .select("id,variant_id,external_product_id,external_variant_id,status,last_error,last_synced_at")
     .eq("channel", channel).eq("status", "published")
     .not("external_product_id", "is", null)
-    .order("last_synced_at", { ascending: true, nullsFirst: true }).limit(20);
+    .order("last_synced_at", { ascending: true, nullsFirst: true }).limit(5);
   if (error) throw new Error("stale_listing_read_failed:" + error.message);
 
   // Only inspect currently published listings. Already-hidden error rows must not
