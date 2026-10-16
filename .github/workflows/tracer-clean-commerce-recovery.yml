@@ -1,6 +1,6 @@
 name: TRACER clean-commerce bounded recovery
 
-# TRACER_CLEAN_COMMERCE_RECOVERY: wait for the exact production commit before bounded supplier import and channel publication.
+# TRACER_CLEAN_COMMERCE_RECOVERY: bounded production recovery requested 2026-10-16; wait for exact production commit before supplier import and gated channel publication.
 
 on:
   push:
