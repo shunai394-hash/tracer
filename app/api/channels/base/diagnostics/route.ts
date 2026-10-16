@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
-import { probeBaseReadOnly, isBaseConfigured } from "@/lib/channels/base";
+import { probeBaseReadOnly, isBaseConfigured, BASE_ITEMS_MAX_PAGES } from "@/lib/channels/base";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 /** Read-only probe. Never returns item IDs, order IDs, customer data, or credentials. */
 export async function GET(request: Request) {
@@ -22,7 +23,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const probe = await probeBaseReadOnly({ itemPageLimit: 100, itemMaxPages: 10 });
+    const probe = await probeBaseReadOnly({ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES });
     const mappingAudit = {
       ok: false,
       visibleItemsMatchedToDatabase: 0,
