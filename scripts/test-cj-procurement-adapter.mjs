@@ -62,14 +62,15 @@ assert.match(order, /postCJSandboxAction\("updateTrackNumber"/);
 assert.match(adapter, /runCJSandboxOrderLifecycle/);
 assert.match(adapter, /onOrderCreated\?: \(supplierOrderId: string\) => Promise<void>/, "sandbox lifecycle must allow immediate persistence of a created external order ID");
 const createdIdCallback = adapter.indexOf("if (onOrderCreated) await onOrderCreated(orderId)");
-const sandboxBalancePayment = adapter.indexOf("await payCJSandboxOrderBalance(orderId)");
-assert.ok(createdIdCallback >= 0 && createdIdCallback < sandboxBalancePayment,
-  "persist created supplier order ID before sandbox balance payment");
-assert.ok(adapter.includes("await payCJSandboxOrderBalance(orderId)"));
-assert.ok(!adapter.includes("await confirmCJSandboxOrder(orderId)") && !adapter.includes("await simulateCJSandboxPayment(orderId)"),
-  "payType=3 sandbox orders must use balance payment, not an unsupported status transition");
+const sandboxConfirmation = adapter.indexOf("await confirmCJSandboxOrder(orderId)");
+const sandboxPayment = adapter.indexOf("await simulateCJSandboxPayment(orderId)");
+assert.ok(createdIdCallback >= 0 && createdIdCallback < sandboxConfirmation && sandboxConfirmation < sandboxPayment,
+  "persist created supplier order ID, confirm CREATED→UNPAID, then simulate sandbox payment");
+assert.ok(adapter.includes("await confirmCJSandboxOrder(orderId)"));
+assert.ok(adapter.includes("await simulateCJSandboxPayment(orderId)"));
+assert.ok(!adapter.includes("await payCJSandboxOrderBalance(orderId)"), "sandbox verification must not debit the live CJ balance");
 assert.match(adapter, /payType: 3,/,
-  "sandbox order must be created without initiating payment before the balance-payment step");
+  "sandbox order must be create-only before explicit confirmation and simulated payment");
 assert.ok(order.includes("/shopping/order/confirmOrder"));
 assert.ok(order.includes('method: "PATCH"'));
 assert.ok(!adapter.includes("updateCJSandboxOrderStatus(orderId, 200)"));
