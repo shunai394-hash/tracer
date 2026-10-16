@@ -91,4 +91,4 @@ jobs:
             echo "Shopify live sync skipped: no eligible listings passed the read-only gate."
           fi
 
-# TRACER_ONE_SHOT_SUPPLY_RECOVERY: correct canonical production URL and remove stale sandbox listing ID.
+# TRACER_ONE_SHOT_SUPPLY_RECOVERY: bounded production wiring proof; no sandbox order unless a fresh verified listing ID is returned.
