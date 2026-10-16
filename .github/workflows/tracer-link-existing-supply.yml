@@ -6,6 +6,9 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/tracer-link-existing-supply.yml"
+      - "lib/market/select-supply-sales-tests.ts"
+      - "lib/suppliers/discover-cj-supply.ts"
+      - "app/api/cron/supply-first/route.ts"
   workflow_dispatch:
 
 permissions:
