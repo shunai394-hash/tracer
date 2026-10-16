@@ -98,3 +98,15 @@ test("both channels use the shared capped storefront quantity and Japanese title
   assert.match(publish, /stock: storefrontStock/);
   assert.match(publish, /quantity: storefrontStock/);
 });
+
+test("TRACER storefront includes canonical Shopify listings only when fulfillment is enabled", async () => {
+  const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
+  assert.match(store, /async function loadCanonicalCommerceListings/);
+  assert.match(store, /from\("channel_listings"\)/);
+  assert.match(store, /from\("commerce_variants"\)/);
+  assert.match(store, /from\("supplier_offers"\)/);
+  assert.match(store, /from\("commerce_prices"\)/);
+  assert.match(store, /isCJLiveOrderingEnabled\(\)/);
+  assert.match(store, /from\("commerce_events"\)/);
+  assert.match(store, /const canonicalListings = await loadCanonicalCommerceListings\(\)/);
+});
