@@ -46,6 +46,19 @@ test("Supabase nested relations normalize object, array, and null shapes", () =>
   assert.deepEqual(asRelationRows(undefined), []);
 });
 
+test("bounded recovery processes only unpublished channel listings", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  const baseRoute = await readFile(new URL("../app/api/cron/commerce-publish-base/route.ts", import.meta.url), "utf8");
+  const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
+  const workflow = await readFile(new URL("../.github/workflows/tracer-clean-commerce-recovery.yml", import.meta.url), "utf8");
+  assert.match(publish, /onlyUnpublished = false/);
+  assert.match(publish, /sortedCandidates\.filter\(\(candidate\) => stateByVariant\.get\(candidate\.id\)\?\.status !== "published"\)/);
+  assert.match(baseRoute, /onlyUnpublished/);
+  assert.match(shopifyRoute, /onlyUnpublished/);
+  assert.match(workflow, /commerce-publish-base\?limit=100&onlyUnpublished=true/);
+  assert.match(workflow, /commerce-publish-shopify\?limit=100&onlyUnpublished=true/);
+});
+
 test("stale listing eligibility uses batched supplier, price, and variant reads", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   const start = publish.indexOf("async function unpublishUnfulfillableListings");

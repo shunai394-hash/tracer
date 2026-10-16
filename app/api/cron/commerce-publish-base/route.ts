@@ -9,7 +9,8 @@ export async function GET(request: Request) {
   try {
     const requested = Number(new URL(request.url).searchParams.get("limit") || 100);
     const limit = Number.isFinite(requested) ? Math.min(100, Math.max(1, Math.floor(requested))) : 25;
-    const result = await syncCommerceListings("base", limit);
+    const onlyUnpublished = new URL(request.url).searchParams.get("onlyUnpublished") === "true";
+    const result = await syncCommerceListings("base", limit, onlyUnpublished);
     return NextResponse.json({ ok: result.failed === 0, ...result }, { status: result.failed ? 207 : 200 });
   } catch (error) {
     return NextResponse.json({ ok: false, channel: "base", error: error instanceof Error ? error.message : String(error) }, { status: 502 });

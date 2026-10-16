@@ -89,8 +89,8 @@ jobs:
           # The route caps each pass at 100, so three sequential passes drain up to
           # 300 candidates per channel without overlapping publication requests.
           for pass in 1 2 3; do
-            call_publish "api/cron/commerce-publish-base?limit=100" "base-publish-${pass}.json" || failed=1
-            call_publish "api/cron/commerce-publish-shopify?limit=100" "shopify-publish-${pass}.json" || failed=1
+            call_publish "api/cron/commerce-publish-base?limit=100&onlyUnpublished=true" "base-publish-${pass}.json" || failed=1
+            call_publish "api/cron/commerce-publish-shopify?limit=100&onlyUnpublished=true" "shopify-publish-${pass}.json" || failed=1
           done
           # No supplier purchase or customer order is created by this workflow.
           # Paid-order procurement remains separate and requires payment_status=paid.
