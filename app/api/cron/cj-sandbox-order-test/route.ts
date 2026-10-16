@@ -109,26 +109,80 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "SANDBOX_AUDIT_CLAIM_FAILED" }, { status: 500 });
   }
   const runId = String(run.id);
+  let activeListing = listing;
+  const attemptedListingIds: string[] = [];
 
   try {
-    const result = await runCJSandboxOrderLifecycle({
-      supplierProductId: String(listing.supplier_product_id),
-      supplierVariantId: String(listing.supplier_variant_id),
-      orderNumber: `TRACER-SANDBOX-${Date.now()}`,
-      quantity: 1,
-      shippingCountryCode: "JP",
-      shippingCountry: "Japan",
-      shippingProvince: "Tokyo",
-      shippingCity: "Chiyoda-ku",
-      shippingAddress: "1-1 Chiyoda",
-      shippingZip: "1000001",
-      shippingPhone: "00000000000",
-      shippingCustomerName: "TRACER SANDBOX TEST",
-      email: "sandbox-test@example.invalid",
-    });
+    const { data: candidateRows, error: candidateError } = await db
+      .from("supplier_listings")
+      .select("id,supplier,supplier_product_id,supplier_variant_id,configured,cost,shipping_cost,currency,inventory,ship_to,shipping_status,price_confirmed,inventory_confirmed,metadata")
+      .eq("supplier", "cj")
+      .eq("configured", true)
+      .eq("price_confirmed", true)
+      .eq("inventory_confirmed", true)
+      .eq("shipping_status", "verified")
+      .eq("ship_to", "JP")
+      .gt("inventory", 0)
+      .order("id", { ascending: true })
+      .limit(12);
+    if (candidateError) throw new Error("CJ_SANDBOX_CANDIDATE_SCAN_FAILED");
+
+    const validCandidate = (candidate: typeof listing) =>
+      candidate.supplier === "cj" &&
+      candidate.configured === true &&
+      /^\d{10,25}$/.test(String(candidate.supplier_product_id ?? "")) &&
+      /^\d{10,25}$/.test(String(candidate.supplier_variant_id ?? ""));
+    const alternatives = (candidateRows ?? []).filter((candidate) =>
+      candidate.id !== listing.id &&
+      validCandidate(candidate as typeof listing) &&
+      !(candidate.metadata && typeof candidate.metadata === "object" && !Array.isArray(candidate.metadata)
+        && "cj_sandbox_order_path_verified_at" in candidate.metadata)
+    );
+    const candidates = [listing, ...alternatives.slice(0, 2)];
+    let result: Awaited<ReturnType<typeof runCJSandboxOrderLifecycle>> | null = null;
+    let lastPreOrderFailure = "";
+
+    for (const candidate of candidates) {
+      activeListing = candidate as typeof listing;
+      attemptedListingIds.push(String(activeListing.id));
+      try {
+        result = await runCJSandboxOrderLifecycle({
+          supplierProductId: String(activeListing.supplier_product_id),
+          supplierVariantId: String(activeListing.supplier_variant_id),
+          orderNumber: `TRACER-SANDBOX-${Date.now()}`,
+          quantity: 1,
+          shippingCountryCode: "JP",
+          shippingCountry: "Japan",
+          shippingProvince: "Tokyo",
+          shippingCity: "Chiyoda-ku",
+          shippingAddress: "1-1 Chiyoda",
+          shippingZip: "1000001",
+          shippingPhone: "00000000000",
+          shippingCustomerName: "TRACER SANDBOX TEST",
+          email: "sandbox-test@example.invalid",
+        });
+        break;
+      } catch (error) {
+        const detail = error instanceof Error ? error.message.slice(0, 240) : "CJ sandbox test failed";
+        const safeToTryAnotherCandidate =
+          detail.startsWith("CJ_SANDBOX_VARIANT_NOT_FOUND:") ||
+          detail.startsWith("CJ_SANDBOX_PRODUCT_ID_MISMATCH:") ||
+          detail === "CJ_SANDBOX_STOCK_OR_PRICE_UNVERIFIED" ||
+          detail === "CJ_SANDBOX_SHIPPING_UNAVAILABLE" ||
+          detail === "CJ_SANDBOX_COUNTRY_UNVERIFIED";
+        if (!safeToTryAnotherCandidate) throw error;
+        lastPreOrderFailure = detail;
+        console.warn("[TRACER CJ SANDBOX CANDIDATE REJECTED BEFORE ORDER CREATION]", {
+          supplierListingId: activeListing.id,
+          error: detail,
+        });
+      }
+    }
+    if (!result) throw new Error(`CJ_SANDBOX_NO_VALID_CANDIDATE:${lastPreOrderFailure || "no_candidates"}`);
+
     const sandboxVerifiedAt = new Date().toISOString();
-    const existingListingMetadata = listing.metadata && typeof listing.metadata === "object" && !Array.isArray(listing.metadata)
-      ? listing.metadata as Record<string, unknown>
+    const existingListingMetadata = activeListing.metadata && typeof activeListing.metadata === "object" && !Array.isArray(activeListing.metadata)
+      ? activeListing.metadata as Record<string, unknown>
       : {};
     const { error: listingEvidenceWriteError } = await db.from("supplier_listings").update({
       metadata: {
@@ -149,12 +203,13 @@ export async function POST(request: Request) {
           realFulfillment: false,
         },
       },
-    }).eq("id", supplierListingId);
+    }).eq("id", activeListing.id);
     if (listingEvidenceWriteError) throw new Error("CJ_SANDBOX_LISTING_EVIDENCE_WRITE_FAILED");
 
     const auditMetadata = {
       phase: "cj_sandbox_order_lifecycle",
-      supplierListingId,
+      supplierListingId: activeListing.id,
+      attemptedListingIds,
       supplierOrderId: result.supplierOrderId,
       supplierStatus: result.status,
       paymentConfirmed: result.paymentConfirmed,
@@ -177,7 +232,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       phase: "cj_sandbox_order_lifecycle",
-      supplierListingId,
+      supplierListingId: activeListing.id,
       ...result,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
@@ -191,17 +246,18 @@ export async function POST(request: Request) {
       error: detail,
       metadata: {
         phase: "cj_sandbox_order_lifecycle",
-        supplierListingId,
+        supplierListingId: activeListing.id,
+        attemptedListingIds,
         sandbox: true,
         charged: false,
         realFulfillment: false,
       },
     }).eq("id", runId);
-    console.error("[TRACER CJ SANDBOX ORDER TEST FAILED]", { supplierListingId, error: detail });
+    console.error("[TRACER CJ SANDBOX ORDER TEST FAILED]", { supplierListingId: activeListing.id, error: detail });
     return NextResponse.json({
       ok: false,
       phase: "cj_sandbox_order_lifecycle",
-      supplierListingId,
+      supplierListingId: activeListing.id,
       error: detail,
     }, { status: 502, headers: { "Cache-Control": "no-store" } });
   }
