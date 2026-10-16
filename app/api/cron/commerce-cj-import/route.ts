@@ -12,6 +12,8 @@ function japaneseCommerceTitle(title: string, productType?: string | null): stri
   const source = (String(title ?? "") + " " + String(productType ?? "")).toLowerCase();
   const rules: Array<[RegExp, string]> = [
     [/women role play hair accessories|role play hair accessories/, "レディース コスプレ用ヘアアクセサリー"],
+    [/hair tie|rubber band.*hair|hair rope/, "レディース ヘアゴム・ヘアロープ"],
+    [/women.*hair accessories|hair accessories.*women/, "レディース ヘアアクセサリー"],
     [/fan brush|makeup brush|make-up brush|cosmetic brush|tartaric acid brush/, "メイクブラシ"],
     [/hair claw|hair clip/, "ヘアクリップ"],
     [/headband|hair band/, "ヘアバンド"],
@@ -25,7 +27,6 @@ function japaneseCommerceTitle(title: string, productType?: string | null): stri
     [/clutch bag|clutch/, "クラッチバッグ"],
     [/handbag|purse/, "ハンドバッグ"],
     [/bag strap/, "バッグストラップ"],
-    [/\bbag\b/, "バッグ"],
     [/face roller/, "フェイスローラー"],
     [/beauty tool|makeup|cosmetic/, "美容ツール"],
   ];
@@ -63,11 +64,35 @@ export async function GET(request: Request) {
 
   const stats = { searched: 0, products: 0, variants: 0, offers: 0, priced: 0, skipped: 0, errors: [] as string[] };
   try {
-    const results = await searchCJProducts(query, { page, size: Math.min(20, limit * 2) });
-    stats.searched = results.products.length;
-    for (const candidate of results.products.slice(0, limit)) {
+    type ImportCandidate = { id: string; title: string; productType?: string | null; imageUrl?: string | null };
+    const requestedProductIds = url.searchParams.has("productIds")
+      ? [...new Set((url.searchParams.get("productIds") ?? "").split(",").map((id) => id.trim()).filter((id) => /^\d{10,22}$/.test(id)))].slice(0, limit)
+      : [];
+    if (url.searchParams.has("productIds") && requestedProductIds.length === 0) {
+      return NextResponse.json({ ok: false, error: "invalid_product_ids", imported: 0 }, { status: 400 });
+    }
+    const forcedDetails = new Map<string, Awaited<ReturnType<typeof getCJProductDetail>>>();
+    let candidates: ImportCandidate[] = [];
+    if (requestedProductIds.length > 0) {
+      for (const id of requestedProductIds) {
+        const detail = await getCJProductDetail(id);
+        if (!detail) {
+          stats.skipped++;
+          stats.errors.push("requested_product_detail_missing:" + id);
+          continue;
+        }
+        forcedDetails.set(id, detail);
+        candidates.push({ id, title: detail.title, productType: detail.productType, imageUrl: detail.imageUrl });
+      }
+      stats.searched = candidates.length;
+    } else {
+      const results = await searchCJProducts(query, { page, size: Math.min(20, limit * 2) });
+      stats.searched = results.products.length;
+      candidates = results.products.slice(0, limit);
+    }
+    for (const candidate of candidates) {
       try {
-        const detail = await getCJProductDetail(candidate.id);
+        const detail = forcedDetails.get(candidate.id) ?? await getCJProductDetail(candidate.id);
         if (!detail) { stats.skipped++; continue; }
         const variants = await fetchCJProductVariants(candidate.id);
         if (!variants.length) { stats.skipped++; continue; }
