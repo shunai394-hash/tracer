@@ -90,7 +90,7 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         pageInfo: { hasNextPage: boolean; endCursor: string | null };
       };
     }>(
-      \`query PaidOrders($first: Int!, $after: String) {
+      `query PaidOrders($first: Int!, $after: String) {
         orders(first: $first, after: $after, query: "financial_status:paid status:open fulfillment_status:unfulfilled", sortKey: CREATED_AT, reverse: true) {
           nodes {
             id name email phone displayFinancialStatus displayFulfillmentStatus createdAt cancelledAt
@@ -103,7 +103,7 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
           }
           pageInfo { hasNextPage endCursor }
         }
-      }\`,
+      }`,
       { first: 100, after },
     );
 
@@ -143,14 +143,14 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
           };
         } | null;
       }>(
-        \`query PaidOrderLineItems($id: ID!, $first: Int!, $after: String!) {
+        `query PaidOrderLineItems($id: ID!, $first: Int!, $after: String!) {
           order(id: $id) {
             lineItems(first: $first, after: $after) {
               nodes { id title quantity originalUnitPriceSet { shopMoney { amount currencyCode } } variant { id sku } }
               pageInfo { hasNextPage endCursor }
             }
           }
-        }\`,
+        }`,
         { id: order.id, first: 100, after: cursor },
       );
       const connection = nextPage.order?.lineItems;
