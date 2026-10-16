@@ -283,3 +283,15 @@ test("BASE diagnostics reconcile both legacy and commerce-native channel listing
   assert.match(diagnostics, /visibleItemsManagedByCommerce/);
   assert.match(diagnostics, /String\(variant\.source_variant_key\) === String\(offer\.supplier_variant_id\)/);
 });
+
+test("BASE reconciliation recognizes commerce-native supplier SKUs without auto-mapping", async () => {
+  const reconciliation = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
+  assert.match(reconciliation, /from\("channel_listings"\)/);
+  assert.match(reconciliation, /from\("commerce_variants"\)/);
+  assert.match(reconciliation, /from\("commerce_products"\)/);
+  assert.match(reconciliation, /from\("supplier_offers"\)/);
+  assert.match(reconciliation, /const reconciliationListings = \[\.\.\.listings, \.\.\.commerceListingRows\]/);
+  assert.match(reconciliation, /addSupplierIdentifier\(evidence\?\.sku, listing\)/);
+  assert.match(reconciliation, /Exact-title candidates are unverified suggestions only/);
+  assert.doesNotMatch(reconciliation, /\.update\(|\.insert\(|\.upsert\(/);
+});
