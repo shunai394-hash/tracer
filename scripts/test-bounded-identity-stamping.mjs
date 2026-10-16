@@ -32,12 +32,10 @@ assert.match(reverify, /\.limit\(MAX_CANDIDATE_SCAN\)/);
 assert.match(reverify, /buildCandidateQuery\(\)\.gt\("id", priorCursor\)/);
 assert.match(reverify, /nextCursor: scanCursor/);
 const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
-const beautySourceIndex = collector.indexOf('source: "amazon_bestsellers_beauty"');
-const genericAmazonSourceIndex = collector.indexOf('source: "amazon_bestsellers" },');
-const electronicsSourceIndex = collector.indexOf('source: "amazon_bestsellers_electronics"');
-assert.ok(beautySourceIndex >= 0 && genericAmazonSourceIndex >= 0 && electronicsSourceIndex >= 0
-  && beautySourceIndex < genericAmazonSourceIndex && genericAmazonSourceIndex < electronicsSourceIndex,
-  "Amazon beauty and general demand must be collected before electronics");
+const activeSourceBlock = collector.match(/export const MARKETPLACE_SOURCES = \[([\s\S]*?)\] as const;/)?.[1] ?? "";
+assert.match(activeSourceBlock, /marketplace: "yahoo_shopping"/, "Yahoo! Shopping remains available for demand research");
+assert.doesNotMatch(activeSourceBlock, /amazon\.co\.jp|rakuten\.co\.jp|marketplace: "rakuten"/, "Amazon and Rakuten must not be active market observation sources");
+assert.equal((activeSourceBlock.match(/marketplace:/g) ?? []).length, 1, "market observation must have one allowed source: Yahoo demand research");
 assert.match(collector, /skipped: items\.length === 0/);
 assert.match(collector, /ranking_html_returned_zero_items/);
 console.log("Bounded demand identity stamping and CJ reverify: 18 assertions passed");
