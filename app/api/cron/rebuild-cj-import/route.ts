@@ -50,7 +50,7 @@ export async function GET(request: Request) {
         for(const listed of variants.slice(0,5)) {
           try {
             if(!listed.vid){stats.skipped++;continue;}
-            const exact=await fetchCJVariantByVid(listed.vid);
+            const exact = await fetchCJVariantByVid(listed.vid);
             const productId=String(exact?.productId??"").trim();
             if(!exact||String(exact.vid)!==String(listed.vid)||!productId){stats.skipped++;stats.errors.push("exact_variant_unresolved:"+listed.vid);continue;}
             const detail=productId===candidate.id?initial:await getCJProductDetail(productId);
