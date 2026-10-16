@@ -137,7 +137,7 @@ export async function GET(request: Request) {
     const { data: verifiedSupply, error: verifiedSupplyError } = await supabase
       .from("supplier_listings")
       .select("product_id")
-      .in("supplier", ["cj", "cjdropshipping", "orosy", "faire", "dsers"])
+      .in("supplier", ["cj", "cjdropshipping", "faire", "dsers"])
       .eq("verification_status", "verified")
       .eq("identity_status", "linked")
       .eq("orderable", true)
@@ -155,9 +155,9 @@ export async function GET(request: Request) {
     const { data: nativeCjSupply, error: nativeCjSupplyError } = await supabase
       .from("supplier_listings")
       .select("product_id")
-      .in("supplier", ["cj", "cjdropshipping", "orosy", "faire", "dsers"])
+      .in("supplier", ["cj", "cjdropshipping", "faire", "dsers"])
       .eq("verification_status", "verified")
-      .in("shipping_status", ["verified", "estimated"])
+      .eq("shipping_status", "verified")
       .eq("price_confirmed", true)
       .eq("inventory_confirmed", true)
       .gt("inventory", 0)
