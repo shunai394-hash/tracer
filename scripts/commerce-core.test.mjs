@@ -202,16 +202,19 @@ test("both channels use the shared capped storefront quantity and Japanese title
   assert.match(publish, /quantity: storefrontStock/);
 });
 
-test("TRACER storefront includes canonical Shopify listings only when fulfillment is enabled", async () => {
+test("TRACER storefront displays published canonical Shopify listings without enabling local CJ checkout", async () => {
   const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
+  const productPage = await readFile(new URL("../app/shop/[slug]/page.tsx", import.meta.url), "utf8");
   assert.match(store, /async function loadCanonicalCommerceListings/);
   assert.match(store, /from\("channel_listings"\)/);
   assert.match(store, /from\("commerce_variants"\)/);
   assert.match(store, /from\("supplier_offers"\)/);
   assert.match(store, /from\("commerce_prices"\)/);
-  assert.match(store, /isCJLiveOrderingEnabled\(\)/);
-  assert.match(store, /from\("commerce_events"\)/);
+  assert.doesNotMatch(store, /if \(!isCJLiveOrderingEnabled\(\)\) return \[\]/);
+  assert.match(store, /orderable: isCJLiveOrderingEnabled\(\)/);
   assert.match(store, /const canonicalListings = await loadCanonicalCommerceListings\(\)/);
+  assert.match(productPage, /shopifyProductUrl/);
+  assert.match(productPage, /Shopifyで購入する/);
 });
 
 test("CJ importer keeps source titles and localizes handbag subtypes", async () => {
