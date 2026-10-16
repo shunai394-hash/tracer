@@ -577,8 +577,8 @@ export async function discoverAndCreateCjSupply(
         : await db.from("products").select("id").eq("identity_key", sourceRef).limit(1).maybeSingle();
       if (existingProduct.error) throw new Error(existingProduct.error.message);
       const productInsert = existingProduct.data?.id
-        ? await db.from("products").update({ canonical_name: detail.title }).eq("id", existingProduct.data.id).select("id").single()
-        : await db.from("products").insert({ canonical_name: detail.title, identity_key: sourceRef }).select("id").single();
+        ? await db.from("products").update({ canonical_name: displayTitle }).eq("id", existingProduct.data.id).select("id").single()
+        : await db.from("products").insert({ canonical_name: displayTitle, identity_key: sourceRef }).select("id").single();
       if (productInsert.error) throw new Error(productInsert.error.message);
       const productId = String(productInsert.data.id);
       const refreshedAt = new Date().toISOString();
@@ -591,7 +591,7 @@ export async function discoverAndCreateCjSupply(
         && Number.isFinite(freight) && freight > 0
         && Number.isFinite(stock) && stock > 0;
       const supplierInsert = await upsertSupplierListing(db, {
-        supplier: "cj", external_id: candidate.variantId, sku: seededVariant.sku ?? null, title: detail.title, product_id: null,
+        supplier: "cj", external_id: candidate.variantId, sku: seededVariant.sku ?? null, title: displayTitle, product_id: null,
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
         order_method: "cj_api", api_available: liveOrderPathReady, verification_status: liveOrderPathReady ? "verified" : "unverified", shipping_status: "verified", identity_method: "supply_discovered",
         identity_status: "supply_discovered", identity_confidence: 0, configured: true,
@@ -850,14 +850,14 @@ export async function discoverAndCreateCjSupply(
         const productInsert = existingProduct.data?.id
           ? await db
               .from("products")
-              .update({ canonical_name: detail.title })
+              .update({ canonical_name: displayTitle })
               .eq("id", existingProduct.data.id)
               .select("id")
               .single()
           : await db
               .from("products")
               .insert({
-                canonical_name: detail.title,
+                canonical_name: displayTitle,
                 identity_key: identityKey,
               })
               .select("id")
@@ -871,7 +871,7 @@ export async function discoverAndCreateCjSupply(
               supplier: "cj",
               external_id: variant.vid,
               sku: variant.sku,
-              title: detail.title,
+              title: displayTitle,
               // Discovery is not canonical identity. Keep unresolved supply detached until a unique exact-variant match exists.
               product_id: null,
               cost,
@@ -902,6 +902,7 @@ export async function discoverAndCreateCjSupply(
                 source: "cj_supply_first",
                 source_ref: sourceRef,
                 query,
+                source_title: detail.title,
                 fx_rate: fxRate,
                 freight_usd: freight,
                 image_url: detail.imageUrl,
