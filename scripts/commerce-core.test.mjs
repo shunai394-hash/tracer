@@ -472,3 +472,12 @@ test("scheduled CJ imports retry a bounded batch of previously failed canonical 
   assert.match(importer, /\.slice\(0, 2\)/);
   assert.match(importer, /failed_offer_recovery_read/);
 });
+
+test("BASE publication retries recover exact created IDs and refuse ambiguous stable SKUs", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /fetchBaseItemsSnapshot\(\{ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES \}\)/);
+  assert.match(publish, /base_create_id_persist_failed:/);
+  assert.match(publish, /base_identifier_ambiguous:/);
+  assert.match(publish, /base_sku_already_mapped_to_other_variant:/);
+  assert.doesNotMatch(publish, /external_sku: sku, status: "pending", last_error: null/);
+});
