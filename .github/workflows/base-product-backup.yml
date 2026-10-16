@@ -20,8 +20,32 @@ jobs:
   export:
     name: Export and validate BASE product snapshot
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
+      - name: Check out commit history for deployment verification
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait until production serves this commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for attempt in $(seq 1 24); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $attempt/24: production commit=$sha expected=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Production is not at this commit or a descendant; refusing a stale BASE scan."
+          exit 1
+
       - name: Request a short-lived GitHub OIDC token for Vercel
         shell: bash
         run: |
