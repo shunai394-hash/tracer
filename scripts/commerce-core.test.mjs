@@ -117,6 +117,6 @@ test("clean sandbox recovery retries only explicit no-order failures and uses a 
   assert.match(route, /cj-sandbox-core:retry-2/);
   assert.match(route, /previousErrorText\.startsWith\("CJ_SANDBOX_CREATE_FAILED:1603000"\)/);
   assert.match(route, /shippingAddress: "1-1"/);
-  assert.match(route, /shippingAddress2: "Chiyoda"/);
+  assert.match(route, /shippingAddress2: "Chiyoda Sandbox Test Building 101"/);
   assert.match(route, /supplierOrderId/);
 });
