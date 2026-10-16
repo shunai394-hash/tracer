@@ -18,6 +18,17 @@ export function isCjIdentityReverifyDue(metadata: unknown, nowMs = Date.now()): 
   const record = metadata && typeof metadata === "object" && !Array.isArray(metadata)
     ? metadata as Record<string, unknown>
     : {};
+  // Earlier deployed builds rejected exact live CJ variants when their
+  // canonical parent product ID differed from the backup-restored ID. The
+  // current resolver accepts the exact VID + canonical parent ID, so give
+  // those legacy failures one immediate retry instead of waiting 24 hours.
+  // The reverify run overwrites this legacy error list with current results,
+  // preventing repeated immediate retries when the mismatch persists.
+  const priorErrors = Array.isArray(record.missing_supply_evidence_errors)
+    ? record.missing_supply_evidence_errors.filter((value): value is string => typeof value === "string")
+    : [];
+  if (priorErrors.includes("cost:returned_variant_or_product_id_mismatch")) return true;
+
   const nextAt = typeof record.next_identity_reverify_at === "string"
     ? Date.parse(record.next_identity_reverify_at)
     : NaN;
