@@ -140,15 +140,21 @@ export async function ingestPaidOrder(input: {
     shipping_address: input.shippingAddress, raw_payload: input.rawPayload, updated_at: new Date().toISOString()
   }, { onConflict: "channel,external_order_id", ignoreDuplicates: true }).select("id").maybeSingle();
   if (error) throw new Error("order_upsert_failed:" + error.message);
-  if (!order) {
+  let orderId: string;
+  let duplicate = false;
+  if (order) {
+    orderId = order.id as string;
+  } else {
     const { data: existing, error: lookupError } = await db.from("commerce_orders").select("id")
       .eq("channel", input.channel).eq("external_order_id", input.externalOrderId).single();
     if (lookupError || !existing) throw new Error("order_idempotency_lookup_failed:" + (lookupError?.message ?? ""));
-    return { orderId: existing.id as string, duplicate: true };
+    orderId = existing.id as string;
+    duplicate = true;
   }
+  // Reconcile lines on retries so a prior partial write can be repaired.
   for (const line of input.lines) {
     const { data: savedLine, error: lineError } = await db.from("commerce_order_lines").upsert({
-      order_id: order.id, variant_id: line.variantId, external_line_id: line.externalLineId,
+      order_id: orderId, variant_id: line.variantId, external_line_id: line.externalLineId,
       sku: line.sku ?? null, quantity: line.quantity, unit_price: Math.round(line.unitPrice), supplier_offer_id: line.offerId
     }, { onConflict: "order_id,external_line_id" }).select("id").single();
     if (lineError || !savedLine) throw new Error("order_line_upsert_failed:" + (lineError?.message ?? ""));
@@ -164,5 +170,5 @@ export async function ingestPaidOrder(input: {
     }, { onConflict: "order_line_id", ignoreDuplicates: true });
     if (poError) throw new Error("procurement_create_failed:" + poError.message);
   }
-  return { orderId: order.id as string, duplicate: false };
+  return { orderId, duplicate };
 }
