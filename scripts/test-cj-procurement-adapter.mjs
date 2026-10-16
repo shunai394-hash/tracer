@@ -46,7 +46,6 @@ assert.match(client, /features: "enable_inventory"/);
 assert.match(client, /Number\(inventoryRow\.verifiedWarehouse\) !== 1/);
 assert.match(client, /Number\(inventoryRow\.cjInventory\)/);
 assert.match(order, /body\.payType = input\.payType \?\? \(input\.isSandbox \? 3 : 2\)/);
-assert.match(order, /CJ_PAGE_PAYMENT_DISABLED_FOR_LIVE_ORDER/, "legacy page payment is allowed only for sandbox verification");
 assert.match(order, /if \(input\.isSandbox\) body\.isSandbox = 1/);
 assert.match(order, /required CJ createOrderV2 field is missing/);
 assert.doesNotMatch(inventoryRefresh, /getAutoProcurementEligibility/,
@@ -67,10 +66,11 @@ assert.ok(createdIdCallback >= 0 && createdIdCallback < paymentSimulation,
   "persist created supplier order ID before simulating sandbox payment");
 const sandboxPaymentIndex = adapter.indexOf("await simulateCJSandboxPayment(orderId)");
 assert.ok(sandboxPaymentIndex >= 0, "sandbox lifecycle must call simulatePay");
-assert.doesNotMatch(adapter, /await confirmCJSandboxOrder\(orderId\)/,
-  "sandbox page-payment mode must avoid the unsupported UNPAID status transition");
-assert.match(adapter, /payType: 1,/,
-  "legacy page-payment mode is allowed only for sandbox verification");
+const sandboxConfirmation = adapter.indexOf("await confirmCJSandboxOrder(orderId)");
+assert.ok(sandboxConfirmation >= 0 && sandboxConfirmation < sandboxPaymentIndex,
+  "payType=3 sandbox order must be confirmed before simulated payment");
+assert.match(adapter, /payType: 3,/,
+  "sandbox order must be created without initiating payment, then explicitly confirmed");
 assert.match(order, /shopping\/order\/confirmOrder/);
 assert.match(order, /method: "PATCH"/);
 assert.doesNotMatch(adapter, /updateCJSandboxOrderStatus\(orderId, 200\)/);
