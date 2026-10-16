@@ -43,6 +43,9 @@ assert.equal(localizeProductTitle("Compatible WithApple, Suitable ForApple 12 Te
 assert.equal(localizeProductTitle("Comma Facial Brush Soft Hair Face Cleaning Facial Cleansing Massage Brush (Comma Facial Brush Soft Hair Face Cleaning Facial Cleansing Massage Brush Bamboo charcoal protrusions)"), "竹炭突起付き フェイス洗顔ブラシ");
 assert.equal(localizeProductTitle("Simple Retro Small Handbag Women (Simple Retro Small Handbag Women Wine Red)"), "レトロデザイン レディースミニハンドバッグ");
 assert.equal(localizeProductTitle("Harajuku Canvas Bags Students Handbag With Pockets Preppy Buckpack Shoulder Bag For Women Shoolbags Black"), "ポケット付き キャンバスリュック レディース");
+assert.equal(localizeProductTitle("Portable Transparent Shoulder Crossbody Bag Tote Satchel Handbag For Women (Portable Transparent Shoulder Crossbody Bag Tote Satchel Handbag For Women Black)"), "クリア素材 レディースショルダーバッグ");
+assert.equal(localizeProductTitle("Crossbody Bag Vegan Leather Women Retro Small Saddle Satchel Shoulder Bag With Long Adjustable Strap (Crossbody Bag Vegan Leather Women Retro Small Saddle Satchel Shoulder Bag With Long Adjustable Strap Black)"), "レトロデザイン ヴィーガンレザーショルダーバッグ");
+assert.equal(localizeProductTitle("Summer Woven Hollowed Handbag For Women"), "透かし編み サマーハンドバッグ");
 for (const title of ["竹炭突起付き フェイス洗顔ブラシ", "レトロデザイン レディースミニハンドバッグ", "ポケット付き キャンバスリュック レディース"]) {
   assert.equal(isPublishableCatalogTitle(title), true, title);
 }
