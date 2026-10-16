@@ -32,6 +32,7 @@ const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.u
 assert.match(cronRoute, /const discoveryIncomplete/);
 assert.match(cronRoute, /status: runStatus/);
 assert.match(cronRoute, /status: discoveryIncomplete \? 503 : 200/);
+assert.ok(cronRoute.includes("supply_first_already_running"));
 assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/supply-first").map((job) => job.schedule), ["5,35 * * * *"]);
 
 console.log("Supply-first core completion: optional discovery cooldowns do not block the core cycle; empty deadline runs are deferred");
