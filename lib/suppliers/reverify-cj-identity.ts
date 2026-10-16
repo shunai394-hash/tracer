@@ -248,6 +248,9 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       const missingImage = !imageUrl;
       let shippingQuoteVerified = row.shipping_status === "verified" && shippingCost !== null;
       let variantDetails: Awaited<ReturnType<typeof fetchCJVariantByVid>> = freshVariantDetails;
+      // The live CJ variant endpoint is authoritative for the parent product ID.
+      // Backup-restored listings can have a stale product ID even when the VID is valid.
+      let liveCanonicalSupplierProductId = String(row.supplier_product_id);
       let productDetails: Awaited<ReturnType<typeof getCJProductDetail>> = null;
       const refreshErrors: string[] = [];
       let liveSupplierApiVerified = row.api_available === true && row.configured === true;
@@ -256,13 +259,18 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         try {
           variantDetails = variantDetails ?? await fetchCJVariantByVid(String(row.supplier_variant_id));
           const exactVariant = variantDetails?.vid === String(row.supplier_variant_id)
-            && variantDetails.productId === String(row.supplier_product_id);
+            && /^\d{10,25}$/.test(String(variantDetails?.productId ?? ""));
           const fetchedCost = exactVariant ? num(variantDetails?.sellPrice) : null;
+          if (exactVariant && variantDetails?.productId) {
+            // Accept the product ID returned by CJ only after the requested VID
+            // exactly matches the live response; preserve an audit trail below.
+            liveCanonicalSupplierProductId = variantDetails.productId;
+          }
           if (fetchedCost !== null && fetchedCost > 0) {
             cost = fetchedCost;
             priceVerified = true;
             liveSupplierApiVerified = true;
-          } else if (!exactVariant) refreshErrors.push("cost:returned_variant_or_product_id_mismatch");
+          } else if (!exactVariant) refreshErrors.push("cost:returned_variant_id_or_product_id_invalid");
         } catch (error) {
           if (isCJQuotaCircuitBlockingError(error)) throw error;
           refreshErrors.push("cost:" + (error instanceof Error ? error.message : String(error)));
@@ -296,12 +304,12 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       }
       if (missingImage) {
         try {
-          productDetails = await getCJProductDetail(String(row.supplier_product_id));
-          if (productDetails?.id === String(row.supplier_product_id) && isHttpUrl(productDetails.imageUrl)) {
+          productDetails = await getCJProductDetail(liveCanonicalSupplierProductId);
+          if (productDetails?.id === liveCanonicalSupplierProductId && isHttpUrl(productDetails.imageUrl)) {
             imageUrl = productDetails.imageUrl.trim();
             liveSupplierApiVerified = true;
           }
-          else if (productDetails && productDetails.id !== String(row.supplier_product_id)) refreshErrors.push("image:returned_product_id_mismatch");
+          else if (productDetails && productDetails.id !== liveCanonicalSupplierProductId) refreshErrors.push("image:returned_product_id_mismatch");
         } catch (error) {
           if (isCJQuotaCircuitBlockingError(error)) throw error;
           refreshErrors.push("image:" + (error instanceof Error ? error.message : String(error)));
@@ -327,6 +335,15 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         last_identity_reverify_at: checkedAt.toISOString(),
       };
       const refreshedFields: Record<string, unknown> = { metadata: nextListingMetadata };
+      if (liveCanonicalSupplierProductId !== String(row.supplier_product_id)) {
+        refreshedFields.supplier_product_id = liveCanonicalSupplierProductId;
+        refreshedFields.metadata = {
+          ...nextListingMetadata,
+          live_cj_product_id_corrected_at: checkedAt.toISOString(),
+          live_cj_product_id_previous: String(row.supplier_product_id),
+          live_cj_product_id_source: "queryByVid_exact_vid_match",
+        };
+      }
       if (liveSupplierApiVerified) {
         // Backup restoration intentionally invalidated stale supplier capability
         // flags. Re-enable only the flags proven by successful live CJ reads;
@@ -339,7 +356,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         refreshedFields.price_confirmed = true;
       }
       if (variantDetails?.vid === String(row.supplier_variant_id)
-        && variantDetails.productId === String(row.supplier_product_id)
+        && variantDetails.productId === liveCanonicalSupplierProductId
         && typeof variantDetails.sku === "string"
         && variantDetails.sku.trim()) {
         refreshedFields.sku = variantDetails.sku.trim();
@@ -423,7 +440,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       if (!priceVerified || cost === null || shippingCost === null || !shippingQuoteVerified || !inventoryVerified || inventory === null || fxRate === null || sellingPriceJpy === null || !imageUrl) {
         throw new Error("CJ evidence recovery invariant failed: required supply fields remain missing");
       }
-      await persistCjSupplyIntelligence({ productId: identity?.productId ?? String(row.product_id), title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: String(row.supplier_product_id), supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } });
+      await persistCjSupplyIntelligence({ productId: identity?.productId ?? String(row.product_id), title: String(row.title ?? ""), imageUrl, cost, shippingCost, supplierListingId, supplierProductId: liveCanonicalSupplierProductId, supplierVariantId: String(row.supplier_variant_id), inventory, query: typeof metadata.query === "string" ? metadata.query : "identity_reverify", fxRate, sellingPriceJpy, variantBarcode, supplierIdentifiers: { gtin: row.gtin, jan: row.jan, ean: row.ean, upc: row.upc, mpn: row.mpn } });
       if (!identity) {
         const { data: latest } = await db.from("supplier_listings").select("metadata").eq("id", supplierListingId).maybeSingle();
         const latestMetadata = record(latest?.metadata);
