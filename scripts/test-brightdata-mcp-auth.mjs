@@ -29,6 +29,7 @@ assert.match(collector, /for \(const key of \["data", "content", "result", "resp
 assert.match(collector, /"product_title", "productTitle"/, "provider-specific title keys must be recognized");
 assert.match(collector, /"product_link", "productLink", "source_url", "sourceUrl"/, "provider-specific product URL keys must be recognized");
 assert.ok(collector.includes("const htmlAnchors = [...unwrapped.matchAll"), "HTML-only Google Shopping cards should be parsed when JSON-LD is absent");
+assert.ok(collector.includes("envelope?.structuredContent ?? envelope?.content ?? payload"), "MCP result envelopes must be unwrapped before parsing");
 assert.ok(collector.includes('for (const key of ["data", "content", "result", "response", "payload", "body"])'), "nested MCP response envelopes should be searched for product arrays");
 assert.ok(collector.includes('"product_title", "productTitle"'), "alternate product-title keys should be recognized");
 assert.ok(collector.includes("if (!priceMatch) continue;"), "HTML card candidates must have an explicit price");
