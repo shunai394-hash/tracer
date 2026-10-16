@@ -31,7 +31,7 @@ assert.match(discovery, /let catalogAttempted = 0;[\s\S]*?if \(catalogAttempted 
 assert.match(discovery, /api_available: preserveVerifiedOrderPath[\s\S]*?orderable: preserveVerifiedOrderPath[\s\S]*?tracking_available: preserveVerifiedOrderPath/, "new candidates must not inherit an existing supplier order path");
 assert.match(cronRoute, /job_name: "supply-first"/, "the dedicated supplier cron must write an auditable run record");
 assert.match(cronRoute, /status: "running"/);
-assert.match(cronRoute, /status: "succeeded"/);
+assert.match(cronRoute, /const runStatus = discoveryIncomplete \? "failed" : "succeeded"/, "incomplete discovery must not be reported as succeeded");
 assert.match(cronRoute, /status: "failed"/);
 assert.match(cronRoute, /quotaBlocked: supplyFirst\.quotaBlocked === true/, "quota cooldowns must be distinguishable from successful product discovery");
 assert.match(cronRoute, /retryAfter: typeof supplyFirst\.retryAfter === "string"/, "the audit record must retain the next retry time without logging credentials");

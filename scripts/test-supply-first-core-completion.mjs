@@ -27,4 +27,11 @@ assert.match(source, /Math\.floor\(Date\.now\(\) \/ 300_000\) % verifiedSupplyPa
 assert.match(source, /\.range\(verifiedSupplyOffset, verifiedSupplyOffset \+ verifiedSupplyPageSize - 1\)/,
   "rotating supplier candidate pages must be bounded");
 
+const cronRoute = await readFile(new URL("../app/api/cron/supply-first/route.ts", import.meta.url), "utf8");
+const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+assert.match(cronRoute, /const discoveryIncomplete/);
+assert.match(cronRoute, /status: runStatus/);
+assert.match(cronRoute, /status: discoveryIncomplete \? 503 : 200/);
+assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/supply-first").map((job) => job.schedule), ["*/5 * * * *"]);
+
 console.log("Supply-first core completion: optional discovery cooldowns do not block the core cycle; empty deadline runs are deferred");

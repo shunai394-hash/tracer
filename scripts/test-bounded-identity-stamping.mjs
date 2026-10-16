@@ -33,12 +33,12 @@ assert.match(reverify, /buildCandidateQuery\(\)\.gt\("id", priorCursor\)/);
 assert.match(reverify, /result\.nextCursor = item\.supplierListingId/, "reverify cursor advances only after an actual candidate is processed");
 assert.match(reverify, /sort\(\(a, b\) => String\(a\.id\)\.localeCompare\(String\(b\.id\)\)\)/, "cursor batches must be ordered to avoid skipping unprocessed supplier rows");
 const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
-const beautySourceIndex = collector.indexOf('source: "amazon_bestsellers_beauty"');
-const genericAmazonSourceIndex = collector.indexOf('source: "amazon_bestsellers" },');
-const electronicsSourceIndex = collector.indexOf('source: "amazon_bestsellers_electronics"');
-assert.ok(beautySourceIndex >= 0 && genericAmazonSourceIndex >= 0 && electronicsSourceIndex >= 0
-  && beautySourceIndex < genericAmazonSourceIndex && genericAmazonSourceIndex < electronicsSourceIndex,
-  "Amazon beauty and general demand must be collected before electronics");
+const activeSourceStart = collector.indexOf("export const MARKETPLACE_SOURCES");
+const activeSourceEnd = collector.indexOf("];", activeSourceStart);
+const activeSourceBlock = collector.slice(activeSourceStart, activeSourceEnd);
+assert.match(activeSourceBlock, /yahoo_shopping_ranking/);
+assert.doesNotMatch(activeSourceBlock, /amazon_bestsellers|rakuten_ranking/,
+  "Amazon/Rakuten are excluded from active demand fetches; Yahoo is demand research only");
 assert.match(collector, /skipped: items\.length === 0/);
 assert.match(collector, /ranking_html_returned_zero_items/);
 console.log("Bounded demand identity stamping and CJ reverify: 18 assertions passed");
