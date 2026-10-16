@@ -213,52 +213,45 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
       const variantStageOutcome = variantEvidenceWriteVerified
         ? "completed"
         : "blocked";
-      // Observation runs revisit the same source item. The v2 pipeline is append-only
-      // and ordered, so a previously completed variant stage must not be replayed with
-      // a new fetched_at-based idempotency key (that would incorrectly try to move
-      // the stage backwards from supplier_matched to variant_evidence_saved).
-      const { data: priorVariantStage, error: priorVariantStageError } = await supabase
-        .from("tracer_v2_pipeline_events")
-        .select("id")
-        .eq("product_key", tracerV2ProductKey)
-        .eq("stage", "variant_evidence_saved")
-        .eq("outcome", "completed")
-        .limit(1)
-        .maybeSingle();
-      if (priorVariantStageError) throw new Error(priorVariantStageError.message);
-      if (!priorVariantStage) {
-        const variantStage = await persistTracerV2Stage({
-          productKey: tracerV2ProductKey,
-          stage: "variant_evidence_saved",
-          outcome: variantStageOutcome,
-          idempotencyKey: `variants:${sourceItemKey}`,
-          externalId: variantStageOutcome === "completed" ? String(variantEvidenceRows.length) : null,
-          reason: variantStageOutcome === "blocked"
-            ? variantEvidenceRows.length === 0
-              ? "no_canonical_variant_evidence"
-              : "canonical_variant_evidence_not_fully_persisted"
-            : null,
-          evidence: {
-            parsed: variantEvidenceRows.length,
-            written: variantEvidenceWriteCount,
-            marketplace: marketplace.marketplace,
-            source: marketplace.source,
-          },
-        });
-        if (!variantStage.ok) {
-          const reason = variantStage.reason ?? "unknown";
-          // Another worker may complete variant_evidence_saved after the read
-          // above but before this append-only RPC. The RPC's ordered ledger is
-          // authoritative: if it says the next stage is supplier_matched, this
-          // replay must not fail the whole market-sourcing batch or regress the
-          // already-advanced product.
-          if (reason === "out_of_order_stage:expected=supplier_matched:received=variant_evidence_saved") {
-            console.warn("[TRACER V2] variant stage already advanced; concurrent replay skipped", {
-              productKey: tracerV2ProductKey,
-            });
-          } else {
-            throw new Error(`tracer_v2_variant_stage_failed:${reason}`);
-          }
+      // The append-only ledger intentionally exposes no direct table read to
+      // the application role. Use its RPC as the authority instead of querying
+      // tracer_v2_pipeline_events (which is RLS-protected and not directly granted).
+      // Completed stages use a stable idempotency key; blocked attempts include
+      // the observation timestamp so later evidence can retry the same stage.
+      const variantStage = await persistTracerV2Stage({
+        productKey: tracerV2ProductKey,
+        stage: "variant_evidence_saved",
+        outcome: variantStageOutcome,
+        idempotencyKey: variantStageOutcome === "completed"
+          ? `variants:${sourceItemKey}`
+          : `variants:${sourceItemKey}:${marketplace.fetchedAt}`,
+        externalId: variantStageOutcome === "completed" ? String(variantEvidenceRows.length) : null,
+        reason: variantStageOutcome === "blocked"
+          ? variantEvidenceRows.length === 0
+            ? "no_canonical_variant_evidence"
+            : "canonical_variant_evidence_not_fully_persisted"
+          : null,
+        evidence: {
+          parsed: variantEvidenceRows.length,
+          written: variantEvidenceWriteCount,
+          marketplace: marketplace.marketplace,
+          source: marketplace.source,
+        },
+      });
+      if (!variantStage.ok) {
+        const reason = variantStage.reason ?? "unknown";
+        // Another worker may advance the append-only ledger between observations.
+        // Do not abort the whole batch when the RPC confirms that this stage has
+        // already been completed or the product has advanced to supplier matching.
+        const alreadyAdvanced =
+          reason === "out_of_order_stage:expected=supplier_matched:received=variant_evidence_saved" ||
+          (variantStageOutcome === "completed" && reason === "idempotency_key_reused_with_different_result");
+        if (alreadyAdvanced) {
+          console.warn("[TRACER V2] variant stage already advanced; replay skipped", {
+            productKey: tracerV2ProductKey,
+          });
+        } else {
+          throw new Error(`tracer_v2_variant_stage_failed:${reason}`);
         }
       }
 
