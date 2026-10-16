@@ -128,6 +128,12 @@ test("procurement revalidates the exact fresh profitable offer and preserves a c
   assert.doesNotMatch(worker, /country_code_v2"\)\.toUpperCase\(\) \|\| "JP"/);
 });
 
+test("Shopify fulfillment tracking sync runs automatically after procurement", async () => {
+  const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+  assert.equal(config.crons.find((job) => job.path === "/api/cron/shopify-fulfillment")?.schedule, "7,22,37,52 * * * *");
+  const route = await readFile(new URL("../app/api/cron/shopify-fulfillment/route.ts", import.meta.url), "utf8");
+  assert.match(route, /syncShopifyFulfillments\(25\)/);
+});
 test("five-minute AI patrol remains scheduled alongside canonical commerce jobs", async () => {
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
   assert.equal(config.crons.find((job) => job.path === "/api/cron/patrol-ai")?.schedule, "*/5 * * * *");
@@ -311,6 +317,14 @@ test("BASE reconciliation recognizes commerce-native supplier SKUs without auto-
   assert.match(reconciliation, /addSupplierIdentifier\(evidence\?\.sku, listing\)/);
   assert.match(reconciliation, /Exact-title candidates are unverified suggestions only/);
   assert.doesNotMatch(reconciliation, /\.update\(|\.insert\(|\.upsert\(/);
+});
+
+test("BASE audit workflow waits for commerce-aware production reconciliation", async () => {
+  const route = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
+  const workflow = await readFile(new URL("../.github/workflows/base-product-backup.yml", import.meta.url), "utf8");
+  assert.match(route, /commerceChannelListingCount: commerceRows\?\.length \?\? 0/);
+  assert.match(workflow, /hasOwnProperty\.call\(candidate, "commerceChannelListingCount"\)/);
+  assert.match(workflow, /"commerceChannelListingCount": d\.get\("commerceChannelListingCount"\)/);
 });
 
 test("CJ imported products use specific customer-facing Japanese descriptions", async () => {
