@@ -46,6 +46,7 @@ assert.match(client, /features: "enable_inventory"/);
 assert.match(client, /Number\(inventoryRow\.verifiedWarehouse\) !== 1/);
 assert.match(client, /Number\(inventoryRow\.cjInventory\)/);
 assert.match(order, /body\.payType = input\.payType \?\? \(input\.isSandbox \? 3 : 2\)/);
+assert.match(order, /CJ_PAGE_PAYMENT_DISABLED_FOR_LIVE_ORDER/, "legacy page payment is allowed only for sandbox verification");
 assert.match(order, /if \(input\.isSandbox\) body\.isSandbox = 1/);
 assert.match(order, /required CJ createOrderV2 field is missing/);
 assert.doesNotMatch(inventoryRefresh, /getAutoProcurementEligibility/,
