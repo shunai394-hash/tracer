@@ -24,7 +24,24 @@ jobs:
             echo "Skipping annual cron outside the one-time recovery date."
             exit 0
           fi
-          BASE=https://tracer-self.vercel.app
+          BASE=https://tracer-pied-alpha.vercel.app
+          # Vercel deploys and reassigns this production alias asynchronously after push.
+          # Wait until the new deployment is routable before calling protected cron routes.
+          ready=0
+          for attempt in $(seq 1 36); do
+            code="$(curl -sS -o /tmp/tracer-preflight.txt -w "%{http_code}" --max-time 10 "$BASE/api/cron/supply-first" || true)"
+            if [[ "$code" != "404" ]] || ! grep -q "DEPLOYMENT_NOT_FOUND" /tmp/tracer-preflight.txt 2>/dev/null; then
+              ready=1
+              echo "Production alias is routable (preflight HTTP $code; attempt $attempt)."
+              break
+            fi
+            echo "Production alias is still being reassigned (attempt $attempt/36); waiting 10 seconds."
+            sleep 10
+          done
+          if [[ "$ready" != "1" ]]; then
+            echo "Production deployment did not become routable within 6 minutes."
+            exit 1
+          fi
           token() {
             curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
