@@ -29,6 +29,7 @@ assert.match(commerceImporter, /幾何学模様のメタルヘアクリップ/);
 assert.match(commerceImporter, /パール・ラインストーン付きメタルヘアクリップ/);
 assert.match(commerceImporter, /スタイル/);
 assert.match(commerceImporter, /japan_compliance_unverified_disinfection_cabinet/);
+assert.match(commerceImporter, /const queryOptions = \[\s*"women handbag", "beauty tools", "hair accessories women",\s*\]/, "CJ discovery must prioritize bags, beauty tools and hair accessories");
 assert.match(commerceImporter, /complianceBlocked/);
 assert.match(adapter, /isCanonicalCjNativeId/);
 assert.match(adapter, /CJ_NATIVE_ID_INVALID/);
