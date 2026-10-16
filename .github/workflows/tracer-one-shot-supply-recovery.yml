@@ -1,4 +1,5 @@
 name: Clean commerce recovery
+# TRACER_CLEAN_COMMERCE_RECOVERY: execute bounded production reconciliation and order-pipeline check
 
 on:
   workflow_dispatch:
