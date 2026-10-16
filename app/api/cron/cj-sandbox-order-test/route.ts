@@ -103,7 +103,6 @@ export async function POST(request: Request) {
       const sinceMs = Math.max(0, Date.parse(String(previous.started_at)) - 5 * 60 * 1000);
       const recentOrders = await listRecentCJSandboxCreatedOrders(sinceMs);
       const matches = recentOrders.filter((order) => {
-        const orderName = String(order.orderNum ?? "");
         const createdAt = Date.parse(String(order.createDate ?? ""));
         const sameTestRecipient =
           String(order.shippingCustomerName ?? "").trim() === "TRACER SANDBOX TEST" &&
