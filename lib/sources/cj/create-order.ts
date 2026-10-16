@@ -39,8 +39,8 @@ export type CJCreateOrderInput = {
   fromCountryCode?: string;
   /** Required by CJ createOrderV2. Human-readable destination country. */
   shippingCountry?: string;
-  /** CJ payment mode: 1 = legacy page-payment (sandbox only), 2 = balance payment, 3 = create-only. */
-  payType?: 1 | 2 | 3;
+  /** CJ payment mode: 2 = automatic balance payment, 3 = create-only. */
+  payType?: 2 | 3;
   /** Explicitly create a CJ sandbox order; omitted for all live orders. */
   isSandbox?: boolean;
   products: CJOrderProduct[];
@@ -113,9 +113,6 @@ export async function createCJOrderV2(
 ): Promise<CJCreateOrderResult> {
   if (input.products.length === 0) {
     throw new CJRequestError("order has no line items");
-  }
-  if (input.payType === 1 && input.isSandbox !== true) {
-    throw new CJRequestError("CJ_PAGE_PAYMENT_DISABLED_FOR_LIVE_ORDER");
   }
 
   // Fail closed before obtaining a CJ access token. These are official
@@ -306,6 +303,46 @@ async function postCJSandboxAction(
   return payload;
 }
 
+export type CJSandboxOrderListItem = {
+  orderId?: string;
+  orderNum?: string;
+  orderStatus?: string;
+  status?: string;
+  isSandbox?: number | string;
+  createDate?: string;
+  shippingCustomerName?: string;
+  shippingAddress?: string;
+  shippingCountryCode?: string;
+  trackNumber?: string;
+  paymentDate?: string;
+  paymentDateTime?: number;
+};
+
+export async function listRecentCJSandboxCreatedOrders(sinceMs: number): Promise<CJSandboxOrderListItem[]> {
+  if (!Number.isFinite(sinceMs) || sinceMs < 0) throw new CJRequestError("invalid sandbox reconciliation start time");
+  const token = await getAccessTokenForOrder();
+  const params = new URLSearchParams({
+    pageNum: "1",
+    pageSize: "100",
+    status: "CREATED",
+    createDateFrom: String(Math.floor(sinceMs)),
+    createDateTo: String(Date.now()),
+  });
+  const response = await fetchCJWithRateLimit(
+    "https://developers.cjdropshipping.com/api2.0/v1/shopping/order/list?" + params.toString(),
+    { method: "GET", headers: { "CJ-Access-Token": token }, cache: "no-store" },
+  );
+  if (!response.ok) throw new CJRequestError("CJ sandbox order list failed with HTTP " + response.status);
+  const payload = await response.json() as {
+    result?: boolean;
+    message?: string;
+    data?: { list?: CJSandboxOrderListItem[] } | CJSandboxOrderListItem[];
+  };
+  if (payload.result !== true || !payload.data) throw new CJRequestError(payload.message || "CJ sandbox order list response was invalid");
+  const rows = Array.isArray(payload.data) ? payload.data : payload.data.list ?? [];
+  return rows.filter((row) => String(row.isSandbox ?? "") === "1");
+}
+
 export async function confirmCJSandboxOrder(orderId: string): Promise<void> {
   const id = orderId.trim();
   if (!id) throw new CJRequestError("CJ sandbox order ID is empty", "CJ_SANDBOX_ORDER_ID_MISSING");
@@ -314,30 +351,14 @@ export async function confirmCJSandboxOrder(orderId: string): Promise<void> {
     "https://developers.cjdropshipping.com/api2.0/v1/shopping/order/confirmOrder",
     {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        "CJ-Access-Token": token,
-      },
+      headers: { "Content-Type": "application/json", "CJ-Access-Token": token },
       body: JSON.stringify({ orderId: id }),
       cache: "no-store",
     },
   );
-  const payload = (await response.json().catch(() => ({}))) as {
-    code?: number;
-    result?: boolean;
-    message?: string;
-    data?: unknown;
-  };
-  if (
-    !response.ok ||
-    payload.result === false ||
-    (typeof payload.code === "number" && payload.code !== 200) ||
-    !(payload.result === true || payload.code === 200 || payload.data === id)
-  ) {
-    throw new CJRequestError(
-      payload.message || `CJ order confirmation failed with HTTP ${response.status}`,
-      "CJ_ORDER_CONFIRM_FAILED",
-    );
+  const payload = await response.json().catch(() => null) as { result?: boolean; code?: number; message?: string } | null;
+  if (!response.ok || !payload || payload.result !== true || (typeof payload.code === "number" && payload.code !== 200)) {
+    throw new CJRequestError(payload?.message || "CJ sandbox order confirmation failed", "CJ_SANDBOX_CONFIRM_FAILED");
   }
 }
 
