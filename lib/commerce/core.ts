@@ -47,7 +47,7 @@ export async function upsertSupplierOffer(input: {
   sourceKey: string; titleJa: string; descriptionJa?: string; brand?: string | null;
   category?: string | null; imageUrl?: string | null; sourceUrl?: string | null;
   sourceVariantKey: string; variantTitleJa?: string; sku?: string | null;
-  attributes?: Record<string, unknown>; offer: OfferInput;
+  attributes?: Record<string, unknown>; metadata?: Record<string, unknown>; offer: OfferInput;
 }) {
   const sourceKey = required(input.sourceKey, "source_key");
   const supplierCode = required(input.offer.supplierCode, "supplier_code").toLowerCase();
@@ -57,11 +57,15 @@ export async function upsertSupplierOffer(input: {
   if (!Number.isFinite(input.offer.shippingCost) || input.offer.shippingCost < 0) throw new Error("invalid_shipping_cost");
   if (!Number.isInteger(input.offer.inventory) || input.offer.inventory < 0) throw new Error("invalid_inventory");
   const supabase = createSupabaseAdminClient();
-  const { data: product, error: productError } = await supabase.from("commerce_products").upsert({
+  const productPayload = {
     source_key: sourceKey, title_ja: required(input.titleJa, "title_ja"),
     description_ja: input.descriptionJa ?? "", brand: input.brand ?? null, category: input.category ?? null,
-    image_url: input.imageUrl ?? null, source_url: input.sourceUrl ?? null, updated_at: new Date().toISOString()
-  }, { onConflict: "source_key" }).select("id").single();
+    image_url: input.imageUrl ?? null, source_url: input.sourceUrl ?? null, updated_at: new Date().toISOString(),
+    ...(input.metadata ? { metadata: input.metadata } : {}),
+  };
+  const { data: product, error: productError } = await supabase.from("commerce_products").upsert(
+    productPayload, { onConflict: "source_key" }
+  ).select("id").single();
   if (productError || !product) throw new Error("product_upsert_failed:" + (productError?.message ?? "no_row"));
   const { data: variant, error: variantError } = await supabase.from("commerce_variants").upsert({
     product_id: product.id, source_variant_key: required(input.sourceVariantKey, "source_variant_key"),
