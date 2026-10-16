@@ -217,7 +217,7 @@ test("TRACER storefront includes canonical Shopify listings only when fulfillmen
 test("CJ importer keeps source titles and localizes handbag subtypes", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
-  assert.match(importer, /filter\(\(id\) =>/);
+  assert.ok(importer.includes('[/women.*handbag|handbag.*women/, "レディースハンドバッグ"]'));
   assert.ok(importer.includes('"メタルバックル付きラウンドバッグ"'));
   assert.ok(importer.includes("metadata: { sourceTitle: canonicalDetail.title, sourceProductType: canonicalDetail.productType ?? null }"));
   assert.ok(core.includes("...(input.metadata ? { metadata: input.metadata } : {})"));
@@ -407,7 +407,7 @@ test("CJ transient stock or freight lookup failures do not overwrite previously 
 test("scheduled CJ imports retry a bounded batch of previously failed canonical supplier product IDs", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /from\("supplier_offers"\)[\s\S]*?\.eq\("source_status", "error"\)/);
-  assert.match(importer, /failed_offer_recovery_read/);
+  assert.match(importer, /supplier_product_id/);
   assert.match(importer, /\.slice\(0, 2\)/);
   assert.match(importer, /failed_offer_recovery_read/);
 });
