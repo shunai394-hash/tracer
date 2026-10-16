@@ -3,14 +3,14 @@ name: TRACER CJ Sandbox Lifecycle — One-Time Verification
 on:
   workflow_dispatch:
   schedule:
-    - cron: "50 7 16 10 *"
+    - cron: "1 0 16 10 *"
 
 permissions:
   id-token: write
   contents: read
 
 concurrency:
-  group: tracer-cj-sandbox-one-time-20261016
+  group: tracer-cj-sandbox-one-time-20261015
   cancel-in-progress: false
 
 jobs:
