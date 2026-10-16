@@ -10,7 +10,7 @@ export function isCjIdentityReverifyCandidate(args: {
   supplierVariantId: string | null;
 }): boolean {
   return ["unverified", "retryable", "verified"].includes(args.verificationStatus ?? "")
-    && ["supply_discovered", "none"].includes(args.identityMethod ?? "")
+    && ["supply_discovered", "none", "cj_supplier_variant"].includes(args.identityMethod ?? "")
     && Boolean(args.supplierVariantId?.trim());
 }
 
@@ -126,6 +126,7 @@ export function verifyCjIdentityReverifyPolicyInvariants(): {
   const now = Date.parse("2026-01-01T00:00:00.000Z");
   const cases = [
     { name: "verified_unlinked_is_candidate", expected: true, actual: isCjIdentityReverifyCandidate({ verificationStatus: "verified", identityMethod: "supply_discovered", supplierVariantId: "variant-1" }) },
+    { name: "verified_native_cj_variant_is_candidate", expected: true, actual: isCjIdentityReverifyCandidate({ verificationStatus: "verified", identityMethod: "cj_supplier_variant", supplierVariantId: "variant-1" }) },
     { name: "verified_linked_is_not_candidate", expected: false, actual: isCjIdentityReverifyCandidate({ verificationStatus: "verified", identityMethod: "gtin", supplierVariantId: "variant-1" }) },
     { name: "missing_variant_is_not_candidate", expected: false, actual: isCjIdentityReverifyCandidate({ verificationStatus: "verified", identityMethod: "supply_discovered", supplierVariantId: null }) },
     { name: "no_retry_timestamp_is_due", expected: true, actual: isCjIdentityReverifyDue({}, now) },
