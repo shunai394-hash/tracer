@@ -309,6 +309,12 @@ export async function simulateCJSandboxPayment(orderId: string): Promise<void> {
   await postCJSandboxAction("simulatePay", { orderId: id });
 }
 
+export async function markCJSandboxOrderUnpaid(orderId: string): Promise<void> {
+  const id = orderId.trim();
+  if (!id) throw new CJRequestError("CJ sandbox order ID is empty", "CJ_SANDBOX_ORDER_ID_MISSING");
+  await postCJSandboxAction("updateStatus", { orderId: id, targetStatus: 200 });
+}
+
 export async function updateCJSandboxOrderStatus(
   orderId: string,
   targetStatus: 400 | 500 | 600 | 700,
