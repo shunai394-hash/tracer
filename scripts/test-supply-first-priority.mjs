@@ -16,7 +16,7 @@ assert.match(discovery, /reason: "supplier_quota_cooldown"/, "an open CJ quota c
 assert.match(discovery, /deadlineReached: false,[\s\S]*?skipped: true,[\s\S]*?retryable: true/, "quota cooldown must be reported as an intentional retryable skip, not a false deadline timeout");
 assert.match(discovery, /retryAfter: quotaBlockedUntil/, "the caller must receive the exact quota-cooldown end time");
 assert.match(discovery, /const resolvedSeededVariant = await resolveCJVariantProductIdentity\(candidate\.id, candidate\.variantId, productScopedVariant\)/, "seeded refresh must resolve the exact live CJ product/variant pair");
-assert.match(discovery, /if \(productScopedVariant && productScopedVariant\.vid === variantId && scopedProductId\) \{/, "an exact variant returned by the live product-scoped endpoint must not be rejected by a redundant queryByVid lookup");
+assert.match(discovery, /if \(productScopedVariant && productScopedVariant\.vid === variantId\)[\s\S]{0,280}const resolvedProductId = scopedProductId \|\| candidateProductId/, "an exact product-scoped variant must use its live parent ID or the queried parent when CJ omits pid");
 assert.match(discovery, /if \(!liveVariant \|\| liveVariant\.vid !== variantId \|\| !liveProductId\) return null/, "variant identity resolution must require the exact live variant ID and canonical supplier product ID");
 assert.match(discovery, /const liveCost = Number\(seededVariant\.sellPrice\)/, "seeded refresh must use current exact-variant price instead of stale persisted cost");
 assert.match(discovery, /const liveProductId = liveVariant\?\.productId\?\.trim\(\)[\s\S]*?supplierProductId: liveProductId/, "exact live variant lookup must resolve the canonical parent product even when the seeded catalog ID is stale");
