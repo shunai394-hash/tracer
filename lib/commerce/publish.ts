@@ -97,7 +97,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
         const itemId = externalProductId;
         const response = itemId
           ? await editBaseItem({ itemId, title, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: true })
-          : await createBaseItem({ title, identifier: sku, detail: description, price: Number(price.selling_price), stock: Number(offer.inventory), visible: true });
+          : await createBaseItem({ title, identifier: sku, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: true });
         const returned = response.item?.item_id ?? response.item_id;
         externalProductId = String(returned ?? itemId ?? "");
         if (!externalProductId) throw new Error("base_item_id_missing");
