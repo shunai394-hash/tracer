@@ -42,6 +42,20 @@ export function isCJAutoOrderingEnabled(): boolean {
   return readEnv("CJ_AUTO_ORDERING") === "1";
 }
 
+/**
+ * A supplier listing may be marked orderable only when production explicitly
+ * enabled the live CJ path, the sandbox lifecycle proof is recorded, and dry
+ * run is disabled. Each listing still needs fresh exact-variant stock and JP
+ * freight checks before this capability is persisted on the row.
+ */
+export function isCJLiveOrderPathReady(): boolean {
+  return present(getCJConfig().apiKey)
+    && isCJLiveOrderingEnabled()
+    && isCJAutoOrderingEnabled()
+    && readEnv("CJ_PAYMENT_FLOW_VERIFIED") === "1"
+    && !isSupplierDryRunEnabled();
+}
+
 export function getNewfindConfig() {
   return {
     webhookSecret: readEnv("NEWFIND_WEBHOOK_SECRET"),
