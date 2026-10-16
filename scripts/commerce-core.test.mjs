@@ -57,7 +57,8 @@ test("BASE listing URLs resolve from the authenticated shop profile when API edi
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(base, /getBasePublicShopUrl/);
   assert.match(base, /\/users\/me/);
-  assert.match(base, /payload\?\.shop_url/);
+  assert.match(base, /payload\?\.user/);
+  assert.match(base, /userRecord\?\.shop_url/);
   assert.match(publish, /getBasePublicShopUrl\(\)/);
   assert.match(publish, /resolveBasePublicUrl\(visibleResponse, externalProductId, basePublicShopUrl\)/);
 });
