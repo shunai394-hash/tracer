@@ -130,7 +130,7 @@ export async function POST(request: Request) {
     const priorFinishedAt = Date.parse(String(previous.finished_at ?? previous.started_at ?? ""));
     const priorVariantId = String(previousListingQuery.data.supplier_variant_id ?? "").trim();
     const matchingOrders = providerOrders.filter((order) => {
-      const createdAt = Date.parse(order.createdAt.includes("T") || /(?:Z|[+-]\\d{2}:?\\d{2})$/i.test(order.createdAt)
+      const createdAt = Date.parse(order.createdAt.includes("T") || /(?:Z|[+-]\d{2}:?\d{2})$/i.test(order.createdAt)
         ? order.createdAt
         : `${order.createdAt.replace(" ", "T")}Z`);
       return order.isSandbox &&
