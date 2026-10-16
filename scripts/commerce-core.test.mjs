@@ -194,3 +194,37 @@ test("BASE product links never fall back to the generic BASE homepage", async ()
   assert.match(publish, /resolveBasePublicUrl\(visibleResponse, externalProductId, process\.env\.BASE_PUBLIC_SHOP_URL\)/);
   assert.doesNotMatch(publish, /publishedUrl = "https:\/\/thebase\.com\//);
 });
+
+
+test("Shopify paid webhook is signature-verified, idempotent, and writes canonical commerce orders", async () => {
+  const webhook = await readFile(new URL("../app/api/webhooks/shopify/orders-paid/route.ts", import.meta.url), "utf8");
+  const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
+  assert.match(webhook, /verifyShopifyWebhookHmac/);
+  assert.match(webhook, /shopify-webhook-id/);
+  assert.match(webhook, /insertError\?\.code === "23505"/);
+  assert.match(webhook, /ingestPaidOrder\(/);
+  assert.match(webhook, /\.eq\("status", "published"\)/);
+  assert.match(core, /procurement_orders/);
+  assert.match(core, /payment_status/);
+});
+
+test("BASE order polling only imports confirmed paid orders and maps published canonical listings", async () => {
+  const baseOrders = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
+  assert.match(baseOrders, /function isPaid\(/);
+  assert.match(baseOrders, /dispatch_status === "unpaid"/);
+  assert.match(baseOrders, /status", "published"/);
+  assert.match(baseOrders, /ingestPaidOrder\(/);
+  assert.match(baseOrders, /splitJapaneseAddress/);
+});
+
+test("procurement submits only paid orders with complete shipping and exact current profitable CJ offer", async () => {
+  const worker = await readFile(new URL("../app/api/cron/commerce-procurement/route.ts", import.meta.url), "utf8");
+  assert.match(worker, /order\.payment_status !== "paid"/);
+  assert.match(worker, /shippingAddress_or_line_incomplete|shipping_address_or_line_incomplete/);
+  assert.match(worker, /offer\.source_status !== "verified"/);
+  assert.match(worker, /offer\.inventory\) < input\.quantity/);
+  assert.match(worker, /offer\.supplier_product_id !== row\.supplier_product_id/);
+  assert.match(worker, /status: "processing"/);
+  assert.match(worker, /createdSupplierOrderId/);
+  assert.match(worker, /trackingNumber/);
+});
