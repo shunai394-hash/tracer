@@ -51,6 +51,16 @@ test("patrol readiness and snapshots include canonical commerce tables after leg
   assert.match(patrol, /publishedCommerceListings/);
   assert.match(patrol, /supplierProcurementOrders/);
 });
+test("product dashboard displays the canonical commerce catalog instead of legacy zero counts", async () => {
+  const page = await readFile(new URL("../app/products/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /from\("commerce_products"\)/);
+  assert.match(page, /from\("commerce_variants"\)/);
+  assert.match(page, /from\("supplier_offers"\)/);
+  assert.match(page, /from\("commerce_prices"\)/);
+  assert.match(page, /from\("channel_listings"\)/);
+  assert.match(page, /BASE・Shopify 自動販売カタログ/);
+  assert.match(page, /旧Intelligenceテーブルの件数とは分けて表示/);
+});
 test("publication and price calculation require fresh verified supplier evidence", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
