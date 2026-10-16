@@ -54,7 +54,8 @@ assert.match(inventoryRefresh, /supplier_inventory_capability_missing/);
 
 console.log("CJ procurement adapter contract checks passed (live ordering remains fail-closed until payment proof and explicit flags).");
 
-assert.match(order, /isSandbox\?: boolean/);
+assert.match(order, /isSandbox: true; payType\?: 1 \| 2 \| 3/);
+assert.match(order, /isSandbox\?: false; payType\?: 2 \| 3/);
 assert.match(order, /postCJSandboxAction\("simulatePay"/);
 assert.match(order, /postCJSandboxAction\("updateStatus"/);
 assert.match(order, /postCJSandboxAction\("updateTrackNumber"/);
