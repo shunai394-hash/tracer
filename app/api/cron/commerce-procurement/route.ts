@@ -93,7 +93,7 @@ export async function GET(request: Request) {
 
   // Do not create supplier orders unless the existing, explicit payment-flow and live-order controls are enabled.
   if (!cjSupplierAdapter.capabilities.liveOrdering) {
-    return NextResponse.json({ ok: result.failed === 0, ...result, submission: "disabled_until_live_order_and_payment_flow_are_verified" }, { status: 409 });
+    return NextResponse.json({ ok: result.failed === 0, ...result, submission: "disabled_until_live_order_and_payment_flow_are_verified" }, { status: 200 });
   }
 
   const { data: pending, error: pendingError } = await db.from("procurement_orders")
