@@ -38,8 +38,10 @@ assert.match(bestsellerRouteForBrightData, /marketplace_sourcing_disabled_suppli
 assert.doesNotMatch(bestsellerRouteForBrightData, /persistMarketplaceBestsellers|canonicalVariantEvidenceParsed/);
 
 const recoveryWorkflow = await readFile(new URL("../.github/workflows/tracer-one-shot-supply-recovery.yml", import.meta.url), "utf8");
-const healthRoute = await readFile(new URL("../app/api/health/route.ts", import.meta.url), "utf8");
-assert.match(recoveryWorkflow, /\$BASE\/api\/health/);
-assert.match(recoveryWorkflow, /grep -q "\$GITHUB_SHA"/);
-assert.doesNotMatch(recoveryWorkflow, /call_get api\/cron\/market-sourcing/);
-assert.match(healthRoute, /gitCommitSha: process\.env\.VERCEL_GIT_COMMIT_SHA/);
+assert.match(recoveryWorkflow, /BASE=https:\/\/tracer-pied-alpha\.vercel\.app/);
+assert.match(recoveryWorkflow, /api\/cron\/commerce-cj-import/);
+assert.match(recoveryWorkflow, /api\/cron\/commerce-publish-base/);
+assert.match(recoveryWorkflow, /api\/cron\/commerce-publish-shopify/);
+assert.match(recoveryWorkflow, /api\/cron\/commerce-procurement/);
+assert.doesNotMatch(recoveryWorkflow, /call_get api\/cron\/market-sourcing/,
+  "clean commerce recovery must not consume marketplace-demand observations as supplier inventory");
