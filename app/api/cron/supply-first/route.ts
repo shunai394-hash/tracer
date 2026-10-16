@@ -84,6 +84,10 @@ export async function GET(request: Request) {
       ? {
           items: (cachedSupply?.data ?? []).map((row) => ({ productId: String(row.product_id ?? "") })).filter((row) => row.productId),
           discovered: 0,
+          published: 0,
+          rejected: 0,
+          eligibleCount: 0,
+          deadlineReached: false,
           verified: cachedSupply?.data?.length ?? 0,
           candidateCount: cachedSupply?.data?.length ?? 0,
           quotaBlocked: true,
