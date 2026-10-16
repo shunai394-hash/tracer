@@ -8,6 +8,9 @@ import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { rescueUndeliveredGatePassedListings, retryPendingNewfindPromotions } from "@/lib/integration/newfind";
 import { catalogCountsNeedReview } from "@/lib/ops/catalog-count-check";
 import { promoteCommerceListingsToNewfind } from "@/lib/integration/newfind-commerce";
+import { asRelationRows } from "@/lib/commerce/relation-rows";
+import { isCanonicalCjNativeId } from "@/lib/commerce/core";
+import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -19,6 +22,8 @@ type Snapshot = {
   shopListings: number;
   publishedListings: number;
   eligibleForBase: number;
+  newEligibleForBase: number;
+  newEligibleForShopify: number;
   autoProcurementEligibleListings: number;
   onBase: number;
   basePublished: number;
@@ -41,6 +46,24 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
   const shopListingsQuery = db.from("shop_listings").select("*", { count: "exact", head: true });
   const publishedListingsQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).eq("published", true);
   const eligibilityListingsQuery = db.from("shop_listings").select("supplier_name,orderable,inventory,image_url,tracking_available,pipeline_reason,pipeline_stage,pipeline_status").eq("published", true);
+  // The clean commerce catalog is the source of truth for BASE/Shopify. Keep
+  // legacy shop_listings eligibility separately so a legacy reset cannot report
+  // zero sellable variants when the canonical catalog has verified offers.
+  const commerceEligibilityQuery = db.from("commerce_variants")
+    .select("id,title_ja,commerce_products!inner(active,image_url),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,unit_cost,shipping_cost,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,currency,selling_price,expected_profit)")
+    .eq("commerce_products.active", true)
+    .eq("supplier_offers.ship_to", "JP")
+    .eq("supplier_offers.source_status", "verified")
+    .eq("supplier_offers.tracking_supported", true)
+    .gte("supplier_offers.last_checked_at", new Date(Date.now() - 24 * 60 * 60_000).toISOString())
+    .gt("supplier_offers.inventory", 0)
+    .eq("commerce_prices.currency", "JPY")
+    .gt("commerce_prices.selling_price", 0)
+    .gt("commerce_prices.expected_profit", 0);
+  const publishedBaseVariantIdsQuery = db.from("channel_listings").select("variant_id")
+    .eq("channel", "base").eq("status", "published");
+  const publishedShopifyVariantIdsQuery = db.from("channel_listings").select("variant_id")
+    .eq("channel", "shopify").eq("status", "published");
   const onBaseQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).not("base_item_id", "is", null);
   const basePublishedQuery = db.from("shop_listings").select("*", { count: "exact", head: true }).not("base_item_id", "is", null).eq("base_publication_status", "published").eq("published", true);
   const ordersQuery = db.from("shop_orders").select("*", { count: "exact", head: true });
@@ -57,8 +80,8 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
   const commerceOrdersQuery = db.from("commerce_orders").select("*", { count: "exact", head: true });
   const supplierProcurementOrdersQuery = db.from("procurement_orders").select("*", { count: "exact", head: true });
 
-  const [productsResult, supplierListingsResult, orderableSuppliersResult, shopListingsResult, publishedListingsResult, eligibilityListingsResult, onBaseResult, basePublishedResult, ordersResult, commerceProductsResult, commerceVariantsResult, verifiedCommerceOffersResult, publishedCommerceListingsResult, publishedBaseCommerceListingsResult, publishedShopifyCommerceListingsResult, unpublishedCommerceListingsResult, commerceOrdersResult, supplierProcurementOrdersResult] =
-    await Promise.all([productsQuery, supplierListingsQuery, orderableSuppliersQuery, shopListingsQuery, publishedListingsQuery, eligibilityListingsQuery, onBaseQuery, basePublishedQuery, ordersQuery, commerceProductsQuery, commerceVariantsQuery, verifiedCommerceOffersQuery, publishedCommerceListingsQuery, publishedBaseCommerceListingsQuery, publishedShopifyCommerceListingsQuery, unpublishedCommerceListingsQuery, commerceOrdersQuery, supplierProcurementOrdersQuery]);
+  const [productsResult, supplierListingsResult, orderableSuppliersResult, shopListingsResult, publishedListingsResult, eligibilityListingsResult, commerceEligibilityResult, publishedBaseVariantIdsResult, publishedShopifyVariantIdsResult, onBaseResult, basePublishedResult, ordersResult, commerceProductsResult, commerceVariantsResult, verifiedCommerceOffersResult, publishedCommerceListingsResult, publishedBaseCommerceListingsResult, publishedShopifyCommerceListingsResult, unpublishedCommerceListingsResult, commerceOrdersResult, supplierProcurementOrdersResult] =
+    await Promise.all([productsQuery, supplierListingsQuery, orderableSuppliersQuery, shopListingsQuery, publishedListingsQuery, eligibilityListingsQuery, commerceEligibilityQuery, publishedBaseVariantIdsQuery, publishedShopifyVariantIdsQuery, onBaseQuery, basePublishedQuery, ordersQuery, commerceProductsQuery, commerceVariantsQuery, verifiedCommerceOffersQuery, publishedCommerceListingsQuery, publishedBaseCommerceListingsQuery, publishedShopifyCommerceListingsQuery, unpublishedCommerceListingsQuery, commerceOrdersQuery, supplierProcurementOrdersQuery]);
 
   const results = [
     ["products", productsResult], ["supplier_listings", supplierListingsResult], ["supplier_listings(orderable)", orderableSuppliersResult],
@@ -75,7 +98,7 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
     if (result.error) throw new Error(`${label}: ${result.error.message}`);
   }
 
-  const eligibleRows = (eligibilityListingsResult.data ?? []).filter((row) => {
+  const legacyEligibleRows = (eligibilityListingsResult.data ?? []).filter((row) => {
     const inventory = Number(row.inventory);
     return row.orderable === true &&
       Number.isFinite(inventory) &&
@@ -87,6 +110,32 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
       row.pipeline_status === "published" &&
       row.pipeline_reason === "sales_test_gate_passed";
   });
+  const relationRows = (value: unknown): Array<Record<string, unknown>> => asRelationRows(value as never) as Array<Record<string, unknown>>;
+  const eligibleVariantIds = new Set<string>();
+  for (const row of commerceEligibilityResult.data ?? []) {
+    const product = relationRows(row.commerce_products)[0];
+    const imageUrl = typeof product?.image_url === "string" ? product.image_url : "";
+    if (product?.active !== true || !/^https?:\/\//i.test(imageUrl)) continue;
+    if (!isJapaneseProductTitle(String(row.title_ja ?? ""))) continue;
+    const offers = relationRows(row.supplier_offers);
+    const prices = relationRows(row.commerce_prices);
+    const validOffer = offers.find((offer) => {
+      const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
+      const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 && Date.now() - checkedAt <= 24 * 60 * 60_000;
+      const nativeIdsValid = offer.supplier_code !== "cj" ||
+        (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
+      return offer.source_status === "verified" && offer.ship_to === "JP" && offer.tracking_supported === true &&
+        Number(offer.inventory) > 0 && Number(offer.unit_cost) >= 0 && Number(offer.shipping_cost) >= 0 && fresh && nativeIdsValid;
+    });
+    if (!validOffer) continue;
+    if (!prices.some((price) => price.supplier_offer_id === validOffer.id && price.currency === "JPY" &&
+      Number(price.selling_price) > 0 && Number(price.expected_profit) > 0)) continue;
+    eligibleVariantIds.add(String(row.id));
+  }
+  const publishedBaseVariantIds = new Set((publishedBaseVariantIdsResult.data ?? []).map((row) => String(row.variant_id)));
+  const publishedShopifyVariantIds = new Set((publishedShopifyVariantIdsResult.data ?? []).map((row) => String(row.variant_id)));
+  const newEligibleForBase = [...eligibleVariantIds].filter((id) => !publishedBaseVariantIds.has(id)).length;
+  const newEligibleForShopify = [...eligibleVariantIds].filter((id) => !publishedShopifyVariantIds.has(id)).length;
 
   const autoProcurementEligibleRows = (eligibilityListingsResult.data ?? []).filter((row) =>
     getAutoProcurementEligibility(typeof row.supplier_name === "string" ? row.supplier_name : null).eligible
@@ -98,7 +147,11 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
     orderableSuppliers: orderableSuppliersResult.count ?? 0,
     shopListings: shopListingsResult.count ?? 0,
     publishedListings: publishedListingsResult.count ?? 0,
-    eligibleForBase: eligibleRows.length,
+    // Eligible count now reflects the canonical commerce catalog; legacyEligible
+    // remains diagnostic-only and is intentionally not used to gate publication.
+    eligibleForBase: eligibleVariantIds.size,
+    newEligibleForBase,
+    newEligibleForShopify,
     autoProcurementEligibleListings: autoProcurementEligibleRows.length,
     onBase: onBaseResult.count ?? 0,
     basePublished: basePublishedResult.count ?? 0,
