@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { runCJSandboxOrderLifecycle } from "@/lib/procurement/cj-adapter";
+import { listCJSandboxOrders } from "@/lib/sources/cj/create-order";
 import { isCJQuotaCircuitActive } from "@/lib/sources/cj/rate-limit-policy";
 
 export const runtime = "nodejs";
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
   // This test exists to establish the order-path contract, so it must accept an
   // unverified candidate. runCJSandboxOrderLifecycle performs fresh exact-variant,
   // price, stock and Japan-freight checks before creating a sandbox-only order.
-  const { data: listing, error } = await db
+  const { data: requestedListing, error } = await db
     .from("supplier_listings")
     .select("id,supplier,supplier_product_id,supplier_variant_id,configured,metadata")
     .eq("id", supplierListingId)
@@ -63,20 +64,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "SUPPLIER_LISTING_LOOKUP_FAILED" }, { status: 500 });
   }
   if (
-    !listing ||
-    listing.supplier !== "cj" ||
-    !String(listing.supplier_product_id ?? "").trim() ||
-    !String(listing.supplier_variant_id ?? "").trim() ||
-    listing.configured !== true
+    !requestedListing ||
+    requestedListing.supplier !== "cj" ||
+    !String(requestedListing.supplier_product_id ?? "").trim() ||
+    !String(requestedListing.supplier_variant_id ?? "").trim() ||
+    requestedListing.configured !== true
   ) {
     return NextResponse.json({ ok: false, error: "SUPPLIER_LISTING_NOT_CJ_SANDBOX_CANDIDATE" }, { status: 409 });
   }
 
   // One successful lifecycle is sufficient for this one-time contract proof.
-  // Failed attempts are auditable and may be retried only after inspecting the cause.
+  // If a previous run created a sandbox order but failed before recording its ID,
+  // reconcile that exact order by sandbox marker, variant, and narrow creation window.
   const { data: previousRuns, error: previousRunsError } = await db
     .from("cron_runs")
-    .select("status,started_at,metadata,error")
+    .select("id,status,started_at,finished_at,metadata,error")
     .eq("job_name", "cj-sandbox-order-lifecycle")
     .order("started_at", { ascending: false })
     .limit(1);
@@ -85,6 +87,13 @@ export async function POST(request: Request) {
   if (previous?.status === "succeeded") {
     return NextResponse.json({ ok: false, error: "CJ_SANDBOX_LIFECYCLE_ALREADY_VERIFIED" }, { status: 409 });
   }
+
+  let activeListing = requestedListing;
+  let effectiveSupplierListingId = supplierListingId;
+  let existingSandboxOrderId: string | undefined;
+  let recoveredOrderNumber: string | undefined;
+  let resumedFromPreviousRunId: string | undefined;
+
   const previousError = typeof previous?.error === "string" ? previous.error : "";
   const previousFailureWasPreOrderOnly =
     previousError.startsWith("CJ_SANDBOX_NO_VALID_CANDIDATE:") ||
@@ -93,12 +102,64 @@ export async function POST(request: Request) {
     previousError === "CJ_SANDBOX_STOCK_OR_PRICE_UNVERIFIED" ||
     previousError === "CJ_SANDBOX_SHIPPING_UNAVAILABLE" ||
     previousError === "CJ_SANDBOX_COUNTRY_UNVERIFIED";
-  if (previous?.status === "failed" && !previousFailureWasPreOrderOnly) {
+  const previousFailureNeedsOrderRecovery =
+    previousError === "Current order status is CREATED(100), not UNPAID(200), cannot simulate pay.";
+
+  if (previous?.status === "failed" && previousFailureNeedsOrderRecovery) {
+    const previousMetadata = previous.metadata && typeof previous.metadata === "object" && !Array.isArray(previous.metadata)
+      ? previous.metadata as Record<string, unknown>
+      : {};
+    const previousListingId = String(previousMetadata.supplierListingId ?? "").trim();
+    const previousListingQuery = previousListingId
+      ? await db.from("supplier_listings")
+          .select("id,supplier,supplier_product_id,supplier_variant_id,configured,metadata")
+          .eq("id", previousListingId)
+          .maybeSingle()
+      : { data: null, error: null };
+    if (previousListingQuery.error || !previousListingQuery.data) {
+      return NextResponse.json({ ok: false, error: "CJ_SANDBOX_PREVIOUS_ORDER_LISTING_NOT_FOUND_REQUIRES_MANUAL_RECONCILIATION" }, { status: 409 });
+    }
+
+    let providerOrders;
+    try {
+      providerOrders = await listCJSandboxOrders("CREATED");
+    } catch {
+      return NextResponse.json({ ok: false, error: "CJ_SANDBOX_PREVIOUS_ORDER_LOOKUP_FAILED_REQUIRES_MANUAL_RECONCILIATION" }, { status: 409 });
+    }
+    const priorStartedAt = Date.parse(String(previous.started_at ?? ""));
+    const priorFinishedAt = Date.parse(String(previous.finished_at ?? previous.started_at ?? ""));
+    const priorVariantId = String(previousListingQuery.data.supplier_variant_id ?? "").trim();
+    const matchingOrders = providerOrders.filter((order) => {
+      const createdAt = Date.parse(order.createdAt.includes("T") || /(?:Z|[+-]\\d{2}:?\\d{2})$/i.test(order.createdAt)
+        ? order.createdAt
+        : `${order.createdAt.replace(" ", "T")}Z`);
+      return order.isSandbox &&
+        order.orderNumber.startsWith("TRACER-SANDBOX-") &&
+        ["CREATED", "100"].includes(order.status) &&
+        order.variantIds.includes(priorVariantId) &&
+        Number.isFinite(createdAt) &&
+        createdAt >= priorStartedAt - 60_000 &&
+        createdAt <= priorFinishedAt + 60_000;
+    });
+    if (matchingOrders.length !== 1) {
+      return NextResponse.json({
+        ok: false,
+        error: "CJ_SANDBOX_PREVIOUS_ORDER_MAY_EXIST_REQUIRES_MANUAL_RECONCILIATION",
+        matchingSandboxOrders: matchingOrders.length,
+      }, { status: 409 });
+    }
+    activeListing = previousListingQuery.data;
+    effectiveSupplierListingId = String(activeListing.id);
+    existingSandboxOrderId = matchingOrders[0].orderId;
+    recoveredOrderNumber = matchingOrders[0].orderNumber;
+    resumedFromPreviousRunId = String(previous.id ?? "");
+  } else if (previous?.status === "failed" && !previousFailureWasPreOrderOnly) {
     return NextResponse.json({
       ok: false,
       error: "CJ_SANDBOX_PREVIOUS_ORDER_MAY_EXIST_REQUIRES_MANUAL_RECONCILIATION",
     }, { status: 409 });
   }
+
   if (previous?.status === "running" && Date.now() - Date.parse(String(previous.started_at)) < 10 * 60 * 1000) {
     return NextResponse.json({ ok: false, error: "CJ_SANDBOX_LIFECYCLE_ALREADY_RUNNING" }, { status: 409 });
   }
