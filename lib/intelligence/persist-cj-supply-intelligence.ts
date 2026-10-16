@@ -32,7 +32,7 @@ async function readSupplierBarcode(args: { supplierProductId: string; supplierVa
   // this response for supply repair rather than burning a second CJ API call.
   try {
     const variant = await fetchCJVariantByVid(args.supplierVariantId);
-    if (variant?.vid === args.supplierVariantId && /^\\d{10,25}$/.test(String(variant.productId ?? ""))) {
+    if (variant?.vid === args.supplierVariantId && /^\d{10,25}$/.test(String(variant.productId ?? ""))) {
       return { barcode: normalizeBarcode(variant.barcode), variant };
     }
   } catch (error) { console.warn("[cj-supply-identity] queryByVid barcode lookup failed", { error: error instanceof Error ? error.message : String(error) }); }
