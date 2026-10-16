@@ -16,6 +16,38 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
+      - name: Check out repository history for deployment SHA verification
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait for production to serve this exact commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          ready=0
+          for attempt in $(seq 1 36); do
+            code="$(curl -sS -o /tmp/health.json -w "%{http_code}" --max-time 10 "$BASE/api/health" || true)"
+            sha="$(python3 -c 'import json; d=json.load(open("/tmp/health.json")); print(d.get("gitCommitSha") or "")' 2>/dev/null || true)"
+            if [[ "$code" == "200" && "$sha" == "$GITHUB_SHA" ]]; then
+              echo "Production is serving expected commit $GITHUB_SHA."
+              ready=1
+              break
+            fi
+            if [[ "$code" == "200" && -n "$sha" ]]; then
+              git fetch --no-tags origin main
+              if git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+                echo "Production is serving descendant commit $sha, which includes $GITHUB_SHA."
+                ready=1
+                break
+              fi
+            fi
+            echo "Waiting for deployment: HTTP=$code sha=$sha attempt=$attempt/36"
+            sleep 10
+          done
+          [[ "$ready" == "1" ]] || { echo "Production did not serve this commit within 6 minutes."; exit 1; }
+
       - name: Run bounded clean commerce recovery
         shell: bash
         run: |
