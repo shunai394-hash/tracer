@@ -48,15 +48,32 @@ export async function GET(request: Request) {
       ? quotaRun.metadata as Record<string, unknown>
       : {};
     const blockedUntil = typeof quotaMetadata.blockedUntil === "string" ? quotaMetadata.blockedUntil : null;
-    if (isCJQuotaCircuitActive(quotaMetadata)) {
+    const quotaCircuitActive = isCJQuotaCircuitActive(quotaMetadata);
+    // Inspect the cache before creating a run. If the provider is cooling down
+    // and no fully verified offers exist, return a truthful no-op without
+    // generating another misleading zero-product run record.
+    const cachedSupply = quotaCircuitActive
+      ? await db.from("supplier_listings")
+          .select("product_id")
+          .eq("price_confirmed", true)
+          .eq("inventory_confirmed", true)
+          .eq("orderable", true)
+          .eq("tracking_available", true)
+          .eq("api_available", true)
+          .gt("inventory", 0)
+          .limit(DISCOVERY_BATCH_SIZE)
+      : null;
+    if (cachedSupply?.error) throw new Error(`cached orderable supply lookup failed: ${cachedSupply.error.message}`);
+    if (quotaCircuitActive && (cachedSupply?.data?.length ?? 0) === 0) {
       return NextResponse.json({
         ok: true,
         skipped: true,
-        reason: "supplier_quota_cooldown",
+        reason: "supplier_quota_cooldown_no_verified_cached_supply",
         retryable: true,
         retryAfter: blockedUntil,
         discoveryInvoked: false,
         runRecordCreated: false,
+        cachedEligibleCount: 0,
       });
     }
 
@@ -74,9 +91,39 @@ export async function GET(request: Request) {
       runId = String(run.id);
     }
 
-    const supplyFirst = await discoverAndCreateCjSupply(DISCOVERY_BATCH_SIZE, {
-      deadlineAt: startedAt + DISCOVERY_BUDGET_MS,
-    });
+    const supplyFirst: {
+      items: unknown[];
+      discovered?: number;
+      published?: number;
+      rejected?: number;
+      eligibleCount?: number;
+      deadlineReached?: boolean;
+      verified?: number;
+      candidateCount?: number;
+      quotaBlocked?: boolean;
+      retryable?: boolean;
+      retryAfter?: string | null;
+      reason?: string;
+    } = quotaCircuitActive
+      ? {
+          items: (cachedSupply?.data ?? [])
+            .map((row) => ({ productId: String(row.product_id ?? "") }))
+            .filter((row) => row.productId),
+          discovered: 0,
+          published: 0,
+          rejected: 0,
+          eligibleCount: 0,
+          deadlineReached: false,
+          verified: cachedSupply?.data?.length ?? 0,
+          candidateCount: cachedSupply?.data?.length ?? 0,
+          quotaBlocked: true,
+          retryable: true,
+          retryAfter: blockedUntil,
+          reason: "cj_quota_cooldown_using_cached_orderable_supply",
+        }
+      : await discoverAndCreateCjSupply(DISCOVERY_BATCH_SIZE, {
+          deadlineAt: startedAt + DISCOVERY_BUDGET_MS,
+        });
 
     const verifiedProductIds = (supplyFirst.items ?? [])
       .map((item) => (item && typeof item === "object" && "productId" in item ? String((item as { productId?: unknown }).productId ?? "") : ""))
