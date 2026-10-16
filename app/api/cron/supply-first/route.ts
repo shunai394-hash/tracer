@@ -138,14 +138,23 @@ export async function GET(request: Request) {
     }
 
     const elapsedMs = Date.now() - startedAt;
+    const discoveryIncomplete =
+      supplyFirst.quotaBlocked === true ||
+      supplyFirst.deadlineReached === true ||
+      (supplyFirst.retryable === true && verifiedProductIds.length === 0);
+    const runStatus = discoveryIncomplete ? "failed" : "succeeded";
+    const rejectedCount = Math.max(0, Number(supplyFirst.rejected ?? 0));
+    const runFailureCount = Math.max(rejectedCount, discoveryIncomplete ? 1 : 0);
     if (db && runId) {
       const { error: finishError } = await db.from("cron_runs").update({
-        status: "succeeded",
+        status: runStatus,
         finished_at: new Date().toISOString(),
         duration_ms: elapsedMs,
         processed: verifiedProductIds.length,
-        failed: 0,
+        failed: runFailureCount,
         metadata: {
+          discoveryIncomplete,
+          discoveryStatus: runStatus,
           actor: "vercel-cron",
           batchSize: DISCOVERY_BATCH_SIZE,
           deadlineMs: DISCOVERY_BUDGET_MS,
@@ -173,12 +182,13 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({
-      ok: true,
+      ok: !discoveryIncomplete,
+      discoveryIncomplete,
       elapsedMs,
       supplyFirst,
       opportunityIntelligence,
       publication,
-    });
+    }, { status: discoveryIncomplete ? 503 : 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     const stage = message.split(":")[0].slice(0, 100);
