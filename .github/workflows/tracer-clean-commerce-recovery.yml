@@ -8,8 +8,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Isolate recovery runs by commit. A shared group allows a newer ordinary push
+# to cancel the queued run before its job-level commit-message guard can skip it.
 concurrency:
-  group: tracer-clean-commerce-recovery
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 
 permissions:
