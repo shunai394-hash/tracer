@@ -4,6 +4,7 @@ import { searchCJProducts, getCJProductDetail, fetchCJProductVariants, fetchCJVa
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { upsertSupplierOffer, recalculatePrice } from "@/lib/commerce/core";
+import { selectRotatingVariantBatch } from "@/lib/commerce/variant-batch";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -71,12 +72,14 @@ export async function GET(request: Request) {
   const query = (explicitQuery || queryOptions[Math.floor(Date.now() / 600_000) % queryOptions.length]).trim().slice(0, 100);
   const page = Math.min(1000, Math.max(1, Number(url.searchParams.get("page") || 1)));
   const limit = Math.min(10, Math.max(1, Number(url.searchParams.get("limit") || 4)));
+  const variantBatchLimit = Math.min(6, Math.max(1, Number(url.searchParams.get("variantLimit") || 5)));
+  const variantRunSlot = Math.floor(Date.now() / 600_000);
   const fx = await getObservedUsdToJpyRate();
   if (!fx || !Number.isFinite(fx.rate) || fx.rate <= 0) {
     return NextResponse.json({ ok: false, error: "usd_jpy_rate_unavailable", imported: 0 }, { status: 503 });
   }
 
-  const stats = { searched: 0, products: 0, variants: 0, offers: 0, priced: 0, skipped: 0, errors: [] as string[] };
+  const stats = { searched: 0, products: 0, variantsAvailable: 0, variants: 0, offers: 0, priced: 0, skipped: 0, errors: [] as string[] };
   try {
     type ImportCandidate = { id: string; title: string; productType?: string | null; imageUrl?: string | null };
     const requestedProductIds = url.searchParams.has("productIds")
@@ -111,7 +114,11 @@ export async function GET(request: Request) {
         const variants = await fetchCJProductVariants(candidate.id);
         if (!variants.length) { stats.skipped++; continue; }
         stats.products++;
-        for (const variant of variants.slice(0, 2)) {
+        stats.variantsAvailable += variants.length;
+        // Rotate through every child variant across 10-minute importer slots.
+        // Keep each run bounded while avoiding a permanent first-two-variants bias.
+        const variantBatch = selectRotatingVariantBatch(variants, variantBatchLimit, variantRunSlot);
+        for (const variant of variantBatch) {
           try {
             if (!variant.vid) { stats.skipped++; continue; }
             // Always resolve the exact live VID. A non-empty productId in a
