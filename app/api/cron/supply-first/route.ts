@@ -70,7 +70,7 @@ export async function GET(request: Request) {
     }).select("id").maybeSingle();
     if (startError) {
       console.error("[TRACER SUPPLY-FIRST RUN LOG START FAILED]", { stage: "cron_run_insert", code: startError.code ?? null });
-      if (startError.code === "23505" && String(startError.message ?? "").includes("cron_runs_one_running_job_uq")) {
+      if (startError.code === "23505") {
         return NextResponse.json({
           ok: true,
           skipped: true,
