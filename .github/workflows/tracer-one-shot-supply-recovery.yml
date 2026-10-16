@@ -39,18 +39,18 @@ jobs:
           import json,sys
           try:
               d=json.load(open(sys.argv[1]))
-              for k in ("ok","elapsedMs","supplyFirst","selected","published","failed","reason","error"):
+              for k in ("ok","elapsedMs","supplyFirst","selected","published","failed","reason","error","checked","promoted","supplierVerified","noUniqueBarcodeMatch","missingEconomics","quotaBlockedUntil","retryAfter","counts"):
                   if k in d: print(k, json.dumps(d[k],ensure_ascii=False)[:2500])
           except Exception:
               print(open(sys.argv[1]).read()[:1000])
           PY
           }
-          echo "=== Market recovery (CJ cooldown-safe) ==="
-          call_get api/cron/market-sourcing 300 market-sourcing.json || true
-          # The market-sourcing route itself runs the observation collector and persists child-variant evidence.
-
-          # Re-verify the existing bounded CJ batch early so later discovery calls cannot consume the full job budget first.
+          # Re-verify supplier identity first; no catalog row is published from backup/stale evidence.
           call_get "api/cron/cj-identity-reverify?limit=25&force=1" 300 cj-identity-reverify.json || true
+
+          echo "=== Market recovery (after supplier re-verification) ==="
+          call_get api/cron/market-sourcing 300 market-sourcing.json || true
+          # The market-sourcing route collects demand and persists canonical child-variant evidence.
           call_get api/cron/intelligence 300 intelligence.json || true
 
           echo "=== CJ supply discovery (will fail closed during provider cooldown) ==="
