@@ -484,7 +484,7 @@ export async function runCJSandboxOrderLifecycle(
     products: [{ vid: variant.vid, quantity: input.quantity }],
   });
   const orderId = created.supplierOrderId?.trim();
-  if (!created.succeeded || !orderId) throw new Error(`CJ_SANDBOX_CREATE_FAILED:${created.responseCode ?? "unknown"}${created.responseMessage ? `:${created.responseMessage.replace(/\\s+/g, " ").slice(0, 120)}` : ""}`);
+  if (!created.succeeded || !orderId) throw new Error(`CJ_SANDBOX_CREATE_FAILED:${created.responseCode ?? "unknown"}${created.responseMessage ? `:${created.responseMessage.replace(/\s+/g, " ").slice(0, 120)}` : ""}`);
   // Persist the external order ID immediately so a later payment/status failure is reconcilable.
   if (onOrderCreated) await onOrderCreated(orderId);
 
