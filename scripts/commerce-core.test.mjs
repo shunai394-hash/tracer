@@ -51,19 +51,19 @@ test("paid-order supplier preflight runs before writing the order record", async
 });
 
 test("supplier importer never substitutes a search-result product ID for unresolved variant identity", async () => {
-  const importer = await readFile(new URL("../app/api/cron/rebuild-cj-import/route.ts", import.meta.url), "utf8");
-  assert.match(importer, /const exact = await fetchCJVariantByVid\(listed\.vid\)/);
-  assert.match(importer, /function titleJa/);
-  assert.match(importer, /function variantJa/);
-  assert.match(importer, /variantTitleJa: variantJa\(exact\.nameEn\)/);
-  assert.doesNotMatch(importer, /variantTitleJa: exact\.nameEn \? localized \+ "（" \+ exact\.nameEn/);
-  assert.match(importer, /String\(exact\.vid\)!==String\(listed\.vid\)/);
-  assert.match(importer, /exact_variant_unresolved/);
-  assert.match(importer, /!Number\.isFinite\(usd\)/);
-  assert.doesNotMatch(importer, /if \(!productId\)\s*\{\s*const exact/, "a non-empty parent ID from product search is not proof of the live canonical parent");
-  assert.match(importer, /productId===candidate\.id\?initial:await getCJProductDetail\(productId\)/);
-  assert.match(importer, /supplierVariantId:String\(exact\.vid\)/);
-  assert.match(importer, /const defaults=\["women handbag","beauty tools","hair accessories women","phone case"\]/, "CJ discovery must rotate across broad product categories");
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /const exactVariant = await fetchCJVariantByVid\(variant\.vid\)/);
+  assert.match(importer, /function japaneseCommerceTitle/);
+  assert.match(importer, /function japaneseVariantSuffix/);
+  assert.match(importer, /variantTitleJa: title \+ japaneseVariantSuffix\(exactVariant\.nameEn\)/);
+  assert.doesNotMatch(importer, /variantTitleJa: exactVariant\.nameEn \? title \+ "（" \+ exactVariant\.nameEn/);
+  assert.match(importer, /exactVariant\.vid !== variant\.vid/);
+  assert.match(importer, /canonical_supplier_product_id_unresolved/);
+  assert.match(importer, /canonical_supplier_variant_price_unresolved/);
+  assert.doesNotMatch(importer, /if \(!supplierProductId\)\s*\{\s*const exactVariant/, "a non-empty parent ID from product search is not proof of the live canonical parent");
+  assert.match(importer, /supplierProductId === candidate\.id \? detail : await getCJProductDetail\(supplierProductId\)/);
+  assert.match(importer, /supplierVariantId: exactVariant\.vid/);
+  assert.match(importer, /const queryOptions = \["women handbag", "beauty tools", .*"hair accessories women"\]/, "CJ discovery must rotate across broad product categories including the requested priorities");
 });
 
 test("procurement revalidates the exact fresh profitable offer and preserves a created supplier order ID", async () => {
@@ -78,7 +78,7 @@ test("procurement revalidates the exact fresh profitable offer and preserves a c
 test("clean commerce cron schedule uses only the new supplier, channel, order, and procurement routes", async () => {
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
   const schedules = new Map(config.crons.map((job) => [job.path, job.schedule]));
-  assert.equal(schedules.get("/api/cron/rebuild-cj-import"), "*/30 * * * *");
+  assert.equal(schedules.get("/api/cron/commerce-cj-import"), "*/30 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-publish-base"), "10,25,40,55 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-publish-shopify"), "*/15 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,16,31,46 * * * *");
