@@ -22,7 +22,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const probe = await probeBaseReadOnly({ itemPageLimit: 100, itemMaxPages: 10 });
+    const probe = await probeBaseReadOnly({ itemPageLimit: 100, itemMaxPages: 20 });
     const mappingAudit = {
       ok: false,
       visibleItemsMatchedToDatabase: 0,

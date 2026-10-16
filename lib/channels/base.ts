@@ -356,7 +356,7 @@ export async function probeBaseReadOnly(options?: {
   };
 
   const pageLimit = Math.min(100, Math.max(1, Math.floor(options?.itemPageLimit ?? 100)));
-  const maxPages = Math.min(10, Math.max(1, Math.floor(options?.itemMaxPages ?? 10)));
+  const maxPages = Math.min(20, Math.max(1, Math.floor(options?.itemMaxPages ?? 20)));
   let offset = 0;
   for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
     try {
@@ -436,7 +436,7 @@ export async function fetchBaseItemsSnapshot(options?: {
 }): Promise<{ items: Record<string, unknown>[]; pages: number; complete: boolean }> {
   const token = await getBaseAccessToken();
   const pageLimit = Math.min(100, Math.max(1, Math.floor(options?.itemPageLimit ?? 100)));
-  const maxPages = Math.min(10, Math.max(1, Math.floor(options?.itemMaxPages ?? 10)));
+  const maxPages = Math.min(20, Math.max(1, Math.floor(options?.itemMaxPages ?? 20)));
   const items: Record<string, unknown>[] = [];
   let pages = 0;
   let offset = 0;

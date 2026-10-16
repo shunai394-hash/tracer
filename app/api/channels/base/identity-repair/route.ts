@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: 10 });
+    const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: 20 });
     if (!snapshot.complete) {
       return NextResponse.json({ ok: false, error: "BASE_ITEMS_SNAPSHOT_INCOMPLETE" }, { status: 502 });
     }

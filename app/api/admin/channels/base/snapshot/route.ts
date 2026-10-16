@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: 10 });
+    const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: 20 });
     const visible = snapshot.items.filter((item) =>
       item.visible === true || item.visible === 1 || item.visible === "1",
     ).length;

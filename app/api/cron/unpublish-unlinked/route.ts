@@ -93,7 +93,7 @@ export async function GET(request: Request) {
     baseOrphans.skipped = "base_oauth_not_configured";
   } else {
     try {
-      const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: 10 });
+      const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: 20 });
       if (!snapshot.complete) throw new Error("BASE_ITEMS_SNAPSHOT_INCOMPLETE");
       baseOrphans.snapshotComplete = true;
 
