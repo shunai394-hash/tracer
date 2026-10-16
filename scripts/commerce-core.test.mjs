@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { calculateSellingPrice } from "../lib/commerce/pricing.mjs";
 import { splitJapaneseAddress } from "../lib/commerce/japanese-address.mjs";
 import { isCanonicalCJNativeId } from "../lib/sources/cj/native-id.mjs";
+import { japaneseCommerceDescription } from "../lib/commerce/japanese-copy.mjs";
 import { resolveBasePublicUrl } from "../lib/commerce/base-public-url.mjs";
 
 test("price calculation preserves positive profit after fees and target margin", () => {
@@ -281,4 +282,13 @@ test("CJ discovery rotates through search pages instead of repeatedly fetching p
   assert.match(importer, /const discoveryBucket = Math\.floor\(Date\.now\(\) \/ 600_000\)/);
   assert.match(importer, /url\.searchParams\.get\("page"\) \|\| \(discoveryBucket % 10\) \+ 1/);
   assert.match(importer, /searchCJProducts\(query, \{ page, size: Math\.min\(20, limit \* 2\) \}\)/);
+});
+
+test("CJ imported products use specific customer-facing Japanese descriptions", async () => {
+  assert.match(japaneseCommerceDescription("メタルバックル付きラウンドバッグ"), /メタルバックルをあしらったラウンドバッグ/);
+  assert.match(japaneseCommerceDescription("日光で色が変わるアセテート製シャーククリップ"), /日光で色の変化を楽しめるアセテート製/);
+  assert.match(japaneseCommerceDescription("メイク用ファンブラシ"), /ファン型のメイクブラシ/);
+  assert.doesNotMatch(japaneseCommerceDescription("レディースハンドバッグ"), /仕入先の最新情報に基づき確認してください/);
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /descriptionJa: japaneseCommerceDescription\(title\)/);
 });
