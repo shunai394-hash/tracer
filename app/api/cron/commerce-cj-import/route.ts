@@ -5,6 +5,7 @@ import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { upsertSupplierOffer, recalculatePrice } from "@/lib/commerce/core";
 import { selectRotatingVariantBatch } from "@/lib/commerce/variant-batch";
+import { japaneseCommerceDescription } from "@/lib/commerce/japanese-copy.mjs";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -171,7 +172,7 @@ export async function GET(request: Request) {
             const saved = await upsertSupplierOffer({
               sourceKey: "cj:" + supplierProductId,
               titleJa: title,
-              descriptionJa: title + "。商品仕様・配送条件は仕入先の最新情報に基づき確認してください。",
+              descriptionJa: japaneseCommerceDescription(title),
               metadata: { sourceTitle: canonicalDetail.title, sourceProductType: canonicalDetail.productType ?? null },
               category: canonicalDetail.productType ?? (supplierProductId === candidate.id ? candidate.productType : null),
               imageUrl: canonicalDetail.imageUrl ?? (supplierProductId === candidate.id ? candidate.imageUrl : null),
