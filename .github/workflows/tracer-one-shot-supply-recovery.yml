@@ -30,13 +30,13 @@ jobs:
           # Wait until the new deployment is routable before calling protected cron routes.
           ready=0
           for attempt in $(seq 1 36); do
-            code="$(curl -sS -o /tmp/tracer-preflight.txt -w "%{http_code}" --max-time 10 "$BASE/api/cron/supply-first" || true)"
-            if [[ "$code" != "404" ]] || ! grep -q "DEPLOYMENT_NOT_FOUND" /tmp/tracer-preflight.txt 2>/dev/null; then
+            code="$(curl -sS -o /tmp/tracer-preflight.txt -w "%{http_code}" --max-time 10 "$BASE/api/health" || true)"
+            if [[ "$code" == "200" ]] && grep -q "$GITHUB_SHA" /tmp/tracer-preflight.txt; then
               ready=1
-              echo "Production alias is routable (preflight HTTP $code; attempt $attempt)."
+              echo "Production alias serves expected commit $GITHUB_SHA (attempt $attempt)."
               break
             fi
-            echo "Production alias is still being reassigned (attempt $attempt/36); waiting 10 seconds."
+            echo "Waiting for production alias to serve expected commit $GITHUB_SHA (HTTP $code; attempt $attempt/36). Waiting 10 seconds."
             sleep 10
           done
           if [[ "$ready" != "1" ]]; then
