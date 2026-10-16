@@ -42,9 +42,11 @@ async function resolveCJVariantProductIdentity(
   const liveVariant = await fetchCJVariantByVid(variantId);
   const liveProductId = liveVariant?.productId?.trim();
   if (!liveVariant || liveVariant.vid !== variantId || !liveProductId) return null;
-  if (!productScopedVariant && liveProductId !== candidateProductId) return null;
   if (productScopedVariant && productScopedVariant.vid !== variantId) return null;
 
+  // The exact-variant endpoint is authoritative for the variant's parent
+  // product ID. A stale/public catalog ID may differ from that canonical ID;
+  // callers must refetch product details for the resolved ID before using them.
   return {
     variant: productScopedVariant
       ? { ...productScopedVariant, productId: liveProductId }
@@ -477,6 +479,23 @@ export async function discoverAndCreateCjSupply(
         continue;
       }
       const supplierProductId = resolvedSeededVariant!.supplierProductId;
+      if (supplierProductId !== candidate.id) {
+        // Exact-variant lookup may correct a stale/public product ID. Never
+        // keep title/image from the old parent; refetch against the canonical
+        // product ID before persisting or publishing this candidate.
+        const canonicalDetail = await getCJProductDetail(supplierProductId);
+        if (!canonicalDetail?.title?.trim() || !canonicalDetail.imageUrl?.trim()) {
+          rejected++;
+          if (seededCandidate.supplierListingId) await markVerification(db, seededCandidate.supplierListingId, {
+            status: "retryable",
+            error: "canonical_supplier_product_detail_missing",
+            attempts: seededCandidate.attempts,
+          });
+          items.push({ rejectedStage: "canonical_supplier_product_detail_missing", supplierProductId, supplierVariantId: candidate.variantId });
+          continue;
+        }
+        detail = canonicalDetail;
+      }
       // Price must come from the live exact-variant response, not the stale
       // supplier-listing/cache price. Stock and Japan freight are rechecked too.
       const liveCost = Number(seededVariant.sellPrice);
