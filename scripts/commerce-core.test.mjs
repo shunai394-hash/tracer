@@ -133,15 +133,15 @@ test("Shopify paid-order polling uses the canonical commerce order and procureme
   assert.equal(config.crons.find((job) => job.path === "/api/cron/shopify-orders")?.schedule, "*/5 * * * *");
   const route = await readFile(new URL("../app/api/cron/shopify-orders/route.ts", import.meta.url), "utf8");
   const sync = await readFile(new URL("../lib/shopify/sync-orders.ts", import.meta.url), "utf8");
-  assert.match(route, /syncPaidShopifyOrders\\(25\\)/);
+  assert.match(route, /syncPaidShopifyOrders\(25\)/);
   assert.match(route, /canonical_shopify_order_ingestion/);
   assert.doesNotMatch(route, /runAutonomousOrderControl/);
-  assert.match(sync, /from\\("commerce_orders"\\)/);
-  assert.match(sync, /from\\("channel_listings"\\)/);
-  assert.match(sync, /from\\("commerce_prices"\\)/);
-  assert.match(sync, /ingestPaidOrder\\(/);
-  assert.doesNotMatch(sync, /from\\("shop_orders"\\)/);
-  assert.doesNotMatch(sync, /from\\("shop_order_items"\\)/);
+  assert.match(sync, /from\("commerce_orders"\)/);
+  assert.match(sync, /from\("channel_listings"\)/);
+  assert.match(sync, /from\("commerce_prices"\)/);
+  assert.match(sync, /ingestPaidOrder\(/);
+  assert.doesNotMatch(sync, /from\("shop_orders"\)/);
+  assert.doesNotMatch(sync, /from\("shop_order_items"\)/);
 });
 test("BASE order ingestion requires the true order_item_id for tracking reflection", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
