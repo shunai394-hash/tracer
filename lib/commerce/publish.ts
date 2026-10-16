@@ -29,14 +29,15 @@ function safeSlug(value: string): string {
 async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<typeof createSupabaseAdminClient>) {
   const result = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
   const { data: listings, error } = await db.from("channel_listings")
-    .select("id,variant_id,external_product_id,external_variant_id,status,last_error")
-    .eq("channel", channel).in("status", ["published", "error"])
-    .not("external_product_id", "is", null).limit(500);
+    .select("id,variant_id,external_product_id,external_variant_id,status,last_error,last_synced_at")
+    .eq("channel", channel).eq("status", "published")
+    .not("external_product_id", "is", null)
+    .order("last_synced_at", { ascending: true, nullsFirst: true }).limit(40);
   if (error) throw new Error("stale_listing_read_failed:" + error.message);
 
-  const checkableListings = (listings ?? []).filter((listing) =>
-    !(listing.status === "error" && String(listing.last_error ?? "").startsWith("supplier_offer_no_longer_fulfillable:")),
-  );
+  // Only inspect currently published listings. Previously failed rows are already
+  // hidden; including them in the limited scan can starve healthy rows forever.
+  const checkableListings = listings ?? [];
   result.checked = checkableListings.length;
   const variantIds = [...new Set(checkableListings.map((listing) => String(listing.variant_id)).filter(Boolean))];
   if (variantIds.length === 0) return result;
@@ -92,7 +93,16 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           offer.source_status === "verified" && nativeIdsValid && offer.tracking_supported === true &&
           offer.ship_to === "JP" && fresh && Number(offer.inventory) > 0);
       };
-      if (offers.some(offerIsValid)) continue;
+      if (offers.some(offerIsValid)) {
+        // Rotate healthy listings to the back of the scan so each cron run checks
+        // a bounded batch without repeatedly inspecting the same first rows.
+        const { error: markCheckedError } = await db.from("channel_listings").update({
+          last_synced_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq("id", listing.id);
+        if (markCheckedError) throw new Error("stale_listing_check_timestamp_failed:" + markCheckedError.message);
+        continue;
+      }
 
       const offer = offers[0] ?? null;
       const price = (offer ? prices.find((candidate) => candidate.supplier_offer_id === offer.id) : null) ?? prices[0] ?? null;
