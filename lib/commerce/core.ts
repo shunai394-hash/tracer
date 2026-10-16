@@ -161,6 +161,34 @@ export async function ingestPaidOrder(input: {
     if (!Number.isInteger(line.quantity) || line.quantity <= 0 || !Number.isFinite(line.unitPrice) || line.unitPrice < 0) throw new Error("invalid_order_line");
   }
   const db = createSupabaseAdminClient();
+
+  // A repeated paid-order delivery must be idempotent even when the supplier
+  // quote has since gone stale. If the prior attempt already persisted every
+  // requested line and its procurement intent, return without revalidating or
+  // rewriting it. Incomplete prior writes still pass through the full current
+  // offer validation below before any missing procurement intent is repaired.
+  const { data: priorOrder, error: priorOrderError } = await db.from("commerce_orders")
+    .select("id,commerce_order_lines(external_line_id,procurement_orders(id))")
+    .eq("channel", input.channel)
+    .eq("external_order_id", input.externalOrderId)
+    .maybeSingle();
+  if (priorOrderError) throw new Error("order_idempotency_lookup_failed:" + priorOrderError.message);
+  if (priorOrder) {
+    const asRows = (value: unknown): Array<Record<string, unknown>> =>
+      Array.isArray(value) ? value.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object")
+        : value && typeof value === "object" ? [value as Record<string, unknown>] : [];
+    const priorLines = asRows(priorOrder.commerce_order_lines);
+    const requestedIds = new Set(input.lines.map((line) => line.externalLineId));
+    const persistedById = new Map(priorLines.map((line) => [String(line.external_line_id ?? ""), line]));
+    const complete = requestedIds.size === input.lines.length &&
+      priorLines.length === input.lines.length &&
+      input.lines.every((line) => {
+        const saved = persistedById.get(line.externalLineId);
+        return Boolean(saved && asRows(saved.procurement_orders).length > 0);
+      });
+    if (complete) return { orderId: String(priorOrder.id), duplicate: true };
+  }
+
   const quantityByOffer = new Map<string, number>();
   for (const line of input.lines) {
     quantityByOffer.set(line.offerId, (quantityByOffer.get(line.offerId) ?? 0) + line.quantity);
