@@ -60,3 +60,4 @@ assert.match(duplicateCleanup, /deleted: 0/);
 const cleanupWorkflow = await readFile(new URL("../.github/workflows/tracer-base-duplicate-cleanup.yml", import.meta.url), "utf8");
 assert.match(cleanupWorkflow, /gitCommitSha\|\|j\.commitSha/);
 assert.match(cleanupWorkflow, /workflow_dispatch/);
+assert.match(cleanupWorkflow, /cancel-in-progress: true/);
