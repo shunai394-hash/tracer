@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getCJConfig } from "@/lib/config/env";
+import { isCanonicalCJNativeId } from "@/lib/sources/cj/native-id.mjs";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   selectUnambiguousVariant,
@@ -378,7 +379,7 @@ function normalizeProduct(product: CJProduct): CJProductCandidate | null {
   const id = product.id?.trim() || product.pid?.trim();
   const title = product.nameEn?.trim() || product.productNameEn?.trim();
 
-  if (!id || !title) {
+  if (!id || !isCanonicalCJNativeId(id) || !title) {
     return null;
   }
 
@@ -404,6 +405,9 @@ function normalizeProduct(product: CJProduct): CJProductCandidate | null {
 export async function fetchCJVariantByVid(vid: string): Promise<CJProductVariant | null> {
   const normalizedVid = vid.trim();
   if (!normalizedVid) throw new CJRequestError("CJ variant id is empty");
+  if (!isCanonicalCJNativeId(normalizedVid)) {
+    throw new CJRequestError("CJ variant id is not a canonical native ID", "CJ_NATIVE_ID_INVALID");
+  }
 
   const token = await getAccessToken();
   const params = new URLSearchParams({ vid: normalizedVid, features: "enable_inventory" });
@@ -435,6 +439,10 @@ export async function fetchCJVariantByVid(vid: string): Promise<CJProductVariant
 
   const id = row.vid?.trim() || row.variantId?.trim();
   if (id !== normalizedVid) return null;
+  const parentProductId = row.pid?.trim() || row.productId?.trim() || "";
+  if (!isCanonicalCJNativeId(parentProductId)) {
+    throw new CJRequestError("CJ variant parent ID is not a canonical native ID", "CJ_NATIVE_ID_INVALID");
+  }
 
   const verifiedByCountry = new Map<string, { quantity: number; storageId: string | null }>();
   for (const inventoryRow of row.inventories ?? []) {
@@ -462,7 +470,7 @@ export async function fetchCJVariantByVid(vid: string): Promise<CJProductVariant
 
   return {
     vid: id,
-    productId: row.pid?.trim() || row.productId?.trim() || "",
+    productId: parentProductId,
     sku: row.variantSku?.trim() || row.sku?.trim() || null,
     nameEn: row.variantNameEn?.trim() || row.variantKey?.trim() || null,
     sellPrice:
