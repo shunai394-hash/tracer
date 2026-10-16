@@ -141,8 +141,12 @@ export async function ingestPaidOrder(input: {
     if (!Number.isInteger(line.quantity) || line.quantity <= 0 || !Number.isFinite(line.unitPrice) || line.unitPrice < 0) throw new Error("invalid_order_line");
   }
   const db = createSupabaseAdminClient();
+  const quantityByOffer = new Map<string, number>();
+  for (const line of input.lines) {
+    quantityByOffer.set(line.offerId, (quantityByOffer.get(line.offerId) ?? 0) + line.quantity);
+  }
   // Validate every supplier offer before persisting a paid order or procurement intent.
-  // The importer may discover an offer without having verified stock/shipping yet.
+  // Aggregate repeated order lines so split lines cannot oversell one supplier offer.
   for (const line of input.lines) {
     const { data: offer, error: offerError } = await db.from("supplier_offers")
       .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,ship_to,tracking_supported,source_status,last_checked_at")
@@ -151,7 +155,7 @@ export async function ingestPaidOrder(input: {
     if (offer.source_status !== "verified" || offer.tracking_supported !== true || offer.ship_to !== "JP") throw new Error("supplier_offer_not_fulfillable");
     const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
     if (!Number.isFinite(checkedAt) || checkedAt > Date.now() + 5 * 60_000 || Date.now() - checkedAt > 24 * 60 * 60_000) throw new Error("supplier_offer_verification_stale");
-    if (Number(offer.inventory) < line.quantity) throw new Error("supplier_offer_not_fulfillable");
+    if (Number(offer.inventory) < (quantityByOffer.get(line.offerId) ?? line.quantity)) throw new Error("supplier_offer_not_fulfillable");
     const { data: price, error: priceError } = await db.from("commerce_prices")
       .select("supplier_offer_id,expected_profit").eq("variant_id", line.variantId).single();
     if (priceError || !price || price.supplier_offer_id !== line.offerId || Number(price.expected_profit) <= 0) throw new Error("supplier_offer_price_not_fulfillable");
