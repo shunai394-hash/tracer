@@ -56,6 +56,19 @@ test("stale listing eligibility uses batched supplier, price, and variant reads"
   assert.match(audit, /from\("supplier_offers"\)[\s\S]*?\.in\("variant_id", variantIds\)/);
   assert.match(audit, /from\("commerce_variants"\)[\s\S]*?\.in\("id", variantIds\)/);
   assert.doesNotMatch(audit, /for \(const listing of checkableListings\)[\s\S]*?db\.from\("commerce_prices"\)/);
+  assert.match(audit, /\.eq\("status", "published"\)/, "already-hidden error rows must not consume the bounded scan");
+  assert.match(audit, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)\.limit\(40\)/);
+  assert.match(audit, /stale_listing_check_timestamp_failed/);
+  assert.match(publish, /markCheckedError/);
+});
+
+test("BASE and Shopify commerce publish cron routes bound each invocation to 25 listings", async () => {
+  const baseRoute = await readFile(new URL("../app/api/cron/commerce-publish-base/route.ts", import.meta.url), "utf8");
+  const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
+  for (const route of [baseRoute, shopifyRoute]) {
+    assert.match(route, /searchParams\.get\("limit"\) \|\| 25/);
+    assert.match(route, /Math\.min\(25, Math\.max\(1, Math\.floor\(requested\)\)\)/);
+  }
 });
 
 test("publication matches each JPY price to its own verified supplier offer across relation shapes", async () => {
