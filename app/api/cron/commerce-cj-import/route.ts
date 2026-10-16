@@ -13,7 +13,10 @@ function japaneseCommerceTitle(title: string, productType?: string | null): stri
   const rules: Array<[RegExp, string]> = [
     [/women role play hair accessories|role play hair accessories/, "レディース コスプレ用ヘアアクセサリー"],
     [/hair tie|rubber band.*hair|hair rope/, "レディース ヘアゴム・ヘアロープ"],
+    [/color changing in the sun.*acetate shark clip|acetate shark clip.*shark clip/, "日光で色が変わるアセテート製シャーククリップ"],
+    [/pu leather headband.*ponytail clip|ponytail clip.*pu leather headband/, "PUレザー調ヘッドバンド付きポニーテールクリップ"],
     [/women.*hair accessories|hair accessories.*women/, "レディース ヘアアクセサリー"],
+    [/fan brush/, "メイク用ファンブラシ"],
     [/fan brush|makeup brush|make-up brush|cosmetic brush|tartaric acid brush/, "メイクブラシ"],
     [/hair claw|hair clip/, "ヘアクリップ"],
     [/headband|hair band/, "ヘアバンド"],
