@@ -16,7 +16,7 @@ import {
 } from "@/lib/sources/cj";
 import {
   createCJOrderV2,
-  payCJSandboxOrderBalance,
+  confirmCJSandboxOrder,
   getCJOrderStatus,
   getCJTrackingInfo,
   updateCJSandboxOrderStatus,
@@ -487,9 +487,10 @@ export async function runCJSandboxOrderLifecycle(
   // Persist the external order ID immediately so a later payment/status failure is reconcilable.
   if (onOrderCreated) await onOrderCreated(orderId);
 
-  // payType=3 creates only; CJ documents payBalance as the payment step for a single sandbox order.
-  // Sandbox balance payment is simulated by CJ and does not charge the real account balance.
-  await payCJSandboxOrderBalance(orderId);
+  // payType=3 creates only; confirmOrder advances CREATED(100) to UNPAID(200).
+  // simulatePay is sandbox-only and does not debit the real CJ balance.
+  await confirmCJSandboxOrder(orderId);
+  await simulateCJSandboxPayment(orderId);
   const trackingNumber = `SBXTRACER${Date.now()}`;
   await updateCJSandboxTrackingNumber(orderId, trackingNumber);
   await updateCJSandboxOrderStatus(orderId, 400);
