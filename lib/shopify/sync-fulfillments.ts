@@ -251,7 +251,7 @@ export async function syncShopifyFulfillments(limit = 25): Promise<ShopifyFulfil
                 : "gid://shopify/LineItem/" + line.externalLineId,
               line.quantity,
             ]));
-            const lineItemsByFulfillmentOrder = data.order.fulfillmentOrders
+            const lineItemsByFulfillmentOrder = data.order.fulfillmentOrders.nodes
               .filter((fulfillmentOrder) => ["OPEN", "SCHEDULED"].includes(fulfillmentOrder.status))
               .map((fulfillmentOrder) => ({
                 fulfillmentOrderId: fulfillmentOrder.id,
