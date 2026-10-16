@@ -24,9 +24,9 @@ jobs:
             echo "Skipping annual cron outside the one-time recovery date."
             exit 0
           fi
-          BASE=https://tracer-pied-alpha.vercel.app
+          BASE=https://tracer-self.vercel.app
           token() {
-            curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+            curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
           call_get() {
@@ -47,7 +47,7 @@ jobs:
           }
           echo "=== Market recovery (CJ cooldown-safe) ==="
           call_get api/cron/market-sourcing 300 market-sourcing.json || true
-          # The market-sourcing route itself runs the observation collector and persists child-variant evidence. There is no separate /market-sourcing-observation route.
+          # The market-sourcing route itself runs the observation collector and persists child-variant evidence.
 
           # Re-verify the existing bounded CJ batch early so later discovery calls cannot consume the full job budget first.
           call_get "api/cron/cj-identity-reverify?limit=25&force=1" 300 cj-identity-reverify.json || true
@@ -57,18 +57,9 @@ jobs:
           echo "=== CJ supply discovery (will fail closed during provider cooldown) ==="
           call_get api/cron/supply-first 300 supply-first.json || true
 
-          echo "=== CJ sandbox order lifecycle (no charge / no real fulfillment) ==="
-          T="$(token)" || { echo "OIDC token failed for CJ sandbox lifecycle"; exit 1; }
-          CODE="$(curl -sS -o cj-sandbox.json -w "%{http_code}" --max-time 90 -H "Authorization: Bearer $T" -H "Content-Type: application/json" -X POST "$BASE/api/cron/cj-sandbox-order-test" -d '{"supplierListingId":"1d9b4946-deaa-4439-9aba-a9485a4c0ff9"}' || true)"
-          echo "CJ sandbox lifecycle HTTP $CODE"
-          python3 - <<'PY'
-          import json
-          try:
-              d=json.load(open("cj-sandbox.json"))
-              print(json.dumps({k:d.get(k) for k in ("ok","phase","supplierOrderId","status","paymentConfirmed","sandbox","charged","realFulfillment","error")},ensure_ascii=False))
-          except Exception:
-              print(open("cj-sandbox.json").read()[:1000])
-          PY
+          # Do not run an order lifecycle against a stale hard-coded supplierListingId.
+          # The sandbox lifecycle must be invoked only after the current run returns a freshly verified listing ID.
+          echo "=== CJ sandbox order lifecycle skipped: no fresh verified listing ID is supplied by this workflow ==="
 
           call_get api/cron/sales-test-publication 300 sales-test.json || true
           call_get api/cron/base-publish 60 base-publish.json || true
@@ -100,4 +91,4 @@ jobs:
             echo "Shopify live sync skipped: no eligible listings passed the read-only gate."
           fi
 
-# TRACER_ONE_SHOT_SUPPLY_RECOVERY: rerun bounded recovery after replay-safe pipeline fix (PR #833).
+# TRACER_ONE_SHOT_SUPPLY_RECOVERY: correct canonical production URL and remove stale sandbox listing ID.
