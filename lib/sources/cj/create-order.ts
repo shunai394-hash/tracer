@@ -311,7 +311,7 @@ export async function simulateCJSandboxPayment(orderId: string): Promise<void> {
 
 export async function updateCJSandboxOrderStatus(
   orderId: string,
-  targetStatus: 400 | 500 | 600 | 700,
+  targetStatus: 200 | 400 | 500 | 600 | 700,
 ): Promise<void> {
   const id = orderId.trim();
   if (!id) throw new CJRequestError("CJ sandbox order ID is empty", "CJ_SANDBOX_ORDER_ID_MISSING");
