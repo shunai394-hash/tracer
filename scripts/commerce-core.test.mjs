@@ -51,6 +51,10 @@ test("paid-order supplier preflight runs before writing the order record", async
 test("supplier importer never substitutes a search-result product ID for unresolved variant identity", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /const exactVariant = await fetchCJVariantByVid\(variant\.vid\)/);
+  assert.match(importer, /function japaneseCommerceTitle/);
+  assert.match(importer, /function japaneseVariantSuffix/);
+  assert.match(importer, /variantTitleJa: title \+ japaneseVariantSuffix\(exactVariant\.nameEn\)/);
+  assert.doesNotMatch(importer, /variantTitleJa: exactVariant\.nameEn \? title \+ "（" \+ exactVariant\.nameEn/);
   assert.match(importer, /exactVariant\.vid !== variant\.vid/);
   assert.match(importer, /canonical_supplier_product_id_unresolved/);
   assert.match(importer, /canonical_supplier_variant_price_unresolved/);
