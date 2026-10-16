@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { getCJQuotaCooldownUntil, isCJQuotaCircuitActive, isCJQuotaExhausted } from "../lib/sources/cj/rate-limit-policy.ts";
 import { isWithinCjQuotaResetReservation } from "../lib/suppliers/cj-identity-reverify-policy.ts";
+import { isCjIdentityReverifyDue } from "../lib/suppliers/cj-identity-reverify-policy.ts";
 
 assert.equal(isCJQuotaExhausted({
   code: 1600200,
@@ -24,4 +25,13 @@ assert.equal(isWithinCjQuotaResetReservation(new Date("2026-10-15T23:54:00.000Z"
 assert.equal(isWithinCjQuotaResetReservation(new Date("2026-10-15T23:55:00.000Z")), true);
 assert.equal(isWithinCjQuotaResetReservation(new Date("2026-10-16T00:04:00.000Z")), true);
 assert.equal(isWithinCjQuotaResetReservation(new Date("2026-10-16T00:05:00.000Z")), false);
-console.log("CJ quota policy: 11 assertions passed");
+const now = Date.parse("2026-10-16T07:00:00.000Z");
+assert.equal(isCjIdentityReverifyDue({
+  next_identity_reverify_at: "2026-10-17T07:00:00.000Z",
+  missing_supply_evidence_errors: ["cost:returned_variant_or_product_id_mismatch"],
+}, now), true);
+assert.equal(isCjIdentityReverifyDue({
+  next_identity_reverify_at: "2026-10-17T07:00:00.000Z",
+  missing_supply_evidence_errors: ["cost:timeout"],
+}, now), false);
+console.log("CJ quota and legacy identity retry policy: 13 assertions passed");
