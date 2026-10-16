@@ -66,7 +66,10 @@ export async function getBasePublicShopUrl(): Promise<string | null> {
   if (!response.ok) {
     throw new Error(`BASE_SHOP_URL_LOOKUP_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
   }
-  const value = payload?.shop_url;
+  const userRecord = payload?.user && typeof payload.user === "object"
+    ? payload.user as Record<string, unknown>
+    : payload;
+  const value = userRecord?.shop_url;
   if (typeof value !== "string" || !value.trim()) return null;
   try {
     const url = new URL(value.trim());
