@@ -139,9 +139,9 @@ assert.doesNotMatch(vercel, /"path": "\/api\/cron\/newfind-retry"/, "out-of-scop
 assert.match(intelligencePipeline, /marketplace_sourcing_disabled_supplier_native_only/, "marketplace candidates must not feed publication");
 assert.match(unpublishWorkflow, /Disabled after the clean commerce reset/);
 assert.match(unpublishWorkflow, /workflow_dispatch/);
-assert.match(unpublishWorkflow, /if: \\$\\{\\{ false \\}\\}/, "legacy reconciliation must stay disabled against the empty legacy listing table");
+assert.match(unpublishWorkflow, /if: \$\{\{ false \}\}/, "legacy reconciliation must stay disabled against the empty legacy listing table");
 assert.doesNotMatch(unpublishWorkflow, /cron: "\\*\/15 \\* \\* \\*"/, "legacy reconciliation must not run on a timer");
-assert.doesNotMatch(unpublishWorkflow, /api\\/cron\\/unpublish-unlinked/);
+assert.doesNotMatch(unpublishWorkflow, /api\/cron\/unpublish-unlinked/);
 assert.doesNotMatch(patrolWorkflow, /^\s{2}schedule:/m, "production patrol must not have a duplicate GitHub Actions schedule");
 const vercelPatrolSchedules = JSON.parse(vercel).crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule);
 assert.deepEqual(vercelPatrolSchedules, ["*/5 * * * *"], "the existing Vercel production patrol must still run every five minutes");
