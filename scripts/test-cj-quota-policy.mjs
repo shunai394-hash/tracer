@@ -45,6 +45,12 @@ assert.ok(cjClient.includes("const minIntervalMs = 2_000"), "local fallback must
 assert.ok(cjClient.includes("p_min_interval_ms: 2_000"), "the shared Supabase slot must enforce the same conservative interval");
 assert.ok(cjClient.includes("AbortSignal.timeout(20_000)"), "CJ requests must have a finite timeout");
 assert.ok(cjClient.includes("AbortSignal.any([init.signal, timeoutSignal])"), "CJ requests must preserve caller cancellation");
+const pointsExhaustionCheck = cjClient.indexOf("if (isCJQuotaExhausted(diagnostic))");
+const non429Return = cjClient.indexOf("if (response.status !== 429)");
+assert.ok(pointsExhaustionCheck >= 0 && pointsExhaustionCheck < non429Return,
+  "daily API point exhaustion must be detected before non-429 responses are returned to callers");
+assert.ok(cjClient.includes("provider_explicit_daily_points_exhausted"),
+  "explicit CJ point exhaustion must persist a global cooldown circuit");
 const sandboxRoute = await readFile(new URL("../app/api/cron/cj-sandbox-order-test/route.ts", import.meta.url), "utf8");
 assert.ok(sandboxRoute.includes("isCJQuotaCircuitActive(quotaMetadata)"));
 assert.ok(!sandboxRoute.includes("blockedUntil && Date.parse(blockedUntil) > Date.now()"));
