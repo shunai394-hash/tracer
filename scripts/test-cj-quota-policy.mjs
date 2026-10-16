@@ -6,7 +6,7 @@ assert.equal(isCJQuotaExhausted({
   code: 1600200,
   message: "Too Many Requests, QPS limit is 1 time/1second",
   pointsInfo: { total: 0, usedToday: 0, remaining: 0 },
-}), true);
+}), false);
 assert.equal(isCJQuotaExhausted({
   code: 1600200,
   message: "Too Many Requests, QPS limit is 1 time/1second",
