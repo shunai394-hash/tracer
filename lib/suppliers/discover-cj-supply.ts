@@ -31,8 +31,15 @@ async function resolveCJVariantProductIdentity(
   productScopedVariant?: CJProductVariant | null,
 ): Promise<{ variant: CJProductVariant; supplierProductId: string } | null> {
   const scopedProductId = productScopedVariant?.productId?.trim();
-  if (productScopedVariant && productScopedVariant.vid === variantId && scopedProductId) {
-    return { variant: productScopedVariant, supplierProductId: scopedProductId };
+  if (productScopedVariant && productScopedVariant.vid === variantId) {
+    // A variant returned by the live product-scoped endpoint is already proof
+    // that this exact VID belongs to the requested parent. Some CJ responses
+    // omit pid on child rows; in that case the parent ID is the product queried.
+    const resolvedProductId = scopedProductId || candidateProductId;
+    return {
+      variant: scopedProductId ? productScopedVariant : { ...productScopedVariant, productId: resolvedProductId },
+      supplierProductId: resolvedProductId,
+    };
   }
 
   // Some catalog responses omit pid and fall back to the public catalog ID.
