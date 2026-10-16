@@ -22,7 +22,7 @@ jobs:
   recover:
     if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'TRACER_CLEAN_COMMERCE_RECOVERY')))
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 60
     steps:
       - name: Check out repository history for deployment SHA verification
         uses: actions/checkout@v4
@@ -56,7 +56,7 @@ jobs:
           done
           [[ "$ready" == "1" ]] || { echo "Production did not serve this commit within 6 minutes."; exit 1; }
 
-      - name: Import supplier-native CJ products and run gated channel publication
+      - name: Publish verified commerce backlog in bounded batches
         shell: bash
         run: |
           set -uo pipefail
@@ -67,31 +67,6 @@ jobs:
               "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
-          call_get() {
-            local path="$1" out="$2" max_time="$3" t code
-            t="$(token)" || { echo "OIDC token failed for $path"; return 1; }
-            code="$(curl -sS -o "$out" -w "%{http_code}" --max-time "$max_time" \
-              -H "Authorization: Bearer $t" "$BASE/$path" || true)"
-            echo "=== $path HTTP $code ==="
-            python3 - "$out" <<'PY'
-          import json,sys
-          try:
-              d=json.load(open(sys.argv[1]))
-              print(json.dumps(d,ensure_ascii=False)[:6000])
-          except Exception:
-              print(open(sys.argv[1]).read()[:1200])
-          PY
-            [[ "$code" == "200" || "$code" == "207" ]]
-          }
-          failed=0
-          # Recheck persisted legacy CJ supplier identities with live API evidence first.
-          # This refreshes evidence only; no customer order or supplier purchase is created.
-          call_get "api/cron/cj-identity-reverify?limit=4&force=1" "cj-identity-reverify.json" 240 || failed=1
-          # Refresh existing products by exact CJ IDs before discovering any new products.
-          call_get "api/cron/commerce-cj-import?productIds=1732295872995663872,1732293361517735936,2406100641131613800,2406110943541622000&limit=4" "cj-refresh-bags-hair-1.json" 300 || failed=1
-          call_get "api/cron/commerce-cj-import?productIds=1715919913287692288,1439910326744256512,2409230148051626500,1606597353589452800&limit=4" "cj-refresh-bags-hair-2.json" 300 || failed=1
-          call_get "api/cron/commerce-cj-import?limit=4" "cj-import.json" 300 || failed=1
-          call_get "api/admin/shopify/auth-check" "shopify-auth-check.json" 60 || failed=1
           call_publish() {
             local path="$1" out="$2" t code
             t="$(token)" || { echo "OIDC token failed for $path"; return 1; }
@@ -108,9 +83,16 @@ jobs:
           PY
             [[ "$code" == "200" ]]
           }
-          # Publish only fresh, verified, profitable Japanese listings; the bounded import ran once above.
-          call_publish "api/cron/commerce-publish-base?limit=100" "base-publish.json" || failed=1
-          call_publish "api/cron/commerce-publish-shopify?limit=100" "shopify-publish.json" || failed=1
-          # No supplier purchase is created here; the procurement cron independently requires payment_status=paid.
-          echo "Publication pass finished. Any partial failures are recorded in the output JSON above."
+          failed=0
+          # CJ's daily API points are exhausted. Publish only already verified,
+          # fresh, profitable Japanese listings; supplier import remains separate.
+          # The route caps each pass at 100, so three sequential passes drain up to
+          # 300 candidates per channel without overlapping publication requests.
+          for pass in 1 2 3; do
+            call_publish "api/cron/commerce-publish-base?limit=100" "base-publish-${pass}.json" || failed=1
+            call_publish "api/cron/commerce-publish-shopify?limit=100" "shopify-publish-${pass}.json" || failed=1
+          done
+          # No supplier purchase or customer order is created by this workflow.
+          # Paid-order procurement remains separate and requires payment_status=paid.
+          echo "Bounded publication passes finished; inspect each JSON response for published/failed counts."
           exit "$failed"
