@@ -40,6 +40,16 @@ test("stale published listings are hidden when supplier stock or verification di
   assert.match(publish, /status: "DRAFT"/);
   assert.match(publish, /supplier_offer_no_longer_fulfillable:/);
 });
+test("patrol readiness and snapshots include canonical commerce tables after legacy reset", async () => {
+  const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
+  const patrol = await readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8");
+  assert.match(pipeline, /from\("supplier_offers"\)/);
+  assert.match(pipeline, /from\("commerce_prices"\)/);
+  assert.match(pipeline, /from\("channel_listings"\)/);
+  assert.match(pipeline, /readinessSource: canonicalPublishedCount > 0 \? "clean_commerce" : "legacy"/);
+  assert.match(patrol, /publishedCommerceListings/);
+  assert.match(patrol, /supplierProcurementOrders/);
+});
 test("publication and price calculation require fresh verified supplier evidence", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
