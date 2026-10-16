@@ -76,7 +76,7 @@ export async function POST(request: Request) {
   // Failed attempts are auditable and may be retried only after inspecting the cause.
   const { data: previousRuns, error: previousRunsError } = await db
     .from("cron_runs")
-    .select("status,started_at,metadata")
+    .select("status,started_at,metadata,error")
     .eq("job_name", "cj-sandbox-order-lifecycle")
     .order("started_at", { ascending: false })
     .limit(1);
@@ -84,6 +84,20 @@ export async function POST(request: Request) {
   const previous = previousRuns?.[0];
   if (previous?.status === "succeeded") {
     return NextResponse.json({ ok: false, error: "CJ_SANDBOX_LIFECYCLE_ALREADY_VERIFIED" }, { status: 409 });
+  }
+  const previousError = typeof previous?.error === "string" ? previous.error : "";
+  const previousFailureWasPreOrderOnly =
+    previousError.startsWith("CJ_SANDBOX_NO_VALID_CANDIDATE:") ||
+    previousError.startsWith("CJ_SANDBOX_VARIANT_NOT_FOUND:") ||
+    previousError.startsWith("CJ_SANDBOX_PRODUCT_ID_MISMATCH:") ||
+    previousError === "CJ_SANDBOX_STOCK_OR_PRICE_UNVERIFIED" ||
+    previousError === "CJ_SANDBOX_SHIPPING_UNAVAILABLE" ||
+    previousError === "CJ_SANDBOX_COUNTRY_UNVERIFIED";
+  if (previous?.status === "failed" && !previousFailureWasPreOrderOnly) {
+    return NextResponse.json({
+      ok: false,
+      error: "CJ_SANDBOX_PREVIOUS_ORDER_MAY_EXIST_REQUIRES_MANUAL_RECONCILIATION",
+    }, { status: 409 });
   }
   if (previous?.status === "running" && Date.now() - Date.parse(String(previous.started_at)) < 10 * 60 * 1000) {
     return NextResponse.json({ ok: false, error: "CJ_SANDBOX_LIFECYCLE_ALREADY_RUNNING" }, { status: 409 });
