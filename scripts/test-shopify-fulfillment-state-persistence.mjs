@@ -16,6 +16,8 @@ assert.match(source, /from\("commerce_orders"\)/,
   "canonical commerce orders must be eligible for Shopify tracking sync");
 assert.match(source, /tracerShopifyFulfillmentGroups/,
   "canonical fulfillment sync must persist an idempotency marker");
+assert.match(source, /context: "commerce_shopify_fulfillment_sync_state"[\s\S]*?if \(!stateWrite\.ok\)/,
+  "canonical fulfillment must not report synced before local persistence succeeds");
 assert.match(source, /shopify_fulfillment_line_match_missing/,
   "only supplier-shipped lines with exact Shopify line IDs may be fulfilled");
 const vercel = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
