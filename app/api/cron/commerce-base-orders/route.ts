@@ -5,6 +5,8 @@ import { getBaseOrderDetail, isBaseConfigured, listBaseOrders } from "@/lib/chan
 import { ingestPaidOrder } from "@/lib/commerce/core";
 import { splitJapaneseAddress } from "@/lib/commerce/japanese-address.mjs";
 
+const BASE_UNMAPPED_ORDER_ITEM_EVENT = "base_order_unmapped_item";
+
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
@@ -31,7 +33,7 @@ export async function GET(request: Request) {
   if (authError) return authError;
   if (!isBaseConfigured()) return NextResponse.json({ ok: false, error: "base_oauth_not_configured" }, { status: 503 });
   const db = createSupabaseAdminClient();
-  const result = { checked: 0, paid: 0, imported: 0, duplicate: 0, ignored: 0, failed: 0, errors: [] as string[] };
+  const result = { checked: 0, paid: 0, imported: 0, duplicate: 0, ignored: 0, failed: 0, unmappedItems: 0, errors: [] as string[] };
   try {
     const summaries = await listBaseOrders({ limit: 50, offset: 0 });
     for (const summary of summaries) {
@@ -50,7 +52,23 @@ export async function GET(request: Request) {
           const { data: listing, error: listingError } = await db.from("channel_listings")
             .select("variant_id,external_sku").eq("channel", "base").eq("external_product_id", String(item.item_id)).eq("status", "published").maybeSingle();
           if (listingError) throw new Error("base_item_mapping_read_failed:" + listingError.message);
-          if (!listing) continue;
+          if (!listing) {
+            // A paid line for a BASE item TRACER does not link (legacy, duplicate
+            // or foreign listing) must never vanish: record it for a person to
+            // resolve. It is not procured automatically.
+            result.unmappedItems++;
+            const { error: unmappedError } = await db.from("commerce_events").upsert({
+              event_key: "base_order_unmapped_item:" + String(detail.unique_key) + ":" + String(item.order_item_id),
+              event_type: BASE_UNMAPPED_ORDER_ITEM_EVENT,
+              entity_type: "base_order",
+              entity_id: String(detail.unique_key),
+              status: "needs_review",
+              detail: { baseItemId: String(item.item_id), orderItemId: String(item.order_item_id), quantity: Math.max(1, Math.floor(Number(item.amount ?? 1))) },
+            }, { onConflict: "event_key", ignoreDuplicates: true });
+            if (unmappedError) throw new Error("base_unmapped_item_record_failed:" + unmappedError.message);
+            result.errors.push(String(summary.unique_key) + ":base_item_not_linked:" + String(item.item_id));
+            continue;
+          }
           const { data: price, error: priceError } = await db.from("commerce_prices").select("supplier_offer_id").eq("variant_id", listing.variant_id).maybeSingle();
           if (priceError || !price?.supplier_offer_id) throw new Error("supplier_offer_mapping_missing_for_base_item:" + String(item.item_id));
           const quantity = Math.max(1, Math.floor(Number(item.amount ?? 1)));
@@ -88,7 +106,8 @@ export async function GET(request: Request) {
         result.errors.push(String(summary.unique_key) + ":" + (error instanceof Error ? error.message : String(error)).slice(0, 180));
       }
     }
-    return NextResponse.json({ ok: result.failed === 0, channel: "base", ...result }, { status: result.failed ? 207 : 200 });
+    const healthy = result.failed === 0 && result.unmappedItems === 0;
+    return NextResponse.json({ ok: healthy, channel: "base", ...result }, { status: healthy ? 200 : 207 });
   } catch (error) {
     return NextResponse.json({ ok: false, channel: "base", ...result, error: error instanceof Error ? error.message : String(error) }, { status: 502 });
   }
