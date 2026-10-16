@@ -311,6 +311,9 @@ export type BaseReadOnlyProbeResult = {
  * Read-only BASE inventory probe. Uses one refreshed access token for all pages
  * and returns counts only; no item IDs, titles, or customer data leave this helper.
  */
+/** Maximum BASE scan: 50 pages × 100 items = 5,000 items. */
+export const BASE_ITEMS_MAX_PAGES = 50;
+
 export async function probeBaseReadOnly(options?: {
   itemPageLimit?: number;
   itemMaxPages?: number;
@@ -356,7 +359,7 @@ export async function probeBaseReadOnly(options?: {
   };
 
   const pageLimit = Math.min(100, Math.max(1, Math.floor(options?.itemPageLimit ?? 100)));
-  const maxPages = Math.min(10, Math.max(1, Math.floor(options?.itemMaxPages ?? 10)));
+  const maxPages = Math.min(BASE_ITEMS_MAX_PAGES, Math.max(1, Math.floor(options?.itemMaxPages ?? BASE_ITEMS_MAX_PAGES)));
   let offset = 0;
   for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
     try {
