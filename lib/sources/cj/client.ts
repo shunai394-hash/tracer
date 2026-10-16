@@ -879,7 +879,7 @@ type CJVariantQueryResponse = {
   code?: number;
   result?: boolean;
   message?: string;
-  data?: CJVariantRow[] | {
+  data?: CJVariantRow[] | CJVariantRow | {
     content?: CJVariantRow[];
     variantList?: CJVariantRow[];
     productList?: CJVariantRow[];
@@ -889,6 +889,10 @@ type CJVariantQueryResponse = {
 function extractCJVariantRows(data: CJVariantQueryResponse["data"]): CJVariantRow[] {
   if (Array.isArray(data)) return data;
   if (!data) return [];
+  // queryByVid may return the exact variant as a single object, while the
+  // product-scoped query returns a collection. Do not silently drop the
+  // authoritative queryByVid result just because it is not array-wrapped.
+  if ("vid" in data || "variantId" in data) return [data as CJVariantRow];
   return data.content ?? data.variantList ?? data.productList ?? [];
 }
 
