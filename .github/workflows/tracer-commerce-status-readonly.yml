@@ -58,7 +58,7 @@ jobs:
           set -uo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
           token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
-          status_code="$(curl -sS -o status.json -w "%{http_code}" --max-time 70 -H "Authorization: Bearer $token" "$BASE/api/admin/commerce/status" || true)"
+          status_code="$(curl -sS -o status.json -w "%{http_code}" --max-time 110 -H "Authorization: Bearer $token" "$BASE/api/admin/commerce/status" || true)"
           approvals_code="$(curl -sS -o approvals.json -w "%{http_code}" --max-time 70 -H "Authorization: Bearer $token" "$BASE/api/admin/procurement/approvals" || true)"
           echo "=== commerce status HTTP $status_code ==="
           python3 -c 'import json; print(json.dumps(json.load(open("status.json")), ensure_ascii=False, indent=2))' || echo "status response was not JSON"

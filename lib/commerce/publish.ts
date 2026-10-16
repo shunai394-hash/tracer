@@ -290,17 +290,45 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         const handle = safeSlug(product.source_key + "-" + candidate.id.replace(/-/g, ""));
         const productId = toShopifyGid("Product", externalProductId);
         const variantId = toShopifyGid("ProductVariant", externalVariantId);
-        let recoveredProduct: { id: string; handle: string; variants: { nodes: Array<{ id: string; sku?: string | null }> } } | null = null;
+        type RecoveredShopifyProduct = { id: string; handle: string; vendor?: string | null; tags?: string[]; variants: { nodes: Array<{ id: string; sku?: string | null }> } };
+        const isTracerProduct = (item: RecoveredShopifyProduct) => item.vendor === "TRACER" || (item.tags ?? []).includes("TRACER");
+        const findTracerProducts = async (query: string) => {
+          const found = await shopifyGraphQL<{ products: { nodes: RecoveredShopifyProduct[] } }>(
+            `query CommerceRecoverProduct($query: String!) { products(first: 5, query: $query) { nodes { id handle vendor tags variants(first: 10) { nodes { id sku } } } } }`,
+            { query },
+          );
+          return (found.products?.nodes ?? []).filter(isTracerProduct);
+        };
+        let recoveredProduct: RecoveredShopifyProduct | null = null;
         if (!productId || !variantId) {
           // Recover an external create whose response was lost before the DB ID was saved.
-          const found = await shopifyGraphQL<{ products: { nodes: Array<{ id: string; handle: string; vendor?: string | null; tags?: string[]; variants: { nodes: Array<{ id: string; sku?: string | null }> } }> } }>(
-            `query CommerceRecoverByHandle($query: String!) { products(first: 5, query: $query) { nodes { id handle vendor tags variants(first: 10) { nodes { id sku } } } } }`,
-            { query: "handle:" + handle },
+          // The current handle, the exact SKU, and the legacy 8-character handle are checked
+          // separately. A SKU that belongs to more than one TRACER product is not adopted.
+          const byHandle = (await findTracerProducts("handle:" + handle)).filter((item) =>
+            (item.variants?.nodes ?? []).some((variant) => variant.sku === sku),
           );
-          recoveredProduct = (found.products?.nodes ?? []).find((item) =>
-            (item.vendor === "TRACER" || (item.tags ?? []).includes("TRACER")) &&
-            (item.variants?.nodes ?? []).some((variant) => variant.sku === sku)
-          ) ?? null;
+          if (byHandle.length > 1) throw new Error("shopify_handle_ambiguous:" + handle);
+          recoveredProduct = byHandle[0] ?? null;
+          if (!recoveredProduct) {
+            const bySku = (await findTracerProducts("sku:" + sku)).filter((item) =>
+              (item.variants?.nodes ?? []).some((variant) => variant.sku === sku),
+            );
+            if (bySku.length > 1) throw new Error("shopify_sku_ambiguous:" + sku);
+            recoveredProduct = bySku[0] ?? null;
+          }
+          if (!recoveredProduct) {
+            const legacyHandle = safeSlug(product.source_key + "-" + candidate.id.slice(0, 8));
+            if (legacyHandle !== handle) {
+              const byLegacyHandle = await findTracerProducts("handle:" + legacyHandle);
+              if (byLegacyHandle.length > 1) throw new Error("shopify_legacy_handle_ambiguous:" + legacyHandle);
+              const legacy = byLegacyHandle[0] ?? null;
+              const legacyVariants = legacy?.variants?.nodes ?? [];
+              const skuMatches = legacyVariants.some((variant) => variant.sku === sku);
+              const skuUnset = legacyVariants.length === 1 && !legacyVariants[0]?.sku;
+              if (legacy && (skuMatches || skuUnset)) recoveredProduct = legacy;
+              else if (legacy) throw new Error("shopify_legacy_handle_sku_mismatch:" + legacyHandle);
+            }
+          }
         }
         const recoveredVariantId = recoveredProduct?.variants.nodes.find((variant) => variant.sku === sku)?.id ?? null;
         const productResult = productId && variantId

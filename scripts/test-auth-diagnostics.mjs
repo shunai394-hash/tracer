@@ -33,6 +33,7 @@ assert.match(baseClient, /options\?\.itemMaxPages \?\? BASE_ITEMS_MAX_PAGES/);
 assert.equal((baseClient.match(/options\?\.itemMaxPages \?\? BASE_ITEMS_MAX_PAGES/g) ?? []).length, 2, "BASE diagnostics and snapshots default to the full 5,000-item scan");
 assert.doesNotMatch(baseClient, /Math\.min\(10, Math\.max\(1, Math\.floor\(options\?\.itemMaxPages/);
 assert.match(base, /probeBaseReadOnly\(\{ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES \}\)/);
+assert.match(base, /externalIds\.slice\(offset, offset \+ 100\)/, "BASE item-id audit must batch database lookups so a 5,000 item scan is not truncated");
 const commerceStatus = await readFile(new URL("../app/api/admin/commerce/status/route.ts", import.meta.url), "utf8");
 assert.match(commerceStatus, /readOnly: true/);
 assert.match(commerceStatus, /livePlatforms: \{ base: baseLive, shopify: shopifyLive \}/);
@@ -44,4 +45,4 @@ assert.match(shopify, /const scopeReady = adminApi\.ok === true[\s\S]*?adminApi\
 assert.match(shopify, /ok: shopifyProbe\.ok && scopeReady/);
 assert.match(shopify, /scopeReady,/);
 assert.ok(workflow.includes("api/channels/base/diagnostics"), "read-only auth workflow must include BASE diagnostics");
-console.log("Read-only channel auth diagnostics: 29 assertions passed");
+console.log("Read-only channel auth diagnostics: 30 assertions passed");

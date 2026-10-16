@@ -119,8 +119,32 @@ export async function GET(request: Request) {
   }
   const approvalRequired = isProcurementApprovalRequired();
 
+  // Retry only failures that never received a supplier order id. A returned CJ order id
+  // stays submitted so a later cron cannot place a second purchase for the same line.
+  const { data: failedWithoutSupplierId, error: failedReadError } = await db.from("procurement_orders")
+    .select("id,last_error")
+    .eq("supplier_code", "cj")
+    .eq("status", "failed")
+    .is("external_order_id", null)
+    .limit(10);
+  if (failedReadError) result.errors.push("failed_procurement_reread:" + failedReadError.message);
+  for (const failedRow of failedWithoutSupplierId ?? []) {
+    const previous = String(failedRow.last_error ?? "");
+    const retryCount = Number(previous.match(/(?:^|\|)retry_count:(\d+)/)?.[1] ?? 0);
+    if (retryCount >= 3) {
+      result.blocked++;
+      continue;
+    }
+    const { error: retryError } = await db.from("procurement_orders").update({
+      status: "pending",
+      last_error: "retry_count:" + String(retryCount + 1) + "|" + previous.replace(/^(?:retry_count:\d+\|)+/, "").slice(0, 1200),
+      updated_at: new Date().toISOString(),
+    }).eq("id", failedRow.id).eq("status", "failed").is("external_order_id", null);
+    if (retryError) result.errors.push(String(failedRow.id) + ":retry_requeue_failed:" + retryError.message.slice(0, 120));
+  }
+
   const { data: pending, error: pendingError } = await db.from("procurement_orders")
-    .select("id,supplier_code,supplier_product_id,supplier_variant_id,quantity,status,commerce_order_lines!inner(id,variant_id,supplier_offer_id,quantity,commerce_orders!inner(id,channel,external_order_id,payment_status,customer_name,shipping_address,raw_payload))")
+    .select("id,last_error,supplier_code,supplier_product_id,supplier_variant_id,quantity,status,commerce_order_lines!inner(id,variant_id,supplier_offer_id,quantity,commerce_orders!inner(id,channel,external_order_id,payment_status,customer_name,shipping_address,raw_payload))")
     .eq("supplier_code", "cj").eq("status", "pending").limit(10);
   if (pendingError) return NextResponse.json({ ok: false, ...result, error: "procurement_pending_read_failed:" + pendingError.message }, { status: 500 });
 
@@ -251,7 +275,9 @@ export async function GET(request: Request) {
           ? ":supplier_order_created_but_state_repair_failed_leave_processing"
           : ":supplier_order_created_state_repaired_check_order_status"));
       } else {
-        await db.from("procurement_orders").update({ status: "failed", last_error: message.slice(0, 1500), updated_at: new Date().toISOString() }).eq("id", row.id).eq("status", "processing");
+        const priorRetries = Number(String(row.last_error ?? "").match(/(?:^|\|)retry_count:(\d+)/)?.[1] ?? 0);
+        const failedError = (priorRetries > 0 ? "retry_count:" + priorRetries + "|" : "") + message.slice(0, 1400);
+        await db.from("procurement_orders").update({ status: "failed", last_error: failedError, updated_at: new Date().toISOString() }).eq("id", row.id).eq("status", "processing");
         result.failed++;
         result.errors.push(String(row.id) + ":" + message.slice(0, 160));
       }

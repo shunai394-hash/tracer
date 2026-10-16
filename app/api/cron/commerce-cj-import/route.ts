@@ -89,6 +89,21 @@ function japaneseVariantSuffix(nameEn: unknown): string {
   return matched.length ? "（" + matched.join("・") + "）" : "";
 }
 
+/** Durable exclusion record so a zero-import run can be rechecked without deleting supplier evidence. */
+async function recordCjExclusion(identity: string, reason: string, detail: Record<string, unknown>) {
+  const db = createSupabaseAdminClient();
+  const eventKey = ("cj-exclusion:" + identity + ":" + reason).slice(0, 240);
+  const { error } = await db.from("commerce_events").upsert({
+    event_key: eventKey,
+    event_type: "cj_import_exclusion",
+    entity_type: "cj_variant",
+    entity_id: identity.slice(0, 200),
+    status: "excluded",
+    detail: { reason, ...detail, recordedAt: new Date().toISOString() },
+  }, { onConflict: "event_key" });
+  return error?.message ?? null;
+}
+
 /** New clean-catalog CJ importer. Bounded per run and idempotent by supplier-native product/variant IDs. */
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -191,14 +206,20 @@ export async function GET(request: Request) {
             const exactVariant = await fetchCJVariantByVid(variant.vid);
             if (!exactVariant || exactVariant.vid !== variant.vid || !String(exactVariant.productId ?? "").trim()) {
               stats.skipped++;
-              stats.errors.push("canonical_supplier_product_id_unresolved:" + candidate.id + ":" + variant.vid);
+              const reason = "canonical_supplier_product_id_unresolved";
+              stats.errors.push(reason + ":" + candidate.id + ":" + variant.vid);
+              const logError = await recordCjExclusion(candidate.id + ":" + variant.vid, reason, { catalogProductId: candidate.id, variantId: variant.vid });
+              if (logError) stats.errors.push("exclusion_log:" + logError.slice(0, 80));
               continue;
             }
             const supplierProductId = String(exactVariant.productId).trim();
             const cost = Number(exactVariant.sellPrice);
             if (!Number.isFinite(cost) || cost <= 0) {
               stats.skipped++;
-              stats.errors.push("canonical_supplier_variant_price_unresolved:" + supplierProductId + ":" + exactVariant.vid);
+              const reason = "canonical_supplier_variant_price_unresolved";
+              stats.errors.push(reason + ":" + supplierProductId + ":" + exactVariant.vid);
+              const logError = await recordCjExclusion(supplierProductId + ":" + exactVariant.vid, reason, { catalogProductId: candidate.id, supplierProductId, variantId: exactVariant.vid });
+              if (logError) stats.errors.push("exclusion_log:" + logError.slice(0, 80));
               continue;
             }
             const canonicalDetail = supplierProductId === candidate.id ? detail : await getCJProductDetail(supplierProductId);
@@ -233,11 +254,28 @@ export async function GET(request: Request) {
             // Do not overwrite it with inventory=0, shipping=0, or sourceStatus=error on transient API failures.
             if (stock === null || shipping === null) {
               stats.skipped++;
+              const reason = stock === null ? "supplier_stock_unconfirmed" : "japan_freight_unconfirmed";
+              const logError = await recordCjExclusion(supplierProductId + ":" + exactVariant.vid, reason, {
+                catalogProductId: candidate.id,
+                supplierProductId,
+                variantId: exactVariant.vid,
+                stockKnown: stock !== null,
+                shippingKnown: shipping !== null,
+              });
+              if (logError) stats.errors.push("exclusion_log:" + logError.slice(0, 80));
               continue;
             }
             const complianceBlockReason = japaneseCommerceComplianceBlockReason(canonicalDetail.title, canonicalDetail.productType);
             const title = japaneseCommerceTitle(canonicalDetail.title, canonicalDetail.productType, supplierProductId === candidate.id ? variants.flatMap((item) => typeof item.nameEn === "string" && item.nameEn.trim().length > 0 ? [item.nameEn] : []) : []) || (supplierProductId === candidate.id ? japaneseCommerceTitle(candidate.title, candidate.productType) : null);
-            if (!title) { stats.skipped++; continue; }
+            if (!title) {
+              stats.skipped++;
+              const logError = await recordCjExclusion(supplierProductId + ":" + exactVariant.vid, "japanese_title_unavailable", {
+                catalogProductId: candidate.id,
+                sourceTitle: canonicalDetail.title,
+              });
+              if (logError) stats.errors.push("exclusion_log:" + logError.slice(0, 80));
+              continue;
+            }
             const saved = await upsertSupplierOffer({
               sourceKey: "cj:" + supplierProductId,
               titleJa: title,
@@ -266,6 +304,12 @@ export async function GET(request: Request) {
             if (complianceBlockReason) {
               stats.complianceBlocked++;
               stats.skipped++;
+              const logError = await recordCjExclusion(supplierProductId + ":" + exactVariant.vid, complianceBlockReason, {
+                catalogProductId: candidate.id,
+                supplierProductId,
+                variantId: exactVariant.vid,
+              });
+              if (logError) stats.errors.push("exclusion_log:" + logError.slice(0, 80));
               continue;
             }
             if (stock !== null && stock > 0 && shipping !== null && shipping >= 0) {

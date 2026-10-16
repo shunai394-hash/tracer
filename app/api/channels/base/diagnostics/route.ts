@@ -51,11 +51,16 @@ export async function GET(request: Request) {
       } else if (externalIds.length > 0) {
         try {
           const db = createSupabaseAdminClient();
-          const { data: listingRows, error: listingError } = await db
-            .from("shop_listings")
-            .select("id,base_item_id,supplier_listing_id")
-            .in("base_item_id", externalIds);
-          if (listingError) throw new Error("base_listing_mapping_db_read_failed");
+          const listingRows: Array<{ id: string; base_item_id: string | number | null; supplier_listing_id: string | null }> = [];
+          for (let offset = 0; offset < externalIds.length; offset += 100) {
+            const batch = externalIds.slice(offset, offset + 100);
+            const { data, error: listingError } = await db
+              .from("shop_listings")
+              .select("id,base_item_id,supplier_listing_id")
+              .in("base_item_id", batch);
+            if (listingError) throw new Error("base_listing_mapping_db_read_failed");
+            listingRows.push(...(data ?? []));
+          }
 
           const rowsByBaseId = new Map<string, Array<{ id: string; base_item_id: string | number | null; supplier_listing_id: string | null }>>();
           for (const row of listingRows ?? []) {
@@ -76,30 +81,44 @@ export async function GET(request: Request) {
           // supplier_offers, not the retired shop_listings table. Include both
           // representations so diagnostics don't falsely report zero managed
           // BASE items after the commerce migration.
-          const { data: commerceRows, error: commerceError } = await db
-            .from("channel_listings")
-            .select("id,variant_id,external_product_id,status")
-            .eq("channel", "base")
-            .in("external_product_id", externalIds);
-          if (commerceError) throw new Error("base_commerce_mapping_db_read_failed");
-          const variantIds = [...new Set((commerceRows ?? []).map((row) => String(row.variant_id ?? "")).filter(Boolean))];
-          const { data: variants, error: variantsError } = variantIds.length
-            ? await db.from("commerce_variants").select("id,product_id,source_variant_key,sku").in("id", variantIds)
-            : { data: [], error: null };
-          if (variantsError) throw new Error("base_commerce_variant_read_failed");
-          const { data: prices, error: pricesError } = variantIds.length
-            ? await db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit").in("variant_id", variantIds)
-            : { data: [], error: null };
-          if (pricesError) throw new Error("base_commerce_price_read_failed");
-          const offerIds = [...new Set((prices ?? []).map((row) => String(row.supplier_offer_id ?? "")).filter(Boolean))];
-          const { data: offers, error: offersError } = offerIds.length
-            ? await db.from("supplier_offers").select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,source_status,tracking_supported,ship_to,last_checked_at").in("id", offerIds)
-            : { data: [], error: null };
-          if (offersError) throw new Error("base_commerce_offer_read_failed");
+          const commerceRows: Array<{ id: string; variant_id: string | null; external_product_id: string | null; status: string | null }> = [];
+          for (let offset = 0; offset < externalIds.length; offset += 100) {
+            const batch = externalIds.slice(offset, offset + 100);
+            const { data, error: commerceError } = await db
+              .from("channel_listings")
+              .select("id,variant_id,external_product_id,status")
+              .eq("channel", "base")
+              .in("external_product_id", batch);
+            if (commerceError) throw new Error("base_commerce_mapping_db_read_failed");
+            commerceRows.push(...(data ?? []));
+          }
+          const variantIds = [...new Set(commerceRows.map((row) => String(row.variant_id ?? "")).filter(Boolean))];
+          const variants: Array<{ id: string; product_id: string | null; source_variant_key: string | null; sku: string | null }> = [];
+          const prices: Array<{ variant_id: string; supplier_offer_id: string | null; selling_price: number | null; expected_profit: number | null }> = [];
+          for (let offset = 0; offset < variantIds.length; offset += 100) {
+            const batch = variantIds.slice(offset, offset + 100);
+            const [variantResult, priceResult] = await Promise.all([
+              db.from("commerce_variants").select("id,product_id,source_variant_key,sku").in("id", batch),
+              db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit").in("variant_id", batch),
+            ]);
+            if (variantResult.error) throw new Error("base_commerce_variant_read_failed");
+            if (priceResult.error) throw new Error("base_commerce_price_read_failed");
+            variants.push(...(variantResult.data ?? []));
+            prices.push(...(priceResult.data ?? []));
+          }
+          const offerIds = [...new Set(prices.map((row) => String(row.supplier_offer_id ?? "")).filter(Boolean))];
+          const offers: Array<{ id: string; variant_id: string | null; supplier_code: string | null; supplier_product_id: string | null; supplier_variant_id: string | null; inventory: number | null; source_status: string | null; tracking_supported: boolean | null; ship_to: string | null; last_checked_at: string | null }> = [];
+          for (let offset = 0; offset < offerIds.length; offset += 100) {
+            const { data, error: offersError } = await db.from("supplier_offers")
+              .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,source_status,tracking_supported,ship_to,last_checked_at")
+              .in("id", offerIds.slice(offset, offset + 100));
+            if (offersError) throw new Error("base_commerce_offer_read_failed");
+            offers.push(...(data ?? []));
+          }
 
-          const variantById = new Map((variants ?? []).map((row) => [String(row.id), row]));
-          const priceByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), row]));
-          const offerById = new Map((offers ?? []).map((row) => [String(row.id), row]));
+          const variantById = new Map(variants.map((row) => [String(row.id), row]));
+          const priceByVariant = new Map(prices.map((row) => [String(row.variant_id), row]));
+          const offerById = new Map(offers.map((row) => [String(row.id), row]));
           const commerceByBaseId = new Map<string, Array<{ listingId: string; variantId: string; status: string | null }>>();
           for (const row of commerceRows ?? []) {
             const key = String(row.external_product_id ?? "");

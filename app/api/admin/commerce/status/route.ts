@@ -82,13 +82,20 @@ export async function GET(request: Request) {
         if (!isShopifyConfigured()) return { ok: false, configured: false, error: "shopify_admin_api_not_configured" };
         try {
           const live = await shopifyGraphQL<{
-            productsCount: { count: number };
-            activeProductsCount: { count: number };
+            productsCount: { count: number; precision: "EXACT" | "AT_LEAST" };
+            activeProductsCount: { count: number; precision: "EXACT" | "AT_LEAST" };
           }>(`query TracerReadOnlyCommerceStatus {
-            productsCount(limit: 1) { count }
-            activeProductsCount: productsCount(query: "status:active", limit: 1) { count }
+            productsCount(limit: 10000) { count precision }
+            activeProductsCount: productsCount(query: "status:active", limit: 10000) { count precision }
           }`);
-          return { ok: true, configured: true, totalProducts: live.productsCount.count, activeProducts: live.activeProductsCount.count };
+          return {
+            ok: live.productsCount.precision === "EXACT" && live.activeProductsCount.precision === "EXACT",
+            configured: true,
+            totalProducts: live.productsCount.count,
+            activeProducts: live.activeProductsCount.count,
+            countPrecision: live.productsCount.precision,
+            activeCountPrecision: live.activeProductsCount.precision,
+          };
         } catch (error) {
           return { ok: false, configured: true, error: error instanceof Error ? error.message.split("\\n")[0].slice(0, 160) : "shopify_probe_failed" };
         }
