@@ -82,9 +82,7 @@ jobs:
           PY
             [[ "$code" == "200" ]]
           }
-          failed=0
-          # Import a bounded batch, then publish only fresh, verified, profitable Japanese listings.
-          call_get "api/cron/commerce-cj-import?limit=2" "cj-import.json" 300 || failed=1
+          # Publish only fresh, verified, profitable Japanese listings; the bounded import ran once above.
           call_publish "api/cron/commerce-publish-base" "base-publish.json" || failed=1
           call_publish "api/cron/commerce-publish-shopify" "shopify-publish.json" || failed=1
           # No supplier purchase is created here; the procurement cron independently requires payment_status=paid.
