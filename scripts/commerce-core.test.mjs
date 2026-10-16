@@ -273,3 +273,13 @@ test("CJ discovery rotates through search pages instead of repeatedly fetching p
   assert.match(importer, /url\.searchParams\.get\("page"\) \|\| \(discoveryBucket % 10\) \+ 1/);
   assert.match(importer, /searchCJProducts\(query, \{ page, size: Math\.min\(20, limit \* 2\) \}\)/);
 });
+
+test("BASE diagnostics reconcile both legacy and commerce-native channel listings", async () => {
+  const diagnostics = await readFile(new URL("../app/api/channels/base/diagnostics/route.ts", import.meta.url), "utf8");
+  assert.match(diagnostics, /from\("channel_listings"\)/);
+  assert.match(diagnostics, /from\("commerce_variants"\)/);
+  assert.match(diagnostics, /from\("commerce_prices"\)/);
+  assert.match(diagnostics, /from\("supplier_offers"\)/);
+  assert.match(diagnostics, /visibleItemsManagedByCommerce/);
+  assert.match(diagnostics, /String\(variant\.source_variant_key\) === String\(offer\.supplier_variant_id\)/);
+});
