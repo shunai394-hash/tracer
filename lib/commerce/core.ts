@@ -5,7 +5,7 @@ export type CommerceChannel = "base" | "shopify";
 export type OfferInput = {
   supplierCode: string; supplierProductId: string; supplierVariantId: string;
   supplierUrl?: string | null; currency: string; unitCost: number; shippingCost: number;
-  inventory: number; shipTo?: string; trackingSupported: boolean; rawData?: Record<string, unknown>;
+  inventory: number; shipTo?: string; trackingSupported: boolean; sourceStatus?: "discovered" | "verified" | "unavailable" | "error"; lastCheckedAt?: string | null; rawData?: Record<string, unknown>;
 };
 
 const required = (value: unknown, field: string) => {
@@ -74,7 +74,8 @@ export async function upsertSupplierOffer(input: {
     supplier_variant_id: supplierVariantId, supplier_url: input.offer.supplierUrl ?? null,
     currency: required(input.offer.currency, "currency").toUpperCase(), unit_cost: input.offer.unitCost,
     shipping_cost: input.offer.shippingCost, inventory: input.offer.inventory, ship_to: input.offer.shipTo ?? "JP",
-    tracking_supported: input.offer.trackingSupported, raw_data: input.offer.rawData ?? {},
+    tracking_supported: input.offer.trackingSupported, source_status: input.offer.sourceStatus ?? "discovered",
+    last_checked_at: input.offer.lastCheckedAt ?? null, raw_data: input.offer.rawData ?? {},
     updated_at: new Date().toISOString()
   }, { onConflict: "supplier_code,supplier_product_id,supplier_variant_id" }).select("id").single();
   if (offerError || !offer) throw new Error("offer_upsert_failed:" + (offerError?.message ?? "no_row"));
@@ -88,11 +89,15 @@ export async function recalculatePrice(input: {
   if (!Number.isFinite(input.exchangeRateToJpy) || input.exchangeRateToJpy <= 0) throw new Error("invalid_exchange_rate");
   const db = createSupabaseAdminClient();
   const { data: offer, error } = await db.from("supplier_offers")
-    .select("id,variant_id,currency,unit_cost,shipping_cost,inventory,ship_to,source_status")
+    .select("id,variant_id,currency,unit_cost,shipping_cost,inventory,ship_to,source_status,tracking_supported,last_checked_at")
     .eq("id", input.offerId).eq("variant_id", input.variantId).single();
   if (error || !offer) throw new Error("supplier_offer_not_found:" + (error?.message ?? ""));
+  if (offer.source_status !== "verified") throw new Error("supplier_offer_not_verified");
+  if (offer.tracking_supported !== true) throw new Error("supplier_tracking_not_verified");
   if (offer.ship_to !== "JP") throw new Error("supplier_does_not_ship_to_japan");
   if (Number(offer.inventory) <= 0) throw new Error("supplier_out_of_stock");
+  const lastCheckedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
+  if (!Number.isFinite(lastCheckedAt) || lastCheckedAt > Date.now() + 5 * 60_000 || Date.now() - lastCheckedAt > 24 * 60 * 60_000) throw new Error("supplier_offer_verification_stale");
   const price = calculateSellingPrice({
     unitCostJpy: Math.ceil(Number(offer.unit_cost) * input.exchangeRateToJpy),
     shippingCostJpy: Math.ceil(Number(offer.shipping_cost) * input.exchangeRateToJpy),
@@ -114,6 +119,8 @@ export async function getPublicationCandidates(channel: CommerceChannel, limit =
   const { data, error } = await db.from("commerce_variants")
     .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported,source_status),commerce_prices!inner(currency,selling_price,expected_profit,fee_amount,margin_rate)")
     .eq("commerce_products.active", true).gt("supplier_offers.inventory", 0)
+    .eq("supplier_offers.source_status", "verified").eq("supplier_offers.tracking_supported", true)
+    .gte("supplier_offers.last_checked_at", new Date(Date.now() - 24 * 60 * 60_000).toISOString())
     .eq("supplier_offers.ship_to", "JP").eq("commerce_prices.currency", "JPY")
     .gt("commerce_prices.expected_profit", 0).order("updated_at", { ascending: false })
     .limit(Math.min(500, Math.max(1, Math.floor(limit))));
@@ -134,6 +141,21 @@ export async function ingestPaidOrder(input: {
     if (!Number.isInteger(line.quantity) || line.quantity <= 0 || !Number.isFinite(line.unitPrice) || line.unitPrice < 0) throw new Error("invalid_order_line");
   }
   const db = createSupabaseAdminClient();
+  // Validate every supplier offer before persisting a paid order or procurement intent.
+  // The importer may discover an offer without having verified stock/shipping yet.
+  for (const line of input.lines) {
+    const { data: offer, error: offerError } = await db.from("supplier_offers")
+      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,ship_to,tracking_supported,source_status,last_checked_at")
+      .eq("id", line.offerId).eq("variant_id", line.variantId).single();
+    if (offerError || !offer) throw new Error("order_line_supplier_offer_missing");
+    if (offer.source_status !== "verified" || offer.tracking_supported !== true || offer.ship_to !== "JP") throw new Error("supplier_offer_not_fulfillable");
+    const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
+    if (!Number.isFinite(checkedAt) || checkedAt > Date.now() + 5 * 60_000 || Date.now() - checkedAt > 24 * 60 * 60_000) throw new Error("supplier_offer_verification_stale");
+    if (Number(offer.inventory) < line.quantity) throw new Error("supplier_offer_not_fulfillable");
+    const { data: price, error: priceError } = await db.from("commerce_prices")
+      .select("supplier_offer_id,expected_profit").eq("variant_id", line.variantId).single();
+    if (priceError || !price || price.supplier_offer_id !== line.offerId || Number(price.expected_profit) <= 0) throw new Error("supplier_offer_price_not_fulfillable");
+  }
   const { data: order, error } = await db.from("commerce_orders").upsert({
     channel: input.channel, external_order_id: input.externalOrderId, total_amount: Math.round(input.totalAmount),
     payment_status: "paid", fulfillment_status: "procurement_pending", customer_name: input.customerName ?? null,
