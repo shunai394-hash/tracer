@@ -62,7 +62,7 @@ function fullAddress(address: ShopifyOrder["shippingAddress"]): string {
 function canonicalShopifyId(value: string, resource: "Order" | "LineItem"): string {
   const prefix = "gid://shopify/" + resource + "/";
   const id = value.startsWith(prefix) ? value.slice(prefix.length) : value;
-  if (!/^\\d+$/.test(id)) throw new Error("shopify_" + resource.toLowerCase() + "_id_invalid");
+  if (!/^\d+$/.test(id)) throw new Error("shopify_" + resource.toLowerCase() + "_id_invalid");
   return id;
 }
 
