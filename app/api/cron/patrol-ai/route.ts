@@ -83,9 +83,9 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
       row.image_url !== null &&
       row.image_url !== "" &&
       row.tracking_available === true &&
-      row.pipeline_stage === "PUBLISHED" &&
+      ["PUBLISHED", "BASE_PUBLISHED", "SHOPIFY_PUBLISHED"].includes(String(row.pipeline_stage ?? "")) &&
       row.pipeline_status === "published" &&
-      row.pipeline_reason === "sales_test_gate_passed";
+      ["sales_test_gate_passed", "profitable_supplier_linked_catalog"].includes(String(row.pipeline_reason ?? ""));
   });
 
   const autoProcurementEligibleRows = (eligibilityListingsResult.data ?? []).filter((row) =>
