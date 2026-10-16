@@ -9,13 +9,27 @@ import { selectRotatingVariantBatch } from "@/lib/commerce/variant-batch";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-function japaneseCommerceTitle(title: string, productType?: string | null): string | null {
+function japaneseCommerceTitle(title: string, productType?: string | null, variantNames: string[] = []): string | null {
   const source = (String(title ?? "") + " " + String(productType ?? "")).toLowerCase();
+
+  const normalizedTitle = String(title ?? "").trim().toLowerCase();
+  if (/^women handbag$/.test(normalizedTitle) && variantNames.length === 1) {
+    const variant = String(variantNames[0] ?? "").toLowerCase();
+    if (/gold/.test(variant)) return "ゴールドカラーのレディースハンドバッグ";
+    if (/silver/.test(variant)) return "シルバーカラーのレディースハンドバッグ";
+  }
   const rules: Array<[RegExp, string]> = [
     [/women role play hair accessories|role play hair accessories/, "レディース コスプレ用ヘアアクセサリー"],
     [/hair tie|rubber band.*hair|hair rope/, "レディース ヘアゴム・ヘアロープ"],
     [/color changing in the sun.*acetate shark clip|acetate shark clip.*shark clip/, "日光で色が変わるアセテート製シャーククリップ"],
     [/pu leather headband.*ponytail clip|ponytail clip.*pu leather headband/, "PUレザー調ヘッドバンド付きポニーテールクリップ"],
+    [/women vintage pu handbag|vintage pu handbag/, "ヴィンテージPUレザーハンドバッグ"],
+    [/new fashion personalized handbag/, "パーソナライズドハンドバッグ"],
+    [/high temperature disinfection cabinet/, "美容器具用高温消毒キャビネット"],
+    [/8 pcs makeup brushes|makeup brushes suit portable/, "携帯用メイクブラシ8本セット"],
+    [/eyelash.*comb.*tweezers|tweezers.*eyelash/, "コーム付きまつげピンセット"],
+    [/facial beauty tools.*ems|ems.*beauty equipment/, "EMSフェイスケア機器"],
+    [/mushroom.*powder puff|powder puff.*mushroom/, "きのこ型メイクパフ"],
     [/women.*hair accessories|hair accessories.*women/, "レディース ヘアアクセサリー"],
     [/fan brush/, "メイク用ファンブラシ"],
     [/fan brush|makeup brush|make-up brush|cosmetic brush|tartaric acid brush/, "メイクブラシ"],
@@ -166,7 +180,7 @@ export async function GET(request: Request) {
             const shipping = freightResult.status === "fulfilled" ? freightResult.value : null;
             if (stockResult.status === "rejected") stats.errors.push("stock:" + candidate.id + ":" + String(stockResult.reason).slice(0, 100));
             if (freightResult.status === "rejected") stats.errors.push("freight:" + candidate.id + ":" + String(freightResult.reason).slice(0, 100));
-            const title = japaneseCommerceTitle(canonicalDetail.title, canonicalDetail.productType) || (supplierProductId === candidate.id ? japaneseCommerceTitle(candidate.title, candidate.productType) : null);
+            const title = japaneseCommerceTitle(canonicalDetail.title, canonicalDetail.productType, supplierProductId === candidate.id ? variants.map((item) => item.nameEn) : []) || (supplierProductId === candidate.id ? japaneseCommerceTitle(candidate.title, candidate.productType) : null);
             if (!title) { stats.skipped++; continue; }
             const saved = await upsertSupplierOffer({
               sourceKey: "cj:" + supplierProductId,
