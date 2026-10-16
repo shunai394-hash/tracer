@@ -8,7 +8,6 @@ import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { rescueUndeliveredGatePassedListings, retryPendingNewfindPromotions } from "@/lib/integration/newfind";
 import { catalogCountsNeedReview } from "@/lib/ops/catalog-count-check";
 import { promoteCommerceListingsToNewfind } from "@/lib/integration/newfind-commerce";
-import { asRelationRows } from "@/lib/commerce/relation-rows";
 import { isCanonicalCjNativeId } from "@/lib/commerce/core";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 
@@ -22,6 +21,7 @@ type Snapshot = {
   shopListings: number;
   publishedListings: number;
   eligibleForBase: number;
+  legacyEligibleForBase: number;
   newEligibleForBase: number;
   newEligibleForShopify: number;
   autoProcurementEligibleListings: number;
@@ -86,6 +86,9 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
   const results = [
     ["products", productsResult], ["supplier_listings", supplierListingsResult], ["supplier_listings(orderable)", orderableSuppliersResult],
     ["shop_listings", shopListingsResult], ["shop_listings(published)", publishedListingsResult], ["shop_listings(eligibility)", eligibilityListingsResult],
+    ["commerce_variants(eligibility)", commerceEligibilityResult],
+    ["channel_listings(base_variant_ids)", publishedBaseVariantIdsResult],
+    ["channel_listings(shopify_variant_ids)", publishedShopifyVariantIdsResult],
     ["shop_listings(on_base)", onBaseResult], ["shop_listings(base_published)", basePublishedResult], ["shop_orders", ordersResult],
     ["commerce_products", commerceProductsResult], ["commerce_variants", commerceVariantsResult],
     ["supplier_offers(verified_fresh)", verifiedCommerceOffersResult], ["channel_listings(published)", publishedCommerceListingsResult],
@@ -110,7 +113,10 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
       row.pipeline_status === "published" &&
       row.pipeline_reason === "sales_test_gate_passed";
   });
-  const relationRows = (value: unknown): Array<Record<string, unknown>> => asRelationRows(value as never) as Array<Record<string, unknown>>;
+  const relationRows = (value: unknown): Array<Record<string, unknown>> => {
+    if (Array.isArray(value)) return value.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object");
+    return value && typeof value === "object" ? [value as Record<string, unknown>] : [];
+  };
   const eligibleVariantIds = new Set<string>();
   for (const row of commerceEligibilityResult.data ?? []) {
     const product = relationRows(row.commerce_products)[0];
@@ -150,6 +156,7 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
     // Eligible count now reflects the canonical commerce catalog; legacyEligible
     // remains diagnostic-only and is intentionally not used to gate publication.
     eligibleForBase: eligibleVariantIds.size,
+    legacyEligibleForBase: legacyEligibleRows.length,
     newEligibleForBase,
     newEligibleForShopify,
     autoProcurementEligibleListings: autoProcurementEligibleRows.length,
