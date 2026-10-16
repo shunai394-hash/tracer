@@ -247,7 +247,7 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
           reason === "out_of_order_stage:expected=supplier_matched:received=variant_evidence_saved" ||
           (variantStageOutcome === "completed" && reason === "idempotency_key_reused_with_different_result");
         if (alreadyAdvanced) {
-          console.warn("[TRACER V2] variant stage already advanced; replay skipped", {
+          console.warn("[TRACER V2] variant stage already advanced; concurrent replay skipped", {
             productKey: tracerV2ProductKey,
           });
         } else {
