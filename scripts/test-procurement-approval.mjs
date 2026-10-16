@@ -74,4 +74,15 @@ check("approval route is authenticated, dry-run by default and never orders", ()
   assert.doesNotMatch(admin, /shippingCustomerName|address\.phone|address1|customer_name/);
 });
 
+const status = await readFile(new URL("../app/api/admin/commerce/status/route.ts", import.meta.url), "utf8");
+check("commerce status route is authenticated and read-only", () => {
+  assert.match(status, /requireAutomationAuth\(request\)/);
+  assert.doesNotMatch(status, /\.(insert|update|upsert|delete)\(/);
+  assert.doesNotMatch(status, /customer_name|shipping_address/);
+});
+const statusWorkflow = await readFile(new URL("../.github/workflows/tracer-commerce-status-readonly.yml", import.meta.url), "utf8");
+check("status workflow only issues GET requests", () => {
+  assert.doesNotMatch(statusWorkflow, /-X (POST|PUT|PATCH|DELETE)|--data|-d '/);
+});
+
 console.log(`procurement approval gate: ${cases} cases passed`);
