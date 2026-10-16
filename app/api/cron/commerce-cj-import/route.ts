@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   const url = new URL(request.url);
-  const queryOptions = ["women handbag", "beauty tools", "phone accessories", "home organization", "kitchen gadgets", "pet accessories", "fitness accessories", "hair accessories women"];
+  const queryOptions = ["women handbag", "beauty tools", "hair accessories women"];
   const explicitQuery = url.searchParams.get("q");
   const query = (explicitQuery || queryOptions[Math.floor(Date.now() / 1_800_000) % queryOptions.length]).trim().slice(0, 100);
   const page = Math.min(1000, Math.max(1, Number(url.searchParams.get("page") || 1)));
@@ -36,17 +36,21 @@ export async function GET(request: Request) {
         stats.products++;
         for (const variant of variants.slice(0, 2)) {
           try {
-            const cost = Number(variant.sellPrice);
-            if (!variant.vid || !Number.isFinite(cost) || cost <= 0) { stats.skipped++; continue; }
-            let supplierProductId = String(variant.productId ?? "").trim();
-            if (!supplierProductId) {
-              const exactVariant = await fetchCJVariantByVid(variant.vid);
-              if (!exactVariant || exactVariant.vid !== variant.vid || !String(exactVariant.productId ?? "").trim()) {
-                stats.skipped++;
-                stats.errors.push("canonical_supplier_product_id_unresolved:" + candidate.id + ":" + variant.vid);
-                continue;
-              }
-              supplierProductId = String(exactVariant.productId).trim();
+            if (!variant.vid) { stats.skipped++; continue; }
+            // Always resolve the exact live VID. A non-empty productId in a
+            // product-scoped response may be stale or point at a backup parent.
+            const exactVariant = await fetchCJVariantByVid(variant.vid);
+            if (!exactVariant || exactVariant.vid !== variant.vid || !String(exactVariant.productId ?? "").trim()) {
+              stats.skipped++;
+              stats.errors.push("canonical_supplier_product_id_unresolved:" + candidate.id + ":" + variant.vid);
+              continue;
+            }
+            const supplierProductId = String(exactVariant.productId).trim();
+            const cost = Number(exactVariant.sellPrice);
+            if (!Number.isFinite(cost) || cost <= 0) {
+              stats.skipped++;
+              stats.errors.push("canonical_supplier_variant_price_unresolved:" + supplierProductId + ":" + exactVariant.vid);
+              continue;
             }
             const canonicalDetail = supplierProductId === candidate.id ? detail : await getCJProductDetail(supplierProductId);
             if (!canonicalDetail) {
@@ -71,19 +75,19 @@ export async function GET(request: Request) {
               category: canonicalDetail.productType ?? (supplierProductId === candidate.id ? candidate.productType : null),
               imageUrl: canonicalDetail.imageUrl ?? (supplierProductId === candidate.id ? candidate.imageUrl : null),
               sourceUrl: "https://cjdropshipping.com/product/" + encodeURIComponent(supplierProductId),
-              sourceVariantKey: variant.vid,
-              variantTitleJa: variant.nameEn ? title + "（" + variant.nameEn + "）" : title,
-              sku: variant.sku,
-              attributes: { barcode: variant.barcode, supplierVariantName: variant.nameEn },
+              sourceVariantKey: exactVariant.vid,
+              variantTitleJa: exactVariant.nameEn ? title + "（" + exactVariant.nameEn + "）" : title,
+              sku: exactVariant.sku,
+              attributes: { barcode: exactVariant.barcode, supplierVariantName: exactVariant.nameEn },
               offer: {
                 supplierCode: "cj", supplierProductId,
-                supplierVariantId: variant.vid, supplierUrl: "https://cjdropshipping.com/product/" + encodeURIComponent(supplierProductId),
+                supplierVariantId: exactVariant.vid, supplierUrl: "https://cjdropshipping.com/product/" + encodeURIComponent(supplierProductId),
                 currency: "USD", unitCost: cost, shippingCost: shipping ?? 0,
                 inventory: stock === null ? 0 : Math.max(0, Math.floor(stock)), shipTo: "JP",
                 trackingSupported: true,
                 sourceStatus: stock !== null && shipping !== null ? "verified" : "error",
                 lastCheckedAt: new Date().toISOString(),
-                rawData: { query, page, catalogProductId: candidate.id, productId: supplierProductId, variantId: variant.vid, stockKnown: stock !== null, shippingKnown: shipping !== null, fxRate: fx.rate },
+                rawData: { query, page, catalogProductId: candidate.id, productId: supplierProductId, variantId: exactVariant.vid, stockKnown: stock !== null, shippingKnown: shipping !== null, fxRate: fx.rate },
               },
             });
             stats.variants++;
