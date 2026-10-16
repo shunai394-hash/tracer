@@ -44,4 +44,4 @@ assert.match(shopify, /const scopeReady = adminApi\.ok === true[\s\S]*?adminApi\
 assert.match(shopify, /ok: shopifyProbe\.ok && scopeReady/);
 assert.match(shopify, /scopeReady,/);
 assert.ok(workflow.includes("api/channels/base/diagnostics"), "read-only auth workflow must include BASE diagnostics");
-console.log("Read-only channel auth diagnostics: 24 assertions passed");
+console.log("Read-only channel auth diagnostics: 29 assertions passed");
