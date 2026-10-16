@@ -45,12 +45,14 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
     const title = candidate.title_ja.trim() || product.title_ja.trim();
     const description = (product.description_ja || title + "。商品仕様・配送条件は仕入先の最新情報をご確認ください。").trim();
     const sku = "TRC-" + candidate.id.replace(/-/g, "").slice(0, 24).toUpperCase();
+    let listingId: string | null = null;
     try {
       const { data: listing, error: listingError } = await db.from("channel_listings").upsert({
         variant_id: candidate.id, channel, selling_price: Math.round(Number(price.selling_price)),
         external_sku: sku, status: "pending", last_error: null, updated_at: new Date().toISOString()
       }, { onConflict: "channel,variant_id" }).select("id,external_product_id,external_variant_id").single();
       if (listingError || !listing) throw new Error("listing_claim_failed:" + (listingError?.message ?? "no_row"));
+      listingId = String(listing.id);
       let externalProductId = listing.external_product_id ? String(listing.external_product_id) : null;
       let externalVariantId = listing.external_variant_id ? String(listing.external_variant_id) : null;
       let publishedUrl: string | null = null;
