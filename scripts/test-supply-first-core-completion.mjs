@@ -29,6 +29,8 @@ assert.match(source, /\.range\(verifiedSupplyOffset, verifiedSupplyOffset \+ ver
 
 const cronRoute = await readFile(new URL("../app/api/cron/supply-first/route.ts", import.meta.url), "utf8");
 const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+assert.match(cronRoute, /const DISCOVERY_BUDGET_MS = 150_000/,
+  "supplier discovery must reserve route time for downstream opportunity intelligence and channel publication");
 assert.match(cronRoute, /const discoveryIncomplete/);
 assert.match(cronRoute, /status: runStatus/);
 assert.match(cronRoute, /status: discoveryIncomplete \? 503 : 200/);
