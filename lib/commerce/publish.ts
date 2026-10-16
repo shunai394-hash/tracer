@@ -20,6 +20,11 @@ function safeSlug(value: string): string {
 }
 
 export async function syncCommerceListings(channel: Channel, limit = 10) {
+  // Never create a customer-facing listing until CJ's live order/payment path is explicitly verified.
+  // Import and price calculation can continue while publication remains blocked.
+  if (!cjSupplierAdapter.capabilities.liveOrdering) {
+    return { channel, considered: 0, published: 0, failed: 0, blocked: "supplier_live_ordering_not_verified", results: [] as Array<{ variantId: string; ok: boolean; externalId?: string; error?: string }> };
+  }
   if (channel === "base" && !isBaseConfigured()) throw new Error("base_oauth_not_configured");
   if (channel === "shopify" && !isShopifyConfigured()) throw new Error("shopify_not_configured");
   const db = createSupabaseAdminClient();
