@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: tracer-base-duplicate-sku-cleanup
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   cleanup:
