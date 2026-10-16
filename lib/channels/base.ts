@@ -303,6 +303,9 @@ export type BaseReadOnlyProbeResult = {
     pages: number;
     complete: boolean;
     errorStage: string | null;
+    /** Rows whose item_id was missing, or repeated across pages (offsets shifted mid-scan). Either makes the scan incomplete. */
+    missingItemIdCount: number;
+    duplicateItemIdCount: number;
     entries: Array<{ itemId: string | null; identifier: string | null; visible: boolean | null }>;
   };
 };
@@ -354,9 +357,12 @@ export async function probeBaseReadOnly(options?: {
       pages: 0,
       complete: false,
       errorStage: null,
+      missingItemIdCount: 0,
+      duplicateItemIdCount: 0,
       entries: [],
     },
   };
+  const seenItemIds = new Set<string>();
 
   const pageLimit = Math.min(100, Math.max(1, Math.floor(options?.itemPageLimit ?? 100)));
   const maxPages = Math.min(BASE_ITEMS_MAX_PAGES, Math.max(1, Math.floor(options?.itemMaxPages ?? BASE_ITEMS_MAX_PAGES)));
@@ -375,7 +381,10 @@ export async function probeBaseReadOnly(options?: {
       for (const item of rows) {
         const raw = item as { item_id?: string | number; identifier?: unknown };
         const rawId = raw.item_id;
-        const itemId = rawId == null ? null : String(rawId);
+        const itemId = rawId == null || String(rawId).trim() === "" ? null : String(rawId);
+        if (!itemId) result.items.missingItemIdCount += 1;
+        else if (seenItemIds.has(itemId)) result.items.duplicateItemIdCount += 1;
+        else seenItemIds.add(itemId);
         const identifier = typeof raw.identifier === "string" && raw.identifier.trim() ? raw.identifier.trim() : null;
         const visible = item.visible === true || item.visible === 1 || item.visible === "1"
           ? true
@@ -402,6 +411,21 @@ export async function probeBaseReadOnly(options?: {
       result.items.errorStage = message.split(":")[0].slice(0, 100);
       break;
     }
+  }
+  // Every page was full: the catalog may end exactly at the cap. One extra
+  // single-row read decides it instead of reporting a full scan as partial.
+  if (!result.items.complete && !result.items.errorStage && result.items.pages === maxPages) {
+    try {
+      const payload = await requestJson(`/items?limit=1&offset=${offset}`, "BASE_ITEMS_PROBE_FAILED");
+      if (Array.isArray(payload.items) && payload.items.length === 0) result.items.complete = true;
+      else result.items.errorStage = "BASE_ITEMS_SCAN_CAP_REACHED";
+    } catch (error) {
+      result.items.errorStage = (error instanceof Error ? error.message : "BASE_ITEMS_PROBE_FAILED").split(":")[0].slice(0, 100);
+    }
+  }
+  if (result.items.missingItemIdCount > 0 || result.items.duplicateItemIdCount > 0) {
+    result.items.complete = false;
+    result.items.errorStage ??= "BASE_ITEMS_ID_MISSING_OR_DUPLICATE";
   }
 
   return result;
@@ -474,6 +498,18 @@ export async function fetchBaseItemsSnapshot(options?: {
       break;
     }
     offset += rows.length;
+  }
+  // All pages full: confirm the catalog ends exactly at the cap before calling it incomplete.
+  if (!complete && pages === maxPages) {
+    const response = await fetch(`${BASE_API_URL}/items?limit=1&offset=${offset}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
+    });
+    const payload = await response.json().catch(() => null) as { items?: unknown } | null;
+    if (!response.ok) throw new Error(`BASE_ITEMS_SNAPSHOT_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
+    if (Array.isArray(payload?.items) && payload.items.length === 0) complete = true;
   }
 
   if (!complete) throw new Error("BASE_ITEMS_SNAPSHOT_INCOMPLETE");

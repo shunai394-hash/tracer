@@ -43,7 +43,8 @@ export async function POST(request: Request) {
     if (!snapshot.complete) {
       return NextResponse.json({ ok: false, error: "BASE_ITEMS_SNAPSHOT_INCOMPLETE" }, { status: 502 });
     }
-    const items = snapshot.items.slice(0, limit).map((item) => ({
+    // Evaluate the whole snapshot; `limit` only bounds how many rows one apply call writes.
+    const items = snapshot.items.map((item) => ({
       baseItemId: String(item.item_id ?? ""),
       identifier: typeof item.identifier === "string" ? item.identifier.trim() : "",
     })).filter((item) => item.baseItemId);
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
       .select("id,base_item_id,base_last_error")
       .is("base_item_id", null)
       .like("base_last_error", "base_create_id_persist_failed:%")
-      .limit(limit);
+      .limit(5000);
     if (markerError) throw new Error("base_identity_recovery_marker_lookup_failed");
 
     const recoveryCandidates = (markerRows ?? []).flatMap((row) => {
@@ -171,6 +172,11 @@ export async function POST(request: Request) {
         continue;
       }
 
+      if (repaired >= limit) {
+        repairable += 1;
+        results.push({ baseItemId: item.baseItemId, listingId, source: sources, outcome: "repairable_deferred_by_limit" });
+        continue;
+      }
       const { data: updated, error } = await db
         .from("shop_listings")
         .update({ base_item_id: item.baseItemId })
