@@ -14,6 +14,7 @@ export async function GET() {
   return Response.json({
     ok: true,
     service: "tracer",
+    gitCommitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
     connections: {
       supabase: status.supabasePublic && status.supabaseServiceRole,
       supabasePublic: status.supabasePublic,
