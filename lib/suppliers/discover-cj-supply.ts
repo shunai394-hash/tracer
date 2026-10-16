@@ -880,6 +880,7 @@ export async function discoverAndCreateCjSupply(
               inventory: Math.floor(stock),
               ship_to: "JP",
               order_method: "cj_api",
+              shipping_status: "verified",
               api_available: isCJLiveOrderPathReady(),
               verification_status: isCJLiveOrderPathReady() ? "verified" : "unverified",
               identity_method: "supply_discovered",
