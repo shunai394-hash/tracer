@@ -115,7 +115,8 @@ test("clean commerce cron schedule uses only the new supplier, channel, order, a
   assert.equal(schedules.get("/api/cron/patrol-ai"), "*/5 * * * *");
   assert.equal(schedules.has("/api/cron/market-sourcing"), false);
   assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
-  assert.equal(schedules.has("/api/cron/supply-first"), false);
+  assert.equal(schedules.get("/api/cron/supply-first"), "0 */6 * * *");
+  assert.equal(schedules.get("/api/cron/cj-variant-repair"), "20 */6 * * *");
 });
 
 test("both channels use the shared capped storefront quantity and Japanese title validation", async () => {
