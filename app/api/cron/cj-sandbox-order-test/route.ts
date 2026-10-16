@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { runCJSandboxOrderLifecycle } from "@/lib/procurement/cj-adapter";
+import { listCJSandboxOrders } from "@/lib/sources/cj/create-order";
 import { isCJQuotaCircuitActive } from "@/lib/sources/cj/rate-limit-policy";
 
 export const runtime = "nodejs";
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
   // This test exists to establish the order-path contract, so it must accept an
   // unverified candidate. runCJSandboxOrderLifecycle performs fresh exact-variant,
   // price, stock and Japan-freight checks before creating a sandbox-only order.
-  const { data: listing, error } = await db
+  const { data: requestedListing, error } = await db
     .from("supplier_listings")
     .select("id,supplier,supplier_product_id,supplier_variant_id,configured,metadata")
     .eq("id", supplierListingId)
@@ -63,20 +64,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "SUPPLIER_LISTING_LOOKUP_FAILED" }, { status: 500 });
   }
   if (
-    !listing ||
-    listing.supplier !== "cj" ||
-    !String(listing.supplier_product_id ?? "").trim() ||
-    !String(listing.supplier_variant_id ?? "").trim() ||
-    listing.configured !== true
+    !requestedListing ||
+    requestedListing.supplier !== "cj" ||
+    !String(requestedListing.supplier_product_id ?? "").trim() ||
+    !String(requestedListing.supplier_variant_id ?? "").trim() ||
+    requestedListing.configured !== true
   ) {
     return NextResponse.json({ ok: false, error: "SUPPLIER_LISTING_NOT_CJ_SANDBOX_CANDIDATE" }, { status: 409 });
   }
 
   // One successful lifecycle is sufficient for this one-time contract proof.
-  // Failed attempts are auditable and may be retried only after inspecting the cause.
+  // If a previous run created a sandbox order but failed before recording its ID,
+  // reconcile that exact order by sandbox marker, variant, and narrow creation window.
   const { data: previousRuns, error: previousRunsError } = await db
     .from("cron_runs")
-    .select("status,started_at,metadata,error")
+    .select("id,status,started_at,finished_at,metadata,error")
     .eq("job_name", "cj-sandbox-order-lifecycle")
     .order("started_at", { ascending: false })
     .limit(1);
@@ -85,32 +87,80 @@ export async function POST(request: Request) {
   if (previous?.status === "succeeded") {
     return NextResponse.json({ ok: false, error: "CJ_SANDBOX_LIFECYCLE_ALREADY_VERIFIED" }, { status: 409 });
   }
+
+  let activeListing = requestedListing;
+  let effectiveSupplierListingId = supplierListingId;
+  let existingSandboxOrderId: string | undefined;
+  let recoveredOrderNumber: string | undefined;
+  let resumedFromPreviousRunId: string | undefined;
+
   const previousError = typeof previous?.error === "string" ? previous.error : "";
-  const previousMetadata = previous?.metadata && typeof previous.metadata === "object" && !Array.isArray(previous.metadata)
-    ? previous.metadata as Record<string, unknown>
-    : {};
-  // A prior sandbox-only order can be retried after this exact pre-payment
-  // transition failure: the old order remained CREATED, no payment was made,
-  // and no real fulfillment occurred. This exception must never apply to live orders.
-  const previousFailureWasSafeSandboxTransition =
-    previousError === "Current order status is CREATED(100), not UNPAID(200), cannot simulate pay." &&
-    previousMetadata.sandbox === true &&
-    previousMetadata.charged === false &&
-    previousMetadata.realFulfillment === false;
   const previousFailureWasPreOrderOnly =
     previousError.startsWith("CJ_SANDBOX_NO_VALID_CANDIDATE:") ||
     previousError.startsWith("CJ_SANDBOX_VARIANT_NOT_FOUND:") ||
     previousError.startsWith("CJ_SANDBOX_PRODUCT_ID_MISMATCH:") ||
     previousError === "CJ_SANDBOX_STOCK_OR_PRICE_UNVERIFIED" ||
     previousError === "CJ_SANDBOX_SHIPPING_UNAVAILABLE" ||
-    previousError === "CJ_SANDBOX_COUNTRY_UNVERIFIED" ||
-    previousFailureWasSafeSandboxTransition;
-  if (previous?.status === "failed" && !previousFailureWasPreOrderOnly) {
+    previousError === "CJ_SANDBOX_COUNTRY_UNVERIFIED";
+  const previousFailureNeedsOrderRecovery =
+    previousError === "Current order status is CREATED(100), not UNPAID(200), cannot simulate pay.";
+
+  if (previous?.status === "failed" && previousFailureNeedsOrderRecovery) {
+    const previousMetadata = previous.metadata && typeof previous.metadata === "object" && !Array.isArray(previous.metadata)
+      ? previous.metadata as Record<string, unknown>
+      : {};
+    const previousListingId = String(previousMetadata.supplierListingId ?? "").trim();
+    const previousListingQuery = previousListingId
+      ? await db.from("supplier_listings")
+          .select("id,supplier,supplier_product_id,supplier_variant_id,configured,metadata")
+          .eq("id", previousListingId)
+          .maybeSingle()
+      : { data: null, error: null };
+    if (previousListingQuery.error || !previousListingQuery.data) {
+      return NextResponse.json({ ok: false, error: "CJ_SANDBOX_PREVIOUS_ORDER_LISTING_NOT_FOUND_REQUIRES_MANUAL_RECONCILIATION" }, { status: 409 });
+    }
+
+    let providerOrders;
+    try {
+      providerOrders = await listCJSandboxOrders("CREATED");
+    } catch {
+      return NextResponse.json({ ok: false, error: "CJ_SANDBOX_PREVIOUS_ORDER_LOOKUP_FAILED_REQUIRES_MANUAL_RECONCILIATION" }, { status: 409 });
+    }
+    const priorStartedAt = Date.parse(String(previous.started_at ?? ""));
+    const priorFinishedAt = Date.parse(String(previous.finished_at ?? previous.started_at ?? ""));
+    const priorVariantId = String(previousListingQuery.data.supplier_variant_id ?? "").trim();
+    const matchingOrders = providerOrders.filter((order) => {
+      const prefix = "TRACER-SANDBOX-";
+      const orderTimestamp = order.orderNumber.startsWith(prefix)
+        ? Number(order.orderNumber.slice(prefix.length))
+        : Number.NaN;
+      return order.isSandbox &&
+        /^TRACER-SANDBOX-\d{13}$/.test(order.orderNumber) &&
+        ["CREATED", "100"].includes(order.status) &&
+        order.variantIds.includes(priorVariantId) &&
+        Number.isFinite(orderTimestamp) &&
+        orderTimestamp >= priorStartedAt - 60_000 &&
+        orderTimestamp <= priorFinishedAt + 60_000;
+    });
+    if (matchingOrders.length !== 1) {
+      return NextResponse.json({
+        ok: false,
+        error: "CJ_SANDBOX_PREVIOUS_ORDER_MAY_EXIST_REQUIRES_MANUAL_RECONCILIATION",
+        matchingSandboxOrders: matchingOrders.length,
+      }, { status: 409 });
+    }
+    activeListing = previousListingQuery.data;
+    effectiveSupplierListingId = String(activeListing.id);
+    existingSandboxOrderId = matchingOrders[0].orderId;
+    recoveredOrderNumber = matchingOrders[0].orderNumber;
+    resumedFromPreviousRunId = String(previous.id ?? "");
+  } else if (previous?.status === "failed" && !previousFailureWasPreOrderOnly) {
     return NextResponse.json({
       ok: false,
       error: "CJ_SANDBOX_PREVIOUS_ORDER_MAY_EXIST_REQUIRES_MANUAL_RECONCILIATION",
     }, { status: 409 });
   }
+
   if (previous?.status === "running" && Date.now() - Date.parse(String(previous.started_at)) < 10 * 60 * 1000) {
     return NextResponse.json({ ok: false, error: "CJ_SANDBOX_LIFECYCLE_ALREADY_RUNNING" }, { status: 409 });
   }
@@ -123,7 +173,10 @@ export async function POST(request: Request) {
       status: "running",
       metadata: {
         phase: "cj_sandbox_order_lifecycle",
-        supplierListingId,
+        supplierListingId: effectiveSupplierListingId,
+        resumedFromPreviousRunId: resumedFromPreviousRunId ?? null,
+        supplierOrderId: existingSandboxOrderId ?? null,
+        orderNumber: recoveredOrderNumber ?? null,
         sandbox: true,
         charged: false,
         realFulfillment: false,
@@ -135,7 +188,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "SANDBOX_AUDIT_CLAIM_FAILED" }, { status: 500 });
   }
   const runId = String(run.id);
-  let activeListing = listing;
+  let activeSupplierOrderId: string | null = existingSandboxOrderId ?? null;
+  let activeOrderNumber: string | null = recoveredOrderNumber ?? null;
   const attemptedListingIds: string[] = [];
 
   try {
@@ -153,29 +207,52 @@ export async function POST(request: Request) {
       .limit(12);
     if (candidateError) throw new Error("CJ_SANDBOX_CANDIDATE_SCAN_FAILED");
 
-    const validCandidate = (candidate: typeof listing) =>
+    const validCandidate = (candidate: typeof requestedListing) =>
       candidate.supplier === "cj" &&
       candidate.configured === true &&
       /^\d{10,25}$/.test(String(candidate.supplier_product_id ?? "")) &&
       /^\d{10,25}$/.test(String(candidate.supplier_variant_id ?? ""));
     const alternatives = (candidateRows ?? []).filter((candidate) =>
-      candidate.id !== listing.id &&
-      validCandidate(candidate as typeof listing) &&
+      candidate.id !== activeListing.id &&
+      validCandidate(candidate as typeof requestedListing) &&
       !(candidate.metadata && typeof candidate.metadata === "object" && !Array.isArray(candidate.metadata)
         && "cj_sandbox_order_path_verified_at" in candidate.metadata)
     );
-    const candidates = [listing, ...alternatives.slice(0, 2)];
+    const candidates = existingSandboxOrderId ? [activeListing] : [activeListing, ...alternatives.slice(0, 2)];
     let result: Awaited<ReturnType<typeof runCJSandboxOrderLifecycle>> | null = null;
     let lastPreOrderFailure = "";
 
     for (const candidate of candidates) {
-      activeListing = candidate as typeof listing;
+      activeListing = candidate as typeof requestedListing;
       attemptedListingIds.push(String(activeListing.id));
       try {
         result = await runCJSandboxOrderLifecycle({
           supplierProductId: String(activeListing.supplier_product_id),
           supplierVariantId: String(activeListing.supplier_variant_id),
-          orderNumber: `TRACER-SANDBOX-${Date.now()}`,
+          orderNumber: existingSandboxOrderId && candidate.id === effectiveSupplierListingId && recoveredOrderNumber
+            ? recoveredOrderNumber
+            : `TRACER-SANDBOX-${Date.now()}`,
+          existingSandboxOrderId: existingSandboxOrderId && candidate.id === effectiveSupplierListingId
+            ? existingSandboxOrderId
+            : undefined,
+          onOrderCreated: async ({ supplierOrderId, orderNumber }) => {
+            activeSupplierOrderId = supplierOrderId;
+            activeOrderNumber = orderNumber;
+            const { error: orderIdAuditError } = await db.from("cron_runs").update({
+              metadata: {
+                phase: "cj_sandbox_order_lifecycle",
+                supplierListingId: activeListing.id,
+                attemptedListingIds,
+                supplierOrderId,
+                orderNumber,
+                resumedFromPreviousRunId: resumedFromPreviousRunId ?? null,
+                sandbox: true,
+                charged: false,
+                realFulfillment: false,
+              },
+            }).eq("id", runId);
+            if (orderIdAuditError) throw new Error("CJ_SANDBOX_ORDER_ID_AUDIT_WRITE_FAILED");
+          },
           quantity: 1,
           shippingCountryCode: "JP",
           shippingCountry: "Japan",
@@ -237,6 +314,8 @@ export async function POST(request: Request) {
       supplierListingId: activeListing.id,
       attemptedListingIds,
       supplierOrderId: result.supplierOrderId,
+      orderNumber: activeOrderNumber,
+      resumedFromPreviousRunId: resumedFromPreviousRunId ?? null,
       supplierStatus: result.status,
       paymentConfirmed: result.paymentConfirmed,
       sandbox: result.sandbox,
@@ -274,6 +353,9 @@ export async function POST(request: Request) {
         phase: "cj_sandbox_order_lifecycle",
         supplierListingId: activeListing.id,
         attemptedListingIds,
+        supplierOrderId: activeSupplierOrderId,
+        orderNumber: activeOrderNumber,
+        resumedFromPreviousRunId: resumedFromPreviousRunId ?? null,
         sandbox: true,
         charged: false,
         realFulfillment: false,
