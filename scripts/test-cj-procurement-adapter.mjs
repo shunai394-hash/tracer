@@ -59,6 +59,13 @@ assert.match(order, /postCJSandboxAction\("simulatePay"/);
 assert.match(order, /postCJSandboxAction\("updateStatus"/);
 assert.match(order, /postCJSandboxAction\("updateTrackNumber"/);
 assert.match(adapter, /runCJSandboxOrderLifecycle/);
+assert.match(order, /postCJSandboxAction\("updateStatus", \{ orderId: id, targetStatus: 200 \}\)/);
+const sandboxUnpaidTransition = adapter.indexOf("await updateCJSandboxOrderStatus(orderId, 200);");
+const sandboxPaymentSimulation = adapter.indexOf("await simulateCJSandboxPayment(orderId);");
+assert.ok(sandboxUnpaidTransition >= 0 && sandboxPaymentSimulation > sandboxUnpaidTransition, "sandbox order must transition to UNPAID before simulated payment");
+assert.match(adapter, /CJ_SANDBOX_PREPAY_STATUS_TRANSITION_FAILED:supplierOrderId=/);
+assert.match(adapter, /CJ_SANDBOX_PAYMENT_SIMULATION_FAILED:supplierOrderId=/);
+
 const sandboxTransition = adapter.indexOf("await updateCJSandboxOrderStatus(orderId, 200)");
 const sandboxPayment = adapter.indexOf("await simulateCJSandboxPayment(orderId)");
 assert.ok(sandboxTransition >= 0 && sandboxTransition < sandboxPayment, "CJ sandbox order must transition CREATED(100) to UNPAID(200) before simulated payment");
