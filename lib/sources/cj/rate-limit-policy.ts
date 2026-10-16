@@ -33,3 +33,14 @@ export function isCJQuotaExhausted(diagnostic: CJRateLimitDiagnostic): boolean {
 export function getCJQuotaCooldownUntil(nowMs = Date.now()): string {
   return new Date(nowMs + 24 * 60 * 60 * 1000).toISOString();
 }
+
+/**
+ * Ignore the legacy circuit reason written by the old QPS/points conflation.
+ * New circuits must be written only after explicit daily-points exhaustion.
+ */
+export function isCJQuotaCircuitActive(metadata: unknown, nowMs = Date.now()): boolean {
+  const record = asRecord(metadata);
+  if (record.reason === "provider_points_remaining_zero") return false;
+  const blockedUntil = record.blockedUntil;
+  return typeof blockedUntil === "string" && Date.parse(blockedUntil) > nowMs;
+}
