@@ -116,6 +116,7 @@ assert.match(sandboxRoute, /previousMetadata\.realFulfillment === false/);
 assert.match(sandboxRoute, /TRACER CJ SANDBOX ORDER TEST COMPLETE/, "sandbox lifecycle success must be observable without logging the tracking number");
 const vercelConfig = JSON.parse(read("vercel.json"));
 assert.doesNotMatch(JSON.stringify(vercelConfig.crons), /cj-sandbox-order-test/, "sandbox order test must never be scheduled automatically");
+assert.doesNotMatch(JSON.stringify(vercelConfig.crons), /commerce-cj-sandbox-test/, "temporary clean-core sandbox cron must be removed after one-shot proof");
 const sandboxOnceWorkflow = read(".github/workflows/tracer-cj-sandbox-once.yml");
 assert.ok(sandboxOnceWorkflow.includes('cron: "1 0 16 10 *"'), "one-time CJ sandbox lifecycle proof must run in the reserved quota window");
 assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule), ["*/30 * * * *"], "clean supplier discovery must run every 30 minutes");
