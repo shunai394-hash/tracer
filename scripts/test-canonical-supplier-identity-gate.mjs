@@ -149,8 +149,7 @@ assert.doesNotMatch(unpublishWorkflow, /cron: "\\*\/15 \\* \\* \\*"/, "legacy re
 assert.doesNotMatch(unpublishWorkflow, /api\/cron\/unpublish-unlinked/);
 assert.doesNotMatch(patrolWorkflow, /^\s{2}schedule:/m, "production patrol must not have a duplicate GitHub Actions schedule");
 const vercelPatrolSchedules = JSON.parse(vercel).crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule);
-// de9506e0 restored the patrol-ai cron; keep exactly one five-minute schedule (no duplicates).
-assert.deepEqual(vercelPatrolSchedules, ["*/5 * * * *"], "patrol-ai must have exactly one five-minute Vercel schedule");
+assert.deepEqual(vercelPatrolSchedules, [], "legacy patrol cron must be absent; canonical commerce jobs own supplier import, publication, orders, and fulfillment");
 const cleanSupplierSchedules = JSON.parse(vercel).crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule);
 assert.deepEqual(cleanSupplierSchedules, ["*/10 * * * *"], "clean supplier discovery must run every 10 minutes");
 assert.deepEqual(JSON.parse(vercel).crons.filter((job) => job.path === "/api/cron/cj-identity-reverify"), [], "legacy identity re-verification must not run against the cleared legacy supplier table");
