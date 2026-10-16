@@ -477,3 +477,59 @@ export async function fetchBaseItemsSnapshot(options?: {
   }
   return { items, pages, complete };
 }
+
+
+export type BaseDeliveryCompany = {
+  delivery_company_id: number;
+  name: string;
+};
+
+export async function listBaseDeliveryCompanies(): Promise<BaseDeliveryCompany[]> {
+  const token = await getBaseAccessToken();
+  const response = await fetch(`${BASE_API_URL}/delivery_companies`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const text = await response.text();
+  let payload: Record<string, unknown> | null = null;
+  try { payload = JSON.parse(text) as Record<string, unknown>; } catch { payload = null; }
+  if (!response.ok) throw new Error(`BASE_DELIVERY_COMPANIES_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
+  const rows = payload?.delivery_companies;
+  if (!Array.isArray(rows)) throw new Error("BASE_DELIVERY_COMPANIES_RESPONSE_INVALID");
+  return rows.flatMap((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+    const row = value as Record<string, unknown>;
+    const id = Number(row.delivery_company_id);
+    const name = String(row.name ?? "").trim();
+    return Number.isSafeInteger(id) && id >= 0 && name ? [{ delivery_company_id: id, name }] : [];
+  });
+}
+
+export async function updateBaseOrderItemFulfillment(input: {
+  orderItemId: string;
+  trackingNumber: string;
+  addComment?: string;
+  atobarai?: boolean;
+  deliveryCompanyId?: number;
+}) {
+  const orderItemId = input.orderItemId.trim();
+  const trackingNumber = input.trackingNumber.trim();
+  if (!orderItemId) throw new Error("BASE_ORDER_ITEM_ID_REQUIRED");
+  if (!trackingNumber) throw new Error("BASE_TRACKING_NUMBER_REQUIRED");
+  const body = new URLSearchParams({ order_item_id: orderItemId });
+  if (input.atobarai) {
+    if (!Number.isSafeInteger(input.deliveryCompanyId) || Number(input.deliveryCompanyId) < 0) {
+      throw new Error("BASE_AFTERPAY_DELIVERY_COMPANY_REQUIRED");
+    }
+    if (!/^[A-Za-z0-9-]+$/.test(trackingNumber)) throw new Error("BASE_AFTERPAY_TRACKING_NUMBER_INVALID");
+    body.set("atobarai_status", "shipping");
+    body.set("delivery_company_id", String(input.deliveryCompanyId));
+    body.set("tracking_number", trackingNumber);
+  } else {
+    body.set("status", "dispatched");
+    body.set("add_comment", (input.addComment || ("[送り状番号]" + trackingNumber)).slice(0, 250));
+  }
+  return requestBase("/orders/edit_status", body);
+}
