@@ -440,7 +440,9 @@ export async function discoverAndCreateCjSupply(
       // the saved variant, resolve by exact variant ID and use its returned pid.
       if (!seededVariant) {
         const liveVariantById = await fetchCJVariantByVid(candidate.variantId);
-        if (liveVariantById?.vid === candidate.variantId) seededVariant = liveVariantById;
+        if (liveVariantById?.vid === candidate.variantId && liveVariantById.productId === candidate.id) {
+          seededVariant = liveVariantById;
+        }
       }
       if (!seededVariant) {
         rejected++;
