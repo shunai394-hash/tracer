@@ -64,9 +64,27 @@ jobs:
           failed=0
           # Small, bounded import batch; importer persists exact supplier-native product/variant IDs.
           call_get "api/cron/commerce-cj-import?limit=2" "cj-import.json" 300 || failed=1
-          # Publication routes enforce fresh supplier offer, stock, shipping and positive-profit gates.
-          call_get "api/cron/commerce-publish-base" "base-publish.json" 300 || failed=1
-          call_get "api/cron/commerce-publish-shopify" "shopify-publish.json" 300 || failed=1
-          # Always emit clean-core database counts; no live supplier order is initiated by this workflow.
+          call_post() {
+            local path="$1" out="$2" max_time="$3" t code
+            t="$(token)" || { echo "OIDC token failed for $path"; return 1; }
+            code="$(curl -sS -o "$out" -w "%{http_code}" --max-time "$max_time" \
+              -X POST -H "Authorization: Bearer $t" -H "Content-Type: application/json" \
+              --data '{}' "$BASE/$path" || true)"
+            echo "=== $path HTTP $code ==="
+            python3 - "$out" <<'PY'
+          import json,sys
+          try:
+              print(json.dumps(json.load(open(sys.argv[1])),ensure_ascii=False)[:6000])
+          except Exception:
+              print(open(sys.argv[1]).read()[:1200])
+          PY
+            [[ "$code" == "200" ]]
+          }
+          # Prove the clean catalog's exact CJ variant → sandbox order → simulated payment → tracking path.
+          # The callback persists supplierOrderId before payment so partial failures remain reconcilable.
+          call_post "api/cron/commerce-cj-sandbox-test" "cj-sandbox-core.json" 300 || failed=1
+          # Do not publish or enable paid live ordering from CI. Real storefront writes stay gated
+          # until the operator explicitly enables the production order/payment flags.
+          echo "Storefront publication intentionally held until explicit live-order approval; no live order was placed."
           echo "Recovery pass finished. Detailed JSON outputs are in the preceding step logs."
           exit "$failed"
