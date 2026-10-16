@@ -11,7 +11,7 @@ export const maxDuration = 300;
  * commerce order and never enables live ordering; the external order is marked
  * sandbox and must be confirmed uncharged/non-fulfilling by the supplier API.
  */
-export async function POST(request: Request) {
+async function runSandboxLifecycle(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   if (process.env.CJ_SANDBOX_ORDER_TEST_ENABLED?.trim() !== "1") {
@@ -175,4 +175,14 @@ export async function POST(request: Request) {
       realFulfillment: false,
     }, { status: 502 });
   }
+}
+
+
+/** Vercel Cron uses GET; the fixed audit key and bounded retries keep this one-shot. */
+export async function GET(request: Request) {
+  return runSandboxLifecycle(request);
+}
+
+export async function POST(request: Request) {
+  return runSandboxLifecycle(request);
 }
