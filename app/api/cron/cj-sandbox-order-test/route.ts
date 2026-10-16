@@ -130,16 +130,17 @@ export async function POST(request: Request) {
     const priorFinishedAt = Date.parse(String(previous.finished_at ?? previous.started_at ?? ""));
     const priorVariantId = String(previousListingQuery.data.supplier_variant_id ?? "").trim();
     const matchingOrders = providerOrders.filter((order) => {
-      const createdAt = Date.parse(order.createdAt.includes("T") || /(?:Z|[+-]\d{2}:?\d{2})$/i.test(order.createdAt)
-        ? order.createdAt
-        : `${order.createdAt.replace(" ", "T")}Z`);
+      const prefix = "TRACER-SANDBOX-";
+      const orderTimestamp = order.orderNumber.startsWith(prefix)
+        ? Number(order.orderNumber.slice(prefix.length))
+        : Number.NaN;
       return order.isSandbox &&
-        order.orderNumber.startsWith("TRACER-SANDBOX-") &&
+        /^TRACER-SANDBOX-\d{13}$/.test(order.orderNumber) &&
         ["CREATED", "100"].includes(order.status) &&
         order.variantIds.includes(priorVariantId) &&
-        Number.isFinite(createdAt) &&
-        createdAt >= priorStartedAt - 60_000 &&
-        createdAt <= priorFinishedAt + 60_000;
+        Number.isFinite(orderTimestamp) &&
+        orderTimestamp >= priorStartedAt - 60_000 &&
+        orderTimestamp <= priorFinishedAt + 60_000;
     });
     if (matchingOrders.length !== 1) {
       return NextResponse.json({
