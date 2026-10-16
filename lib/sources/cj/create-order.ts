@@ -39,8 +39,8 @@ export type CJCreateOrderInput = {
   fromCountryCode?: string;
   /** Required by CJ createOrderV2. Human-readable destination country. */
   shippingCountry?: string;
-  /** CJ payment mode: 1 = legacy page-payment (sandbox only), 2 = balance payment, 3 = create-only. */
-  payType?: 1 | 2 | 3;
+  /** CJ payment mode: 2 = automatic balance payment, 3 = create-only. */
+  payType?: 2 | 3;
   /** Explicitly create a CJ sandbox order; omitted for all live orders. */
   isSandbox?: boolean;
   products: CJOrderProduct[];
@@ -113,9 +113,6 @@ export async function createCJOrderV2(
 ): Promise<CJCreateOrderResult> {
   if (input.products.length === 0) {
     throw new CJRequestError("order has no line items");
-  }
-  if (input.payType === 1 && input.isSandbox !== true) {
-    throw new CJRequestError("CJ_PAGE_PAYMENT_DISABLED_FOR_LIVE_ORDER");
   }
 
   // Fail closed before obtaining a CJ access token. These are official
