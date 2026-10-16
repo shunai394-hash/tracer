@@ -246,7 +246,19 @@ export async function persistMarketplaceBestsellers(options: { startIndex?: numb
           },
         });
         if (!variantStage.ok) {
-          throw new Error(`tracer_v2_variant_stage_failed:${variantStage.reason ?? "unknown"}`);
+          const reason = variantStage.reason ?? "unknown";
+          // Another worker may complete variant_evidence_saved after the read
+          // above but before this append-only RPC. The RPC's ordered ledger is
+          // authoritative: if it says the next stage is supplier_matched, this
+          // replay must not fail the whole market-sourcing batch or regress the
+          // already-advanced product.
+          if (reason === "out_of_order_stage:expected=supplier_matched:received=variant_evidence_saved") {
+            console.warn("[TRACER V2] variant stage already advanced; concurrent replay skipped", {
+              productKey: tracerV2ProductKey,
+            });
+          } else {
+            throw new Error(`tracer_v2_variant_stage_failed:${reason}`);
+          }
         }
       }
 
