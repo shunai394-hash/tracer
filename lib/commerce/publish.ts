@@ -3,6 +3,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { cjSupplierAdapter } from "@/lib/procurement/cj-adapter";
 import { addBaseItemImage, createBaseItem, editBaseItem, isBaseConfigured } from "@/lib/channels/base";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, updateShopifyProduct } from "@/lib/shopify/admin";
+import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
+import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 
 type Channel = "base" | "shopify";
 type Candidate = {
@@ -69,6 +71,15 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
       continue;
     }
     const title = candidate.title_ja.trim() || product.title_ja.trim();
+    const storefrontStock = toStorefrontStockQuantity(offer.inventory, getStorefrontStockCap());
+    if (!isJapaneseProductTitle(title)) {
+      results.push({ variantId: candidate.id, ok: false, error: "japanese_product_title_invalid" });
+      continue;
+    }
+    if (storefrontStock <= 0) {
+      results.push({ variantId: candidate.id, ok: false, error: "storefront_stock_zero_after_cap" });
+      continue;
+    }
     const description = (product.description_ja || title + "。商品仕様・配送条件は仕入先の最新情報をご確認ください。").trim();
     const sku = "TRC-" + candidate.id.replace(/-/g, "").slice(0, 24).toUpperCase();
     let listingId: string | null = null;
@@ -85,7 +96,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
       if (channel === "base") {
         const itemId = externalProductId;
         const response = itemId
-          ? await editBaseItem({ itemId, title, detail: description, price: Number(price.selling_price), stock: Number(offer.inventory), visible: true })
+          ? await editBaseItem({ itemId, title, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: true })
           : await createBaseItem({ title, identifier: sku, detail: description, price: Number(price.selling_price), stock: Number(offer.inventory), visible: true });
         const returned = response.item?.item_id ?? response.item_id;
         externalProductId = String(returned ?? itemId ?? "");
@@ -118,7 +129,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10) {
         const variant = productResult.variants?.nodes?.[0];
         if (!variant?.id) throw new Error("shopify_variant_id_missing");
         externalVariantId = variant.id;
-        await setShopifyVariantInventory({ variantId: variant.id, quantity: Number(offer.inventory), reference: "commerce-core:" + candidate.id });
+        await setShopifyVariantInventory({ variantId: variant.id, quantity: storefrontStock, reference: "commerce-core:" + candidate.id });
         const publication = await ensureShopifyProductPublished(productResult.id);
         if (!publication.published) throw new Error("shopify_publication_not_confirmed");
         publishedUrl = "https://" + String(process.env.SHOPIFY_STORE_DOMAIN || "").replace(/^https?:\/\//, "") + "/products/" + productResult.handle;
