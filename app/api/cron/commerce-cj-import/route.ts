@@ -121,10 +121,23 @@ export async function GET(request: Request) {
               stats.errors.push("canonical_supplier_product_detail_missing:" + supplierProductId);
               continue;
             }
-            const [stockResult, freightResult] = await Promise.allSettled([
-              fetchCJVariantStock(variant.vid),
-              calculateCJFreight(variant.vid, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 }),
-            ]);
+            // CJ enforces one request per second per account. Do not issue stock and freight
+            // requests concurrently; parallel requests cause HTTP 429 and waste the quota window.
+            let stockResult: PromiseSettledResult<Awaited<ReturnType<typeof fetchCJVariantStock>>>;
+            try {
+              stockResult = { status: "fulfilled", value: await fetchCJVariantStock(variant.vid) };
+            } catch (reason) {
+              stockResult = { status: "rejected", reason };
+            }
+            let freightResult: PromiseSettledResult<Awaited<ReturnType<typeof calculateCJFreight>>>;
+            try {
+              freightResult = {
+                status: "fulfilled",
+                value: await calculateCJFreight(variant.vid, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 }),
+              };
+            } catch (reason) {
+              freightResult = { status: "rejected", reason };
+            }
             const stock = stockResult.status === "fulfilled" ? stockResult.value : null;
             const shipping = freightResult.status === "fulfilled" ? freightResult.value : null;
             if (stockResult.status === "rejected") stats.errors.push("stock:" + candidate.id + ":" + String(stockResult.reason).slice(0, 100));
