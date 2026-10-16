@@ -73,7 +73,7 @@ export async function getBasePublicShopUrl(): Promise<string | null> {
   if (typeof value !== "string" || !value.trim()) return null;
   try {
     const url = new URL(value.trim());
-    return url.protocol === "https:" ? url.origin : null;
+    return url.protocol === "https:" || url.protocol === "http:" ? url.origin : null;
   } catch {
     return null;
   }
