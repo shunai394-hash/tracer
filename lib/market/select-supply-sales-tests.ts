@@ -102,12 +102,17 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   // reconstruct the source_ref in memory. This keeps supplier identity exact
   // without linking a CJ item to an unrelated marketplace product.
   const sourceIdentityPairs = sourceRefs.map((sourceRef) => {
-    const parts = sourceRef.split(":");
+    // Canonical supply-first identity_key format is
+    // "cj:product:<supplierProductId>:variant:<supplierVariantId>".
+    // Parse the labeled segments rather than positional split indexes: using
+    // parts[1] here returned the literal word "product", causing every detached
+    // supplier listing lookup to miss and reject valid supply as missing.
+    const match = /^cj:product:([^:]+):variant:(.+)$/.exec(sourceRef);
     return {
       sourceRef,
       productId: sourceRefToProductId.get(sourceRef) ?? null,
-      supplierProductId: parts.length >= 3 ? parts[1] : "",
-      supplierVariantId: parts.length >= 3 ? parts.slice(2).join(":") : "",
+      supplierProductId: match?.[1] ?? "",
+      supplierVariantId: match?.[2] ?? "",
     };
   }).filter((item) => item.productId && item.supplierProductId && item.supplierVariantId);
   const detachedSupplierProductIds = [...new Set(sourceIdentityPairs.map((item) => item.supplierProductId))];
