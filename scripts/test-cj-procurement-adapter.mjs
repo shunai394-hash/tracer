@@ -64,6 +64,8 @@ assert.match(sandboxRoute, /CJ_SANDBOX_ORDER_TEST_ENABLED/);
 assert.match(sandboxRoute, /requireAutomationAuth/);
 assert.match(sandboxRoute, /SUPPLIER_LISTING_NOT_CJ_SANDBOX_CANDIDATE/);
 assert.match(sandboxRoute, /CJ_API_QUOTA_COOLDOWN/);
+assert.match(sandboxRoute, /isCJQuotaCircuitActive\(quotaMetadata\)/, "sandbox proof must use the canonical CJ quota-circuit policy");
+assert.doesNotMatch(sandboxRoute, /if \(blockedUntil && Date\.parse\(blockedUntil\) > Date\.now\(\)\)/, "legacy QPS metadata must not falsely block the sandbox lifecycle");
 assert.match(sandboxRoute, /cj-sandbox-order-lifecycle/);
 assert.doesNotMatch(sandboxRoute, /verification_status !== "verified"|orderable !== true|last_verified_at/, "sandbox lifecycle must be able to prove order-path capability for a fresh unverified candidate");
 assert.match(sandboxRoute, /runCJSandboxOrderLifecycle/);
@@ -73,7 +75,7 @@ assert.match(sandboxRoute, /TRACER CJ SANDBOX ORDER TEST COMPLETE/, "sandbox lif
 const vercelConfig = JSON.parse(read("vercel.json"));
 assert.doesNotMatch(JSON.stringify(vercelConfig.crons), /cj-sandbox-order-test/, "sandbox order test must never be scheduled automatically");
 const sandboxOnceWorkflow = read(".github/workflows/tracer-cj-sandbox-once.yml");
-assert.ok(sandboxOnceWorkflow.includes('cron: "1 0 16 10 *"'), "one-time CJ sandbox lifecycle proof must run in the reserved quota window");
+assert.ok(sandboxOnceWorkflow.includes('cron: "15 8 16 10 *"'), "one-time CJ sandbox lifecycle proof must run after the canonical variant recovery window");
 assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/cj-identity-reverify").map((job) => job.schedule), ["12,27,42,57 * * * *"], "CJ identity re-verification must be offset from catalog discovery");
 assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/supply-first").map((job) => job.schedule), ["5,35 * * * *"], "supply-first discovery must run on the 30-minute cadence staggered against identity re-verification");
 
