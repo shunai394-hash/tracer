@@ -266,3 +266,10 @@ test("CJ importer persists exact supplier variant IDs and rotates bounded child-
   assert.match(importer, /sku: exactVariant\.sku/);
   assert.match(importer, /supplierVariantId: exactVariant\.vid/);
 });
+
+test("CJ discovery rotates through search pages instead of repeatedly fetching page one", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /const discoveryBucket = Math\.floor\(Date\.now\(\) \/ 600_000\)/);
+  assert.match(importer, /url\.searchParams\.get\("page"\) \|\| \(discoveryBucket % 10\) \+ 1/);
+  assert.match(importer, /searchCJProducts\(query, \{ page, size: Math\.min\(20, limit \* 2\) \}\)/);
+});
