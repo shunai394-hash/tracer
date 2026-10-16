@@ -21,6 +21,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
+      - name: Check out repository history for deployment SHA verification
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Wait for production to serve this exact commit
         shell: bash
         run: |
