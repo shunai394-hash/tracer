@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   // Permit exactly one retry only after an explicit CJ create failure with no external order ID.
   // Any attempt that may have created an order remains locked for manual reconciliation.
   const safeCreateFailureRetry =
-    last?.event_key === "cj-sandbox-core:one-shot" &&
+    (last?.event_key === "cj-sandbox-core:one-shot" || last?.event_key === "cj-sandbox-core:retry-1") &&
     last.status === "failed" &&
     !(typeof lastDetail.supplierOrderId === "string" && lastDetail.supplierOrderId.trim()) &&
     previousErrorText.startsWith("CJ_SANDBOX_CREATE_FAILED:1603000");
@@ -83,7 +83,9 @@ export async function POST(request: Request) {
   }
 
   // A fixed unique key is the one-shot lock: parallel workflows cannot create duplicate sandbox orders.
-  const eventKey = safeCreateFailureRetry ? "cj-sandbox-core:retry-1" : "cj-sandbox-core:one-shot";
+  const eventKey = safeCreateFailureRetry
+    ? (last?.event_key === "cj-sandbox-core:one-shot" ? "cj-sandbox-core:retry-1" : "cj-sandbox-core:retry-2")
+    : "cj-sandbox-core:one-shot";
   const baseDetail: Record<string, unknown> = {
     supplierOfferId: selected.id,
     supplierProductId: selected.supplier_product_id,
@@ -113,7 +115,8 @@ export async function POST(request: Request) {
       shippingCountry: "Japan",
       shippingProvince: "Tokyo",
       shippingCity: "Chiyoda-ku",
-      shippingAddress: "1-1 Chiyoda",
+      shippingAddress: "1-1-1 Chiyoda",
+      shippingAddress2: "Sandbox Test Building 101",
       shippingZip: "1000001",
       shippingPhone: "09000000000",
       shippingCustomerName: "TRACER SANDBOX TEST",
@@ -154,7 +157,7 @@ export async function POST(request: Request) {
       realFulfillment: false,
     });
   } catch (error) {
-    const detail = error instanceof Error ? error.message.slice(0, 240) : "CJ sandbox lifecycle failed";
+    const detail = error instanceof Error ? error.message.slice(0, 800) : "CJ sandbox lifecycle failed";
     const { error: auditError } = await db.from("commerce_events").update({
       status: "failed",
       detail: { ...baseDetail, supplierOrderId, error: detail, failedAt: new Date().toISOString() },
