@@ -3,6 +3,10 @@
   "buildCommand": "npm run build",
   "crons": [
     {
+      "path": "/api/cron/commerce-base-fulfillment",
+      "schedule": "14,29,44,59 * * * *"
+    },
+    {
       "path": "/api/cron/commerce-base-orders",
       "schedule": "1,16,31,46 * * * *"
     },
@@ -13,10 +17,6 @@
     {
       "path": "/api/cron/commerce-procurement",
       "schedule": "13,28,43,58 * * * *"
-    },
-    {
-      "path": "/api/cron/shopify-fulfillment",
-      "schedule": "7,22,37,52 * * * *"
     },
     {
       "path": "/api/cron/commerce-publish-base",
@@ -31,8 +31,12 @@
       "schedule": "*/5 * * * *"
     },
     {
-      "path": "/api/cron/commerce-base-fulfillment",
-      "schedule": "14,29,44,59 * * * *"
+      "path": "/api/cron/shopify-fulfillment",
+      "schedule": "7,22,37,52 * * * *"
+    },
+    {
+      "path": "/api/cron/shopify-orders",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
