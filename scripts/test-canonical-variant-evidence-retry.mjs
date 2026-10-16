@@ -33,6 +33,6 @@ const [pipelineForBrightData, bestsellerRouteForBrightData, vercelForBrightData]
 ]);
 assert.match(pipelineForBrightData, /marketplace_sourcing_disabled_supplier_native_only/);
 assert.doesNotMatch(pipelineForBrightData, /writeMarketCursor|persistMarketplaceBestsellers/);
-assert.match(vercelForBrightData, /"path": "\/api\/cron\/market-sourcing"/);
+assert.doesNotMatch(vercelForBrightData, /"path": "\/api\/cron\/market-sourcing"/, "marketplace observation must not be scheduled; run it only as an explicit demand-research action");
 assert.match(bestsellerRouteForBrightData, /marketplace_sourcing_disabled_supplier_native_only/);
 assert.doesNotMatch(bestsellerRouteForBrightData, /persistMarketplaceBestsellers|canonicalVariantEvidenceParsed/);
