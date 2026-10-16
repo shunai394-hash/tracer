@@ -110,3 +110,13 @@ test("TRACER storefront includes canonical Shopify listings only when fulfillmen
   assert.match(store, /from\("commerce_events"\)/);
   assert.match(store, /const canonicalListings = await loadCanonicalCommerceListings\(\)/);
 });
+
+test("clean sandbox recovery retries only explicit no-order failures and uses a separate door-number field", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-cj-sandbox-test/route.ts", import.meta.url), "utf8");
+  assert.match(route, /last\?\.event_key === "cj-sandbox-core:retry-1"/);
+  assert.match(route, /cj-sandbox-core:retry-2/);
+  assert.match(route, /previousErrorText\.startsWith\("CJ_SANDBOX_CREATE_FAILED:1603000"\)/);
+  assert.match(route, /shippingAddress: "1-1"/);
+  assert.match(route, /shippingAddress2: "Chiyoda"/);
+  assert.match(route, /supplierOrderId/);
+});
