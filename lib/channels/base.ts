@@ -311,6 +311,14 @@ export type BaseReadOnlyProbeResult = {
  * Read-only BASE inventory probe. Uses one refreshed access token for all pages
  * and returns counts only; no item IDs, titles, or customer data leave this helper.
  */
+/**
+ * Upper bound on BASE /items pages (100 items each) a read-only scan may
+ * fetch. The production shop has more than 1,000 items, so the former cap of
+ * 10 pages always left the scan incomplete and the TRACER↔BASE mapping audit
+ * could never run.
+ */
+export const BASE_ITEMS_MAX_PAGES = 50;
+
 export async function probeBaseReadOnly(options?: {
   itemPageLimit?: number;
   itemMaxPages?: number;
@@ -356,7 +364,7 @@ export async function probeBaseReadOnly(options?: {
   };
 
   const pageLimit = Math.min(100, Math.max(1, Math.floor(options?.itemPageLimit ?? 100)));
-  const maxPages = Math.min(10, Math.max(1, Math.floor(options?.itemMaxPages ?? 10)));
+  const maxPages = Math.min(BASE_ITEMS_MAX_PAGES, Math.max(1, Math.floor(options?.itemMaxPages ?? 10)));
   let offset = 0;
   for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
     try {
@@ -436,7 +444,7 @@ export async function fetchBaseItemsSnapshot(options?: {
 }): Promise<{ items: Record<string, unknown>[]; pages: number; complete: boolean }> {
   const token = await getBaseAccessToken();
   const pageLimit = Math.min(100, Math.max(1, Math.floor(options?.itemPageLimit ?? 100)));
-  const maxPages = Math.min(10, Math.max(1, Math.floor(options?.itemMaxPages ?? 10)));
+  const maxPages = Math.min(BASE_ITEMS_MAX_PAGES, Math.max(1, Math.floor(options?.itemMaxPages ?? 10)));
   const items: Record<string, unknown>[] = [];
   let pages = 0;
   let offset = 0;
