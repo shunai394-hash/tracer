@@ -72,6 +72,20 @@ assert.match(sandboxRoute, /CJ_API_QUOTA_COOLDOWN/);
 assert.match(sandboxRoute, /cj-sandbox-order-lifecycle/);
 assert.doesNotMatch(sandboxRoute, /verification_status !== "verified"|orderable !== true|last_verified_at/, "sandbox lifecycle must be able to prove order-path capability for a fresh unverified candidate");
 assert.match(sandboxRoute, /runCJSandboxOrderLifecycle/);
+assert.match(order, /export async function confirmCJSandboxOrder/);
+assert.match(order, /shopping\/order\/confirmOrder/);
+assert.match(order, /export async function listCJSandboxOrders/);
+assert.match(adapter, /await confirmCJSandboxOrder\(orderId\)/,
+  "CJ sandbox order must be confirmed from CREATED to UNPAID before simulated payment");
+assert.match(adapter, /onOrderCreated\?/,
+  "persist supplier order ID immediately after creation so a later failure can resume without duplicates");
+assert.match(sandboxRoute, /listCJSandboxOrders\("CREATED"\)/);
+assert.match(sandboxRoute, /previousFailureNeedsOrderRecovery/);
+assert.match(sandboxRoute, /supplierOrderId: activeSupplierOrderId/,
+  "sandbox failures must retain the created supplier order ID for reconciliation");
+assert.match(sandboxRoute, /TRACER-SANDBOX-\\d\{13\}/,
+  "recovery must match the unique timestamped order number instead of relying on local guesses");
+
 assert.match(adapter, /fetchCJProductVariants\(input\.supplierProductId\)/, "sandbox lifecycle must resolve price from the exact live child under its parent");
 assert.match(adapter, /fetchCJVariantStock\(input\.supplierVariantId\)/, "sandbox lifecycle must use the dedicated live stock endpoint when queryByVid omits inventory");
 assert.match(adapter, /const sourceCountries = warehouses\.length \? warehouses\.map\(\(warehouse\) => warehouse\.countryCode\) : \["CN"\]/, "sandbox freight lookup must fall back to a live CN-origin quote when warehouse rows are omitted");
