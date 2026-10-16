@@ -28,6 +28,9 @@ assert.match(pipeline, /selectAndPublishSupplySalesTests\(supplyCandidateIds,\s*
 const salesRoute = readFileSync("app/api/cron/sales-test-publication/route.ts", "utf8");
 assert.match(salesRoute, /mode: "canonical_supply_fast_path"/, "cron telemetry must name the supply-first path it actually runs");
 assert.doesNotMatch(salesRoute, /mode: "market_linked_sales_test"/, "cron telemetry must not mislabel supply-first runs as market-linked-only");
+assert.match(salesRoute, /nativeSourceRefs/);
+assert.match(salesRoute, /`cj:\\$\{productId\}:\\$\{variantId\}`/);
+assert.doesNotMatch(salesRoute, /\.not\("product_id",\s*"is",\s*null\)/, "standalone CJ supply resolves its TRACER product only by exact source_ref");
 assert.match(selector, /options\.allowNativeCjIdentity\s*===\s*true/);
 assert.match(selector, /sourceRefToProductId/, "native supply candidates resolve their TRACER-owned product by deterministic source_ref");
 assert.match(selector, /metadata->>source_ref/, "detached supply listings are queried without writing marketplace identity");
