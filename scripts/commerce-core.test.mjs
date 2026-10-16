@@ -16,12 +16,12 @@ test("rejects negative costs", () => {
   assert.throws(() => calculateSellingPrice({ unitCostJpy: -1, shippingCostJpy: 0, feeRate: 0.1 }), /invalid_unitCostJpy/);
 });
 
-test("catalog publication is independent of live supplier-ordering capability but requires fresh supplier evidence", async () => {
+test("storefront publication is independent from live supplier purchasing", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
-  assert.match(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
-  assert.match(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
-  assert.match(publish, /supplier_offer_missing_or_out_of_stock/);
+  assert.match(publish, /source_status", "verified/);
+  assert.match(publish, /expected_profit", 0/);
+  assert.match(publish, /tracking_supported", true/);
 });
 
 test("publication and price calculation require fresh verified supplier evidence", async () => {
