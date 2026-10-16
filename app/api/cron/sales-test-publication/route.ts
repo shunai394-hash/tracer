@@ -43,7 +43,7 @@ async function promoteGatePassedListings(selectedListingIds: string[]) {
   // Deliver to NEWFIND before BASE. A BASE image/API failure must not overwrite
   // the durable Sales Test Gate provenance before another channel can use it.
   const newfind = await Promise.all(
-    selectedListingIds.map((listingId) => promoteShopListingToNewfind(listingId).catch((error) => ({
+    publishedListingIds.map((listingId) => promoteShopListingToNewfind(listingId).catch((error) => ({
       configured: true,
       sent: false,
       eventId: `tracer-shop-listing:${listingId}`,
