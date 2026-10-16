@@ -15,6 +15,10 @@
       "schedule": "13,28,43,58 * * * *"
     },
     {
+      "path": "/api/cron/shopify-fulfillment",
+      "schedule": "7,22,37,52 * * * *"
+    },
+    {
       "path": "/api/cron/commerce-publish-base",
       "schedule": "10,25,40,55 * * * *"
     },
