@@ -115,6 +115,10 @@ test("procurement revalidates the exact fresh profitable offer and preserves a c
   assert.doesNotMatch(worker, /country_code_v2"\)\.toUpperCase\(\) \|\| "JP"/);
 });
 
+test("five-minute AI patrol remains scheduled alongside canonical commerce jobs", async () => {
+  const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+  assert.equal(config.crons.find((job) => job.path === "/api/cron/patrol-ai")?.schedule, "*/5 * * * *");
+});
 test("clean commerce cron schedule uses only the new supplier, channel, order, and procurement routes", async () => {
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
   const schedules = new Map(config.crons.map((job) => [job.path, job.schedule]));
@@ -123,7 +127,7 @@ test("clean commerce cron schedule uses only the new supplier, channel, order, a
   assert.equal(schedules.get("/api/cron/commerce-publish-shopify"), "*/15 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,16,31,46 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-procurement"), "13,28,43,58 * * * *");
-  assert.equal(schedules.has("/api/cron/patrol-ai"), false, "legacy patrol cron must be disabled");
+  assert.equal(schedules.get("/api/cron/patrol-ai"), "*/5 * * * *", "required AI patrol cron must remain enabled");
   assert.equal(schedules.has("/api/cron/market-sourcing"), false);
   assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
   assert.equal(schedules.has("/api/cron/supply-first"), false);
