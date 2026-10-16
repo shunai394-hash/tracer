@@ -1,0 +1,72 @@
+name: TRACER clean-commerce bounded recovery
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  recover:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'TRACER_CLEAN_COMMERCE_RECOVERY')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Wait for production to serve this exact commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          ready=0
+          for attempt in $(seq 1 36); do
+            code="$(curl -sS -o /tmp/health.json -w "%{http_code}" --max-time 10 "$BASE/api/health" || true)"
+            sha="$(python3 -c 'import json; d=json.load(open("/tmp/health.json")); print(d.get("gitCommitSha") or "")' 2>/dev/null || true)"
+            if [[ "$code" == "200" && "$sha" == "$GITHUB_SHA" ]]; then
+              echo "Production is serving expected commit $GITHUB_SHA."
+              ready=1
+              break
+            fi
+            echo "Waiting for deployment: HTTP=$code sha=$sha attempt=$attempt/36"
+            sleep 10
+          done
+          [[ "$ready" == "1" ]] || { echo "Production did not serve this commit within 6 minutes."; exit 1; }
+
+      - name: Import supplier-native CJ products and run gated channel publication
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token() {
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          call_get() {
+            local path="$1" out="$2" max_time="$3" t code
+            t="$(token)" || { echo "OIDC token failed for $path"; return 1; }
+            code="$(curl -sS -o "$out" -w "%{http_code}" --max-time "$max_time" \
+              -H "Authorization: Bearer $t" "$BASE/$path" || true)"
+            echo "=== $path HTTP $code ==="
+            python3 - "$out" <<'PY'
+          import json,sys
+          try:
+              d=json.load(open(sys.argv[1]))
+              print(json.dumps(d,ensure_ascii=False)[:6000])
+          except Exception:
+              print(open(sys.argv[1]).read()[:1200])
+          PY
+            [[ "$code" == "200" || "$code" == "207" ]]
+          }
+          failed=0
+          # Small, bounded import batch; importer persists exact supplier-native product/variant IDs.
+          call_get "api/cron/commerce-cj-import?limit=2" "cj-import.json" 300 || failed=1
+          # Publication routes enforce fresh supplier offer, stock, shipping and positive-profit gates.
+          call_get "api/cron/commerce-publish-base" "base-publish.json" 300 || failed=1
+          call_get "api/cron/commerce-publish-shopify" "shopify-publish.json" 300 || failed=1
+          # Always emit clean-core database counts; no live supplier order is initiated by this workflow.
+          echo "Recovery pass finished. Detailed JSON outputs are in the preceding step logs."
+          exit "$failed"
