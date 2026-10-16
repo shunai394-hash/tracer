@@ -55,8 +55,8 @@ test("bounded recovery processes only unpublished channel listings", async () =>
   assert.match(publish, /sortedCandidates\.filter\(\(candidate\) => stateByVariant\.get\(candidate\.id\)\?\.status !== "published"\)/);
   assert.match(baseRoute, /onlyUnpublished/);
   assert.match(shopifyRoute, /onlyUnpublished/);
-  assert.match(workflow, /commerce-publish-base\?limit=100&onlyUnpublished=true/);
-  assert.match(workflow, /commerce-publish-shopify\?limit=100&onlyUnpublished=true/);
+  assert.match(workflow, /commerce-publish-base\?limit=10&onlyUnpublished=true/);
+  assert.match(workflow, /commerce-publish-shopify\?limit=10&onlyUnpublished=true/);
 });
 
 test("stale listing eligibility uses batched supplier, price, and variant reads", async () => {
