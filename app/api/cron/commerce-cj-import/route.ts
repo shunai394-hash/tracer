@@ -154,11 +154,39 @@ export async function GET(request: Request) {
     } else {
       const results = await searchCJProducts(query, { page, size: Math.min(20, limit * 2) });
       stats.searched = results.products.length;
-      candidates = results.products.slice(0, limit);
+      const db = createSupabaseAdminClient();
+      const { data: knownProducts, error: knownProductsError } = await db
+        .from("commerce_products").select("source_key").like("source_key", "cj:%").limit(5000);
+      if (knownProductsError) throw new Error("known_cj_catalog_read_failed:" + knownProductsError.message);
+      const knownParentIds = new Set((knownProducts ?? []).map((row) => {
+        const key = String(row.source_key ?? "");
+        return key.startsWith("cj:") ? key.slice(3) : "";
+      }).filter(Boolean));
+      const uniqueSearchProducts = new Map<string, ImportCandidate>();
+      for (const item of results.products) {
+        const id = String(item.id ?? "").trim();
+        if (/^\d{10,22}$/.test(id) && !uniqueSearchProducts.has(id)) uniqueSearchProducts.set(id, item);
+      }
+      // Prefer never-imported CJ parents so search pages containing existing products
+      // cannot consume the entire per-run batch and stall catalog growth.
+      const newCandidates = [...uniqueSearchProducts.values()].filter((item) => !knownParentIds.has(item.id));
+      let scanPage = page + 1;
+      while (newCandidates.length < limit && scanPage <= page + 2) {
+        const extra = await searchCJProducts(query, { page: scanPage, size: Math.min(20, limit * 2) });
+        stats.searched += extra.products.length;
+        for (const item of extra.products) {
+          const id = String(item.id ?? "").trim();
+          if (!/^\d{10,22}$/.test(id) || uniqueSearchProducts.has(id)) continue;
+          uniqueSearchProducts.set(id, item);
+          if (!knownParentIds.has(id)) newCandidates.push(item);
+        }
+        scanPage += 1;
+      }
+      const fallbackCandidates = [...uniqueSearchProducts.values()].filter((item) => knownParentIds.has(item.id));
+      candidates = [...newCandidates, ...fallbackCandidates].slice(0, limit);
       // Prioritize previously failed, syntactically valid CJ parent IDs so transient
       // API failures can be retried instead of leaving those offers errored forever.
       try {
-        const db = createSupabaseAdminClient();
         const [{ data: failedOffers, error: failedOffersError }, { data: listingErrors, error: listingErrorsError }] = await Promise.all([
           db.from("supplier_offers")
             .select("supplier_product_id")
