@@ -214,7 +214,7 @@ test("Shopify fulfillment tracking sync runs automatically after procurement", a
   const route = await readFile(new URL("../app/api/cron/shopify-fulfillment/route.ts", import.meta.url), "utf8");
   assert.match(route, /syncShopifyFulfillments\(25\)/);
 });
-test("clean commerce cron schedule includes canonical supplier, channel, order, and procurement routes without legacy patrol", async () => {
+test("clean commerce cron schedule preserves canonical routes and the required five-minute patrol", async () => {
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
   const schedules = new Map(config.crons.map((job) => [job.path, job.schedule]));
   assert.equal(schedules.get("/api/cron/commerce-cj-import"), "*/10 * * * *");
@@ -222,7 +222,7 @@ test("clean commerce cron schedule includes canonical supplier, channel, order, 
   assert.equal(schedules.get("/api/cron/commerce-publish-shopify"), "*/15 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,16,31,46 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-procurement"), "13,28,43,58 * * * *");
-  assert.equal(schedules.has("/api/cron/patrol-ai"), false, "canonical commerce cron must not duplicate the legacy patrol");
+  assert.equal(schedules.get("/api/cron/patrol-ai"), "*/5 * * * *", "the existing patrol must remain enabled every five minutes");
   assert.equal(schedules.has("/api/cron/market-sourcing"), false);
   assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
   assert.equal(schedules.has("/api/cron/supply-first"), false);
