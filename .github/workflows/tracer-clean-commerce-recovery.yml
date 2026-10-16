@@ -81,6 +81,9 @@ jobs:
             [[ "$code" == "200" || "$code" == "207" ]]
           }
           failed=0
+          # Recheck persisted legacy CJ supplier identities with live API evidence first.
+          # This refreshes evidence only; no customer order or supplier purchase is created.
+          call_get "api/cron/cj-identity-reverify?limit=4&force=1" "cj-identity-reverify.json" 240 || failed=1
           # Refresh existing products by exact CJ IDs before discovering any new products.
           call_get "api/cron/commerce-cj-import?productIds=1732295872995663872,1732293361517735936,2406100641131613800,2406110943541622000&limit=4" "cj-refresh-bags-hair-1.json" 300 || failed=1
           call_get "api/cron/commerce-cj-import?productIds=1715919913287692288,1439910326744256512,2409230148051626500,1606597353589452800&limit=4" "cj-refresh-bags-hair-2.json" 300 || failed=1
