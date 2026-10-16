@@ -92,10 +92,10 @@ export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   const url = new URL(request.url);
+  // Keep discovery aligned with the user's catalog priorities:
+  // women's bags first, then beauty tools, then hair accessories.
   const queryOptions = [
     "women handbag", "beauty tools", "hair accessories women",
-    "phone case", "pet accessories", "kitchen storage",
-    "travel accessories", "jewelry women",
   ];
   const explicitQuery = url.searchParams.get("q");
   const discoveryBucket = Math.floor(Date.now() / 600_000);
