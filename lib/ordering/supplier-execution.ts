@@ -1,4 +1,6 @@
 import "server-only";
+import { isProcurementApprovalRequired } from "@/lib/commerce/procurement-approval";
+import { commerceProcurementConflictForShopOrder } from "@/lib/commerce/cross-pipeline-guard";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
@@ -440,7 +442,9 @@ export async function executeSupplierPurchaseOrder(
   }
 
   const autoOrdering = isSupplierAutoOrderingEnabled(supplierName);
-  if (!po.human_confirmed_at && !autoOrdering) {
+  // Per-order human approval stays mandatory even when auto-ordering is on,
+  // unless COMMERCE_PROCUREMENT_REQUIRE_APPROVAL is explicitly "0".
+  if (!po.human_confirmed_at && (!autoOrdering || isProcurementApprovalRequired())) {
     return {
       purchaseOrderId,
       supplierName,
@@ -448,6 +452,23 @@ export async function executeSupplierPurchaseOrder(
       succeeded: false,
       supplierOrderId: null,
       reason: "human_confirmation_required",
+      gate,
+    };
+  }
+
+  // The canonical commerce pipeline may hold the same customer order.
+  // Inventory reorders have no customer order and cannot be duplicated there.
+  const crossPipeline = po.shop_order_id
+    ? await commerceProcurementConflictForShopOrder(String(po.shop_order_id))
+    : { conflict: false, reason: null, references: [] };
+  if (crossPipeline.conflict) {
+    return {
+      purchaseOrderId,
+      supplierName,
+      attempted: false,
+      succeeded: false,
+      supplierOrderId: null,
+      reason: crossPipeline.reason ?? "cross_pipeline_duplicate",
       gate,
     };
   }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { fetchBaseItemsSnapshot, isBaseConfigured } from "@/lib/channels/base";
+import { fetchBaseItemsSnapshot, isBaseConfigured, BASE_ITEMS_MAX_PAGES } from "@/lib/channels/base";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: 10 });
+    const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES });
     if (!snapshot.complete) {
       return NextResponse.json({ ok: false, error: "BASE_ITEMS_SNAPSHOT_INCOMPLETE" }, { status: 502 });
     }

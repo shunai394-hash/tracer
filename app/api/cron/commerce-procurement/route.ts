@@ -4,6 +4,14 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isCanonicalCjNativeId } from "@/lib/commerce/core";
 import { cjSupplierAdapter } from "@/lib/procurement/cj-adapter";
 import type { SupplierOrderInput } from "@/lib/procurement/types";
+import { checkKillSwitch } from "@/lib/ops/kill-switch";
+import { isSupplierDryRunEnabled } from "@/lib/config/env";
+import {
+  evaluateProcurementApproval,
+  isProcurementApprovalRequired,
+  procurementApprovalEventKey,
+} from "@/lib/commerce/procurement-approval";
+import { legacyPurchaseConflictForCommerceOrder } from "@/lib/commerce/cross-pipeline-guard";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -50,7 +58,7 @@ export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   const db = createSupabaseAdminClient();
-  const result = { checked: 0, submitted: 0, confirmed: 0, shipped: 0, failed: 0, blocked: 0, stuckProcessing: 0, errors: [] as string[] };
+  const result = { checked: 0, submitted: 0, confirmed: 0, shipped: 0, failed: 0, blocked: 0, awaitingApproval: 0, stuckProcessing: 0, errors: [] as string[] };
 
   // Poll existing supplier orders first; never submit an order twice to obtain tracking.
   const { data: active, error: activeError } = await db.from("procurement_orders")
@@ -96,9 +104,23 @@ export async function GET(request: Request) {
   if (!cjSupplierAdapter.capabilities.liveOrdering) {
     return NextResponse.json({ ok: result.failed === 0, ...result, submission: "disabled_until_live_order_and_payment_flow_are_verified" }, { status: 200 });
   }
+  // The legacy ordering path honours these controls; the canonical path must too.
+  if (isSupplierDryRunEnabled()) {
+    return NextResponse.json({ ok: result.failed === 0, ...result, submission: "supplier_dry_run_enabled" }, { status: 200 });
+  }
+  let killSwitch;
+  try {
+    killSwitch = await checkKillSwitch({ supplier: "cj" });
+  } catch (error) {
+    return NextResponse.json({ ok: false, ...result, error: "kill_switch_read_failed:" + (error instanceof Error ? error.message : String(error)).slice(0, 200) }, { status: 500 });
+  }
+  if (killSwitch.blocked) {
+    return NextResponse.json({ ok: result.failed === 0, ...result, submission: "kill_switch_active", killSwitch: killSwitch.matched }, { status: 200 });
+  }
+  const approvalRequired = isProcurementApprovalRequired();
 
   const { data: pending, error: pendingError } = await db.from("procurement_orders")
-    .select("id,supplier_code,supplier_product_id,supplier_variant_id,quantity,status,commerce_order_lines!inner(id,variant_id,supplier_offer_id,quantity,commerce_orders!inner(id,external_order_id,payment_status,customer_name,shipping_address,raw_payload))")
+    .select("id,supplier_code,supplier_product_id,supplier_variant_id,quantity,status,commerce_order_lines!inner(id,variant_id,supplier_offer_id,quantity,commerce_orders!inner(id,channel,external_order_id,payment_status,customer_name,shipping_address,raw_payload))")
     .eq("supplier_code", "cj").eq("status", "pending").limit(10);
   if (pendingError) return NextResponse.json({ ok: false, ...result, error: "procurement_pending_read_failed:" + pendingError.message }, { status: 500 });
 
@@ -151,6 +173,47 @@ export async function GET(request: Request) {
     if (priceError || !price || price.supplier_offer_id !== offerId || Number(price.expected_profit) <= 0) {
       result.blocked++;
       result.errors.push(String(row.id) + ":exact_supplier_offer_price_missing_or_unprofitable");
+      continue;
+    }
+
+    // A live CJ order is paid from the CJ balance at once, so each procurement
+    // row needs a person's approval bound to exactly these supplier IDs and
+    // quantity. Without it, record a visible approval request and stop here.
+    if (approvalRequired) {
+      const target = {
+        id: String(row.id), supplierCode: "cj",
+        supplierProductId: String(row.supplier_product_id ?? ""),
+        supplierVariantId: String(row.supplier_variant_id ?? ""),
+        quantity: Number(row.quantity),
+      };
+      const { data: approvalEvent, error: approvalError } = await db.from("commerce_events")
+        .select("event_type,status,detail").eq("event_key", procurementApprovalEventKey(target.id)).maybeSingle();
+      if (approvalError) { result.failed++; result.errors.push(target.id + ":approval_read_failed:" + approvalError.message); continue; }
+      const decision = evaluateProcurementApproval(target, approvalEvent);
+      if (!decision.approved) {
+        result.awaitingApproval++;
+        result.errors.push(target.id + ":awaiting_human_approval:" + decision.reason);
+        await db.from("commerce_events").upsert({
+          event_key: "procurement_approval_request:" + target.id,
+          event_type: "procurement_approval_requested",
+          entity_type: "procurement_order", entity_id: target.id, status: "pending",
+          detail: {
+            ...target,
+            externalOrderId: str(order, "external_order_id"),
+            expectedProfitJpy: Number(price.expected_profit),
+            reason: decision.reason,
+          },
+        }, { onConflict: "event_key", ignoreDuplicates: true });
+        continue;
+      }
+    }
+
+    // The legacy pipeline may have ingested the same customer order; never
+    // buy it twice from the supplier.
+    const crossPipeline = await legacyPurchaseConflictForCommerceOrder(str(order, "channel"), str(order, "external_order_id"), db);
+    if (crossPipeline.conflict) {
+      result.blocked++;
+      result.errors.push(String(row.id) + ":" + crossPipeline.reason);
       continue;
     }
 
