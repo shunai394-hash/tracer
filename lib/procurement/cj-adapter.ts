@@ -16,7 +16,6 @@ import {
 } from "@/lib/sources/cj";
 import {
   createCJOrderV2,
-  confirmCJSandboxOrder,
   getCJOrderStatus,
   getCJTrackingInfo,
   simulateCJSandboxPayment,
@@ -479,7 +478,7 @@ export async function runCJSandboxOrderLifecycle(
     email: input.email,
     logisticName: freight.logisticName,
     fromCountryCode: freight.countryCode,
-    payType: 3,
+    payType: 1,
     isSandbox: true,
     products: [{ vid: variant.vid, quantity: input.quantity }],
   });
@@ -488,8 +487,7 @@ export async function runCJSandboxOrderLifecycle(
   // Persist the external order ID immediately so a later payment/status failure is reconcilable.
   if (onOrderCreated) await onOrderCreated(orderId);
 
-  // payType=3 leaves the order in CREATED(100); confirmOrder moves it to UNPAID before sandbox payment.
-  await confirmCJSandboxOrder(orderId);
+  // Page-payment mode creates an unpaid sandbox order; sandbox simulatePay advances it to paid without charging real balance.
   await simulateCJSandboxPayment(orderId);
   const trackingNumber = `SBXTRACER${Date.now()}`;
   await updateCJSandboxTrackingNumber(orderId, trackingNumber);
