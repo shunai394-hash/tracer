@@ -65,14 +65,14 @@ const createdIdCallback = adapter.indexOf("if (onOrderCreated) await onOrderCrea
 const sandboxBalancePayment = adapter.indexOf("await payCJSandboxOrderBalance(orderId)");
 assert.ok(createdIdCallback >= 0 && createdIdCallback < sandboxBalancePayment,
   "persist created supplier order ID before sandbox balance payment");
-assert.match(adapter, /await payCJSandboxOrderBalance\\(orderId\\)/);
-assert.doesNotMatch(adapter, /await confirmCJSandboxOrder\\(orderId\\)|await simulateCJSandboxPayment\\(orderId\\)/,
+assert.ok(adapter.includes("await payCJSandboxOrderBalance(orderId)"));
+assert.ok(!adapter.includes("await confirmCJSandboxOrder(orderId)") && !adapter.includes("await simulateCJSandboxPayment(orderId)"),
   "payType=3 sandbox orders must use balance payment, not an unsupported status transition");
 assert.match(adapter, /payType: 3,/,
   "sandbox order must be created without initiating payment before the balance-payment step");
-assert.match(order, /shopping\/order\/confirmOrder/);
-assert.match(order, /method: "PATCH"/);
-assert.doesNotMatch(adapter, /updateCJSandboxOrderStatus\(orderId, 200\)/);
+assert.ok(order.includes("/shopping/order/confirmOrder"));
+assert.ok(order.includes('method: "PATCH"'));
+assert.ok(!adapter.includes("updateCJSandboxOrderStatus(orderId, 200)"));
 const cleanSandboxRoute = read("app/api/cron/commerce-cj-sandbox-test/route.ts");
 assert.match(cleanSandboxRoute, /from\("supplier_offers"\)/);
 assert.match(cleanSandboxRoute, /from\("commerce_events"\)/);
