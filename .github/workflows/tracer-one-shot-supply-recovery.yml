@@ -76,7 +76,7 @@ except Exception:
 PY
           }
 
-          call_get "api/cron/rebuild-cj-import?q=women%20handbag&limit=3" 300 || true
+          call_get "api/cron/commerce-cj-import?q=women%20handbag&limit=3" 300 || true
           call_get "api/cron/commerce-publish-base?limit=3" 120 || true
           call_get "api/cron/commerce-publish-shopify?limit=3" 120 || true
           call_get "api/cron/commerce-base-orders" 120 || true
