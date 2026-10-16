@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { searchCJProducts, getCJProductDetail, fetchCJProductVariants, fetchCJVariantByVid, fetchCJVariantStock, calculateCJFreight } from "@/lib/sources/cj";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
@@ -139,6 +140,37 @@ export async function GET(request: Request) {
       const results = await searchCJProducts(query, { page, size: Math.min(20, limit * 2) });
       stats.searched = results.products.length;
       candidates = results.products.slice(0, limit);
+      // Prioritize previously failed, syntactically valid CJ parent IDs so transient
+      // API failures can be retried instead of leaving those offers errored forever.
+      try {
+        const db = createSupabaseAdminClient();
+        const { data: failedOffers, error: failedOffersError } = await db.from("supplier_offers")
+          .select("supplier_product_id")
+          .eq("supplier_code", "cj")
+          .eq("source_status", "error")
+          .order("updated_at", { ascending: true })
+          .limit(30);
+        if (failedOffersError) {
+          stats.errors.push("failed_offer_recovery_read:" + failedOffersError.message.slice(0, 120));
+        } else {
+          const seen = new Set(candidates.map((item) => item.id));
+          const recoveryIds = [...new Set((failedOffers ?? [])
+            .map((row) => String(row.supplier_product_id ?? "").trim())
+            .filter((id) => /^\\d{10,22}$/.test(id) && !seen.has(id)))].slice(0, 2);
+          for (const id of recoveryIds) {
+            const detail = await getCJProductDetail(id);
+            if (!detail) {
+              stats.skipped++;
+              continue;
+            }
+            forcedDetails.set(id, detail);
+            candidates.push({ id, title: detail.title, productType: detail.productType, imageUrl: detail.imageUrl });
+            seen.add(id);
+          }
+        }
+      } catch (recoveryError) {
+        stats.errors.push("failed_offer_recovery:" + (recoveryError instanceof Error ? recoveryError.message : String(recoveryError)).slice(0, 120));
+      }
     }
     for (const candidate of candidates) {
       try {
