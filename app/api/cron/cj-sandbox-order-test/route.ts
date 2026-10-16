@@ -104,10 +104,13 @@ export async function POST(request: Request) {
       const recentOrders = await listRecentCJSandboxCreatedOrders(sinceMs);
       const matches = recentOrders.filter((order) => {
         const createdAt = Date.parse(String(order.createDate ?? ""));
+        const customer = String(order.shippingCustomerName ?? "").trim();
+        const countryCode = String(order.shippingCountryCode ?? "").toUpperCase();
+        const address = String(order.shippingAddress ?? "");
         const sameTestRecipient =
-          String(order.shippingCustomerName ?? "").trim() === "TRACER SANDBOX TEST" &&
-          String(order.shippingCountryCode ?? "").toUpperCase() === "JP" &&
-          String(order.shippingAddress ?? "").includes("1-1 Chiyoda");
+          (!customer || customer === "TRACER SANDBOX TEST") &&
+          (!countryCode || countryCode === "JP") &&
+          (!address || address.includes("1-1 Chiyoda"));
         const recent = !Number.isFinite(createdAt) || createdAt >= sinceMs;
         return sameTestRecipient && recent;
       });
