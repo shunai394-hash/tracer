@@ -130,17 +130,15 @@ assert.match(baseRepair, /identity_evidence_ambiguous/);
 assert.match(baseRepair, /snapshot\.complete/, "incomplete BASE snapshots must never be used for identity repair");
 assert.match(baseRepair, /\.is\("base_item_id", null\)/, "BASE identity repair must compare-and-set only missing links");
 assert.doesNotMatch(baseRepair, /\.update\(\{[^}]*published\s*:/, "BASE identity repair must not change publication state");
-// Keep Vercel Cron disabled; guarded 15-minute reconciliation runs through GitHub Actions OIDC.
-assert.doesNotMatch(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/, "use the guarded GitHub Actions reconciliation schedule without a duplicate Vercel cron");
+// Legacy unlinked-listing reconciliation stays disabled after the clean commerce reset.
+assert.doesNotMatch(vercel, /"path": "\/api\/cron\/unpublish-unlinked"/, "do not schedule legacy reconciliation against the cleared catalog");
 assert.doesNotMatch(vercel, /"path": "\/api\/cron\/(supplier-investigation|demand-match)"/, "supplier discovery and marketplace matching must not run as independent cron sourcing jobs");
 assert.doesNotMatch(vercel, /"path": "\/api\/cron\/market-sourcing"/, "marketplace collection must not be scheduled in the supplier-native rebuild");
 assert.match(intelligencePipeline, /marketplace_sourcing_disabled_supplier_native_only/, "patrol must not read marketplace-derived sourcing data");
 assert.doesNotMatch(vercel, /"path": "\/api\/cron\/newfind-retry"/, "out-of-scope NEWFIND retries must not run in the three-site workflow");
 assert.match(intelligencePipeline, /marketplace_sourcing_disabled_supplier_native_only/, "marketplace candidates must not feed publication");
-assert.match(unpublishWorkflow, /cron: "\*\/15 \* \* \* \*"/, "guarded unlinked listing reconciliation must retry every 15 minutes via GitHub Actions");
-assert.match(unpublishWorkflow, /api\/cron\/unpublish-unlinked/);
-assert.match(unpublishWorkflow, /id-token: write/);
-assert.match(unpublishWorkflow, /timeout-minutes: 13/);
+assert.match(unpublishWorkflow, /if: \$\{\{ false \}\}/, "legacy reconciliation must stay disabled until rebuilt listing IDs exist");
+assert.match(unpublishWorkflow, /Disabled after the clean commerce reset/, "do not reattach old listing IDs after a full reset");
 assert.doesNotMatch(patrolWorkflow, /^\s{2}schedule:/m, "production patrol must not have a duplicate GitHub Actions schedule");
 const vercelPatrolSchedules = JSON.parse(vercel).crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule);
 assert.deepEqual(vercelPatrolSchedules, ["*/5 * * * *"], "the existing Vercel production patrol must still run every five minutes");
