@@ -1,0 +1,18 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const route = await readFile(new URL("../app/api/admin/commerce/status/route.ts", import.meta.url), "utf8");
+assert.match(route, /requireAutomationAuth/);
+assert.match(route, /export async function GET/);
+assert.match(route, /readOnly: true/);
+assert.match(route, /commerce_products/);
+assert.match(route, /supplier_offers/);
+assert.match(route, /channel_listings/);
+assert.match(route, /commerce_orders/);
+assert.match(route, /procurement_orders/);
+assert.match(route, /tracking_number/);
+assert.match(route, /cron_runs/);
+assert.match(route, /last24Hours/);
+assert.match(route, /Cache-Control.*no-store/);
+assert.doesNotMatch(route, /\.insert\(|\.upsert\(|\.update\(|\.delete\(/);
+console.log("Read-only commerce status endpoint contract: 13 assertions passed");

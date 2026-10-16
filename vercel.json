@@ -27,6 +27,10 @@
       "schedule": "*/15 * * * *"
     },
     {
+      "path": "/api/cron/patrol-ai",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/shopify-fulfillment",
       "schedule": "7,22,37,52 * * * *"
     },

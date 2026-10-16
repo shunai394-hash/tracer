@@ -311,12 +311,7 @@ export type BaseReadOnlyProbeResult = {
  * Read-only BASE inventory probe. Uses one refreshed access token for all pages
  * and returns counts only; no item IDs, titles, or customer data leave this helper.
  */
-/**
- * Upper bound on BASE /items pages (100 items each) a read-only scan may
- * fetch. The production shop has more than 1,000 items, so the former cap of
- * 10 pages always left the scan incomplete and the TRACER↔BASE mapping audit
- * could never run.
- */
+/** Maximum BASE scan: 50 pages × 100 items = 5,000 items. A 1,000 item cap left the mapping audit incomplete. */
 export const BASE_ITEMS_MAX_PAGES = 50;
 
 export async function probeBaseReadOnly(options?: {

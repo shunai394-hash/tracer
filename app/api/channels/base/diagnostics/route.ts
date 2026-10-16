@@ -5,6 +5,7 @@ import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-id
 import { probeBaseReadOnly, isBaseConfigured, BASE_ITEMS_MAX_PAGES } from "@/lib/channels/base";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 /** Read-only probe. Never returns item IDs, order IDs, customer data, or credentials. */
 export const maxDuration = 120;
