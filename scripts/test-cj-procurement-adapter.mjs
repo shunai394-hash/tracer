@@ -15,6 +15,7 @@ const order = read("lib/sources/cj/create-order.ts");
 const inventoryRefresh = read("app/api/cron/inventory-refresh/route.ts");
 const supplyDiscovery = read("lib/suppliers/discover-cj-supply.ts");
 const procurement = read("app/api/cron/commerce-procurement/route.ts");
+const commerceImporter = read("app/api/cron/commerce-cj-import/route.ts");
 const cleanSandboxRoute = read("app/api/cron/commerce-cj-sandbox-test/route.ts");
 const commerceImporter = read("app/api/cron/commerce-cj-import/route.ts");
 const commercePublish = read("lib/commerce/publish.ts");
