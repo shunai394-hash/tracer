@@ -100,14 +100,13 @@ export async function GET(request: Request) {
       });
       const listingIds = selected.selectedListingIds;
       if (listingIds.length > 0) {
-        const [shopify, base, newfind] = await Promise.all([
-          syncPublishedListingsToShopify(listingIds).then((result) => ({ ok: result.failed === 0, ...result }))
-            .catch((error) => ({ ok: false, error: error instanceof Error ? error.message : String(error) })),
-          publishPublishedListingsToBase(40, listingIds)
-            .catch((error) => ({ ok: false, error: error instanceof Error ? error.message : String(error), published: 0, failed: listingIds.length })),
-          Promise.all(listingIds.map((listingId) => promoteShopListingToNewfind(listingId)
-            .catch((error) => ({ configured: true, sent: false, eventId: `tracer-shop-listing:${listingId}`, status: null, ackStatus: null, detail: error instanceof Error ? error.message : String(error) })))),
-        ]);
+        const shopify = await syncPublishedListingsToShopify(listingIds)
+          .then((result) => ({ ok: result.failed === 0, ...result }))
+          .catch((error) => ({ ok: false, error: error instanceof Error ? error.message : String(error) }));
+        const newfind = await Promise.all(listingIds.map((listingId) => promoteShopListingToNewfind(listingId)
+          .catch((error) => ({ configured: true, sent: false, eventId: `tracer-shop-listing:${listingId}`, status: null, ackStatus: null, detail: error instanceof Error ? error.message : String(error) }))));
+        const base = await publishPublishedListingsToBase(40, listingIds)
+          .catch((error) => ({ ok: false, error: error instanceof Error ? error.message : String(error), published: 0, failed: listingIds.length }));
         publication = {
           considered: selected.considered,
           published: selected.published,
