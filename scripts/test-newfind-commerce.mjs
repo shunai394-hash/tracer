@@ -88,3 +88,10 @@ check("status reports both NEWFIND ledgers without writing", () => {
 });
 
 console.log(`newfind commerce delivery: ${cases} cases passed`);
+
+
+check("known duplicate-key receiver failures are prioritized for recovery before never-sent variants", () => {
+  assert.match(source, /duplicate key value violates unique constraint\|discovery insert failed/);
+  assert.match(source, /const deliveryPriority = \(item: typeof sendable\[number\]\)/);
+  assert.match(source, /deliveryPriority\(a\) - deliveryPriority\(b\)/);
+});
