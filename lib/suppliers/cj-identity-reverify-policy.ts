@@ -27,7 +27,9 @@ export function isCjIdentityReverifyDue(metadata: unknown, nowMs = Date.now()): 
   const priorErrors = Array.isArray(record.missing_supply_evidence_errors)
     ? record.missing_supply_evidence_errors.filter((value): value is string => typeof value === "string")
     : [];
-  if (priorErrors.includes("cost:returned_variant_or_product_id_mismatch")) return true;
+  const legacyMismatchPending = priorErrors.includes("cost:returned_variant_or_product_id_mismatch");
+  const legacyRetryAttempted = typeof record.legacy_parent_id_mismatch_retry_attempted_at === "string";
+  if (legacyMismatchPending && !legacyRetryAttempted) return true;
 
   const nextAt = typeof record.next_identity_reverify_at === "string"
     ? Date.parse(record.next_identity_reverify_at)
