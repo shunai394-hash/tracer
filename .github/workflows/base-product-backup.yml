@@ -180,6 +180,25 @@ jobs:
               "stableIdentifierListingMatchedCount": sum(1 for item in d.get("items", []) if str(item.get("identifier", "")).startswith("TRC-") and item.get("stableIdentifierMatchCount") == 1),
               "stableIdentifierBaseItemIdMissingCount": sum(1 for item in d.get("items", []) if str(item.get("identifier", "")).startswith("TRC-") and item.get("stableIdentifierMatchCount") == 1 and item.get("stableIdentifierMatches", [{}])[0].get("existingBaseItemId") is None),
               "stableIdentifierBaseItemIdConflictCount": sum(1 for item in d.get("items", []) if str(item.get("identifier", "")).startswith("TRC-") and item.get("stableIdentifierMatchCount") == 1 and item.get("stableIdentifierMatches", [{}])[0].get("existingBaseItemId") is not None and str(item.get("stableIdentifierMatches", [{}])[0].get("existingBaseItemId")) != str(item.get("baseItemId"))),
+              "stableIdentifierConflictSamples": [
+                  {
+                      "identifier": item.get("identifier"),
+                      "baseItemId": item.get("baseItemId"),
+                      "baseTitle": str(item.get("title", ""))[:100],
+                      "listingId": (item.get("stableIdentifierMatches") or [{}])[0].get("listingId"),
+                      "listingTitle": str((item.get("stableIdentifierMatches") or [{}])[0].get("title", ""))[:100],
+                      "existingBaseItemId": (item.get("stableIdentifierMatches") or [{}])[0].get("existingBaseItemId"),
+                      "orderable": (item.get("stableIdentifierMatches") or [{}])[0].get("orderable"),
+                      "supplierVariantId": (item.get("stableIdentifierMatches") or [{}])[0].get("supplierVariantId"),
+                      "exactBaseIdMatchCount": item.get("exactBaseIdMatchCount"),
+                      "exactTitleCandidateListingIds": [candidate.get("listingId") for candidate in (item.get("exactTitleCandidates") or [])[:5]]
+                  }
+                  for item in d.get("items", [])
+                  if str(item.get("identifier", "")).startswith("TRC-")
+                  and item.get("stableIdentifierMatchCount") == 1
+                  and (item.get("stableIdentifierMatches") or [{}])[0].get("existingBaseItemId") is not None
+                  and str((item.get("stableIdentifierMatches") or [{}])[0].get("existingBaseItemId")) != str(item.get("baseItemId"))
+              ],
               "tracerListingsWithoutBaseItemIdCount": d.get("tracerListingsWithoutBaseItemIdCount"),
               "duplicateBaseItemIdGroupsInTracer": d.get("duplicateBaseItemIdGroupsInTracer"),
               "safeLinkCandidateCount": d.get("safeLinkCandidateCount"),

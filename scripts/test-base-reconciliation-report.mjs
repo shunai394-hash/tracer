@@ -38,6 +38,8 @@ assert.match(workflow, /api\/admin\/channels\/base\/reconciliation/);
 assert.match(workflow, /app\/api\/admin\/channels\/base\/snapshot\/route\.ts/);
 assert.match(workflow, /stableIdentifierListingMatchedCount/);
 assert.match(workflow, /stableIdentifierBaseItemIdConflictCount/);
+assert.match(workflow, /stableIdentifierConflictSamples/);
+assert.match(workflow, /exactTitleCandidateListingIds/);
 assert.match(workflow, /body: JSON\.stringify\(\{ snapshot \}\)/);
 assert.match(workflow, /tracer-base-reconciliation-/);
 assert.doesNotMatch(workflow, /actions\/upload-artifact@/);
