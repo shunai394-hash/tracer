@@ -9,6 +9,14 @@ import { selectRotatingVariantBatch } from "@/lib/commerce/variant-batch";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+function japaneseCommerceComplianceBlockReason(title: string, productType?: string | null): string | null {
+  const source = (String(title ?? "") + " " + String(productType ?? "")).toLowerCase();
+  if (/high temperature disinfection cabinet|disinfection cabinet/.test(source)) {
+    return "japan_compliance_unverified_disinfection_cabinet";
+  }
+  return null;
+}
+
 function japaneseCommerceTitle(title: string, productType?: string | null, variantNames: string[] = []): string | null {
   const source = (String(title ?? "") + " " + String(productType ?? "")).toLowerCase();
 
@@ -182,6 +190,7 @@ export async function GET(request: Request) {
             if (freightResult.status === "rejected") stats.errors.push("freight:" + candidate.id + ":" + String(freightResult.reason).slice(0, 100));
             const title = japaneseCommerceTitle(canonicalDetail.title, canonicalDetail.productType, supplierProductId === candidate.id ? variants.map((item) => item.nameEn) : []) || (supplierProductId === candidate.id ? japaneseCommerceTitle(candidate.title, candidate.productType) : null);
             if (!title) { stats.skipped++; continue; }
+            const complianceBlockReason = japaneseCommerceComplianceBlockReason(canonicalDetail.title, canonicalDetail.productType);
             const saved = await upsertSupplierOffer({
               sourceKey: "cj:" + supplierProductId,
               titleJa: title,
@@ -198,15 +207,20 @@ export async function GET(request: Request) {
                 supplierCode: "cj", supplierProductId,
                 supplierVariantId: exactVariant.vid, supplierUrl: "https://cjdropshipping.com/product/" + encodeURIComponent(supplierProductId),
                 currency: "USD", unitCost: cost, shippingCost: shipping ?? 0,
-                inventory: stock === null ? 0 : Math.max(0, Math.floor(stock)), shipTo: "JP",
-                trackingSupported: true,
-                sourceStatus: stock !== null && shipping !== null ? "verified" : "error",
+                inventory: complianceBlockReason || stock === null ? 0 : Math.max(0, Math.floor(stock)), shipTo: "JP",
+                trackingSupported: !complianceBlockReason,
+                sourceStatus: !complianceBlockReason && stock !== null && shipping !== null ? "verified" : "error",
                 lastCheckedAt: new Date().toISOString(),
-                rawData: { query, page, catalogProductId: candidate.id, productId: supplierProductId, variantId: exactVariant.vid, stockKnown: stock !== null, shippingKnown: shipping !== null, fxRate: fx.rate },
+                rawData: { query, page, catalogProductId: candidate.id, productId: supplierProductId, variantId: exactVariant.vid, stockKnown: stock !== null, shippingKnown: shipping !== null, fxRate: fx.rate, complianceBlockReason },
               },
             });
             stats.variants++;
             stats.offers++;
+            if (complianceBlockReason) {
+              stats.complianceBlocked++;
+              stats.skipped++;
+              continue;
+            }
             if (stock !== null && stock > 0 && shipping !== null && shipping >= 0) {
               await recalculatePrice({ variantId: saved.variantId, offerId: saved.offerId, exchangeRateToJpy: fx.rate, feeRate: 0.1, targetMarginRate: 0.2 });
               stats.priced++;
