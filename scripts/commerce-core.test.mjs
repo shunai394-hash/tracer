@@ -140,6 +140,8 @@ test("Shopify paid-order polling uses the canonical commerce order and procureme
   assert.match(sync, /from\("channel_listings"\)/);
   assert.match(sync, /from\("commerce_prices"\)/);
   assert.match(sync, /ingestPaidOrder\(/);
+  assert.match(sync, /canonicalShopifyId\(order\.id, "Order"\)/);
+  assert.match(sync, /canonicalShopifyId\(item\.id, "LineItem"\)/);
   assert.doesNotMatch(sync, /from\("shop_orders"\)/);
   assert.doesNotMatch(sync, /from\("shop_order_items"\)/);
 });
