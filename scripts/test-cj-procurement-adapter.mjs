@@ -81,6 +81,8 @@ assert.match(cleanSandboxRoute, /realFulfillment: false/);
 const sandboxPayment = adapter.indexOf("await simulateCJSandboxPayment(orderId)");
 assert.ok(sandboxPayment >= 0, "CJ sandbox lifecycle must use the documented simulated-payment endpoint");
 assert.match(adapter, /charged: false/);
+assert.match(adapter, /fromCountryCode: freight\.countryCode,\s+payType: 3,\s+isSandbox: true/,
+  "sandbox order creation must be create-only before the explicit confirmOrder API call");
 assert.match(adapter, /realFulfillment: false/);
 const sandboxRoute = read("app/api/cron/cj-sandbox-order-test/route.ts");
 assert.match(sandboxRoute, /CJ_SANDBOX_ORDER_TEST_ENABLED/);
