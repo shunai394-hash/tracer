@@ -11,8 +11,8 @@ const auditMigration = readFileSync("supabase/migrations/20261010150000_tracer_i
 assert.match(discovery, /import \{ persistCjInternalSupplyCandidate \} from "@\/lib\/suppliers\/persist-cj-internal-supply"/);
 assert.match(discovery, /\.eq\("job_name", "cj-api-quota-circuit"\)/,
   "supply-first must inspect the persisted CJ quota circuit before attempting provider calls");
-assert.match(discovery, /if \(quotaBlockedUntil && Date\.parse\(quotaBlockedUntil\) > Date\.now\(\)\) \{[\s\S]*?deadlineReached: false[\s\S]*?skipped: true[\s\S]*?retryable: true[\s\S]*?reason: "supplier_quota_cooldown"[\s\S]*?retryAfter: quotaBlockedUntil[\s\S]*?items: \[\]/,
-  "an active CJ quota cooldown must return a clean no-op instead of repeatedly rejecting the same candidate");
+assert.match(discovery, /if \(isCJQuotaCircuitActive\(quotaMetadata\)\) \{[\s\S]*?deadlineReached: false[\s\S]*?skipped: true[\s\S]*?retryable: true[\s\S]*?reason: "supplier_quota_cooldown"[\s\S]*?quotaBlocked: true[\s\S]*?retryAfter: quotaBlockedUntil \?\? undefined[\s\S]*?items: \[\]/,
+  "an active CJ quota circuit must return a clean no-op using the shared circuit policy");
 assert.equal((discovery.match(/persistCjInternalSupplyCandidate\(/g) ?? []).length, 2,
   "both seeded verification and fresh catalog discovery must feed the internal supply catalog");
 assert.match(discovery, /internalSupplyIngested: Boolean\(internalSupply\)/);
