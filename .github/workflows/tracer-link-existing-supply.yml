@@ -1,5 +1,5 @@
-name: TRACER Link Existing Verified Supply
-# Prioritize bounded linkage of existing verified supply so more real products can pass publication gates. Recovery retrigger 2026-10-16.
+name: TRACER Run Supplier-First Recovery
+# Use the live supplier-native pipeline. The legacy supplier-investigation endpoint is intentionally disabled and only returns skipped=true.
 
 on:
   push:
@@ -44,7 +44,7 @@ jobs:
           echo "Production has not reflected this commit; refusing to call a stale deployment."
           exit 1
 
-      - name: Run bounded existing-catalog supplier linkage
+      - name: Run supplier-first discovery, verification, and gated channel sync
         shell: bash
         run: |
           set -euo pipefail
@@ -76,8 +76,8 @@ jobs:
             echo "Source audit failed; refusing to interpret linkage without counts."
             exit 1
           fi
-          code="$(curl -sS --max-time 300 -o linkage-report.json -w "%{http_code}" -H "Authorization: Bearer $OIDC_TOKEN" "https://tracer-pied-alpha.vercel.app/api/cron/supplier-investigation" || true)"
-          echo "=== SUPPLIER INVESTIGATION HTTP $code ==="
+          code="$(curl -sS --max-time 300 -o linkage-report.json -w "%{http_code}" -H "Authorization: Bearer $OIDC_TOKEN" "https://tracer-pied-alpha.vercel.app/api/cron/supply-first" || true)"
+          echo "=== SUPPLIER-FIRST RECOVERY HTTP $code ==="
           python3 - <<'PY'
           import json,sys
           try:
@@ -86,20 +86,26 @@ jobs:
           except Exception as e:
               print("Could not parse linkage report:", e)
               sys.exit(1)
+          supply = r.get("supplyFirst") or {}
+          publication = r.get("publication") or {}
           summary = {
               "ok": r.get("ok"),
-              "phase": r.get("phase"),
-              "candidateCount": len(r.get("candidateIds") or []),
-              "internalMatched": len(r.get("internalMatchedIds") or []),
-              "externalMatched": r.get("matched"),
-              "totalMatched": r.get("totalMatched"),
-              "rowErrors": r.get("rowErrors"),
-              "deferred": r.get("deferred"),
-              "internalResults": r.get("internalResults"),
-              "error": r.get("error"),
+              "discoveryIncomplete": r.get("discoveryIncomplete"),
+              "elapsedMs": r.get("elapsedMs"),
+              "reason": supply.get("reason"),
+              "quotaBlocked": supply.get("quotaBlocked"),
+              "retryAfter": supply.get("retryAfter"),
+              "candidateCount": supply.get("candidateCount"),
+              "discovered": supply.get("discovered"),
+              "verified": supply.get("verified"),
+              "eligibleCount": supply.get("eligibleCount"),
+              "published": supply.get("published"),
+              "opportunityIntelligence": r.get("opportunityIntelligence"),
+              "channelPublication": publication,
           }
-          print("LINKAGE REPORT:", json.dumps(summary, ensure_ascii=False))
+          print("SUPPLIER-FIRST REPORT:", json.dumps(summary, ensure_ascii=False))
           if r.get("ok") is not True:
+              print("Supplier-first pipeline did not complete; inspect quota/deadline/eligibility details above.")
               sys.exit(1)
           PY
           if [ "$code" != "200" ]; then
