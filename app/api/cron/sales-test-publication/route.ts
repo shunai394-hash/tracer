@@ -156,7 +156,7 @@ export async function GET(request: Request) {
       .map((row) => {
         const productId = String(row.supplier_product_id ?? "").trim();
         const variantId = String(row.supplier_variant_id ?? "").trim();
-        return productId && variantId ? `cj:${productId}:${variantId}` : "";
+        return productId && variantId ? `cj:product:${productId}:variant:${variantId}` : "";
       })
       .filter(Boolean)));
     let nativeProducts: Array<{ id: string; identity_key: string }> = [];
