@@ -488,7 +488,8 @@ export async function runCJSandboxOrderLifecycle(
   // Persist the external order ID immediately so a later payment/status failure is reconcilable.
   if (onOrderCreated) await onOrderCreated(orderId);
 
-  // payType=3 creates only; confirmOrder moves CREATED(100) to UNPAID before simulated payment.
+  // Official CJ flow: CREATED(100) -> confirmOrder -> UNPAID(200) -> simulatePay -> PENDING(300).
+  // updateStatus only supports the forward transitions 400 -> 500 -> 600 -> 700.
   await confirmCJSandboxOrder(orderId);
   await simulateCJSandboxPayment(orderId);
   const trackingNumber = `SBXTRACER${Date.now()}`;
