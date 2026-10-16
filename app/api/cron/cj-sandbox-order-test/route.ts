@@ -73,6 +73,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "SUPPLIER_LISTING_NOT_CJ_SANDBOX_CANDIDATE" }, { status: 409 });
   }
 
+  let evidenceListing = listing;
+
   // One successful lifecycle is sufficient for this one-time contract proof.
   // Failed attempts are auditable and may be retried only after inspecting the cause.
   const { data: previousRuns, error: previousRunsError } = await db
@@ -125,6 +127,16 @@ export async function POST(request: Request) {
       }
       const orderId = String(matches[0].orderId ?? "").trim();
       if (!orderId) return NextResponse.json({ ok: false, error: "CJ_SANDBOX_ORDER_ID_MISSING", charged: false, realFulfillment: false }, { status: 409 });
+      const priorListingId = String(previousMetadata.supplierListingId ?? "").trim();
+      if (priorListingId && priorListingId !== listing.id) {
+        const { data: priorListing, error: priorListingError } = await db.from("supplier_listings")
+          .select("id,supplier,supplier_product_id,supplier_variant_id,configured,metadata")
+          .eq("id", priorListingId).maybeSingle();
+        if (priorListingError || !priorListing || priorListing.supplier !== "cj") {
+          return NextResponse.json({ ok: false, error: "CJ_SANDBOX_PRIOR_LISTING_NOT_FOUND", charged: false, realFulfillment: false }, { status: 409 });
+        }
+        evidenceListing = priorListing;
+      }
 
       let observed = await getCJOrderStatus(orderId);
       let normalized = String(observed.status ?? "").trim().toUpperCase();
@@ -166,7 +178,7 @@ export async function POST(request: Request) {
       const metadata = {
         ...previousMetadata,
         phase: "cj_sandbox_order_lifecycle",
-        supplierListingId: listing.id,
+        supplierListingId: evidenceListing.id,
         supplierOrderId: orderId,
         supplierStatus: verifiedStatus,
         paymentConfirmed: true,
@@ -178,11 +190,11 @@ export async function POST(request: Request) {
       };
       const { error: listingEvidenceError } = await db.from("supplier_listings").update({
         metadata: {
-          ...(listing.metadata && typeof listing.metadata === "object" && !Array.isArray(listing.metadata) ? listing.metadata as Record<string, unknown> : {}),
+          ...(evidenceListing.metadata && typeof evidenceListing.metadata === "object" && !Array.isArray(evidenceListing.metadata) ? evidenceListing.metadata as Record<string, unknown> : {}),
           cj_sandbox_order_path_verified_at: sandboxVerifiedAt,
           cj_sandbox_order_path_evidence: { supplierOrderId: orderId, supplierStatus: verifiedStatus, paymentConfirmed: true, trackingNumberPresent: true, sandbox: true, charged: false, realFulfillment: false },
         },
-      }).eq("id", listing.id);
+      }).eq("id", evidenceListing.id);
       if (listingEvidenceError) throw new Error("CJ_SANDBOX_LISTING_EVIDENCE_WRITE_FAILED");
       const { error: auditError } = await db.from("cron_runs").update({
         status: "succeeded", finished_at: sandboxVerifiedAt, error: null, processed: 1, failed: 0,
@@ -190,7 +202,7 @@ export async function POST(request: Request) {
       }).eq("id", previous.id);
       if (auditError) throw new Error("CJ_SANDBOX_AUDIT_RECONCILIATION_WRITE_FAILED");
       return NextResponse.json({
-        ok: true, phase: "cj_sandbox_order_lifecycle_reconciled", supplierListingId: listing.id,
+        ok: true, phase: "cj_sandbox_order_lifecycle_reconciled", supplierListingId: evidenceListing.id,
         supplierOrderId: orderId, status: verifiedStatus, trackingNumber: verifiedTracking,
         paymentConfirmed: true, sandbox: true, charged: false, realFulfillment: false,
       }, { headers: { "Cache-Control": "no-store" } });
