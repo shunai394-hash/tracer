@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
-import { searchCJProducts, getCJProductDetail, fetchCJProductVariants, fetchCJVariantStock, calculateCJFreight } from "@/lib/sources/cj";
+import { searchCJProducts, getCJProductDetail, fetchCJProductVariants, fetchCJVariantByVid, fetchCJVariantStock, calculateCJFreight } from "@/lib/sources/cj";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { upsertSupplierOffer, recalculatePrice } from "@/lib/commerce/core";
@@ -36,6 +36,22 @@ export async function GET(request: Request) {
           try {
             const cost = Number(variant.sellPrice);
             if (!variant.vid || !Number.isFinite(cost) || cost <= 0) { stats.skipped++; continue; }
+            let supplierProductId = String(variant.productId ?? "").trim();
+            if (!supplierProductId) {
+              const exactVariant = await fetchCJVariantByVid(variant.vid);
+              if (!exactVariant || exactVariant.vid !== variant.vid || !String(exactVariant.productId ?? "").trim()) {
+                stats.skipped++;
+                stats.errors.push("canonical_supplier_product_id_unresolved:" + candidate.id + ":" + variant.vid);
+                continue;
+              }
+              supplierProductId = String(exactVariant.productId).trim();
+            }
+            const canonicalDetail = supplierProductId === candidate.id ? detail : await getCJProductDetail(supplierProductId);
+            if (!canonicalDetail) {
+              stats.skipped++;
+              stats.errors.push("canonical_supplier_product_detail_missing:" + supplierProductId);
+              continue;
+            }
             const [stockResult, freightResult] = await Promise.allSettled([
               fetchCJVariantStock(variant.vid),
               calculateCJFreight(variant.vid, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 }),
@@ -44,28 +60,28 @@ export async function GET(request: Request) {
             const shipping = freightResult.status === "fulfilled" ? freightResult.value : null;
             if (stockResult.status === "rejected") stats.errors.push("stock:" + candidate.id + ":" + String(stockResult.reason).slice(0, 100));
             if (freightResult.status === "rejected") stats.errors.push("freight:" + candidate.id + ":" + String(freightResult.reason).slice(0, 100));
-            const title = localizeProductTitle(detail.title, detail.productType) || localizeProductTitle(candidate.title, candidate.productType);
+            const title = localizeProductTitle(canonicalDetail.title, canonicalDetail.productType) || (supplierProductId === candidate.id ? localizeProductTitle(candidate.title, candidate.productType) : null);
             if (!title) { stats.skipped++; continue; }
             const saved = await upsertSupplierOffer({
-              sourceKey: "cj:" + candidate.id,
+              sourceKey: "cj:" + supplierProductId,
               titleJa: title,
               descriptionJa: title + "。商品仕様・配送条件は仕入先の最新情報に基づき確認してください。",
-              category: detail.productType ?? candidate.productType,
-              imageUrl: detail.imageUrl ?? candidate.imageUrl,
-              sourceUrl: "https://cjdropshipping.com/product/" + encodeURIComponent(candidate.id),
+              category: canonicalDetail.productType ?? (supplierProductId === candidate.id ? candidate.productType : null),
+              imageUrl: canonicalDetail.imageUrl ?? (supplierProductId === candidate.id ? candidate.imageUrl : null),
+              sourceUrl: "https://cjdropshipping.com/product/" + encodeURIComponent(supplierProductId),
               sourceVariantKey: variant.vid,
               variantTitleJa: variant.nameEn ? title + "（" + variant.nameEn + "）" : title,
               sku: variant.sku,
               attributes: { barcode: variant.barcode, supplierVariantName: variant.nameEn },
               offer: {
-                supplierCode: "cj", supplierProductId: variant.productId || candidate.id,
-                supplierVariantId: variant.vid, supplierUrl: "https://cjdropshipping.com/product/" + encodeURIComponent(candidate.id),
+                supplierCode: "cj", supplierProductId,
+                supplierVariantId: variant.vid, supplierUrl: "https://cjdropshipping.com/product/" + encodeURIComponent(supplierProductId),
                 currency: "USD", unitCost: cost, shippingCost: shipping ?? 0,
                 inventory: stock === null ? 0 : Math.max(0, Math.floor(stock)), shipTo: "JP",
                 trackingSupported: true,
                 sourceStatus: stock !== null && shipping !== null ? "verified" : "error",
                 lastCheckedAt: new Date().toISOString(),
-                rawData: { query, page, productId: candidate.id, variantId: variant.vid, stockKnown: stock !== null, shippingKnown: shipping !== null, fxRate: fx.rate },
+                rawData: { query, page, catalogProductId: candidate.id, productId: supplierProductId, variantId: variant.vid, stockKnown: stock !== null, shippingKnown: shipping !== null, fxRate: fx.rate },
               },
             });
             stats.variants++;
