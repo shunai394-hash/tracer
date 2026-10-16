@@ -59,6 +59,13 @@ function fullAddress(address: ShopifyOrder["shippingAddress"]): string {
   ].filter(Boolean).join(" ");
 }
 
+function canonicalShopifyId(value: string, resource: "Order" | "LineItem"): string {
+  const prefix = "gid://shopify/" + resource + "/";
+  const id = value.startsWith(prefix) ? value.slice(prefix.length) : value;
+  if (!/^\\d+$/.test(id)) throw new Error("shopify_" + resource.toLowerCase() + "_id_invalid");
+  return id;
+}
+
 function finitePositiveNumber(value: unknown): number | null {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
@@ -114,11 +121,11 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         .from("commerce_orders")
         .select("external_order_id")
         .eq("channel", "shopify")
-        .in("external_order_id", pageOrders.map((order) => order.id));
+        .in("external_order_id", pageOrders.map((order) => canonicalShopifyId(order.id, "Order")));
       if (existingRowsError) throw new Error("shopify_canonical_order_lookup_failed:" + existingRowsError.message);
       const existingIds = new Set((existingRows ?? []).map((row) => String(row.external_order_id)));
       for (const order of pageOrders) {
-        if (!existingIds.has(order.id) && orders.length < maxNewOrders) orders.push(order);
+        if (!existingIds.has(canonicalShopifyId(order.id, "Order")) && orders.length < maxNewOrders) orders.push(order);
       }
     }
 
@@ -258,7 +265,7 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
           throw new Error("shopify_line_item_price_or_currency_invalid:" + item.id);
         }
         return {
-          externalLineId: item.id,
+          externalLineId: canonicalShopifyId(item.id, "LineItem"),
           variantId: listing.variantId,
           sku: listing.sku || item.variant.sku,
           quantity,
@@ -269,7 +276,7 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
 
       const imported = await ingestPaidOrder({
         channel: "shopify",
-        externalOrderId: order.id,
+        externalOrderId: canonicalShopifyId(order.id, "Order"),
         totalAmount: Math.round(total),
         customerName: address.name || order.email || null,
         shippingAddress: {
