@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   const db = createSupabaseAdminClient();
   const { data: previous, error: previousError } = await db
     .from("commerce_events")
-    .select("status,detail")
+    .select("event_key,status,detail")
     .eq("event_type", "cj_sandbox_order_lifecycle")
     .order("created_at", { ascending: false })
     .limit(1);
@@ -35,7 +35,15 @@ export async function POST(request: Request) {
   if (last?.status === "running") {
     return NextResponse.json({ ok: false, error: "CJ_SANDBOX_LIFECYCLE_ALREADY_RUNNING" }, { status: 409 });
   }
-  if (last) {
+  const previousErrorText = typeof lastDetail.error === "string" ? lastDetail.error : "";
+  // Permit exactly one retry only after an explicit CJ create failure with no external order ID.
+  // Any attempt that may have created an order remains locked for manual reconciliation.
+  const safeCreateFailureRetry =
+    last?.event_key === "cj-sandbox-core:one-shot" &&
+    last.status === "failed" &&
+    !(typeof lastDetail.supplierOrderId === "string" && lastDetail.supplierOrderId.trim()) &&
+    previousErrorText.startsWith("CJ_SANDBOX_CREATE_FAILED:1603000");
+  if (last && !safeCreateFailureRetry) {
     return NextResponse.json({
       ok: false,
       error: typeof lastDetail.supplierOrderId === "string" && lastDetail.supplierOrderId.trim()
@@ -75,7 +83,7 @@ export async function POST(request: Request) {
   }
 
   // A fixed unique key is the one-shot lock: parallel workflows cannot create duplicate sandbox orders.
-  const eventKey = "cj-sandbox-core:one-shot";
+  const eventKey = safeCreateFailureRetry ? "cj-sandbox-core:retry-1" : "cj-sandbox-core:one-shot";
   const baseDetail: Record<string, unknown> = {
     supplierOfferId: selected.id,
     supplierProductId: selected.supplier_product_id,
@@ -107,9 +115,8 @@ export async function POST(request: Request) {
       shippingCity: "Chiyoda-ku",
       shippingAddress: "1-1 Chiyoda",
       shippingZip: "1000001",
-      shippingPhone: "00000000000",
+      shippingPhone: "09000000000",
       shippingCustomerName: "TRACER SANDBOX TEST",
-      email: "sandbox-test@example.invalid",
     }, async (createdOrderId) => {
       supplierOrderId = createdOrderId;
       const { error } = await db.from("commerce_events").update({
