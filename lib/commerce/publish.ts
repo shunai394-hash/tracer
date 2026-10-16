@@ -275,7 +275,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         publishedUrl = resolveBasePublicUrl(visibleResponse, externalProductId, basePublicShopUrl)
           ?? resolveBasePublicUrl(baseResponse, externalProductId, basePublicShopUrl);
       } else {
-        const handle = safeSlug(product.source_key + "-" + candidate.id.slice(0, 8));
+        // Use the full stable variant UUID in the handle. Eight characters collided in the live catalog,
+        // and Shopify rejects a duplicate handle even when the SKU differs.
+        const handle = safeSlug(product.source_key + "-" + candidate.id.replace(/-/g, ""));
         const productId = toShopifyGid("Product", externalProductId);
         const variantId = toShopifyGid("ProductVariant", externalVariantId);
         let recoveredProduct: { id: string; handle: string; variants: { nodes: Array<{ id: string; sku?: string | null }> } } | null = null;
