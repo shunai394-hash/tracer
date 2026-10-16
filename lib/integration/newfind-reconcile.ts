@@ -55,16 +55,18 @@ export async function rescueUndeliveredGatePassedListings(options: { limit?: num
   if (gated.length === 0) return result;
 
   const ids = gated.map((row) => String(row.id));
-  const deliveries = new Map<string, { status: string; schemaBlocked: boolean }>();
+  const deliveries = new Map<string, { status: string; schemaBlocked: boolean; lastError: string | null; lastAttemptAt: string | null }>();
   const receiverReady = process.env.NEWFIND_TRACER_PROMOTION_RECEIVER_READY?.trim() === "1";
   for (let i = 0; i < ids.length; i += 100) {
-    const { data, error: deliveryError } = await supabase.from("newfind_promotion_deliveries").select("listing_id, status, ack_status, last_error").in("listing_id", ids.slice(i, i + 100));
+    const { data, error: deliveryError } = await supabase.from("newfind_promotion_deliveries").select("listing_id, status, ack_status, last_error, last_attempt_at").in("listing_id", ids.slice(i, i + 100));
     if (deliveryError) throw new Error(deliveryError.message);
     for (const row of data ?? []) {
       const processed = row.status === "processed" && (row.ack_status === "processed" || row.ack_status === "duplicate");
       deliveries.set(String(row.listing_id), {
         status: processed ? "processed" : String(row.status ?? "pending"),
         schemaBlocked: !receiverReady && isNewfindPromotionLedgerSchemaBlocked(row.last_error),
+        lastError: typeof row.last_error === "string" ? row.last_error : null,
+        lastAttemptAt: typeof row.last_attempt_at === "string" ? row.last_attempt_at : null,
       });
     }
   }
@@ -83,11 +85,42 @@ export async function rescueUndeliveredGatePassedListings(options: { limit?: num
     }
     const status = delivery?.status ?? "missing";
     if (status === "processed") { result.alreadyProcessed += 1; continue; }
+
+    const listing = gated.find((row) => String(row.id) === id);
+    const lastError = delivery?.lastError;
+    const listingUpdatedAt = Date.parse(String(listing?.updated_at ?? ""));
+    const lastAttemptAt = Date.parse(String(delivery?.lastAttemptAt ?? ""));
+    const staleSalesUrlFailure =
+      status === "failed" &&
+      (lastError === "tracer_sales_url_http_404" || lastError === "tracer_sales_url_not_live") &&
+      Number.isFinite(listingUpdatedAt) &&
+      Number.isFinite(lastAttemptAt) &&
+      listingUpdatedAt > lastAttemptAt;
+    if (staleSalesUrlFailure) {
+      // A prior 404 is terminal for the old listing state, but if the listing
+      // was subsequently published/synced, give that exact event one new
+      // attempt. The updated_at > last_attempt_at check prevents 5-minute
+      // retry loops while the sales page remains unavailable.
+      const { error: resetError } = await supabase
+        .from("newfind_promotion_deliveries")
+        .update({ status: "pending", last_error: null, lease_until: null, updated_at: new Date().toISOString() })
+        .eq("listing_id", id)
+        .eq("status", "failed")
+        .eq("last_error", lastError);
+      if (resetError) {
+        result.stillFailing.push({ listingId: id, detail: `newfind_delivery_retry_reset_failed: ${resetError.message}` });
+        continue;
+      }
+      result.undelivered.pending += 1;
+      targets.push(id);
+      continue;
+    }
+
     const bucket = status in result.undelivered ? status as keyof NewfindRescueResult["undelivered"] : "pending";
     result.undelivered[bucket] += 1;
     // retryPendingNewfindPromotions already handles every durable delivery
-    // status. Rescue only listings with no delivery row, avoiding a second
-    // send of the same failed item in the same five-minute cron invocation.
+    // status. Rescue missing rows, plus old sales-URL failures only after the
+    // published/synced listing has changed since the previous failed attempt.
     if (status !== "missing") continue;
     targets.push(id);
   }
