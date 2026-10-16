@@ -127,6 +127,21 @@ test("procurement revalidates the exact fresh profitable offer and preserves a c
   assert.doesNotMatch(worker, /country_code_v2"\)\.toUpperCase\(\) \|\| "JP"/);
 });
 
+test("BASE order ingestion requires the true order_item_id for tracking reflection", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
+  assert.match(route, /base_order_item_id_missing_for_fulfillment_mapping/);
+  assert.match(route, /externalLineId: String\(item\.order_item_id\)/);
+  assert.doesNotMatch(route, /externalLineId: String\(item\.order_item_id \?\? item\.item_id\)/);
+});
+test("BASE tracking reflection is scheduled after procurement and idempotent per order line", async () => {
+  const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+  assert.equal(config.crons.find((job) => job.path === "/api/cron/commerce-base-fulfillment")?.schedule, "14,29,44,59 * * * *");
+  const route = await readFile(new URL("../app/api/cron/commerce-base-fulfillment/route.ts", import.meta.url), "utf8");
+  assert.match(route, /from\("commerce_orders"\)/);
+  assert.match(route, /procurement_orders\(id,status,tracking_number/);
+  assert.match(route, /tracerBaseFulfillmentGroups/);
+  assert.match(route, /updateBaseOrderItemFulfillment/);
+});
 test("Shopify fulfillment tracking sync runs automatically after procurement", async () => {
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
   assert.equal(config.crons.find((job) => job.path === "/api/cron/shopify-fulfillment")?.schedule, "7,22,37,52 * * * *");

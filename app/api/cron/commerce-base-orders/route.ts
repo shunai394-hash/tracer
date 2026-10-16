@@ -42,6 +42,9 @@ export async function GET(request: Request) {
         if (!isPaid(detail)) { result.ignored++; continue; }
         result.paid++;
         const sourceLines = (detail.order_items ?? []).filter((item) => item.status !== "cancelled" && item.item_id !== undefined);
+        if (sourceLines.some((item) => item.order_item_id === undefined || item.order_item_id === null)) {
+          throw new Error("base_order_item_id_missing_for_fulfillment_mapping");
+        }
         const lines: Array<{ externalLineId: string; variantId: string; sku: string; quantity: number; unitPrice: number; offerId: string }> = [];
         for (const item of sourceLines) {
           const { data: listing, error: listingError } = await db.from("channel_listings")
@@ -52,7 +55,7 @@ export async function GET(request: Request) {
           if (priceError || !price?.supplier_offer_id) throw new Error("supplier_offer_mapping_missing_for_base_item:" + String(item.item_id));
           const quantity = Math.max(1, Math.floor(Number(item.amount ?? 1)));
           lines.push({
-            externalLineId: String(item.order_item_id ?? item.item_id),
+            externalLineId: String(item.order_item_id),
             variantId: String(listing.variant_id), sku: String(listing.external_sku ?? ""),
             quantity, unitPrice: Math.round(Number(item.price ?? 0)), offerId: String(price.supplier_offer_id)
           });
