@@ -34,3 +34,9 @@ assert.match(repair, /shipping_status: "verified"/);
 assert.match(repair, /tracking capability still require verification/);
 assert.doesNotMatch(repair, /tracking_available: true/, "variant recovery must not invent tracking capability");
 assert.match(repair, /inventory_checked_at: checkedAt/);
+
+assert.match(repair, /\.in\("verification_status", \["unverified", "retryable"\]\)/);
+assert.match(repair, /next_verification_at\.is\.null,next_verification_at\.lte/);
+assert.match(repair, /verification_attempts: attempts \+ 1/);
+assert.match(repair, /CJ product has no unambiguous recoverable child variant/);
+assert.match(repair, /CJ Japan freight quote unavailable/);
