@@ -478,7 +478,7 @@ export async function runCJSandboxOrderLifecycle(
     email: input.email,
     logisticName: freight.logisticName,
     fromCountryCode: freight.countryCode,
-    payType: 1,
+    payType: 3,
     isSandbox: true,
     products: [{ vid: variant.vid, quantity: input.quantity }],
   });
