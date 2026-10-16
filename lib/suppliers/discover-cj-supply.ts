@@ -31,7 +31,7 @@ async function resolveCJVariantProductIdentity(
   productScopedVariant?: CJProductVariant | null,
 ): Promise<{ variant: CJProductVariant; supplierProductId: string } | null> {
   const scopedProductId = productScopedVariant?.productId?.trim();
-  if (productScopedVariant && productScopedVariant.vid === variantId && scopedProductId && scopedProductId !== candidateProductId) {
+  if (productScopedVariant && productScopedVariant.vid === variantId && scopedProductId) {
     return { variant: productScopedVariant, supplierProductId: scopedProductId };
   }
 
