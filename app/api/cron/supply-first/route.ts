@@ -175,13 +175,18 @@ export async function GET(request: Request) {
     }
 
     const elapsedMs = Date.now() - startedAt;
-    const discoveryIncomplete =
+    // A persisted daily-points circuit is an intentional cooldown, not a
+    // failed discovery attempt. The route still checks cached verified supply
+    // and records any publication rejections, but returns 200 so the scheduled
+    // patrol does not report a false pipeline failure every five minutes.
+    const discoveryIncomplete = !quotaCircuitActive && (
       supplyFirst.quotaBlocked === true ||
       supplyFirst.deadlineReached === true ||
-      (supplyFirst.retryable === true && verifiedProductIds.length === 0);
+      (supplyFirst.retryable === true && verifiedProductIds.length === 0)
+    );
     const runStatus = discoveryIncomplete ? "failed" : "succeeded";
     const rejectedCount = Math.max(0, Number(supplyFirst.rejected ?? 0));
-    const runFailureCount = Math.max(rejectedCount, discoveryIncomplete ? 1 : 0);
+    const runFailureCount = quotaCircuitActive ? 0 : Math.max(rejectedCount, discoveryIncomplete ? 1 : 0);
     if (db && runId) {
       const { error: finishError } = await db.from("cron_runs").update({
         status: runStatus,
@@ -191,7 +196,7 @@ export async function GET(request: Request) {
         failed: runFailureCount,
         metadata: {
           discoveryIncomplete,
-          discoveryStatus: runStatus,
+          discoveryStatus: quotaCircuitActive ? "skipped_quota_cooldown" : runStatus,
           actor: "vercel-cron",
           batchSize: DISCOVERY_BATCH_SIZE,
           deadlineMs: DISCOVERY_BUDGET_MS,
