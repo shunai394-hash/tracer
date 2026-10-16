@@ -552,7 +552,7 @@ export async function discoverAndCreateCjSupply(
         && seededCandidate.supplierVariantId === candidate.variantId
         && (seededCandidate.verificationError === "" || seededCandidate.verificationError === "CJdropshipping is not configured" || seededCandidate.verificationError === "no_unique_canonical_child_variant_match");
       const supplierInsert = await upsertSupplierListing(db, {
-        supplier: "cj", external_id: candidate.variantId, sku: seededVariant.sku ?? null, title: detail.title, product_id: null,
+        supplier: "cj", external_id: candidate.variantId, sku: seededVariant.sku ?? null, title: detail.title, product_id: productId,
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
         order_method: "cj_api", api_available: preserveVerifiedOrderPath, verification_status: preserveVerifiedOrderPath ? "verified" : "unverified", shipping_status: "verified", identity_method: "supply_discovered",
         identity_status: "supply_discovered", identity_confidence: 0, configured: true,
@@ -814,8 +814,9 @@ export async function discoverAndCreateCjSupply(
               external_id: variant.vid,
               sku: variant.sku,
               title: detail.title,
-              // Discovery is not canonical identity. Keep unresolved supply detached until a unique exact-variant match exists.
-              product_id: null,
+              // Attach the offer to its TRACER-owned product row so the sales-test selector can find it.
+              // identity_status remains supply_discovered; this does not claim marketplace identity.
+              product_id: productId,
               cost,
               shipping_cost: freight,
               currency: "USD",
