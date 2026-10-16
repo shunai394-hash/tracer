@@ -125,9 +125,9 @@ export async function GET(request: Request) {
     // an emergency kill switch, not a required opt-in.
     const nativeSupplyFreshCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const nativeSupplyFutureCutoff = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-    const { data: nativeCjSupply, error: nativeCjSupplyError } = await supabase
+    const { data: nativeCjSupplyRows, error: nativeCjSupplyError } = await supabase
       .from("supplier_listings")
-      .select("product_id")
+      .select("supplier_product_id,supplier_variant_id")
       .in("supplier", ["cj", "cjdropshipping"])
       .eq("identity_status", "supply_discovered")
       .eq("verification_status", "verified")
@@ -146,10 +146,37 @@ export async function GET(request: Request) {
       .lte("last_verified_at", nativeSupplyFutureCutoff)
       .not("supplier_product_id", "is", null)
       .not("supplier_variant_id", "is", null)
-      .not("product_id", "is", null)
       .order("last_verified_at", { ascending: false, nullsFirst: false })
       .limit(1000);
     if (nativeCjSupplyError) throw new Error(nativeCjSupplyError.message);
+
+    // Native CJ supply intentionally has no marketplace product FK. Resolve its
+    // standalone product row only by the exact supplier product+variant source key.
+    const nativeSourceRefs = Array.from(new Set((nativeCjSupplyRows ?? [])
+      .map((row) => {
+        const productId = String(row.supplier_product_id ?? "").trim();
+        const variantId = String(row.supplier_variant_id ?? "").trim();
+        return productId && variantId ? `cj:${productId}:${variantId}` : "";
+      })
+      .filter(Boolean)));
+    let nativeProducts: Array<{ id: string; identity_key: string }> = [];
+    if (nativeSourceRefs.length > 0) {
+      const { data, error } = await supabase
+        .from("products")
+        .select("id,identity_key")
+        .in("identity_key", nativeSourceRefs);
+      if (error) throw new Error(error.message);
+      nativeProducts = (data ?? []) as Array<{ id: string; identity_key: string }>;
+    }
+    const nativeProductBySourceRef = new Map(nativeProducts.map((row) => [String(row.identity_key), String(row.id)]));
+    const nativeCjSupply = (nativeCjSupplyRows ?? [])
+      .map((row) => {
+        const productId = String(row.supplier_product_id ?? "").trim();
+        const variantId = String(row.supplier_variant_id ?? "").trim();
+        const sourceRef = productId && variantId ? `cj:${productId}:${variantId}` : "";
+        return { product_id: nativeProductBySourceRef.get(sourceRef) ?? null };
+      })
+      .filter((row): row is { product_id: string } => Boolean(row.product_id));
 
     const verifiedSupplyIds = Array.from(new Set([
       ...(demandSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
