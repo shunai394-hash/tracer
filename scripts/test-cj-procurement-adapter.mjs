@@ -86,6 +86,12 @@ assert.match(adapter, /const verifiedUnitCostUsd = positiveNumber\(variant\.sell
 assert.match(sandboxRoute, /status: "succeeded"/);
 assert.match(sandboxRoute, /status: "failed"/);
 assert.match(sandboxRoute, /CJ_SANDBOX_PREVIOUS_ORDER_MAY_EXIST_REQUIRES_MANUAL_RECONCILIATION/);
+assert.match(sandboxRoute, /previousFailureWasKnownUnpaidSandboxOnly/, "only the known CREATED-to-payment failure may be retried after the explicit status-transition fix");
+const sandboxWorkflow = read(".github/workflows/tracer-cj-sandbox-once.yml");
+assert.match(sandboxWorkflow, /github\.event_name == 'workflow_dispatch'/);
+assert.match(sandboxWorkflow, /SUPPLIER_LISTING_ID="e7cc08b5-9039-4c21-9906-a60130e76ab1"/);
+assert.match(sandboxWorkflow, /sha.*GITHUB_SHA|GITHUB_SHA.*sha/);
+
 assert.match(sandboxRoute, /TRACER CJ SANDBOX ORDER TEST COMPLETE/, "sandbox lifecycle success must be observable without logging the tracking number");
 const vercelConfig = JSON.parse(read("vercel.json"));
 assert.doesNotMatch(JSON.stringify(vercelConfig.crons), /cj-sandbox-order-test/, "sandbox order test must never be scheduled automatically");
