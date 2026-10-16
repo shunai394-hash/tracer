@@ -3,6 +3,10 @@ import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
+import { syncPublishedListingsToShopify } from "@/lib/shopify/sync";
+import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
+import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -76,11 +80,61 @@ export async function GET(request: Request) {
     const verifiedProductIds = (supplyFirst.items ?? [])
       .map((item) => (item && typeof item === "object" && "productId" in item ? String((item as { productId?: unknown }).productId ?? "") : ""))
       .filter(Boolean);
-    const opportunityIntelligence = verifiedProductIds.length > 0 && Date.now() - startedAt < 260_000
+    const opportunityIntelligence = verifiedProductIds.length > 0 && Date.now() - startedAt < 210_000
       ? await buildOpportunityIntelligence({ productIds: verifiedProductIds })
           .then((result) => ({ productIds: verifiedProductIds, processed: result.processed, testReady: result.testReady }))
           .catch((error) => ({ productIds: verifiedProductIds, error: error instanceof Error ? error.message : String(error) }))
       : { skipped: true, reason: verifiedProductIds.length > 0 ? "time_budget" : "no_verified_products" };
+
+    // Continue the same real pipeline from verified supply into sales-test selection
+    // and all three delivery channels. The selector remains the single profitability,
+    // stock, shipping and supplier-evidence gate; no raw discovery candidate is published.
+    let publication: Record<string, unknown> = { skipped: true, reason: "no_verified_products" };
+    if (
+      verifiedProductIds.length > 0 &&
+      !("error" in opportunityIntelligence) &&
+      Date.now() - startedAt < 225_000
+    ) {
+      const selected = await selectAndPublishSupplySalesTests(verifiedProductIds, 40, {
+        allowNativeCjIdentity: process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED !== "false",
+      });
+      const listingIds = selected.selectedListingIds;
+      if (listingIds.length > 0) {
+        const [shopify, base, newfind] = await Promise.all([
+          syncPublishedListingsToShopify(listingIds).then((result) => ({ ok: result.failed === 0, ...result }))
+            .catch((error) => ({ ok: false, error: error instanceof Error ? error.message : String(error) })),
+          publishPublishedListingsToBase(40, listingIds)
+            .catch((error) => ({ ok: false, error: error instanceof Error ? error.message : String(error), published: 0, failed: listingIds.length })),
+          Promise.all(listingIds.map((listingId) => promoteShopListingToNewfind(listingId)
+            .catch((error) => ({ configured: true, sent: false, eventId: `tracer-shop-listing:${listingId}`, status: null, ackStatus: null, detail: error instanceof Error ? error.message : String(error) })))),
+        ]);
+        publication = {
+          considered: selected.considered,
+          published: selected.published,
+          rejected: selected.rejected.length,
+          rejectedReasons: selected.rejected.reduce<Record<string, number>>((counts, item) => {
+            for (const reason of item.reasons) counts[reason] = (counts[reason] ?? 0) + 1;
+            return counts;
+          }, {}),
+          listingIds,
+          shopify,
+          base,
+          newfindSent: newfind.filter((item) => item.sent).length,
+          newfind,
+        };
+      } else {
+        publication = {
+          considered: selected.considered,
+          published: selected.published,
+          rejected: selected.rejected.length,
+          rejectedReasons: selected.rejected.reduce<Record<string, number>>((counts, item) => {
+            for (const reason of item.reasons) counts[reason] = (counts[reason] ?? 0) + 1;
+            return counts;
+          }, {}),
+          reason: "no_listing_passed_profitability_and_live_supply_gate",
+        };
+      }
+    }
 
     const elapsedMs = Date.now() - startedAt;
     if (db && runId) {
@@ -111,6 +165,7 @@ export async function GET(request: Request) {
               ? Number(opportunityIntelligence.processed)
               : 0,
           },
+          publication,
         },
       }).eq("id", runId);
       if (finishError) console.error("[TRACER SUPPLY-FIRST RUN LOG FINISH FAILED]", { stage: "cron_run_update", code: finishError.code ?? null });
@@ -121,12 +176,7 @@ export async function GET(request: Request) {
       elapsedMs,
       supplyFirst,
       opportunityIntelligence,
-      publication: {
-        published: 0,
-        base: false,
-        newfind: false,
-        reason: "deferred_to_opportunity_intelligence_and_sales_test_gate",
-      },
+      publication,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
