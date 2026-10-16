@@ -207,8 +207,13 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
   const canonicalProductId = nativeCandidateProductId ?? args.productId;
   const priorVerificationError = String(existingListing.data?.verification_error ?? "").trim();
   const priorVerifiedAt = typeof existingListing.data?.last_verified_at === "string" ? Date.parse(existingListing.data.last_verified_at) : NaN;
-  const nativeEvidenceFresh = existingListing.data?.verification_status === "verified"
-    && existingListing.data?.shipping_status === "verified"
+  // This function is called only after the caller has fetched the exact live
+  // CJ variant, current stock, and a Japan freight quote in the same request.
+  // Do not require the prior verification_status/timestamp to already be valid:
+  // that created a circular gate where a fresh live check could never promote an
+  // unverified row. Exact IDs and the freshly persisted capability fields still
+  // have to match before the row can be marked verified.
+  const nativeEvidenceFresh = existingListing.data?.shipping_status === "verified"
     && existingListing.data?.configured === true
     && existingListing.data?.price_confirmed === true
     && existingListing.data?.inventory_confirmed === true
@@ -218,8 +223,7 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
     && String(existingListing.data?.ship_to ?? "").trim().toUpperCase() === "JP"
     && String(existingListing.data?.supplier_product_id ?? "") === args.supplierProductId
     && String(existingListing.data?.supplier_variant_id ?? "") === args.supplierVariantId
-    && Number(args.cost) > 0 && Number(args.shippingCost) >= 0 && Number(args.inventory) > 0
-    && Number.isFinite(priorVerifiedAt) && priorVerifiedAt >= Date.now() - 7 * 24 * 60 * 60 * 1000 && priorVerifiedAt <= Date.now() + 5 * 60 * 1000
+    && Number(args.cost) > 0 && Number(args.shippingCost) > 0 && Number(args.inventory) > 0
     && (priorVerificationError === "" || priorVerificationError === "CJdropshipping is not configured" || priorVerificationError === "no_unique_canonical_child_variant_match" || priorVerificationError === "supplier_native_evidence_pending");
 
   let candidateIntelligenceId: string | null = null;
