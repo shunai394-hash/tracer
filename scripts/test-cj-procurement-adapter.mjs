@@ -56,10 +56,11 @@ console.log("CJ procurement adapter contract checks passed (live ordering remain
 
 assert.match(order, /isSandbox\?: boolean/);
 assert.match(order, /postCJSandboxAction\("simulatePay"/);
+assert.match(order, /postCJSandboxAction\("updateStatus", \{ orderId: id, targetStatus: 200 \}\)/);
 assert.match(order, /postCJSandboxAction\("updateStatus"/);
 assert.match(order, /postCJSandboxAction\("updateTrackNumber"/);
 assert.match(adapter, /runCJSandboxOrderLifecycle/);
-const sandboxUnpaidTransition = adapter.indexOf("await updateCJSandboxOrderStatus(orderId, 200);");
+const sandboxUnpaidTransition = adapter.indexOf("await markCJSandboxOrderUnpaid(orderId);");
 const sandboxPaymentSimulation = adapter.indexOf("await simulateCJSandboxPayment(orderId);");
 assert.ok(sandboxUnpaidTransition >= 0 && sandboxPaymentSimulation > sandboxUnpaidTransition, "CJ sandbox order must transition to UNPAID before simulated payment");
 assert.match(adapter, /CJ_SANDBOX_PAYMENT_SIMULATION_FAILED:supplierOrderId=/);
