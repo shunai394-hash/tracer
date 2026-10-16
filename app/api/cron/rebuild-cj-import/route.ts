@@ -126,13 +126,35 @@ export async function GET(request: Request) {
 
             // Quote in JPY, but retain the supplier's native USD costs in the supplier offer.
             if (stock !== null && Number(stock) > 0 && shipping !== null && Number(shipping) >= 0) {
-              quoteSellingPrice({
+              const quote = quoteSellingPrice({
                 sourceCost: Math.ceil(sourceCost * fx.rate),
                 shippingCost: Math.ceil(Number(shipping) * fx.rate),
                 marketplaceFeeRate: 0.1,
                 paymentFeeRate: 0,
                 targetMarginRate: 0.2,
               });
+              const { data: savedOffer, error: savedOfferError } = await db.from("tc_supplier_variants")
+                .select("id")
+                .eq("supplier_code", "cj")
+                .eq("supplier_product_id", supplierProductId)
+                .eq("supplier_variant_id", exact.vid)
+                .single();
+              if (savedOfferError || !savedOffer) throw new Error("supplier_variant_id_lookup_failed:" + (savedOfferError?.message ?? "no_row"));
+              const { error: priceError } = await db.from("tc_prices").upsert({
+                supplier_variant_id: savedOffer.id,
+                currency: "JPY",
+                selling_price: quote.sellingPrice,
+                marketplace_fee_rate: 0.1,
+                payment_fee_rate: 0,
+                target_margin_rate: 0.2,
+                landed_cost_jpy: quote.landedCost,
+                estimated_fees_jpy: quote.estimatedFees,
+                estimated_profit_jpy: quote.estimatedProfit,
+                estimated_margin_rate: quote.estimatedMarginRate,
+                fx_rate: fx.rate,
+                calculated_at: new Date().toISOString(),
+              }, { onConflict: "supplier_variant_id" });
+              if (priceError) throw new Error("price_upsert_failed:" + priceError.message);
               stats.priced++;
             } else {
               stats.skipped++;
