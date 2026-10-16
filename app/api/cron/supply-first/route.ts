@@ -134,7 +134,7 @@ export async function GET(request: Request) {
       Date.now() - startedAt < 225_000
     ) {
       const selected = await selectAndPublishSupplySalesTests(verifiedProductIds, 40, {
-        allowNativeCjIdentity: process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED !== "false",
+        allowNativeCjIdentity: true,
       });
       const listingIds = selected.selectedListingIds;
       if (listingIds.length > 0) {
