@@ -41,6 +41,8 @@ assert.match(selector, /metadata->>source_ref/, "detached supply listings are qu
 assert.match(selector, /supplier_listings\.product_id null until marketplace identity is proven/, "detached offers remain detached in the database");
 // Demand/opportunity intelligence is ranking-only, not a listing prerequisite.
 assert.match(selector, /const intelligence = intelligenceByProduct.get\(productId\) \?\?/);
+assert.match(selector, /Supplier-native products may not have a product_intelligence row yet/, "supplier-native title/image evidence can provide a fallback catalog record when enrichment is missing");
+assert.match(selector, /product_intelligence_or_supplier_catalog_missing/, "missing enrichment is only rejected when neither catalog nor supplier title exists");
 assert.doesNotMatch(selector, /if \(!intelligence\) reasons\.push\("opportunity_intelligence_missing"\)/);
 assert.doesNotMatch(selector, /sellability_not_ready|intelligence_filter_not_pass|intelligence_profit_not_ok|demand_evidence_missing|search_fit_evidence_missing|market_gap_evidence_missing|intelligence_confidence_low/, "AI demand scores must not suppress an otherwise profitable and fulfilment-ready product");
 assert.doesNotMatch(selector, /outside_womens_product_strategy/, "women-focused priority must not exclude other profitable categories");
