@@ -2,6 +2,8 @@ name: TRACER CJ Sandbox Lifecycle — One-Time Verification
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
   schedule:
     - cron: "1 0 16 10 *"
 
@@ -15,7 +17,7 @@ concurrency:
 
 jobs:
   sandbox-lifecycle:
-    if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'TRACER_CJ_SANDBOX_ORDER_TEST')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -33,7 +35,7 @@ jobs:
           fi
 
           BASE="https://tracer-pied-alpha.vercel.app"
-          SUPPLIER_LISTING_ID="9a6eec53-9585-4c28-84a5-d7b879b8e44c"
+          SUPPLIER_LISTING_ID="83eb3a0e-eced-4041-afa5-da57c3084f4c"
 
           get_oidc_token() {
             curl -sSf --max-time 15 \
