@@ -103,8 +103,9 @@ export async function GET(request: Request) {
         const shopify = await syncPublishedListingsToShopify(listingIds)
           .then((result) => ({ ok: result.failed.length === 0, ...result }))
           .catch((error) => ({ ok: false, error: error instanceof Error ? error.message : String(error) }));
-        const newfind = await Promise.all(listingIds.map((listingId) => promoteShopListingToNewfind(listingId)
-          .catch((error) => ({ configured: true, sent: false, eventId: `tracer-shop-listing:${listingId}`, status: null, ackStatus: null, detail: error instanceof Error ? error.message : String(error) }))));
+        const shopifySyncedListingIds = "listingIds" in shopify ? shopify.listingIds : [];
+        const newfind = await Promise.all(shopifySyncedListingIds.map((listingId) => promoteShopListingToNewfind(listingId)
+          .catch((error) => ({ configured: true, sent: false, eventId: "tracer-shop-listing:" + listingId, status: null, ackStatus: null, detail: error instanceof Error ? error.message : String(error) }))));
         const base = await publishPublishedListingsToBase(40, listingIds)
           .catch((error) => ({ ok: false, error: error instanceof Error ? error.message : String(error), published: 0, failed: listingIds.length }));
         publication = {
