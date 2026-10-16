@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { selectRotatingVariantBatch } from "../lib/commerce/variant-batch.ts";
 import { readFile } from "node:fs/promises";
 import { calculateSellingPrice } from "../lib/commerce/pricing.mjs";
 import { splitJapaneseAddress } from "../lib/commerce/japanese-address.mjs";
@@ -237,4 +238,27 @@ test("procurement submits only paid orders with complete shipping and exact curr
   assert.match(worker, /status: "processing"/);
   assert.match(worker, /createdSupplierOrderId/);
   assert.match(worker, /trackingNumber/);
+});
+
+test("CJ import rotates bounded batches through every child variant", () => {
+  const variants = ["black", "white", "pink", "blue", "green", "red", "beige"];
+  const first = selectRotatingVariantBatch(variants, 3, 0);
+  const second = selectRotatingVariantBatch(variants, 3, 1);
+  const third = selectRotatingVariantBatch(variants, 3, 2);
+  assert.deepEqual(first, ["black", "white", "pink"]);
+  assert.deepEqual(second, ["blue", "green", "red"]);
+  assert.deepEqual(third, ["beige", "black", "white"]);
+  assert.equal(new Set([...first, ...second, ...third]).size, 7);
+  assert.deepEqual(selectRotatingVariantBatch(variants, 20, 0), variants);
+  assert.deepEqual(selectRotatingVariantBatch([], 3, 0), []);
+});
+
+test("CJ importer persists exact supplier variant IDs and rotates bounded child-variant batches", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /selectRotatingVariantBatch\(variants, variantBatchLimit, variantRunSlot\)/);
+  assert.match(importer, /variantBatchLimit = Math\.min\(6, Math\.max\(1, Number\(url\.searchParams\.get\("variantLimit"\) \|\| 5\)\)\)/);
+  assert.match(importer, /variantsAvailable \+= variants\.length/);
+  assert.match(importer, /sourceVariantKey: exactVariant\.vid/);
+  assert.match(importer, /sku: exactVariant\.sku/);
+  assert.match(importer, /supplierVariantId: exactVariant\.vid/);
 });
