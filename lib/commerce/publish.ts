@@ -38,17 +38,20 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
         .eq("variant_id", listing.variant_id).maybeSingle();
       if (priceError) throw new Error("price_read_failed:" + priceError.message);
       const { data: offer, error: offerError } = price?.supplier_offer_id
-        ? await db.from("supplier_offers").select("inventory,source_status,tracking_supported,ship_to,last_checked_at")
+        ? await db.from("supplier_offers").select("supplier_code,supplier_product_id,supplier_variant_id,inventory,source_status,tracking_supported,ship_to,last_checked_at")
             .eq("id", price.supplier_offer_id).maybeSingle()
         : { data: null, error: null };
       if (offerError) throw new Error("supplier_offer_read_failed:" + offerError.message);
       const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
       const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 && Date.now() - checkedAt <= 24 * 60 * 60_000;
+      const nativeIdsValid = offer?.supplier_code !== "cj" ||
+        (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
       const valid = Boolean(offer && price && offer.source_status === "verified" &&
-        offer.tracking_supported === true && offer.ship_to === "JP" && fresh &&
+        nativeIdsValid && offer.tracking_supported === true && offer.ship_to === "JP" && fresh &&
         Number(offer.inventory) > 0 && Number(price.selling_price) > 0 && Number(price.expected_profit) > 0);
       if (valid) continue;
       const reason = !offer ? "supplier_offer_missing" :
+        !nativeIdsValid ? "supplier_native_ids_invalid" :
         offer.source_status !== "verified" ? "supplier_offer_not_verified" :
         offer.tracking_supported !== true ? "tracking_not_verified" :
         offer.ship_to !== "JP" ? "supplier_not_shipping_to_japan" :
