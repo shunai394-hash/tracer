@@ -3,7 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { persistCjSupplyIntelligence, resolveMarketplaceIdentityWithFreshBarcode } from "@/lib/intelligence/persist-cj-supply-intelligence";
 import { calculateCJFreight, fetchCJVariantByVid, fetchCJVariantStock, getCJProductDetail } from "@/lib/sources/cj";
 import { isCJQuotaCircuitBlockingError, isCJQuotaExhaustedError } from "@/lib/sources/cj/client";
-import { getCJQuotaCooldownUntil } from "@/lib/sources/cj/rate-limit-policy";
+import { getCJQuotaCooldownUntil, isCJQuotaCircuitActive } from "@/lib/sources/cj/rate-limit-policy";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { normalizeIdentifier } from "@/lib/market/identifiers";
 import { isCjIdentityReverifyCandidate, isCjIdentityReverifyDue, CJ_IDENTITY_RETRY_DELAYS_MS, supplierBarcodeAudit, partitionByExactShopListing } from "@/lib/suppliers/cj-identity-reverify-policy";
@@ -75,7 +75,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   if (quotaReadError) throw new Error(`CJ quota circuit read failed: ${quotaReadError.message}`);
   const blockedUntilValue = record(quotaRuns?.[0]?.metadata).blockedUntil;
   const blockedUntil = typeof blockedUntilValue === "string" ? blockedUntilValue : null;
-  if (blockedUntil && Date.parse(blockedUntil) > Date.now()) {
+  if (isCJQuotaCircuitActive(quotaRuns?.[0]?.metadata)) {
     const progress = await readCjIdentityProgressCounts(db);
     return {
       checked: 0,
@@ -478,7 +478,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
           finished_at: now,
           processed: 0,
           failed: 1,
-          metadata: { blockedUntil: result.quotaBlockedUntil, reason: "provider_points_remaining_zero", source: "cj-identity-reverify" },
+          metadata: { blockedUntil: result.quotaBlockedUntil, reason: "provider_explicit_daily_points_exhausted", source: "cj-identity-reverify" },
         });
         if (circuitWriteError) throw new Error("CJ quota circuit persistence failed: " + circuitWriteError.message);
       } else if (item.kind === "circuit_blocked") {

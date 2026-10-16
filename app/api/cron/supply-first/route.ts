@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { discoverAndCreateCjSupply } from "@/lib/suppliers/discover-cj-supply";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { isCJQuotaCircuitActive } from "@/lib/sources/cj/rate-limit-policy";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync";
@@ -47,7 +48,7 @@ export async function GET(request: Request) {
       ? quotaRun.metadata as Record<string, unknown>
       : {};
     const blockedUntil = typeof quotaMetadata.blockedUntil === "string" ? quotaMetadata.blockedUntil : null;
-    if (blockedUntil && Date.parse(blockedUntil) > Date.now()) {
+    if (isCJQuotaCircuitActive(quotaMetadata)) {
       return NextResponse.json({
         ok: true,
         skipped: true,

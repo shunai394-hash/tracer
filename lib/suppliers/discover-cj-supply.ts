@@ -11,6 +11,7 @@ import {
   calculateCJFreight,
 } from "@/lib/sources/cj";
 import { isCJQuotaCircuitBlockingError } from "@/lib/sources/cj/client";
+import { isCJQuotaCircuitActive } from "@/lib/sources/cj/rate-limit-policy";
 import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/cj/variant-select";
 import { persistCjSupplyIntelligence } from "@/lib/intelligence/persist-cj-supply-intelligence";
 import { hasPassedSalesTestGate } from "@/lib/market/sales-test-gate";
@@ -240,7 +241,7 @@ export async function discoverAndCreateCjSupply(
     ? quotaCircuit.data.metadata as Record<string, unknown>
     : {};
   const quotaBlockedUntil = typeof quotaMetadata.blockedUntil === "string" ? quotaMetadata.blockedUntil : null;
-  if (quotaBlockedUntil && Date.parse(quotaBlockedUntil) > Date.now()) {
+  if (isCJQuotaCircuitActive(quotaMetadata)) {
     return {
       discovered: 0,
       published: 0,
@@ -254,7 +255,7 @@ export async function discoverAndCreateCjSupply(
       retryable: true,
       reason: "supplier_quota_cooldown",
       quotaBlocked: true,
-      retryAfter: quotaBlockedUntil,
+      retryAfter: quotaBlockedUntil ?? undefined,
       items: [],
     };
   }
