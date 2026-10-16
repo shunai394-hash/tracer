@@ -7,6 +7,10 @@
       "schedule": "*/30 * * * *"
     },
     {
+      "path": "/api/cron/commerce-cj-sandbox-test",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/commerce-publish-base",
       "schedule": "10,25,40,55 * * * *"
     },
