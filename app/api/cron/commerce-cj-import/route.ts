@@ -8,6 +8,37 @@ import { upsertSupplierOffer, recalculatePrice } from "@/lib/commerce/core";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+function japaneseCommerceTitle(title: string, productType?: string | null): string | null {
+  const source = (String(title ?? "") + " " + String(productType ?? "")).toLowerCase();
+  const rules: Array<[RegExp, string]> = [
+    [/fan brush|makeup brush|make-up brush|cosmetic brush|tartaric acid brush/, "メイクブラシ"],
+    [/hair brush|detangling brush/, "ヘアブラシ"],
+    [/hair clip|hair claw|headband|hair band/, "ヘアアクセサリー"],
+    [/crossbody bag/, "斜めがけバッグ"],
+    [/shoulder bag/, "ショルダーバッグ"],
+    [/tote bag|tote/, "トートバッグ"],
+    [/clutch bag|clutch/, "クラッチバッグ"],
+    [/handbag|purse|shoulder bag|\bbag\b/, "バッグ"],
+    [/face roller/, "フェイスローラー"],
+    [/beauty tool|makeup|cosmetic/, "美容ツール"],
+  ];
+  const specific = rules.find(([pattern]) => pattern.test(source));
+  return specific?.[1] ?? localizeProductTitle(title, productType);
+}
+
+function japaneseVariantSuffix(nameEn: unknown): string {
+  const source = String(nameEn ?? "").toLowerCase();
+  const colors: Array<[RegExp, string]> = [
+    [/yellow/, "イエロー"], [/white/, "ホワイト"], [/black/, "ブラック"],
+    [/pink/, "ピンク"], [/blue/, "ブルー"], [/green/, "グリーン"],
+    [/red/, "レッド"], [/purple/, "パープル"], [/beige/, "ベージュ"],
+    [/brown/, "ブラウン"], [/gray|grey/, "グレー"], [/silver/, "シルバー"],
+    [/gold/, "ゴールド"], [/orange/, "オレンジ"], [/navy/, "ネイビー"],
+  ];
+  const matched = [...new Set(colors.filter(([pattern]) => pattern.test(source)).map(([, ja]) => ja))];
+  return matched.length ? "（" + matched.join("・") + "）" : "";
+}
+
 /** New clean-catalog CJ importer. Bounded per run and idempotent by supplier-native product/variant IDs. */
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -66,7 +97,7 @@ export async function GET(request: Request) {
             const shipping = freightResult.status === "fulfilled" ? freightResult.value : null;
             if (stockResult.status === "rejected") stats.errors.push("stock:" + candidate.id + ":" + String(stockResult.reason).slice(0, 100));
             if (freightResult.status === "rejected") stats.errors.push("freight:" + candidate.id + ":" + String(freightResult.reason).slice(0, 100));
-            const title = localizeProductTitle(canonicalDetail.title, canonicalDetail.productType) || (supplierProductId === candidate.id ? localizeProductTitle(candidate.title, candidate.productType) : null);
+            const title = japaneseCommerceTitle(canonicalDetail.title, canonicalDetail.productType) || (supplierProductId === candidate.id ? japaneseCommerceTitle(candidate.title, candidate.productType) : null);
             if (!title) { stats.skipped++; continue; }
             const saved = await upsertSupplierOffer({
               sourceKey: "cj:" + supplierProductId,
@@ -76,7 +107,7 @@ export async function GET(request: Request) {
               imageUrl: canonicalDetail.imageUrl ?? (supplierProductId === candidate.id ? candidate.imageUrl : null),
               sourceUrl: "https://cjdropshipping.com/product/" + encodeURIComponent(supplierProductId),
               sourceVariantKey: exactVariant.vid,
-              variantTitleJa: exactVariant.nameEn ? title + "（" + exactVariant.nameEn + "）" : title,
+              variantTitleJa: title + japaneseVariantSuffix(exactVariant.nameEn),
               sku: exactVariant.sku,
               attributes: { barcode: exactVariant.barcode, supplierVariantName: exactVariant.nameEn },
               offer: {
