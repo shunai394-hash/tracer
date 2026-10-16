@@ -40,6 +40,6 @@ assert.doesNotMatch(bestsellerRouteForBrightData, /persistMarketplaceBestsellers
 const recoveryWorkflow = await readFile(new URL("../.github/workflows/tracer-one-shot-supply-recovery.yml", import.meta.url), "utf8");
 const healthRoute = await readFile(new URL("../app/api/health/route.ts", import.meta.url), "utf8");
 assert.match(recoveryWorkflow, /\$BASE\/api\/health/);
-assert.match(recoveryWorkflow, /\\$GITHUB_SHA/);
+assert.match(recoveryWorkflow, /\$GITHUB_SHA/);
 assert.doesNotMatch(recoveryWorkflow, /call_get api\/cron\/market-sourcing/);
 assert.match(healthRoute, /gitCommitSha: process\.env\.VERCEL_GIT_COMMIT_SHA/);
