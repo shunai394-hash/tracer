@@ -347,3 +347,11 @@ test("BASE reconciliation matches stable commerce TRC SKUs as well as legacy UUI
   assert.match(route, /addSupplierIdentifier\(channelRow\.external_sku, listing\)/);
   assert.match(route, /stableIdentifierMatch\?\.\[2\] && supplierIdentifierCandidates\.length === 1/);
 });
+
+test("BASE audit waits for exact commerce TRC identifier match support", async () => {
+  const route = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
+  const workflow = await readFile(new URL("../.github/workflows/base-product-backup.yml", import.meta.url), "utf8");
+  assert.match(route, /commerceTrcIdentifierMatchCount: items\.filter/);
+  assert.match(workflow, /hasOwnProperty\.call\(candidate, "commerceTrcIdentifierMatchCount"\)/);
+  assert.match(workflow, /"commerceTrcIdentifierMatchCount": d\.get\("commerceTrcIdentifierMatchCount"\)/);
+});
