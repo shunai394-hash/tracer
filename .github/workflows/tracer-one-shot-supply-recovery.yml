@@ -41,6 +41,24 @@ jobs:
               print(open("/tmp/response.json").read()[:1000])
           PY
           }
+          call_post() {
+            local path="$1" payload="$2" max_time="$3" t code
+            t="$(token)" || { echo "OIDC token failed for $path"; return 1; }
+            code="$(curl -sS -o /tmp/response.json -w "%{http_code}" --max-time "$max_time" -X POST \
+              -H "Authorization: Bearer $t" -H "Content-Type: application/json" \
+              --data "$payload" "$BASE/$path" || true)"
+            echo "=== $path HTTP $code ==="
+            python3 - <<'PY'
+import json
+try:
+    d=json.load(open("/tmp/response.json"))
+    print(json.dumps(d,ensure_ascii=False)[:5000])
+except Exception:
+    print(open("/tmp/response.json").read()[:1000])
+PY
+          }
+
+          call_post "api/cron/cj-sandbox-order-test" '{"supplierListingId":"d970c5d9-0662-4894-bfe6-4e377819666d"}' 300 || true
           call_get "api/cron/commerce-cj-import?q=women%20handbag&limit=3" 300 || true
           call_get "api/cron/commerce-publish-base?limit=3" 120 || true
           call_get "api/cron/commerce-publish-shopify?limit=3" 120 || true
