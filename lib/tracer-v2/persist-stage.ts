@@ -49,10 +49,9 @@ export async function persistTracerV2Stage(
 
   const result = data as Record<string, unknown>;
   if (result.ok !== true) {
-    return {
-      ok: false,
-      reason: typeof result.reason === "string" ? result.reason : "pipeline_stage_rejected",
-    };
+    const reason = typeof result.reason === "string" ? result.reason : "pipeline_stage_rejected";
+
+    return { ok: false, reason };
   }
 
   return {
