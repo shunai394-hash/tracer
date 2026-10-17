@@ -189,3 +189,15 @@ assert.match(identityAuditRoute, /referenced\.ship_to[\s\S]*?!== "JP"/);
 assert.match(identityAuditRoute, /supplier_verification_missing_or_stale/);
 assert.match(identityAuditRoute, /nativePublicationBlockReasonCounts/);
 assert.match(identityAuditRoute, /blockReasons: nativeBlockReasons/);
+
+
+// Targeted re-verification may refresh only explicitly named supplier rows, without advancing the global cursor.
+const reverifyImplementation = await readFile(new URL("../lib/suppliers/reverify-cj-identity.ts", import.meta.url), "utf8");
+const reverifyRoute = await readFile(new URL("../app/api/cron/cj-identity-reverify/route.ts", import.meta.url), "utf8");
+assert.match(reverifyImplementation, /supplierListingIds\?: string\[\]/);
+assert.match(reverifyImplementation, /targetSupplierListingIds\.length > 0[\s\S]*?buildCandidateQuery\(\)\.in\("id", targetSupplierListingIds\)/);
+assert.match(reverifyImplementation, /targetSupplierListingIds\.length > 0\) result\.nextCursor = priorCursor/);
+assert.match(reverifyImplementation, /selectionStrategy: targetSupplierListingIds\.length > 0 \? "explicit_supplier_listing_ids"/);
+assert.match(reverifyRoute, /url\.searchParams\.get\("supplierListingIds"\)/);
+assert.match(reverifyRoute, /supplierListingIds,/);
+assert.match(reverifyRoute, /targetedListingCount: supplierListingIds\.length/);
