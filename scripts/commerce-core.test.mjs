@@ -571,6 +571,10 @@ test("scheduled commerce publication defaults to unpublished recovery to avoid r
   const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
   assert.match(baseRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/);
   assert.match(shopifyRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/);
+  assert.match(baseRoute, /\[commerce-publish\] run completed/);
+  assert.match(shopifyRoute, /\[commerce-publish\] run completed/);
+  assert.match(baseRoute, /failureReasons/);
+  assert.match(shopifyRoute, /failureReasons/);
 });
 
 
