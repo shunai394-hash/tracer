@@ -37,6 +37,7 @@ jobs:
             let totalRows = null;
             const totals = {
               rowsReturned: 0, priceMatches: 0, priceMismatches: 0,
+              skuMatches: 0, skuMismatches: 0,
               visibilityMatches: 0, visibilityMismatches: 0, readErrors: 0, missingSku: 0,
             };
             const anomalies = [];
@@ -61,12 +62,13 @@ jobs:
                 readErrorCounts[error] = (readErrorCounts[error] ?? 0) + Number(count ?? 0);
               }
               for (const row of body.results ?? []) {
-                if (row.error || !row.priceMatches || !row.visibilityMatches || !row.skuPresent) {
+                if (row.error || !row.priceMatches || !row.skuMatches || !row.visibilityMatches || !row.skuPresent) {
                   anomalies.push({
                     listingId: row.listingId, baseItemId: row.baseItemId, status: row.status,
+                    expectedSku: row.expectedSku, externalSku: row.externalSku,
                     expectedPrice: row.expectedPrice, externalPrice: row.externalPrice,
                     externalVisible: row.externalVisible, skuPresent: row.skuPresent,
-                    priceMatches: row.priceMatches, visibilityMatches: row.visibilityMatches,
+                    skuMatches: row.skuMatches, priceMatches: row.priceMatches, visibilityMatches: row.visibilityMatches,
                     error: row.error,
                   });
                 }
@@ -90,8 +92,9 @@ jobs:
             await fs.mkdir("base-external-readback-artifacts", { recursive: true });
             await fs.writeFile("base-external-readback-artifacts/report.json", JSON.stringify(report, null, 2) + "\n");
             const columns = [
-              "listingId", "baseItemId", "status", "expectedPrice", "externalPrice",
-              "externalVisible", "skuPresent", "priceMatches", "visibilityMatches", "error",
+              "listingId", "baseItemId", "status", "expectedSku", "externalSku",
+              "expectedPrice", "externalPrice", "externalVisible", "skuPresent",
+              "skuMatches", "priceMatches", "visibilityMatches", "error",
             ];
             const csvCell = (value) => {
               const text = value == null ? "" : String(value);
@@ -105,6 +108,7 @@ jobs:
               `- Total TRACER BASE listing rows: **${totalRows}**`,
               `- Rows actually scanned: **${totals.rowsReturned}**`,
               `- Price matches / mismatches: **${totals.priceMatches} / ${totals.priceMismatches}**`,
+              `- SKU matches / mismatches: **${totals.skuMatches} / ${totals.skuMismatches}**`,
               `- Visibility matches / mismatches: **${totals.visibilityMatches} / ${totals.visibilityMismatches}**`,
               `- External API read errors: **${totals.readErrors}**`,
               `- Read error categories: **${JSON.stringify(readErrorCounts)}**`,
@@ -118,8 +122,9 @@ jobs:
             console.log(JSON.stringify({ ...report, anomalies: anomalies.slice(0, 50) }, null, 2));
 
             const incomplete = totals.rowsReturned !== totalRows;
-            const mismatches = totals.priceMismatches > 0 || totals.visibilityMismatches > 0 ||
-              totals.readErrors > 0 || totals.missingSku > 0 || anomalies.length > 0;
+            const mismatches = totals.priceMismatches > 0 || totals.skuMismatches > 0 ||
+              totals.visibilityMismatches > 0 || totals.readErrors > 0 ||
+              totals.missingSku > 0 || anomalies.length > 0;
             if (incomplete) console.error(`Incomplete audit: scanned ${totals.rowsReturned} of ${totalRows} rows`);
             if (mismatches) console.error("Audit found discrepancies; inspect the JSON/CSV artifact and step summary.");
             if (incomplete || mismatches) process.exitCode = 1;
