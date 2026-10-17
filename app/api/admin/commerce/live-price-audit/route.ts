@@ -159,6 +159,7 @@ export async function GET(request: Request) {
       ambiguousSkuMatches: 0,
       missingCanonicalPrice: 0,
       duplicateLiveSku: 0,
+      duplicateSkuResolvedByIds: 0,
     };
 
     for (const listing of listings) {
@@ -234,6 +235,26 @@ export async function GET(request: Request) {
           discrepancies.push({ channel: "shopify", listingId: listing.id, externalProductId: listing.external_product_id, externalVariantId: listing.external_variant_id, sku, expectedPrice: expected, issue: "external_product_variant_and_sku_missing" });
           continue;
         }
+        if (bySku.length > 1 && matches.length === 1) {
+          summary.duplicateLiveSku += 1;
+          const exactRecordedMatch = bySku.filter((row) =>
+            sameShopifyId(row.productId, recordedProductId) &&
+            sameShopifyId(row.variantId, recordedVariantId)
+          );
+          if (exactRecordedMatch.length === 1 && sameShopifyId(matches[0].variantId, exactRecordedMatch[0].variantId)) {
+            summary.duplicateSkuResolvedByIds += 1;
+          }
+          discrepancies.push({
+            channel: "shopify",
+            listingId: listing.id,
+            sku,
+            recordedProductId: listing.external_product_id,
+            recordedVariantId: listing.external_variant_id,
+            liveMatches: bySku,
+            issue: exactRecordedMatch.length === 1 ? "duplicate_live_sku_recorded_ids_resolve_match" : "duplicate_live_sku_detected",
+          });
+        }
+
         const matched = matches[0];
         const actual = matched.price;
         const externalIdMismatch = Boolean(
