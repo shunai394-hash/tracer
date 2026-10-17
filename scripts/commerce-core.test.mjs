@@ -909,6 +909,8 @@ test("Shopify live reconciliation exports full row-level IDs, SKUs, prices, and 
   assert.match(route, /shopifyPrice/);
   assert.match(route, /items: checks/);
   assert.match(route, /unlinkedProducts: shopify\.filter/);
+  assert.match(route, /notLinkedInDb: shopify\.filter\(\(n\) => !linkedIds\.has\(tail\(n\.id\)\) && !commerceIds\.has\(tail\(n\.id\)\)\)/);
+  assert.match(route, /unlinkedProducts: shopify\.filter\(\(node\) => !linkedIds\.has\(tail\(node\.id\)\) && !commerceIds\.has\(tail\(node\.id\)\)\)/);
   assert.match(route, /shop_listings_scan_incomplete/);
   assert.match(workflow, /SHOPIFY_RECONCILIATION_INCOMPLETE_REFUSING_TO_LABEL_AUDIT_COMPLETE/);
   assert.match(workflow, /cp out\.json shopify-reconcile\.json/);
