@@ -532,3 +532,13 @@ test("clean commerce CJ importer respects the shared daily-points cooldown befor
   assert.ok(importer.indexOf("isCJQuotaCircuitActive(quotaMetadata)") < importer.indexOf("searchCJProducts(query"),
     "the quota circuit must stop CJ calls before search begins");
 });
+
+
+test("linked supplier products can publish without optional Japanese-title or image gates", async () => {
+  const publisher = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(publisher, /isJapaneseProductTitle\(title\)/);
+  assert.match(publisher, /if \(imageUrl\) await addBaseItemImage/);
+  assert.match(publisher, /supplier_link_or_cost_missing/);
+  const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
+  assert.match(core, /const base = unitCostJpy \+ shippingCostJpy \+ fixedFeeJpy/);
+});
