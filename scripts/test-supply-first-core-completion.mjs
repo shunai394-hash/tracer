@@ -15,7 +15,6 @@ for (const required of ["match", "supply_sales_test_select", "sales_test_select"
 assert.match(source, /dedicated_commerce_cj_import_cron_owns_live_cj_discovery/,
   "the five-minute patrol must leave live CJ discovery to its scheduled canonical importer");
 assert.match(source, /discoveryCron: "\/api\/cron\/commerce-cj-import"/);
-  "the skipped patrol stage must point to the canonical scheduled importer");
 assert.doesNotMatch(source, /discoverAndCreateCjSupply\(/,
   "the five-minute patrol must not duplicate live CJ API discovery calls");
 assert.ok(source.indexOf("const supplyFirstStep") < source.indexOf("marketplace_sourcing_disabled_supplier_native_only"),
