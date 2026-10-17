@@ -527,7 +527,10 @@ async function syncListingRows(
         : null;
       // A stored id whose product no longer exists in Shopify is stale: fall
       // back to an exact handle match, otherwise create the product afresh.
-      let existing = existingById ?? (await findByHandle(productInput.handle)) ?? (await findByExactSku(productInput.sku));
+      // Always preflight exact SKU first: even a stored ID or handle must not
+      // bypass the ambiguity guard when another TRACER product has the same SKU.
+      const existingBySku = await findByExactSku(productInput.sku);
+      let existing = existingBySku ?? existingById ?? (await findByHandle(productInput.handle));
 
       // Never overwrite a product owned by another vendor. Recover from a
       // stale/colliding handle by choosing a deterministic TRACER-owned handle.
