@@ -33,7 +33,7 @@ type GatePulse = {
 
 type CommerceProduct = { id: string; title_ja: string; description_ja: string | null; image_url: string | null; active: boolean; updated_at: string };
 type CommerceVariant = { id: string; product_id: string; title_ja: string; sku: string | null; source_variant_key: string };
-type CommerceOffer = { id: string; variant_id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; inventory: number | string; unit_cost: number | string; shipping_cost: number | string; currency: string; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
+type CommerceOffer = { id: string; variant_id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; inventory: number | string; unit_cost: number | string; shipping_cost: number | string; raw_data: Record<string, unknown> | null; currency: string; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
 type CommercePrice = { variant_id: string; supplier_offer_id: string; selling_price: number | string; expected_profit: number | string; margin_rate: number | string; currency: string };
 type CommerceListing = { id: string; variant_id: string; channel: "base" | "shopify"; external_product_id: string | null; external_variant_id: string | null; external_sku: string | null; selling_price: number | string; status: string; published_url: string | null; last_error: string | null; last_synced_at: string | null };
 
@@ -92,7 +92,7 @@ export default async function ProductsPage() {
         .eq("profit_state", "PROFIT_OK"),
       supabase.from("commerce_products").select("id,title_ja,description_ja,image_url,active,updated_at").eq("active", true).order("updated_at", { ascending: false }).limit(100),
       supabase.from("commerce_variants").select("id,product_id,title_ja,sku,source_variant_key").order("updated_at", { ascending: false }).limit(500),
-      supabase.from("supplier_offers").select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,unit_cost,shipping_cost,currency,ship_to,tracking_supported,source_status,last_checked_at").limit(500),
+      supabase.from("supplier_offers").select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,unit_cost,shipping_cost,raw_data,currency,ship_to,tracking_supported,source_status,last_checked_at").limit(500),
       supabase.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit,margin_rate,currency").limit(500),
       supabase.from("channel_listings").select("id,variant_id,channel,external_product_id,external_variant_id,external_sku,selling_price,status,published_url,last_error,last_synced_at").order("last_synced_at", { ascending: false }).limit(1000),
     ]);
@@ -118,10 +118,10 @@ export default async function ProductsPage() {
     const freshnessCutoff = Date.now() - 24 * 60 * 60 * 1000;
     const freshOffers = commerceOffers.filter((offer) =>
       offer.source_status === "verified" &&
-      offer.tracking_supported === true &&
       offer.ship_to === "JP" &&
-      Number(offer.inventory) > 0 &&
       Boolean(offer.supplier_product_id && offer.supplier_variant_id) &&
+      Number.isFinite(Number(offer.unit_cost)) && Number(offer.unit_cost) > 0 &&
+      (Number(offer.shipping_cost) > 0 || (Number(offer.shipping_cost) === 0 && offer.raw_data?.shippingKnown === true)) &&
       Number.isFinite(Date.parse(String(offer.last_checked_at ?? ""))) &&
       Date.parse(String(offer.last_checked_at ?? "")) >= freshnessCutoff
     );

@@ -51,7 +51,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       .in("variant_id", variantIds)
       .order("calculated_at", { ascending: false }),
     db.from("supplier_offers")
-      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,source_status,tracking_supported,ship_to,last_checked_at")
+      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,unit_cost,shipping_cost,raw_data,inventory,source_status,tracking_supported,ship_to,last_checked_at")
       .in("variant_id", variantIds)
       .order("last_checked_at", { ascending: false }),
     db.from("commerce_variants")
@@ -63,7 +63,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   if (variantsRead.error) throw new Error("stale_variant_batch_read_failed:" + variantsRead.error.message);
 
   type StalePrice = { variant_id: string; supplier_offer_id: string | null; currency: string; selling_price: number; expected_profit: number; calculated_at: string | null };
-  type StaleOffer = { id: string; variant_id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; inventory: number; source_status: string; tracking_supported: boolean; ship_to: string; last_checked_at: string | null };
+  type StaleOffer = { id: string; variant_id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; source_status: string; tracking_supported: boolean; ship_to: string; last_checked_at: string | null };
   type StaleVariant = { id: string; title_ja: string | null; commerce_products: { title_ja?: string | null; description_ja?: string | null } | Array<{ title_ja?: string | null; description_ja?: string | null }> | null };
   const pricesByVariant = new Map<string, StalePrice[]>();
   for (const price of (pricesRead.data ?? []) as StalePrice[]) {
@@ -83,28 +83,25 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
     try {
       const prices = pricesByVariant.get(String(listing.variant_id)) ?? [];
       const offers = offersByVariant.get(String(listing.variant_id)) ?? [];
-      const offerIsValid = (offer: StaleOffer) => {
-        const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
-        const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 && Date.now() - checkedAt <= 24 * 60 * 60_000;
-        const nativeIdsValid = offer.supplier_code !== "cj" ||
-          (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
-        const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id);
-        return Boolean(price && price.currency === "JPY" && Number(price.selling_price) > 0 && Number(price.expected_profit) > 0 &&
-          offer.source_status === "verified" && nativeIdsValid && offer.tracking_supported === true &&
-          offer.ship_to === "JP" && fresh && Number(offer.inventory) > 0);
-      };
       const hasPublishableLinkedOffer = offers.some((offer) => {
         const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id);
         const nativeIdsValid = offer.supplier_code !== "cj" ||
           (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
+        // Listing eligibility uses exact supplier identity and a positive JPY landed-cost price.
+        // Cached stock, verification age, JP destination and tracking are rechecked at procurement,
+        // so temporary supplier evidence gaps do not silently hide otherwise linked catalog items.
+        const unitCostKnown = Number.isFinite(Number(offer.unit_cost)) && Number(offer.unit_cost) > 0;
+        const shippingKnown = Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0 ||
+          (Number(offer.shipping_cost) === 0 && offer.raw_data?.shippingKnown === true);
         return Boolean(
           offer.supplier_product_id && offer.supplier_variant_id && nativeIdsValid &&
+          unitCostKnown && shippingKnown &&
           price && price.currency === "JPY" && Number(price.selling_price) > 0 && Number(price.expected_profit) > 0
         );
       });
-      if (offers.some(offerIsValid) || hasPublishableLinkedOffer) {
-        // Listing requires a mapped supplier product/variant and profitable JPY price.
-        // Stock freshness, tracking capability and supplier verification belong to procurement.
+      if (hasPublishableLinkedOffer) {
+        // Only exact supplier product/variant identity and profitable JPY pricing gate a listing.
+        // Live stock, freshness, destination, tracking and orderability belong to procurement.
         const checkedAt = new Date().toISOString();
         const { error: markCheckedError } = await db.from("channel_listings").update({
           last_synced_at: checkedAt,
