@@ -6,6 +6,9 @@ import { ingestPaidOrder } from "@/lib/commerce/core";
 import { splitJapaneseAddress } from "@/lib/commerce/japanese-address.mjs";
 
 const BASE_UNMAPPED_ORDER_ITEM_EVENT = "base_order_unmapped_item";
+const BASE_ORDER_SCAN_CURSOR_EVENT = "base_order_scan_cursor";
+const BASE_ORDER_PAGE_SIZE = 50;
+const BASE_ORDER_SCAN_MAX_OFFSET = 50000;
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -33,9 +36,31 @@ export async function GET(request: Request) {
   if (authError) return authError;
   if (!isBaseConfigured()) return NextResponse.json({ ok: false, error: "base_oauth_not_configured" }, { status: 503 });
   const db = createSupabaseAdminClient();
-  const result = { checked: 0, paid: 0, imported: 0, duplicate: 0, ignored: 0, failed: 0, unmappedItems: 0, errors: [] as string[] };
+  const result = { checked: 0, paid: 0, imported: 0, duplicate: 0, ignored: 0, failed: 0, unmappedItems: 0, scanOffsets: [] as number[], errors: [] as string[] };
   try {
-    const summaries = await listBaseOrders({ limit: 50, offset: 0 });
+    // Always scan the newest page, then rotate through older pages so paid
+    // orders beyond the first 50 cannot starve forever.
+    const { data: cursorRow, error: cursorReadError } = await db.from("commerce_events")
+      .select("detail").eq("event_key", BASE_ORDER_SCAN_CURSOR_EVENT).maybeSingle();
+    if (cursorReadError) throw new Error("base_order_scan_cursor_read_failed:" + cursorReadError.message);
+    const cursorDetail = cursorRow?.detail && typeof cursorRow.detail === "object" && !Array.isArray(cursorRow.detail)
+      ? cursorRow.detail as Record<string, unknown>
+      : {};
+    const storedOffset = Number(cursorDetail.offset);
+    const scanOffset = Number.isSafeInteger(storedOffset) && storedOffset >= BASE_ORDER_PAGE_SIZE && storedOffset <= BASE_ORDER_SCAN_MAX_OFFSET
+      ? storedOffset
+      : BASE_ORDER_PAGE_SIZE;
+    const [recentSummaries, rotatingSummaries] = await Promise.all([
+      listBaseOrders({ limit: BASE_ORDER_PAGE_SIZE, offset: 0 }),
+      listBaseOrders({ limit: BASE_ORDER_PAGE_SIZE, offset: scanOffset }),
+    ]);
+    result.scanOffsets = [0, scanOffset];
+    const summaries = [...new Map([...recentSummaries, ...rotatingSummaries]
+      .filter((summary) => Boolean(summary.unique_key))
+      .map((summary) => [String(summary.unique_key), summary] as const)].values());
+    const nextOffset = rotatingSummaries.length < BASE_ORDER_PAGE_SIZE || scanOffset >= BASE_ORDER_SCAN_MAX_OFFSET
+      ? BASE_ORDER_PAGE_SIZE
+      : scanOffset + BASE_ORDER_PAGE_SIZE;
     for (const summary of summaries) {
       if (!summary.unique_key) continue;
       result.checked++;
@@ -111,8 +136,17 @@ export async function GET(request: Request) {
         result.errors.push(String(summary.unique_key) + ":" + (error instanceof Error ? error.message : String(error)).slice(0, 180));
       }
     }
+    const { error: cursorWriteError } = await db.from("commerce_events").upsert({
+      event_key: BASE_ORDER_SCAN_CURSOR_EVENT,
+      event_type: BASE_ORDER_SCAN_CURSOR_EVENT,
+      entity_type: "system",
+      entity_id: "base-order-scan",
+      status: "active",
+      detail: { offset: nextOffset, pageSize: BASE_ORDER_PAGE_SIZE, scannedAt: new Date().toISOString() },
+    }, { onConflict: "event_key" });
+    if (cursorWriteError) throw new Error("base_order_scan_cursor_write_failed:" + cursorWriteError.message);
     const healthy = result.failed === 0 && result.unmappedItems === 0;
-    return NextResponse.json({ ok: healthy, channel: "base", ...result }, { status: healthy ? 200 : 207 });
+    return NextResponse.json({ ok: healthy, channel: "base", nextScanOffset: nextOffset, ...result }, { status: healthy ? 200 : 207 });
   } catch (error) {
     return NextResponse.json({ ok: false, channel: "base", ...result, error: error instanceof Error ? error.message : String(error) }, { status: 502 });
   }
