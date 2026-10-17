@@ -2,12 +2,23 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { persistedListingShippingCost } from "../lib/market/listing-shipping-cost.ts";
 import { selectRecoverableVariant, verifyVariantSelectionInvariants } from "../lib/sources/cj/variant-select.ts";
+import { readCJFreightPrice } from "../lib/sources/cj/freight-cost.ts";
 
 assert.equal(persistedListingShippingCost({ supplierShippingCost: 4.75, convertedInternationalShipping: 712.5 }), 712.5);
 assert.equal(persistedListingShippingCost({ supplierShippingCost: 0, convertedInternationalShipping: 0 }), 0);
 assert.equal(persistedListingShippingCost({ supplierShippingCost: null, convertedInternationalShipping: 712.5 }), null);
 assert.equal(persistedListingShippingCost({ supplierShippingCost: 4.75, convertedInternationalShipping: null }), null);
 assert.equal(persistedListingShippingCost({ supplierShippingCost: -1, convertedInternationalShipping: 712.5 }), null);
+assert.equal(readCJFreightPrice(0), 0);
+assert.equal(readCJFreightPrice("0"), 0);
+assert.equal(readCJFreightPrice(12.5), 12.5);
+assert.equal(readCJFreightPrice("12.5"), 12.5);
+assert.equal(readCJFreightPrice(null), null);
+assert.equal(readCJFreightPrice(undefined), null);
+assert.equal(readCJFreightPrice(""), null);
+assert.equal(readCJFreightPrice("unknown"), null);
+assert.equal(readCJFreightPrice(-1), null);
+assert.equal(readCJFreightPrice("Infinity"), null);
 
 const publisher = fs.readFileSync(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8");
 assert.match(publisher, /persistedListingShippingCost\(\{ supplierShippingCost: num\(item\.listing\.shipping_cost\), convertedInternationalShipping: item\.profit\.internationalShipping \}\)/);
