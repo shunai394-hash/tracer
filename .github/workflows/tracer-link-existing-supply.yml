@@ -30,6 +30,10 @@ concurrency:
 
 jobs:
   link:
+    # This job calls supplier-first discovery and gated channel publication. Do not
+    # let ordinary audit/client-code commits trigger storefront writes; use an
+    # explicit manual dispatch or the reviewed commit marker.
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[supplier-first-recovery-now]')
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
