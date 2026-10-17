@@ -150,7 +150,9 @@ export async function GET(request: Request) {
   // Rotate pages as well as query categories; otherwise a 10-minute cron keeps
   // revisiting page 1 and catalog growth stalls after the first few search hits.
   const page = Math.min(1000, Math.max(1, Number(url.searchParams.get("page") || (discoveryBucket % 10) + 1)));
-  const limit = Math.min(10, Math.max(1, Number(url.searchParams.get("limit") || 1)));
+  // Default to three distinct parent candidates per run, while keeping child-variant work at one per parent by default.
+  // This improves throughput without multiplying per-product variant API calls; the persisted quota circuit still blocks discovery during cooldown.
+  const limit = Math.min(10, Math.max(1, Number(url.searchParams.get("limit") || 3)));
   const variantBatchLimit = Math.min(6, Math.max(1, Number(url.searchParams.get("variantLimit") || 1)));
   const variantRunSlot = Math.floor(Date.now() / 600_000);
   const fx = await getObservedUsdToJpyRate();
