@@ -151,7 +151,8 @@ export async function GET(request: Request) {
       const allChannelIds = [...new Set((listings ?? [])
         .filter((row) => row.channel === channel && needsSync.has(String(row.variant_id)))
         .map((row) => String(row.variant_id)))];
-      const batchIds = allChannelIds.slice(0, 10);
+      // Keep each channel update bounded while draining the backlog materially faster.
+      const batchIds = allChannelIds.slice(0, 20);
       if (batchIds.length === 0) continue;
       try {
         const synced = await syncCommerceListings(channel, batchIds.length, false, batchIds);
