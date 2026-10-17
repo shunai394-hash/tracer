@@ -556,13 +556,14 @@ test("CJ transient stock or freight lookup failures do not overwrite previously 
 });
 
 
-test("scheduled CJ discovery does not spend quota retrying known errored supplier products", async () => {
+test("scheduled CJ discovery only retries errored variants missing Shopify publication", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /requestedProductIds/);
-  assert.match(importer, /candidates = newCandidates/);
-  assert.doesNotMatch(importer, /\.eq\("source_status", "error"\)/);
+  assert.match(importer, /candidates = \[\.\.\.retryCandidates, \.\.\.newCandidates/);
+  assert.match(importer, /\.eq\("source_status", "error"\)/);
+  assert.match(importer, /shopifyVariantIds\.has\(String\(offer\.variant_id\)\)/);
+  assert.match(importer, /retryVariantIds/);
   assert.doesNotMatch(importer, /const recoveryPool/);
-  assert.doesNotMatch(importer, /failed_offer_recovery_read/);
 });
 
 test("BASE publication retries recover exact created IDs and refuse ambiguous stable SKUs", async () => {
@@ -589,8 +590,10 @@ test("CJ catalog importer prioritizes unseen parent products and scans bounded e
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /from\("commerce_products"\)\.select\("source_key"\)\.like\("source_key", "cj:%"\)/);
   assert.match(importer, /Prefer never-imported CJ parents/);
-  assert.match(importer, /while \(newCandidates\.length < limit && scanPage <= page \+ 2\)/);
-  assert.ok(importer.includes("candidates = newCandidates.slice(0, limit)"));
+  assert.match(importer, /while \(newCandidates\.length < Math\.max\(0, limit - retryCandidates\.length\) && scanPage <= page \+ 2\)/);
+  assert.ok(importer.includes("candidates = [...retryCandidates, ...newCandidates.slice(0, Math.max(0, limit - retryCandidates.length))]"));
+  assert.match(importer, /shopifyVariantIds = new Set/);
+  assert.match(importer, /retryVariantIds\?\.length/);
   assert.match(importer, /searchParams\.get\("limit"\) \|\| 3/);
   assert.match(importer, /searchParams\.get\("variantLimit"\) \|\| 2/);
   assert.doesNotMatch(importer, /const fallbackCandidates/);

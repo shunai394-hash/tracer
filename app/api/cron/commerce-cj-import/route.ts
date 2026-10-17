@@ -233,7 +233,7 @@ export async function GET(request: Request) {
 
   const stats = { searched: 0, products: 0, variantsAvailable: 0, variants: 0, offers: 0, priced: 0, complianceBlocked: 0, skipped: 0, errors: [] as string[] };
   try {
-    type ImportCandidate = { id: string; title: string; productType?: string | null; imageUrl?: string | null };
+    type ImportCandidate = { id: string; title: string; productType?: string | null; imageUrl?: string | null; retryVariantIds?: string[] };
     const requestedProductIds = url.searchParams.has("productIds")
       ? [...new Set((url.searchParams.get("productIds") ?? "").split(",").map((id) => id.trim()).filter((id) => /^\d{10,22}$/.test(id)))].slice(0, limit)
       : [];
@@ -269,11 +269,39 @@ export async function GET(request: Request) {
         const id = String(item.id ?? "").trim();
         if (/^\d{10,22}$/.test(id) && !uniqueSearchProducts.has(id)) uniqueSearchProducts.set(id, item);
       }
-      // Prefer never-imported CJ parents so search pages containing existing products
-      // cannot consume the entire per-run batch and stall catalog growth.
+      // Prioritize exact supplier variants that are missing from Shopify publication.
+      // This is a narrow recovery lane, not a broad retry of every known CJ parent:
+      // only errored offers without a Shopify channel row are eligible.
+      const [{ data: erroredOffers, error: erroredOffersError }, { data: shopifyRows, error: shopifyRowsError }] = await Promise.all([
+        db.from("supplier_offers")
+          .select("variant_id,supplier_product_id,supplier_variant_id,source_status,raw_data,updated_at")
+          .eq("supplier_code", "cj").eq("source_status", "error")
+          .order("updated_at", { ascending: true }).limit(2000),
+        db.from("channel_listings").select("variant_id").eq("channel", "shopify").limit(5000),
+      ]);
+      if (erroredOffersError || shopifyRowsError) {
+        throw new Error("missing_shopify_offer_recovery_read_failed:" + (erroredOffersError?.message ?? shopifyRowsError?.message));
+      }
+      const shopifyVariantIds = new Set((shopifyRows ?? []).map((row) => String(row.variant_id)));
+      const missingShopifyByParent = new Map<string, string[]>();
+      for (const offer of erroredOffers ?? []) {
+        const parentId = String(offer.supplier_product_id ?? "").trim();
+        const variantId = String(offer.supplier_variant_id ?? "").trim();
+        if (!/^\d{10,22}$/.test(parentId) || !/^\d{10,25}$/.test(variantId)) continue;
+        if (shopifyVariantIds.has(String(offer.variant_id))) continue;
+        const variantIds = missingShopifyByParent.get(parentId) ?? [];
+        if (!variantIds.includes(variantId)) variantIds.push(variantId);
+        missingShopifyByParent.set(parentId, variantIds);
+      }
+      const retryCandidates: ImportCandidate[] = [...missingShopifyByParent.entries()]
+        .slice(0, limit)
+        .map(([id, retryVariantIds]) => ({ id, title: "", retryVariantIds }));
+
+      // Prefer never-imported CJ parents for remaining slots so search pages
+      // containing existing products cannot consume the entire discovery batch.
       const newCandidates = [...uniqueSearchProducts.values()].filter((item) => !knownParentIds.has(item.id));
       let scanPage = page + 1;
-      while (newCandidates.length < limit && scanPage <= page + 2) {
+      while (newCandidates.length < Math.max(0, limit - retryCandidates.length) && scanPage <= page + 2) {
         const extra = await searchCJProducts(query, { page: scanPage, size: Math.min(20, limit * 2) });
         stats.searched += extra.products.length;
         for (const item of extra.products) {
@@ -284,10 +312,9 @@ export async function GET(request: Request) {
         }
         scanPage += 1;
       }
-      // Discovery must never spend supplier API quota retrying already-known parents.
-      // Existing supplier_offers are repriced by commerce-reprice-existing; targeted
-      // refreshes require an explicit productIds request after the quota circuit clears.
-      candidates = newCandidates.slice(0, limit);
+      // Broad discovery still only imports new parents. Existing-parent retries are
+      // limited to exact errored variants with no Shopify publication record.
+      candidates = [...retryCandidates, ...newCandidates.slice(0, Math.max(0, limit - retryCandidates.length))];
     }
     for (const candidate of candidates) {
       try {
@@ -297,9 +324,14 @@ export async function GET(request: Request) {
         if (!variants.length) { stats.skipped++; continue; }
         stats.products++;
         stats.variantsAvailable += variants.length;
-        // Rotate through every child variant across 10-minute importer slots.
-        // Keep each run bounded while avoiding a permanent first-two-variants bias.
-        const variantBatch = selectRotatingVariantBatch(variants, variantBatchLimit, variantRunSlot);
+        // Retry only the exact errored child IDs that lack a Shopify publication row;
+        // normal discovery keeps its rotating bounded child-variant batch.
+        const variantBatch = candidate.retryVariantIds?.length
+          ? variants.filter((item) => candidate.retryVariantIds!.includes(String(item.vid)))
+          : selectRotatingVariantBatch(variants, variantBatchLimit, variantRunSlot);
+        if (candidate.retryVariantIds?.length && variantBatch.length !== candidate.retryVariantIds.length) {
+          stats.errors.push("retry_variant_not_in_parent_catalog:" + candidate.id);
+        }
         for (const variant of variantBatch) {
           try {
             if (!variant.vid) { stats.skipped++; continue; }
