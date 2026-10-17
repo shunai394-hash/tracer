@@ -835,11 +835,11 @@ test("storefront sync reads back real BASE and Shopify prices before reporting s
   assert.match(publish, /actual !== item\.expectedPrice/);
 });
 
-test("price reconciliation disables published listings with unverified supplier evidence", async () => {
+test("price reconciliation keeps unverified supplier safety handling without starving stale price sync", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(route, /unverifiedVariantIds/);
-  assert.match(route, /row\.status === "published" && unverifiedVariantIds\.has\(variantId\)/);
+  assert.doesNotMatch(route, /row\.status === "published" && unverifiedVariantIds\.has\(variantId\)/);
   assert.match(route, /synced\.processed \?\? synced\.published/);
   assert.match(publish, /supplierEvidenceUnverified/);
   assert.match(publish, /supplier_offer_not_fulfillable:/);
@@ -855,10 +855,10 @@ test("storefront reconciliation also syncs updated Japanese product copy", async
 });
 
 
-test("storefront reconciliation prioritizes unverified listings and recently changed Japanese copy", async () => {
+test("storefront reconciliation prioritizes stale prices and recently changed Japanese copy without unverified-listing churn", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
   assert.match(route, /recentCopyCutoff/);
-  assert.match(route, /unverifiedVariantIds\.has\(variantId\)/);
   assert.match(route, /contentNeedsSync/);
   assert.match(route, /const priority =/);
+  assert.doesNotMatch(route, /row\.status === "published" && unverifiedVariantIds\.has\(variantId\)/);
 });
