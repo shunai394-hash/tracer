@@ -169,6 +169,9 @@ jobs:
             const stored = numericPrice(item.exactBaseIdMatches?.[0]?.sellingPrice);
             return canonical !== null && stored !== null && canonical !== stored;
           }).length;
+          const canonicalPriceMissingExactMappingCount = exactMapped.filter(item =>
+            numericPrice(item.exactBaseIdMatches?.[0]?.canonicalSellingPrice) === null
+          ).length;
           summary.reconciliation = {
             schemaVersion: reconciliation.schemaVersion,
             tracerListingCount: reconciliation.tracerListingCount,
@@ -184,6 +187,7 @@ jobs:
             priceMismatchVsStoredListingCount: priceMismatchVsStored,
             priceMismatchVsCanonicalCount: priceMismatchVsCanonical,
             canonicalVsStoredMismatchCount: canonicalVsStoredMismatch,
+            canonicalPriceMissingExactMappingCount,
             stableIdentifierMatchCount: reconciliation.commerceTrcIdentifierMatchCount,
             reconciliationGeneratedAt: reconciliation.generatedAt,
           };
@@ -198,6 +202,7 @@ jobs:
             `- Live vs stored listing price mismatches (exact ID only): ${priceMismatchVsStored}`,
             `- Live vs canonical price mismatches (exact ID only): ${priceMismatchVsCanonical}`,
             `- Canonical vs stored listing price mismatches (exact ID only): ${canonicalVsStoredMismatch}`,
+            `- Canonical price missing for exact ID mappings: ${canonicalPriceMissingExactMappingCount}`,
             "- No BASE, Shopify, TRACER listing, order, or payment writes performed."
           ].join("\n") + "\n");
           console.log(JSON.stringify(summary));
