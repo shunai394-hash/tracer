@@ -169,13 +169,15 @@ test("publication matches each JPY profitable price to its own cost-bearing supp
   assert.match(publish, /asRelationRows\(candidate\.supplier_offers\)/);
   assert.match(publish, /asRelationRows\(candidate\.commerce_prices\)/);
   assert.match(publish, /currentPriceRows = asRelationRows\(candidate\.commerce_prices\)\.sort/);
-  assert.match(publish, /const currentCanonicalPrice = currentPriceRows\[0\]/);
-  assert.match(publish, /const price = currentCanonicalPrice && currentPriceOffer/);
-  assert.match(publish, /Number\(currentCanonicalPrice\.margin_rate\) >= 0\.5/);
+  assert.match(publish, /const eligiblePriceOfferPair = currentPriceRows[\s\S]*?\.find\(\(\{ price: candidatePrice, offer: candidateOffer \}\) => Boolean\(/, "choose a price paired with an eligible exact supplier offer");
+  assert.match(publish, /const currentCanonicalPrice = eligiblePriceOfferPair\?\.price/);
+  assert.match(publish, /const currentPriceOffer = eligiblePriceOfferPair\?\.offer/);
+  assert.match(publish, /const price = currentCanonicalPrice;/);
+  assert.match(publish, /Number\(candidatePrice\.margin_rate\) >= 0\.5/);
   assert.doesNotMatch(publish, /\.eq\("commerce_prices\.currency", "JPY"\)/);
   assert.doesNotMatch(publish, /\.gt\("commerce_prices\.expected_profit", 0\)/);
   assert.doesNotMatch(publish, /\.gte\("commerce_prices\.margin_rate", 0\.5\)/);
-  assert.match(publish, /validOffers\.find\(\(candidateOffer\) => String\(candidateOffer\.id\) === currentPriceOfferId\)/);
+  assert.match(publish, /allOffers\.find\(\(candidateOffer\) => String\(candidateOffer\.id\) === currentPriceOfferId\)/);
   assert.doesNotMatch(publish, /candidate\.commerce_prices\.supplier_offer_id/);
 });
 test("supplier readiness failures do not automatically unpublish profitable catalog listings", async () => {
@@ -908,8 +910,11 @@ test("publisher selects the latest canonical price calculation before matching i
 test("unpublish safety checks the exact supplier offer behind the canonical price", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /currentPriceOfferId/);
-  assert.match(publish, /const currentCanonicalPrice = currentPriceRows\[0\]/);
-  assert.match(publish, /const price = currentCanonicalPrice && currentPriceOffer/);
+  assert.match(publish, /const eligiblePriceOfferPair = currentPriceRows/);
+  assert.match(publish, /\.find\(\(\{ price: candidatePrice, offer: candidateOffer \}\) => Boolean\(/, "select a price paired with an eligible exact supplier offer");
+  assert.match(publish, /const currentCanonicalPrice = eligiblePriceOfferPair/);
+  assert.match(publish, /const currentPriceOffer = eligiblePriceOfferPair\?\.offer/);
+  assert.match(publish, /const price = currentCanonicalPrice;/);
   assert.match(publish, /allOffers\.find\(\(candidateOffer\) => String\(candidateOffer\.id\) === currentPriceOfferId\)/);
   assert.doesNotMatch(publish, /const rawOffer = offer \?\? allOffers\[0\]/);
   assert.doesNotMatch(publish, /price\?\.supplier_offer_id \?\? currentPriceRows\[0\]/);

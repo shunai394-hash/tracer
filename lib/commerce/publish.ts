@@ -324,19 +324,28 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const currentPriceRows = asRelationRows(candidate.commerce_prices).sort((a, b) =>
       Date.parse(String(b.calculated_at ?? "")) - Date.parse(String(a.calculated_at ?? "")),
     );
-    const currentCanonicalPrice = currentPriceRows[0];
+    // Select the newest eligible price/offer pair, not merely the newest price row.
+    // A newer price tied to an unverified offer must not mask an older, still-valid
+    // exact supplier offer with a profitable JPY price.
+    const eligiblePriceOfferPair = currentPriceRows
+      .map((candidatePrice) => ({
+        price: candidatePrice,
+        offer: validOffers.find((candidateOffer) =>
+          String(candidateOffer.id) === String(candidatePrice.supplier_offer_id ?? ""),
+        ),
+      }))
+      .find(({ price: candidatePrice, offer: candidateOffer }) => Boolean(
+        candidateOffer &&
+        candidatePrice.currency === "JPY" &&
+        Number(candidatePrice.selling_price) > 0 &&
+        Number(candidatePrice.expected_profit) > 0 &&
+        Number(candidatePrice.margin_rate) >= 0.5
+      ));
+    const currentCanonicalPrice = eligiblePriceOfferPair?.price;
     const currentPriceOfferId = String(currentCanonicalPrice?.supplier_offer_id ?? "");
-    const currentPriceOffer = currentPriceOfferId
-      ? validOffers.find((candidateOffer) => String(candidateOffer.id) === currentPriceOfferId)
-      : undefined;
-    const price = currentCanonicalPrice && currentPriceOffer &&
-      currentCanonicalPrice.currency === "JPY" &&
-      Number(currentCanonicalPrice.selling_price) > 0 &&
-      Number(currentCanonicalPrice.expected_profit) > 0 &&
-      Number(currentCanonicalPrice.margin_rate) >= 0.5
-      ? currentCanonicalPrice
-      : undefined;
-    const offer = price ? currentPriceOffer : undefined;
+    const currentPriceOffer = eligiblePriceOfferPair?.offer;
+    const price = currentCanonicalPrice;
+    const offer = currentPriceOffer;
     const imageUrl = safeUrl(product.image_url);
     const sourceTitle = typeof product.metadata?.sourceTitle === "string" ? product.metadata.sourceTitle : typeof product.metadata?.source_title === "string" ? product.metadata.source_title : typeof product.metadata?.originalTitle === "string" ? product.metadata.originalTitle : null;
     const localizedSourceTitle = sourceTitle ? localizeProductTitle(sourceTitle) : null;
