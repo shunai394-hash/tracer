@@ -177,7 +177,7 @@ test("publication matches each JPY profitable price to its own cost-bearing supp
   assert.doesNotMatch(publish, /\.eq\("commerce_prices\.currency", "JPY"\)/);
   assert.doesNotMatch(publish, /\.gt\("commerce_prices\.expected_profit", 0\)/);
   assert.doesNotMatch(publish, /\.gte\("commerce_prices\.margin_rate", 0\.5\)/);
-  assert.match(publish, /validOffers\.find\(\(candidateOffer\) => String\(candidateOffer\.id\) === currentPriceOfferId\)/);
+  assert.match(publish, /allOffers\.find\(\(candidateOffer\) => String\(candidateOffer\.id\) === currentPriceOfferId\)/);
   assert.doesNotMatch(publish, /candidate\.commerce_prices\.supplier_offer_id/);
 });
 test("supplier readiness failures do not automatically unpublish profitable catalog listings", async () => {
