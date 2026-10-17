@@ -491,19 +491,37 @@ export async function GET(request: Request) {
             } catch (reason) {
               stockResult = { status: "rejected", reason };
             }
-            let freightResult: PromiseSettledResult<Awaited<ReturnType<typeof calculateCJFreight>>>;
-            try {
-              freightResult = {
-                status: "fulfilled",
-                value: await calculateCJFreight(variant.vid, { startCountryCode: "CN", endCountryCode: "JP", quantity: 1 }),
-              };
-            } catch (reason) {
-              freightResult = { status: "rejected", reason };
+            // A variant may be stocked in a verified warehouse other than CN. Try
+            // the two best-stocked verified origins first; hard-coding CN caused
+            // successful CJ freight responses with an empty list for valid variants.
+            const freightOrigins = [...new Set((exactVariant.inventoryByCountry ?? [])
+              .filter((warehouse) => /^[A-Z]{2}$/.test(warehouse.countryCode) && warehouse.quantity >= 1)
+              .sort((a, b) => b.quantity - a.quantity)
+              .slice(0, 2)
+              .map((warehouse) => warehouse.countryCode))];
+            if (freightOrigins.length === 0) freightOrigins.push("CN");
+            const freightZip = process.env.TRACER_CJ_FREIGHT_QUOTE_ZIP?.trim() || undefined;
+            let shipping: number | null = null;
+            const freightErrors: string[] = [];
+            for (const startCountryCode of freightOrigins) {
+              try {
+                const quote = await calculateCJFreight(variant.vid, {
+                  startCountryCode,
+                  endCountryCode: "JP",
+                  quantity: 1,
+                  ...(freightZip ? { zip: freightZip } : {}),
+                });
+                if (quote !== null && Number.isFinite(quote) && quote >= 0) {
+                  shipping = quote;
+                  break;
+                }
+              } catch (reason) {
+                freightErrors.push(startCountryCode + ":" + String(reason).slice(0, 100));
+              }
             }
             const stock = stockResult.status === "fulfilled" ? stockResult.value : null;
-            const shipping = freightResult.status === "fulfilled" ? freightResult.value : null;
             if (stockResult.status === "rejected") stats.errors.push("stock:" + candidate.id + ":" + String(stockResult.reason).slice(0, 100));
-            if (freightResult.status === "rejected") stats.errors.push("freight:" + candidate.id + ":" + String(freightResult.reason).slice(0, 100));
+            if (shipping === null && freightErrors.length > 0) stats.errors.push("freight:" + candidate.id + ":" + freightErrors.join("|").slice(0, 180));
             // A failed/unknown live lookup is not evidence that a previously verified offer is invalid.
             // Preserve its last known evidence; the freshness gate will stop publication once it expires.
             // Do not overwrite it with inventory=0, shipping=0, or sourceStatus=error on transient API failures.
