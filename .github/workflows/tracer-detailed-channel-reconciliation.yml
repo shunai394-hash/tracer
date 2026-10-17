@@ -2,6 +2,10 @@ name: TRACER Detailed Channel Reconciliation (Read Only)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/tracer-detailed-channel-reconciliation.yml'
 
 permissions:
   id-token: write
