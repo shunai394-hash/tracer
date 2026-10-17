@@ -32,6 +32,15 @@ test("storefront publication is profit-first and independent from live supplier 
 });
 
 test("catalog publication requires positive profit, not current stock or tracking readiness", async () => {
+  const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
+  const pricingStart = core.indexOf("export async function recalculatePrice");
+  const pricingEnd = core.indexOf("/** Channel state is independent.", pricingStart);
+  const pricing = core.slice(pricingStart, pricingEnd);
+  assert.match(pricing, /correctly linked offer with known non-negative costs/);
+  assert.doesNotMatch(pricing, /offer\.source_status !== "verified"/);
+  assert.doesNotMatch(pricing, /offer\.tracking_supported !== true/);
+  assert.doesNotMatch(pricing, /offer\.ship_to !== "JP"/);
+  assert.doesNotMatch(pricing, /supplier_offer_verification_stale/);
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
   assert.match(publish, /\.gt\("commerce_prices\.expected_profit", 0\)/);
