@@ -124,7 +124,7 @@ jobs:
 
           const csvEscape = value => {
             const s = value === null || value === undefined ? "" : String(value);
-            return /[",\\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+            return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
           };
           const reconciliationHeaders = ["base_item_id","identifier","title","visible","live_price","exact_mapping_count","listing_id","stored_listing_price","canonical_price","live_minus_stored","live_minus_canonical","expected_profit","supplier_variant_id","orderable","unmapped_category"];
           const reconciliationRows = reconciliation.items.map(item => {
@@ -142,7 +142,7 @@ jobs:
             ];
           });
           const csvLines = [reconciliationHeaders, ...reconciliationRows].map(row => row.map(csvEscape).join(","));
-          await writeFile("base-live-price-reconciliation.csv", csvLines.join("\\n") + "\\n", { mode: 0o600 });
+          await writeFile("base-live-price-reconciliation.csv", csvLines.join("\n") + "\n", { mode: 0o600 });
           await writeFile("base-live-reconciliation.json", JSON.stringify(reconciliation, null, 2), { mode: 0o600 });
 
           const exactMapped = reconciliation.items.filter(item => Number(item.exactBaseIdMatchCount) === 1);
