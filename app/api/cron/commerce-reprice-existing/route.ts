@@ -130,5 +130,46 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, ...result, sourceApiCalls: 0, fxRate: usdJpy.rate });
+  // Reconcile existing mismatches as well as prices changed in this run.
+  // Target only published variants whose storefront price differs from the canonical JPY price.
+  const { data: publishedListings, error: listingReadError } = await db.from("channel_listings")
+    .select("variant_id,channel,selling_price")
+    .eq("status", "published")
+    .limit(5000);
+  if (listingReadError) {
+    result.storefrontSyncErrors.push({ channel: "lookup", reason: listingReadError.message.slice(0, 180) });
+  } else {
+    const variantsNeedingSync = new Set(repricedVariantIds);
+    for (const listing of publishedListings ?? []) {
+      const variantId = String(listing.variant_id);
+      const canonicalPrice = canonicalPriceByVariant.get(variantId);
+      if (canonicalPrice !== undefined && Number(listing.selling_price) !== canonicalPrice) {
+        variantsNeedingSync.add(variantId);
+      }
+    }
+    for (const channel of ["base", "shopify"] as const) {
+      const channelVariantIds = [...new Set((publishedListings ?? [])
+        .filter((row) => row.channel === channel && variantsNeedingSync.has(String(row.variant_id)))
+        .map((row) => String(row.variant_id)))];
+      if (channelVariantIds.length === 0) continue;
+      try {
+        const synced = await syncCommerceListings(channel, channelVariantIds.length, false, channelVariantIds);
+        result.storefrontSync[channel] += synced.published;
+        if (synced.failed > 0) {
+          result.storefrontSyncErrors.push({
+            channel,
+            reason: `updated=${synced.published}, failed=${synced.failed}`,
+          });
+        }
+      } catch (error) {
+        result.storefrontSyncErrors.push({
+          channel,
+          reason: (error instanceof Error ? error.message : String(error)).slice(0, 180),
+        });
+      }
+    }
+  }
+
+  const ok = result.skipped === 0 && result.errors.length === 0 && result.storefrontSyncErrors.length === 0;
+  return NextResponse.json({ ok, ...result, sourceApiCalls: 0, fxRate: usdJpy.rate }, { status: ok ? 200 : 207 });
 }
