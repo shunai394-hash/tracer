@@ -257,10 +257,10 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       // recording a generic hold and waiting for the next patrol.
       const currency = String(row.currency ?? metadata.currency ?? metadata.source_currency ?? "").trim().toUpperCase();
       let priceVerified = cost !== null && row.price_confirmed === true;
-      let inventoryVerified = inventory !== null && row.inventory_confirmed === true;
+      let inventoryVerified = inventory !== null && row.inventory_confirmed === true && hasFreshEvidenceTimestamp(row.inventory_checked_at, INVENTORY_EVIDENCE_MAX_AGE_MS, nowMs);
       const missingCost = !priceVerified;
       const missingShipping = shippingCost === null || row.shipping_status !== "verified" || !hasFreshEvidenceTimestamp(row.shipping_checked_at, SHIPPING_EVIDENCE_MAX_AGE_MS, nowMs);
-      const missingInventory = !inventoryVerified || !hasFreshEvidenceTimestamp(row.inventory_checked_at, INVENTORY_EVIDENCE_MAX_AGE_MS, nowMs);
+      const missingInventory = !inventoryVerified;
       const missingImage = !imageUrl;
       let shippingQuoteVerified = row.shipping_status === "verified" && shippingCost !== null && hasFreshEvidenceTimestamp(row.shipping_checked_at, SHIPPING_EVIDENCE_MAX_AGE_MS, nowMs);
       let shippingRefreshedLive = false;
