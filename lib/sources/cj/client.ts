@@ -668,27 +668,28 @@ export async function getCJFreightOptions(
 
 async function calculateCJFreightTipFromProductDetail(
   vid: string,
-  options: { startCountryCode: string; endCountryCode: string; quantity: number; zip?: string; productId?: string },
+  options: { startCountryCode: string; endCountryCode: string; quantity: number; zip?: string; productId?: string; diagnostics?: string[] },
 ): Promise<number | null> {
+  const diagnostic = (value: string) => options.diagnostics?.push(value);
   // CJ's detailed freight endpoint requires the exact variant's weight and the
   // product's logistics property. The simple endpoint can return Success + []
   // when these fields are omitted, without explaining which field is missing.
   const parentProductId = options.productId || (await fetchCJVariantByVid(vid))?.productId;
-  if (!parentProductId) return null;
+  if (!parentProductId) { diagnostic("product_id_missing"); return null; }
   const token = await getAccessToken();
   const params = new URLSearchParams({ pid: parentProductId });
   const detailResponse = await fetchCJWithRateLimit(
     `https://developers.cjdropshipping.com/api2.0/v1/product/query?${params.toString()}`,
     { method: "GET", headers: { "CJ-Access-Token": token }, cache: "no-store" },
   );
-  if (!detailResponse.ok) return null;
+  if (!detailResponse.ok) { diagnostic("product_detail_http_" + detailResponse.status); return null; }
   const detailPayload = await detailResponse.json() as { result?: boolean; data?: unknown };
-  if (detailPayload.result === false || !detailPayload.data || typeof detailPayload.data !== "object") return null;
+  if (detailPayload.result === false || !detailPayload.data || typeof detailPayload.data !== "object") { diagnostic("product_detail_empty_or_rejected"); return null; }
   const product = (Array.isArray(detailPayload.data) ? detailPayload.data[0] : detailPayload.data) as Record<string, unknown> | null;
-  if (!product) return null;
+  if (!product) { diagnostic("product_detail_no_product"); return null; }
   const variants = Array.isArray(product.variants) ? product.variants as Array<Record<string, unknown>> : [];
   const variant = variants.find((row) => String(row.vid ?? "") === vid);
-  if (!variant) return null;
+  if (!variant) { diagnostic("variant_not_in_product_detail"); return null; }
   const numberFrom = (...values: unknown[]): number | null => {
     for (const value of values) {
       const n = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
@@ -716,6 +717,7 @@ async function calculateCJFreightTipFromProductDetail(
       hasWeight: Boolean(weight), hasWrapWeight: Boolean(wrapWeight),
       hasProductProp: productProps.length > 0, hasVolume: Boolean(volumeCm3), hasSku: Boolean(sku),
     });
+    diagnostic("tip_input_incomplete:" + [!weight ? "weight" : "", !wrapWeight ? "wrap_weight" : "", productProps.length === 0 ? "product_property" : "", !volumeCm3 ? "volume" : "", !sku ? "sku" : ""].filter(Boolean).join(","));
     return null;
   }
   const body = {
@@ -746,9 +748,11 @@ async function calculateCJFreightTipFromProductDetail(
       cache: "no-store",
     },
   );
-  if (!response.ok) return null;
+  if (!response.ok) { diagnostic("tip_http_" + response.status); return null; }
   const payload = await response.json() as { result?: boolean; message?: string; data?: unknown };
   if (payload.result === false) {
+    const message = String(payload.message ?? "").slice(0, 80).replace(/[^a-zA-Z0-9 _-]/g, "");
+    diagnostic("tip_rejected:" + (message || "unspecified"));
     console.warn("[CJ FREIGHT TIP REJECTED]", { vid, message: String(payload.message ?? "").slice(0, 120) });
     return null;
   }
@@ -773,8 +777,10 @@ async function calculateCJFreightTipFromProductDetail(
       result: payload.result ?? null, dataType: Array.isArray(payload.data) ? "array" : typeof payload.data,
       rowCount: rows.length,
     });
+    diagnostic("tip_no_options:rows=" + rows.length);
     return null;
   }
+  diagnostic("tip_quote_returned");
   return Math.min(...prices);
 }
 
@@ -786,14 +792,17 @@ export async function calculateCJFreight(
     quantity?: number;
     zip?: string;
     productId?: string;
+    diagnostics?: string[];
   },
 ): Promise<number | null> {
+  const diagnostic = (value: string) => options?.diagnostics?.push(value);
   const tipQuote = await calculateCJFreightTipFromProductDetail(vid, {
     startCountryCode: options?.startCountryCode ?? "CN",
     endCountryCode: options?.endCountryCode ?? "JP",
     quantity: options?.quantity ?? 1,
     ...(options?.zip ? { zip: options.zip } : {}),
     ...(options?.productId ? { productId: options.productId } : {}),
+    ...(options?.diagnostics ? { diagnostics: options.diagnostics } : {}),
   });
   if (tipQuote !== null) return tipQuote;
 
@@ -822,6 +831,7 @@ export async function calculateCJFreight(
   );
 
   if (!response.ok) {
+    diagnostic("freight_http_" + response.status);
     throw new CJRequestError(
       `CJ freight calculation failed with HTTP ${response.status}`,
     );
@@ -834,6 +844,7 @@ export async function calculateCJFreight(
   };
 
   if (payload.result === false) {
+    diagnostic("freight_rejected");
     throw new CJRequestError(payload.message || "CJ freight calculation failed");
   }
 
@@ -862,6 +873,7 @@ export async function calculateCJFreight(
     );
     // Never log the full CJ response or credentials. Key names and response shape
     // are enough to identify API schema changes without exposing product payloads.
+    diagnostic("freight_no_quote:rows=" + rowsForDiagnostics.length);
     console.warn("[CJ FREIGHT QUOTE UNRESOLVED]", {
       vid,
       startCountryCode: options?.startCountryCode ?? "CN",
@@ -879,6 +891,7 @@ export async function calculateCJFreight(
     });
     return null;
   }
+  diagnostic("freight_quote_returned");
   return Math.min(...prices);
 }
 

@@ -502,8 +502,9 @@ export async function GET(request: Request) {
             const freightZip = process.env.TRACER_CJ_FREIGHT_QUOTE_ZIP?.trim() || undefined;
             let shipping: number | null = null;
             const freightErrors: string[] = [];
-            const freightAttempts: Array<{ origin: string; result: "quoted" | "no_quote" | "error" }> = [];
+            const freightAttempts: Array<{ origin: string; result: "quoted" | "no_quote" | "error"; diagnostics?: string[] }> = [];
             for (const startCountryCode of freightOrigins) {
+              const diagnostics: string[] = [];
               try {
                 const quote = await calculateCJFreight(variant.vid, {
                   productId: exactVariant.productId,
@@ -511,15 +512,16 @@ export async function GET(request: Request) {
                   endCountryCode: "JP",
                   quantity: 1,
                   ...(freightZip ? { zip: freightZip } : {}),
+                  diagnostics,
                 });
                 if (quote !== null && Number.isFinite(quote) && quote >= 0) {
                   shipping = quote;
-                  freightAttempts.push({ origin: startCountryCode, result: "quoted" });
+                  freightAttempts.push({ origin: startCountryCode, result: "quoted", diagnostics: diagnostics.slice(0, 8) });
                   break;
                 }
-                freightAttempts.push({ origin: startCountryCode, result: "no_quote" });
+                freightAttempts.push({ origin: startCountryCode, result: "no_quote", diagnostics: diagnostics.slice(0, 8) });
               } catch (reason) {
-                freightAttempts.push({ origin: startCountryCode, result: "error" });
+                freightAttempts.push({ origin: startCountryCode, result: "error", diagnostics: diagnostics.slice(0, 8) });
                 freightErrors.push(startCountryCode + ":" + String(reason).slice(0, 100));
               }
             }
