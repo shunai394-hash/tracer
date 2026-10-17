@@ -355,6 +355,8 @@ test("BASE order polling only imports confirmed paid orders and maps published c
   assert.match(baseOrders, /status", "published"/);
   assert.match(baseOrders, /ingestPaidOrder\(/);
   assert.match(baseOrders, /splitJapaneseAddress/);
+  assert.match(baseOrders, /let hasUnmappedItems = false/);
+  assert.match(baseOrders, /if \(hasUnmappedItems \|\| !lines\.length\) \{ result\.ignored\+\+; continue; \}/);
 });
 
 test("procurement submits only paid orders with complete shipping and exact current profitable CJ offer", async () => {
