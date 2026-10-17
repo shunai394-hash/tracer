@@ -75,9 +75,10 @@ export async function GET(request: Request) {
     const rawData = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
       ? offer.raw_data as Record<string, unknown>
       : {};
-    const shippingKnown = rawData.shippingKnown === true ||
-      (rawData.shippingKnown === undefined && rawData.shippingEstimated !== true &&
-        offer.source_status === "verified" && Number(offer.shipping_cost) > 0);
+    const shippingKnown = rawData.shippingEstimated !== true && (
+      rawData.shippingKnown === true ||
+      (rawData.shippingKnown === undefined && offer.source_status === "verified" && Number(offer.shipping_cost) > 0)
+    );
     if (!shippingKnown) {
       skippedUnknownShipping++;
       continue;
@@ -96,8 +97,10 @@ export async function GET(request: Request) {
         Date.now() - checkedAt <= 24 * 60 * 60_000;
       const stockKnown = candidateRaw.stockKnown === true ||
         (candidateRaw.stockKnown === undefined && candidate.source_status === "verified");
-      const shippingKnown = candidateRaw.shippingKnown === true || candidateRaw.shippingEstimated === true ||
-        (candidateRaw.shippingKnown === undefined && candidate.source_status === "verified" && Number(candidate.shipping_cost) > 0);
+      const shippingKnown = candidateRaw.shippingEstimated !== true && (
+        candidateRaw.shippingKnown === true ||
+        (candidateRaw.shippingKnown === undefined && candidate.source_status === "verified" && Number(candidate.shipping_cost) > 0)
+      );
       return candidate.source_status === "verified" && fresh && stockKnown && shippingKnown &&
         candidate.ship_to === "JP" && candidate.tracking_supported === true &&
         Number.isFinite(Number(candidate.inventory)) && Number(candidate.inventory) > 0;
@@ -176,8 +179,10 @@ export async function GET(request: Request) {
     const rawData = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
       ? offer.raw_data as Record<string, unknown>
       : {};
-    const shippingKnown = rawData.shippingKnown === true || rawData.shippingEstimated === true ||
-      (rawData.shippingKnown === undefined && offer.source_status === "verified" && Number(offer.shipping_cost) > 0);
+    const shippingKnown = rawData.shippingEstimated !== true && (
+      rawData.shippingKnown === true ||
+      (rawData.shippingKnown === undefined && offer.source_status === "verified" && Number(offer.shipping_cost) > 0)
+    );
     const stockKnown = rawData.stockKnown === true ||
       (rawData.stockKnown === undefined && offer.source_status === "verified");
     return offer.source_status !== "verified" || !shippingKnown || !stockKnown;
