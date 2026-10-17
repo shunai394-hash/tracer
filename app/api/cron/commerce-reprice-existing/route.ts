@@ -30,7 +30,9 @@ export async function GET(request: Request) {
       .order("updated_at", { ascending: true })
       .limit(2000),
     db.from("commerce_products").select("id").eq("active", true).limit(2000),
-    db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit,margin_rate,calculated_at").limit(4000),
+    db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit,margin_rate,calculated_at")
+      .order("calculated_at", { ascending: false, nullsFirst: false })
+      .limit(4000),
   ]);
   if (offersError || productsError || pricesError) {
     return NextResponse.json({
@@ -49,8 +51,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "existing_variant_read_failed", detail: variantsError.message }, { status: 500 });
   }
   const activeVariantIds = new Set((variants ?? []).map((row) => String(row.id)));
-  const priceByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), row]));
-  const canonicalPriceByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), Number(row.selling_price)]));
+  // The query is newest-first. Keep the first row per variant so a later/older
+  // historical price cannot overwrite the canonical current price in either map.
+  const priceByVariant = new Map<string, NonNullable<typeof prices>[number]>();
+  const canonicalPriceByVariant = new Map<string, number>();
+  for (const row of prices ?? []) {
+    const variantId = String(row.variant_id);
+    if (priceByVariant.has(variantId)) continue;
+    priceByVariant.set(variantId, row);
+    canonicalPriceByVariant.set(variantId, Number(row.selling_price));
+  }
   let skippedUnknownShipping = 0;
   const oneOfferPerVariant = new Map<string, NonNullable<typeof offers>[number]>();
   for (const offer of offers ?? []) {
@@ -126,6 +136,17 @@ export async function GET(request: Request) {
     }
   }
 
+  const unverifiedVariantIds = new Set([...oneOfferPerVariant.values()].filter((offer) => {
+    const rawData = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
+      ? offer.raw_data as Record<string, unknown>
+      : {};
+    const shippingKnown = (Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0) ||
+      rawData.shippingKnown === true;
+    const stockKnown = rawData.stockKnown === true ||
+      (rawData.stockKnown === undefined && offer.source_status === "verified");
+    return offer.source_status !== "verified" || !shippingKnown || !stockKnown;
+  }).map((offer) => String(offer.variant_id)));
+
   // Reconcile storefront prices already published before the canonical price change.
   // Process up to twenty actually stale variants per channel; the cron is staggered from publication and order-poll jobs.
   // Query all states so a failed sync remains eligible for retry on the next cron run.
@@ -143,18 +164,23 @@ export async function GET(request: Request) {
       const allChannelIds = [...new Set((listings ?? [])
         .filter((row) => {
           if (row.channel !== channel) return false;
-          const canonicalPrice = canonicalPriceByVariant.get(String(row.variant_id));
-          return canonicalPrice !== undefined &&
-            (Number(row.selling_price) !== canonicalPrice || row.status !== "published");
+          const variantId = String(row.variant_id);
+          const canonicalPrice = canonicalPriceByVariant.get(variantId);
+          if (canonicalPrice === undefined) return false;
+          if (row.status === "published" && unverifiedVariantIds.has(variantId)) return true;
+          if (unverifiedVariantIds.has(variantId)) return false;
+          return Number(row.selling_price) !== canonicalPrice || row.status !== "published";
         })
         .map((row) => String(row.variant_id)))];
-      // Keep each channel update bounded while draining the backlog materially faster.
-      const batchIds = allChannelIds.slice(0, 20);
+      // Keep each channel update small enough to leave headroom under the 300s function timeout.
+      // Ten variants per channel is bounded and retries rotate through the oldest stale listings.
+      const batchIds = allChannelIds.slice(0, 10);
       if (batchIds.length === 0) continue;
       try {
         const synced = await syncCommerceListings(channel, batchIds.length, false, batchIds);
-        result.storefrontSync[channel] += synced.published;
-        result.storefrontSyncRemaining[channel] = Math.max(0, allChannelIds.length - synced.published);
+        const processed = Number(synced.processed ?? synced.published);
+        result.storefrontSync[channel] += processed;
+        result.storefrontSyncRemaining[channel] = Math.max(0, allChannelIds.length - processed);
         if (synced.failed > 0 || synced.considered < batchIds.length) {
           result.storefrontSyncErrors.push({
             channel,
