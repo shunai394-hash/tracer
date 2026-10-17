@@ -126,18 +126,23 @@ jobs:
             const s = value === null || value === undefined ? "" : String(value);
             return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
           };
+          const numericPrice = value => {
+            if (value === null || value === undefined || String(value).trim() === "") return null;
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : null;
+          };
           const reconciliationHeaders = ["base_item_id","identifier","title","visible","live_price","exact_mapping_count","listing_id","stored_listing_price","canonical_price","live_minus_stored","live_minus_canonical","expected_profit","supplier_variant_id","orderable","unmapped_category"];
           const reconciliationRows = reconciliation.items.map(item => {
             const exact = Number(item.exactBaseIdMatchCount) === 1 ? item.exactBaseIdMatches?.[0] : null;
-            const livePrice = Number(item.price);
-            const storedPrice = Number(exact?.sellingPrice);
-            const canonicalPrice = Number(exact?.canonicalSellingPrice);
+            const livePrice = numericPrice(item.price);
+            const storedPrice = numericPrice(exact?.sellingPrice);
+            const canonicalPrice = numericPrice(exact?.canonicalSellingPrice);
             return [
               item.baseItemId, item.identifier, item.title, item.visible, item.price,
               item.exactBaseIdMatchCount, exact?.listingId, exact?.sellingPrice,
               exact?.canonicalSellingPrice,
-              Number.isFinite(livePrice) && Number.isFinite(storedPrice) ? livePrice - storedPrice : null,
-              Number.isFinite(livePrice) && Number.isFinite(canonicalPrice) ? livePrice - canonicalPrice : null,
+              livePrice !== null && storedPrice !== null ? livePrice - storedPrice : null,
+              livePrice !== null && canonicalPrice !== null ? livePrice - canonicalPrice : null,
               exact?.canonicalExpectedProfit, exact?.supplierVariantId, exact?.orderable, item.unmappedCategory
             ];
           });
@@ -146,9 +151,21 @@ jobs:
           await writeFile("base-live-reconciliation.json", JSON.stringify(reconciliation, null, 2), { mode: 0o600 });
 
           const exactMapped = reconciliation.items.filter(item => Number(item.exactBaseIdMatchCount) === 1);
-          const priceMismatchVsStored = exactMapped.filter(item => Number.isFinite(Number(item.price)) && Number.isFinite(Number(item.exactBaseIdMatches?.[0]?.sellingPrice)) && Number(item.price) !== Number(item.exactBaseIdMatches[0].sellingPrice)).length;
-          const priceMismatchVsCanonical = exactMapped.filter(item => Number.isFinite(Number(item.price)) && Number.isFinite(Number(item.exactBaseIdMatches?.[0]?.canonicalSellingPrice)) && Number(item.price) !== Number(item.exactBaseIdMatches[0].canonicalSellingPrice)).length;
-          const canonicalVsStoredMismatch = exactMapped.filter(item => Number.isFinite(Number(item.exactBaseIdMatches?.[0]?.canonicalSellingPrice)) && Number.isFinite(Number(item.exactBaseIdMatches?.[0]?.sellingPrice)) && Number(item.exactBaseIdMatches[0].canonicalSellingPrice) !== Number(item.exactBaseIdMatches[0].sellingPrice)).length;
+          const priceMismatchVsStored = exactMapped.filter(item => {
+            const live = numericPrice(item.price);
+            const stored = numericPrice(item.exactBaseIdMatches?.[0]?.sellingPrice);
+            return live !== null && stored !== null && live !== stored;
+          }).length;
+          const priceMismatchVsCanonical = exactMapped.filter(item => {
+            const live = numericPrice(item.price);
+            const canonical = numericPrice(item.exactBaseIdMatches?.[0]?.canonicalSellingPrice);
+            return live !== null && canonical !== null && live !== canonical;
+          }).length;
+          const canonicalVsStoredMismatch = exactMapped.filter(item => {
+            const canonical = numericPrice(item.exactBaseIdMatches?.[0]?.canonicalSellingPrice);
+            const stored = numericPrice(item.exactBaseIdMatches?.[0]?.sellingPrice);
+            return canonical !== null && stored !== null && canonical !== stored;
+          }).length;
           summary.reconciliation = {
             schemaVersion: reconciliation.schemaVersion,
             tracerListingCount: reconciliation.tracerListingCount,
@@ -156,7 +173,11 @@ jobs:
             exactBaseIdMappedCount: reconciliation.exactBaseIdMappedCount,
             baseItemsWithoutExactMappingCount: reconciliation.baseItemsWithoutExactMappingCount,
             baseItemsWithAmbiguousExactMappingCount: reconciliation.baseItemsWithAmbiguousExactMappingCount,
-            priceComparableExactMappings: exactMapped.filter(item => Number.isFinite(Number(item.price)) && Number.isFinite(Number(item.exactBaseIdMatches?.[0]?.sellingPrice)) && Number.isFinite(Number(item.exactBaseIdMatches?.[0]?.canonicalSellingPrice))).length,
+            priceComparableExactMappings: exactMapped.filter(item =>
+              numericPrice(item.price) !== null &&
+              numericPrice(item.exactBaseIdMatches?.[0]?.sellingPrice) !== null &&
+              numericPrice(item.exactBaseIdMatches?.[0]?.canonicalSellingPrice) !== null
+            ).length,
             priceMismatchVsStoredListingCount: priceMismatchVsStored,
             priceMismatchVsCanonicalCount: priceMismatchVsCanonical,
             canonicalVsStoredMismatchCount: canonicalVsStoredMismatch,
