@@ -270,7 +270,11 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       Number(latestPrice.selling_price) > 0 && Number(latestPrice.expected_profit) > 0 && Number(latestPrice.margin_rate) >= 0.5
       ? latestPrice
       : undefined;
-    const offer = price ? validOffers.find((x) => x.id === price.supplier_offer_id) : undefined;
+    if (!price) {
+      results.push({ variantId: candidate.id, ok: false, error: "latest_price_missing_or_unprofitable" });
+      continue;
+    }
+    const offer = validOffers.find((x) => x.id === price.supplier_offer_id);
     const imageUrl = safeUrl(product.image_url);
     const title = candidate.title_ja.trim() || product.title_ja.trim();
     const allOffers = asRelationRows(candidate.supplier_offers);
@@ -351,7 +355,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       }
       continue;
     }
-    if (!price || !offer || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0) {
+    if (!offer || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0) {
       results.push({ variantId: candidate.id, ok: false, error: !offer ? "supplier_offer_missing_or_cost_unknown" : !imageUrl ? "image_url_invalid" : "price_not_profitable" });
       continue;
     }
