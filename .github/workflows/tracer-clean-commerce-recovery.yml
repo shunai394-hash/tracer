@@ -7,6 +7,7 @@ name: TRACER clean-commerce bounded recovery
 # 2026-10-18: TRACER_CLEAN_COMMERCE_RECOVERY retry with title-only legacy backlog isolated.
 # 2026-10-18: TRACER_CLEAN_COMMERCE_RECOVERY retry after batched listing-state read fix.
 # 2026-10-18: TRACER_CLEAN_COMMERCE_RECOVERY verify saleability and hide unfulfillable existing listings.
+# 2026-10-18: TRACER_CLEAN_COMMERCE_RECOVERY rerun after fresh-offer repricing fix #1328 is deployed.
 
 on:
   push:
