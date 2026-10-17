@@ -27,7 +27,7 @@ type ShopifyPage = {
       status: string;
       publishedOnPublication: boolean;
       totalInventory: number;
-      variants: { nodes: Array<{ id: string; sku: string | null; price: string | null }> };
+      variants: { nodes: Array<{ id: string; sku: string | null; price: string | null; inventoryQuantity: number }> };
       variantsCount: { count: number };
     }>;
     pageInfo: { hasNextPage: boolean; endCursor: string | null };
@@ -100,7 +100,7 @@ export async function GET(request: Request) {
     const baseById = new Map<string, Record<string, unknown>>();
     for (const item of baseSnapshot.items) baseById.set(norm(item.item_id), item);
 
-    const shopifyBySku = new Map<string, Array<{ productId: string; variantId: string; sku: string; title: string; status: string; published: boolean; totalInventory: number; price: number | null }>>();
+    const shopifyBySku = new Map<string, Array<{ productId: string; variantId: string; sku: string; title: string; status: string; published: boolean; totalInventory: number; inventoryQuantity: number; price: number | null }>>();
     const shopifyByVariantId = new Map<string, Array<{ productId: string; variantId: string; sku: string; title: string; status: string; published: boolean; totalInventory: number; price: number | null }>>();
     const shopifyByProductId = new Map<string, Array<{ productId: string; variantId: string; sku: string; title: string; status: string; published: boolean; totalInventory: number; price: number | null }>>();
     let after: string | undefined;
@@ -112,7 +112,7 @@ export async function GET(request: Request) {
       const onlineStorePublicationId = await getOnlineStorePublicationId();
       for (let page = 0; page < 200; page += 1) {
         const result = await shopifyGraphQL<ShopifyPage>(
-          "query LivePriceAudit($first: Int!, $after: String, $publicationId: ID!) { products(first: $first, after: $after) { nodes { id title status publishedOnPublication(publicationId: $publicationId) totalInventory variantsCount { count } variants(first: 100) { nodes { id sku price } } } pageInfo { hasNextPage endCursor } } }",
+          "query LivePriceAudit($first: Int!, $after: String, $publicationId: ID!) { products(first: $first, after: $after) { nodes { id title status publishedOnPublication(publicationId: $publicationId) totalInventory variantsCount { count } variants(first: 100) { nodes { id sku price inventoryQuantity } } } pageInfo { hasNextPage endCursor } } }",
           { first: 50, after: after ?? null, publicationId: onlineStorePublicationId },
         );
         shopifyPages += 1;
@@ -122,7 +122,7 @@ export async function GET(request: Request) {
           }
           for (const variant of product.variants.nodes) {
             const sku = norm(variant.sku);
-            const record = { productId: product.id, variantId: variant.id, sku, title: product.title, status: product.status, published: product.publishedOnPublication, totalInventory: product.totalInventory, price: yen(variant.price) };
+            const record = { productId: product.id, variantId: variant.id, sku, title: product.title, status: product.status, published: product.publishedOnPublication, totalInventory: product.totalInventory, inventoryQuantity: variant.inventoryQuantity, price: yen(variant.price) };
             const variantGroup = shopifyByVariantId.get(variant.id) ?? [];
             variantGroup.push(record);
             shopifyByVariantId.set(variant.id, variantGroup);
@@ -262,10 +262,10 @@ export async function GET(request: Request) {
           (recordedVariantId && !sameShopifyId(matched.variantId, recordedVariantId))
         );
         const skuMismatch = Boolean(sku && matched.sku && sku !== matched.sku);
-        const availabilityMismatch = matched.status !== "ACTIVE" || !matched.published || matched.totalInventory <= 0;
+        const availabilityMismatch = matched.status !== "ACTIVE" || !matched.published || matched.inventoryQuantity <= 0;
         if (actual !== expected || externalIdMismatch || skuMismatch || availabilityMismatch) {
           summary.priceMismatches += actual !== expected ? 1 : 0;
-          discrepancies.push({ channel: "shopify", listingId: listing.id, sku, matchMethod, expectedPrice: expected, actualPrice: actual, liveSku: matched.sku || null, recordedProductId: listing.external_product_id, liveProductId: matched.productId, recordedVariantId: listing.external_variant_id, liveVariantId: matched.variantId, status: matched.status, publishedOnOnlineStore: matched.published, totalInventory: matched.totalInventory, issue: actual !== expected ? "live_price_mismatch" : externalIdMismatch ? "external_id_mismatch" : skuMismatch ? "sku_mismatch" : "publication_or_inventory_mismatch" });
+          discrepancies.push({ channel: "shopify", listingId: listing.id, sku, matchMethod, expectedPrice: expected, actualPrice: actual, liveSku: matched.sku || null, recordedProductId: listing.external_product_id, liveProductId: matched.productId, recordedVariantId: listing.external_variant_id, liveVariantId: matched.variantId, status: matched.status, publishedOnOnlineStore: matched.published, totalInventory: matched.totalInventory, inventoryQuantity: matched.inventoryQuantity, issue: actual !== expected ? "live_price_mismatch" : externalIdMismatch ? "external_id_mismatch" : skuMismatch ? "sku_mismatch" : "publication_or_inventory_mismatch" });
         }
       }
     }
