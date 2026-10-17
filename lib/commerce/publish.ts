@@ -251,7 +251,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const id = String(item.item_id ?? "").trim();
     if (id) baseItemsById.set(id, item);
   }
-  const results: Array<{ variantId: string; ok: boolean; externalId?: string; error?: string; action?: "published" | "unpublished" }> = [];
+  const results: Array<{ variantId: string; ok: boolean; externalId?: string; externalVariantId?: string; expectedPrice?: number; error?: string; action?: "published" | "unpublished" }> = [];
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
     const validOffers = asRelationRows(candidate.supplier_offers)
@@ -543,7 +543,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         updated_at: new Date().toISOString()
       }).eq("id", listing.id);
       if (finishError) throw new Error("listing_result_save_failed:" + finishError.message);
-      results.push({ variantId: candidate.id, ok: true, externalId: externalProductId });
+      results.push({ variantId: candidate.id, ok: true, externalId: externalProductId, externalVariantId: mappedExternalVariantId ?? undefined, expectedPrice: Math.round(Number(price.selling_price)) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const recoverableBaseError = channel === "base" && baseCreateIdNeedsRecovery
@@ -554,5 +554,76 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       results.push({ variantId: candidate.id, ok: false, error: message.slice(0, 300) });
     }
   }
+
+  // Never treat an API write acknowledgement as proof of the customer-facing price.
+  // Read back the real storefront price by exact BASE item ID / Shopify variant GID.
+  const successfulPriceWrites = results.filter((item) =>
+    item.ok && item.action !== "unpublished" && item.expectedPrice !== undefined,
+  );
+  if (successfulPriceWrites.length > 0) {
+    const actualPrices = new Map<string, number | null>();
+    let readbackFailure: string | null = null;
+    try {
+      if (channel === "base") {
+        const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES });
+        if (!snapshot.complete) throw new Error("base_price_readback_snapshot_incomplete");
+        const itemsById = new Map(snapshot.items.map((item) => [String(item.item_id ?? ""), item]));
+        for (const item of successfulPriceWrites) {
+          const externalItem = itemsById.get(String(item.externalId ?? ""));
+          const rawPrice = externalItem?.price;
+          const actual = rawPrice === undefined || rawPrice === null || String(rawPrice).trim() === ""
+            ? Number.NaN
+            : Number(rawPrice);
+          actualPrices.set(item.variantId, Number.isFinite(actual) ? Math.round(actual) : null);
+        }
+      } else {
+        const ids = [...new Set(successfulPriceWrites.map((item) => String(item.externalVariantId ?? "")).filter((id) => id.startsWith("gid://shopify/ProductVariant/")))];
+        if (ids.length !== successfulPriceWrites.length) throw new Error("shopify_price_readback_variant_id_missing");
+        const readback = await shopifyGraphQL<{
+          nodes: Array<{ id: string; price: string | null; product: { status: string | null } | null } | null>;
+        }>(
+          "query TracerStorefrontPriceReadback($ids: [ID!]!) { nodes(ids: $ids) { ... on ProductVariant { id price product { status } } } }",
+          { ids },
+        );
+        const byId = new Map((readback.nodes ?? []).filter((node): node is { id: string; price: string | null; product: { status: string | null } | null } => Boolean(node)).map((node) => [
+          node.id,
+          { price: node.price === null || node.price === undefined ? Number.NaN : Number(node.price), active: node.product?.status === "ACTIVE" },
+        ]));
+        for (const item of successfulPriceWrites) {
+          const actual = byId.get(String(item.externalVariantId ?? ""));
+          actualPrices.set(item.variantId, actual && actual.active && Number.isFinite(actual.price) ? Math.round(actual.price) : null);
+        }
+      }
+    } catch (error) {
+      readbackFailure = (error instanceof Error ? error.message : String(error)).replace(/[\\r\\n]+/g, " ").slice(0, 180);
+    }
+    for (const item of successfulPriceWrites) {
+      const actual = actualPrices.get(item.variantId);
+      const mismatch = readbackFailure
+        ? "storefront_price_readback_failed:" + channel + ":" + readbackFailure
+        : actual === null || actual === undefined || actual !== item.expectedPrice
+          ? "storefront_price_readback_mismatch:" + channel + ":expected=" + item.expectedPrice + ":actual=" + (actual ?? "unknown")
+          : null;
+      if (!mismatch) continue;
+      const checkedAt = new Date().toISOString();
+      const { error: verifySaveError } = await db.from("channel_listings").update({
+        status: "error",
+        last_error: mismatch,
+        last_synced_at: checkedAt,
+        updated_at: checkedAt,
+      }).eq("channel", channel).eq("variant_id", item.variantId);
+      item.ok = false;
+      item.error = verifySaveError ? mismatch + ":state_save_failed" : mismatch;
+      console.error("[commerce-publish] storefront price readback did not match", {
+        channel,
+        variantId: item.variantId,
+        expectedPrice: item.expectedPrice,
+        actualPrice: actual ?? null,
+        readbackFailure,
+        stateSaveFailed: Boolean(verifySaveError),
+      });
+    }
+  }
+
   return { channel, staleListings, considered: candidates.length, published: results.filter((x) => x.ok && x.action !== "unpublished").length, processed: results.filter((x) => x.ok).length, failed: results.filter((x) => !x.ok).length, results };
 }

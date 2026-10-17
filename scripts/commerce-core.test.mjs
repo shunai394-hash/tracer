@@ -814,6 +814,16 @@ test("unpublish safety checks the exact supplier offer behind the canonical pric
   assert.doesNotMatch(publish, /price\?\.supplier_offer_id \?\? currentPriceRows\[0\]/);
 });
 
+test("storefront sync reads back real BASE and Shopify prices before reporting success", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /TracerStorefrontPriceReadback/);
+  assert.match(publish, /fetchBaseItemsSnapshot\(\{ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES \}\)/);
+  assert.match(publish, /storefront_price_readback_mismatch:/);
+  assert.match(publish, /storefront_price_readback_failed:/);
+  assert.match(publish, /status: "error",[\s\S]*?last_error: mismatch/);
+  assert.match(publish, /actual !== item\.expectedPrice/);
+});
+
 test("price reconciliation disables published listings with unverified supplier evidence", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
