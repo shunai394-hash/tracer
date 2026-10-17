@@ -130,6 +130,7 @@ export async function GET(request: Request) {
   }
 
   // Reconcile storefront prices already published before the canonical price change.
+  // Process ten variants per channel; the cron is staggered from publication and order-poll jobs.
   // Query all states so a failed sync remains eligible for retry on the next cron run.
   const { data: listings, error: listingReadError } = await db.from("channel_listings")
     .select("variant_id,channel,selling_price,status")
@@ -150,7 +151,7 @@ export async function GET(request: Request) {
       const allChannelIds = [...new Set((listings ?? [])
         .filter((row) => row.channel === channel && needsSync.has(String(row.variant_id)))
         .map((row) => String(row.variant_id)))];
-      const batchIds = allChannelIds.slice(0, 5);
+      const batchIds = allChannelIds.slice(0, 10);
       if (batchIds.length === 0) continue;
       try {
         const synced = await syncCommerceListings(channel, batchIds.length, false, batchIds);
