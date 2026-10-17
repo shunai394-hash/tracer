@@ -3,9 +3,10 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { recalculatePrice } from "@/lib/commerce/core";
+import { syncCommerceListings } from "@/lib/commerce/publish";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 /**
  * Reprice already-linked supplier offers without calling the supplier API.
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
       .order("updated_at", { ascending: true })
       .limit(2000),
     db.from("commerce_products").select("id").eq("active", true).limit(2000),
-    db.from("commerce_prices").select("variant_id,supplier_offer_id,expected_profit,margin_rate,calculated_at").limit(4000),
+    db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit,margin_rate,calculated_at").limit(4000),
   ]);
   if (offersError || productsError || pricesError) {
     return NextResponse.json({
@@ -49,6 +50,7 @@ export async function GET(request: Request) {
   }
   const activeVariantIds = new Set((variants ?? []).map((row) => String(row.id)));
   const priceByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), row]));
+  const canonicalPriceByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), Number(row.selling_price)]));
   let skippedUnknownShipping = 0;
   const oneOfferPerVariant = new Map<string, NonNullable<typeof offers>[number]>();
   for (const offer of offers ?? []) {
