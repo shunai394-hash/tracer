@@ -132,20 +132,13 @@ export async function getPublicationCandidates(channel: CommerceChannel, limit =
   const db = createSupabaseAdminClient();
   const { data, error } = await db.from("commerce_variants")
     .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported,source_status),commerce_prices!inner(currency,selling_price,expected_profit,fee_amount,margin_rate)")
-    .eq("commerce_products.active", true).gt("supplier_offers.inventory", 0)
-    .eq("supplier_offers.source_status", "verified").eq("supplier_offers.tracking_supported", true)
-    .gte("supplier_offers.last_checked_at", new Date(Date.now() - 24 * 60 * 60_000).toISOString())
-    .eq("supplier_offers.ship_to", "JP").eq("commerce_prices.currency", "JPY")
+    .eq("commerce_products.active", true).eq("commerce_prices.currency", "JPY")
     .gt("commerce_prices.expected_profit", 0).order("updated_at", { ascending: false })
     .limit(Math.min(500, Math.max(1, Math.floor(limit))));
   if (error) throw new Error("publication_candidates_failed:" + error.message);
-  return (data ?? []).filter((row) => {
-    const offers = Array.isArray(row.supplier_offers) ? row.supplier_offers : [row.supplier_offers];
-    return offers.some((offer) => offer && (
-      offer.supplier_code !== "cj" ||
-      (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id))
-    ));
-  }).map((row) => ({ ...row, channel }));
+  // Catalog eligibility is profit-first. Current stock, tracking, and live-order
+  // readiness are handled by fulfillment, not used to suppress profitable listings.
+  return (data ?? []).map((row) => ({ ...row, channel }));
 }
 
 /** Persist paid orders and procurement intents idempotently; supplier submission happens in a separate worker. */
