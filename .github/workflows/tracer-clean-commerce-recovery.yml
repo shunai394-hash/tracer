@@ -5,6 +5,7 @@ name: TRACER clean-commerce bounded recovery
 # Run the bounded publication recovery after the timeout fix is deployed.
 # 2026-10-18: trigger the guarded recovery workflow after confirming the verified backlog is ready.
 # 2026-10-18: TRACER_CLEAN_COMMERCE_RECOVERY retry with title-only legacy backlog isolated.
+# 2026-10-18: TRACER_CLEAN_COMMERCE_RECOVERY retry after batched listing-state read fix.
 
 on:
   push:
