@@ -8,10 +8,10 @@ export async function GET(request: Request) {
   if (authError) return authError;
   try {
     const requested = Number(new URL(request.url).searchParams.get("limit") || 5);
-    // Reprocess published rows so recalculated 50% margin prices reach the storefront.
-    // Keep scheduled work small to reduce function timeouts while refreshing published prices.
+    // Scheduled publication handles new/pending/error rows only. The reprice cron explicitly
+    // passes selected stale variant IDs when an existing published price must be refreshed.
     const limit = Number.isFinite(requested) ? Math.min(10, Math.max(1, Math.floor(requested))) : 5;
-    const onlyUnpublished = new URL(request.url).searchParams.get("onlyUnpublished") === "true";
+    const onlyUnpublished = new URL(request.url).searchParams.get("onlyUnpublished") !== "false";
     const result = await syncCommerceListings("shopify", limit, onlyUnpublished);
     return NextResponse.json({ ok: result.failed === 0, ...result }, { status: result.failed ? 207 : 200 });
   } catch (error) {
