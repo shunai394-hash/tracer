@@ -188,6 +188,30 @@ async function findByHandle(handle: string): Promise<ShopifyProductNode | null> 
   return data.products.nodes.find((node) => node.handle === handle) ?? null;
 }
 
+/**
+ * Cross-pipeline duplicate guard. The legacy shop_listings sync must reuse the
+ * one exact-SKU TRACER product created by the canonical commerce pipeline.
+ * Ambiguous or foreign SKU matches fail closed instead of creating another item.
+ */
+async function findByExactSku(skuValue: string): Promise<ShopifyProductNode | null> {
+  const data = await shopifyGraphQL<{ products: { nodes: ShopifyProductNode[] } }>(
+    `query ProductsBySku($query: String!) { products(first: 50, query: $query) { nodes { id handle status vendor tags variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType preview { image { url } } } } } } }`,
+    { query: `sku:${skuValue}` },
+  );
+  const exactMatches = (data.products?.nodes ?? []).filter((product) =>
+    (product.variants?.nodes ?? []).some((variant) => variant.sku === skuValue),
+  );
+  if (exactMatches.length > 1 || (data.products?.nodes ?? []).length >= 50) {
+    throw new Error("shopify_sku_ambiguous:" + skuValue);
+  }
+  if (exactMatches.length === 0) return null;
+  const product = exactMatches[0];
+  if (product.vendor !== "TRACER" && !product.tags.includes("TRACER")) {
+    throw new Error("shopify_sku_owned_by_non_tracer_product:" + skuValue);
+  }
+  return product;
+}
+
 export type ShopifySyncResult = { configured: boolean; considered: number; synced: number; failed: number; listingIds: string[]; errors: Array<{ listingId: string; error: string }> };
 
 /** Shopify is downstream-only: canonical Sales Test Gate plus live fulfillment evidence are mandatory. */
@@ -503,7 +527,7 @@ async function syncListingRows(
         : null;
       // A stored id whose product no longer exists in Shopify is stale: fall
       // back to an exact handle match, otherwise create the product afresh.
-      let existing = existingById ?? (await findByHandle(productInput.handle));
+      let existing = existingById ?? (await findByHandle(productInput.handle)) ?? (await findByExactSku(productInput.sku));
 
       // Never overwrite a product owned by another vendor. Recover from a
       // stale/colliding handle by choosing a deterministic TRACER-owned handle.
