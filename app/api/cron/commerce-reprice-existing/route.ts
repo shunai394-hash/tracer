@@ -50,6 +50,7 @@ export async function GET(request: Request) {
   }
   const activeVariantIds = new Set((variants ?? []).map((row) => String(row.id)));
   const priceByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), row]));
+  const canonicalPriceByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), Number(row.selling_price)]));
   let skippedUnknownShipping = 0;
   const oneOfferPerVariant = new Map<string, NonNullable<typeof offers>[number]>();
   for (const offer of offers ?? []) {
@@ -114,9 +115,11 @@ export async function GET(request: Request) {
         targetMarginRate,
       });
       result.repriced++;
-      const prior = priceByVariant.get(String(offer.variant_id));
+      const variantId = String(offer.variant_id);
+      const prior = priceByVariant.get(variantId);
+      canonicalPriceByVariant.set(variantId, price.sellingPrice);
       if (!prior || Number(prior.selling_price) !== price.sellingPrice) {
-        repricedVariantIds.push(String(offer.variant_id));
+        repricedVariantIds.push(variantId);
       }
     } catch (error) {
       result.skipped++;
@@ -127,37 +130,43 @@ export async function GET(request: Request) {
     }
   }
 
-  // Repricing is not complete until any already-published external listing receives the new canonical price.
-  // Query only the variants whose price changed; never re-sync the entire catalog on each 10-minute pass.
-  if (repricedVariantIds.length > 0) {
-    const uniqueVariantIds = [...new Set(repricedVariantIds)];
-    const { data: publishedListings, error: listingReadError } = await db.from("channel_listings")
-      .select("variant_id,channel")
-      .in("variant_id", uniqueVariantIds)
-      .eq("status", "published");
-    if (listingReadError) {
-      result.storefrontSyncErrors.push({ channel: "lookup", reason: listingReadError.message.slice(0, 180) });
-    } else {
-      for (const channel of ["base", "shopify"] as const) {
-        const channelVariantIds = [...new Set((publishedListings ?? [])
-          .filter((row) => row.channel === channel)
-          .map((row) => String(row.variant_id)))];
-        if (channelVariantIds.length === 0) continue;
-        try {
-          const synced = await syncCommerceListings(channel, channelVariantIds.length, false, channelVariantIds);
-          result.storefrontSync[channel] += synced.published;
-          if (synced.failed > 0) {
-            result.storefrontSyncErrors.push({
-              channel,
-              reason: `updated=${synced.published}, failed=${synced.failed}`,
-            });
-          }
-        } catch (error) {
+  // Repricing is not complete until published external prices match the canonical JPY price.
+  // Reconcile existing mismatches as well as prices changed in this run; limit API writes to affected variants.
+  const { data: publishedListings, error: listingReadError } = await db.from("channel_listings")
+    .select("variant_id,channel,selling_price")
+    .eq("status", "published")
+    .limit(5000);
+  if (listingReadError) {
+    result.storefrontSyncErrors.push({ channel: "lookup", reason: listingReadError.message.slice(0, 180) });
+  } else {
+    const variantsNeedingSync = new Set(repricedVariantIds);
+    for (const listing of publishedListings ?? []) {
+      const variantId = String(listing.variant_id);
+      const canonicalPrice = canonicalPriceByVariant.get(variantId);
+      if (canonicalPrice !== undefined && Number(listing.selling_price) !== canonicalPrice) {
+        variantsNeedingSync.add(variantId);
+      }
+    }
+    const uniqueVariantIds = [...variantsNeedingSync];
+    for (const channel of ["base", "shopify"] as const) {
+      const channelVariantIds = [...new Set((publishedListings ?? [])
+        .filter((row) => row.channel === channel && variantsNeedingSync.has(String(row.variant_id)))
+        .map((row) => String(row.variant_id)))];
+      if (channelVariantIds.length === 0) continue;
+      try {
+        const synced = await syncCommerceListings(channel, channelVariantIds.length, false, channelVariantIds);
+        result.storefrontSync[channel] += synced.published;
+        if (synced.failed > 0) {
           result.storefrontSyncErrors.push({
             channel,
-            reason: (error instanceof Error ? error.message : String(error)).slice(0, 180),
+            reason: `updated=${synced.published}, failed=${synced.failed}`,
           });
         }
+      } catch (error) {
+        result.storefrontSyncErrors.push({
+          channel,
+          reason: (error instanceof Error ? error.message : String(error)).slice(0, 180),
+        });
       }
     }
   }
