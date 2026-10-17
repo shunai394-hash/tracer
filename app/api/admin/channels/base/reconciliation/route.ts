@@ -21,6 +21,8 @@ type ListingRow = {
   inventory: number | null;
   orderable: boolean | null;
   base_publication_status: string | null;
+  canonical_selling_price?: number | string | null;
+  canonical_expected_profit?: number | string | null;
 };
 
 function text(value: unknown): string | null {
@@ -145,13 +147,18 @@ export async function POST(request: Request) {
     const commerceVariants = await readIn(commerceVariantIds, (ids) => db.from("commerce_variants").select("id,product_id,source_variant_key,sku,title_ja").in("id", ids), "TRACER_COMMERCE_VARIANT_READ_FAILED");
     const commerceProductIds = [...new Set(commerceVariants.map((row) => String(row.product_id ?? "")).filter(Boolean))];
     const commerceProducts = await readIn(commerceProductIds, (ids) => db.from("commerce_products").select("id,source_key,title_ja,active").in("id", ids), "TRACER_COMMERCE_PRODUCT_READ_FAILED");
-    const commercePrices = await readIn(commerceVariantIds, (ids) => db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit").in("variant_id", ids), "TRACER_COMMERCE_PRICE_READ_FAILED");
+    const commercePrices = (await readIn(commerceVariantIds, (ids) => db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit,calculated_at").in("variant_id", ids), "TRACER_COMMERCE_PRICE_READ_FAILED"))
+      .sort((a, b) => Date.parse(String(b.calculated_at ?? "")) - Date.parse(String(a.calculated_at ?? "")));
     const commerceOfferIds = [...new Set(commercePrices.map((row) => String(row.supplier_offer_id ?? "")).filter(Boolean))];
     const commerceOffers = await readIn(commerceOfferIds, (ids) => db.from("supplier_offers").select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,source_status,tracking_supported,ship_to,last_checked_at").in("id", ids), "TRACER_COMMERCE_OFFER_READ_FAILED");
 
     const variantById = new Map(commerceVariants.map((row) => [String(row.id), row]));
     const productById = new Map(commerceProducts.map((row) => [String(row.id), row]));
-    const priceByVariant = new Map(commercePrices.map((row) => [String(row.variant_id), row]));
+    const priceByVariant = new Map<string, Record<string, unknown>>();
+    for (const row of commercePrices) {
+      const variantId = String(row.variant_id);
+      if (!priceByVariant.has(variantId)) priceByVariant.set(variantId, row);
+    }
     const offerById = new Map(commerceOffers.map((row) => [String(row.id), row]));
     const commerceListingRows: ListingRow[] = commerceRows.map((channelRow) => {
       const variant = variantById.get(String(channelRow.variant_id));
@@ -171,6 +178,8 @@ export async function POST(request: Request) {
         published: channelRow.status === "published",
         base_item_id: channelRow.external_product_id == null ? null : String(channelRow.external_product_id),
         selling_price: channelRow.selling_price as number | null,
+        canonical_selling_price: price?.selling_price as number | string | null ?? null,
+        canonical_expected_profit: price?.expected_profit as number | string | null ?? null,
         supplier_name: offer ? String(offer.supplier_code) : null,
         supplier_listing_id: offer ? String(offer.id) : null,
         supplier_product_id: offer ? String(offer.supplier_product_id) : null,
@@ -274,6 +283,8 @@ export async function POST(request: Request) {
           inventory: stableIdentifierListing.inventory,
           orderable: stableIdentifierListing.orderable,
           sellingPrice: stableIdentifierListing.selling_price,
+          canonicalSellingPrice: stableIdentifierListing.canonical_selling_price ?? null,
+          canonicalExpectedProfit: stableIdentifierListing.canonical_expected_profit ?? null,
           basePublicationStatus: stableIdentifierListing.base_publication_status,
         }] : [],
         exactSupplierIdentifierMatchCount: supplierIdentifierCandidates.length,
@@ -289,6 +300,8 @@ export async function POST(request: Request) {
           inventory: row.inventory,
           orderable: row.orderable,
           sellingPrice: row.selling_price,
+          canonicalSellingPrice: row.canonical_selling_price ?? null,
+          canonicalExpectedProfit: row.canonical_expected_profit ?? null,
           basePublicationStatus: row.base_publication_status,
         })),
         visible: visibility(item.visible),
