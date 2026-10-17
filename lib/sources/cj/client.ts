@@ -580,6 +580,22 @@ export type CJFreightOption = {
   arrivalTime: string | null;
 };
 
+const CJ_FREIGHT_PRICE_KEYS = [
+  "totalPostageFee", "logisticPrice", "shippingCost", "shippingFee",
+  "postageFee", "freight", "freightCost", "totalFreight", "freightAmount", "price",
+] as const;
+
+/** Find named freight quote rows regardless of CJ's object/array wrapper shape. */
+function collectCJFreightRows(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value.flatMap((item) => collectCJFreightRows(item));
+  if (!value || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  if (CJ_FREIGHT_PRICE_KEYS.some((key) => readCJFreightPrice(record[key]) !== null)) {
+    return [record];
+  }
+  return Object.values(record).flatMap((nested) => collectCJFreightRows(nested));
+}
+
 export async function getCJFreightOptions(
   vid: string,
   options?: {
@@ -629,33 +645,13 @@ export async function getCJFreightOptions(
     throw new CJRequestError(payload.message || "CJ freight options lookup failed");
   }
 
-  const rows: unknown[] = Array.isArray(payload.data)
-    ? payload.data
-    : payload.data && typeof payload.data === "object"
-      ? Object.values(payload.data as Record<string, unknown>).flatMap((value) =>
-          Array.isArray(value) ? value : [value],
-        )
-      : [];
+  const rows = collectCJFreightRows(payload.data);
   return rows
-    .map((row) => {
-      if (!row || typeof row !== "object" || Array.isArray(row)) return null;
-      const record = row as Record<string, unknown>;
+    .map((record) => {
       const name = typeof record.logisticName === "string" ? record.logisticName.trim() : "";
-      const readPrice = (value: unknown): number | null => {
-        if (typeof value === "number") return Number.isFinite(value) && value > 0 ? value : null;
-        if (typeof value === "string" && value.trim()) {
-          const parsed = Number(value);
-          return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-        }
-        return null;
-      };
-      const shippingCost =
-        readPrice(record.totalPostageFee) ??
-        readPrice(record.logisticPrice) ??
-        readPrice(record.totalFreight) ??
-        readPrice(record.shippingCost) ??
-        readPrice(record.freightAmount) ??
-        readPrice(record.price);
+      const shippingCost = CJ_FREIGHT_PRICE_KEYS
+        .map((key) => readCJFreightPrice(record[key]))
+        .find((price) => price !== null) ?? null;
       if (!name || shippingCost === null) return null;
       return {
         logisticName: name,
@@ -722,43 +718,16 @@ export async function calculateCJFreight(
   // CJ has returned several freight field names across API versions and
   // wrappers. Accept the documented price fields plus equivalent numeric
   // postage/shipping fields, while never treating an unknown value as zero.
-  const rows: unknown[] = Array.isArray(payload.data)
-    ? payload.data
-    : payload.data && typeof payload.data === "object"
-      ? Object.values(payload.data as Record<string, unknown>).flatMap((value) =>
-          Array.isArray(value) ? value : [value],
-        )
-      : [];
-
+  const rows = collectCJFreightRows(payload.data);
   const prices = rows
-    .map((row) => {
-      if (!row || typeof row !== "object" || Array.isArray(row)) return null;
-      const record = row as Record<string, unknown>;
-      for (const key of [
-        "totalPostageFee",
-        "logisticPrice",
-        "shippingCost",
-        "shippingFee",
-        "postageFee",
-        "freight",
-        "freightCost",
-      ]) {
-        const price = readCJFreightPrice(record[key]);
-        if (price !== null) return price;
-      }
-      return null;
-    })
+    .map((record) => CJ_FREIGHT_PRICE_KEYS
+      .map((key) => readCJFreightPrice(record[key]))
+      .find((price) => price !== null) ?? null)
     .filter((value): value is number => value !== null);
 
   if (prices.length === 0) {
     const data = payload.data;
-    const rowsForDiagnostics: unknown[] = Array.isArray(data)
-      ? data
-      : data && typeof data === "object"
-        ? Object.values(data as Record<string, unknown>).flatMap((value) =>
-            Array.isArray(value) ? value : [value],
-          )
-        : [];
+    const rowsForDiagnostics = collectCJFreightRows(data);
     const firstRow = rowsForDiagnostics.find(
       (row): row is Record<string, unknown> =>
         Boolean(row) && typeof row === "object" && !Array.isArray(row),
