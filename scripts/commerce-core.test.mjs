@@ -541,8 +541,8 @@ test("CJ catalog importer prioritizes unseen parent products and scans bounded e
   assert.match(importer, /Prefer never-imported CJ parents/);
   assert.match(importer, /while \(newCandidates\.length < limit && scanPage <= page \+ 2\)/);
   assert.ok(importer.includes("candidates = newCandidates.slice(0, limit)"));
-  assert.match(importer, /searchParams\.get\("limit"\) \|\| 1/);
-  assert.match(importer, /searchParams\.get\("variantLimit"\) \|\| 1/);
+  assert.match(importer, /searchParams\.get\("limit"\) \|\| 3/);
+  assert.match(importer, /searchParams\.get\("variantLimit"\) \|\| 2/);
   assert.doesNotMatch(importer, /const fallbackCandidates/);
 });
 
