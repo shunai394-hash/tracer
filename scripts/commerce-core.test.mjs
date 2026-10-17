@@ -168,6 +168,10 @@ test("paid-order intake validates exact offer identity before writing but leaves
   assert.doesNotMatch(core.slice(preflight, orderWrite), /source_status|tracking_supported|last_checked_at|expected_profit|inventory|ship_to/);
   assert.match(core, /supplier_offer_id: line\.offerId/);
   assert.match(core, /status: "pending"/);
+  assert.match(core, /order_refresh_failed/);
+  assert.match(core, /const refreshedAddress = \{ \.\.\.previousAddress \}/);
+  assert.match(core, /if \(value !== null && value !== undefined && String\(value\)\.trim\(\) !== ""\) refreshedAddress\[key\] = value/);
+  assert.doesNotMatch(core.slice(core.indexOf("if (order) {"), core.indexOf("// Reconcile lines on retries")), /fulfillment_status: "procurement_pending"/);
 });
 
 test("supplier importer never substitutes a search-result product ID for unresolved variant identity", async () => {
