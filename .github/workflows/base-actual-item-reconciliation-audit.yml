@@ -1,0 +1,103 @@
+name: BASE actual-item reconciliation audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: base-actual-item-reconciliation-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Reconcile the actual BASE /items snapshot against TRACER
+        env:
+          BASE_AUDIT_ORIGIN: https://tracer-pied-alpha.vercel.app
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs/promises");
+          (async () => {
+            const origin = process.env.BASE_AUDIT_ORIGIN;
+            const oidcUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+            oidcUrl.searchParams.set("audience", origin);
+            const oidcResponse = await fetch(oidcUrl, {
+              headers: { Authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
+            });
+            if (!oidcResponse.ok) throw new Error(`GitHub OIDC token request failed: HTTP ${oidcResponse.status}`);
+            const { value: token } = await oidcResponse.json();
+            if (!token) throw new Error("GitHub OIDC token was missing");
+
+            const response = await fetch(new URL("/api/channels/base/reconciliation", origin), {
+              headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+              cache: "no-store",
+            });
+            const body = await response.json();
+            if (!response.ok) {
+              throw new Error(`BASE actual-item reconciliation failed: HTTP ${response.status} ${body.error ?? "unknown"}`);
+            }
+            const report = {
+              generatedAt: new Date().toISOString(),
+              source: "BASE /items actual snapshot compared with TRACER channel_listings",
+              apiReadComplete: body.apiReadComplete === true,
+              itemCount: Number(body.itemCount ?? 0),
+              pages: Number(body.pages ?? 0),
+              dbListingCount: Number(body.dbListingCount ?? 0),
+              mappedItems: Number(body.mappedItems ?? 0),
+              unmappedItems: Number(body.unmappedItems ?? 0),
+              ambiguousItems: Number(body.ambiguousItems ?? 0),
+              unknownVisibility: Number(body.unknownVisibility ?? 0),
+              unreadablePrices: Number(body.unreadablePrices ?? 0),
+              priceMismatches: Number(body.priceMismatches ?? 0),
+              skuMismatches: Number(body.skuMismatches ?? 0),
+              auditRowsWritten: Number(body.auditRowsWritten ?? 0),
+              runId: body.runId ?? null,
+              ok: body.ok === true,
+              error: body.error ?? null,
+            };
+            const out = "base-actual-item-reconciliation-artifacts";
+            await fs.mkdir(out, { recursive: true });
+            await fs.writeFile(`${out}/report.json`, JSON.stringify(report, null, 2) + "\n");
+            const columns = Object.keys(report);
+            const cell = (value) => {
+              const s = value == null ? "" : String(value);
+              return /[",\\r\\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+            };
+            await fs.writeFile(`${out}/summary.csv`,
+              [columns.join(","), columns.map((key) => cell(report[key])).join(",")].join("\n") + "\n");
+            const summary = [
+              "# BASE actual-item reconciliation audit", "",
+              `- Actual BASE items scanned: **${report.itemCount}**`,
+              `- API scan complete: **${report.apiReadComplete}** (${report.pages} pages)`,
+              `- TRACER BASE listing rows: **${report.dbListingCount}**`,
+              `- Mapped / unmapped / ambiguous: **${report.mappedItems} / ${report.unmappedItems} / ${report.ambiguousItems}**`,
+              `- Price mismatches: **${report.priceMismatches}**`,
+              `- SKU mismatches: **${report.skuMismatches}**`,
+              `- Unknown visibility / unreadable prices: **${report.unknownVisibility} / ${report.unreadablePrices}**`,
+              `- Audit rows persisted: **${report.auditRowsWritten}**`,
+              `- Run ID: ${report.runId ?? "not returned"}`, "",
+              "JSON and CSV summary are attached as artifact `base-actual-item-reconciliation-audit`.", ""
+            ].join("\n");
+            await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
+            console.log(JSON.stringify(report, null, 2));
+            if (!report.apiReadComplete || report.itemCount !== report.auditRowsWritten || !report.ok) {
+              throw new Error("BASE reconciliation found discrepancies or did not persist a complete audit");
+            }
+          })().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
+      - name: Upload reconciliation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: base-actual-item-reconciliation-audit
+          path: base-actual-item-reconciliation-artifacts/
+          if-no-files-found: warn
+          retention-days: 30
