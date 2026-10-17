@@ -40,6 +40,7 @@ jobs:
               visibilityMatches: 0, visibilityMismatches: 0, readErrors: 0, missingSku: 0,
             };
             const anomalies = [];
+            const readErrorCounts = {};
 
             while (totalRows === null || offset < totalRows) {
               const url = new URL(baseUrl);
@@ -56,6 +57,9 @@ jobs:
               if (totalRows === null) totalRows = body.totalRows;
               if (!Number.isFinite(totalRows)) throw new Error("Audit response did not include totalRows");
               for (const key of Object.keys(totals)) totals[key] += Number(body[key] ?? 0);
+              for (const [error, count] of Object.entries(body.readErrorCounts ?? {})) {
+                readErrorCounts[error] = (readErrorCounts[error] ?? 0) + Number(count ?? 0);
+              }
               for (const row of body.results ?? []) {
                 if (row.error || !row.priceMatches || !row.visibilityMatches || !row.skuPresent) {
                   anomalies.push({
@@ -75,13 +79,14 @@ jobs:
               console.log(JSON.stringify({ offset, totalRows, pageRows: body.rowsReturned, pageErrors: body.readErrors }));
             }
 
-            const report = { completedAt: new Date().toISOString(), totalRows, ...totals, anomalyCount: anomalies.length, anomalies };
+            const report = { completedAt: new Date().toISOString(), totalRows, ...totals, readErrorCounts, anomalyCount: anomalies.length, anomalies };
             const summary = [
               "# BASE external listing readback audit", "",
               `- Total TRACER BASE listing rows scanned: **${totalRows}**`,
               `- Price matches / mismatches: **${totals.priceMatches} / ${totals.priceMismatches}**`,
               `- Visibility matches / mismatches: **${totals.visibilityMatches} / ${totals.visibilityMismatches}**`,
               `- External API read errors: **${totals.readErrors}**`,
+              `- Read error categories: **${JSON.stringify(readErrorCounts)}**`,
               `- Rows without external SKU: **${totals.missingSku}**`,
               `- Rows requiring review: **${anomalies.length}**`, "",
               anomalies.length ? "```json\n" + JSON.stringify(anomalies, null, 2) + "\n```" : "No discrepancies detected in the returned listing set.",
