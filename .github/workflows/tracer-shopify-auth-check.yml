@@ -278,6 +278,10 @@ jobs:
 
           report = json.load(open("shopify-reconcile.json"))
           items = report.get("items") or []
+          if report.get("ok") is not True or report.get("shopifyStore", {}).get("countPrecision") != "EXACT" or report.get("shopify", {}).get("scanComplete") is not True:
+              raise SystemExit("SHOPIFY_RECONCILIATION_INCOMPLETE_REFUSING_TO_LABEL_AUDIT_COMPLETE")
+          if not isinstance(items, list) or not isinstance(report.get("unlinkedProducts"), list):
+              raise SystemExit("SHOPIFY_RECONCILIATION_MISSING_ROW_LEVEL_DATA")
           fields = [
               "listingId", "existsInShopify", "dbShopifyProductId", "shopifyProductId", "shopifyHandle",
               "dbShopifyVariantId", "shopifyVariantId", "variantScanComplete", "expectedSku", "shopifySku",
@@ -329,7 +333,7 @@ jobs:
           PY
 
       - name: Upload read-only Shopify audit evidence
-        if: github.event_name == 'push'
+        if: always() && github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
           name: tracer-shopify-live-audit-${{ github.run_id }}
