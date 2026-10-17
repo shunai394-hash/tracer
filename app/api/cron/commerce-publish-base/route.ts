@@ -7,8 +7,11 @@ export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   try {
-    const requested = Number(new URL(request.url).searchParams.get("limit") || 25);
-    const limit = Number.isFinite(requested) ? Math.min(25, Math.max(1, Math.floor(requested))) : 25;
+    // Channel APIs require several sequential remote calls per listing. Keep each
+    // cron invocation small so a slow BASE response cannot time out the whole batch.
+    // The cron runs repeatedly and onlyUnpublished=true prioritizes unlisted variants.
+    const requested = Number(new URL(request.url).searchParams.get("limit") || 5);
+    const limit = Number.isFinite(requested) ? Math.min(5, Math.max(1, Math.floor(requested))) : 5;
     const onlyUnpublished = new URL(request.url).searchParams.get("onlyUnpublished") === "true";
     const result = await syncCommerceListings("base", limit, onlyUnpublished);
     return NextResponse.json({ ok: result.failed === 0, ...result }, { status: result.failed ? 207 : 200 });
