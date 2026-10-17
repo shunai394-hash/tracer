@@ -66,8 +66,8 @@ jobs:
             const columns = Object.keys(report);
             const cell = (value) => {
               const s = value == null ? "" : String(value);
-              return /[",\\r\\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-            };
+  const s = value == null ? "" : String(value);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
             await fs.writeFile(`${out}/summary.csv`,
               [columns.join(","), columns.map((key) => cell(report[key])).join(",")].join("\n") + "\n");
             const summary = [
