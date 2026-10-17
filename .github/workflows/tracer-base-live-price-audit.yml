@@ -7,6 +7,8 @@ on:
       - main
     paths:
       - .github/workflows/tracer-base-live-price-audit.yml
+      - app/api/admin/channels/base/snapshot/route.ts
+      - app/api/admin/channels/base/reconciliation/route.ts
 
 permissions:
   contents: read
