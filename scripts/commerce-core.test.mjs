@@ -725,7 +725,12 @@ test("clean commerce CJ importer respects the shared daily-points cooldown befor
 test("clean commerce CJ importer prices linked offers even when cached stock is zero or unknown", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /if \(shipping !== null && shipping >= 0\)\s*\{\s*await recalculatePrice/);
-  assert.doesNotMatch(importer, /if \(stock !== null &&/);
+  const priceGateStart = importer.indexOf("if (shipping !== null && shipping >= 0)");
+  const priceGateEnd = importer.indexOf("} else {", priceGateStart);
+  assert.ok(priceGateStart >= 0 && priceGateEnd > priceGateStart, "freight-based price gate must exist");
+  const priceGate = importer.slice(priceGateStart, priceGateEnd);
+  assert.match(priceGate, /await recalculatePrice/);
+  assert.doesNotMatch(priceGate, /stock !== null/, "stock checks for evidence persistence must not gate pricing");
 });
 
 
