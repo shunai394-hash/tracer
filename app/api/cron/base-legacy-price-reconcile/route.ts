@@ -31,7 +31,7 @@ export async function GET(request: Request) {
     { data: prices, error: priceError },
   ] = await Promise.all([
     db.from("shop_listings")
-      .select("id,title,description,base_item_id,selling_price,contribution_profit,inventory,published,orderable,tracking_available,supplier_variant_id")
+      .select("id,title,description,base_item_id,selling_price,contribution_profit,contribution_margin,inventory,published,orderable,tracking_available,supplier_variant_id")
       .eq("published", true)
       .eq("orderable", true)
       .eq("tracking_available", true)
@@ -138,7 +138,13 @@ export async function GET(request: Request) {
   });
 
   counts.eligible = candidates.length;
-  const mismatches = candidates.filter(({ listing, canonicalPrice }) => Number(listing.selling_price) !== canonicalPrice);
+  const mismatches = candidates.filter(({ listing, canonicalPrice, price }) => {
+    const canonicalMarginRate = Number(price.margin_rate);
+    const canonicalMarginPercent = Math.round(canonicalMarginRate * 10000) / 100;
+    return Number(listing.selling_price) !== canonicalPrice ||
+      Number(listing.contribution_profit) !== Number(price.expected_profit) ||
+      Number(listing.contribution_margin) !== canonicalMarginPercent;
+  });
   counts.remainingMismatches = mismatches.length;
   const batch = mismatches.slice(0, limit);
 
@@ -147,17 +153,19 @@ export async function GET(request: Request) {
     const baseItemId = String(listing.base_item_id);
     const oldPrice = Number(listing.selling_price);
     try {
-      await editBaseItem({
-        itemId: baseItemId,
-        title: String(listing.title ?? "").trim() || "商品情報確認中",
-        detail: String(listing.description ?? listing.title ?? "").trim() || "商品情報を確認しています。",
-        price: canonicalPrice,
-        stock: toStorefrontStockQuantity(inventory),
-        visible: true,
-      });
       const canonicalMarginRate = Number(price.margin_rate);
       if (!Number.isFinite(canonicalMarginRate) || canonicalMarginRate <= 0 || canonicalMarginRate > 1) {
         throw new Error("canonical_margin_rate_invalid");
+      }
+      if (oldPrice !== canonicalPrice) {
+        await editBaseItem({
+          itemId: baseItemId,
+          title: String(listing.title ?? "").trim() || "商品情報確認中",
+          detail: String(listing.description ?? listing.title ?? "").trim() || "商品情報を確認しています。",
+          price: canonicalPrice,
+          stock: toStorefrontStockQuantity(inventory),
+          visible: true,
+        });
       }
       const { error: updateError } = await db.from("shop_listings").update({
         selling_price: canonicalPrice,
