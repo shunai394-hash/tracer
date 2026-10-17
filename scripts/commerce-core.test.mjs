@@ -989,3 +989,11 @@ test("CJ stale-listing evidence retry accepts canonical numeric IDs", async () =
   assert.ok(!importer.includes(badGuard), "must not use a double-escaped digit class");
   assert.ok(importer.includes(goodGuard), "must validate canonical numeric CJ IDs");
 });
+
+test("legacy BASE price reconciliation updates canonical profit margin using percent units", async () => {
+  const route = await readFile(new URL("../app/api/cron/base-legacy-price-reconcile/route.ts", import.meta.url), "utf8");
+  assert.match(route, /\.select\("variant_id,supplier_offer_id,selling_price,expected_profit,margin_rate,calculated_at"\)/);
+  assert.match(route, /canonicalMarginRate = Number\(price\.margin_rate\)/);
+  assert.match(route, /canonical_margin_rate_invalid/);
+  assert.match(route, /contribution_margin: Math\.round\(canonicalMarginRate \* 10000\) \/ 100/);
+});
