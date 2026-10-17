@@ -90,7 +90,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
         const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id);
         return Boolean(price && price.currency === "JPY" && Number(price.selling_price) > 0 && Number(price.expected_profit) > 0 &&
-          offer.source_status === "verified" && nativeIdsValid && offer.tracking_supported === true &&
+          offer.source_status === "verified" && nativeIdsValid &&
           offer.ship_to === "JP" && fresh && Number(offer.inventory) > 0);
       };
       if (offers.some(offerIsValid)) {
@@ -113,7 +113,6 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       const reason = !offer ? "supplier_offer_missing" :
         !nativeIdsValid ? "supplier_native_ids_invalid" :
         offer.source_status !== "verified" ? "supplier_offer_not_verified" :
-        offer.tracking_supported !== true ? "tracking_not_verified" :
         offer.ship_to !== "JP" ? "supplier_not_shipping_to_japan" :
         !fresh ? "supplier_verification_stale" :
         Number(offer.inventory) <= 0 ? "supplier_out_of_stock" :
