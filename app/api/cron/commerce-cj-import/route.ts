@@ -327,7 +327,7 @@ export async function GET(request: Request) {
       }
       // Keep missing-publication recovery narrow and separately recheck existing listings
       // whose saved supplier status, stock, or Japan-bound freight evidence is in error.
-      const [{ data: erroredOffers, error: erroredOffersError }, { data: staleVerifiedOffers, error: staleVerifiedOffersError }, { data: shopifyRows, error: shopifyRowsError }, { data: cjListingRows, error: cjListingRowsError }] = await Promise.all([
+      const [{ data: erroredOffers, error: erroredOffersError }, { data: staleVerifiedOffers, error: staleVerifiedOffersError }, { data: shopifyRows, error: shopifyRowsError }, { data: publicationErrorRows, error: publicationErrorRowsError }, { data: cjListingRows, error: cjListingRowsError }] = await Promise.all([
         db.from("supplier_offers")
           .select("id,variant_id,supplier_product_id,supplier_variant_id,source_status,raw_data,updated_at,last_checked_at")
           .eq("supplier_code", "cj").eq("source_status", "error")
@@ -340,6 +340,10 @@ export async function GET(request: Request) {
           .eq("supplier_code", "cj").eq("source_status", "verified")
           .order("last_checked_at", { ascending: true, nullsFirst: true }).limit(2000),
         db.from("channel_listings").select("variant_id").eq("channel", "shopify").limit(5000),
+        // Publication errors are the highest-value recovery queue. Read both channels
+        // so BASE-only failures are retried too; match them only by canonical variant UUID.
+        db.from("channel_listings").select("variant_id,channel,last_error")
+          .eq("last_error", "supplier_offer_not_fulfillable:supplier_stock_unconfirmed").limit(5000),
         // Procurement freshness gates read supplier_listings, not only commerce offers.
         // Refresh stale/missing timestamps from the exact native CJ IDs so verified
         // legacy listings don't remain permanently unorderable.
@@ -348,10 +352,11 @@ export async function GET(request: Request) {
           .eq("supplier", "cj")
           .order("updated_at", { ascending: true }).limit(2000),
       ]);
-      if (erroredOffersError || staleVerifiedOffersError || shopifyRowsError || cjListingRowsError) {
-        throw new Error("missing_shopify_offer_recovery_read_failed:" + (erroredOffersError?.message ?? staleVerifiedOffersError?.message ?? shopifyRowsError?.message ?? cjListingRowsError?.message));
+      if (erroredOffersError || staleVerifiedOffersError || shopifyRowsError || publicationErrorRowsError || cjListingRowsError) {
+        throw new Error("missing_shopify_offer_recovery_read_failed:" + (erroredOffersError?.message ?? staleVerifiedOffersError?.message ?? shopifyRowsError?.message ?? publicationErrorRowsError?.message ?? cjListingRowsError?.message));
       }
       const shopifyVariantIds = new Set((shopifyRows ?? []).map((row) => String(row.variant_id)));
+      const publicationErrorVariantIds = new Set((publicationErrorRows ?? []).map((row) => String(row.variant_id)));
       const eligibleErroredOffers = (erroredOffers ?? []).filter((offer) => {
         const parentId = String(offer.supplier_product_id ?? "").trim();
         const variantId = String(offer.supplier_variant_id ?? "").trim();
@@ -406,9 +411,13 @@ export async function GET(request: Request) {
         const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
         return !Number.isFinite(checkedAt) || checkedAt <= evidenceCutoff;
       });
-      const existingOffersNeedingEvidence = [...(erroredOffers ?? []), ...staleVerifiedForEvidence].sort((a, b) =>
-        String(a.last_checked_at ?? a.updated_at ?? "").localeCompare(String(b.last_checked_at ?? b.updated_at ?? "")),
-      );
+      const existingOffersNeedingEvidence = [...(erroredOffers ?? []), ...staleVerifiedForEvidence].sort((a, b) => {
+        // Recover already-published failures before background freshness maintenance.
+        const aBlocked = publicationErrorVariantIds.has(String(a.variant_id)) ? 0 : 1;
+        const bBlocked = publicationErrorVariantIds.has(String(b.variant_id)) ? 0 : 1;
+        return aBlocked - bBlocked ||
+          String(a.last_checked_at ?? a.updated_at ?? "").localeCompare(String(b.last_checked_at ?? b.updated_at ?? ""));
+      });
       for (const offer of existingOffersNeedingEvidence) {
         if (!shopifyVariantIds.has(String(offer.variant_id))) continue;
         const parentId = String(offer.supplier_product_id ?? "").trim();
@@ -477,7 +486,9 @@ export async function GET(request: Request) {
       // Broad discovery still only imports new parents. Existing-parent retries are
       // limited to exact errored variants with no Shopify publication record.
       const evidenceVariantsByParent = new Map<string, string[]>();
-      for (const candidate of [...staleListingRetryCandidates, ...evidenceRetryCandidates]) {
+      // Put exact offer refreshes (including variants attached to publication errors)
+      // ahead of legacy listing-only refreshes so the bounded batch cannot starve them.
+      for (const candidate of [...evidenceRetryCandidates, ...staleListingRetryCandidates]) {
         const variantIds = evidenceVariantsByParent.get(candidate.id) ?? [];
         for (const variantId of candidate.retryVariantIds ?? []) {
           if (!variantIds.includes(variantId)) variantIds.push(variantId);
