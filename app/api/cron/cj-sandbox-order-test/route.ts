@@ -164,7 +164,9 @@ export async function POST(request: Request) {
       !(candidate.metadata && typeof candidate.metadata === "object" && !Array.isArray(candidate.metadata)
         && "cj_sandbox_order_path_verified_at" in candidate.metadata)
     );
-    const candidates = [listing, ...alternatives.slice(0, 2)];
+    // Skip the requested row if it contains internal UUIDs instead of CJ-native numeric IDs.
+    // Otherwise the first invalid candidate aborts before valid alternatives are attempted.
+    const candidates = [listing, ...alternatives.slice(0, 2)].filter((candidate) => validCandidate(candidate as typeof listing));
     let result: Awaited<ReturnType<typeof runCJSandboxOrderLifecycle>> | null = null;
     let lastPreOrderFailure = "";
 
