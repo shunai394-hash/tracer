@@ -20,6 +20,9 @@ const CONCURRENCY = 1;
 const NO_MATCH_RETRY_MS = CJ_IDENTITY_RETRY_DELAYS_MS.noUniqueMatch;
 const MISSING_DATA_RETRY_MS = CJ_IDENTITY_RETRY_DELAYS_MS.missingEvidence;
 const ERROR_RETRY_MS = CJ_IDENTITY_RETRY_DELAYS_MS.processingError;
+const SHIPPING_EVIDENCE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const INVENTORY_EVIDENCE_MAX_AGE_MS = 30 * 60 * 1000;
+const MISSING_TIMESTAMP_RETRY_MS = 30 * 60 * 1000;
 const WOMENS_PRODUCT_PATTERNS = [
   /skincare|skin care|serum|moisturizer|moisturiser|face cream|sunscreen|toner|essence|retinol|niacinamide|acne patch|pore strip|facial mask|cleansing/i,
   /beauty|cosmetic case|cosmetic bag|makeup|lipstick|lip gloss|lip tint|blush|mascara|eyelash|eyeliner|highlighter|contour|concealer/i,
@@ -61,6 +64,14 @@ async function readCjIdentityProgressCounts(db: ReturnType<typeof createSupabase
   };
 }
 function num(value: unknown): number | null { const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN; return Number.isFinite(parsed) ? parsed : null; }
+function hasFreshEvidenceTimestamp(value: unknown, maxAgeMs: number, nowMs: number): boolean { const timestamp = typeof value === "string" ? Date.parse(value) : Number.NaN; return Number.isFinite(timestamp) && timestamp <= nowMs && nowMs - timestamp <= maxAgeMs; }
+function evidenceTimestampRepairDue(row: { shipping_cost: unknown; shipping_status: unknown; shipping_checked_at: unknown; inventory: unknown; inventory_confirmed: unknown; inventory_checked_at: unknown; metadata: unknown }, nowMs: number): boolean {
+  const shippingTimestampMissing = row.shipping_cost !== null && row.shipping_cost !== undefined && row.shipping_status === "verified" && !hasFreshEvidenceTimestamp(row.shipping_checked_at, SHIPPING_EVIDENCE_MAX_AGE_MS, nowMs);
+  const inventoryTimestampMissing = row.inventory !== null && row.inventory !== undefined && row.inventory_confirmed === true && !hasFreshEvidenceTimestamp(row.inventory_checked_at, INVENTORY_EVIDENCE_MAX_AGE_MS, nowMs);
+  if (!shippingTimestampMissing && !inventoryTimestampMissing) return false;
+  const lastAttempt = Date.parse(String(record(row.metadata).last_identity_reverify_at ?? ""));
+  return !Number.isFinite(lastAttempt) || nowMs - lastAttempt >= MISSING_TIMESTAMP_RETRY_MS;
+}
 function isHttpUrl(value: unknown): value is string { return typeof value === "string" && (value.trim().startsWith("https://") || value.trim().startsWith("http://")); }
 function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 
@@ -106,7 +117,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   // This bypasses that row's barcode-related retry backoff, not the API quota or evidence gates.
   const stockCapHeldResult = targetSupplierListingIds.length === 0 && process.env.TRACER_STOREFRONT_STOCK_CAP_DEPLOYED === "1"
     ? await db.from("supplier_listings")
-        .select("id,product_id,title,sku,cost,shipping_cost,shipping_status,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency,price_confirmed,inventory_confirmed,configured,api_available,orderable,tracking_available,ship_to,verification_error")
+        .select("id,product_id,title,sku,cost,shipping_cost,shipping_status,shipping_checked_at,inventory,inventory_checked_at,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency,price_confirmed,inventory_confirmed,configured,api_available,orderable,tracking_available,ship_to,verification_error")
         .eq("supplier", "cj")
         .eq("verification_error", "storefront_stock_cap_deploy_pending")
         .in("verification_status", ["unverified", "retryable", "verified"])
@@ -133,7 +144,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
 
   const buildCandidateQuery = () => db
     .from("supplier_listings")
-    .select("id,product_id,title,sku,cost,shipping_cost,shipping_status,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency,price_confirmed,inventory_confirmed,configured,api_available,orderable,tracking_available,ship_to,verification_error")
+    .select("id,product_id,title,sku,cost,shipping_cost,shipping_status,shipping_checked_at,inventory,inventory_checked_at,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency,price_confirmed,inventory_confirmed,configured,api_available,orderable,tracking_available,ship_to,verification_error")
     .eq("supplier", "cj")
     .in("verification_status", ["unverified", "retryable", "verified"])
     .in("identity_method", ["supply_discovered", "none", "cj_supplier_variant"])
@@ -169,7 +180,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       verificationStatus: row.verification_status,
       identityMethod: row.identity_method,
       supplierVariantId: row.supplier_variant_id,
-    }) && (force || stockCapHoldIds.has(String(row.id)) || isCjIdentityReverifyDue(row.metadata, nowMs));
+    }) && (force || stockCapHoldIds.has(String(row.id)) || isCjIdentityReverifyDue(row.metadata, nowMs) || evidenceTimestampRepairDue(row, nowMs));
     // CJ product and variant endpoints require numeric IDs. UUIDs restored from
     // backups are internal placeholders, not CJ identifiers; skip them so they
     // cannot consume the provider quota needed to verify real products.
@@ -248,10 +259,12 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       let priceVerified = cost !== null && row.price_confirmed === true;
       let inventoryVerified = inventory !== null && row.inventory_confirmed === true;
       const missingCost = !priceVerified;
-      const missingShipping = shippingCost === null || row.shipping_status !== "verified";
-      const missingInventory = !inventoryVerified;
+      const missingShipping = shippingCost === null || row.shipping_status !== "verified" || !hasFreshEvidenceTimestamp(row.shipping_checked_at, SHIPPING_EVIDENCE_MAX_AGE_MS, nowMs);
+      const missingInventory = !inventoryVerified || !hasFreshEvidenceTimestamp(row.inventory_checked_at, INVENTORY_EVIDENCE_MAX_AGE_MS, nowMs);
       const missingImage = !imageUrl;
-      let shippingQuoteVerified = row.shipping_status === "verified" && shippingCost !== null;
+      let shippingQuoteVerified = row.shipping_status === "verified" && shippingCost !== null && hasFreshEvidenceTimestamp(row.shipping_checked_at, SHIPPING_EVIDENCE_MAX_AGE_MS, nowMs);
+      let shippingRefreshedLive = false;
+      let inventoryRefreshedLive = false;
       let variantDetails: Awaited<ReturnType<typeof fetchCJVariantByVid>> = freshVariantDetails;
       // The live CJ variant endpoint is authoritative for the parent product ID.
       // Backup-restored listings can have a stale product ID even when the VID is valid.
@@ -287,6 +300,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
           if (fetchedShipping !== null && Number.isFinite(fetchedShipping) && fetchedShipping >= 0) {
             shippingCost = fetchedShipping;
             shippingQuoteVerified = true;
+            shippingRefreshedLive = true;
             liveSupplierApiVerified = true;
           }
         } catch (error) {
@@ -300,6 +314,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
           if (fetchedInventory !== null && Number.isFinite(fetchedInventory) && fetchedInventory >= 0) {
             inventory = fetchedInventory;
             inventoryVerified = true;
+            inventoryRefreshedLive = true;
             liveSupplierApiVerified = true;
           }
         } catch (error) {
@@ -376,10 +391,12 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
         refreshedFields.shipping_cost = shippingCost;
         refreshedFields.shipping_status = "verified";
         refreshedFields.ship_to = "JP";
+        if (shippingRefreshedLive) refreshedFields.shipping_checked_at = checkedAt.toISOString();
       }
       if (inventoryVerified && inventory !== null) {
         refreshedFields.inventory = inventory;
         refreshedFields.inventory_confirmed = true;
+        if (inventoryRefreshedLive) refreshedFields.inventory_checked_at = checkedAt.toISOString();
       }
       // A stock-cap deployment hold may only be cleared after the capped storefront-stock
       // implementation is explicitly confirmed in this production environment.
