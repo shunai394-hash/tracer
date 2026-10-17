@@ -272,7 +272,13 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const imageUrl = safeUrl(product.image_url);
     const title = candidate.title_ja.trim() || product.title_ja.trim();
     const allOffers = asRelationRows(candidate.supplier_offers);
-    const rawOffer = offer ?? allOffers[0] ?? null;
+    const currentPriceRows = asRelationRows(candidate.commerce_prices).sort((a, b) =>
+      Date.parse(String(b.calculated_at ?? "")) - Date.parse(String(a.calculated_at ?? "")),
+    );
+    const currentPriceOfferId = String(price?.supplier_offer_id ?? currentPriceRows[0]?.supplier_offer_id ?? "");
+    const rawOffer = offer ?? (currentPriceOfferId
+      ? allOffers.find((candidateOffer) => String(candidateOffer.id) === currentPriceOfferId)
+      : undefined) ?? null;
     const preflightRawOfferData = rawOffer?.raw_data && typeof rawOffer.raw_data === "object" && !Array.isArray(rawOffer.raw_data)
       ? rawOffer.raw_data as Record<string, unknown>
       : {};
