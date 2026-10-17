@@ -33,7 +33,11 @@ test("storefront publication requires exact supplier identity and evidenced land
   assert.match(publish, /offer\.raw_data\?\.shippingKnown === true/);
   assert.doesNotMatch(publish, /offer\.tracking_supported === true/);
   assert.doesNotMatch(publish, /offer\.source_status === "verified" && nativeIdsValid/);
-  assert.match(publish, /Math\.max\(1, Number\(offer\.inventory\) \|\| 0\)/);
+  assert.match(publish, /const supplierShippingKnown =/);
+  assert.match(publish, /const supplierStockKnown =/);
+  assert.match(publish, /const supplierSaleable = supplierShippingKnown && supplierStockKnown/);
+  assert.doesNotMatch(publish, /Math\.max\(1, Number\(offer\.inventory\) \|\| 0\)/);
+  assert.match(publish, /現在、仕入先の日本向け送料を再確認中のため、購入できません。確認が完了次第、販売を再開します。/);
   assert.doesNotMatch(dashboard, /offer\.tracking_supported === true/);
   assert.doesNotMatch(dashboard, /Number\(offer\.inventory\) > 0/);
   assert.match(dashboard, /offer\.raw_data\?\.shippingKnown === true/);
@@ -278,7 +282,8 @@ test("clean commerce cron schedule preserves canonical routes and the required f
 test("both channels use the shared capped storefront quantity and Japanese title validation", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /getStorefrontStockCap, toStorefrontStockQuantity/);
-  assert.match(publish, /toStorefrontStockQuantity\(Math\.max\(1, Number\(offer\.inventory\) \|\| 0\), getStorefrontStockCap\(\)\)/);
+  assert.match(publish, /toStorefrontStockQuantity\(\s*supplierSaleable \? Number\(offer\.inventory\) : 0,\s*getStorefrontStockCap\(\),\s*\)/);
+  assert.doesNotMatch(publish, /Math\.max\(1, Number\(offer\.inventory\) \|\| 0\)/);
   assert.match(publish, /isJapaneseProductTitle\(title\)/);
   assert.match(publish, /stock: storefrontStock/);
   assert.match(publish, /quantity: storefrontStock/);
