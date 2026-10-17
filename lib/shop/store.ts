@@ -317,8 +317,6 @@ async function loadCanonicalCommerceListings(): Promise<ShopListing[]> {
   }
   const variantsById = new Map<string, Record<string, unknown>>();
   for (const variant of (variants ?? []) as Record<string, unknown>[]) variantsById.set(String(variant.id), variant);
-  const validOffers = (offers ?? []) as Record<string, unknown>[];
-  const validPrices = (prices ?? []) as Record<string, unknown>[];
   const candidates: ShopListing[] = [];
 
   for (const channel of rows) {
