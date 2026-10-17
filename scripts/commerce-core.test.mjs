@@ -65,7 +65,9 @@ test("new storefront candidates require evidenced landed costs and exact supplie
   assert.match(publish, /const validOffers = asRelationRows\(candidate\.supplier_offers\)/);
   assert.match(publish, /const nativeIdsValid = x\.supplier_code !== "cj"/);
   assert.match(publish, /const unitCostKnown = Number\.isFinite\(Number\(x\.unit_cost\)\) && Number\(x\.unit_cost\) > 0/);
-  assert.match(publish, /const shippingKnown = Number\.isFinite\(Number\(x\.shipping_cost\)\) && Number\(x\.shipping_cost\) > 0/);
+  assert.match(publish, /const shippingKnown = x\.raw_data\?\.shippingKnown === true/);
+  assert.match(publish, /x\.raw_data\?\.shippingKnown === undefined && x\.source_status === "verified"/);
+  assert.match(publish, /offer\.raw_data\?\.shippingKnown === undefined && offer\.source_status === "verified"/);
   assert.match(publish, /x\.raw_data\?\.shippingKnown === true/);
   assert.match(publish, /Boolean\(x\.supplier_product_id && x\.supplier_variant_id && nativeIdsValid && unitCostKnown && shippingKnown\)/);
 });
