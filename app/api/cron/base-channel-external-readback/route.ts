@@ -46,7 +46,9 @@ export async function GET(request: Request) {
     if (!/^\d+$/.test(baseItemId)) {
       return {
         listingId, baseItemId: baseItemId || null, status: listing.status,
-        skuPresent: Boolean(listing.external_sku), expectedPrice: Number.isFinite(expectedPrice) ? expectedPrice : null,
+        expectedSku: String(listing.external_sku ?? "").trim() || null,
+        externalSku: null, skuPresent: false, skuMatches: false,
+        expectedPrice: Number.isFinite(expectedPrice) ? expectedPrice : null,
         externalPrice: null, externalVisible: null, externalStock: null,
         priceMatches: false, visibilityMatches: false, error: "external_product_id_invalid",
       };
@@ -55,6 +57,10 @@ export async function GET(request: Request) {
       const item = await getBaseItemDetail(baseItemId);
       const rawPrice = Number(item.price);
       const externalPrice = Number.isFinite(rawPrice) ? rawPrice : null;
+      const expectedSku = String(listing.external_sku ?? "").trim();
+      const externalSku = String(item.identifier ?? "").trim();
+      const skuPresent = externalSku.length > 0;
+      const skuMatches = expectedSku.length > 0 && skuPresent && expectedSku === externalSku;
       const rawVisible = item.visible;
       const externalVisible = rawVisible === true || rawVisible === 1 || rawVisible === "1";
       const rawStock = Number(item.stock);
@@ -64,7 +70,8 @@ export async function GET(request: Request) {
       const visibilityMatches = listing.status === "published" ? externalVisible : !externalVisible;
       return {
         listingId, baseItemId, status: listing.status,
-        skuPresent: Boolean(listing.external_sku), expectedPrice: Number.isFinite(expectedPrice) ? expectedPrice : null,
+        expectedSku: expectedSku || null, externalSku: externalSku || null, skuPresent, skuMatches,
+        expectedPrice: Number.isFinite(expectedPrice) ? expectedPrice : null,
         externalPrice, externalVisible, externalStock,
         priceMatches, visibilityMatches, error: null,
       };
@@ -72,7 +79,9 @@ export async function GET(request: Request) {
       const message = cause instanceof Error ? cause.message : String(cause);
       return {
         listingId, baseItemId, status: listing.status,
-        skuPresent: Boolean(listing.external_sku), expectedPrice: Number.isFinite(expectedPrice) ? expectedPrice : null,
+        expectedSku: String(listing.external_sku ?? "").trim() || null,
+        externalSku: null, skuPresent: false, skuMatches: false,
+        expectedPrice: Number.isFinite(expectedPrice) ? expectedPrice : null,
         externalPrice: null, externalVisible: null, externalStock: null,
         priceMatches: false, visibilityMatches: false,
         error: (() => {
@@ -89,6 +98,8 @@ export async function GET(request: Request) {
     offset, limit, totalRows: count ?? null, rowsReturned: results.length,
     priceMatches: results.filter((row) => row.priceMatches).length,
     priceMismatches: results.filter((row) => !row.error && !row.priceMatches).length,
+    skuMatches: results.filter((row) => row.skuMatches).length,
+    skuMismatches: results.filter((row) => !row.error && !row.skuMatches).length,
     visibilityMatches: results.filter((row) => row.visibilityMatches).length,
     visibilityMismatches: results.filter((row) => !row.error && !row.visibilityMatches).length,
     readErrors: results.filter((row) => row.error !== null).length,
@@ -96,7 +107,7 @@ export async function GET(request: Request) {
       if (row.error) counts[row.error] = (counts[row.error] ?? 0) + 1;
       return counts;
     }, {}),
-    missingSku: results.filter((row) => !row.skuPresent).length,
+    missingSku: results.filter((row) => !row.error && !row.skuPresent).length,
     nextOffset: offset + results.length,
     complete: count !== null && offset + results.length >= count,
   };
