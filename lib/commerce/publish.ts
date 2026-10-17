@@ -264,21 +264,27 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           (Number(x.shipping_cost) === 0 && x.raw_data?.shippingKnown === true);
         return Boolean(x.supplier_product_id && x.supplier_variant_id && nativeIdsValid && unitCostKnown && shippingKnown);
       });
-    const validOfferIds = new Set(validOffers.map((x) => x.id));
-    const price = asRelationRows(candidate.commerce_prices)
-      .filter((x) => validOfferIds.has(x.supplier_offer_id) && x.currency === "JPY" && Number(x.selling_price) > 0 && Number(x.expected_profit) > 0)
-      .sort((a, b) => Date.parse(String(b.calculated_at)) - Date.parse(String(a.calculated_at)))[0];
-    const offer = price ? validOffers.find((x) => x.id === price.supplier_offer_id) : undefined;
-    const imageUrl = safeUrl(product.image_url);
-    const title = candidate.title_ja.trim() || product.title_ja.trim();
     const allOffers = asRelationRows(candidate.supplier_offers);
     const currentPriceRows = asRelationRows(candidate.commerce_prices).sort((a, b) =>
       Date.parse(String(b.calculated_at ?? "")) - Date.parse(String(a.calculated_at ?? "")),
     );
-    const currentPriceOfferId = String(price?.supplier_offer_id ?? currentPriceRows[0]?.supplier_offer_id ?? "");
-    const rawOffer = offer ?? (currentPriceOfferId
-      ? allOffers.find((candidateOffer) => String(candidateOffer.id) === currentPriceOfferId)
-      : undefined) ?? null;
+    const currentCanonicalPrice = currentPriceRows[0];
+    const currentPriceOfferId = String(currentCanonicalPrice?.supplier_offer_id ?? "");
+    const currentPriceOffer = currentPriceOfferId
+      ? validOffers.find((candidateOffer) => String(candidateOffer.id) === currentPriceOfferId)
+      : undefined;
+    const price = currentCanonicalPrice && currentPriceOffer &&
+      currentCanonicalPrice.currency === "JPY" &&
+      Number(currentCanonicalPrice.selling_price) > 0 &&
+      Number(currentCanonicalPrice.expected_profit) > 0
+      ? currentCanonicalPrice
+      : undefined;
+    const offer = price ? currentPriceOffer : undefined;
+    const imageUrl = safeUrl(product.image_url);
+    const title = candidate.title_ja.trim() || product.title_ja.trim();
+    const rawOffer = currentPriceOfferId
+      ? allOffers.find((candidateOffer) => String(candidateOffer.id) === currentPriceOfferId) ?? null
+      : null;
     const preflightRawOfferData = rawOffer?.raw_data && typeof rawOffer.raw_data === "object" && !Array.isArray(rawOffer.raw_data)
       ? rawOffer.raw_data as Record<string, unknown>
       : {};
