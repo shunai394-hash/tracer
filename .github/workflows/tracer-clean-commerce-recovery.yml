@@ -2,7 +2,7 @@ name: TRACER clean-commerce bounded recovery
 
 # TRACER_CLEAN_COMMERCE_RECOVERY: bounded production recovery requested 2026-10-16; wait for exact production commit before supplier import and gated channel publication.
 # Recovery re-trigger after CJ identity parser, bounded batch, and Shopify inventory idempotency fixes (2026-10-17).
-# Run the bounded publication recovery after the timeout fix is deployed.
+# Preserve the main branch's dedicated per-channel publisher and small batches.
 
 on:
   push:
@@ -57,6 +57,55 @@ jobs:
           done
           [[ "$ready" == "1" ]] || { echo "Production did not serve this commit within 6 minutes."; exit 1; }
 
+      - name: Reconcile existing prices in bounded batches
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token() {
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          call_api() {
+            local path="$1" out="$2" allow_partial="${3:-false}" t code
+            t="$(token)" || { echo "OIDC token failed for $path"; return 1; }
+            code="$(curl -sS -o "$out" -w "%{http_code}" --max-time 300 \
+              -H "Authorization: Bearer $t" "$BASE/$path" || true)"
+            echo "=== $path HTTP $code ==="
+            python3 - "$out" <<'PY'
+          import json,sys
+          try:
+              print(json.dumps(json.load(open(sys.argv[1])),ensure_ascii=False)[:6000])
+          except Exception:
+              print(open(sys.argv[1]).read()[:1200])
+          PY
+            if [[ "$allow_partial" == "true" && ( "$code" == "200" || "$code" == "207" ) ]]; then return 0; fi
+            [[ "$code" == "200" ]]
+          }
+          failed=0
+          # Each call reprices at most 25 candidates and reconciles at most 25 stale
+          # variants per channel. HTTP 207 is recorded as partial, not mistaken for success.
+          for pass in 1 2 3 4; do
+            call_api "api/cron/commerce-reprice-existing?limit=25" "commerce-reprice-${pass}.json" true || failed=1
+          done
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, pathlib
+          print("## TRACER price reconciliation")
+          print("| Pass | ok | repriced | BASE remaining | Shopify remaining | errors |")
+          print("|---:|---:|---:|---:|---:|---:|")
+          for i in range(1, 5):
+              p = pathlib.Path(f"commerce-reprice-{i}.json")
+              try: d = json.loads(p.read_text())
+              except Exception:
+                  print(f"| {i} | response missing/invalid | — | — | — | — |")
+                  continue
+              rem = d.get("storefrontSyncRemaining") or {}
+              errors = len(d.get("errors", [])) + len(d.get("storefrontSyncErrors", []))
+              print(f"| {i} | {d.get('ok')} | {d.get('repriced')} | {rem.get('base')} | {rem.get('shopify')} | {errors} |")
+          PY
+
       - name: Publish verified commerce backlog in bounded batches
         shell: bash
         run: |
@@ -77,24 +126,48 @@ jobs:
             python3 - "$out" <<'PY'
           import json,sys
           try:
-              d=json.load(open(sys.argv[1]))
-              print(json.dumps(d,ensure_ascii=False)[:6000])
+              print(json.dumps(json.load(open(sys.argv[1])),ensure_ascii=False)[:6000])
           except Exception:
               print(open(sys.argv[1]).read()[:1200])
           PY
             [[ "$code" == "200" ]]
           }
           failed=0
-          # CJ's daily API points are exhausted. Publish only already verified,
-          # fresh, profitable Japanese listings; supplier import remains separate.
-          # Each pass is deliberately small: the previous 100-item requests timed out
-          # at the platform 300-second limit. Three sequential passes make progress
-          # without overwhelming BASE/Shopify APIs or the stale-listing audit.
+          # Keep the main-branch publication safeguards: verified supplier evidence,
+          # small per-channel batches, no supplier import and no paid-order procurement.
           for pass in 1 2 3; do
             call_publish "api/cron/commerce-publish-base?limit=10&onlyUnpublished=true" "base-publish-${pass}.json" || failed=1
             call_publish "api/cron/commerce-publish-shopify?limit=10&onlyUnpublished=true" "shopify-publish-${pass}.json" || failed=1
           done
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, pathlib
+          print("\n## TRACER storefront publication")
+          print("| Channel/pass | ok | considered | processed | published | failed | skipped |")
+          print("|---|---:|---:|---:|---:|---:|---:|")
+          for channel in ("base", "shopify"):
+              for i in range(1, 4):
+                  p = pathlib.Path(f"{channel}-publish-{i}.json")
+                  try: d = json.loads(p.read_text())
+                  except Exception:
+                      print(f"| {channel}/{i} | response missing/invalid | — | — | — | — | — |")
+                      continue
+                  print("| " + f"{channel}/{i} | {d.get('ok')} | {d.get('considered')} | {d.get('processed')} | {d.get('published')} | {d.get('failed')} | {d.get('skipped')} |")
+          PY
+          # A successful HTTP response is not enough if price reconciliation still has a backlog.
+          python3 - <<'PY' || failed=1
+          import json, pathlib, sys
+          paths = [pathlib.Path(f"commerce-reprice-{i}.json") for i in range(1, 5)]
+          try:
+              rows = [json.loads(p.read_text()) for p in paths]
+          except Exception:
+              print("Price reconciliation responses incomplete.")
+              sys.exit(1)
+          final = rows[-1]
+          if not final.get("ok") or not final.get("storefrontSyncComplete"):
+              print("Price reconciliation remains incomplete; see the summary and runtime logs.")
+              sys.exit(1)
+          print("Price reconciliation backlog is drained.")
+          PY
           # No supplier purchase or customer order is created by this workflow.
           # Paid-order procurement remains separate and requires payment_status=paid.
-          echo "Bounded publication passes finished; inspect each JSON response for published/failed counts."
           exit "$failed"
