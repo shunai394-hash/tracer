@@ -90,5 +90,40 @@ jobs:
           for pass in 1 2 3; do
             call_publish "api/cron/commerce-publish-all?limit=5&onlyUnpublished=true" "commerce-publish-${pass}.json" || failed=1
           done
-          echo "Unified bounded publication passes finished; inspect each JSON response for published/failed counts."
+          python3 <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, pathlib
+          print("## TRACER commerce recovery results")
+          print("| Step | HTTP | Result details |")
+          print("|---|---:|---|")
+          for name in ["commerce-reprice.json", "commerce-publish-1.json", "commerce-publish-2.json", "commerce-publish-3.json"]:
+              path = pathlib.Path(name)
+              if not path.exists():
+                  print(f"| {name} | — | response file missing |")
+                  continue
+              try:
+                  data = json.loads(path.read_text())
+              except Exception:
+                  print(f"| {name} | — | invalid JSON response |")
+                  continue
+              if name == "commerce-reprice.json":
+                  detail = {
+                      "ok": data.get("ok"),
+                      "considered": data.get("considered"),
+                      "repriced": data.get("repriced"),
+                      "storefrontSync": data.get("storefrontSync"),
+                      "remaining": data.get("storefrontSyncRemaining"),
+                      "errors": len(data.get("errors", [])) + len(data.get("storefrontSyncErrors", [])),
+                  }
+              else:
+                  detail = {"ok": data.get("ok"), "limit": data.get("limit")}
+                  for channel, result in (data.get("results") or {}).items():
+                      if isinstance(result, dict):
+                          detail[channel] = {
+                              key: result.get(key)
+                              for key in ("considered", "processed", "published", "failed", "skipped")
+                              if key in result
+                          }
+              print(f"| {name} | see job log | `{json.dumps(detail, ensure_ascii=False)}` |")
+          PY
+          echo "Recovery passes finished. The step summary records per-channel counts and remaining price-sync backlog."
           exit "$failed"
