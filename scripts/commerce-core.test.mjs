@@ -742,3 +742,12 @@ test("storefront price reconciliation emits bounded, privacy-safe completion tel
   assert.match(route, /storefrontSyncErrorCount: result\.storefrontSyncErrors\.length/);
   assert.doesNotMatch(route, /console\.info\([^\n]*(?:customer|orderId|supplierVariantId|accessToken)/i);
 });
+
+
+test("TRACER product detail copy stays generic to the actual product", async () => {
+  const page = await readFile(new URL("../app/shop/[slug]/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /サイズ・素材・カラーなど、商品ごとの仕様を購入前にご確認ください/);
+  assert.match(page, /在庫・配送日数・送料・返品条件は商品や配送先によって異なります/);
+  assert.doesNotMatch(page, /iPhone 11・12・13・14シリーズ向け/);
+  assert.doesNotMatch(page, /お使いの端末に合うケース/);
+});
