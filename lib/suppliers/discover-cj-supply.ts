@@ -593,7 +593,7 @@ export async function discoverAndCreateCjSupply(
       const supplierInsert = await upsertSupplierListing(db, {
         supplier: "cj", external_id: candidate.variantId, sku: seededVariant.sku ?? null, title: displayTitle, product_id: null,
         cost, shipping_cost: freight, currency: "USD", inventory: Math.floor(stock), ship_to: "JP",
-        order_method: "cj_api", api_available: liveOrderPathReady, verification_status: liveOrderPathReady ? "verified" : "unverified", shipping_status: "verified", identity_method: "supply_discovered",
+        order_method: "cj_api", api_available: liveOrderPathReady, verification_status: liveOrderPathReady ? "verified" : "unverified", shipping_status: "verified", shipping_checked_at: refreshedAt, inventory_checked_at: refreshedAt, identity_method: "supply_discovered",
         identity_status: "supply_discovered", identity_confidence: 0, configured: true,
         supplier_product_id: supplierProductId, supplier_variant_id: candidate.variantId, cj_variant_id: candidate.variantId,
         gtin: normalizeIdentifier("gtin", variantBarcode),
