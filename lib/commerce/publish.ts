@@ -104,8 +104,8 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           price && price.currency === "JPY" && Number(price.selling_price) > 0 && Number(price.expected_profit) > 0);
       });
       if (offers.some(offerIsValid) || hasPublishableLinkedOffer) {
-        // Listing requires a mapped supplier product/variant and profitable JPY price.
-        // Stock freshness, tracking capability and supplier verification belong to procurement.
+        // Listing requires a mapped, freshly verified, Japan-shippable in-stock supplier variant
+        // and a profitable JPY price. Tracking capability is checked before paid-order procurement.
         const checkedAt = new Date().toISOString();
         const { error: markCheckedError } = await db.from("channel_listings").update({
           last_synced_at: checkedAt,
@@ -196,7 +196,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       });
     }
   }
-  // Do not unpublish profitable catalog items merely because live supplier verification is temporarily unavailable.
+  // Hide listings when the linked supplier offer is no longer freshly verified, in stock, and Japan-shippable.
   const staleListings = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
   const { data, error } = await db.from("commerce_variants")
     .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,currency,selling_price,expected_profit,fee_amount,margin_rate)")
