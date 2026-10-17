@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
-import { editBaseItem, isBaseConfigured } from "@/lib/channels/base";
+import { editBaseItem, getBaseItemDetail, isBaseConfigured } from "@/lib/channels/base";
 import { toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 
 export const runtime = "nodejs";
@@ -175,6 +175,55 @@ export async function GET(request: Request) {
       });
     }
   }
+
+  // Read the real external BASE state back by item ID on every run. This is
+  // intentionally GET-only and makes API-visible price/visibility discrepancies observable.
+  const expectedPriceByListingId = new Map(candidates.map(({ listing, canonicalPrice }) => [
+    String(listing.id), canonicalPrice,
+  ]));
+  const externalReadback = await Promise.all((listings ?? []).map(async (listing) => {
+    const baseItemId = String(listing.base_item_id ?? "");
+    const expectedPrice = expectedPriceByListingId.get(String(listing.id)) ?? Number(listing.selling_price);
+    try {
+      const item = await getBaseItemDetail(baseItemId);
+      const rawPrice = Number(item.price);
+      const externalPrice = Number.isFinite(rawPrice) ? rawPrice : null;
+      const externalVisible = item.visible === true || item.visible === 1 || item.visible === "1";
+      return {
+        baseItemId,
+        dbPriceBeforeRun: Number(listing.selling_price),
+        expectedPrice,
+        externalPrice,
+        externalVisible,
+        externalStock: Number.isFinite(Number(item.stock)) ? Number(item.stock) : null,
+        priceMatchesExpected: externalPrice !== null && externalPrice === expectedPrice,
+        error: null,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        baseItemId,
+        dbPriceBeforeRun: Number(listing.selling_price),
+        expectedPrice,
+        externalPrice: null,
+        externalVisible: null,
+        externalStock: null,
+        priceMatchesExpected: false,
+        error: message.split(":")[0].slice(0, 100),
+      };
+    }
+  }));
+  const externalReadbackErrors = externalReadback.filter((row) => row.error !== null).length;
+  const externalPriceMismatches = externalReadback.filter((row) => row.error === null && row.priceMatchesExpected === false).length;
+  const externalHiddenItems = externalReadback.filter((row) => row.externalVisible === false).length;
+  console.info("[TRACER LEGACY BASE EXTERNAL PRICE READBACK]", {
+    generatedAt: new Date().toISOString(),
+    scanned: externalReadback.length,
+    externalReadbackErrors,
+    externalPriceMismatches,
+    externalHiddenItems,
+    results: externalReadback,
+  });
 
   counts.remainingMismatches = Math.max(0, mismatches.length - counts.updated);
   const ok = counts.failed === 0 && counts.remainingMismatches === 0;
