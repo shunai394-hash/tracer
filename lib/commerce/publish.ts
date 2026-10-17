@@ -274,6 +274,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       continue;
     }
     const description = (product.description_ja || title + "。商品仕様・配送条件は仕入先の最新情報をご確認ください。").trim();
+    // Selling price must be calculated from landed cost; make customer-facing free shipping explicit.
+    const storefrontDescription = `${description}\n\n送料込み・送料無料。送料は商品価格に含まれています。`;
     const sku = "TRC-" + candidate.id.replace(/-/g, "").slice(0, 24).toUpperCase();
     let baseCreateIdNeedsRecovery: string | null = null;
     try {
@@ -321,10 +323,10 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         let baseResponse: unknown = null;
         const itemId = externalProductId;
         if (itemId) {
-          baseResponse = await editBaseItem({ itemId, title, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: false });
+          baseResponse = await editBaseItem({ itemId, title, detail: storefrontDescription, price: Number(price.selling_price), stock: storefrontStock, visible: false });
           externalProductId = itemId;
         } else {
-          const response = await createBaseItem({ title, identifier: sku, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: false });
+          const response = await createBaseItem({ title, identifier: sku, detail: storefrontDescription, price: Number(price.selling_price), stock: storefrontStock, visible: false });
           baseResponse = response;
           const returned = response.item?.item_id ?? response.item_id;
           externalProductId = String(returned ?? "");
@@ -340,7 +342,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         }
         await addBaseItemImage({ itemId: externalProductId, imageNo: 1, imageUrl });
         // Only make the item visible after the external ID and image are saved.
-        const visibleResponse = await editBaseItem({ itemId: externalProductId, title, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: true });
+        const visibleResponse = await editBaseItem({ itemId: externalProductId, title, detail: storefrontDescription, price: Number(price.selling_price), stock: storefrontStock, visible: true });
         publishedUrl = resolveBasePublicUrl(visibleResponse, externalProductId, basePublicShopUrl)
           ?? resolveBasePublicUrl(baseResponse, externalProductId, basePublicShopUrl);
       } else {
@@ -391,10 +393,10 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         }
         const recoveredVariantId = recoveredProduct?.variants.nodes.find((variant) => variant.sku === sku)?.id ?? null;
         const productResult = productId && variantId
-          ? await updateShopifyProduct({ productId, title, descriptionHtml: description, handle, price: Number(price.selling_price), variantId, sku, imageUrl: null })
+          ? await updateShopifyProduct({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId, sku, imageUrl: null })
           : recoveredProduct && recoveredVariantId
-            ? await updateShopifyProduct({ productId: recoveredProduct.id, title, descriptionHtml: description, handle, price: Number(price.selling_price), variantId: recoveredVariantId, sku, imageUrl: null })
-            : await createShopifyProduct({ title, descriptionHtml: description, handle, price: Number(price.selling_price), sku, imageUrl });
+            ? await updateShopifyProduct({ productId: recoveredProduct.id, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId: recoveredVariantId, sku, imageUrl: null })
+            : await createShopifyProduct({ title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), sku, imageUrl });
         externalProductId = productResult.id;
         const variant = productResult.variants?.nodes?.[0];
         if (!variant?.id) throw new Error("shopify_variant_id_missing");
