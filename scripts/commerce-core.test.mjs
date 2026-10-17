@@ -514,6 +514,11 @@ test("BASE reconciliation recognizes commerce-native supplier SKUs without auto-
   assert.match(reconciliation, /from\("commerce_variants"\)/);
   assert.match(reconciliation, /from\("commerce_products"\)/);
   assert.match(reconciliation, /from\("supplier_offers"\)/);
+  assert.match(reconciliation, /commercePrices = \(await readIn/);
+  assert.match(reconciliation, /calculated_at/);
+  assert.match(reconciliation, /if \(!priceByVariant\.has\(variantId\)\)/);
+  assert.match(reconciliation, /canonical_selling_price/);
+  assert.match(reconciliation, /canonicalSellingPrice/);
   assert.match(reconciliation, /const reconciliationListings = \[\.\.\.listings, \.\.\.commerceListingRows\]/);
   assert.match(reconciliation, /addSupplierIdentifier\(evidence\?\.sku, listing\)/);
   assert.match(reconciliation, /Exact-title candidates are unverified suggestions only/);
