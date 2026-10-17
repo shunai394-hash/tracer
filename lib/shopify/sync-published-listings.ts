@@ -195,7 +195,7 @@ async function findByHandle(handle: string): Promise<ShopifyProductNode | null> 
  */
 async function findByExactSku(skuValue: string): Promise<ShopifyProductNode | null> {
   const data = await shopifyGraphQL<{ products: { nodes: ShopifyProductNode[] } }>(
-    `query ProductsBySku($query: String!) { products(first: 50, query: $query) { nodes { id handle status vendor tags variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType preview { image { url } } } } } } }`,
+    `query ProductsBySku($query: String!) { products(first: 50, query: $query) { nodes { id handle status vendor tags variants(first: 250) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType preview { image { url } } } } } } }`,
     { query: `sku:${skuValue}` },
   );
   const exactMatches = (data.products?.nodes ?? []).filter((product) =>
