@@ -45,4 +45,9 @@ assert.match(shopify, /const scopeReady = adminApi\.ok === true[\s\S]*?adminApi\
 assert.match(shopify, /ok: shopifyProbe\.ok && scopeReady/);
 assert.match(shopify, /scopeReady,/);
 assert.ok(workflow.includes("api/channels/base/diagnostics"), "read-only auth workflow must include BASE diagnostics");
+assert.match(workflow, /baseIdentityRepair/);
+assert.match(workflow, /outcomeCounts/);
+assert.match(workflow, /sourceCounts/);
+assert.match(workflow, /base-identity-repair\.json/);
+assert.doesNotMatch(workflow, /baseIdentityRepair[^\n]*(?:baseItemId|listingId)/, "identity report must include counts, not item IDs");
 console.log("Read-only channel auth diagnostics: 30 assertions passed");
