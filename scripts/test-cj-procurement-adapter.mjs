@@ -155,6 +155,9 @@ assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/comm
 assert.match(commerceImporter, /newCandidates\.slice\(0, Math\.max\(0, limit - retryCandidates\.length\)\)/, "broad supplier discovery must only fill slots left after targeted publication recovery");
 assert.match(commerceImporter, /eq\("source_status", "error"\)/, "targeted recovery only considers failed supplier offers");
 assert.match(commerceImporter, /shopifyVariantIds\.has\(String\(offer\.variant_id\)\)/, "targeted recovery must skip variants that already have a Shopify listing row");
+assert.match(commerceImporter, /lastAttemptByIdentity/, "targeted retries must track the last recorded attempt");
+assert.match(commerceImporter, /detail\.recordedAt/, "targeted retries must use persisted exclusion timestamps");
+assert.match(commerceImporter, /lastAttemptedAt - b\[1\]\.lastAttemptedAt/, "targeted retries must rotate oldest attempts first");
 assert.match(commerceImporter, /variants\.filter\(\(item\) => candidate\.retryVariantIds!\.includes\(String\(item\.vid\)\)\)/, "targeted recovery must re-fetch only the exact missing child variants");
 assert.doesNotMatch(commerceImporter, /const fallbackCandidates = \[\.\.\.uniqueSearchProducts\.values\(\)\]\.filter\(\(item\) => knownParentIds\.has\(item\.id\)\)/, "known supplier parents must not be a fallback discovery batch");
 assert.doesNotMatch(commerceImporter, /const recoveryPool = \[\.\.\.new Set\(\[\.\.\.listingIds, \.\.\.erroredIds\]\)\]/, "automatic importer runs must not spend CJ API quota re-fetching known errored products");
