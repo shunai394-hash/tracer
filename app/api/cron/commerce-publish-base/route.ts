@@ -7,11 +7,9 @@ export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   try {
-    // Channel APIs require several sequential remote calls per listing. Keep each
-    // cron invocation small so a slow BASE response cannot time out the whole batch.
-    // Preserve the existing default price-refresh behavior; only skip published rows
-    // when the caller explicitly requests onlyUnpublished=true.
     const requested = Number(new URL(request.url).searchParams.get("limit") || 5);
+    // Reprocess published rows so recalculated 50% margin prices reach the storefront.
+    // Keep scheduled work small to reduce function timeouts while refreshing published prices.
     const limit = Number.isFinite(requested) ? Math.min(5, Math.max(1, Math.floor(requested))) : 5;
     const onlyUnpublished = new URL(request.url).searchParams.get("onlyUnpublished") === "true";
     const result = await syncCommerceListings("base", limit, onlyUnpublished);
