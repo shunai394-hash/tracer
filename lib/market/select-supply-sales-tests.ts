@@ -307,7 +307,6 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const shippingAllowanceUsd = resolveUnknownShippingAllowanceUsd(process.env.TRACER_CJ_UNKNOWN_SHIPPING_ALLOWANCE_USD);
     const shippingEstimated = shippingCost === null && String(listing.supplier ?? "").trim().toLowerCase() === "cj" && Boolean(listing.supplier_product_id) && Boolean(listing.supplier_variant_id) && listing.orderable === true && sourceCurrency === "USD";
     const supplierShippingKnown = shippingCost !== null && Number.isFinite(shippingCost) && shippingCost >= 0;
-    const shippingEstimateReason = shippingEstimated ? `shipping_allowance_estimated_usd_${shippingAllowanceUsd}_not_supplier_quote` : null;
     const pricingShippingCost = shippingCost ?? (shippingEstimated ? shippingAllowanceUsd : null);
     sellingPrice = calculateSupplySellingPriceJpy({
       existingSellingPriceJpy: sellingPrice,
