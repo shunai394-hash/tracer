@@ -626,7 +626,7 @@ test("CJ unknown stock still skips before supplier offer upsert", async () => {
   const guard = importer.indexOf("if (stock === null)");
   const save = importer.indexOf("const saved = await upsertSupplierOffer", guard);
   assert.ok(guard >= 0 && save > guard, "unknown stock must skip before supplier offer upsert");
-  assert.match(importer, /shippingCostForPricing = shipping \\?\\? 7\\.76/);
+  assert.ok(importer.includes("shippingCostForPricing = shipping ?? 7.76"));
 });
 
 
