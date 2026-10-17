@@ -85,8 +85,8 @@ test("new storefront candidates require evidenced landed costs and exact supplie
   assert.match(publish, /const nativeIdsValid = x\.supplier_code !== "cj"/);
   assert.match(publish, /const unitCostKnown = Number\.isFinite\(Number\(x\.unit_cost\)\) && Number\(x\.unit_cost\) > 0/);
   assert.match(publish, /const shippingKnown = x\.raw_data\?\.shippingKnown === true/);
-  assert.match(publish, /x\.raw_data\?\.shippingKnown === undefined && x\.source_status === "verified"/);
-  assert.match(publish, /offer\.raw_data\?\.shippingKnown === undefined && offer\.source_status === "verified"/);
+  assert.match(publish, /x\.raw_data\?\.shippingKnown === undefined && x\.raw_data\?\.shippingEstimated !== true/);
+  assert.match(publish, /offer\.raw_data\?\.shippingKnown === undefined && offer\.raw_data\?\.shippingEstimated !== true/);
   assert.match(publish, /x\.raw_data\?\.shippingKnown === true/);
   assert.match(publish, /Boolean\(x\.supplier_product_id && x\.supplier_variant_id && nativeIdsValid && unitCostKnown && shippingKnown\)/);
 });
@@ -627,7 +627,7 @@ test("failed supplier procurement retries only when no supplier order id exists"
   assert.match(worker, /retryCount >= 3/);
 });
 
-test("CJ import keeps unknown stock excluded and labels missing freight as an estimate", async () => {
+test("CJ import keeps unknown stock and unknown Japan freight excluded", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /cj_import_exclusion/);
   assert.match(importer, /shippingKnown: shipping !== null/);
@@ -640,7 +640,7 @@ test("CJ unknown stock still skips before supplier offer upsert", async () => {
   const guard = importer.indexOf("if (stock === null)");
   const save = importer.indexOf("const saved = await upsertSupplierOffer", guard);
   assert.ok(guard >= 0 && save > guard, "unknown stock must skip before supplier offer upsert");
-  assert.ok(importer.includes("shippingCostForPricing = shipping ?? 7.76"));
+  assert.ok(importer.includes("shippingCostForPricing = shipping;"));
 });
 
 
@@ -980,20 +980,22 @@ test("CJ freight uses the detailed API when required product logistics fields ar
 
 
 
-test("CJ freight quote misses use a conservative historical reserve while preserving unknown status", async () => {
+test("CJ freight quote misses never use estimated shipping for pricing or publication", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  assert.ok(importer.includes("const shippingCostForPricing = shipping ?? 7.76"));
+  assert.ok(importer.includes('recordSkip("shipping_unconfirmed")'));
+  assert.ok(importer.includes('recordCjExclusion(supplierProductId + ":" + exactVariant.vid, "japan_freight_unconfirmed"'));
+  assert.ok(importer.includes("const shippingCostForPricing = shipping;"));
   assert.ok(importer.includes("if (Number.isFinite(shippingCostForPricing) && shippingCostForPricing >= 0)"));
-  assert.ok(!importer.includes("if (shipping !== null && shipping >= 0)"));
+  assert.ok(!importer.includes("shipping ?? 7.76"));
   assert.ok(importer.includes("shippingKnown: shipping !== null"));
-  assert.ok(importer.includes("shippingEstimated: shippingWasEstimated"));
-  assert.ok(importer.includes('shippingEstimateSource: shippingWasEstimated ? "cj_historical_p90_570_offers" : null'));
+  assert.ok(importer.includes("shippingKnown: shipping !== null"));
+  assert.ok(importer.includes("shippingEstimated: false"));
   const publisher = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   const repricer = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
-  assert.ok(publisher.includes("offer.raw_data?.shippingKnown === true || offer.raw_data?.shippingEstimated === true"));
-  assert.ok(publisher.includes("x.raw_data?.shippingKnown === true || x.raw_data?.shippingEstimated === true"));
-  assert.ok(publisher.includes("preflightRawOfferData.shippingEstimated === true"));
-  assert.ok(repricer.includes("rawData.shippingEstimated === true"));
+  assert.ok(publisher.includes("offer.raw_data?.shippingKnown === true ||"));
+  assert.ok(publisher.includes("x.raw_data?.shippingKnown === true ||"));
+  assert.ok(publisher.includes("preflightRawOfferData.shippingEstimated !== true"));
+  assert.ok(repricer.includes("rawData.shippingEstimated !== true"));
   assert.ok(importer.includes("targetMarginRate: 0.5"));
 });
 
