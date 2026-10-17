@@ -116,7 +116,9 @@ test("bounded recovery processes only unpublished channel listings", async () =>
   const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
   const workflow = await readFile(new URL("../.github/workflows/tracer-clean-commerce-recovery.yml", import.meta.url), "utf8");
   assert.match(publish, /onlyUnpublished = true/);
-  assert.match(publish, /sortedCandidates\.filter\(\(candidate\) => stateByVariant\.get\(candidate\.id\)\?\.status !== "published"\)/);
+  assert.match(publish, /sortedCandidates\.filter\(\(candidate\) => \{/);
+  assert.match(publish, /return !saleable;/, "recovery rechecks published items whose supplier evidence no longer supports saleability");
+  assert.match(publish, /supplier_offer_not_fulfillable/, "new items without fresh supplier stock are not published");
   assert.match(baseRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/, "BASE cron defaults to unpublished-only unless full refresh is explicitly requested");
   assert.match(shopifyRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/, "Shopify cron defaults to unpublished-only unless full refresh is explicitly requested");
   assert.match(baseRoute, /Math\.min\(5, Math\.max\(1, Math\.floor\(requested\)\)\)/, "BASE cron caps each run at five listings");
