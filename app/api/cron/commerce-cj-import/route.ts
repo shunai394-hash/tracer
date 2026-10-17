@@ -531,15 +531,20 @@ export async function GET(request: Request) {
             // A failed/unknown live lookup is not evidence that a previously verified offer is invalid.
             // Preserve its last known evidence; the freshness gate will stop publication once it expires.
             // Do not overwrite it with inventory=0, shipping=0, or sourceStatus=error on transient API failures.
-            if (stock === null || shipping === null) {
-              recordSkip(stock === null ? "supplier_stock_unconfirmed" : "japan_freight_unconfirmed");
-              const reason = stock === null ? "supplier_stock_unconfirmed" : "japan_freight_unconfirmed";
+            const shippingWasEstimated = shipping === null;
+            const shippingCostForPricing = shipping ?? 7.76;
+            if (stock === null) {
+              recordSkip("supplier_stock_unconfirmed");
+              const reason = "supplier_stock_unconfirmed";
               const logError = await recordCjExclusion(supplierProductId + ":" + exactVariant.vid, reason, {
                 catalogProductId: candidate.id,
                 supplierProductId,
                 variantId: exactVariant.vid,
                 stockKnown: stock !== null,
                 shippingKnown: shipping !== null,
+                shippingEstimated: shippingWasEstimated,
+                shippingEstimateUsd: shippingWasEstimated ? 7.76 : null,
+                shippingEstimateSource: shippingWasEstimated ? "cj_historical_p90_570_offers" : null,
                 freightAttempts,
                 freightZipConfigured: Boolean(freightZip),
                 freightErrors: freightErrors.slice(0, 4),
@@ -595,14 +600,18 @@ export async function GET(request: Request) {
               offer: {
                 supplierCode: "cj", supplierProductId,
                 supplierVariantId: exactVariant.vid, supplierUrl: "https://cjdropshipping.com/product/" + encodeURIComponent(supplierProductId),
-                currency: "USD", unitCost: cost, shippingCost: shipping ?? 0,
+                currency: "USD", unitCost: cost, shippingCost: shippingCostForPricing,
                 inventory: complianceBlockReason || stock === null ? 0 : Math.max(0, Math.floor(stock)), shipTo: "JP",
                 trackingSupported: !complianceBlockReason,
-                sourceStatus: !complianceBlockReason && stock !== null && shipping !== null ? "verified" : "error",
+                sourceStatus: !complianceBlockReason && stock !== null ? "verified" : "error",
                 lastCheckedAt: new Date().toISOString(),
                 rawData: {
                   query, page, catalogProductId: candidate.id, productId: supplierProductId, variantId: exactVariant.vid,
                   stockKnown: stock !== null, shippingKnown: shipping !== null,
+                  shippingEstimated: shippingWasEstimated,
+                  shippingEstimateUsd: shippingWasEstimated ? 7.76 : null,
+                  shippingEstimateSource: shippingWasEstimated ? "cj_historical_p90_570_offers" : null,
+                  freightAttempts,
                   ...(stock !== null ? { observedInventory: Math.max(0, Math.floor(stock)) } : {}),
                   fxRate: fx.rate, complianceBlockReason,
                   ...(complianceBlockReason ? {
