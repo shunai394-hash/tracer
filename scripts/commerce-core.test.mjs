@@ -725,7 +725,7 @@ test("clean commerce CJ importer respects the shared daily-points cooldown befor
 
 test("clean commerce CJ importer prices linked offers even when cached stock is zero or unknown", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  assert.match(importer, /if \(shipping !== null && shipping >= 0\)\s*\{\s*await recalculatePrice/);
+  assert.match(importer, /if \(shippingCostForPricing >= 0\)\s*\{\s*await recalculatePrice/);
   assert.doesNotMatch(importer, /if \(stock !== null &&/);
 });
 
