@@ -9,10 +9,11 @@ export async function GET(request: Request) {
   try {
     // Channel APIs require several sequential remote calls per listing. Keep each
     // cron invocation small so a slow BASE response cannot time out the whole batch.
-    // The cron runs repeatedly and onlyUnpublished=true prioritizes unlisted variants.
+    // Pending and failed rows are retried; already-published rows are not rewritten
+    // every 15 minutes. The cron prioritizes unpublished variants by default.
     const requested = Number(new URL(request.url).searchParams.get("limit") || 5);
     const limit = Number.isFinite(requested) ? Math.min(5, Math.max(1, Math.floor(requested))) : 5;
-    const onlyUnpublished = new URL(request.url).searchParams.get("onlyUnpublished") === "true";
+    const onlyUnpublished = new URL(request.url).searchParams.get("onlyUnpublished") !== "false";
     const result = await syncCommerceListings("base", limit, onlyUnpublished);
     return NextResponse.json({ ok: result.failed === 0, ...result }, { status: result.failed ? 207 : 200 });
   } catch (error) {
