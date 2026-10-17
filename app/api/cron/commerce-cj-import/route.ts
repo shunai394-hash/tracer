@@ -145,8 +145,8 @@ export async function GET(request: Request) {
   // Rotate pages as well as query categories; otherwise a 10-minute cron keeps
   // revisiting page 1 and catalog growth stalls after the first few search hits.
   const page = Math.min(1000, Math.max(1, Number(url.searchParams.get("page") || (discoveryBucket % 10) + 1)));
-  const limit = Math.min(10, Math.max(1, Number(url.searchParams.get("limit") || 4)));
-  const variantBatchLimit = Math.min(6, Math.max(1, Number(url.searchParams.get("variantLimit") || 5)));
+  const limit = Math.min(10, Math.max(1, Number(url.searchParams.get("limit") || 1)));
+  const variantBatchLimit = Math.min(6, Math.max(1, Number(url.searchParams.get("variantLimit") || 1)));
   const variantRunSlot = Math.floor(Date.now() / 600_000);
   const fx = await getObservedUsdToJpyRate();
   if (!fx || !Number.isFinite(fx.rate) || fx.rate <= 0) {
