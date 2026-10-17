@@ -26,6 +26,8 @@ assert.match(discovery, /isCJLiveOrderPathReady\(\)/, "orderability must depend 
 assert.match(discovery, /verification_status: liveOrderPathReady \? "verified" : "unverified"/, "verification status must reflect fresh supply checks plus explicit live-order readiness");
 assert.match(discovery, /next_verification_at: new Date\(Date\.now\(\) \+ 24 \* 60 \* 60 \* 1000\)\.toISOString\(\)/, "successfully processed supplier rows must advance the due queue instead of starving all later candidates");
 assert.match(discovery, /seededVerificationLimit = Math\.min\(5, Math\.max\(0, limit\)\)/, "a bounded batch of existing due suppliers must be refreshed before new-catalog discovery");
+assert.match(discovery, /shipping_checked_at,inventory_checked_at,next_verification_at[\s\S]*?shipping_checked_at\.is\.null,inventory_checked_at\.is\.null/, "rows missing real shipping or inventory timestamps must re-enter the bounded verification queue");
+assert.match(discovery, /if \(row\.shipping_checked_at == null \|\| row\.inventory_checked_at == null\) \{[\s\S]*?existingVariants\.delete/, "stale rows must be rechecked even if they already passed the Sales Test Gate");
 assert.match(discovery, /catalogDiscoveryLimit = Math\.max\(0, limit - seededChecked\)/, "seeded refresh attempts must consume the same bounded run budget instead of multiplying provider calls");
 assert.match(discovery, /catalogDiscovered < catalogDiscoveryLimit/, "new catalog discovery must use only the remaining per-run candidate budget");
 assert.match(discovery, /let catalogAttempted = 0;[\s\S]*?if \(catalogAttempted >= catalogDiscoveryLimit[\s\S]*?catalogAttempted \+= 1;/, "rejected or unavailable new candidates must still consume the bounded attempt budget");
