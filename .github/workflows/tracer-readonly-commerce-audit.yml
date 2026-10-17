@@ -46,6 +46,18 @@ jobs:
           for key in ("catalog", "supplierOffers", "prices", "channels", "livePlatforms", "orders", "procurement", "approvalEvents", "cronRuns", "listingErrors"):
               if key in r:
                   print(key + ":", json.dumps(r[key], ensure_ascii=False, separators=(",", ":")))
+          items = r.get("listingErrorItems", [])
+          print("listingErrorEvidence:", json.dumps([{
+              "channel": item.get("channel"),
+              "reason": item.get("reason"),
+              "offers": [{
+                  "supplier": offer.get("supplier"),
+                  "status": offer.get("status"),
+                  "hasProductId": bool(offer.get("productId")),
+                  "hasVariantId": bool(offer.get("variantId")),
+                  "lastCheckedAt": offer.get("lastCheckedAt"),
+              } for offer in item.get("offers", [])]
+          } for item in items], ensure_ascii=False, separators=(",", ":")))
           PY
           test "${status_code}" = "200"
 
