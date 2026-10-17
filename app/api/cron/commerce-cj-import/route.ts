@@ -106,7 +106,41 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
     [/beauty tool|makeup|cosmetic/, "美容ツール"],
   ];
   const specific = rules.find(([pattern]) => pattern.test(source));
-  return specific?.[1] ?? localizeProductTitle(title, productType);
+  if (!specific) return localizeProductTitle(title, productType);
+
+  // Broad category rules must not override an available source-specific Japanese
+  // title. Older versions returned "メイクブラシ" or "レディースハンドバッグ"
+  // before localizeProductTitle could apply its more specific source-title rules,
+  // creating dozens of indistinguishable storefront cards.
+  const categoryOnlyTitles = new Set([
+    "レディースハンドバッグ",
+    "ハンドバッグ",
+    "ショルダーバッグ",
+    "斜めがけバッグ",
+    "トートバッグ",
+    "クラッチバッグ",
+    "バッグストラップ",
+    "メイクブラシ",
+    "メイク用ファンブラシ",
+    "ヘアクリップ",
+    "ヘアバンド",
+    "ヘアブラシ",
+    "レディース ヘアアクセサリー",
+    "美容ツール",
+    "美容・メイクアイテム",
+    "スマートフォンケース",
+    "ペット用品",
+    "キッチン収納用品",
+    "旅行用収納ポーチ",
+    "アクセサリー",
+  ]);
+  if (categoryOnlyTitles.has(specific[1])) {
+    const sourceSpecificTitle = localizeProductTitle(title, productType);
+    if (sourceSpecificTitle && !categoryOnlyTitles.has(sourceSpecificTitle)) {
+      return sourceSpecificTitle;
+    }
+  }
+  return specific[1];
 }
 
 function japaneseVariantSuffix(nameEn: unknown): string {
