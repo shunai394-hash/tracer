@@ -672,15 +672,15 @@ export async function getCJFreightOptions(
 
 async function calculateCJFreightTipFromProductDetail(
   vid: string,
-  options: { startCountryCode: string; endCountryCode: string; quantity: number; zip?: string },
+  options: { startCountryCode: string; endCountryCode: string; quantity: number; zip?: string; productId?: string },
 ): Promise<number | null> {
   // CJ's detailed freight endpoint requires the exact variant's weight and the
   // product's logistics property. The simple endpoint can return Success + []
   // when these fields are omitted, without explaining which field is missing.
-  const variantDetail = await fetchCJVariantByVid(vid);
-  if (!variantDetail?.productId) return null;
+  const parentProductId = options.productId || (await fetchCJVariantByVid(vid))?.productId;
+  if (!parentProductId) return null;
   const token = await getAccessToken();
-  const params = new URLSearchParams({ pid: variantDetail.productId });
+  const params = new URLSearchParams({ pid: parentProductId });
   const detailResponse = await fetchCJWithRateLimit(
     `https://developers.cjdropshipping.com/api2.0/v1/product/query?${params.toString()}`,
     { method: "GET", headers: { "CJ-Access-Token": token }, cache: "no-store" },
@@ -789,6 +789,7 @@ export async function calculateCJFreight(
     endCountryCode?: string;
     quantity?: number;
     zip?: string;
+    productId?: string;
   },
 ): Promise<number | null> {
   const tipQuote = await calculateCJFreightTipFromProductDetail(vid, {
@@ -796,6 +797,7 @@ export async function calculateCJFreight(
     endCountryCode: options?.endCountryCode ?? "JP",
     quantity: options?.quantity ?? 1,
     ...(options?.zip ? { zip: options.zip } : {}),
+    ...(options?.productId ? { productId: options.productId } : {}),
   });
   if (tipQuote !== null) return tipQuote;
 
