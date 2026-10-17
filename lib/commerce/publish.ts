@@ -191,7 +191,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,currency,selling_price,expected_profit,fee_amount,margin_rate)")
     .eq("commerce_products.active", true).eq("commerce_prices.currency", "JPY")
     .gt("commerce_prices.expected_profit", 0).order("updated_at", { ascending: false })
-    .limit(500);
+    // Cover the complete current catalog (543 variants) so older error rows are not starved.
+    .limit(1000);
   if (error) throw new Error("commerce_candidates_read_failed:" + error.message);
   const allCandidates = (data ?? []) as unknown as Candidate[];
   const { data: listingStates, error: stateError } = await db.from("channel_listings")
