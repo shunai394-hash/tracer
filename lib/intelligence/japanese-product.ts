@@ -1,4 +1,6 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/self-care journal gift set/i, "セルフケアノート ギフトセット"],
+  [/creative trend linen plan new self-care notebook/i, "リネン調 セルフケアノート"],
   [/comma facial brush soft hair face cleaning facial cleansing massage brush/i, "竹炭突起付き フェイス洗顔ブラシ"],
   [/simple retro small handbag women/i, "レトロデザイン レディースミニハンドバッグ"],
   [/harajuku canvas bags students handbag with pockets preppy buckpack shoulder bag for women shoolbags/i, "ポケット付き キャンバスリュック レディース"],
