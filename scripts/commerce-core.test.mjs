@@ -662,3 +662,4 @@ test("existing commerce prices below 50% margin are automatically repriced", asy
   assert.match(route, /targetMarginRate,/);
   assert.doesNotMatch(route, /targetMarginRate: 0\.2/);
 });
+\ntest("commerce publication cron batch defaults and invalid values remain bounded", async () => {\n  const baseRoute = await readFile(new URL("../app/api/cron/commerce-publish-base/route.ts", import.meta.url), "utf8");\n  const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");\n  for (const route of [baseRoute, shopifyRoute]) {\n    assert.match(route, /searchParams\\.get\\("limit"\\) \\|\\| 5/);\n    assert.match(route, /Math\\.min\\(10, Math\\.max\\(1, Math\\.floor\\(requested\\)\\)\\)/);\n    assert.match(route, /Number\\.isFinite\\(requested\\) \\?[^\\n]*: 5/);\n  }\n});\n
