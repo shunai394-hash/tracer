@@ -251,14 +251,10 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         result.skipped += 1;
         continue;
       }
+      // Persist the paid order even if its shipping address needs repair.
+      // The procurement worker records a blocked reason and will not submit an
+      // external order until all required destination fields are present.
       const address = order.shippingAddress;
-      if (!address || !String(address.countryCodeV2 ?? "").trim() ||
-          !String(address.province ?? "").trim() || !String(address.city ?? "").trim() ||
-          !String(address.address1 ?? "").trim() || !String(address.zip ?? "").trim() ||
-          !String(address.phone ?? order.phone ?? "").trim() ||
-          !String(address.name ?? order.email ?? "").trim()) {
-        throw new Error("shopify_shipping_address_incomplete");
-      }
       const total = finitePositiveNumber(order.totalPriceSet.shopMoney.amount);
       if (total === null) throw new Error("shopify_total_invalid");
 
@@ -291,17 +287,17 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         channel: "shopify",
         externalOrderId: canonicalShopifyId(order.id, "Order"),
         totalAmount: Math.round(total),
-        customerName: address.name || order.email || null,
+        customerName: address?.name || order.email || null,
         shippingAddress: {
-          country: address.country ?? "",
-          country_code: address.countryCodeV2,
-          country_code_v2: address.countryCodeV2,
-          province: address.province,
-          city: address.city,
-          address1: address.address1,
-          address2: address.address2 ?? "",
-          zip: address.zip,
-          phone: address.phone || order.phone || "",
+          country: address?.country ?? "",
+          country_code: address?.countryCodeV2 ?? "",
+          country_code_v2: address?.countryCodeV2 ?? "",
+          province: address?.province ?? "",
+          city: address?.city ?? "",
+          address1: address?.address1 ?? "",
+          address2: address?.address2 ?? "",
+          zip: address?.zip ?? "",
+          phone: address?.phone || order.phone || "",
           email: order.email ?? "",
         },
         rawPayload: {
