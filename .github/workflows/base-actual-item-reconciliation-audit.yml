@@ -38,14 +38,12 @@ jobs:
               cache: "no-store",
             });
             const body = await response.json();
-            if (!response.ok) {
-              throw new Error(`BASE actual-item reconciliation failed: HTTP ${response.status} ${body.error ?? "unknown"}`);
-            }
             const report = {
               generatedAt: new Date().toISOString(),
+              httpStatus: response.status,
               source: "BASE /items actual snapshot compared with TRACER channel_listings",
               apiReadComplete: body.apiReadComplete === true,
-              apiErrors: Number(body.apiErrors ?? (body.apiReadComplete === true ? 0 : 1)),
+              apiErrors: Number(body.apiErrors ?? (response.ok && body.apiReadComplete === true ? 0 : 1)),
               itemCount: Number(body.itemCount ?? 0),
               pages: Number(body.pages ?? 0),
               dbListingCount: Number(body.dbListingCount ?? 0),
@@ -88,7 +86,7 @@ jobs:
             ].join("\n");
             await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
             console.log(JSON.stringify(report, null, 2));
-            if (!report.apiReadComplete || report.itemCount !== report.auditRowsWritten || !report.ok) {
+            if (!response.ok || !report.apiReadComplete || report.itemCount !== report.auditRowsWritten || !report.ok) {
               throw new Error("BASE reconciliation found discrepancies or did not persist a complete audit");
             }
           })().catch((error) => {
