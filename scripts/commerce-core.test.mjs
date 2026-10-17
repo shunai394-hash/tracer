@@ -770,7 +770,7 @@ test("published storefront price reconciliation uses exact variants and bounded 
   assert.match(route, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)/);
   assert.match(publish, /variantIds\?: string\[\]/);
   assert.match(publish, /candidateQuery\.in\("id", \[\.\.\.new Set\(variantIds\)\]\)/);
-  assert.match(publish, /selling_canonicalPrice: Number\(price\.selling_price\)/, "successful storefront sync persists the exact published price");
+  assert.match(publish, /selling_price: Number\\(canonicalPrice\\.selling_price\\)/, "successful storefront sync persists the exact published price");
 });
 
 
