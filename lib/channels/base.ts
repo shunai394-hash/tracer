@@ -308,13 +308,14 @@ export type BaseReadOnlyProbeResult = {
     duplicateItemCount: number;
     /** Rows without an item_id; they cannot be matched to TRACER. */
     missingItemIdCount: number;
-    entries: Array<{ itemId: string | null; identifier: string | null; visible: boolean | null }>;
+    entries: Array<{ itemId: string | null; identifier: string | null; visible: boolean | null; price: number | null }>;
   };
 };
 
 /**
- * Read-only BASE inventory probe. Uses one refreshed access token for all pages
- * and returns counts only; no item IDs, titles, or customer data leave this helper.
+ * Read-only BASE catalog probe. Uses one refreshed access token for all pages.
+ * Item IDs, identifiers and prices are retained only for in-memory reconciliation;
+ * titles and customer data are not returned by this helper.
  */
 /** Maximum BASE scan: 50 pages × 100 items = 5,000 items. A 1,000 item cap left the mapping audit incomplete. */
 export const BASE_ITEMS_MAX_PAGES = 50;
@@ -376,15 +377,17 @@ export async function probeBaseReadOnly(options?: {
         "BASE_ITEMS_PROBE_FAILED",
       );
       if (!Array.isArray(payload.items)) throw new Error("BASE_ITEMS_PROBE_RESPONSE_INVALID");
-      const rows = payload.items as Array<{ visible?: boolean | number | string }>;
+      const rows = payload.items as Array<{ visible?: boolean | number | string; price?: unknown }>;
       result.items.apiStatus = 200;
       result.items.pages += 1;
       for (const item of rows) {
-        const raw = item as { item_id?: string | number; identifier?: unknown };
+        const raw = item as { item_id?: string | number; identifier?: unknown; price?: unknown };
         const rawId = raw.item_id;
         const itemId = rawId == null || String(rawId).trim() === "" ? null : String(rawId);
         if (!itemId) result.items.missingItemIdCount += 1;
         const identifier = typeof raw.identifier === "string" && raw.identifier.trim() ? raw.identifier.trim() : null;
+        const parsedPrice = typeof raw.price === "number" ? raw.price : typeof raw.price === "string" && raw.price.trim() ? Number(raw.price) : Number.NaN;
+        const price = Number.isFinite(parsedPrice) && parsedPrice >= 0 ? parsedPrice : null;
         const visible = item.visible === true || item.visible === 1 || item.visible === "1"
           ? true
           : item.visible === false || item.visible === 0 || item.visible === "0"
@@ -396,7 +399,7 @@ export async function probeBaseReadOnly(options?: {
         }
         if (itemId) seenItemIds.add(itemId);
         result.items.countReturned += 1;
-        result.items.entries.push({ itemId, identifier, visible });
+        result.items.entries.push({ itemId, identifier, visible, price });
         if (visible === true) {
           result.items.visibleCount += 1;
         } else if (visible === false) {
