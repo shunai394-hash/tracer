@@ -96,3 +96,25 @@ jobs:
                   print(key + ":", json.dumps(r[key], ensure_ascii=False, separators=(",", ":")))
           PY
           test "${repair_code}" = "200"
+
+          # This endpoint reads complete BASE and Shopify snapshots and compares
+          # them with recorded external IDs/SKUs and canonical TRACER prices.
+          # HTTP 207 means a complete audit found discrepancies, not a transport failure.
+          audit_token="$(get_oidc_token)"
+          audit_code="$(curl --silent --show-error --max-time 300 -o live-price-audit.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${audit_token}" \
+            "${BASE}/api/admin/commerce/live-price-audit")"
+          echo "=== LIVE STOREFRONT PRICE AUDIT HTTP ${audit_code} ==="
+          python3 - <<'PY'
+          import json
+          from collections import Counter
+          with open("live-price-audit.json", encoding="utf-8") as f:
+              r=json.load(f)
+          print("ok:", r.get("ok"), "readOnly:", r.get("readOnly"), "complete:", r.get("complete"), "generatedAt:", r.get("generatedAt"))
+          print("summary:", json.dumps(r.get("summary", {}), ensure_ascii=False, separators=(",", ":")))
+          counts=Counter((str(d.get("channel")), str(d.get("issue"))) for d in r.get("discrepancies", []))
+          print("discrepancyCounts:", json.dumps({channel: dict((issue,n) for (ch,issue),n in counts.items() if ch==channel) for channel in sorted({ch for ch,_ in counts})}, ensure_ascii=False, separators=(",", ":")))
+          if r.get("readOnly") is not True or r.get("complete") is not True:
+              raise SystemExit("live storefront audit was not complete/read-only")
+          PY
+          [[ "${audit_code}" == "200" || "${audit_code}" == "207" ]]
