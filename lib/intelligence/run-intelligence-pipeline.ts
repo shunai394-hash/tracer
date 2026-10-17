@@ -427,7 +427,6 @@ export async function runIntelligencePipeline(options: {
   // Read fresh supplier readiness for reporting only; discovery and publication
   // are handled by the canonical commerce importer and channel publishers.
   const freshSupplyCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const verifiedSupplyPageSize = 100;
   const { count: verifiedSupplyCount, error: verifiedSupplyCountError } = await db
     .from("supplier_listings")
     .select("id", { count: "exact", head: true })
