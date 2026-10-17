@@ -33,7 +33,8 @@ test("storefront publication requires exact supplier identity and evidenced land
   assert.match(publish, /offer\.raw_data\?\.shippingKnown === true/);
   assert.doesNotMatch(publish, /offer\.tracking_supported === true/);
   assert.doesNotMatch(publish, /offer\.source_status === "verified" && nativeIdsValid/);
-  assert.match(publish, /Math\.max\(1, Number\(offer\.inventory\) \|\| 0\)/);
+  assert.match(publish, /const supplierShippingKnown = rawOfferData\.shippingKnown === true/);
+  assert.doesNotMatch(publish, /Math\.max\(1, Number\(offer\.inventory\) \|\| 0\)/);
   assert.doesNotMatch(dashboard, /offer\.tracking_supported === true/);
   assert.doesNotMatch(dashboard, /Number\(offer\.inventory\) > 0/);
   assert.match(dashboard, /offer\.raw_data\?\.shippingKnown === true/);
