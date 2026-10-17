@@ -7,10 +7,10 @@ export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   try {
-    const params = new URL(request.url).searchParams;
-    const requested = Number(params.get("limit") || 5);
-    const onlyUnpublished = params.get("onlyUnpublished") !== "false";
-    const rawVariantIds = params.get("variantIds");
+    const searchParams = new URL(request.url).searchParams;
+    const requested = Number(searchParams.get("limit") || 5);
+    const onlyUnpublished = searchParams.get("onlyUnpublished") !== "false";
+    const rawVariantIds = searchParams.get("variantIds");
     let variantIds: string[] | undefined;
     if (rawVariantIds !== null) {
       const supplied = rawVariantIds.split(",").map((value) => value.trim()).filter(Boolean);
@@ -23,12 +23,10 @@ export async function GET(request: Request) {
     }
     // Scheduled publication handles new/pending/error rows only. Explicit variantIds
     // enables a bounded, authenticated recovery for a known set of eligible products.
-    const maxLimit = channelMaxLimit();
-    const limit = Number.isFinite(requested) ? Math.min(maxLimit, Math.max(1, Math.floor(requested))) : 5;
+    const limit = Number.isFinite(requested) ? Math.min(5, Math.max(1, Math.floor(requested))) : 5;
     const result = await syncCommerceListings("base", limit, onlyUnpublished, variantIds);
     return NextResponse.json({ ok: result.failed === 0, ...result }, { status: result.failed ? 207 : 200 });
   } catch (error) {
     return NextResponse.json({ ok: false, channel: "base", error: error instanceof Error ? error.message : String(error) }, { status: 502 });
   }
 }
-function channelMaxLimit() { return 5; }
