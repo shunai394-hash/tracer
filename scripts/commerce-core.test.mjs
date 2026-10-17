@@ -22,16 +22,24 @@ test("rejects negative costs", () => {
   assert.throws(() => calculateSellingPrice({ unitCostJpy: -1, shippingCostJpy: 0, feeRate: 0.1 }), /invalid_unitCostJpy/);
 });
 
-test("storefront publication is profit-first and independent from live supplier readiness", async () => {
+test("storefront publication requires a fresh verified, in-stock Japan-shippable linked offer, but not tracking support", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  const dashboard = await readFile(new URL("../app/products/page.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
-  assert.match(publish, /commerce_prices\.expected_profit", 0/);
-  assert.doesNotMatch(publish, /supplier_offers\.source_status", "verified/);
-  assert.doesNotMatch(publish, /supplier_offers\.tracking_supported", true/);
-  assert.match(publish, /Math\.max\(1, Number\(offer\.inventory\) \|\| 0\)/);
+  assert.match(publish, /\.gt\("commerce_prices\.expected_profit", 0\)/);
+  assert.match(publish, /x\.source_status === "verified"/);
+  assert.match(publish, /x\.ship_to === "JP"/);
+  assert.match(publish, /Number\(x\.inventory\) > 0/);
+  assert.match(publish, /fresh && Number\(x\.inventory\) > 0/);
+  assert.match(publish, /isCanonicalCjNativeId\(x\.supplier_product_id\)/);
+  assert.doesNotMatch(publish, /tracking_supported === true/);
+  assert.doesNotMatch(publish, /tracking_not_verified/);
+  assert.doesNotMatch(dashboard, /offer\.tracking_supported === true/);
+  assert.match(publish, /Cover the complete current catalog/);
+  assert.match(publish, /\.limit\(1000\)/);
 });
 
-test("catalog publication requires positive profit, not current stock or tracking readiness", async () => {
+test("price recalculation stays independent from storefront-only supplier readiness gates", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   const pricingStart = core.indexOf("export async function recalculatePrice");
   const pricingEnd = core.indexOf("/** Channel state is independent.", pricingStart);
@@ -41,14 +49,6 @@ test("catalog publication requires positive profit, not current stock or trackin
   assert.doesNotMatch(pricing, /offer\.tracking_supported !== true/);
   assert.doesNotMatch(pricing, /offer\.ship_to !== "JP"/);
   assert.doesNotMatch(pricing, /supplier_offer_verification_stale/);
-  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
-  assert.doesNotMatch(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
-  assert.match(publish, /\.gt\("commerce_prices\.expected_profit", 0\)/);
-  assert.doesNotMatch(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
-  assert.doesNotMatch(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
-  assert.match(publish, /supplier_offer_missing_or_cost_unknown/);
-  assert.match(publish, /Cover the complete current catalog/);
-  assert.match(publish, /\.limit\(1000\)/);
 });
 
 test("Supabase nested relations normalize object, array, and null shapes", () => {
