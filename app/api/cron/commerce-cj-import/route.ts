@@ -285,7 +285,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "usd_jpy_rate_unavailable", imported: 0 }, { status: 503 });
   }
 
-  const stats = { searched: 0, products: 0, variantsAvailable: 0, variants: 0, offers: 0, priced: 0, complianceBlocked: 0, skipped: 0, skipReasons: {} as Record<string, number>, errors: [] as string[] };
+  const stats = { searched: 0, products: 0, variantsAvailable: 0, variants: 0, offers: 0, priced: 0, supplierListingEvidenceUpdated: 0, supplierListingEvidenceUnmatched: 0, complianceBlocked: 0, skipped: 0, skipReasons: {} as Record<string, number>, errors: [] as string[] };
   const recordSkip = (reason: string) => { stats.skipped++; stats.skipReasons[reason] = (stats.skipReasons[reason] ?? 0) + 1; };
   try {
     type ImportCandidate = { id: string; title: string; productType?: string | null; imageUrl?: string | null; retryVariantIds?: string[] };
@@ -636,6 +636,52 @@ export async function GET(request: Request) {
             });
             stats.variants++;
             stats.offers++;
+            // The importer writes commerce supplier_offers, while procurement freshness
+            // gates read supplier_listings. Mirror only exact native product+variant matches
+            // and only when both live stock and Japan freight were actually observed.
+            if (stock !== null && shipping !== null) {
+              const { data: matchedListings, error: listingLookupError } = await db
+                .from("supplier_listings")
+                .select("id")
+                .eq("supplier", "cj")
+                .eq("supplier_product_id", supplierProductId)
+                .eq("supplier_variant_id", exactVariant.vid)
+                .limit(2);
+              if (listingLookupError) {
+                stats.errors.push("supplier_listing_evidence_lookup:" + listingLookupError.message.slice(0, 100));
+              } else if ((matchedListings ?? []).length > 1) {
+                stats.errors.push("supplier_listing_evidence_ambiguous:" + supplierProductId + ":" + exactVariant.vid);
+              } else if ((matchedListings ?? []).length === 1) {
+                const checkedAt = new Date().toISOString();
+                const evidencePatch = {
+                  cost,
+                  shipping_cost: shipping,
+                  currency: "USD",
+                  inventory: Math.max(0, Math.floor(stock)),
+                  ship_to: "JP",
+                  price_confirmed: true,
+                  inventory_confirmed: true,
+                  verification_status: complianceBlockReason ? "unverified" : "verified",
+                  shipping_status: "verified",
+                  shipping_checked_at: checkedAt,
+                  inventory_checked_at: checkedAt,
+                  next_verification_at: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+                  verification_error: complianceBlockReason,
+                  ...(!complianceBlockReason ? { last_verified_at: checkedAt } : {}),
+                };
+                const { error: evidenceWriteError } = await db
+                  .from("supplier_listings")
+                  .update(evidencePatch)
+                  .eq("id", String(matchedListings![0].id));
+                if (evidenceWriteError) {
+                  stats.errors.push("supplier_listing_evidence_persist:" + evidenceWriteError.message.slice(0, 100));
+                } else {
+                  stats.supplierListingEvidenceUpdated++;
+                }
+              } else {
+                stats.supplierListingEvidenceUnmatched++;
+              }
+            }
             if (complianceBlockReason) {
               stats.complianceBlocked++;
               recordSkip("compliance_blocked:" + complianceBlockReason);
