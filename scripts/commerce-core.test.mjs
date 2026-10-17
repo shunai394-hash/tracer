@@ -36,6 +36,11 @@ test("storefront publication requires exact supplier identity and evidenced land
   assert.match(publish, /const supplierShippingKnown =/);
   assert.match(publish, /const supplierStockKnown =/);
   assert.match(publish, /const supplierSaleable = supplierShippingKnown && supplierStockKnown/);
+  assert.match(publish, /offer\.source_status === "verified"/);
+  assert.match(publish, /offer\.ship_to === "JP"/);
+  assert.match(publish, /offer\.tracking_supported === true/);
+  assert.match(publish, /supplierEvidenceFresh/);
+  assert.match(publish, /Date\.now\(\) - supplierCheckedAt <= 24 \* 60 \* 60_000/);
   assert.doesNotMatch(publish, /Math\.max\(1, Number\(offer\.inventory\) \|\| 0\)/);
   assert.match(publish, /現在、仕入先の日本向け送料を再確認中のため、購入できません。確認が完了次第、販売を再開します。/);
   assert.doesNotMatch(dashboard, /offer\.tracking_supported === true/);
