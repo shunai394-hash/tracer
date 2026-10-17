@@ -666,6 +666,119 @@ export async function getCJFreightOptions(
     .sort((a, b) => a.shippingCost - b.shippingCost);
 }
 
+async function calculateCJFreightTipFromProductDetail(
+  vid: string,
+  options: { startCountryCode: string; endCountryCode: string; quantity: number; zip?: string; productId?: string },
+): Promise<number | null> {
+  // CJ's detailed freight endpoint requires the exact variant's weight and the
+  // product's logistics property. The simple endpoint can return Success + []
+  // when these fields are omitted, without explaining which field is missing.
+  const parentProductId = options.productId || (await fetchCJVariantByVid(vid))?.productId;
+  if (!parentProductId) return null;
+  const token = await getAccessToken();
+  const params = new URLSearchParams({ pid: parentProductId });
+  const detailResponse = await fetchCJWithRateLimit(
+    `https://developers.cjdropshipping.com/api2.0/v1/product/query?${params.toString()}`,
+    { method: "GET", headers: { "CJ-Access-Token": token }, cache: "no-store" },
+  );
+  if (!detailResponse.ok) return null;
+  const detailPayload = await detailResponse.json() as { result?: boolean; data?: unknown };
+  if (detailPayload.result === false || !detailPayload.data || typeof detailPayload.data !== "object") return null;
+  const product = (Array.isArray(detailPayload.data) ? detailPayload.data[0] : detailPayload.data) as Record<string, unknown> | null;
+  if (!product) return null;
+  const variants = Array.isArray(product.variants) ? product.variants as Array<Record<string, unknown>> : [];
+  const variant = variants.find((row) => String(row.vid ?? "") === vid);
+  if (!variant) return null;
+  const numberFrom = (...values: unknown[]): number | null => {
+    for (const value of values) {
+      const n = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    return null;
+  };
+  const weight = numberFrom(variant.variantWeight, product.productWeight);
+  const wrapWeight = numberFrom(product.packingWeight, variant.variantWeight, product.productWeight);
+  const productProps = Array.isArray(product.productProEnSet)
+    ? product.productProEnSet.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    : typeof product.productProEn === "string"
+      ? product.productProEn.split(/[;,]/).map((value) => value.trim()).filter(Boolean)
+      : [];
+  const sku = typeof variant.variantSku === "string" ? variant.variantSku.trim() : "";
+  const unitPrice = numberFrom(variant.variantSellPrice, product.sellPrice);
+  const volumeMm3 = numberFrom(variant.variantVolume);
+  const lengthMm = numberFrom(variant.variantLength);
+  const widthMm = numberFrom(variant.variantWidth);
+  const heightMm = numberFrom(variant.variantHeight);
+  const volumeCm3 = volumeMm3 ? volumeMm3 / 1000 : lengthMm && widthMm && heightMm ? (lengthMm * widthMm * heightMm) / 1000 : null;
+  if (!weight || !wrapWeight || productProps.length === 0 || !volumeCm3 || !sku) {
+    console.warn("[CJ FREIGHT TIP INPUT INCOMPLETE]", {
+      vid, productId: String(product.pid ?? ""),
+      hasWeight: Boolean(weight), hasWrapWeight: Boolean(wrapWeight),
+      hasProductProp: productProps.length > 0, hasVolume: Boolean(volumeCm3), hasSku: Boolean(sku),
+    });
+    return null;
+  }
+  const body = {
+    reqDTOS: [{
+      srcAreaCode: options.startCountryCode,
+      destAreaCode: options.endCountryCode,
+      ...(options.zip ? { zip: options.zip } : {}),
+      weight: Math.ceil(weight),
+      wrapWeight: Math.ceil(wrapWeight),
+      volume: volumeCm3,
+      ...(unitPrice ? { totalGoodsAmount: unitPrice * options.quantity } : {}),
+      productProp: productProps,
+      skuList: sku ? [sku] : [],
+      freightTrialSkuList: [{
+        vid, ...(sku ? { sku } : {}),
+        skuQuantity: options.quantity,
+        skuWeight: weight,
+        skuVolume: volumeCm3,
+      }],
+    }],
+  };
+  const response = await fetchCJWithRateLimit(
+    "https://developers.cjdropshipping.com/api2.0/v1/logistic/freightCalculateTip",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "CJ-Access-Token": token },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) return null;
+  const payload = await response.json() as { result?: boolean; message?: string; data?: unknown };
+  if (payload.result === false) {
+    console.warn("[CJ FREIGHT TIP REJECTED]", { vid, message: String(payload.message ?? "").slice(0, 120) });
+    return null;
+  }
+  const rows: unknown[] = Array.isArray(payload.data)
+    ? payload.data
+    : payload.data && typeof payload.data === "object"
+      ? Object.values(payload.data as Record<string, unknown>).flatMap((value) => Array.isArray(value) ? value : [value])
+      : [];
+  const prices = rows.map((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+    const record = row as Record<string, unknown>;
+    // postage is documented in USD. Do not silently convert or interpret CNY fields.
+    for (const key of ["totalPostageFee", "wrapPostage", "postage", "logisticPrice", "shippingCost", "freightAmount"]) {
+      const price = readCJFreightPrice(record[key]);
+      if (price !== null) return price;
+    }
+    return null;
+  }).filter((value): value is number => value !== null);
+  if (prices.length === 0) {
+    console.warn("[CJ FREIGHT TIP NO OPTIONS]", {
+      vid, srcAreaCode: options.startCountryCode, destAreaCode: options.endCountryCode,
+      result: payload.result ?? null, dataType: Array.isArray(payload.data) ? "array" : typeof payload.data,
+      rowCount: rows.length,
+    });
+    return null;
+  }
+  return Math.min(...prices);
+}
+
+
 export async function calculateCJFreight(
   vid: string,
   options?: {
@@ -673,8 +786,18 @@ export async function calculateCJFreight(
     endCountryCode?: string;
     quantity?: number;
     zip?: string;
+    productId?: string;
   },
 ): Promise<number | null> {
+  const tipQuote = await calculateCJFreightTipFromProductDetail(vid, {
+    startCountryCode: options?.startCountryCode ?? "CN",
+    endCountryCode: options?.endCountryCode ?? "JP",
+    quantity: options?.quantity ?? 1,
+    ...(options?.zip ? { zip: options.zip } : {}),
+    ...(options?.productId ? { productId: options.productId } : {}),
+  });
+  if (tipQuote !== null) return tipQuote;
+
   const token = await getAccessToken();
   const response = await fetchCJWithRateLimit(
     "https://developers.cjdropshipping.com/api2.0/v1/logistic/freightCalculate",
