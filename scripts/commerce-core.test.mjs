@@ -593,6 +593,15 @@ test("CJ transient stock or freight lookup failures do not overwrite previously 
   assert.match(importer, /Do not overwrite it with inventory=0, shipping=0, or sourceStatus=error on transient API failures/);
 });
 
+test("CJ freight lookup tries multiple stocked origins plus CN fallback and records why quotes were unavailable", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /stockedOrigins\.slice\(0, 3\)/);
+  assert.match(importer, /\.filter\(\(countryCode, index, values\) => values\.indexOf\(countryCode\) === index\)/);
+  assert.match(importer, /freightAttempts\.push\(\{ origin: startCountryCode, result: "no_quote" \}\)/);
+  assert.match(importer, /freightZipConfigured: Boolean\(freightZip\)/);
+  assert.match(importer, /freightErrors: freightErrors\.slice\(0, 4\)/);
+});
+
 
 test("scheduled CJ discovery only retries errored variants missing Shopify publication", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
