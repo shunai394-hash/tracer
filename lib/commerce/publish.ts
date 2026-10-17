@@ -282,8 +282,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const description = (product.description_ja || title + "。商品仕様・配送条件は仕入先の最新情報をご確認ください。").trim();
     // Selling price already includes supplier shipping; make free shipping explicit on both storefronts.
     const storefrontDescription = supplierEconomicsVerified
-      ? \`\${description}\\n\\n送料込み・送料無料。送料は商品価格に含まれています。\`
-      : \`\${description}\\n\\n現在、仕入先の在庫・日本向け送料を再確認中のため、購入できません。確認が完了次第、販売を再開します。\`
+      ? `${description}\n\n送料込み・送料無料。送料は商品価格に含まれています。`
+      : `${description}\n\n現在、仕入先の在庫・日本向け送料を再確認中のため、購入できません。確認が完了次第、販売を再開します。`;
     const sku = "TRC-" + candidate.id.replace(/-/g, "").slice(0, 24).toUpperCase();
     let baseCreateIdNeedsRecovery: string | null = null;
     try {
