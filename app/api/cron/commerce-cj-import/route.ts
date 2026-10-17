@@ -442,9 +442,13 @@ export async function GET(request: Request) {
         const shippingAt = typeof listing.shipping_checked_at === "string" ? Date.parse(listing.shipping_checked_at) : Number.NaN;
         const inventoryAt = typeof listing.inventory_checked_at === "string" ? Date.parse(listing.inventory_checked_at) : Number.NaN;
         const nextAt = typeof listing.next_verification_at === "string" ? Date.parse(listing.next_verification_at) : Number.NaN;
-        const evidenceStale = !Number.isFinite(shippingAt) || !Number.isFinite(inventoryAt) ||
-          shippingAt <= evidenceCutoff || inventoryAt <= evidenceCutoff;
-        if (!evidenceStale || (Number.isFinite(nextAt) && nextAt > Date.now())) continue;
+        const shippingEvidenceMissing = !Number.isFinite(shippingAt);
+        const inventoryEvidenceMissing = !Number.isFinite(inventoryAt);
+        const evidenceMissing = shippingEvidenceMissing || inventoryEvidenceMissing;
+        const evidenceStale = evidenceMissing || shippingAt <= evidenceCutoff || inventoryAt <= evidenceCutoff;
+        // A future backoff must not hide missing evidence: without both timestamps,
+        // a row has never completed the required live stock + Japan-freight check.
+        if (!evidenceStale || (!evidenceMissing && Number.isFinite(nextAt) && nextAt > Date.now())) continue;
         const group = staleListingGroups.get(parentId) ?? { variantIds: [], oldestAt: Number.POSITIVE_INFINITY };
         if (!group.variantIds.includes(variantId)) group.variantIds.push(variantId);
         group.oldestAt = Math.min(group.oldestAt, Number.isFinite(shippingAt) ? shippingAt : 0, Number.isFinite(inventoryAt) ? inventoryAt : 0);
