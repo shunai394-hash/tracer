@@ -327,15 +327,22 @@ export async function GET(request: Request) {
       }
       // Keep missing-publication recovery narrow and separately recheck existing listings
       // whose saved supplier status, stock, or Japan-bound freight evidence is in error.
-      const [{ data: erroredOffers, error: erroredOffersError }, { data: shopifyRows, error: shopifyRowsError }] = await Promise.all([
+      const [{ data: erroredOffers, error: erroredOffersError }, { data: staleVerifiedOffers, error: staleVerifiedOffersError }, { data: shopifyRows, error: shopifyRowsError }] = await Promise.all([
         db.from("supplier_offers")
-          .select("id,variant_id,supplier_product_id,supplier_variant_id,source_status,raw_data,updated_at")
+          .select("id,variant_id,supplier_product_id,supplier_variant_id,source_status,raw_data,updated_at,last_checked_at")
           .eq("supplier_code", "cj").eq("source_status", "error")
           .order("updated_at", { ascending: true }).limit(2000),
+        // Verified offers also need a bounded refresh once their live stock/freight
+        // evidence is older than 24h; otherwise procurement can reject them forever
+        // while the importer only retries source_status=error rows.
+        db.from("supplier_offers")
+          .select("id,variant_id,supplier_product_id,supplier_variant_id,source_status,raw_data,updated_at,last_checked_at")
+          .eq("supplier_code", "cj").eq("source_status", "verified")
+          .order("last_checked_at", { ascending: true, nullsFirst: true }).limit(2000),
         db.from("channel_listings").select("variant_id").eq("channel", "shopify").limit(5000),
       ]);
-      if (erroredOffersError || shopifyRowsError) {
-        throw new Error("missing_shopify_offer_recovery_read_failed:" + (erroredOffersError?.message ?? shopifyRowsError?.message));
+      if (erroredOffersError || staleVerifiedOffersError || shopifyRowsError) {
+        throw new Error("missing_shopify_offer_recovery_read_failed:" + (erroredOffersError?.message ?? staleVerifiedOffersError?.message ?? shopifyRowsError?.message));
       }
       const shopifyVariantIds = new Set((shopifyRows ?? []).map((row) => String(row.variant_id)));
       const eligibleErroredOffers = (erroredOffers ?? []).filter((offer) => {
@@ -387,8 +394,13 @@ export async function GET(request: Request) {
       const retryVariantLimit = Math.min(3, Math.max(1, limit));
       const evidenceRetryByParent = new Map<string, string[]>();
       let evidenceRetryCount = 0;
-      const existingOffersNeedingEvidence = [...(erroredOffers ?? [])].sort((a, b) =>
-        String(a.updated_at ?? "").localeCompare(String(b.updated_at ?? "")),
+      const evidenceCutoff = Date.now() - 24 * 60 * 60_000;
+      const staleVerifiedForEvidence = (staleVerifiedOffers ?? []).filter((offer) => {
+        const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
+        return !Number.isFinite(checkedAt) || checkedAt <= evidenceCutoff;
+      });
+      const existingOffersNeedingEvidence = [...(erroredOffers ?? []), ...staleVerifiedForEvidence].sort((a, b) =>
+        String(a.last_checked_at ?? a.updated_at ?? "").localeCompare(String(b.last_checked_at ?? b.updated_at ?? "")),
       );
       for (const offer of existingOffersNeedingEvidence) {
         if (!shopifyVariantIds.has(String(offer.variant_id))) continue;
