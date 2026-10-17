@@ -39,6 +39,17 @@ test("storefront publication requires exact supplier identity and evidenced land
   assert.match(dashboard, /offer\.raw_data\?\.shippingKnown === true/);
 });
 
+test("new storefront candidates require evidenced landed costs and exact supplier identity", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /supplier_offers!inner\([^)]*raw_data/);
+  assert.match(publish, /const validOffers = asRelationRows\(candidate\.supplier_offers\)/);
+  assert.match(publish, /const nativeIdsValid = x\.supplier_code !== "cj"/);
+  assert.match(publish, /const unitCostKnown = Number\.isFinite\(Number\(x\.unit_cost\)\) && Number\(x\.unit_cost\) > 0/);
+  assert.match(publish, /const shippingKnown = Number\.isFinite\(Number\(x\.shipping_cost\)\) && Number\(x\.shipping_cost\) > 0/);
+  assert.match(publish, /x\.raw_data\?\.shippingKnown === true/);
+  assert.match(publish, /Boolean\(x\.supplier_product_id && x\.supplier_variant_id && nativeIdsValid && unitCostKnown && shippingKnown\)/);
+});
+
 test("catalog publication requires positive profit, not current stock or tracking readiness", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   const pricingStart = core.indexOf("export async function recalculatePrice");
