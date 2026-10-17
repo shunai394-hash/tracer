@@ -110,6 +110,9 @@ test("patrol readiness and snapshots include canonical commerce tables after leg
   assert.match(pipeline, /from\("commerce_prices"\)/);
   assert.match(pipeline, /from\("channel_listings"\)/);
   assert.match(pipeline, /readinessSource: canonicalPublishedCount > 0 \? "clean_commerce" : "legacy"/);
+  assert.match(pipeline, /select\("id", \{ count: "exact", head: true \}\)/);
+  assert.ok(pipeline.includes("const canonicalPublishedCount = canonicalPublishedCountResult ?? 0"));
+  assert.doesNotMatch(pipeline, /canonicalPublishedRows/);
   assert.match(patrol, /publishedCommerceListings/);
   assert.match(patrol, /supplierProcurementOrders/);
 });
