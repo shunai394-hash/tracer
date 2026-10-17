@@ -156,7 +156,7 @@ export async function GET(request: Request) {
         if (referenced.tracking_available !== true) nativeBlockReasons.push("tracking_unavailable");
         if (!(Number(referenced.inventory) > 0)) nativeBlockReasons.push("inventory_not_positive");
         if (!(Number(referenced.cost) > 0)) nativeBlockReasons.push("supplier_cost_not_positive");
-        if (!(Number.isFinite(Number(referenced.shipping_cost)) && Number(referenced.shipping_cost) >= 0)) nativeBlockReasons.push("shipping_cost_unknown_or_negative");
+        if (referenced.shipping_cost === null || referenced.shipping_cost === undefined || !(Number.isFinite(Number(referenced.shipping_cost)) && Number(referenced.shipping_cost) >= 0)) nativeBlockReasons.push("shipping_cost_unknown_or_negative");
         if (String(referenced.ship_to ?? "").trim().toUpperCase() !== "JP") nativeBlockReasons.push("destination_not_japan");
         if (!String(referenced.supplier_product_id ?? "").trim()) nativeBlockReasons.push("supplier_product_id_missing");
         if (!String(referenced.supplier_variant_id ?? "").trim()) nativeBlockReasons.push("supplier_variant_id_missing");
