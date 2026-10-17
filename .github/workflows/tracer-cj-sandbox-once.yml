@@ -2,6 +2,12 @@ name: TRACER CJ Sandbox Lifecycle — One-Time Verification
 
 on:
   workflow_dispatch:
+    inputs:
+      confirm_sandbox:
+        description: "Run one CJ sandbox lifecycle test (no live fulfillment)"
+        required: true
+        type: boolean
+        default: false
   push:
     branches: [main]
   schedule:
@@ -17,7 +23,7 @@ concurrency:
 
 jobs:
   sandbox-lifecycle:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'TRACER_CJ_SANDBOX_ORDER_TEST')))
+    if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.confirm_sandbox == true) || github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'TRACER_CJ_SANDBOX_ORDER_TEST')))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -29,9 +35,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$(date -u +%F)" != "2026-10-16" ]; then
-            echo "One-time sandbox window has passed; no external request made."
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ] && [ "$(date -u +%F)" != "2026-10-16" ]; then
+            echo "The one-time schedule window has passed; no external request made."
             exit 0
+          fi
+
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "${{ inputs.confirm_sandbox }}" != "true" ]; then
+            echo "Manual dispatch requires confirm_sandbox=true; no external request made."
+            exit 1
           fi
 
           BASE="https://tracer-pied-alpha.vercel.app"
