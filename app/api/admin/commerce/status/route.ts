@@ -101,9 +101,10 @@ export async function GET(request: Request) {
       })(),
     ]);
     if (recentCronRows.error) throw new Error("cron_runs_recent_read_failed:" + recentCronRows.error.message);
-    const [failedCronRows, listingErrorRows] = await Promise.all([
+    const [failedCronRows, listingErrorRows, supplierOfferErrorRows] = await Promise.all([
       db.from("cron_runs").select("job_name,error").gte("started_at", freshSince).eq("status", "failed").limit(500),
       db.from("channel_listings").select("channel,variant_id,external_product_id,last_error,last_synced_at,commerce_variants(sku,title_ja,supplier_offers(supplier_code,supplier_product_id,supplier_variant_id,source_status,last_checked_at))").eq("status", "error").order("variant_id").limit(500),
+      db.from("supplier_offers").select("supplier_code,supplier_product_id,supplier_variant_id,source_status,last_checked_at,updated_at,raw_data").eq("source_status", "error").order("updated_at", { ascending: false }).limit(100),
     ]);
     // NEWFIND: count from the rows themselves with one outcome definition
     // (receiver ACK required), all-time and for the same 24h window.
@@ -132,6 +133,7 @@ export async function GET(request: Request) {
     };
     if (failedCronRows.error) throw new Error("cron_runs_failed_read_failed:" + failedCronRows.error.message);
     if (listingErrorRows.error) throw new Error("channel_listings_error_read_failed:" + listingErrorRows.error.message);
+    if (supplierOfferErrorRows.error) throw new Error("supplier_offer_error_read_failed:" + supplierOfferErrorRows.error.message);
     const tally = (rows: Array<Record<string, unknown>>, group: string, reason: string) => {
       const counts = new Map<string, { [key: string]: unknown; count: number }>();
       for (const row of rows) {
@@ -254,6 +256,22 @@ export async function GET(request: Request) {
       approvalEvents: { requested: approvalRequested, approved: approvalGranted },
       cronRuns: { last24Hours: cronRunTotal, failedLast24Hours: cronRunFailures, latestByJob: [...latestCronByJob.values()], failuresByJobAndError: tally(failedCronRows.data ?? [], "job_name", "error") },
       listingErrors: tally(listingErrorRows.data ?? [], "channel", "last_error"),
+      supplierOfferErrors: (supplierOfferErrorRows.data ?? []).map((row) => {
+        const raw = row.raw_data && typeof row.raw_data === "object" && !Array.isArray(row.raw_data) ? row.raw_data as Record<string, unknown> : {};
+        const safeError = ["errorCode", "lastErrorCode", "error", "lastError", "verificationError"].map((key) => ({ key, value: raw[key] })).find((entry) => typeof entry.value === "string" && entry.value.trim());
+        return {
+          supplier: row.supplier_code,
+          hasProductId: Boolean(row.supplier_product_id),
+          hasVariantId: Boolean(row.supplier_variant_id),
+          status: row.source_status,
+          lastCheckedAt: row.last_checked_at,
+          updatedAt: row.updated_at,
+          rawDataKeys: Object.keys(raw).sort().slice(0, 40),
+          errorField: safeError ? safeError.key : null,
+          errorValue: safeError ? String(safeError.value).replace(/\\s+/g, " ").slice(0, 180) : null,
+          nextReverifyAt: typeof raw.nextReverifyAt === "string" ? raw.nextReverifyAt : null,
+        };
+      }),
       listingErrorItems: (listingErrorRows.data ?? []).map((row) => {
         const variant = (Array.isArray(row.commerce_variants) ? row.commerce_variants[0] : row.commerce_variants) as Record<string, unknown> | null;
         const offers = (Array.isArray(variant?.supplier_offers) ? variant?.supplier_offers : []) as Array<Record<string, unknown>>;
