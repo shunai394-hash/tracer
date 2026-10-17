@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 
   const [{ data: offers, error: offersError }, { data: activeProducts, error: productsError }, { data: prices, error: pricesError }] = await Promise.all([
     db.from("supplier_offers")
-      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,currency,unit_cost,shipping_cost,source_status,raw_data,updated_at")
+      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported,source_status,last_checked_at,raw_data,updated_at")
       .order("updated_at", { ascending: true })
       .limit(2000),
     db.from("commerce_products").select("id").eq("active", true).limit(2000),
@@ -85,9 +85,34 @@ export async function GET(request: Request) {
     if (!["USD", "JPY"].includes(String(offer.currency ?? "").toUpperCase())) continue;
     const currentPrice = priceByVariant.get(variantId);
     const existing = oneOfferPerVariant.get(variantId);
+    const isFulfillable = (candidate: typeof offer) => {
+      const candidateRaw = candidate.raw_data && typeof candidate.raw_data === "object" && !Array.isArray(candidate.raw_data)
+        ? candidate.raw_data as Record<string, unknown>
+        : {};
+      const checkedAt = typeof candidate.last_checked_at === "string" ? Date.parse(candidate.last_checked_at) : Number.NaN;
+      const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 &&
+        Date.now() - checkedAt <= 24 * 60 * 60_000;
+      const stockKnown = candidateRaw.stockKnown === true ||
+        (candidateRaw.stockKnown === undefined && candidate.source_status === "verified");
+      const shippingKnown = candidateRaw.shippingKnown === true || candidateRaw.shippingEstimated === true ||
+        (candidateRaw.shippingKnown === undefined && candidate.source_status === "verified" && Number(candidate.shipping_cost) > 0);
+      return candidate.source_status === "verified" && fresh && stockKnown && shippingKnown &&
+        candidate.ship_to === "JP" && candidate.tracking_supported === true &&
+        Number.isFinite(Number(candidate.inventory)) && Number(candidate.inventory) > 0;
+    };
     const offerIsCurrent = currentPrice && String(currentPrice.supplier_offer_id) === String(offer.id);
     const existingIsCurrent = existing && currentPrice && String(currentPrice.supplier_offer_id) === String(existing.id);
-    if (!existing || (offerIsCurrent && !existingIsCurrent)) oneOfferPerVariant.set(variantId, offer);
+    const offerReady = isFulfillable(offer);
+    const existingReady = existing ? isFulfillable(existing) : false;
+    // Prefer a fresh, verified, Japan-shippable offer over a stale offer pinned by
+    // the current price. Keep the current offer only when readiness is equivalent.
+    if (!existing ||
+      (offerReady && !existingReady) ||
+      (offerReady === existingReady && offerIsCurrent && !existingIsCurrent) ||
+      (offerReady === existingReady && !offerIsCurrent && !existingIsCurrent &&
+        String(offer.updated_at ?? "") > String(existing.updated_at ?? ""))) {
+      oneOfferPerVariant.set(variantId, offer);
+    }
   }
   const candidates = [...oneOfferPerVariant.values()]
     .filter((offer) => {

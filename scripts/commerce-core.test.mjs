@@ -25,6 +25,15 @@ test("price calculation preserves positive profit after fees and target margin",
   assert.ok(result.expectedProfit > 0);
   assert.ok(result.marginRate >= 0.5);
 });
+test("repricing prefers fresh verified supplier offers over stale offers pinned by the current price", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(route, /last_checked_at,raw_data,updated_at/);
+  assert.match(route, /const isFulfillable = \(candidate: typeof offer\)/);
+  assert.match(route, /Date\.now\(\) - checkedAt <= 24 \* 60 \* 60_000/);
+  assert.match(route, /offerReady && !existingReady/);
+  assert.match(route, /Prefer a fresh, verified, Japan-shippable offer over a stale offer pinned by/);
+});
+
 test("canonical repricing uses the highest existing storefront price and preserves the 50% net-margin floor", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   const start = core.indexOf("export async function recalculatePrice");
