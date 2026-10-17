@@ -101,8 +101,8 @@ export async function GET(request: Request) {
     for (const item of baseSnapshot.items) baseById.set(norm(item.item_id), item);
 
     const shopifyBySku = new Map<string, Array<{ productId: string; variantId: string; sku: string; title: string; status: string; published: boolean; totalInventory: number; inventoryQuantity: number; price: number | null }>>();
-    const shopifyByVariantId = new Map<string, Array<{ productId: string; variantId: string; sku: string; title: string; status: string; published: boolean; totalInventory: number; price: number | null }>>();
-    const shopifyByProductId = new Map<string, Array<{ productId: string; variantId: string; sku: string; title: string; status: string; published: boolean; totalInventory: number; price: number | null }>>();
+    const shopifyByVariantId = new Map<string, Array<{ productId: string; variantId: string; sku: string; title: string; status: string; published: boolean; totalInventory: number; inventoryQuantity: number; price: number | null }>>();
+    const shopifyByProductId = new Map<string, Array<{ productId: string; variantId: string; sku: string; title: string; status: string; published: boolean; totalInventory: number; inventoryQuantity: number; price: number | null }>>();
     let after: string | undefined;
     let shopifyPages = 0;
     let shopifyComplete = false;
