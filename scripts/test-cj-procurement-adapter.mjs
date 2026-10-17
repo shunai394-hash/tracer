@@ -148,6 +148,10 @@ assert.doesNotMatch(JSON.stringify(vercelConfig.crons), /commerce-cj-sandbox-tes
 const sandboxOnceWorkflow = read(".github/workflows/tracer-cj-sandbox-once.yml");
 assert.ok(sandboxOnceWorkflow.includes('cron: "1 0 16 10 *"'), "one-time CJ sandbox lifecycle proof must run in the reserved quota window");
 assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule), ["*/10 * * * *"], "clean supplier discovery must run every 10 minutes");
+assert.match(commerceImporter, /candidates = newCandidates\.slice\(0, limit\)/, "supplier API discovery must only process parents that have never been imported");
+assert.doesNotMatch(commerceImporter, /const fallbackCandidates = \[\.\.\.uniqueSearchProducts\.values\(\)\]\.filter\(\(item\) => knownParentIds\.has\(item\.id\)\)/, "known supplier parents must not be a fallback discovery batch");
+assert.doesNotMatch(commerceImporter, /const recoveryPool = \[\.\.\.new Set\(\[\.\.\.listingIds, \.\.\.erroredIds\]\)\]/, "automatic importer runs must not spend CJ API quota re-fetching known errored products");
+
 assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/cj-identity-reverify"), [], "legacy identity re-verification must not query the cleared legacy supplier table");
 assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/supply-first"), [], "legacy supply-first discovery must not run beside the clean importer");
 

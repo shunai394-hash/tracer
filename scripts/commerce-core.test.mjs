@@ -379,7 +379,7 @@ test("CJ import rotates bounded batches through every child variant", () => {
 test("CJ importer persists exact supplier variant IDs and rotates bounded child-variant batches", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /selectRotatingVariantBatch\(variants, variantBatchLimit, variantRunSlot\)/);
-  assert.match(importer, /variantBatchLimit = Math\.min\(6, Math\.max\(1, Number\(url\.searchParams\.get\("variantLimit"\) \|\| 5\)\)\)/);
+  assert.ok(importer.includes("const variantBatchLimit = Math.min(6, Math.max(1, Number(url.searchParams.get(\"variantLimit\") || 1)))"));
   assert.match(importer, /variantsAvailable \+= variants\.length/);
   assert.match(importer, /sourceVariantKey: exactVariant\.vid/);
   assert.match(importer, /sku: exactVariant\.sku/);
@@ -481,14 +481,13 @@ test("CJ transient stock or freight lookup failures do not overwrite previously 
 });
 
 
-test("scheduled CJ imports retry a bounded batch of previously failed canonical supplier product IDs", async () => {
+test("scheduled CJ discovery does not spend quota retrying known errored supplier products", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  assert.match(importer, /from\("supplier_offers"\)[\s\S]*?\.eq\("source_status", "error"\)/);
-  assert.match(importer, /supplier_product_id/);
-  assert.match(importer, /const recoveryPool = \[\.\.\.new Set\(\[\.\.\.listingIds, \.\.\.erroredIds\]\)\]/);
-  assert.match(importer, /const recoveryStart = recoveryPool\.length \? \(recoverySlot \* 2\) % recoveryPool\.length : 0/);
-  assert.match(importer, /const recoveryIds = recoveryPool\.length > 2/);
-  assert.match(importer, /failed_offer_recovery_read/);
+  assert.match(importer, /requestedProductIds/);
+  assert.match(importer, /candidates = newCandidates/);
+  assert.doesNotMatch(importer, /\.eq\("source_status", "error"\)/);
+  assert.doesNotMatch(importer, /const recoveryPool/);
+  assert.doesNotMatch(importer, /failed_offer_recovery_read/);
 });
 
 test("BASE publication retries recover exact created IDs and refuse ambiguous stable SKUs", async () => {
@@ -516,7 +515,10 @@ test("CJ catalog importer prioritizes unseen parent products and scans bounded e
   assert.match(importer, /from\("commerce_products"\)\.select\("source_key"\)\.like\("source_key", "cj:%"\)/);
   assert.match(importer, /Prefer never-imported CJ parents/);
   assert.match(importer, /while \(newCandidates\.length < limit && scanPage <= page \+ 2\)/);
-  assert.match(importer, /const fallbackCandidates = \[\.\.\.uniqueSearchProducts\.values\(\)\]\.filter/);
+  assert.ok(importer.includes("candidates = newCandidates.slice(0, limit)"));
+  assert.match(importer, /searchParams\.get\("limit"\) \|\| 1/);
+  assert.match(importer, /searchParams\.get\("variantLimit"\) \|\| 1/);
+  assert.doesNotMatch(importer, /const fallbackCandidates/);
 });
 
 
