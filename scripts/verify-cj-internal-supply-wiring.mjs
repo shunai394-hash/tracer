@@ -6,9 +6,16 @@ import { readFileSync } from "node:fs";
 const discovery = readFileSync("lib/suppliers/discover-cj-supply.ts", "utf8");
 const ingest = readFileSync("lib/suppliers/persist-cj-internal-supply.ts", "utf8");
 const identity = readFileSync("lib/market/identifiers.ts", "utf8");
+const nativeId = readFileSync("lib/sources/cj/native-id.mjs", "utf8");
 const auditMigration = readFileSync("supabase/migrations/20261010150000_tracer_internal_supply_ingestion_audit.sql", "utf8");
 
 assert.match(discovery, /import \{ persistCjInternalSupplyCandidate \} from "@\/lib\/suppliers\/persist-cj-internal-supply"/);
+assert.match(discovery, /isCanonicalCJNativeId\(candidateProductId\)[\s\S]*?isCanonicalCJNativeId\(variantId\)/,
+  "discovery must reject non-native product/variant IDs before accepting a resolved pair");
+assert.ok(nativeId.includes(String.raw`\d{10,22}`),
+  "CJ native IDs must remain decimal IDs, not TRACER UUIDs or SKUs");
+assert.match(discovery, /if \(!isCanonicalCJNativeId\(row\.supplier_product_id\) \|\| !isCanonicalCJNativeId\(row\.supplier_variant_id\)\) return false/,
+  "seeded verification must skip legacy UUID/SKU values before making CJ provider calls");
 assert.match(discovery, /\.eq\("job_name", "cj-api-quota-circuit"\)/,
   "supply-first must inspect the persisted CJ quota circuit before attempting provider calls");
 assert.match(discovery, /if \(isCJQuotaCircuitActive\(quotaMetadata\)\) \{[\s\S]*?deadlineReached: false[\s\S]*?skipped: true[\s\S]*?retryable: true[\s\S]*?reason: "supplier_quota_cooldown"[\s\S]*?quotaBlocked: true[\s\S]*?retryAfter: quotaBlockedUntil \?\? undefined[\s\S]*?items: \[\]/,
@@ -34,6 +41,10 @@ assert.match(discovery, /let seededChecked = 0/,
   "failed seeded refreshes must count as attempts and not starve fresh catalog discovery");
 assert.match(discovery, /seededChecked >= seededVerificationLimit/,
   "seeded verification must have a hard per-run attempt budget");
+assert.match(ingest, /isCanonicalCJNativeId\(args\.supplierProductId\)[\s\S]*?isCanonicalCJNativeId\(args\.supplierVariantId\)/,
+  "internal-supply persistence must reject UUID/SKU placeholders as CJ native IDs");
+assert.match(ingest, /cj_internal_supply_native_identity_invalid/,
+  "invalid native supplier identity must fail before any persistence writes");
 assert.match(ingest, /sourceRef = `cj:\$\{args\.supplierProductId\}:\$\{args\.supplierVariantId\}`/,
   "source reference must be deterministic for the concrete supplier product+variant");
 assert.match(ingest, /onConflict: "source_name,source_ref"/,
