@@ -385,7 +385,7 @@ export async function GET(request: Request) {
               if (logError) stats.errors.push("exclusion_log:" + logError.slice(0, 80));
               continue;
             }
-            if (stock !== null && stock > 0 && shipping !== null && shipping >= 0) {
+            if (shipping !== null && shipping >= 0) {
               await recalculatePrice({ variantId: saved.variantId, offerId: saved.offerId, exchangeRateToJpy: fx.rate, feeRate: 0.1, targetMarginRate: 0.2 });
               stats.priced++;
             } else {
