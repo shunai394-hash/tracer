@@ -149,15 +149,41 @@ function japaneseVariantSuffix(nameEn: unknown): string {
   if (colorCount) return "（" + colorCount[1] + "色）";
   const styleNumber = source.match(/\b([0-9]+)\s*\.?\s*style\b/);
   if (styleNumber) return "（スタイル" + styleNumber[1] + "）";
+  const numberedColor = source.match(/\b(silver|gold|black|white)\s+([0-9]+)\b/);
+  if (numberedColor) {
+    const color = numberedColor[1] === "silver" ? "シルバー" : numberedColor[1] === "gold" ? "ゴールド" : numberedColor[1] === "black" ? "ブラック" : "ホワイト";
+    return "（" + color + "・タイプ" + numberedColor[2] + "）";
+  }
+  const optionLabels: Array<[RegExp, string]> = [
+    [/4pin.*no\s*5.*oblique clip/, "4ピン・No.5斜めクリップ"],
+    [/4pin.*no\s*5.*straight clip/, "4ピン・No.5ストレートクリップ"],
+    [/4pin.*hook/, "4ピン・フッククリップ"],
+    [/without word hook/, "刻印なし・フック"],
+    [/no word.*oblique clip/, "刻印なし・斜めクリップ"],
+    [/no\s*5.*oblique clip/, "No.5斜めクリップ"],
+    [/no\s*5.*straight clip/, "No.5ストレートクリップ"],
+    [/no\s*5.*hook/, "No.5フック"],
+    [/8piece set/, "8点セット"],
+    [/sunflower/, "サンフラワー"], [/camellia/, "カメリア"],
+    [/trilogy/, "トリロジー"], [/rabble/, "ラブル"],
+    [/pearl tote gradient/, "パールトート・グラデーション"],
+    [/double gradient shoulder/, "ダブルグラデーションショルダー"],
+    [/crossbody dumpling bag/, "巾着型ショルダー"],
+    [/pearl crossbody bag/, "パールショルダー"], [/pearl tote/, "パールトート"],
+  ];
+  const option = optionLabels.find(([pattern]) => pattern.test(source));
+  if (option) return "（" + option[1] + "）";
   const colors: Array<[RegExp, string]> = [
     [/yellow/, "イエロー"], [/white/, "ホワイト"], [/black/, "ブラック"],
     [/pink/, "ピンク"], [/blue/, "ブルー"], [/green/, "グリーン"],
     [/red/, "レッド"], [/purple/, "パープル"], [/beige/, "ベージュ"],
-    [/brown/, "ブラウン"], [/gray|grey/, "グレー"], [/silver/, "シルバー"],
+    [/khaki/, "カーキ"], [/brown/, "ブラウン"], [/gray|grey/, "グレー"], [/silver/, "シルバー"],
     [/gold/, "ゴールド"], [/orange/, "オレンジ"], [/navy/, "ネイビー"],
   ];
   const matched = [...new Set(colors.filter(([pattern]) => pattern.test(source)).map(([, ja]) => ja))];
-  return matched.length ? "（" + matched.join("・") + "）" : "";
+  if (matched.length) return "（" + matched.join("・") + "）";
+  const trailingOptionCode = source.match(/\b([a-z])$/);
+  return trailingOptionCode ? "（タイプ" + trailingOptionCode[1].toUpperCase() + "）" : "";
 }
 
 /** Durable exclusion record so a zero-import run can be rechecked without deleting supplier evidence. */
