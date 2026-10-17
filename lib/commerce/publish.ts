@@ -103,7 +103,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
         // Cached stock, verification age, JP destination and tracking are rechecked at procurement,
         // so temporary supplier evidence gaps do not silently hide otherwise linked catalog items.
         const unitCostKnown = Number.isFinite(Number(offer.unit_cost)) && Number(offer.unit_cost) > 0;
-        const shippingKnown = offer.raw_data?.shippingKnown === true ||
+        const shippingKnown = offer.raw_data?.shippingKnown === true || offer.raw_data?.shippingEstimated === true ||
           (offer.raw_data?.shippingKnown === undefined && offer.source_status === "verified" &&
             Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0);
         return Boolean(
@@ -303,8 +303,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       ? rawOffer.raw_data as Record<string, unknown>
       : {};
     const preflightShippingKnown =
-      (Number.isFinite(Number(rawOffer?.shipping_cost)) && Number(rawOffer?.shipping_cost) > 0) ||
-      preflightRawOfferData.shippingKnown === true;
+      (Number.isFinite(Number(rawOffer?.shipping_cost)) && Number(rawOffer?.shipping_cost) > 0) &&
+      (preflightRawOfferData.shippingKnown === true || preflightRawOfferData.shippingEstimated === true);
     const preflightStockKnown = preflightRawOfferData.stockKnown === true ||
       (preflightRawOfferData.stockKnown === undefined && rawOffer?.source_status === "verified");
     const supplierEvidenceUnverified = !rawOffer || rawOffer.source_status !== "verified" ||
