@@ -619,3 +619,14 @@ test("BASE order polling rotates through older pages while always rescanning the
   assert.match(route, /status: "needs_review"/);
   assert.match(route, /status: "resolved"/);
 });
+
+
+test("commerce publication cron batch defaults and invalid values remain bounded", async () => {
+  const baseRoute = await readFile(new URL("../app/api/cron/commerce-publish-base/route.ts", import.meta.url), "utf8");
+  const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
+  for (const route of [baseRoute, shopifyRoute]) {
+    assert.match(route, /searchParams\.get\("limit"\) \|\| 5/);
+    assert.match(route, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/);
+    assert.match(route, /Number\.isFinite\(requested\) \?[^\n]*: 5/);
+  }
+});
