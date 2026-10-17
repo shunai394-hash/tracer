@@ -83,28 +83,23 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
     try {
       const prices = pricesByVariant.get(String(listing.variant_id)) ?? [];
       const offers = offersByVariant.get(String(listing.variant_id)) ?? [];
-      const offerIsValid = (offer: StaleOffer) => {
-        const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
-        const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 && Date.now() - checkedAt <= 24 * 60 * 60_000;
-        const nativeIdsValid = offer.supplier_code !== "cj" ||
-          (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
-        const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id);
-        return Boolean(price && price.currency === "JPY" && Number(price.selling_price) > 0 && Number(price.expected_profit) > 0 &&
-          offer.source_status === "verified" && nativeIdsValid && offer.tracking_supported === true &&
-          offer.ship_to === "JP" && fresh && Number(offer.inventory) > 0);
-      };
       const hasPublishableLinkedOffer = offers.some((offer) => {
         const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id);
         const nativeIdsValid = offer.supplier_code !== "cj" ||
           (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
+        // Listing eligibility uses exact supplier identity and a positive JPY landed-cost price.
+        // Cached stock, verification age, JP destination and tracking are rechecked at procurement,
+        // so temporary supplier evidence gaps do not silently hide otherwise linked catalog items.
         return Boolean(
           offer.supplier_product_id && offer.supplier_variant_id && nativeIdsValid &&
+          Number.isFinite(Number(offer.unit_cost)) && Number(offer.unit_cost) >= 0 &&
+          Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) >= 0 &&
           price && price.currency === "JPY" && Number(price.selling_price) > 0 && Number(price.expected_profit) > 0
         );
       });
-      if (offers.some(offerIsValid) || hasPublishableLinkedOffer) {
-        // Listing requires a mapped supplier product/variant and profitable JPY price.
-        // Stock freshness, tracking capability and supplier verification belong to procurement.
+      if (hasPublishableLinkedOffer) {
+        // Only exact supplier product/variant identity and profitable JPY pricing gate a listing.
+        // Live stock, freshness, destination, tracking and orderability belong to procurement.
         const checkedAt = new Date().toISOString();
         const { error: markCheckedError } = await db.from("channel_listings").update({
           last_synced_at: checkedAt,
