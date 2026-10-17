@@ -116,7 +116,6 @@ export async function GET(request: Request) {
       });
       result.repriced++;
       const variantId = String(offer.variant_id);
-      const previous = priceByVariant.get(variantId);
       canonicalPriceByVariant.set(variantId, price.sellingPrice);
     } catch (error) {
       result.skipped++;
