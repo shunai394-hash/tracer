@@ -207,7 +207,7 @@ test("Shopify paid-order polling uses the canonical commerce order and procureme
 });
 test("BASE order ingestion requires the true order_item_id for tracking reflection", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
-  assert.match(route, /base_order_item_id_missing_for_fulfillment_mapping/);
+  assert.match(route, /base_order_line_identity_missing/);
   assert.match(route, /externalLineId: String\(item\.order_item_id\)/);
   assert.doesNotMatch(route, /externalLineId: String\(item\.order_item_id \?\? item\.item_id\)/);
 });
@@ -567,4 +567,16 @@ test("existing supplier offers are repriced from database evidence without consu
   const cronEntries = JSON.parse(schedule).crons;
   assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/commerce-reprice-existing" && entry.schedule === "*/10 * * * *"));
   assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/patrol-ai" && entry.schedule === "*/5 * * * *"));
+});
+
+test("BASE paid orders never procure a mapped subset when any non-cancelled line is unmapped", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
+  assert.match(route, /filter\(\(item\) => item\.status !== "cancelled"\)/);
+  assert.match(route, /base_order_line_identity_missing/);
+  assert.match(route, /let hasUnmappedLine = false/);
+  assert.match(route, /hasUnmappedLine = true/);
+  const blockPartial = route.indexOf("if (hasUnmappedLine)");
+  const ingest = route.indexOf("await ingestPaidOrder(");
+  assert.ok(blockPartial >= 0 && ingest > blockPartial, "an unmapped line must block the entire order before canonical ingestion");
+  assert.doesNotMatch(route, /filter\(\(item\) => item\.status !== "cancelled" && item\.item_id !== undefined\)/);
 });

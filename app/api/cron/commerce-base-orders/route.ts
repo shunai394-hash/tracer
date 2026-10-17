@@ -43,11 +43,12 @@ export async function GET(request: Request) {
         const detail = await getBaseOrderDetail(summary.unique_key);
         if (!isPaid(detail)) { result.ignored++; continue; }
         result.paid++;
-        const sourceLines = (detail.order_items ?? []).filter((item) => item.status !== "cancelled" && item.item_id !== undefined);
-        if (sourceLines.some((item) => item.order_item_id === undefined || item.order_item_id === null)) {
-          throw new Error("base_order_item_id_missing_for_fulfillment_mapping");
+        const sourceLines = (detail.order_items ?? []).filter((item) => item.status !== "cancelled");
+        if (sourceLines.some((item) => item.item_id === undefined || item.item_id === null || !String(item.item_id).trim() || item.order_item_id === undefined || item.order_item_id === null || !String(item.order_item_id).trim())) {
+          throw new Error("base_order_line_identity_missing");
         }
         const lines: Array<{ externalLineId: string; variantId: string; sku: string; quantity: number; unitPrice: number; offerId: string }> = [];
+        let hasUnmappedLine = false;
         for (const item of sourceLines) {
           const { data: listing, error: listingError } = await db.from("channel_listings")
             .select("variant_id,external_sku").eq("channel", "base").eq("external_product_id", String(item.item_id)).eq("status", "published").maybeSingle();
@@ -67,6 +68,7 @@ export async function GET(request: Request) {
             }, { onConflict: "event_key", ignoreDuplicates: true });
             if (unmappedError) throw new Error("base_unmapped_item_record_failed:" + unmappedError.message);
             result.errors.push(String(summary.unique_key) + ":base_item_not_linked:" + String(item.item_id));
+            hasUnmappedLine = true;
             continue;
           }
           const { data: price, error: priceError } = await db.from("commerce_prices").select("supplier_offer_id").eq("variant_id", listing.variant_id).maybeSingle();
@@ -78,6 +80,9 @@ export async function GET(request: Request) {
             quantity, unitPrice: Math.round(Number(item.price ?? 0)), offerId: String(price.supplier_offer_id)
           });
         }
+        // Never procure only the mapped subset of a multi-line paid order. Keep
+        // the full order out of the canonical ledger until every line is linked.
+        if (hasUnmappedLine) { result.ignored++; continue; }
         if (!lines.length) { result.ignored++; continue; }
         const prefecture = detail.prefecture ?? detail.order_receiver?.prefecture ?? "";
         const rawAddress = detail.address ?? detail.order_receiver?.address ?? "";
