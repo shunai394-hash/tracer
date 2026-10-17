@@ -181,7 +181,7 @@ export async function GET(request: Request) {
     }, { headers });
   } catch (error) {
     const message = error instanceof Error ? error.message : "BASE_RECONCILIATION_FAILED";
-    const status = Number(message.match(/HTTP_(\\d{3})/)?.[1] ?? 0) || null;
+    const status = Number(message.match(/HTTP_(\d{3})/)?.[1] ?? 0) || null;
     console.error("[TRACER BASE ITEM RECONCILIATION FAILED]", {
       runId,
       stage: message.split(":")[0].slice(0, 100),
