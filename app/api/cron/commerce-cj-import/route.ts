@@ -754,7 +754,7 @@ export async function GET(request: Request) {
                     currency: "USD",
                     inventory: Math.max(0, Math.floor(stock)),
                     ship_to: "JP",
-                    tracking_available: true,
+                    tracking_available: false,
                     order_method: "cj_api",
                     api_available: false,
                     verification_status: "unverified",
@@ -781,6 +781,7 @@ export async function GET(request: Request) {
                       stock_observed: true,
                       japan_freight_observed: true,
                       live_order_path_proven: false,
+                      tracking_capability_proven: false,
                     },
                   });
                   if (createListingError) {
