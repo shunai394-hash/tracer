@@ -27,7 +27,8 @@ export async function GET(request: Request) {
   const [{ data: offers, error: offersError }, { data: activeProducts, error: productsError }, { data: prices, error: pricesError }] = await Promise.all([
     db.from("supplier_offers")
       .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported,source_status,last_checked_at,raw_data,updated_at")
-      .order("updated_at", { ascending: true })
+      // Prefer recently refreshed offers so the bounded scan does not permanently miss new verified inventory.
+      .order("updated_at", { ascending: false })
       .limit(2000),
     db.from("commerce_products").select("id").eq("active", true).limit(2000),
     db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit,margin_rate,calculated_at")
