@@ -3,7 +3,7 @@ name: TRACER BASE Live Price Audit (Read Only)
 on:
   push:
     branches:
-      - audit/base-live-price-2026-10-17
+      - main
     paths:
       - .github/workflows/tracer-base-live-price-audit.yml
 
@@ -53,13 +53,13 @@ jobs:
           await writeFile("base-live-price-snapshot.json", JSON.stringify(snapshot, null, 2), { mode: 0o600 });
           const esc = value => {
             const s = value === null || value === undefined ? "" : String(value);
-            return /[",\\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+            return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
           };
           const headers = ["item_id","identifier","title","price","visible","stock"];
           const lines = [headers.join(","), ...snapshot.items.map(item => [
             item.item_id, item.identifier, item.title ?? item.name, item.price, item.visible, item.stock
           ].map(esc).join(","))];
-          await writeFile("base-live-prices.csv", lines.join("\\n") + "\\n", { mode: 0o600 });
+          await writeFile("base-live-prices.csv", lines.join("\n") + "\n", { mode: 0o600 });
           const visible = snapshot.items.filter(item => item.visible === true || item.visible === 1 || item.visible === "1").length;
           const hidden = snapshot.items.filter(item => item.visible === false || item.visible === 0 || item.visible === "0").length;
           const missingPrice = snapshot.items.filter(item => !Number.isFinite(Number(item.price)) || Number(item.price) <= 0).length;
@@ -78,7 +78,7 @@ jobs:
             `- Visible: ${visible}; hidden: ${hidden}; unknown visibility: ${snapshot.itemCount - visible - hidden}`,
             `- Missing/invalid price: ${missingPrice}`,
             "- No BASE, Shopify, TRACER listing, order, or payment writes performed."
-          ].join("\\n") + "\\n");
+          ].join("\n") + "\n");
           console.log(JSON.stringify(summary));
           NODE
       - name: Save complete row-level audit artifact
