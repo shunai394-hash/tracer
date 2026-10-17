@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
 
-  let body: { apply?: unknown; limit?: unknown } = {};
+  let body: { apply?: unknown; repairStaleExternalIds?: unknown; limit?: unknown } = {};
   try {
     body = await request.json();
   } catch {
@@ -30,6 +30,7 @@ export async function POST(request: Request) {
   }
 
   const apply = body.apply === true;
+  const repairStaleExternalIds = body.repairStaleExternalIds === true;
   const requestedLimit = Number(body.limit ?? 1000);
   const limit = Number.isFinite(requestedLimit)
     ? Math.max(1, Math.min(1000, Math.floor(requestedLimit)))
@@ -242,43 +243,64 @@ export async function POST(request: Request) {
     let commerceRepaired = 0;
     for (const [sku, baseItemIds] of skuGroups) {
       for (const baseItemId of baseItemIds) {
+        const skuRows = listingsBySku.get(sku) ?? [];
+        const currentExternalId = skuRows.length === 1 ? skuRows[0].externalProductId : null;
         const decision = decideCommerceSkuLink({
           baseItemId,
-          listingsForSku: listingsBySku.get(sku) ?? [],
+          listingsForSku: skuRows,
           otherBaseItemIdsWithSameSku: baseItemIds.filter((id) => id !== baseItemId),
           listingIdsAlreadyUsingBaseItem: listingIdsByBaseItem.get(baseItemId) ?? [],
+          currentExternalIdExists: currentExternalId ? itemIds.has(currentExternalId) : undefined,
         });
-        if (decision.outcome !== "repairable" || !decision.listingId) {
+        const canRepair = decision.outcome === "repairable" || decision.outcome === "repairable_stale_external_id";
+        if (!canRepair || !decision.listingId) {
           if (decision.outcome === "ambiguous_sku" || decision.outcome === "ambiguous_base_item" || decision.outcome === "base_item_already_mapped") {
             ambiguous += 1;
           }
           continue;
         }
+        const source = decision.outcome === "repairable_stale_external_id"
+          ? ["exact_commerce_sku", "stale_external_id_absent_from_complete_snapshot"]
+          : ["exact_commerce_sku"];
         if (!apply) {
           commerceRepairable += 1;
           repairable += 1;
-          results.push({ baseItemId, listingId: decision.listingId, source: ["exact_commerce_sku"], outcome: "repairable_dry_run" });
+          results.push({ baseItemId, listingId: decision.listingId, source, outcome: "repairable_dry_run" });
+          continue;
+        }
+        if (decision.outcome === "repairable_stale_external_id" && !repairStaleExternalIds) {
+          commerceRepairable += 1;
+          repairable += 1;
+          results.push({ baseItemId, listingId: decision.listingId, source, outcome: "stale_external_id_repair_requires_explicit_flag" });
           continue;
         }
         if (repaired >= limit) {
           commerceRepairable += 1;
           repairable += 1;
-          results.push({ baseItemId, listingId: decision.listingId, source: ["exact_commerce_sku"], outcome: "repairable_deferred_by_limit" });
+          results.push({ baseItemId, listingId: decision.listingId, source, outcome: "repairable_deferred_by_limit" });
           continue;
         }
-        const { data: updated, error } = await db.from("channel_listings")
+        let updateQuery = db.from("channel_listings")
           .update({ external_product_id: baseItemId, updated_at: new Date().toISOString() })
           .eq("id", decision.listingId)
-          .eq("channel", "base")
-          .is("external_product_id", null)
-          .select("id")
-          .maybeSingle();
+          .eq("channel", "base");
+        if (decision.outcome === "repairable_stale_external_id" && decision.previousExternalProductId) {
+          updateQuery = updateQuery.eq("external_product_id", decision.previousExternalProductId);
+        } else {
+          updateQuery = updateQuery.is("external_product_id", null);
+        }
+        const { data: updated, error } = await updateQuery.select("id").maybeSingle();
         if (error || !updated) {
-          results.push({ baseItemId, listingId: decision.listingId, source: ["exact_commerce_sku"], outcome: error ? "update_failed" : "changed_concurrently" });
+          results.push({ baseItemId, listingId: decision.listingId, source, outcome: error ? "update_failed" : "changed_concurrently" });
         } else {
           commerceRepaired += 1;
           repaired += 1;
-          results.push({ baseItemId, listingId: decision.listingId, source: ["exact_commerce_sku"], outcome: "commerce_external_id_repaired" });
+          results.push({
+            baseItemId,
+            listingId: decision.listingId,
+            source,
+            outcome: decision.outcome === "repairable_stale_external_id" ? "commerce_stale_external_id_repaired" : "commerce_external_id_repaired",
+          });
         }
       }
     }
@@ -290,7 +312,10 @@ export async function POST(request: Request) {
       matchingRules: [
         "BASE identifier exactly equals TRC-<shop_listings.id>",
         "BASE item_id exactly equals the same row's base_create_id_persist_failed marker",
+        "Exact unique TRC commerce SKU may repair a missing channel ID",
+        "A stale channel ID may be rebound only when absent from a complete BASE snapshot, the exact SKU is unique, and the new BASE item ID is not already mapped",
       ],
+      repairStaleExternalIds,
       snapshotComplete: snapshot.complete,
       scannedBaseItems: items.length,
       stableIdentifierCandidates: identityCandidates.length,
