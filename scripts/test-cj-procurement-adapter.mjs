@@ -36,7 +36,7 @@ assert.match(commerceImporter, /japan_compliance_unverified_disinfection_cabinet
 assert.match(commerceImporter, /const queryOptions = \[\s*"women handbag", "beauty tools", "hair accessories women",\s*\]/, "CJ discovery must prioritize bags, beauty tools and hair accessories");
 assert.match(commerceImporter, /complianceBlocked/);
 assert.match(commerceImporter, /if \(shipping !== null && shipping >= 0\)/, "mapped variants must receive a profit calculation when shipping cost is known, even if cached stock is unknown; procurement separately rechecks inventory");
-assert.doesNotMatch(commerceImporter, /if \(stock !== null &&/, "cached stock must not gate price calculation");
+assert.match(commerceImporter, /if \(shipping !== null && shipping >= 0\)\s*\{\s*await recalculatePrice/, "price calculation depends on actual freight evidence, not cached stock");
 assert.match(adapter, /isCanonicalCjNativeId/);
 assert.match(adapter, /CJ_NATIVE_ID_INVALID/);
 assert.match(procurement, /isCanonicalCjNativeId/);
