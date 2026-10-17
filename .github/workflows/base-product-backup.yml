@@ -124,6 +124,37 @@ jobs:
           if (!report) throw new Error("BASE_RECONCILIATION_DEPLOYMENT_NOT_CURRENT");
           const reportFile = `tracer-base-reconciliation-${new Date().toISOString().slice(0, 10)}-${process.env.GITHUB_RUN_ID}.json`;
           await writeFile(reportFile, JSON.stringify(report, null, 2), { mode: 0o600 });
+
+          // Identity repair is deliberately dry-run only; this workflow never mutates mappings.
+          const identityResponse = await fetch(audience + "/api/channels/base/identity-repair", {
+            method: "POST",
+            headers: {
+              Authorization: "Bearer " + tokenBody.value,
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({ apply: false, limit: 1000 }),
+            signal: AbortSignal.timeout(110_000),
+          });
+          const identityRepair = await identityResponse.json().catch(() => ({}));
+          if (!identityResponse.ok) {
+            throw new Error("BASE_IDENTITY_REPAIR_DRY_RUN_HTTP_" + identityResponse.status + ":" + String(identityRepair.error ?? "request_failed").slice(0, 100));
+          }
+          if (identityRepair.ok !== true || identityRepair.readOnly !== true || identityRepair.snapshotComplete !== true) {
+            throw new Error("BASE_IDENTITY_REPAIR_DRY_RUN_NOT_SAFE_OR_INCOMPLETE");
+          }
+          const identityFile = "tracer-base-identity-repair-dry-run-" + new Date().toISOString().slice(0, 10) + "-" + process.env.GITHUB_RUN_ID + ".json";
+          await writeFile(identityFile, JSON.stringify(identityRepair, null, 2), { mode: 0o600 });
+          console.log(JSON.stringify({
+            identityRepairDryRunFile: identityFile, readOnly: identityRepair.readOnly,
+            snapshotComplete: identityRepair.snapshotComplete, scannedBaseItems: identityRepair.scannedBaseItems,
+            stableIdentifierCandidates: identityRepair.stableIdentifierCandidates, recoveryMarkerCandidates: identityRepair.recoveryMarkerCandidates,
+            uniqueEvidencePairs: identityRepair.uniqueEvidencePairs, repairable: identityRepair.repairable,
+            commerceRepairable: identityRepair.commerceRepairable, ambiguous: identityRepair.ambiguous,
+            listingNotFound: identityRepair.listingNotFound, listingAlreadyLinked: identityRepair.listingAlreadyLinked,
+            baseItemAlreadyMapped: identityRepair.baseItemAlreadyMapped, repaired: identityRepair.repaired,
+            commerceRepaired: identityRepair.commerceRepaired, publicationChanged: identityRepair.publicationChanged,
+          }));
           console.log(JSON.stringify({
             reconciliationFile: reportFile,
             tracerListingCount: report.tracerListingCount,
@@ -162,6 +193,12 @@ jobs:
           if len(files) != 1:
               raise SystemExit("BASE_RECONCILIATION_REPORT_FILE_MISSING_OR_AMBIGUOUS")
           d = json.load(open(files[0], encoding="utf-8"))
+          identity_files = glob.glob("tracer-base-identity-repair-dry-run-*.json")
+          if len(identity_files) != 1:
+              raise SystemExit("BASE_IDENTITY_REPAIR_DRY_RUN_FILE_MISSING_OR_AMBIGUOUS")
+          identity = json.load(open(identity_files[0], encoding="utf-8"))
+          if identity.get("ok") is not True or identity.get("readOnly") is not True or identity.get("snapshotComplete") is not True:
+              raise SystemExit("BASE_IDENTITY_REPAIR_DRY_RUN_NOT_SAFE_OR_INCOMPLETE")
           base_items_by_id = {str(item.get("baseItemId", "")): item for item in d.get("items", [])}
           summary = {
               "complete": d.get("complete"),
@@ -218,6 +255,19 @@ jobs:
           print("# TRACER BASE mapping audit")
           print()
           print("Read-only reconciliation summary. No BASE listing, TRACER mapping, or order was modified.")
+          print()
+          print("## Exact-ID identity repair dry run (read-only)")
+          print()
+          print("```json")
+          print(json.dumps({key: identity.get(key) for key in [
+              "readOnly", "snapshotComplete", "scannedBaseItems", "stableIdentifierCandidates",
+              "recoveryMarkerCandidates", "uniqueEvidencePairs", "repairable", "commerceRepairable",
+              "ambiguous", "listingNotFound", "listingAlreadyLinked", "baseItemAlreadyMapped",
+              "repaired", "commerceRepaired", "publicationChanged"
+          ]}, ensure_ascii=False, indent=2))
+          print("```")
+          print()
+          print("Repair was not applied; this workflow only reports exact-evidence candidates.")
           print()
           print("```json")
           print(json.dumps(summary, ensure_ascii=False, indent=2))
