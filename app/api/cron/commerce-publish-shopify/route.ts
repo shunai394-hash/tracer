@@ -7,10 +7,10 @@ export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   try {
-    const params = new URL(request.url).searchParams;
-    const requested = Number(params.get("limit") || 5);
-    const onlyUnpublished = params.get("onlyUnpublished") !== "false";
-    const rawVariantIds = params.get("variantIds");
+    const searchParams = new URL(request.url).searchParams;
+    const requested = Number(searchParams.get("limit") || 5);
+    const onlyUnpublished = searchParams.get("onlyUnpublished") !== "false";
+    const rawVariantIds = searchParams.get("variantIds");
     let variantIds: string[] | undefined;
     if (rawVariantIds !== null) {
       const supplied = rawVariantIds.split(",").map((value) => value.trim()).filter(Boolean);
