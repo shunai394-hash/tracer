@@ -9,6 +9,18 @@ import { isCanonicalCJNativeId } from "../lib/sources/cj/native-id.mjs";
 import { japaneseCommerceDescription } from "../lib/commerce/japanese-copy.mjs";
 import { resolveBasePublicUrl } from "../lib/commerce/base-public-url.mjs";
 
+test("legacy Shopify sync recovers exact-SKU TRACER products and fails closed on ambiguity", async () => {
+  const legacy = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
+  assert.match(legacy, /async function findByExactSku\(skuValue: string\)/);
+  assert.match(legacy, /variant\.sku === skuValue/);
+  assert.match(legacy, /exactMatches\.length > 1/);
+  assert.match(legacy, /shopify_sku_ambiguous/);
+  assert.match(legacy, /shopify_sku_owned_by_non_tracer_product/);
+  assert.match(legacy, /const existingBySku = await findByExactSku\(productInput\.sku\);/);
+  assert.match(legacy, /let existing = existingBySku \?\? existingById \?\? \(await findByHandle\(productInput\.handle\)\);/);
+  assert.match(legacy, /shopify_canonical_product_missing/);
+});
+
 test("CJ freight parsing searches nested object and array wrappers and preserves explicit free-shipping values", async () => {
   const client = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
   assert.match(client, /function collectCJFreightRows\(value: unknown\)/);

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
+import { ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, unpublishShopifyProduct, updateShopifyProduct } from "@/lib/shopify/admin";
 import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
@@ -186,6 +186,30 @@ async function findByHandle(handle: string): Promise<ShopifyProductNode | null> 
   );
   // The search is fuzzy; only an exact handle match is the same product.
   return data.products.nodes.find((node) => node.handle === handle) ?? null;
+}
+
+/**
+ * Cross-pipeline duplicate guard. The legacy shop_listings sync must reuse the
+ * one exact-SKU TRACER product created by the canonical commerce pipeline.
+ * Ambiguous or foreign SKU matches fail closed instead of creating another item.
+ */
+async function findByExactSku(skuValue: string): Promise<ShopifyProductNode | null> {
+  const data = await shopifyGraphQL<{ products: { nodes: ShopifyProductNode[] } }>(
+    `query ProductsBySku($query: String!) { products(first: 50, query: $query) { nodes { id handle status vendor tags variants(first: 250) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType preview { image { url } } } } } } }`,
+    { query: `sku:${skuValue}` },
+  );
+  const exactMatches = (data.products?.nodes ?? []).filter((product) =>
+    (product.variants?.nodes ?? []).some((variant) => variant.sku === skuValue),
+  );
+  if (exactMatches.length > 1 || (data.products?.nodes ?? []).length >= 50) {
+    throw new Error("shopify_sku_ambiguous:" + skuValue);
+  }
+  if (exactMatches.length === 0) return null;
+  const product = exactMatches[0];
+  if (product.vendor !== "TRACER" && !product.tags.includes("TRACER")) {
+    throw new Error("shopify_sku_owned_by_non_tracer_product:" + skuValue);
+  }
+  return product;
 }
 
 export type ShopifySyncResult = { configured: boolean; considered: number; synced: number; failed: number; listingIds: string[]; errors: Array<{ listingId: string; error: string }> };
@@ -503,7 +527,10 @@ async function syncListingRows(
         : null;
       // A stored id whose product no longer exists in Shopify is stale: fall
       // back to an exact handle match, otherwise create the product afresh.
-      let existing = existingById ?? (await findByHandle(productInput.handle));
+      // Always preflight exact SKU first: even a stored ID or handle must not
+      // bypass the ambiguity guard when another TRACER product has the same SKU.
+      const existingBySku = await findByExactSku(productInput.sku);
+      let existing = existingBySku ?? existingById ?? (await findByHandle(productInput.handle));
 
       // Never overwrite a product owned by another vendor. Recover from a
       // stale/colliding handle by choosing a deterministic TRACER-owned handle.
@@ -521,18 +548,21 @@ async function syncListingRows(
         }
       }
 
-      const product = existing
-        ? await updateShopifyProduct({
-            productId: existing.id,
-            title: productInput.title,
-            descriptionHtml: productInput.descriptionHtml,
-            handle: productInput.handle,
-            price: productInput.price,
-            variantId: existing.variants.nodes[0]?.id || null,
-            sku: productInput.sku,
-            imageUrl: existing.media?.nodes?.length ? null : row.image_url,
-          })
-        : await createShopifyProduct({ ...productInput, imageUrl: row.image_url });
+      // This legacy reconciler may update an existing Shopify product, but it must
+      // never create one. New Shopify products are created only by the canonical
+      // commerce pipeline; otherwise the two scheduled jobs can race after both
+      // observe a missing SKU and create duplicate products.
+      if (!existing) throw new Error("shopify_canonical_product_missing");
+      const product = await updateShopifyProduct({
+        productId: existing.id,
+        title: productInput.title,
+        descriptionHtml: productInput.descriptionHtml,
+        handle: productInput.handle,
+        price: productInput.price,
+        variantId: existing.variants.nodes[0]?.id || null,
+        sku: productInput.sku,
+        imageUrl: existing.media?.nodes?.length ? null : row.image_url,
+      });
 
       const variant = product.variants?.nodes?.[0];
       if (!variant?.id) throw new Error("shopify_variant_missing_for_inventory_sync");
