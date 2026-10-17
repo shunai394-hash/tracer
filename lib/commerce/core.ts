@@ -106,12 +106,14 @@ export async function recalculatePrice(input: {
   if (offer.supplier_code === "cj" && (!isCanonicalCjNativeId(offer.supplier_product_id) || !isCanonicalCjNativeId(offer.supplier_variant_id))) {
     throw new Error("invalid_cj_native_supplier_ids");
   }
-  if (offer.source_status !== "verified") throw new Error("supplier_offer_not_verified");
-  if (offer.tracking_supported !== true) throw new Error("supplier_tracking_not_verified");
+  // Pricing/publication only requires a concrete supplier product+variant,
+  // known non-negative costs, and a Japan shipping route. Do not block catalog
+  // pricing on temporary verification freshness, cached stock, or tracking flags.
+  // The paid-order procurement worker must revalidate live stock and orderability
+  // immediately before submitting an actual supplier order.
   if (offer.ship_to !== "JP") throw new Error("supplier_does_not_ship_to_japan");
-  if (Number(offer.inventory) <= 0) throw new Error("supplier_out_of_stock");
-  const lastCheckedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
-  if (!Number.isFinite(lastCheckedAt) || lastCheckedAt > Date.now() + 5 * 60_000 || Date.now() - lastCheckedAt > 24 * 60 * 60_000) throw new Error("supplier_offer_verification_stale");
+  if (!Number.isFinite(Number(offer.unit_cost)) || Number(offer.unit_cost) < 0) throw new Error("invalid_unit_cost");
+  if (!Number.isFinite(Number(offer.shipping_cost)) || Number(offer.shipping_cost) < 0) throw new Error("invalid_shipping_cost");
   const price = calculateSellingPrice({
     unitCostJpy: Math.ceil(Number(offer.unit_cost) * input.exchangeRateToJpy),
     shippingCostJpy: Math.ceil(Number(offer.shipping_cost) * input.exchangeRateToJpy),
