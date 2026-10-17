@@ -3,7 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { addBaseItemImage, createBaseItem, editBaseItem, fetchBaseItemsSnapshot, getBasePublicShopUrl, isBaseConfigured, BASE_ITEMS_MAX_PAGES } from "@/lib/channels/base";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, updateShopifyProduct } from "@/lib/shopify/admin";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
-import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { isCanonicalCjNativeId } from "@/lib/commerce/core";
 import { asRelationRows } from "@/lib/commerce/relation-rows";
 import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
@@ -13,7 +13,7 @@ type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id
 type CommercePriceRow = { supplier_offer_id: string; calculated_at: string; currency: string; selling_price: number; expected_profit: number; fee_amount: number; margin_rate: number };
 type Candidate = {
   id: string; source_variant_key: string; title_ja: string; sku: string | null;
-  commerce_products: { id: string; source_key: string; title_ja: string; description_ja: string; image_url: string | null; active: boolean };
+  commerce_products: { id: string; source_key: string; title_ja: string; description_ja: string; image_url: string | null; active: boolean; metadata?: Record<string, unknown> | null };
   supplier_offers: SupplierOfferRow[] | SupplierOfferRow | null;
   commerce_prices: CommercePriceRow[] | CommercePriceRow | null;
 };
@@ -209,7 +209,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   // Keep profitable items in the catalog, but disable external purchase until the exact priced offer has verified stock and Japan-bound freight.
   const staleListings = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
   let candidateQuery = db.from("commerce_variants")
-    .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,calculated_at,currency,selling_price,expected_profit,fee_amount,margin_rate)")
+    .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active,metadata),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,calculated_at,currency,selling_price,expected_profit,fee_amount,margin_rate)")
     .eq("commerce_products.active", true);
   if (variantIds?.length) candidateQuery = candidateQuery.in("id", [...new Set(variantIds)]);
   const { data, error } = await candidateQuery.order("updated_at", { ascending: false }).limit(1000);
@@ -308,7 +308,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       : undefined;
     const offer = price ? currentPriceOffer : undefined;
     const imageUrl = safeUrl(product.image_url);
-    const title = candidate.title_ja.trim() || product.title_ja.trim();
+    const sourceTitle = typeof product.metadata?.sourceTitle === "string" ? product.metadata.sourceTitle : typeof product.metadata?.source_title === "string" ? product.metadata.source_title : typeof product.metadata?.originalTitle === "string" ? product.metadata.originalTitle : null;
+    const localizedSourceTitle = sourceTitle ? localizeProductTitle(sourceTitle) : null;
+    const title = isJapaneseProductTitle(candidate.title_ja) ? candidate.title_ja.trim() : isJapaneseProductTitle(product.title_ja) ? product.title_ja.trim() : localizedSourceTitle ?? "";
     const rawOffer = currentPriceOfferId
       ? allOffers.find((candidateOffer) => String(candidateOffer.id) === currentPriceOfferId) ?? null
       : null;
