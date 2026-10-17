@@ -68,6 +68,7 @@ assert.match(selector, /profitCalculable: profit\.calculable, shippingUnknown: p
 assert.match(selector, /\[0-9\]\{10,22\}.*supplier_product_id/, "allowance requires native-format CJ product IDs");
 assert.match(selector, /\[0-9\]\{10,22\}.*supplier_variant_id/, "allowance requires native-format CJ variant IDs");
 assert.match(selector, /calculateSupplySellingPriceJpy\\(/, "missing selling prices must flow through the tested landed-price calculator");
+assert.match(selector, /existingSellingPriceJpy: shippingEstimated \? null : sellingPrice/, "an estimated freight allowance must be included in the recalculated selling price");
 assert.match(selector, /supplierMetadata\.image_url/ , "use the verified supplier image stored in metadata when the product master has no image");
 assert.match(selector, /image_url: item\.imageUrl/, "the selected supplier image must be the image persisted to the storefront listing");
 assert.match(pricing, /const landedCostJpy = \(sourceCost \+ shippingCost\) \* sourceFxRateToSelling/, "landed price must use the shipping amount actually passed to profit simulation");
