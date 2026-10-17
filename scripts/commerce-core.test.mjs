@@ -487,6 +487,14 @@ test("CJ imported products use specific customer-facing Japanese descriptions", 
   assert.doesNotMatch(japaneseCommerceDescription("レディースハンドバッグ"), /仕入先の最新情報に基づき確認してください/);
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /descriptionJa: japaneseCommerceDescription\(title\)/);
+  for (const title of [
+    "ダイヤモンド風アルファベット付きパーティーヘアバンド",
+    "柄デザインのレディース斜めがけバッグ",
+    "ウェーブ編みデザインのニットハンドバッグ",
+    "フェイスケア・メイクツール40点セット",
+  ]) assert.ok(importer.includes(title), "specific source title mapping missing: " + title);
+  assert.match(japaneseCommerceDescription("柄デザインのレディース斜めがけバッグ"), /斜めがけバッグ/);
+  assert.match(japaneseCommerceDescription("ウェーブ編みデザインのニットハンドバッグ"), /ウェーブ状の編みデザイン/);
 });
 
 
