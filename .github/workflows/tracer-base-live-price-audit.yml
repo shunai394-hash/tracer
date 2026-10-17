@@ -70,6 +70,99 @@ jobs:
             missingOrInvalidPriceCount: missingPrice, duplicateItemIds: false,
             artifacts: ["base-live-price-snapshot.json", "base-live-prices.csv"]
           };
+          // Wait for the matching production deployment before reconciling against its database.
+          let deploymentReady = false;
+          for (let attempt = 0; attempt < 24; attempt += 1) {
+            const deploymentResponse = await fetch(`${base}/api/intelligence/pipeline-audit`, {
+              headers: { Authorization: `Bearer ${tokenBody.value}`, Accept: "application/json" },
+              signal: AbortSignal.timeout(20000),
+              cache: "no-store",
+            }).catch(() => null);
+            if (deploymentResponse?.ok) {
+              const deploymentBody = await deploymentResponse.json().catch(() => ({}));
+              const deployedSha = String(deploymentBody?.deployment?.commitSha ?? "");
+              if (deployedSha === process.env.GITHUB_SHA) {
+                deploymentReady = true;
+                break;
+              }
+            }
+            await new Promise(resolve => setTimeout(resolve, 10000));
+          }
+          if (!deploymentReady) throw new Error("BASE_AUDIT_PRODUCTION_DEPLOYMENT_NOT_AT_WORKFLOW_SHA");
+
+          let reconciliation = null;
+          for (let attempt = 0; attempt < 12; attempt += 1) {
+            const auditResponse = await fetch(`${base}/api/admin/channels/base/reconciliation`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${tokenBody.value}`,
+                "Content-Type": "application/json",
+                Accept: "application/json",
+              },
+              body: JSON.stringify({ snapshot }),
+              signal: AbortSignal.timeout(110000),
+              cache: "no-store",
+            });
+            if (!auditResponse.ok) {
+              const body = await auditResponse.json().catch(() => ({}));
+              if (auditResponse.status === 404 || auditResponse.status >= 500) {
+                await new Promise(resolve => setTimeout(resolve, 10000));
+                continue;
+              }
+              throw new Error(`BASE_RECONCILIATION_HTTP_${auditResponse.status}:${String(body.error ?? "request_failed").slice(0,100)}`);
+            }
+            const candidate = await auditResponse.json();
+            if (candidate.complete !== true || !Array.isArray(candidate.items) ||
+                candidate.baseItemCount !== snapshot.itemCount || candidate.items.length !== snapshot.itemCount ||
+                candidate.schemaVersion < 3 || !Object.prototype.hasOwnProperty.call(candidate, "commerceChannelListingCount")) {
+              throw new Error("BASE_RECONCILIATION_INCOMPLETE_OR_STALE_SCHEMA");
+            }
+            reconciliation = candidate;
+            break;
+          }
+          if (!reconciliation) throw new Error("BASE_RECONCILIATION_UNAVAILABLE");
+
+          const csvEscape = value => {
+            const s = value === null || value === undefined ? "" : String(value);
+            return /[",\\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+          };
+          const reconciliationHeaders = ["base_item_id","identifier","title","visible","live_price","exact_mapping_count","listing_id","stored_listing_price","canonical_price","live_minus_stored","live_minus_canonical","expected_profit","supplier_variant_id","orderable","unmapped_category"];
+          const reconciliationRows = reconciliation.items.map(item => {
+            const exact = Number(item.exactBaseIdMatchCount) === 1 ? item.exactBaseIdMatches?.[0] : null;
+            const livePrice = Number(item.price);
+            const storedPrice = Number(exact?.sellingPrice);
+            const canonicalPrice = Number(exact?.canonicalSellingPrice);
+            return [
+              item.baseItemId, item.identifier, item.title, item.visible, item.price,
+              item.exactBaseIdMatchCount, exact?.listingId, exact?.sellingPrice,
+              exact?.canonicalSellingPrice,
+              Number.isFinite(livePrice) && Number.isFinite(storedPrice) ? livePrice - storedPrice : null,
+              Number.isFinite(livePrice) && Number.isFinite(canonicalPrice) ? livePrice - canonicalPrice : null,
+              exact?.canonicalExpectedProfit, exact?.supplierVariantId, exact?.orderable, item.unmappedCategory
+            ];
+          });
+          const csvLines = [reconciliationHeaders, ...reconciliationRows].map(row => row.map(csvEscape).join(","));
+          await writeFile("base-live-price-reconciliation.csv", csvLines.join("\\n") + "\\n", { mode: 0o600 });
+          await writeFile("base-live-reconciliation.json", JSON.stringify(reconciliation, null, 2), { mode: 0o600 });
+
+          const exactMapped = reconciliation.items.filter(item => Number(item.exactBaseIdMatchCount) === 1);
+          const priceMismatchVsStored = exactMapped.filter(item => Number.isFinite(Number(item.price)) && Number.isFinite(Number(item.exactBaseIdMatches?.[0]?.sellingPrice)) && Number(item.price) !== Number(item.exactBaseIdMatches[0].sellingPrice)).length;
+          const priceMismatchVsCanonical = exactMapped.filter(item => Number.isFinite(Number(item.price)) && Number.isFinite(Number(item.exactBaseIdMatches?.[0]?.canonicalSellingPrice)) && Number(item.price) !== Number(item.exactBaseIdMatches[0].canonicalSellingPrice)).length;
+          const canonicalVsStoredMismatch = exactMapped.filter(item => Number.isFinite(Number(item.exactBaseIdMatches?.[0]?.canonicalSellingPrice)) && Number.isFinite(Number(item.exactBaseIdMatches?.[0]?.sellingPrice)) && Number(item.exactBaseIdMatches[0].canonicalSellingPrice) !== Number(item.exactBaseIdMatches[0].sellingPrice)).length;
+          summary.reconciliation = {
+            schemaVersion: reconciliation.schemaVersion,
+            tracerListingCount: reconciliation.tracerListingCount,
+            commerceChannelListingCount: reconciliation.commerceChannelListingCount,
+            exactBaseIdMappedCount: reconciliation.exactBaseIdMappedCount,
+            baseItemsWithoutExactMappingCount: reconciliation.baseItemsWithoutExactMappingCount,
+            baseItemsWithAmbiguousExactMappingCount: reconciliation.baseItemsWithAmbiguousExactMappingCount,
+            priceComparableExactMappings: exactMapped.filter(item => Number.isFinite(Number(item.price)) && Number.isFinite(Number(item.exactBaseIdMatches?.[0]?.sellingPrice)) && Number.isFinite(Number(item.exactBaseIdMatches?.[0]?.canonicalSellingPrice))).length,
+            priceMismatchVsStoredListingCount: priceMismatchVsStored,
+            priceMismatchVsCanonicalCount: priceMismatchVsCanonical,
+            canonicalVsStoredMismatchCount: canonicalVsStoredMismatch,
+            stableIdentifierMatchCount: reconciliation.commerceTrcIdentifierMatchCount,
+            reconciliationGeneratedAt: reconciliation.generatedAt,
+          };
           await writeFile("base-live-price-summary.json", JSON.stringify(summary, null, 2), { mode: 0o600 });
           await writeFile(process.env.GITHUB_STEP_SUMMARY, [
             "# BASE live price audit (read-only)", "",
@@ -77,6 +170,10 @@ jobs:
             `- Items: ${snapshot.itemCount}`,
             `- Visible: ${visible}; hidden: ${hidden}; unknown visibility: ${snapshot.itemCount - visible - hidden}`,
             `- Missing/invalid price: ${missingPrice}`,
+            `- Exact TRACER BASE ID mappings: ${reconciliation.exactBaseIdMappedCount}; unmapped: ${reconciliation.baseItemsWithoutExactMappingCount}; ambiguous: ${reconciliation.baseItemsWithAmbiguousExactMappingCount}`,
+            `- Live vs stored listing price mismatches (exact ID only): ${priceMismatchVsStored}`,
+            `- Live vs canonical price mismatches (exact ID only): ${priceMismatchVsCanonical}`,
+            `- Canonical vs stored listing price mismatches (exact ID only): ${canonicalVsStoredMismatch}`,
             "- No BASE, Shopify, TRACER listing, order, or payment writes performed."
           ].join("\n") + "\n");
           console.log(JSON.stringify(summary));
@@ -89,5 +186,7 @@ jobs:
             base-live-price-snapshot.json
             base-live-prices.csv
             base-live-price-summary.json
+            base-live-reconciliation.json
+            base-live-price-reconciliation.csv
           if-no-files-found: error
           retention-days: 30
