@@ -6,7 +6,7 @@ import { recalculatePrice } from "@/lib/commerce/core";
 import { syncCommerceListings } from "@/lib/commerce/publish";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 /**
  * Reprice already-linked supplier offers without calling the supplier API.
