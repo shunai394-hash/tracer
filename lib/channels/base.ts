@@ -140,6 +140,7 @@ async function requestBase(
     },
     body,
     cache: "no-store",
+    signal: AbortSignal.timeout(20_000),
   });
 
   const text = await response.text();
