@@ -141,16 +141,19 @@ export async function GET(request: Request) {
     }
   }
 
-  const unverifiedVariantIds = new Set([...oneOfferPerVariant.values()].filter((offer) => {
+  const offersById = new Map((offers ?? []).map((offer) => [String(offer.id), offer]));
+  const unverifiedVariantIds = new Set([...priceByVariant.entries()].filter(([, price]) => {
+    const offer = offersById.get(String(price.supplier_offer_id));
+    if (!offer) return true;
     const rawData = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
       ? offer.raw_data as Record<string, unknown>
       : {};
-    const shippingKnown = (Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0) ||
-      rawData.shippingKnown === true;
+    const shippingKnown = rawData.shippingKnown === true ||
+      (rawData.shippingKnown === undefined && offer.source_status === "verified" && Number(offer.shipping_cost) > 0);
     const stockKnown = rawData.stockKnown === true ||
       (rawData.stockKnown === undefined && offer.source_status === "verified");
     return offer.source_status !== "verified" || !shippingKnown || !stockKnown;
-  }).map((offer) => String(offer.variant_id)));
+  }).map(([variantId]) => variantId));
 
   // Reconcile storefront prices already published before the canonical price change.
   // Process up to twenty actually stale variants per channel; the cron is staggered from publication and order-poll jobs.
