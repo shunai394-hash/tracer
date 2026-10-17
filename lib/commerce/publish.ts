@@ -216,21 +216,32 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   const { data, error } = await candidateQuery.order("updated_at", { ascending: false }).limit(1000);
   if (error) throw new Error("commerce_candidates_read_failed:" + error.message);
   const allCandidates = (data ?? []) as unknown as Candidate[];
-  // PostgREST GET URLs can exceed gateway limits when .in() contains the
-  // entire 1,000-row candidate batch. Read listing state in small bounded chunks.
+  // Keep .in() filters comfortably below common gateway URL limits. Even 100 UUIDs
+  // can exceed a 4 KB request target once PostgREST filters and selected columns are included.
+  // Small chunks trade a few more reads for reliable publication-state reconciliation.
+  const listingStateBatchSize = 20;
   const candidateVariantIds = [...new Set(allCandidates.map((row) => row.id))];
   const listingStates: Array<{
     variant_id: string; status: string; last_synced_at: string | null;
     external_product_id: string | null; external_variant_id: string | null; last_error: string | null;
   }> = [];
-  for (let offset = 0; offset < candidateVariantIds.length; offset += 100) {
-    const ids = candidateVariantIds.slice(offset, offset + 100);
+  for (let offset = 0; offset < candidateVariantIds.length; offset += listingStateBatchSize) {
+    const ids = candidateVariantIds.slice(offset, offset + listingStateBatchSize);
     const { data: batch, error: stateError } = await db.from("channel_listings")
       .select("variant_id,status,last_synced_at,external_product_id,external_variant_id,last_error")
       .eq("channel", channel)
       .in("variant_id", ids);
-    if (stateError) throw new Error("commerce_listing_state_read_failed:batch=" +
-      Math.floor(offset / 100) + ":" + stateError.message);
+    if (stateError) {
+      const batchNumber = Math.floor(offset / listingStateBatchSize);
+      const detail = [
+        stateError.code ? "code=" + stateError.code : "",
+        stateError.message ? "message=" + stateError.message : "",
+        stateError.details ? "details=" + stateError.details : "",
+        stateError.hint ? "hint=" + stateError.hint : "",
+      ].filter(Boolean).join(";");
+      throw new Error("commerce_listing_state_read_failed:batch=" + batchNumber + ":size=" +
+        ids.length + ":" + detail.slice(0, 700));
+    }
     listingStates.push(...((batch ?? []) as typeof listingStates));
   }
   const stateByVariant = new Map(listingStates.map((row) => [String(row.variant_id), row]));
