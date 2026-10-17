@@ -106,12 +106,9 @@ export async function recalculatePrice(input: {
   if (offer.supplier_code === "cj" && (!isCanonicalCjNativeId(offer.supplier_product_id) || !isCanonicalCjNativeId(offer.supplier_variant_id))) {
     throw new Error("invalid_cj_native_supplier_ids");
   }
-  if (offer.source_status !== "verified") throw new Error("supplier_offer_not_verified");
-  if (offer.tracking_supported !== true) throw new Error("supplier_tracking_not_verified");
-  if (offer.ship_to !== "JP") throw new Error("supplier_does_not_ship_to_japan");
-  if (Number(offer.inventory) <= 0) throw new Error("supplier_out_of_stock");
-  const lastCheckedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
-  if (!Number.isFinite(lastCheckedAt) || lastCheckedAt > Date.now() + 5 * 60_000 || Date.now() - lastCheckedAt > 24 * 60 * 60_000) throw new Error("supplier_offer_verification_stale");
+  // Price any correctly linked offer with known non-negative costs. Live stock,
+  // destination support, tracking and orderability are checked at procurement time,
+  // not used to prevent the catalog from calculating a sale price.
   const price = calculateSellingPrice({
     unitCostJpy: Math.ceil(Number(offer.unit_cost) * input.exchangeRateToJpy),
     shippingCostJpy: Math.ceil(Number(offer.shipping_cost) * input.exchangeRateToJpy),
