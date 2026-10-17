@@ -631,3 +631,19 @@ test("BASE order polling rotates through older pages while always rescanning the
   assert.match(route, /status: "needs_review"/);
   assert.match(route, /status: "resolved"/);
 });
+
+
+test("canonical order pollers emit privacy-safe invocation and outcome counters", async () => {
+  const base = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
+  const shopify = await readFile(new URL("../app/api/cron/shopify-orders/route.ts", import.meta.url), "utf8");
+  assert.match(base, /TRACER BASE ORDER POLL AUTH REJECTED/);
+  assert.match(base, /TRACER BASE ORDER POLL FAILED/);
+  assert.match(base, /\[TRACER BASE ORDER POLL\]/);
+  assert.match(base, /checked: result\.checked, paid: result\.paid, imported: result\.imported/);
+  assert.match(shopify, /TRACER SHOPIFY ORDER POLL AUTH REJECTED/);
+  assert.match(shopify, /TRACER SHOPIFY ORDER POLL FAILED/);
+  assert.match(shopify, /\[TRACER SHOPIFY ORDER POLL\]/);
+  assert.match(shopify, /configured: imported\.configured, fetched: imported\.fetched/);
+  assert.match(shopify, /errorCategories: imported\.errors\.map/);
+  assert.doesNotMatch(shopify, /console\.info\([^\n]*orderIds/);
+});
