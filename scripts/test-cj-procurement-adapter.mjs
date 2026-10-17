@@ -161,7 +161,7 @@ assert.doesNotMatch(JSON.stringify(vercelConfig.crons), /commerce-cj-sandbox-tes
 const sandboxOnceWorkflow = read(".github/workflows/tracer-cj-sandbox-once.yml");
 assert.ok(sandboxOnceWorkflow.includes('cron: "1 0 16 10 *"'), "one-time CJ sandbox lifecycle proof must run in the reserved quota window");
 assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule), ["*/10 * * * *"], "clean supplier discovery must run every 10 minutes");
-assert.match(commerceImporter, /candidates = \[\.\.\.evidenceRetryCandidates, \.\.\.missingPublicationRetries, \.\.\.newCandidates\.slice\(0, discoverySlots\)\]/, "supplier evidence retries and fair publication retries must be prioritized before broad discovery");
+assert.match(commerceImporter, /const dedupedEvidenceCandidates: ImportCandidate\\[\\] =/, "stale supplier evidence retries and publication retries must be deduplicated before broad discovery");
 assert.match(commerceImporter, /eq\("source_status", "error"\)/, "failed supplier offers remain eligible for targeted recovery");
 assert.match(commerceImporter, /eq\("source_status", "verified"\)/, "stale verified supplier offers must also be selected for evidence refresh");
 assert.match(commerceImporter, /const evidenceCutoff = Date\.now\(\) - 24 \* 60 \* 60_000/, "verified offers must be rechecked after 24 hours");
