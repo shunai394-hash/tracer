@@ -211,7 +211,7 @@ test("Shopify paid-order polling uses the canonical commerce order and procureme
   assert.match(sync, /shopify_canonical_sku_lookup_failed/);
   assert.match(sync, /knownStatus === "procurement_pending"/);
   assert.doesNotMatch(sync, /shopify_shipping_address_incomplete/);
-  assert.match(sync, /Persist the paid order even when address fields need repair/);
+  assert.match(sync, /Keep the paid order even when address fields need repair/);
   assert.match(sync, /ingestPaidOrder\(/);
   assert.match(sync, /canonicalShopifyId\(order\.id, "Order"\)/);
   assert.match(sync, /canonicalShopifyId\(item\.id, "LineItem"\)/);
