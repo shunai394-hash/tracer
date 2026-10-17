@@ -272,9 +272,11 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         const nativeIdsValid = x.supplier_code !== "cj" ||
           (isCanonicalCjNativeId(x.supplier_product_id) && isCanonicalCjNativeId(x.supplier_variant_id));
         const unitCostKnown = Number.isFinite(Number(x.unit_cost)) && Number(x.unit_cost) > 0;
-        const shippingKnown = x.raw_data?.shippingKnown === true ||
+        const shippingKnown = x.raw_data?.shippingEstimated !== true && (
+          x.raw_data?.shippingKnown === true ||
           (x.raw_data?.shippingKnown === undefined && x.source_status === "verified" &&
-            Number.isFinite(Number(x.shipping_cost)) && Number(x.shipping_cost) > 0);
+            Number.isFinite(Number(x.shipping_cost)) && Number(x.shipping_cost) > 0)
+        );
         return Boolean(x.supplier_product_id && x.supplier_variant_id && nativeIdsValid && unitCostKnown && shippingKnown);
       });
     const allOffers = asRelationRows(candidate.supplier_offers);
@@ -302,9 +304,10 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const preflightRawOfferData = rawOffer?.raw_data && typeof rawOffer.raw_data === "object" && !Array.isArray(rawOffer.raw_data)
       ? rawOffer.raw_data as Record<string, unknown>
       : {};
-    const preflightShippingKnown =
-      (Number.isFinite(Number(rawOffer?.shipping_cost)) && Number(rawOffer?.shipping_cost) > 0) &&
-      (preflightRawOfferData.shippingKnown === true || preflightRawOfferData.shippingEstimated === true);
+    const preflightShippingKnown = preflightRawOfferData.shippingEstimated !== true &&
+      (preflightRawOfferData.shippingKnown === true ||
+        (preflightRawOfferData.shippingKnown === undefined && rawOffer?.source_status === "verified" &&
+          Number.isFinite(Number(rawOffer?.shipping_cost)) && Number(rawOffer?.shipping_cost) > 0));
     const preflightStockKnown = preflightRawOfferData.stockKnown === true ||
       (preflightRawOfferData.stockKnown === undefined && rawOffer?.source_status === "verified");
     const supplierEvidenceUnverified = !rawOffer || rawOffer.source_status !== "verified" ||
@@ -384,9 +387,11 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const rawOfferData = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
       ? offer.raw_data as Record<string, unknown>
       : {};
-    const supplierShippingKnown =
-      (Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0) ||
-      rawOfferData.shippingKnown === true;
+    const supplierShippingKnown = rawOfferData.shippingEstimated !== true && (
+      rawOfferData.shippingKnown === true ||
+      (rawOfferData.shippingKnown === undefined && offer.source_status === "verified" &&
+        Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0)
+    );
     const supplierStockKnown = rawOfferData.stockKnown === true ||
       (rawOfferData.stockKnown === undefined && offer.source_status === "verified");
     const supplierCheckedAt = typeof offer.last_checked_at === "string"
