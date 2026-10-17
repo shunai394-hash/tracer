@@ -548,18 +548,21 @@ async function syncListingRows(
         }
       }
 
-      const product = existing
-        ? await updateShopifyProduct({
-            productId: existing.id,
-            title: productInput.title,
-            descriptionHtml: productInput.descriptionHtml,
-            handle: productInput.handle,
-            price: productInput.price,
-            variantId: existing.variants.nodes[0]?.id || null,
-            sku: productInput.sku,
-            imageUrl: existing.media?.nodes?.length ? null : row.image_url,
-          })
-        : await createShopifyProduct({ ...productInput, imageUrl: row.image_url });
+      // This legacy reconciler may update an existing Shopify product, but it must
+      // never create one. New Shopify products are created only by the canonical
+      // commerce pipeline; otherwise the two scheduled jobs can race after both
+      // observe a missing SKU and create duplicate products.
+      if (!existing) throw new Error("shopify_canonical_product_missing");
+      const product = await updateShopifyProduct({
+        productId: existing.id,
+        title: productInput.title,
+        descriptionHtml: productInput.descriptionHtml,
+        handle: productInput.handle,
+        price: productInput.price,
+        variantId: existing.variants.nodes[0]?.id || null,
+        sku: productInput.sku,
+        imageUrl: existing.media?.nodes?.length ? null : row.image_url,
+      });
 
       const variant = product.variants?.nodes?.[0];
       if (!variant?.id) throw new Error("shopify_variant_missing_for_inventory_sync");
