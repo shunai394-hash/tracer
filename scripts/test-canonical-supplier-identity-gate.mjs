@@ -201,3 +201,12 @@ assert.match(reverifyImplementation, /selectionStrategy: targetSupplierListingId
 assert.match(reverifyRoute, /url\.searchParams\.get\("supplierListingIds"\)/);
 assert.match(reverifyRoute, /supplierListingIds,/);
 assert.match(reverifyRoute, /targetedListingCount: supplierListingIds\.length/);
+
+
+// The one-shot recovery workflow may refresh only the audited supplier rows and must never publish or order.
+const targetedReverifyWorkflow = await readFile(new URL("../.github/workflows/tracer-targeted-cj-reverify-six.yml", import.meta.url), "utf8");
+assert.match(targetedReverifyWorkflow, /if: contains\(github\.event\.head_commit\.message, 'reverify the six blocked Shopify supplier rows by exact ID'\)/);
+assert.match(targetedReverifyWorkflow, /supplierListingIds=\$IDS/);
+assert.match(targetedReverifyWorkflow, /'\{"dryRun":true,"limit":1000\}'/);
+assert.doesNotMatch(targetedReverifyWorkflow, /api\/cron\/commerce-procurement|api\/cron\/shopify-orders/);
+assert.match(targetedReverifyWorkflow, /No Shopify product write, unpublish, supplier order, or payment was requested/);
