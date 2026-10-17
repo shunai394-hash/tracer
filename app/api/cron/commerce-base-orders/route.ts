@@ -48,6 +48,7 @@ export async function GET(request: Request) {
           throw new Error("base_order_item_id_missing_for_fulfillment_mapping");
         }
         const lines: Array<{ externalLineId: string; variantId: string; sku: string; quantity: number; unitPrice: number; offerId: string }> = [];
+        let hasUnmappedItems = false;
         for (const item of sourceLines) {
           const { data: listing, error: listingError } = await db.from("channel_listings")
             .select("variant_id,external_sku").eq("channel", "base").eq("external_product_id", String(item.item_id)).eq("status", "published").maybeSingle();
@@ -57,6 +58,7 @@ export async function GET(request: Request) {
             // or foreign listing) must never vanish: record it for a person to
             // resolve. It is not procured automatically.
             result.unmappedItems++;
+            hasUnmappedItems = true;
             const { error: unmappedError } = await db.from("commerce_events").upsert({
               event_key: "base_order_unmapped_item:" + String(detail.unique_key) + ":" + String(item.order_item_id),
               event_type: BASE_UNMAPPED_ORDER_ITEM_EVENT,
@@ -78,7 +80,9 @@ export async function GET(request: Request) {
             quantity, unitPrice: Math.round(Number(item.price ?? 0)), offerId: String(price.supplier_offer_id)
           });
         }
-        if (!lines.length) { result.ignored++; continue; }
+        // Never import or procure a partial BASE order: every active line must map
+        // to its exact published TRACER listing and selected supplier offer.
+        if (hasUnmappedItems || !lines.length) { result.ignored++; continue; }
         const prefecture = detail.prefecture ?? detail.order_receiver?.prefecture ?? "";
         const rawAddress = detail.address ?? detail.order_receiver?.address ?? "";
         const parsedAddress = splitJapaneseAddress(rawAddress, prefecture);
