@@ -87,7 +87,7 @@ jobs:
           failed=0
           # Each call reprices at most 25 candidates and reconciles at most 25 stale
           # variants per channel. HTTP 207 is recorded as partial, not mistaken for success.
-          for pass in 1 2 3 4; do
+          for pass in $(seq 1 10); do
             call_api "api/cron/commerce-reprice-existing?limit=25" "commerce-reprice-${pass}.json" true || failed=1
           done
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
@@ -95,7 +95,7 @@ jobs:
           print("## TRACER price reconciliation")
           print("| Pass | ok | repriced | BASE remaining | Shopify remaining | errors |")
           print("|---:|---:|---:|---:|---:|---:|")
-          for i in range(1, 5):
+          for i in range(1, 11):
               p = pathlib.Path(f"commerce-reprice-{i}.json")
               try: d = json.loads(p.read_text())
               except Exception:
@@ -156,7 +156,7 @@ jobs:
           # A successful HTTP response is not enough if price reconciliation still has a backlog.
           python3 - <<'PY' || failed=1
           import json, pathlib, sys
-          paths = [pathlib.Path(f"commerce-reprice-{i}.json") for i in range(1, 5)]
+          paths = [pathlib.Path(f"commerce-reprice-{i}.json") for i in range(1, 11)]
           try:
               rows = [json.loads(p.read_text()) for p in paths]
           except Exception:
