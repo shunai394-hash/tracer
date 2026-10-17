@@ -14,7 +14,8 @@ test("CJ import prioritizes supplier refreshes for existing BASE/Shopify publica
   assert.match(route, /from\("channel_listings"\)\.select\("variant_id,channel,last_error"\)/);
   assert.match(route, /publicationErrorVariantIds/);
   assert.match(route, /aBlocked - bBlocked/);
-  assert.match(route, /!shopifyVariantIds\.has\(String\(offer\.variant_id\)\) && !publicationErrorVariantIds\.has\(String\(offer\.variant_id\)\)/);
+  assert.match(route, /Refresh every stale verified offer, including variants without a storefront listing/);
+  assert.doesNotMatch(route, /if \(!shopifyVariantIds\.has\(String\(offer\.variant_id\)\) && !publicationErrorVariantIds\.has\(String\(offer\.variant_id\)\)\) continue/);
   assert.match(route, /\[\.\.\.evidenceRetryCandidates, \.\.\.staleListingRetryCandidates\]/);
 });
 
@@ -350,7 +351,7 @@ test("clean commerce cron schedule preserves canonical routes and the required f
   assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,16,31,46 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-procurement"), "13,28,43,58 * * * *");
   assert.equal(schedules.get("/api/cron/patrol-ai"), "*/5 * * * *", "the existing patrol must remain enabled every five minutes");
-  assert.equal(schedules.get("/api/cron/market-sourcing"), "5,25,45 * * * *", "market sourcing observation must remain scheduled");
+  assert.equal(schedules.has("/api/cron/market-sourcing"), false, "supplier-native-only sourcing keeps marketplace observation unscheduled");
   assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
   assert.equal(schedules.has("/api/cron/supply-first"), false);
 });
