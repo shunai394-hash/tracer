@@ -6,6 +6,9 @@ on:
     paths:
       - ".github/workflows/tracer-readonly-commerce-audit.yml"
       - "app/api/admin/commerce/status/route.ts"
+      - "app/api/admin/commerce/live-price-audit/route.ts"
+      - "app/api/channels/base/diagnostics/route.ts"
+      - "app/api/cron/commerce-reprice-existing/route.ts"
       - "lib/commerce/publish.ts"
   workflow_dispatch:
 
