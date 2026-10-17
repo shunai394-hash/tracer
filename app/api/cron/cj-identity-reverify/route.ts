@@ -22,6 +22,11 @@ export async function GET(request: Request) {
     const requestedLimit = Number(url.searchParams.get("limit") ?? 25);
     const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(25, Math.floor(requestedLimit))) : 25;
     const force = url.searchParams.get("force") === "1";
+    const supplierListingIds = [...new Set((url.searchParams.get("supplierListingIds") ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter((value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)))]
+      .slice(0, 10);
     // Do not let the final pre-reset poll exhaust CJ quota immediately before the
     // one-time sandbox lifecycle proof at 00:01 UTC. This is a scheduling guard,
     // not a supplier-evidence bypass; the next normal poll resumes at 00:12 UTC.
@@ -50,6 +55,7 @@ export async function GET(request: Request) {
       // CJ QPS 429. A 25-row cap leaves room for retries under the 150s budget.
       limit,
       force,
+      supplierListingIds,
       deadlineAt: startedAt + 150_000,
     });
 
@@ -63,6 +69,7 @@ export async function GET(request: Request) {
       errors: result.errors.length,
       quotaBlockedUntil: result.quotaBlockedUntil,
       progress: result.progress,
+      targetedListingCount: supplierListingIds.length,
     });
 
     return NextResponse.json({
@@ -70,6 +77,7 @@ export async function GET(request: Request) {
       phase: "cj_identity_reverify",
       elapsedMs: Date.now() - startedAt,
       ...result,
+      targetedListingCount: supplierListingIds.length,
       next: "sales_test_publication",
     }, { status: result.errors.length === 0 && result.quotaBlockedUntil === null ? 200 : 207 });
   } catch (error) {

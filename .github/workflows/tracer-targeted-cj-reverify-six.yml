@@ -1,0 +1,117 @@
+name: TRACER targeted CJ evidence reverify (six Shopify listings)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/tracer-targeted-cj-reverify-six.yml"
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
+jobs:
+  reverify:
+    # One-shot guard: only run for the reviewed supplier-reverify merge commit.
+    if: contains(github.event.head_commit.message, 'reverify the six blocked Shopify supplier rows by exact ID')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout commit history for deployment ancestry check
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait for this production deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for i in $(seq 1 20); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected-or-ancestor=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              echo "Production contains the reviewed reverify commit."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Production is not at this commit or a descendant; refusing supplier API calls."
+          exit 1
+
+      - name: Reverify only the six audited supplier rows, then audit readiness
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token() {
+            curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          AUTH="$(token)"
+          IDS="315563e3-0617-44c0-93c4-ba81f379a184,962e4472-6b55-4f6b-a8ce-a6487f5a393c,367293ff-90d6-461b-8142-dbd0a3307192,dde11235-e8aa-4737-87b6-c046fedd7572,54c5f76e-662c-4696-ba35-7cbca6187c5f,4acff916-4e06-4a50-8c11-ab01bcb050fd"
+          code=$(curl -sS -o reverify.json -w "%{http_code}" --max-time 180 -H "Authorization: Bearer $AUTH" "$BASE/api/cron/cj-identity-reverify?limit=6&force=1&supplierListingIds=$IDS" || echo 000)
+          echo "targeted CJ evidence reverify HTTP $code"
+          python3 - <<'PY'
+          import json
+          try:
+              d = json.load(open("reverify.json"))
+          except Exception:
+              d = {"ok": False, "error": "non_json_or_timeout"}
+          print(json.dumps({k:d.get(k) for k in ("ok","phase","checked","promoted","supplierVerified","noUniqueBarcodeMatch","missingEconomics","targetedListingCount","errors","quotaBlockedUntil","nextCursor")}, ensure_ascii=False, indent=1))
+          PY
+
+          audit_code=$(curl -sS -o identity.json -w "%{http_code}" --max-time 60 -H "Authorization: Bearer $AUTH" "$BASE/api/admin/shopify/identity-audit" || echo 000)
+          echo "native CJ publication audit HTTP $audit_code"
+          sync_code=$(curl -sS -o sync.json -w "%{http_code}" --max-time 90 -H "Authorization: Bearer $AUTH" -H "Content-Type: application/json" -X POST "$BASE/api/admin/shopify/sync" -d '{"dryRun":true,"limit":1000}' || echo 000)
+          echo "Shopify sync dry-run HTTP $sync_code"
+
+          python3 - <<'PY' > report.md
+          import json, os
+          def read(path):
+              try:
+                  return json.load(open(path))
+              except Exception:
+                  return {"ok": False, "error": "response_unavailable"}
+          reverify = read("reverify.json")
+          audit = read("identity.json")
+          sync = read("sync.json")
+          readiness = audit.get("nativeCjPublicationReadiness") or {}
+          rows = sync.get("rows") or []
+          by_id = {r.get("listingId"): r for r in rows}
+          candidates = []
+          for row in readiness.get("rows") or []:
+              preview = by_id.get(row.get("shopListingId")) or {}
+              if row.get("eligible") and preview.get("eligible") and not preview.get("shopifyProductId"):
+                  candidates.append({
+                      "shopListingId": row.get("shopListingId"),
+                      "supplierListingId": row.get("supplierListingId"),
+                      "syncPreviewEligible": preview.get("eligible"),
+                      "shopifyProductIdPresent": bool(preview.get("shopifyProductId")),
+                  })
+          report = {
+              "productionCommit": os.environ.get("GITHUB_SHA"),
+              "supplierReverify": {k: reverify.get(k) for k in ("ok","checked","promoted","supplierVerified","noUniqueBarcodeMatch","missingEconomics","targetedListingCount","errors","quotaBlockedUntil")},
+              "nativeCjPublicationReadiness": readiness,
+              "shopifySyncPreview": {
+                  "ok": sync.get("ok"),
+                  "considered": sync.get("considered"),
+                  "eligible": sync.get("eligible"),
+                  "reasonCounts": sync.get("reasonCounts"),
+                  "eligibleMissingShopifyProductCandidates": candidates,
+              },
+              "writePolicy": "Only supplier evidence was refreshed. No Shopify product write, unpublish, supplier order, or payment was requested by this workflow."
+          }
+          print("# TRACER targeted CJ supplier evidence re-verification")
+          print()
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          PY
+          gh issue create --repo shunai394-hash/tracer --title "[TRACER targeted CJ reverify] Run $GITHUB_RUN_ID" --body-file report.md
