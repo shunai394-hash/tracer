@@ -715,7 +715,7 @@ test("published storefront price reconciliation uses exact variants and bounded 
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(route, /syncCommerceListings/);
   assert.match(route, /storefrontSyncRemaining/);
-  assert.match(route, /allChannelIds\.slice\(0, 5\)/);
+  assert.match(route, /allChannelIds\.slice\(0, 10\)/);
   assert.match(route, /\.select\("variant_id,channel,selling_price,status"\)/);
   assert.match(publish, /variantIds\?: string\[\]/);
   assert.match(publish, /candidateQuery\.in\("id", \[\.\.\.new Set\(variantIds\)\]\)/);
