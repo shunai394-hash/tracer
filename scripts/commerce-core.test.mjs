@@ -789,6 +789,19 @@ test("TRACER product detail copy stays generic to the actual product", async () 
 });
 
 
+test("publisher selects the latest canonical price calculation before matching its supplier offer", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /commerce_prices!inner\(supplier_offer_id,calculated_at,currency/);
+  assert.match(publish, /Date\.parse\(String\(b\.calculated_at\)\) - Date\.parse\(String\(a\.calculated_at\)\)/);
+});
+
+test("unpublish safety checks the exact supplier offer behind the canonical price", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /currentPriceOfferId/);
+  assert.match(publish, /allOffers\.find\(\(candidateOffer\) => String\(candidateOffer\.id\) === currentPriceOfferId\)/);
+  assert.doesNotMatch(publish, /const rawOffer = offer \?\? allOffers\[0\]/);
+});
+
 test("price reconciliation disables published listings with unverified supplier evidence", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
