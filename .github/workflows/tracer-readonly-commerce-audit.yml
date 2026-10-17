@@ -1,0 +1,66 @@
+name: TRACER Read-only Commerce Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tracer-readonly-commerce-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tracer-readonly-commerce-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Query authenticated read-only production diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://tracer-pied-alpha.vercel.app"
+
+          get_oidc_token() {
+            curl --fail-with-body --silent --show-error --max-time 20 \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+
+          status_token="$(get_oidc_token)"
+          status_code="$(curl --silent --show-error --max-time 150 -o commerce-status.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${status_token}" \
+            "${BASE}/api/admin/commerce/status")"
+          echo "=== COMMERCE STATUS HTTP ${status_code} ==="
+          python3 - <<'PY'
+          import json
+          with open("commerce-status.json", encoding="utf-8") as f:
+              r=json.load(f)
+          print("ok:", r.get("ok"), "readOnly:", r.get("readOnly"), "generatedAt:", r.get("generatedAt"))
+          for key in ("catalog", "supplierOffers", "prices", "channels", "livePlatforms", "orders", "procurement", "approvalEvents", "cronRuns", "listingErrors"):
+              if key in r:
+                  print(key + ":", json.dumps(r[key], ensure_ascii=False, separators=(",", ":")))
+          PY
+          test "${status_code}" = "200"
+
+          base_token="$(get_oidc_token)"
+          base_code="$(curl --silent --show-error --max-time 150 -o base-diagnostics.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${base_token}" \
+            "${BASE}/api/channels/base/diagnostics")"
+          echo "=== BASE MAPPING DIAGNOSTICS HTTP ${base_code} ==="
+          python3 - <<'PY'
+          import json
+          with open("base-diagnostics.json", encoding="utf-8") as f:
+              r=json.load(f)
+          print("ok:", r.get("ok"), "configured:", r.get("configured"), "baseApi:", r.get("baseApi"))
+          for key in ("ordersApiStatus", "itemsApiStatus", "itemsScanned", "visibleItems", "hiddenItems", "scanComplete", "mappingAudit", "error"):
+              if key in r:
+                  print(key + ":", json.dumps(r[key], ensure_ascii=False, separators=(",", ":")))
+          PY
+          test "${base_code}" = "200"
