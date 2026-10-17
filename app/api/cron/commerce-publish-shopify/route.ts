@@ -7,8 +7,8 @@ export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   try {
-    const requested = Number(new URL(request.url).searchParams.get("limit") || 5);
-    const limit = Number.isFinite(requested) ? Math.min(5, Math.max(1, Math.floor(requested))) : 5;
+    const requested = Number(new URL(request.url).searchParams.get("limit") || 25);
+    const limit = Number.isFinite(requested) ? Math.min(25, Math.max(1, Math.floor(requested))) : 25;
     const onlyUnpublished = new URL(request.url).searchParams.get("onlyUnpublished") !== "false";
     const result = await syncCommerceListings("shopify", limit, onlyUnpublished);
     return NextResponse.json({ ok: result.failed === 0, ...result }, { status: result.failed ? 207 : 200 });
