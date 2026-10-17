@@ -91,4 +91,12 @@ assert.match(auditMigration, /create table if not exists public\.internal_supply
 assert.match(auditMigration, /grant all on public\.internal_supply_ingestion_audit to service_role/);
 assert.match(identity, /function hasValidGs1CheckDigit/);
 
+const commerceImport = readFileSync("app/api/cron/commerce-cj-import/route.ts", "utf8");
+assert.match(commerceImport, /import \{ persistCjInternalSupplyCandidate \} from "@\/lib\/suppliers\/persist-cj-internal-supply"/,
+  "the commerce importer must also feed exact live-verified CJ variants into the internal supply catalog");
+assert.match(commerceImport, /if \(!complianceBlockReason && stock !== null && stock > 0 && shipping !== null && !shippingWasEstimated[\s\S]*?persistCjInternalSupplyCandidate\(/,
+  "internal catalog persistence must be gated on positive live stock, non-estimated Japan freight, cost, and compliance approval");
+assert.match(commerceImport, /supplierProductId,[\s\S]*?supplierVariantId: exactVariant\.vid,[\s\S]*?costUsd: cost,[\s\S]*?shippingUsd: shipping,[\s\S]*?inventory: Math\.floor\(stock\)/,
+  "the internal catalog write must preserve exact CJ product/variant IDs and verified commercial data");
+
 console.log("CJ internal-supply wiring checks passed.");
