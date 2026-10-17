@@ -193,6 +193,9 @@ export async function GET(request: Request) {
     storefrontSync: result.storefrontSync,
     storefrontSyncRemaining: result.storefrontSyncRemaining,
     storefrontSyncErrorCount: result.storefrontSyncErrors.length,
+    storefrontSyncErrors: result.storefrontSyncErrors.map(({ channel, reason }) => ({ channel, reason })),
+    repriceErrorCount: result.errors.length,
+    repriceErrors: result.errors.slice(0, 5).map(({ offerId, reason }) => ({ offerId, reason })),
   });
   return NextResponse.json({ ok, storefrontSyncComplete, ...result, sourceApiCalls: 0, fxRate: usdJpy.rate }, { status: ok ? 200 : 207 });
 }
