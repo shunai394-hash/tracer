@@ -724,8 +724,9 @@ test("clean commerce CJ importer respects the shared daily-points cooldown befor
 
 test("clean commerce CJ importer prices linked offers even when cached stock is zero or unknown", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  assert.match(importer, /if \(shipping !== null && shipping >= 0\)\s*\{\s*await recalculatePrice/);
-  const priceGateStart = importer.indexOf("if (shipping !== null && shipping >= 0)");
+  assert.match(importer, /if \(Number\.isFinite\(shippingCostForPricing\) && shippingCostForPricing >= 0\)\s*\{\s*await recalculatePrice/);
+  assert.doesNotMatch(importer, /if \(shipping !== null && shipping >= 0\)\s*\{\s*await recalculatePrice/);
+  const priceGateStart = importer.indexOf("if (Number.isFinite(shippingCostForPricing) && shippingCostForPricing >= 0)");
   const priceGateEnd = importer.indexOf("} else {", priceGateStart);
   assert.ok(priceGateStart >= 0 && priceGateEnd > priceGateStart, "freight-based price gate must exist");
   const priceGate = importer.slice(priceGateStart, priceGateEnd);
@@ -956,6 +957,8 @@ test("CJ freight uses the detailed API when required product logistics fields ar
 test("CJ freight quote misses use a conservative historical reserve while preserving unknown status", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.ok(importer.includes("const shippingCostForPricing = shipping ?? 7.76"));
+  assert.ok(importer.includes("if (Number.isFinite(shippingCostForPricing) && shippingCostForPricing >= 0)"));
+  assert.ok(!importer.includes("if (shipping !== null && shipping >= 0)"));
   assert.ok(importer.includes("shippingKnown: shipping !== null"));
   assert.ok(importer.includes("shippingEstimated: shippingWasEstimated"));
   assert.ok(importer.includes('shippingEstimateSource: shippingWasEstimated ? "cj_historical_p90_570_offers" : null'));
