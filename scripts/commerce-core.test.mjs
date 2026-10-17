@@ -926,6 +926,8 @@ test("live storefront price audit prioritizes Shopify variant/product IDs before
   assert.match(route, /matchMethod = "sku"/);
   assert.match(route, /ambiguous_variant_id_no_mutation/);
   assert.match(route, /ambiguous_live_sku_no_mutation/);
+  assert.match(route, /nodes \{ id sku price inventoryQuantity \}/, "audit must read inventory for each Shopify variant");
+  assert.match(route, /matched\.inventoryQuantity <= 0/, "inventory mismatch must use the matched variant, not product total inventory");
 });
 
 test("Shopify live reconciliation exports full row-level IDs, SKUs, prices, and unlinked products", async () => {
