@@ -337,14 +337,14 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         }).eq("channel", channel).eq("variant_id", candidate.id);
         if (saveError) throw new Error("supplier_offer_disable_state_save_failed:" + saveError.message);
         staleListings.checked++;
-        staleListings.unpublished++;
+        // The catalog item remains published; only its purchasable inventory is disabled.
         stateByVariant.set(candidate.id, {
           ...currentState,
-          status: "error",
+          status: "published",
           last_error: "supplier_offer_not_fulfillable:" + reason,
           last_synced_at: nowIso,
         });
-        results.push({ variantId: candidate.id, ok: true, externalId: String(currentState.external_product_id), action: "unpublished" });
+        results.push({ variantId: candidate.id, ok: true, externalId: String(currentState.external_product_id), action: "published" });
       } catch (error) {
         staleListings.checked++;
         staleListings.failed++;
