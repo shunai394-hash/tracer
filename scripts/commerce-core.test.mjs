@@ -109,8 +109,10 @@ test("bounded recovery processes only unpublished channel listings", async () =>
   assert.match(shopifyRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/, "Shopify cron defaults to unpublished-only unless full refresh is explicitly requested");
   assert.match(baseRoute, /Math\.min\(5, Math\.max\(1, Math\.floor\(requested\)\)\)/, "BASE cron caps each run at five listings");
   assert.match(shopifyRoute, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/, "Shopify cron caps each run at ten listings");
-  assert.match(workflow, /commerce-publish-base\?limit=10&onlyUnpublished=true/);
-  assert.match(workflow, /commerce-publish-shopify\?limit=10&onlyUnpublished=true/);
+  assert.match(workflow, /commerce-reprice-existing\?limit=100/, "recovery reprices and reconciles stale storefront prices before publishing");
+  assert.match(workflow, /commerce-publish-all\?limit=5&onlyUnpublished=true/, "recovery publishes both storefronts through the unified runner");
+  assert.doesNotMatch(workflow, /commerce-publish-base\?limit=10&onlyUnpublished=true/);
+  assert.doesNotMatch(workflow, /commerce-publish-shopify\?limit=10&onlyUnpublished=true/);
 });
 
 test("stale listing eligibility uses batched supplier, price, and variant reads", async () => {
