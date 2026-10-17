@@ -729,3 +729,11 @@ test("storefront price reconciliation emits bounded, privacy-safe completion tel
   assert.match(route, /storefrontSyncErrorCount: result\.storefrontSyncErrors\.length/);
   assert.doesNotMatch(route, /console\.info\([^\n]*(?:customer|orderId|supplierVariantId|accessToken)/i);
 });
+
+
+test("published storefront price reconciliation rotates oldest unsynced listings first", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(route, /\.select\("variant_id,channel,selling_price,status,last_synced_at"\)/);
+  assert.match(route, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)/);
+  assert.match(route, /allChannelIds\.slice\(0, 20\)/);
+});
