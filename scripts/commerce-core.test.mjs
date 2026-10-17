@@ -636,7 +636,7 @@ test("CJ unknown stock still skips before supplier offer upsert", async () => {
 test("scheduled CJ discovery only retries errored variants missing Shopify publication", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /requestedProductIds/);
-  assert.match(importer, /candidates = \[\.\.\.evidenceRetryCandidates, \.\.\.missingPublicationRetries/);
+  assert.match(importer, /candidates = \[\.\.\.dedupedEvidenceCandidates, \.\.\.missingPublicationRetries/);
   assert.match(importer, /\.eq\("source_status", "error"\)/);
   assert.match(importer, /shopifyVariantIds\.has\(String\(offer\.variant_id\)\)/);
   assert.match(importer, /retryVariantIds/);
