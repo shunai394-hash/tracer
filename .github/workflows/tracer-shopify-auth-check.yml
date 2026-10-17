@@ -268,7 +268,7 @@ jobs:
             --body-file auth-report.md
 
       - name: Export complete read-only Shopify reconciliation artifacts
-        if: github.event_name == 'push'
+        if: always() && github.event_name == 'push'
         shell: bash
         run: |
           set -euo pipefail
