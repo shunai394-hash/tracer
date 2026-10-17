@@ -424,14 +424,8 @@ export async function runIntelligencePipeline(options: {
   // The 100-product scoring page can take >20s when Supabase is slow; a timeout stops all downstream gates.
   steps.push(await runStep("score", () => scoreProductIntelligence(), { downstream: true, budgetMs: 45_000 }));
 
-  // Reconsider supply verified by earlier patrols too, so a deferred or
-  // timed-out patrol does not strand verified supply before the gate.
-  const supplyProductIds = supplyItems.map((item) => String(item.productId ?? "")).filter(Boolean);
-  // Supply-first CJ products are standalone catalog items, not matches to a
-  // marketplace bestseller. Requiring identity_status=linked here silently
-  // excluded hundreds of verified, orderable variants marked supply_discovered.
-  // Native CJ identity is permitted downstream only when the selector rechecks
-  // verified product+variant IDs, shipping, price, inventory, API and orderability.
+  // Read fresh supplier readiness for reporting only; discovery and publication
+  // are handled by the canonical commerce importer and channel publishers.
   const freshSupplyCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const verifiedSupplyPageSize = 100;
   const { count: verifiedSupplyCount, error: verifiedSupplyCountError } = await db
