@@ -12,6 +12,7 @@ import {
   calculateCJFreight,
 } from "@/lib/sources/cj";
 import { isCJQuotaCircuitBlockingError } from "@/lib/sources/cj/client";
+import { isCanonicalCJNativeId } from "@/lib/sources/cj/native-id.mjs";
 import { isCJQuotaCircuitActive } from "@/lib/sources/cj/rate-limit-policy";
 import { selectUnambiguousVariant, type CJProductVariant } from "@/lib/sources/cj/variant-select";
 import { persistCjSupplyIntelligence } from "@/lib/intelligence/persist-cj-supply-intelligence";
@@ -31,6 +32,7 @@ async function resolveCJVariantProductIdentity(
   variantId: string,
   productScopedVariant?: CJProductVariant | null,
 ): Promise<{ variant: CJProductVariant; supplierProductId: string } | null> {
+  if (!isCanonicalCJNativeId(candidateProductId) || !isCanonicalCJNativeId(variantId)) return null;
   const scopedProductId = productScopedVariant?.productId?.trim();
   if (productScopedVariant && productScopedVariant.vid === variantId) {
     // A variant returned by the live product-scoped endpoint is already proof
