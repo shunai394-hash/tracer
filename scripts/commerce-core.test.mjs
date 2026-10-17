@@ -956,7 +956,7 @@ test("CJ freight quote misses use a conservative historical reserve while preser
   assert.ok(importer.includes('shippingEstimateSource: shippingWasEstimated ? "cj_historical_p90_570_offers" : null'));
   const publisher = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   const repricer = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
-  assert.ok(publisher.includes("offer.raw_data?.shippingEstimated === true"));
+  assert.ok(!publisher.includes("offer.raw_data?.shippingKnown === true || offer.raw_data?.shippingEstimated === true"));
   assert.ok(publisher.includes("preflightRawOfferData.shippingEstimated === true"));
   assert.ok(repricer.includes("rawData.shippingEstimated === true"));
   assert.ok(importer.includes("targetMarginRate: 0.5"));
