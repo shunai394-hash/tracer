@@ -66,9 +66,6 @@ export async function GET(request: Request) {
     priceByVariant.set(variantId, row);
     canonicalPriceByVariant.set(variantId, Number(row.selling_price));
   }
-  // Reconcile every already-published listing against the latest canonical price,
-  // not only variants that needed recalculation in this run. Otherwise previously
-  // calculated 50% margin prices can remain stale on BASE/Shopify indefinitely.
   let skippedUnknownShipping = 0;
   const oneOfferPerVariant = new Map<string, NonNullable<typeof offers>[number]>();
   for (const offer of offers ?? []) {
