@@ -103,7 +103,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
         // Cached stock, verification age, JP destination and tracking are rechecked at procurement,
         // so temporary supplier evidence gaps do not silently hide otherwise linked catalog items.
         const unitCostKnown = Number.isFinite(Number(offer.unit_cost)) && Number(offer.unit_cost) > 0;
-        const shippingKnown = offer.raw_data?.shippingKnown === true || offer.raw_data?.shippingEstimated === true ||
+        const shippingKnown = offer.raw_data?.shippingKnown === true ||
           (offer.raw_data?.shippingKnown === undefined && offer.source_status === "verified" &&
             Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0);
         return Boolean(
