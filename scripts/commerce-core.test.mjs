@@ -9,6 +9,15 @@ import { isCanonicalCJNativeId } from "../lib/sources/cj/native-id.mjs";
 import { japaneseCommerceDescription } from "../lib/commerce/japanese-copy.mjs";
 import { resolveBasePublicUrl } from "../lib/commerce/base-public-url.mjs";
 
+test("CJ import prioritizes supplier refreshes for existing BASE/Shopify publication failures", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(route, /from\("channel_listings"\)\.select\("variant_id,channel,last_error"\)/);
+  assert.match(route, /publicationErrorVariantIds/);
+  assert.match(route, /aBlocked - bBlocked/);
+  assert.match(route, /!shopifyVariantIds\.has\(String\(offer\.variant_id\)\) && !publicationErrorVariantIds\.has\(String\(offer\.variant_id\)\)/);
+  assert.match(route, /\[\.\.\.evidenceRetryCandidates, \.\.\.staleListingRetryCandidates\]/);
+});
+
 test("CJ freight parsing searches nested object and array wrappers and preserves explicit free-shipping values", async () => {
   const client = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
   assert.match(client, /function collectCJFreightRows\(value: unknown\)/);
