@@ -64,6 +64,16 @@ for (const source of [
 assert.equal(localizeProductTitle("Bohemian Beach Vacation Flower Hair Clip For Women Fashion Girl Accessories Gift"), "フラワーモチーフ ヘアクリップ");
 assert.equal(localizeProductTitle("Groin Electric Clippers Household Hair Clipper (Groin Electric Clippers Household Hair Clipper Black Cutter head)"), "デリケートゾーン用 電動トリマー");
 assert.equal(localizeProductTitle("Art Design Graffiti Art Hip Hop African Girl with Black Hair Big Earring with Modern Building Shower Curtain for Bathroom Decor"), "アフリカンアート柄 シャワーカーテン");
+const cjHairTitleCases = [
+  ["Cellulose Acetate Sheet Hair Accessories Plaid Headband For Women", "セルロースアセテート チェック柄ヘアバンド"],
+  ["Cute Girly Knitted Wool Headband Hair Accessories Women", "レディース ニットウール ヘアバンド"],
+  ["Women Hollow Hair Circle High Horsetail Artifact Fixed Coiler Hairpin Horsetail Headdress Fashion Hair Accessories", "ポニーテール用 ホローデザイン ヘアアクセサリー"],
+];
+for (const [source, expected] of cjHairTitleCases) {
+  const localized = localizeProductTitle(source);
+  assert.equal(localized, expected, source);
+  assert.equal(isPublishableCatalogTitle(localized), true, `localized title must pass publication gate: ${source}`);
+}
 const nativeHeadbandSource = "Acrylic Thick Wool Knitted Headband Diagonally Crossed Hair Accessories For Women";
 const nativeHeadbandTitle = localizeProductTitle(nativeHeadbandSource);
 assert.equal(nativeHeadbandTitle, "ニット編み クロスヘアバンド");
