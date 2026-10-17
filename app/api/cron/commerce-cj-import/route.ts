@@ -206,59 +206,10 @@ export async function GET(request: Request) {
         }
         scanPage += 1;
       }
-      const fallbackCandidates = [...uniqueSearchProducts.values()].filter((item) => knownParentIds.has(item.id));
-      candidates = [...newCandidates, ...fallbackCandidates].slice(0, limit);
-      // Prioritize previously failed, syntactically valid CJ parent IDs so transient
-      // API failures can be retried instead of leaving those offers errored forever.
-      try {
-        const [{ data: failedOffers, error: failedOffersError }, { data: listingErrors, error: listingErrorsError }] = await Promise.all([
-          db.from("supplier_offers")
-            .select("supplier_product_id")
-            .eq("supplier_code", "cj")
-            .eq("source_status", "error")
-            .order("updated_at", { ascending: true })
-            .limit(30),
-          db.from("channel_listings")
-            .select("variant_id")
-            .eq("status", "error")
-            .like("last_error", "supplier_offer_no_longer_fulfillable:%")
-            .order("updated_at", { ascending: true })
-            .limit(20),
-        ]);
-        const listingVariantIds = [...new Set((listingErrors ?? []).map((row) => String(row.variant_id ?? "")).filter(Boolean))];
-        const { data: listingOffers, error: listingOffersError } = listingVariantIds.length
-          ? await db.from("supplier_offers").select("supplier_product_id").eq("supplier_code", "cj").in("variant_id", listingVariantIds.slice(0, 20))
-          : { data: [], error: null };
-        if (failedOffersError || listingErrorsError || listingOffersError) {
-          stats.errors.push("failed_offer_recovery_read:" + (failedOffersError?.message ?? listingErrorsError?.message ?? listingOffersError?.message ?? "read_failed").slice(0, 120));
-        } else {
-          const seen = new Set(candidates.map((item) => item.id));
-          const listingIds = (listingOffers ?? []).map((row) => String(row.supplier_product_id ?? "").trim());
-          const erroredIds = (failedOffers ?? []).map((row) => String(row.supplier_product_id ?? "").trim());
-          // The DB query intentionally remains bounded, but do not always retry
-          // the oldest two IDs: failed detail lookups do not mutate supplier evidence
-          // and therefore otherwise starve every later ID in the same result window.
-          const recoveryPool = [...new Set([...listingIds, ...erroredIds])]
-            .filter((id) => /^\d{10,22}$/.test(id) && !seen.has(id));
-          const recoverySlot = Math.floor(Date.now() / 600_000);
-          const recoveryStart = recoveryPool.length ? (recoverySlot * 2) % recoveryPool.length : 0;
-          const recoveryIds = recoveryPool.length > 2
-            ? [recoveryPool[recoveryStart], recoveryPool[(recoveryStart + 1) % recoveryPool.length]]
-            : recoveryPool;
-          for (const id of recoveryIds) {
-            const detail = await getCJProductDetail(id);
-            if (!detail) {
-              stats.skipped++;
-              continue;
-            }
-            forcedDetails.set(id, detail);
-            candidates.push({ id, title: detail.title, productType: detail.productType, imageUrl: detail.imageUrl });
-            seen.add(id);
-          }
-        }
-      } catch (recoveryError) {
-        stats.errors.push("failed_offer_recovery:" + (recoveryError instanceof Error ? recoveryError.message : String(recoveryError)).slice(0, 120));
-      }
+      // Discovery must never spend supplier API quota retrying already-known parents.
+      // Existing supplier_offers are repriced by commerce-reprice-existing; targeted
+      // refreshes require an explicit productIds request after the quota circuit clears.
+      candidates = newCandidates.slice(0, limit);
     }
     for (const candidate of candidates) {
       try {
