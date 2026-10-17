@@ -77,7 +77,7 @@ export async function GET(request: Request) {
         priceMatches: false, visibilityMatches: false,
         error: (() => {
           // Keep the HTTP status while excluding the provider response body/token details.
-          const match = message.match(/^([A-Z0-9_]+)(?::HTTP_(\\d{3}))?/);
+          const match = message.match(/^([A-Z0-9_]+)(?::HTTP_(\d{3}))?/);
           return match ? [match[1], match[2] ? `HTTP_${match[2]}` : null].filter(Boolean).join(":") : "BASE_ITEM_DETAIL_FAILED";
         })(),
       };
