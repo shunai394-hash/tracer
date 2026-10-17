@@ -142,18 +142,21 @@ test("product dashboard displays the canonical commerce catalog instead of legac
   assert.match(page, /BASE・Shopify 自動販売カタログ/);
   assert.match(page, /旧Intelligenceテーブルの件数とは分けて表示/);
 });
-test("publication and price calculation require fresh verified supplier evidence", async () => {
+test("catalog publication is independent of live fulfillment evidence while procurement rechecks it", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
-  assert.match(core, /offer\.source_status !== "verified"/);
+  const worker = await readFile(new URL("../app/api/cron/commerce-procurement/route.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(core, /offer\.source_status !== "verified"/);
   assert.match(core, /isCanonicalCjNativeId/);
   assert.match(core, /invalid_cj_native_supplier_ids/);
   assert.match(publish, /isCanonicalCjNativeId/);
-  assert.match(core, /offer\.tracking_supported !== true/);
-  assert.match(core, /supplier_offer_verification_stale/);
-  assert.match(core, /supplier_offer_price_not_fulfillable/);
-  assert.match(core, /const quantityByOffer = new Map<string, number>\(\)/);
-  assert.match(core, /quantityByOffer\.get\(line\.offerId\)/);
+  assert.doesNotMatch(core, /offer\.tracking_supported !== true/);
+  assert.doesNotMatch(core, /supplier_offer_verification_stale/);
+  assert.doesNotMatch(core, /supplier_offer_price_not_fulfillable/);
+  assert.match(worker, /offer\.source_status !== "verified"/);
+  assert.match(worker, /offer\.tracking_supported !== true/);
+  assert.match(worker, /supplier_offer_not_fresh_and_fulfillable/);
+  assert.match(worker, /exact_supplier_offer_price_missing_or_unprofitable/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
   assert.match(publish, /supplier_offer_missing_or_cost_unknown/);
@@ -164,11 +167,18 @@ test("publication and price calculation require fresh verified supplier evidence
   assert.doesNotMatch(publish, /createBaseItem\(\{[^}]*visible: true/s, "new BASE items must stay hidden until image setup succeeds");
 });
 
-test("paid-order supplier preflight runs before writing the order record", async () => {
+test("paid-order intake stores exact offer identity before procurement and repairs duplicate addresses safely", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
-  const preflight = core.indexOf("Validate every supplier offer before persisting a paid order");
+  const preflight = core.indexOf("Intake persists paid orders even when fulfillment evidence is stale or incomplete");
   const orderWrite = core.indexOf('from("commerce_orders").upsert');
-  assert.ok(preflight >= 0 && orderWrite > preflight, "invalid or stale supplier offers must be rejected before order persistence");
+  assert.ok(preflight >= 0 && orderWrite > preflight, "exact supplier offer identity must be resolved before order persistence");
+  assert.doesNotMatch(core.slice(preflight, orderWrite), /source_status|tracking_supported|last_checked_at|expected_profit|inventory|ship_to/);
+  assert.match(core, /supplier_offer_id: line\.offerId/);
+  assert.match(core, /offersById\.get\(line\.offerId\)/);
+  assert.match(core, /order_refresh_failed/);
+  assert.match(core, /const refreshedAddress = \{ \.\.\.previousAddress \}/);
+  assert.match(core, /if \(value !== null && value !== undefined && String\(value\)\.trim\(\) !== ""\) refreshedAddress\[key\] = value/);
+  assert.match(core, /status: "pending"/);
 });
 
 test("supplier importer never substitutes a search-result product ID for unresolved variant identity", async () => {
@@ -207,6 +217,12 @@ test("Shopify paid-order polling uses the canonical commerce order and procureme
   assert.match(sync, /from\("commerce_orders"\)/);
   assert.match(sync, /from\("channel_listings"\)/);
   assert.match(sync, /from\("commerce_prices"\)/);
+  assert.match(sync, /listingBySku/);
+  assert.match(sync, /shopify_sku_mapping_ambiguous/);
+  assert.match(sync, /shopify_canonical_sku_lookup_failed/);
+  assert.match(sync, /knownStatus === "procurement_pending"/);
+  assert.doesNotMatch(sync, /shopify_shipping_address_incomplete/);
+  assert.match(sync, /Keep the paid order even when address fields need repair/);
   assert.match(sync, /ingestPaidOrder\(/);
   assert.match(sync, /canonicalShopifyId\(order\.id, "Order"\)/);
   assert.match(sync, /canonicalShopifyId\(item\.id, "LineItem"\)/);
@@ -599,4 +615,7 @@ test("BASE order polling rotates through older pages while always rescanning the
   assert.match(route, /detail: \{ offset: nextOffset, pageSize: BASE_ORDER_PAGE_SIZE/);
   assert.match(route, /nextScanOffset: nextOffset/);
   assert.match(route, /new Map\(\[\.\.\.recentSummaries, \.\.\.rotatingSummaries\]/);
+  assert.match(route, /base_order_import_error:/);
+  assert.match(route, /status: "needs_review"/);
+  assert.match(route, /status: "resolved"/);
 });

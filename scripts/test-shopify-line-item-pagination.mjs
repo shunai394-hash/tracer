@@ -3,12 +3,14 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../lib/shopify/sync-orders.ts", import.meta.url), "utf8");
 
-// Outer order pagination: newest paid orders are scanned until new imports are found.
+// Outer order pagination: scan recent paid orders until new imports or pending retries are found.
 assert.match(source, /orders\(first: \$first, after: \$after,[\s\S]*?reverse: true/);
 assert.match(source, /while \(hasNextOrdersPage && orders\.length < maxNewOrders\)/);
 assert.match(source, /shopify_orders_cursor_not_advancing/);
 assert.match(source, /fetched: scannedOrders/);
-assert.ok(source.includes('if (!existingIds.has(canonicalShopifyId(order.id, "Order")) && orders.length < maxNewOrders)'), "already-imported orders must be skipped while paging");
+assert.match(source, /existingById\.get\(canonicalShopifyId\(order\.id, "Order"\)\)/);
+assert.match(source, /if \(\(!knownStatus \|\| knownStatus === "procurement_pending"\) && orders\.length < maxNewOrders\) orders\.push\(order\)/,
+  "new orders and procurement-pending retries must be queued; completed orders must be skipped");
 assert.match(source, /financial_status:paid status:open fulfillment_status:unfulfilled/);
 assert.match(source, /cancelledAt: string \| null/);
 assert.match(source, /if \(order\.cancelledAt \|\| order\.displayFinancialStatus !== "PAID" \|\| order\.displayFulfillmentStatus !== "UNFULFILLED"\)/);
@@ -37,4 +39,4 @@ assert.ok(source.includes('externalOrderId: canonicalShopifyId(order.id, "Order"
 assert.match(source, /shopify_variant_mapping_ambiguous/);
 assert.ok(source.indexOf("shopify_variant_mapping_ambiguous") < source.indexOf("await ingestPaidOrder({"),
   "ambiguous variant mappings must fail before canonical order ingestion");
-console.log("Shopify order pagination and idempotency: 22 assertions passed");
+console.log("Shopify order pagination and idempotency: assertions passed");

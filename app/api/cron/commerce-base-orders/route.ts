@@ -130,10 +130,32 @@ export async function GET(request: Request) {
           rawPayload: { unique_key: detail.unique_key, dispatch_status: detail.dispatch_status, payment: detail.payment },
           lines
         });
-        if (imported.duplicate) result.duplicate++; else result.imported++;
+        const outcome = imported.duplicate ? "duplicate" : "imported";
+        result[imported.duplicate ? "duplicate" : "imported"]++;
+        const { error: resolvedError } = await db.from("commerce_events").upsert({
+          event_key: "base_order_import_error:" + String(detail.unique_key),
+          event_type: "base_order_import_error",
+          entity_type: "base_order",
+          entity_id: String(detail.unique_key),
+          status: "resolved",
+          detail: { outcome, resolvedAt: new Date().toISOString() },
+        }, { onConflict: "event_key" });
+        if (resolvedError) throw new Error("base_order_error_event_resolve_failed:" + resolvedError.message);
       } catch (error) {
         result.failed++;
-        result.errors.push(String(summary.unique_key) + ":" + (error instanceof Error ? error.message : String(error)).slice(0, 180));
+        const message = (error instanceof Error ? error.message : String(error)).slice(0, 180);
+        result.errors.push(String(summary.unique_key) + ":" + message);
+        // Persist per-order failures instead of relying on ephemeral cron output.
+        // The next poll can retry the order and mark this event resolved.
+        const { error: eventError } = await db.from("commerce_events").upsert({
+          event_key: "base_order_import_error:" + String(summary.unique_key),
+          event_type: "base_order_import_error",
+          entity_type: "base_order",
+          entity_id: String(summary.unique_key),
+          status: "needs_review",
+          detail: { error: message, lastSeenAt: new Date().toISOString() },
+        }, { onConflict: "event_key" });
+        if (eventError) result.errors.push(String(summary.unique_key) + ":error_event_write_failed:" + eventError.message.slice(0, 100));
       }
     }
     const { error: cursorWriteError } = await db.from("commerce_events").upsert({
