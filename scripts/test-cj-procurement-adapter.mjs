@@ -31,6 +31,7 @@ assert.match(commerceImporter, /スタイル/);
 assert.match(commerceImporter, /japan_compliance_unverified_disinfection_cabinet/);
 assert.match(commerceImporter, /const queryOptions = \[\s*"women handbag", "beauty tools", "hair accessories women",\s*\]/, "CJ discovery must prioritize bags, beauty tools and hair accessories");
 assert.match(commerceImporter, /complianceBlocked/);
+assert.match(commerceImporter, /if \(stock !== null && shipping !== null && shipping >= 0\)/, "mapped zero-stock variants must still receive a profit calculation; procurement separately rechecks inventory");
 assert.match(adapter, /isCanonicalCjNativeId/);
 assert.match(adapter, /CJ_NATIVE_ID_INVALID/);
 assert.match(procurement, /isCanonicalCjNativeId/);
