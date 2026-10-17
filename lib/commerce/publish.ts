@@ -103,7 +103,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
         // Cached stock, verification age, JP destination and tracking are rechecked at procurement,
         // so temporary supplier evidence gaps do not silently hide otherwise linked catalog items.
         const unitCostKnown = Number.isFinite(Number(offer.unit_cost)) && Number(offer.unit_cost) > 0;
-        const shippingKnown = offer.raw_data?.shippingKnown === true ||
+        const shippingKnown = offer.raw_data?.shippingKnown === true || offer.raw_data?.shippingEstimated === true ||
           (offer.raw_data?.shippingKnown === undefined && offer.source_status === "verified" &&
             Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0);
         return Boolean(
@@ -313,7 +313,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         const nativeIdsValid = x.supplier_code !== "cj" ||
           (isCanonicalCjNativeId(x.supplier_product_id) && isCanonicalCjNativeId(x.supplier_variant_id));
         const unitCostKnown = Number.isFinite(Number(x.unit_cost)) && Number(x.unit_cost) > 0;
-        const shippingKnown = x.raw_data?.shippingKnown === true ||
+        const shippingKnown = x.raw_data?.shippingKnown === true || x.raw_data?.shippingEstimated === true ||
           (x.raw_data?.shippingKnown === undefined && x.source_status === "verified" &&
             Number.isFinite(Number(x.shipping_cost)) && Number(x.shipping_cost) > 0);
         return Boolean(x.supplier_product_id && x.supplier_variant_id && nativeIdsValid && unitCostKnown && shippingKnown);
