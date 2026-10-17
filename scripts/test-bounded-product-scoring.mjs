@@ -21,7 +21,7 @@ assert.match(pipeline, /runStep\("demand_analyze", \(\) => persistDemandIntellig
 assert.doesNotMatch(pipeline, /runStep\("match"/);
 assert.doesNotMatch(pipeline, /researchLimitedSupply/, "legacy CJ research must not block the patrol pipeline");
 assert.doesNotMatch(pipeline, /discoverAndCreateCjSupply\(/, "live CJ discovery must stay in its dedicated longer-budget cron");
-assert.match(pipeline, /dedicated_supply_first_cron_owns_live_cj_discovery/);
+assert.match(pipeline, /dedicated_commerce_cj_import_cron_owns_live_cj_discovery/);
 assert.match(pipeline, /marketplace_sourcing_disabled_supplier_native_only/, "patrol must skip marketplace ranking collection");
 assert.doesNotMatch(pipeline, /persistMarketplaceBestsellers/, "patrol must not read marketplace-derived supplier candidates");
 assert.match(pipeline, /runStep\("ordering", \(\) => persistReorderRecommendations\(\), \{ downstream: true, budgetMs: 15_000 \}\)/);
