@@ -12,6 +12,11 @@ export async function GET(request: Request) {
 
   const headers = { "Cache-Control": "no-store" };
   if (!isShopifyConfigured()) {
+    console.error("[TRACER SHOPIFY PUBLISH RECONCILE]", JSON.stringify({
+      ok: false,
+      configured: false,
+      error: "shopify_not_configured",
+    }));
     return NextResponse.json(
       { ok: false, phase: "shopify_channel_sync", configured: false, error: "SHOPIFY_STORE_DOMAIN or SHOPIFY_ADMIN_ACCESS_TOKEN is not configured" },
       { status: 503, headers },
@@ -20,6 +25,16 @@ export async function GET(request: Request) {
 
   try {
     const result = await syncPublishedListingsToShopify(150);
+    console.info("[TRACER SHOPIFY PUBLISH RECONCILE]", JSON.stringify({
+      ok: result.failed === 0,
+      configured: result.configured,
+      considered: result.considered,
+      synced: result.synced,
+      failed: result.failed,
+      listingIds: result.listingIds,
+      errors: result.errors,
+      generatedAt: new Date().toISOString(),
+    }));
     return NextResponse.json({
       ok: result.failed === 0,
       phase: "shopify_channel_sync",
@@ -28,8 +43,14 @@ export async function GET(request: Request) {
       note: "Only TRACER Sales Test Gate-passed PUBLISHED listings with live fulfillment evidence are synchronized.",
     }, { status: result.failed === 0 ? 200 : 207, headers });
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[TRACER SHOPIFY PUBLISH RECONCILE]", JSON.stringify({
+      ok: false,
+      error: message,
+      generatedAt: new Date().toISOString(),
+    }));
     return NextResponse.json(
-      { ok: false, phase: "shopify_channel_sync", error: error instanceof Error ? error.message : String(error) },
+      { ok: false, phase: "shopify_channel_sync", error: message },
       { status: 500, headers },
     );
   }
