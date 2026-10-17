@@ -63,7 +63,10 @@ assert.doesNotMatch(supplySelector, /verifiedCandidates\.length > 0 \? verifiedC
 assert.doesNotMatch(salesPublicationRoute, /identity_status\.eq\.supply_discovered/, "sales-test publication must not prefilter unresolved supply as verified");
 assert.match(e2eFunnel, /eq\("identity_status", "linked"\).*eq\("verification_status", "verified"\).*eq\("orderable", true\)/, "readiness funnel must not count unresolved supply as verified and orderable");
 assert.match(intelligencePipeline, /\.eq\("verification_status", "verified"\)[\s\S]*?\.eq\("orderable", true\)/, "supply selection must still require verified, orderable supplier evidence");
-assert.match(intelligencePipeline, /allowNativeCjIdentity:\s*true/, "standalone CJ supply must use the selector’s explicit native-supplier gate rather than pretending marketplace identity is linked");
+assert.match(intelligencePipeline, /legacy_shop_listings_disabled_canonical_commerce_only/,
+  "patrol must not create legacy BASE-only listings outside the canonical commerce catalog");
+assert.doesNotMatch(intelligencePipeline, /allowNativeCjIdentity:\s*true/,
+  "legacy patrol selection is disabled; native supplier eligibility is handled by the canonical commerce publisher");
 assert.match(intelligencePipeline, /name: "business_readiness"/, "patrol completion must include business readiness, not only successful code stages");
 assert.match(intelligencePipeline, /freshOrderableSuppliers: freshOrderableSupplierCount/);
 assert.match(intelligencePipeline, /publishedOrderableListings/);
