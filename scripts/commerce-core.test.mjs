@@ -251,9 +251,11 @@ test("clean commerce cron schedule preserves canonical routes and the required f
 test("both channels use the shared capped storefront quantity and Japanese title validation", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /getStorefrontStockCap, toStorefrontStockQuantity/);
-  assert.match(publish, /toStorefrontStockQuantity\(Math\.max\(1, Number\(offer\.inventory\) \|\| 0\), getStorefrontStockCap\(\)\)/);
+  assert.match(publish, /toStorefrontStockQuantity\(Math\.max\(0, Number\(offer\.inventory\) \|\| 0\), getStorefrontStockCap\(\)\)/);
   assert.match(publish, /isJapaneseProductTitle\(title\)/);
   assert.match(publish, /stock: storefrontStock/);
+  assert.match(publish, /raw_data[^\n]*shippingKnown === true/);
+  assert.match(publish, /Number\(x\.shipping_cost\) > 0/);
   assert.match(publish, /quantity: storefrontStock/);
 });
 
