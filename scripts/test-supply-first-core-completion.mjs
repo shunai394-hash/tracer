@@ -4,10 +4,10 @@ import { readFile } from "node:fs/promises";
 const source = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
 assert.match(source, /reason: "legacy_shop_listings_disabled_canonical_commerce_only"/,
   "legacy supplier rows must not create new BASE-only listings");
-assert.doesNotMatch(source, /selectAndPublishSupplySalesTests\\(/,
+assert.doesNotMatch(source, /selectAndPublishSupplySalesTests\(/,
   "patrol-ai must not use the legacy selector to create listings outside the canonical commerce catalog");
 const patrolRoute = await readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8");
-assert.doesNotMatch(patrolRoute, /publishPublishedListingsToBase\\(/,
+assert.doesNotMatch(patrolRoute, /publishPublishedListingsToBase\(/,
   "patrol-ai must not publish legacy shop_listings directly to BASE");
 assert.match(source, /optionalDiscoverySteps = new Set\(\["bestsellers", "auxiliary_trends", "supply", "supply_first", "dropship"\]\)/,
   "retryable source discovery/cooldown stages must not block processing of persisted supply candidates");
@@ -26,11 +26,8 @@ assert.doesNotMatch(source, /discoverAndCreateCjSupply\(/,
   "the five-minute patrol must not duplicate live CJ API discovery calls");
 assert.ok(source.indexOf("const supplyFirstStep") < source.indexOf("marketplace_sourcing_disabled_supplier_native_only"),
   "the supplier-native supply-first stage remains visible before the disabled marketplace stage");
-  "verified supplier candidates must be paginated across the full fresh supplier catalog");
-assert.match(source, /Math\.floor\(Date\.now\(\) \/ 300_000\) % verifiedSupplyPages/,
-  "the supplier candidate page must rotate on each five-minute patrol");
-assert.match(source, /\.range\(verifiedSupplyOffset, verifiedSupplyOffset \+ verifiedSupplyPageSize - 1\)/,
-  "rotating supplier candidate pages must be bounded");
+assert.doesNotMatch(source, /verifiedSupplyPages|verifiedSupplyOffset|const supplyCandidateIds/,
+  "legacy supplier rows must not be selected for direct channel publication");
 
 const cronRoute = await readFile(new URL("../app/api/cron/supply-first/route.ts", import.meta.url), "utf8");
 const recoveryWorkflow = await readFile(new URL("../.github/workflows/tracer-one-shot-supply-recovery.yml", import.meta.url), "utf8");
