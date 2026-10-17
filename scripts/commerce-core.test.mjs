@@ -26,7 +26,8 @@ test("storefront publication requires exact supplier identity and evidenced land
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   const dashboard = await readFile(new URL("../app/products/page.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
-  assert.match(publish, /commerce_prices\.expected_profit", 0/);
+  assert.match(publish, /commerce_prices!inner\([^)]*calculated_at/);
+  assert.match(publish, /const latestPrice = asRelationRows\(candidate\.commerce_prices\)/);
   assert.match(publish, /const hasPublishableLinkedOffer = offers\.some/);
   assert.match(publish, /offer\.supplier_product_id && offer\.supplier_variant_id && nativeIdsValid/);
   assert.match(publish, /unitCostKnown/);
@@ -71,7 +72,9 @@ test("catalog publication requires positive profit, not current stock or trackin
   assert.doesNotMatch(pricing, /supplier_offer_verification_stale/);
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
-  assert.match(publish, /\.gt\("commerce_prices\.expected_profit", 0\)/);
+  assert.match(publish, /const latestPrice = asRelationRows\(candidate\.commerce_prices\)/);
+  assert.match(publish, /Number\(latestPrice\.margin_rate\) >= 0\.5/);
+  assert.doesNotMatch(publish, /\.gt\("commerce_prices\.expected_profit", 0\)/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
   assert.match(publish, /supplier_offer_missing_or_cost_unknown/);
