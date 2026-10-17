@@ -492,17 +492,18 @@ export async function GET(request: Request) {
               stockResult = { status: "rejected", reason };
             }
             // A variant may be stocked in a verified warehouse other than CN. Try
-            // the two best-stocked verified origins first; hard-coding CN caused
-            // successful CJ freight responses with an empty list for valid variants.
-            const freightOrigins = [...new Set((exactVariant.inventoryByCountry ?? [])
+            // Try several stocked origin warehouses, then CN as a fallback.
+            // A null quote is not a zero-cost quote; retain diagnostics for every attempted origin.
+            const stockedOrigins = [...new Set((exactVariant.inventoryByCountry ?? [])
               .filter((warehouse) => /^[A-Z]{2}$/.test(warehouse.countryCode) && warehouse.quantity >= 1)
               .sort((a, b) => b.quantity - a.quantity)
-              .slice(0, 2)
               .map((warehouse) => warehouse.countryCode))];
-            if (freightOrigins.length === 0) freightOrigins.push("CN");
+            const freightOrigins = [...stockedOrigins.slice(0, 3), "CN"]
+              .filter((countryCode, index, values) => values.indexOf(countryCode) === index);
             const freightZip = process.env.TRACER_CJ_FREIGHT_QUOTE_ZIP?.trim() || undefined;
             let shipping: number | null = null;
             const freightErrors: string[] = [];
+            const freightAttempts: Array<{ origin: string; result: "quoted" | "no_quote" | "error" }> = [];
             for (const startCountryCode of freightOrigins) {
               try {
                 const quote = await calculateCJFreight(variant.vid, {
@@ -513,9 +514,12 @@ export async function GET(request: Request) {
                 });
                 if (quote !== null && Number.isFinite(quote) && quote >= 0) {
                   shipping = quote;
+                  freightAttempts.push({ origin: startCountryCode, result: "quoted" });
                   break;
                 }
+                freightAttempts.push({ origin: startCountryCode, result: "no_quote" });
               } catch (reason) {
+                freightAttempts.push({ origin: startCountryCode, result: "error" });
                 freightErrors.push(startCountryCode + ":" + String(reason).slice(0, 100));
               }
             }
@@ -534,6 +538,9 @@ export async function GET(request: Request) {
                 variantId: exactVariant.vid,
                 stockKnown: stock !== null,
                 shippingKnown: shipping !== null,
+                freightAttempts,
+                freightZipConfigured: Boolean(freightZip),
+                freightErrors: freightErrors.slice(0, 4),
               });
               if (logError) stats.errors.push("exclusion_log:" + logError.slice(0, 80));
               const retryOffer = retryOfferByVariantId.get(String(exactVariant.vid));
