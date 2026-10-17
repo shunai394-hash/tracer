@@ -109,12 +109,28 @@ export async function recalculatePrice(input: {
   // Price any correctly linked offer with known non-negative costs. Live stock,
   // destination support, tracking and orderability are checked at procurement time,
   // not used to prevent the catalog from calculating a sale price.
-  const price = calculateSellingPrice({
-    unitCostJpy: Math.ceil(Number(offer.unit_cost) * input.exchangeRateToJpy),
-    shippingCostJpy: Math.ceil(Number(offer.shipping_cost) * input.exchangeRateToJpy),
+  const unitCostJpy = Math.ceil(Number(offer.unit_cost) * input.exchangeRateToJpy);
+  const shippingCostJpy = Math.ceil(Number(offer.shipping_cost) * input.exchangeRateToJpy);
+  const minimumPrice = calculateSellingPrice({
+    unitCostJpy, shippingCostJpy,
     feeRate: input.feeRate, fixedFeeJpy: input.fixedFeeJpy, targetMarginRate: input.targetMarginRate
   });
-  if (price.expectedProfit <= 0) throw new Error("non_positive_profit");
+  // Unify both storefronts at the highest existing price, but never below the 50% net-margin floor.
+  const { data: channelPrices, error: channelPricesError } = await db.from("channel_listings")
+    .select("selling_price")
+    .eq("variant_id", input.variantId);
+  if (channelPricesError) throw new Error("channel_price_read_failed:" + channelPricesError.message);
+  const highestExistingPrice = Math.max(0, ...(channelPrices ?? [])
+    .map((row) => Number(row.selling_price))
+    .filter((value) => Number.isFinite(value) && value > 0));
+  const sellingPrice = Math.max(minimumPrice.sellingPrice, highestExistingPrice);
+  const feeAmount = Math.ceil(sellingPrice * input.feeRate) + (input.fixedFeeJpy ?? 0);
+  const expectedProfit = sellingPrice - unitCostJpy - shippingCostJpy - feeAmount;
+  const marginRate = expectedProfit / sellingPrice;
+  if (expectedProfit <= 0 || marginRate + Number.EPSILON < (input.targetMarginRate ?? 0.5)) {
+    throw new Error("non_positive_profit_or_margin_below_target");
+  }
+  const price = { sellingPrice, feeAmount, expectedProfit, marginRate };
   const { error: saveError } = await db.from("commerce_prices").upsert({
     variant_id: input.variantId, supplier_offer_id: input.offerId, currency: "JPY", selling_price: price.sellingPrice,
     fee_amount: price.feeAmount, expected_profit: price.expectedProfit,
