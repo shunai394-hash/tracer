@@ -552,3 +552,15 @@ test("clean commerce CJ importer prices linked offers even when cached stock is 
   assert.match(importer, /if \(shipping !== null && shipping >= 0\)\s*\{\s*await recalculatePrice/);
   assert.doesNotMatch(importer, /if \(stock !== null &&/);
 });
+
+
+test("existing supplier offers are repriced from database evidence without consuming supplier API quota", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  const schedule = await readFile(new URL("../vercel.json", import.meta.url), "utf8");
+  assert.match(route, /from\("supplier_offers"\)/);
+  assert.match(route, /recalculatePrice\(/);
+  assert.match(route, /sourceApiCalls: 0/);
+  assert.match(route, /aNeedsPrice/);
+  assert.match(schedule, /"path": "\/api\/cron\/commerce-reprice-existing",[\s\S]*?"schedule": "\*\/10 \* \* \* \*"/);
+  assert.match(schedule, /"path": "\/api\/cron\/patrol-ai",[\s\S]*?"schedule": "\*\/5 \* \* \* \*"/);
+});
