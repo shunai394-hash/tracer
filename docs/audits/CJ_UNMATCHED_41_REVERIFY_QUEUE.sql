@@ -51,3 +51,54 @@ limit 41;
 -- Note: reverifyCjSupplyIdentities() performs live CJ API reads and can persist
 -- refreshed supplier evidence/identity fields. Do not invoke it as a dry run.
 -- It must respect the global CJ quota circuit and all native-identity gates.
+
+-- 3) CJ's current reverify implementation skips rows unless both IDs are
+-- numeric strings of 10-25 digits. This is important: eligibility above alone
+-- does not mean the implementation will call CJ for the row.
+select
+  count(*) as unmatched_total,
+  count(*) filter (
+    where sl.supplier_product_id ~ '^[0-9]{10,25}$'
+      and sl.supplier_variant_id ~ '^[0-9]{10,25}$'
+  ) as numeric_ids_callable_by_current_code,
+  count(*) filter (
+    where not (
+      sl.supplier_product_id ~ '^[0-9]{10,25}$'
+      and sl.supplier_variant_id ~ '^[0-9]{10,25}$'
+    )
+  ) as blocked_by_non_numeric_ids,
+  count(*) filter (
+    where sl.supplier_product_id ~ '^[0-9]{10,25}$'
+      and sl.supplier_variant_id ~ '^[0-9]{10,25}$'
+      and sl.verification_status in ('unverified', 'retryable', 'verified')
+      and sl.identity_method in ('supply_discovered', 'none', 'cj_supplier_variant')
+  ) as queue_eligible_and_numeric
+from public.supplier_listings sl
+where sl.supplier = 'cj'
+  and not exists (
+    select 1 from public.commerce_variants v
+    where v.source_variant_key = sl.supplier_variant_id
+  );
+
+-- 4) Inspect non-numeric rows separately. Never rewrite UUIDs into numeric IDs
+-- or infer CJ IDs from SKU/barcode/title; they need independent source evidence.
+select
+  sl.id as supplier_listing_id,
+  sl.title,
+  sl.supplier_product_id,
+  sl.supplier_variant_id,
+  sl.sku,
+  sl.metadata ->> 'variant_barcode' as metadata_variant_barcode,
+  sl.verification_status,
+  sl.verification_error
+from public.supplier_listings sl
+where sl.supplier = 'cj'
+  and not exists (
+    select 1 from public.commerce_variants v
+    where v.source_variant_key = sl.supplier_variant_id
+  )
+  and not (
+    sl.supplier_product_id ~ '^[0-9]{10,25}$'
+    and sl.supplier_variant_id ~ '^[0-9]{10,25}$'
+  )
+order by sl.id;
