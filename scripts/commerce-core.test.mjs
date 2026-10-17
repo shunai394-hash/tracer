@@ -716,7 +716,7 @@ test("published storefront price reconciliation uses exact variants and bounded 
   assert.match(route, /syncCommerceListings/);
   assert.match(route, /storefrontSyncRemaining/);
   assert.match(route, /allChannelIds\.slice\(0, 20\)/);
-  assert.match(route, /\.select\("variant_id,channel,selling_price,status"\)/);
+  assert.match(route, /\.select\("variant_id,channel,selling_price,status(?:,last_synced_at)?"\)/);
   assert.match(publish, /variantIds\?: string\[\]/);
   assert.match(publish, /candidateQuery\.in\("id", \[\.\.\.new Set\(variantIds\)\]\)/);
 });
