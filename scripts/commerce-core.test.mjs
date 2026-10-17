@@ -786,3 +786,10 @@ test("storefront reconciliation also syncs updated Japanese product copy", async
   assert.match(route, /productUpdatedAtByVariant/);
   assert.match(route, /contentNeedsSync/);
 });
+
+
+test("BASE item API requests have a bounded timeout", async () => {
+  const base = await readFile(new URL("../lib/channels/base.ts", import.meta.url), "utf8");
+  const requestBase = base.slice(base.indexOf("async function requestBase("), base.indexOf("export async function createBaseItem("));
+  assert.match(requestBase, /signal: AbortSignal\.timeout\(20_000\)/);
+});
