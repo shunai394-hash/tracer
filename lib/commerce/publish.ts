@@ -273,21 +273,21 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const title = candidate.title_ja.trim() || product.title_ja.trim();
     const allOffers = asRelationRows(candidate.supplier_offers);
     const rawOffer = offer ?? allOffers[0] ?? null;
-    const rawOfferData = rawOffer?.raw_data && typeof rawOffer.raw_data === "object" && !Array.isArray(rawOffer.raw_data)
+    const preflightRawOfferData = rawOffer?.raw_data && typeof rawOffer.raw_data === "object" && !Array.isArray(rawOffer.raw_data)
       ? rawOffer.raw_data as Record<string, unknown>
       : {};
-    const supplierShippingKnown =
+    const preflightShippingKnown =
       (Number.isFinite(Number(rawOffer?.shipping_cost)) && Number(rawOffer?.shipping_cost) > 0) ||
-      rawOfferData.shippingKnown === true;
-    const supplierStockKnown = rawOfferData.stockKnown === true ||
-      (rawOfferData.stockKnown === undefined && rawOffer?.source_status === "verified");
+      preflightRawOfferData.shippingKnown === true;
+    const preflightStockKnown = preflightRawOfferData.stockKnown === true ||
+      (preflightRawOfferData.stockKnown === undefined && rawOffer?.source_status === "verified");
     const supplierEvidenceUnverified = !rawOffer || rawOffer.source_status !== "verified" ||
-      !supplierShippingKnown || !supplierStockKnown;
+      !preflightShippingKnown || !preflightStockKnown;
     const currentState = stateByVariant.get(candidate.id);
     if (!onlyUnpublished && currentState?.status === "published" && currentState.external_product_id && supplierEvidenceUnverified) {
       const reason = !rawOffer ? "supplier_offer_missing" :
         rawOffer.source_status !== "verified" ? "supplier_offer_not_verified" :
-        !supplierShippingKnown ? "japan_freight_unconfirmed" : "supplier_stock_unconfirmed";
+        !preflightShippingKnown ? "japan_freight_unconfirmed" : "supplier_stock_unconfirmed";
       const nowIso = new Date().toISOString();
       try {
         const fallbackPrice = Math.max(1, Math.round(Number(asRelationRows(candidate.commerce_prices)[0]?.selling_price) || Number(currentState.selling_price) || 1));
