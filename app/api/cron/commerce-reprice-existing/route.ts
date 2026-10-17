@@ -96,8 +96,10 @@ export async function GET(request: Request) {
         Date.now() - checkedAt <= 24 * 60 * 60_000;
       const stockKnown = candidateRaw.stockKnown === true ||
         (candidateRaw.stockKnown === undefined && candidate.source_status === "verified");
-      const shippingKnown = candidateRaw.shippingKnown === true || candidateRaw.shippingEstimated === true ||
-        (candidateRaw.shippingKnown === undefined && candidate.source_status === "verified" && Number(candidate.shipping_cost) > 0);
+      const shippingKnown = candidateRaw.shippingEstimated !== true && (
+        candidateRaw.shippingKnown === true ||
+        (candidateRaw.shippingKnown === undefined && candidate.source_status === "verified" && Number(candidate.shipping_cost) > 0)
+      );
       return candidate.source_status === "verified" && fresh && stockKnown && shippingKnown &&
         candidate.ship_to === "JP" && candidate.tracking_supported === true &&
         Number.isFinite(Number(candidate.inventory)) && Number(candidate.inventory) > 0;
