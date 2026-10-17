@@ -24,6 +24,7 @@ const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "
 const shopifySync = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
 const unlinkedRoute = await readFile(new URL("../app/api/cron/unpublish-unlinked/route.ts", import.meta.url), "utf8");
 const shopifyReconcile = await readFile(new URL("../app/api/admin/shopify/reconcile/route.ts", import.meta.url), "utf8");
+const commercePublish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
 assert.match(store, /shopify_live_stock_unconfigured/, "missing Shopify credentials must fail closed");
 assert.ok(shopifyReconcile.includes('const expectedSku = `TRC-${row.id}`.slice(0, 100);'), "read-only reconciliation must compare Shopify SKU to the shared BASE/TRACER listing ID");
 assert.ok(!shopifyReconcile.includes('const expectedSku = `TRC-${row.supplier_variant_id'), "supplier IDs must not redefine the channel-neutral listing SKU");
@@ -49,6 +50,10 @@ assert.ok(store.includes('[shopify-live-stock-unavailable]') && store.includes("
 assert.match(store, /placeShopOrder[\s\S]*getLiveShopifyStock/, "checkout must independently recheck live stock when display falls back to the last synchronized snapshot");
 assert.ok(store.includes("hasVerifiedPositiveShopifyStock(listing.shopifyVariantId, live)"), "storefront must use the tested stock policy");
 assert.equal(store.includes("return live === undefined || live > 0"), false, "unknown live stock must never pass through");
+assert.match(commercePublish, /const supplierEconomicsVerified = offer\.source_status === "verified"/, "commerce stock is saleable only when supplier economics are verified");
+assert.match(commercePublish, /const storefrontStock = toStorefrontStockQuantity\(supplierSaleable \? Number\(offer\.inventory\) : 0, getStorefrontStockCap\(\)\)/, "zero or unverified supplier stock must remain zero on both storefronts");
+assert.doesNotMatch(commercePublish, /Math\.max\(1, Number\(offer\.inventory\) \|\| 0\)/, "never invent one unit of stock when supplier inventory is zero");
+assert.match(commercePublish, /現在、仕入先の在庫・日本向け送料を再確認中のため、購入できません。確認が完了次第、販売を再開します。/, "unverified shipping must not be advertised as free shipping");
 assert.match(store, /const liveStock = await getLiveShopifyStock/, "order creation must recheck current Shopify stock");
 assert.match(store, /shopify_live_stock_unverified/, "order creation must reject unverified stock");
 assert.match(store, /requested quantity exceeds verified live inventory/, "quantity checks must use live-verified stock");
