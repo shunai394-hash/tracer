@@ -109,6 +109,12 @@ assert.match(cleanSandboxRoute, /previousErrorText\.startsWith\("CJ_SANDBOX_CREA
 assert.match(cleanSandboxRoute, /cj-sandbox-core:retry-1/);
 assert.match(cleanSandboxRoute, /cj-sandbox-core:retry-2/);
 assert.ok(commerceImporter.includes('url.searchParams.has("productIds")'), "importer must refresh exact existing CJ products by supplier ID");
+assert.match(commerceImporter, /if \(stock !== null && shipping !== null\)/, "supplier-listing freshness must only be refreshed when live stock and Japan freight are both known");
+assert.match(commerceImporter, /\.eq\("supplier_product_id", supplierProductId\)/, "fresh evidence must match the canonical CJ product ID exactly");
+assert.match(commerceImporter, /\.eq\("supplier_variant_id", exactVariant\.vid\)/, "fresh evidence must match the exact CJ variant ID");
+assert.match(commerceImporter, /shipping_checked_at: checkedAt/);
+assert.match(commerceImporter, /inventory_checked_at: checkedAt/);
+assert.match(commerceImporter, /supplierListingEvidenceUpdated/);
 assert.ok(commerceImporter.includes("hair tie|rubber band.*hair|hair rope"), "hair-tie titles must remain specific Japanese titles");
 assert.ok(commerceImporter.includes("color changing in the sun.*acetate shark clip"), "sun-reactive acetate shark clips need a specific Japanese title");
 assert.ok(commerceImporter.includes("pu leather headband.*ponytail clip"), "PU headband ponytail clips need a specific Japanese title");
