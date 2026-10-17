@@ -497,7 +497,9 @@ export async function GET(request: Request) {
       // containing existing products cannot consume the entire discovery batch.
       const newCandidates = [...uniqueSearchProducts.values()].filter((item) => !knownParentIds.has(item.id));
       let scanPage = page + 1;
-      while (newCandidates.length < Math.max(0, limit - retryCandidates.length - evidenceRetryCandidates.length - staleListingRetryCandidates.length) && scanPage <= page + 2) {
+      // Discovery must keep searching even when recovery queues are full; queue sizes
+      // are deduplicated later, and raw counts here can otherwise starve new products.
+      while (newCandidates.length < limit && scanPage <= page + 2) {
         const extra = await searchCJProducts(query, { page: scanPage, size: Math.min(20, limit * 2) });
         stats.searched += extra.products.length;
         for (const item of extra.products) {
@@ -518,12 +520,15 @@ export async function GET(request: Request) {
         }
         evidenceVariantsByParent.set(candidate.id, variantIds);
       }
+      // Reserve one batch slot for a genuinely new CJ parent whenever discovery found
+      // one. Recovery candidates remain prioritized, but cannot monopolize every run.
+      const recoveryCapacity = Math.max(0, limit - (newCandidates.length > 0 ? 1 : 0));
       const dedupedEvidenceCandidates: ImportCandidate[] = [...evidenceVariantsByParent.entries()]
-        .slice(0, limit)
+        .slice(0, recoveryCapacity)
         .map(([id, variantIds]) => ({ id, title: "", retryVariantIds: variantIds.slice(0, 3) }));
       const evidenceParentIds = new Set(dedupedEvidenceCandidates.map((candidate) => candidate.id));
       const missingPublicationRetries = retryCandidates.filter((candidate) => !evidenceParentIds.has(candidate.id))
-        .slice(0, Math.max(0, limit - dedupedEvidenceCandidates.length));
+        .slice(0, Math.max(0, recoveryCapacity - dedupedEvidenceCandidates.length));
       const discoverySlots = Math.max(0, limit - dedupedEvidenceCandidates.length - missingPublicationRetries.length);
       const queuedDiscoveryCandidates = newCandidates.slice(0, discoverySlots);
       stats.finalEvidenceParentCount = dedupedEvidenceCandidates.length;
