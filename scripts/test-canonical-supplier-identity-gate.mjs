@@ -165,6 +165,10 @@ assert.match(patrolRoute, /const safeSteps = pipeline\.steps\.map/);
 assert.match(patrolRoute, /technicalDeferredSteps/);
 assert.match(patrolRoute, /businessReadinessMissing/, "business readiness gaps must be reported incomplete without masquerading as a technical exception");
 assert.match(patrolRoute, /errorCategories: Array\.from\(new Set\(errors\.map/);
+assert.match(patrolRoute, /orderLifecycleEvidence: \{/,
+  "patrol must report order lifecycle evidence separately from intelligence-pipeline completion");
+assert.match(patrolRoute, /endToEndOrderFlowObservedThisRun: progress\.newCommerceOrders > 0 && progress\.newSupplierProcurementOrders > 0/,
+  "end-to-end order flow must only be reported when this run records both a commerce order and supplier procurement order");
 assert.match(patrolRoute, /JSON\.stringify\(safeReport\)/);
 assert.doesNotMatch(patrolRoute, /console\.log\("\[TRACER PATROL AI REPORT\]", JSON\.stringify\(report\)\)/, "raw full patrol reports must not be emitted to runtime logs");
 console.log("Canonical supplier identity publication and reconciliation checks passed");
