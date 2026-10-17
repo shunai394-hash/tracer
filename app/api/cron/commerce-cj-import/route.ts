@@ -606,11 +606,12 @@ export async function GET(request: Request) {
             const stock = stockResult.status === "fulfilled" ? stockResult.value : null;
             if (stockResult.status === "rejected") stats.errors.push("stock:" + candidate.id + ":" + String(stockResult.reason).slice(0, 100));
             if (shipping === null && freightErrors.length > 0) stats.errors.push("freight:" + candidate.id + ":" + freightErrors.join("|").slice(0, 180));
-            // A failed/unknown live lookup is not evidence that a previously verified offer is invalid.
-            // Preserve its last known evidence; the freshness gate will stop publication once it expires.
-            // Do not overwrite it with inventory=0, shipping=0, or sourceStatus=error on transient API failures.
-            const shippingWasEstimated = shipping === null;
-            if (stock === null) {
+            // Keep inventory fail-closed. When live stock is positive but CJ cannot quote Japan freight,
+            // include a conservative historical P90 estimate in pricing and label it explicitly.
+            // Estimated freight must never be mirrored as verified freight evidence.
+            const shippingWasEstimated = shipping === null && stock !== null && stock > 0;
+            if (shippingWasEstimated) shipping = 7.76;
+            if (stock === null || stock <= 0) {
               recordSkip("supplier_stock_unconfirmed");
               const reason = "supplier_stock_unconfirmed";
               const logError = await recordCjExclusion(supplierProductId + ":" + exactVariant.vid, reason, {
@@ -618,7 +619,7 @@ export async function GET(request: Request) {
                 supplierProductId,
                 variantId: exactVariant.vid,
                 stockKnown: stock !== null,
-                shippingKnown: shipping !== null,
+                shippingKnown: shipping !== null && !shippingWasEstimated,
                 shippingEstimated: shippingWasEstimated,
                 shippingEstimateUsd: shippingWasEstimated ? 7.76 : null,
                 shippingEstimateSource: shippingWasEstimated ? "cj_historical_p90_570_offers" : null,
@@ -701,8 +702,9 @@ export async function GET(request: Request) {
                 lastCheckedAt: new Date().toISOString(),
                 rawData: {
                   query, page, catalogProductId: candidate.id, productId: supplierProductId, variantId: exactVariant.vid,
-                  stockKnown: stock !== null, shippingKnown: shipping !== null,
-                  shippingEstimated: false,
+                  stockKnown: stock !== null, shippingKnown: shipping !== null && !shippingWasEstimated,
+                  shippingEstimated: shippingWasEstimated,
+                  ...(shippingWasEstimated ? { shippingEstimateUsd: 7.76, shippingEstimateSource: "cj_historical_p90_570_offers" } : {}),
                   freightAttempts,
                   ...(stock !== null ? { observedInventory: Math.max(0, Math.floor(stock)) } : {}),
                   fxRate: fx.rate, complianceBlockReason,
@@ -719,7 +721,7 @@ export async function GET(request: Request) {
             // The importer writes commerce supplier_offers, while procurement freshness
             // gates read supplier_listings. Mirror only exact native product+variant matches
             // and only when both live stock and Japan freight were actually observed.
-            if (stock !== null && shipping !== null) {
+            if (stock !== null && stock > 0 && shipping !== null && !shippingWasEstimated) {
               const { data: matchedListings, error: listingLookupError } = await db
                 .from("supplier_listings")
                 .select("id")
