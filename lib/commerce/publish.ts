@@ -279,7 +279,17 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       rawOfferData.shippingKnown === true;
     const supplierStockKnown = rawOfferData.stockKnown === true ||
       (rawOfferData.stockKnown === undefined && offer.source_status === "verified");
+    const supplierCheckedAt = typeof offer.last_checked_at === "string"
+      ? Date.parse(offer.last_checked_at)
+      : Number.NaN;
+    const supplierEvidenceFresh = Number.isFinite(supplierCheckedAt) &&
+      supplierCheckedAt <= Date.now() + 5 * 60_000 &&
+      Date.now() - supplierCheckedAt <= 24 * 60 * 60_000;
     const supplierSaleable = supplierShippingKnown && supplierStockKnown &&
+      offer.source_status === "verified" &&
+      offer.ship_to === "JP" &&
+      offer.tracking_supported === true &&
+      supplierEvidenceFresh &&
       Number.isFinite(Number(offer.inventory)) && Number(offer.inventory) > 0;
     const storefrontStock = toStorefrontStockQuantity(
       supplierSaleable ? Number(offer.inventory) : 0,
