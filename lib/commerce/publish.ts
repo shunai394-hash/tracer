@@ -176,7 +176,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   return result;
 }
 
-export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnpublished = true) {
+export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnpublished = true, variantIds?: string[]) {
   // Storefront publication is independent of supplier purchasing. Only the paid-order
   // procurement path is gated by liveOrdering; a sandbox proof must not block listings.
   if (channel === "base" && !isBaseConfigured()) throw new Error("base_oauth_not_configured");
@@ -195,12 +195,20 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   }
   // Do not unpublish profitable catalog items merely because live supplier verification is temporarily unavailable.
   const staleListings = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
-  const { data, error } = await db.from("commerce_variants")
+  let candidateQuery = db.from("commerce_variants")
     .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,currency,selling_price,expected_profit,fee_amount,margin_rate)")
     .eq("commerce_products.active", true).eq("commerce_prices.currency", "JPY")
-    .gt("commerce_prices.expected_profit", 0).gte("commerce_prices.margin_rate", 0.5).order("updated_at", { ascending: false })
-    // Cover the complete current catalog (543 variants) so older error rows are not starved.
-    .limit(1000);
+    .gt("commerce_prices.expected_profit", 0).gte("commerce_prices.margin_rate", 0.5).order("updated_at", { ascending: false });
+  if (variantIds) {
+    const uniqueVariantIds = [...new Set(variantIds.map((id) => String(id).trim()).filter(Boolean))];
+    if (uniqueVariantIds.length === 0) {
+      return { channel, staleListings: { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] }, considered: 0, published: 0, failed: 0, results: [] as Array<{ variantId: string; ok: boolean; externalId?: string; error?: string }> };
+    }
+    candidateQuery = candidateQuery.in("id", uniqueVariantIds);
+  }
+  // Targeted price reconciliation only republishes variants whose canonical price changed.
+  // Normal scheduled publishing still scans the full bounded catalog.
+  const { data, error } = await candidateQuery.limit(1000);
   if (error) throw new Error("commerce_candidates_read_failed:" + error.message);
   const allCandidates = (data ?? []) as unknown as Candidate[];
   const { data: listingStates, error: stateError } = await db.from("channel_listings")
