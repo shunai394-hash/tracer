@@ -556,13 +556,14 @@ test("CJ transient stock or freight lookup failures do not overwrite previously 
 });
 
 
-test("scheduled CJ discovery does not spend quota retrying known errored supplier products", async () => {
+test("scheduled CJ discovery only retries errored variants missing Shopify publication", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /requestedProductIds/);
-  assert.match(importer, /candidates = newCandidates/);
-  assert.doesNotMatch(importer, /\.eq\("source_status", "error"\)/);
+  assert.match(importer, /candidates = \[\.\.\.retryCandidates, \.\.\.newCandidates/);
+  assert.match(importer, /\.eq\("source_status", "error"\)/);
+  assert.match(importer, /shopifyVariantIds\.has\(String\(offer\.variant_id\)\)/);
+  assert.match(importer, /retryVariantIds/);
   assert.doesNotMatch(importer, /const recoveryPool/);
-  assert.doesNotMatch(importer, /failed_offer_recovery_read/);
 });
 
 test("BASE publication retries recover exact created IDs and refuse ambiguous stable SKUs", async () => {
