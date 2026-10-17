@@ -76,8 +76,9 @@ test("new storefront candidates require evidenced landed costs and exact supplie
   assert.match(publish, /const nativeIdsValid = x\.supplier_code !== "cj"/);
   assert.match(publish, /const unitCostKnown = Number\.isFinite\(Number\(x\.unit_cost\)\) && Number\(x\.unit_cost\) > 0/);
   assert.match(publish, /const shippingKnown = x\.raw_data\?\.shippingKnown === true/);
-  assert.match(publish, /x\.raw_data\?\.shippingKnown === undefined && x\.source_status === "verified"/);
-  assert.match(publish, /offer\.raw_data\?\.shippingKnown === undefined && offer\.source_status === "verified"/);
+  assert.match(publish, /x\.raw_data\?\.shippingEstimated === true/, "new storefront candidates may use the labelled reserve for pricing");
+  assert.match(publish, /x\.raw_data\?\.shippingKnown === undefined && x\.raw_data\?\.shippingEstimated === undefined &&\s*x\.source_status === "verified"/);
+  assert.match(publish, /offer\.raw_data\?\.shippingKnown === undefined && offer\.raw_data\?\.shippingEstimated === undefined &&\s*offer\.source_status === "verified"/);
   assert.match(publish, /x\.raw_data\?\.shippingKnown === true/);
   assert.match(publish, /Boolean\(x\.supplier_product_id && x\.supplier_variant_id && nativeIdsValid && unitCostKnown && shippingKnown\)/);
 });
@@ -724,7 +725,7 @@ test("clean commerce CJ importer respects the shared daily-points cooldown befor
 
 test("clean commerce CJ importer prices linked offers even when cached stock is zero or unknown", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  assert.match(importer, /if \(shipping !== null && shipping >= 0\)\s*\{\s*await recalculatePrice/);
+  assert.match(importer, /if \(shippingCostForPricing >= 0\)\s*\{\s*await recalculatePrice/);
   assert.doesNotMatch(importer, /if \(stock !== null &&/);
 });
 
@@ -948,15 +949,16 @@ test("CJ freight uses the detailed API when required product logistics fields ar
 
 
 
-test("CJ freight quote misses use a conservative historical reserve while preserving unknown status", async () => {
+test("CJ freight quote misses use a conservative historical reserve for pricing while preserving unknown status", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.ok(importer.includes("const shippingCostForPricing = shipping ?? 7.76"));
+  assert.ok(importer.includes("if (shippingCostForPricing >= 0)"), "the conservative reserve must be included in 50% target-margin pricing even when live freight returns no quote");
   assert.ok(importer.includes("shippingKnown: shipping !== null"));
   assert.ok(importer.includes("shippingEstimated: shippingWasEstimated"));
   assert.ok(importer.includes('shippingEstimateSource: shippingWasEstimated ? "cj_historical_p90_570_offers" : null'));
   const publisher = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   const repricer = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
-  assert.ok(!publisher.includes("offer.raw_data?.shippingKnown === true || offer.raw_data?.shippingEstimated === true"));
+  assert.ok(publisher.includes("offer.raw_data?.shippingEstimated === true"), "a positive labelled reserve can price and publish the product without claiming a confirmed supplier quote");
   assert.ok(publisher.includes("preflightRawOfferData.shippingEstimated === true"));
   assert.ok(repricer.includes("rawData.shippingEstimated === true"));
   assert.ok(importer.includes("targetMarginRate: 0.5"));
