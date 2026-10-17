@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/tracer-readonly-commerce-audit.yml"
       - "app/api/admin/commerce/status/route.ts"
+      - "lib/commerce/publish.ts"
   workflow_dispatch:
 
 permissions:
