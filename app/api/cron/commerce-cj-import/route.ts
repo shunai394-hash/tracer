@@ -125,6 +125,11 @@ export async function GET(request: Request) {
     : {};
   const blockedUntil = typeof quotaMetadata.blockedUntil === "string" ? quotaMetadata.blockedUntil : null;
   if (isCJQuotaCircuitActive(quotaMetadata)) {
+    console.info("[TRACER COMMERCE CJ IMPORT SKIPPED]", {
+      reason: "cj_daily_api_points_cooldown",
+      retryAfter: blockedUntil,
+      imported: 0,
+    });
     return NextResponse.json({
       ok: true,
       skipped: true,
@@ -150,6 +155,7 @@ export async function GET(request: Request) {
   const variantRunSlot = Math.floor(Date.now() / 600_000);
   const fx = await getObservedUsdToJpyRate();
   if (!fx || !Number.isFinite(fx.rate) || fx.rate <= 0) {
+    console.error("[TRACER COMMERCE CJ IMPORT FAILED]", { reason: "usd_jpy_rate_unavailable", imported: 0 });
     return NextResponse.json({ ok: false, error: "usd_jpy_rate_unavailable", imported: 0 }, { status: 503 });
   }
 
@@ -352,8 +358,17 @@ export async function GET(request: Request) {
         stats.errors.push("product:" + candidate.id + ":" + (error instanceof Error ? error.message : String(error)).slice(0, 180));
       }
     }
+    console.info("[TRACER COMMERCE CJ IMPORT REPORT]", {
+      ok: stats.errors.length === 0,
+      query,
+      page,
+      fxRate: fx.rate,
+      stats,
+    });
     return NextResponse.json({ ok: stats.errors.length === 0, query, page, fxRate: fx.rate, fxSource: fx.source, stats }, { status: stats.errors.length ? 207 : 200 });
   } catch (error) {
-    return NextResponse.json({ ok: false, query, page, stats, error: error instanceof Error ? error.message : String(error) }, { status: 502 });
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[TRACER COMMERCE CJ IMPORT FAILED]", { query, page, stats, error: message.slice(0, 300) });
+    return NextResponse.json({ ok: false, query, page, stats, error: message }, { status: 502 });
   }
 }
