@@ -396,6 +396,18 @@ test("CJ variant suffixes disambiguate non-color supplier options in Japanese", 
   assert.ok(importer.includes('[/khaki/, "カーキ"]'));
 });
 
+test("CJ freight uses the detailed API when required product logistics fields are available", async () => {
+  const client = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
+  assert.match(client, /freightCalculateTip/);
+  assert.match(client, /productProEnSet/);
+  assert.match(client, /variant\.variantWeight/);
+  assert.match(client, /srcAreaCode: options\.startCountryCode/);
+  assert.match(client, /destAreaCode: options\.endCountryCode/);
+  assert.match(client, /if \(tipQuote !== null\) return tipQuote/);
+  assert.match(client, /CJ FREIGHT TIP INPUT INCOMPLETE/);
+  assert.match(client, /Do not silently convert or interpret CNY fields/);
+});
+
 test("CJ importer serializes stock and freight requests to respect the supplier QPS limit", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   const stockCall = importer.indexOf("await fetchCJVariantStock(variant.vid)");
