@@ -97,4 +97,4 @@ assert.deepEqual(nextShopifyVendorPage({
   pageIndex: 1, maxPages: 100, hasNextPage: true, endCursor: "same", previousCursor: "same",
 }), { action: "incomplete", reason: "cursor_stuck" });
 
-console.log("BASE identifier and Shopify page scan: 16 cases passed");
+console.log("BASE identifier and Shopify page scan: 19 cases passed");
