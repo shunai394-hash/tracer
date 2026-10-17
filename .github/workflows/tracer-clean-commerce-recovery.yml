@@ -3,6 +3,7 @@ name: TRACER clean-commerce bounded recovery
 # TRACER_CLEAN_COMMERCE_RECOVERY: bounded production recovery requested 2026-10-16; wait for exact production commit before supplier import and gated channel publication.
 # Recovery re-trigger after CJ identity parser, bounded batch, and Shopify inventory idempotency fixes (2026-10-17).
 # Run the bounded publication recovery after the timeout fix is deployed.
+# 2026-10-18: trigger the guarded recovery workflow after confirming the verified backlog is ready.
 
 on:
   push:
