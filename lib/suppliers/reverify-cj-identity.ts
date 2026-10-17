@@ -156,9 +156,6 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   }
 
   const scanRows = rowsResult.data ?? [];
-  const scanCursor = targetSupplierListingIds.length > 0
-    ? priorCursor
-    : scanRows.length > 0 ? String(scanRows[scanRows.length - 1].id) : priorCursor;
   const rowsById = new Map<string, (typeof scanRows)[number]>();
   for (const row of stockCapHeldRows) rowsById.set(String(row.id), row as (typeof scanRows)[number]);
   for (const row of scanRows) rowsById.set(String(row.id), row);
