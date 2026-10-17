@@ -285,7 +285,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "usd_jpy_rate_unavailable", imported: 0 }, { status: 503 });
   }
 
-  const stats = { searched: 0, products: 0, variantsAvailable: 0, variants: 0, offers: 0, priced: 0, supplierListingEvidenceUpdated: 0, supplierListingEvidenceUnmatched: 0, complianceBlocked: 0, skipped: 0, skipReasons: {} as Record<string, number>, errors: [] as string[] };
+  const stats = { searched: 0, products: 0, variantsAvailable: 0, variants: 0, offers: 0, priced: 0, supplierListingEvidenceUpdated: 0, supplierListingEvidenceCreated: 0, supplierListingEvidenceUnmatched: 0, complianceBlocked: 0, skipped: 0, skipReasons: {} as Record<string, number>, errors: [] as string[] };
   const recordSkip = (reason: string) => { stats.skipped++; stats.skipReasons[reason] = (stats.skipReasons[reason] ?? 0) + 1; };
   try {
     type ImportCandidate = { id: string; title: string; productType?: string | null; imageUrl?: string | null; retryVariantIds?: string[] };
@@ -724,7 +724,72 @@ export async function GET(request: Request) {
                   stats.supplierListingEvidenceUpdated++;
                 }
               } else {
-                stats.supplierListingEvidenceUnmatched++;
+                // The commerce offer is keyed by the exact live CJ product+variant,
+                // but legacy supplier_listings may not have a row yet. Create a
+                // supplier record only from the same exact IDs and observed stock
+                // plus live JP freight; do not infer identity from title or image.
+                const { data: sameVariantListings, error: sameVariantLookupError } = await db
+                  .from("supplier_listings")
+                  .select("id,supplier_product_id,supplier_variant_id")
+                  .eq("supplier", "cj")
+                  .eq("external_id", exactVariant.vid)
+                  .limit(2);
+                if (sameVariantLookupError) {
+                  stats.errors.push("supplier_listing_evidence_variant_lookup:" + sameVariantLookupError.message.slice(0, 100));
+                  stats.supplierListingEvidenceUnmatched++;
+                } else if ((sameVariantListings ?? []).length > 0) {
+                  // A variant-only match with a different/missing parent ID is not
+                  // enough to overwrite an existing row; leave it for identity repair.
+                  stats.errors.push("supplier_listing_evidence_variant_identity_conflict:" + supplierProductId + ":" + exactVariant.vid);
+                  stats.supplierListingEvidenceUnmatched++;
+                } else {
+                  const checkedAt = new Date().toISOString();
+                  const { error: createListingError } = await db.from("supplier_listings").insert({
+                    supplier: "cj",
+                    external_id: exactVariant.vid,
+                    sku: exactVariant.sku ?? null,
+                    title,
+                    cost,
+                    shipping_cost: shipping,
+                    currency: "USD",
+                    inventory: Math.max(0, Math.floor(stock)),
+                    ship_to: "JP",
+                    tracking_available: true,
+                    order_method: "cj_api",
+                    api_available: false,
+                    verification_status: "unverified",
+                    shipping_status: "verified",
+                    shipping_checked_at: checkedAt,
+                    inventory_checked_at: checkedAt,
+                    identity_method: "supply_discovered",
+                    identity_status: "supply_discovered",
+                    identity_confidence: 0,
+                    configured: true,
+                    supplier_product_id: supplierProductId,
+                    supplier_variant_id: exactVariant.vid,
+                    cj_variant_id: exactVariant.vid,
+                    orderable: false,
+                    price_confirmed: true,
+                    inventory_confirmed: true,
+                    verification_error: "live_order_path_not_proven",
+                    next_verification_at: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+                    fetched_at: checkedAt,
+                    metadata: {
+                      source: "commerce_cj_import",
+                      query,
+                      page,
+                      stock_observed: true,
+                      japan_freight_observed: true,
+                      live_order_path_proven: false,
+                    },
+                  });
+                  if (createListingError) {
+                    stats.errors.push("supplier_listing_evidence_create:" + createListingError.message.slice(0, 100));
+                    stats.supplierListingEvidenceUnmatched++;
+                  } else {
+                    stats.supplierListingEvidenceCreated++;
+                  }
+                }
               }
             }
             if (complianceBlockReason) {
