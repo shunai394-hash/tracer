@@ -418,7 +418,7 @@ export async function fetchCJVariantByVid(vid: string): Promise<CJProductVariant
   }
 
   const token = await getAccessToken();
-  const params = new URLSearchParams({ vid: normalizedVid, features: "enable_inventory" });
+  const params = new URLSearchParams({ vid: vid.trim(), features: "enable_inventory" });
   const response = await fetchCJWithRateLimit(
     `https://developers.cjdropshipping.com/api2.0/v1/product/variant/queryByVid?${params.toString()}`,
     {
