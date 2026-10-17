@@ -895,6 +895,8 @@ test("Shopify live reconciliation exports full row-level IDs, SKUs, prices, and 
   assert.match(route, /shopifyPrice/);
   assert.match(route, /items: checks/);
   assert.match(route, /unlinkedProducts: shopify\.filter/);
+  assert.match(route, /shop_listings_scan_incomplete/);
+  assert.match(workflow, /SHOPIFY_RECONCILIATION_INCOMPLETE_REFUSING_TO_LABEL_AUDIT_COMPLETE/);
   assert.match(workflow, /cp out\.json shopify-reconcile\.json/);
   assert.match(workflow, /shopify-linked-row-audit\.csv/);
   assert.match(workflow, /shopify-unlinked-products\.csv/);
