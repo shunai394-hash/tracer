@@ -31,7 +31,7 @@ export async function GET(request: Request) {
     { data: prices, error: priceError },
   ] = await Promise.all([
     db.from("shop_listings")
-      .select("id,title,description,base_item_id,selling_price,contribution_profit,inventory,published,orderable,tracking_available,supplier_variant_id")
+      .select("id,title,description,base_item_id,selling_price,contribution_profit,contribution_margin,inventory,published,orderable,tracking_available,supplier_variant_id")
       .eq("published", true)
       .eq("orderable", true)
       .eq("tracking_available", true)
