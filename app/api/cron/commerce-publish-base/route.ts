@@ -25,6 +25,7 @@ export async function GET(request: Request) {
     // enables a bounded, authenticated recovery for a known set of eligible products.
     const limit = Number.isFinite(requested) ? Math.min(5, Math.max(1, Math.floor(requested))) : 5;
     const result = await syncCommerceListings("base", limit, onlyUnpublished, variantIds);
+    console.info("[TRACER COMMERCE PUBLISH]", JSON.stringify({ channel: "base", ok: result.failed === 0, considered: result.considered, published: result.published, processed: result.processed, failed: result.failed, errors: result.results.filter((item) => !item.ok).slice(0, 10).map((item) => ({ variantId: item.variantId, error: item.error })), generatedAt: new Date().toISOString() }));
     return NextResponse.json({ ok: result.failed === 0, ...result }, { status: result.failed ? 207 : 200 });
   } catch (error) {
     return NextResponse.json({ ok: false, channel: "base", error: error instanceof Error ? error.message : String(error) }, { status: 502 });
