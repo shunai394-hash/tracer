@@ -556,12 +556,16 @@ test("CJ transient stock or freight lookup failures do not overwrite previously 
 });
 
 
-test("scheduled CJ discovery only retries errored variants missing Shopify publication", async () => {
+test("scheduled CJ discovery retries errored variants with missing publication or supplier evidence", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /requestedProductIds/);
   assert.match(importer, /candidates = \[\.\.\.retryCandidates, \.\.\.newCandidates/);
   assert.match(importer, /\.eq\("source_status", "error"\)/);
   assert.match(importer, /shopifyVariantIds\.has\(String\(offer\.variant_id\)\)/);
+  assert.match(importer, /rawData\.shippingKnown !== true \|\| rawData\.stockKnown !== true/);
+  assert.match(importer, /nextReverifyAt/);
+  assert.match(importer, /reverifyAttempts/);
+  assert.match(importer, /retryVariantLimit/);
   assert.match(importer, /retryVariantIds/);
   assert.doesNotMatch(importer, /const recoveryPool/);
 });
@@ -741,4 +745,24 @@ test("storefront price reconciliation emits bounded, privacy-safe completion tel
   assert.match(route, /\[TRACER STOREFRONT PRICE RECONCILE\]/);
   assert.match(route, /storefrontSyncErrorCount: result\.storefrontSyncErrors\.length/);
   assert.doesNotMatch(route, /console\.info\([^\n]*(?:customer|orderId|supplierVariantId|accessToken)/i);
+});
+
+
+test("price reconciliation disables published listings with unverified supplier evidence", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(route, /unverifiedVariantIds/);
+  assert.match(route, /row\.status === "published" && unverifiedVariantIds\.has\(variantId\)/);
+  assert.match(route, /synced\.processed \?\? synced\.published/);
+  assert.match(publish, /supplierEvidenceUnverified/);
+  assert.match(publish, /supplier_offer_not_fulfillable:/);
+  assert.match(publish, /shopify_unpublish_failed:/);
+  assert.match(publish, /staleListings\.unpublished\+\+/);
+});
+
+test("storefront reconciliation also syncs updated Japanese product copy", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(route, /commerce_products!inner\(updated_at\)/);
+  assert.match(route, /productUpdatedAtByVariant/);
+  assert.match(route, /contentNeedsSync/);
 });
