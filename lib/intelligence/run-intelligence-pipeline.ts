@@ -430,7 +430,8 @@ export async function runIntelligencePipeline(options: {
     { downstream: true, budgetMs: 75_000 },
   );
   steps.push(intelligence);
-  steps.push(await runStep("score", () => scoreProductIntelligence(), { downstream: true, budgetMs: 20_000 }));
+  // The 100-product scoring page can take >20s when Supabase is slow; a timeout stops all downstream gates.
+  steps.push(await runStep("score", () => scoreProductIntelligence(), { downstream: true, budgetMs: 45_000 }));
 
   // Reconsider supply verified by earlier patrols too, so a deferred or
   // timed-out patrol does not strand verified supply before the gate.
