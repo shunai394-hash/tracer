@@ -178,6 +178,10 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
     }),
   ));
 
+  const tracerSkus = Array.from(new Set(
+    orders.flatMap((order) => (tracerItemsByOrder.get(order.id) ?? [])
+      .map((item) => String(item.variant?.sku ?? "").trim()).filter(Boolean)),
+  ));
   const { data: listings, error: listingError } = variantIds.length
     ? await supabase.from("channel_listings")
         .select("variant_id,external_variant_id,external_sku,status")
@@ -185,22 +189,42 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         .in("external_variant_id", variantIds)
     : { data: [], error: null };
   if (listingError) throw new Error("shopify_canonical_listing_lookup_failed:" + listingError.message);
+  // Older published listings may have an exact TRC SKU but no external_variant_id.
+  // Use SKU only as an exact, uniqueness-checked fallback; never match by title.
+  const { data: skuListings, error: skuListingError } = tracerSkus.length
+    ? await supabase.from("channel_listings")
+        .select("variant_id,external_variant_id,external_sku,status")
+        .eq("channel", "shopify").eq("status", "published")
+        .in("external_sku", tracerSkus)
+    : { data: [], error: null };
+  if (skuListingError) throw new Error("shopify_canonical_sku_lookup_failed:" + skuListingError.message);
 
   const listingByExternalVariant = new Map<string, { variantId: string; sku: string }>();
-  for (const row of listings ?? []) {
+  const listingBySku = new Map<string, { variantId: string; sku: string }>();
+  for (const row of [...(listings ?? []), ...(skuListings ?? [])]) {
+    const variantId = String(row.variant_id ?? "").trim();
+    const sku = String(row.external_sku ?? "").trim();
     const externalVariantId = String(row.external_variant_id ?? "").trim();
-    if (!externalVariantId) continue;
-    const existing = listingByExternalVariant.get(externalVariantId);
-    if (existing && existing.variantId !== String(row.variant_id)) {
-      throw new Error("shopify_variant_mapping_ambiguous:" + externalVariantId);
+    const mapped = { variantId, sku };
+    if (externalVariantId && variantIds.includes(externalVariantId)) {
+      const existing = listingByExternalVariant.get(externalVariantId);
+      if (existing && existing.variantId !== variantId) {
+        throw new Error("shopify_variant_mapping_ambiguous:" + externalVariantId);
+      }
+      listingByExternalVariant.set(externalVariantId, mapped);
     }
-    listingByExternalVariant.set(externalVariantId, {
-      variantId: String(row.variant_id),
-      sku: String(row.external_sku ?? ""),
-    });
+    if (sku && tracerSkus.includes(sku)) {
+      const existing = listingBySku.get(sku);
+      if (existing && existing.variantId !== variantId) {
+        throw new Error("shopify_sku_mapping_ambiguous:" + sku);
+      }
+      listingBySku.set(sku, mapped);
+    }
   }
 
-  const internalVariantIds = Array.from(new Set([...listingByExternalVariant.values()].map((row) => row.variantId)));
+  const internalVariantIds = Array.from(new Set([
+    ...[...listingByExternalVariant.values(), ...listingBySku.values()].map((row) => row.variantId),
+  ]));
   const { data: prices, error: priceError } = internalVariantIds.length
     ? await supabase.from("commerce_prices").select("variant_id,supplier_offer_id").in("variant_id", internalVariantIds)
     : { data: [], error: null };
@@ -242,7 +266,8 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         if (!item.variant?.id || !String(item.variant.sku ?? "").startsWith("TRC-")) {
           throw new Error("shopify_tracer_variant_id_or_sku_missing:" + item.id);
         }
-        const listing = listingByExternalVariant.get(item.variant.id);
+        const listing = listingByExternalVariant.get(item.variant.id)
+          ?? listingBySku.get(String(item.variant.sku ?? "").trim());
         if (!listing) throw new Error("shopify_canonical_variant_not_mapped:" + item.variant.sku);
         const offerId = offerByVariant.get(listing.variantId);
         if (!offerId) throw new Error("shopify_canonical_supplier_offer_missing:" + item.variant.sku);
