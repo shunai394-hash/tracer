@@ -117,6 +117,8 @@ assert.match(commerceImporter, /inventory_checked_at: checkedAt/);
 assert.match(commerceImporter, /supplierListingEvidenceUpdated/);
 assert.match(commerceImporter, /from\("supplier_listings"\)[\s\S]*?\.eq\("supplier", "cj"\)/, "stale procurement evidence must be rechecked from supplier_listings, not only commerce supplier_offers");
 assert.match(commerceImporter, /shippingAt <= evidenceCutoff \|\| inventoryAt <= evidenceCutoff/, "missing or stale freight/inventory timestamps must enter the bounded exact-ID refresh queue");
+assert.match(commerceImporter, /const evidenceMissing = shippingEvidenceMissing \|\| inventoryEvidenceMissing/);
+assert.match(commerceImporter, /!evidenceMissing && Number\.isFinite\(nextAt\) && nextAt > Date\.now\(\)/, "future backoff must not suppress rows missing either required evidence timestamp");
 assert.match(commerceImporter, /staleListingRetryCandidates/, "legacy supplier listings must be prioritized for evidence refresh");
 assert.match(commerceImporter, /!evidenceMissing && Number\.isFinite\(nextAt\) && nextAt > Date\.now\(\)/, "future backoff must not suppress rows missing either required evidence timestamp");
 assert.ok(commerceImporter.includes("hair tie|rubber band.*hair|hair rope"), "hair-tie titles must remain specific Japanese titles");
