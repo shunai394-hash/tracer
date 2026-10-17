@@ -96,8 +96,8 @@ test("bounded recovery processes only unpublished channel listings", async () =>
   assert.match(publish, /sortedCandidates\.filter\(\(candidate\) => stateByVariant\.get\(candidate\.id\)\?\.status !== "published"\)/);
   assert.match(baseRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/, "BASE cron defaults to unpublished-only unless full refresh is explicitly requested");
   assert.match(shopifyRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/, "Shopify cron defaults to unpublished-only unless full refresh is explicitly requested");
-  assert.match(baseRoute, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/, "BASE cron caps each run at 25 listings");
-  assert.match(shopifyRoute, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/, "Shopify cron caps each run at 25 listings");
+  assert.match(baseRoute, /Math\.min\(5, Math\.max\(1, Math\.floor\(requested\)\)\)/, "BASE cron caps each run at five listings");
+  assert.match(shopifyRoute, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/, "Shopify cron caps each run at ten listings");
   assert.match(workflow, /commerce-publish-base\?limit=10&onlyUnpublished=true/);
   assert.match(workflow, /commerce-publish-shopify\?limit=10&onlyUnpublished=true/);
 });
