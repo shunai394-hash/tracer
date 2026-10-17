@@ -307,7 +307,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const shippingAllowanceUsd = resolveUnknownShippingAllowanceUsd(process.env.TRACER_CJ_UNKNOWN_SHIPPING_ALLOWANCE_USD);
     const shippingEstimated = shippingCost === null && String(listing.supplier ?? "").trim().toLowerCase() === "cj" && /^[0-9]{10,22}$/.test(String(listing.supplier_product_id ?? "")) && /^[0-9]{10,22}$/.test(String(listing.supplier_variant_id ?? "")) && listing.orderable === true && sourceCurrency === "USD";
     const supplierShippingKnown = shippingCost !== null && Number.isFinite(shippingCost) && shippingCost >= 0;
-    if (shippingEstimated) reasons.push(`shipping_allowance_estimated_usd_${shippingAllowanceUsd}_not_supplier_quote`);
+    // Estimated freight remains explicitly identifiable, but is not a rejection reason when its allowance is included in price/profit.
     const pricingShippingCost = shippingCost ?? (shippingEstimated ? shippingAllowanceUsd : null);
     sellingPrice = calculateSupplySellingPriceJpy({
       existingSellingPriceJpy: shippingEstimated ? null : sellingPrice,
