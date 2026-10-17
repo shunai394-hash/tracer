@@ -79,24 +79,60 @@ jobs:
               console.log(JSON.stringify({ offset, totalRows, pageRows: body.rowsReturned, pageErrors: body.readErrors }));
             }
 
-            const report = { completedAt: new Date().toISOString(), totalRows, ...totals, readErrorCounts, anomalyCount: anomalies.length, anomalies };
+            const report = {
+              completedAt: new Date().toISOString(),
+              totalRows,
+              ...totals,
+              readErrorCounts,
+              anomalyCount: anomalies.length,
+              anomalies,
+            };
+            await fs.mkdir("base-external-readback-artifacts", { recursive: true });
+            await fs.writeFile("base-external-readback-artifacts/report.json", JSON.stringify(report, null, 2) + "\n");
+            const columns = [
+              "listingId", "baseItemId", "status", "expectedPrice", "externalPrice",
+              "externalVisible", "skuPresent", "priceMatches", "visibilityMatches", "error",
+            ];
+            const csvCell = (value) => {
+              const text = value == null ? "" : String(value);
+              return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+            };
+            const csv = [columns.join(","), ...anomalies.map((row) => columns.map((key) => csvCell(row[key])).join(","))].join("\n") + "\n";
+            await fs.writeFile("base-external-readback-artifacts/anomalies.csv", csv);
+
             const summary = [
               "# BASE external listing readback audit", "",
-              `- Total TRACER BASE listing rows scanned: **${totalRows}**`,
+              `- Total TRACER BASE listing rows: **${totalRows}**`,
+              `- Rows actually scanned: **${totals.rowsReturned}**`,
               `- Price matches / mismatches: **${totals.priceMatches} / ${totals.priceMismatches}**`,
               `- Visibility matches / mismatches: **${totals.visibilityMatches} / ${totals.visibilityMismatches}**`,
               `- External API read errors: **${totals.readErrors}**`,
               `- Read error categories: **${JSON.stringify(readErrorCounts)}**`,
               `- Rows without external SKU: **${totals.missingSku}**`,
-              `- Rows requiring review: **${anomalies.length}**`, "",
-              anomalies.length ? "```json\n" + JSON.stringify(anomalies, null, 2) + "\n```" : "No discrepancies detected in the returned listing set.",
+              `- Rows requiring review: **${anomalies.length}**`,
+              "- Machine-readable JSON and CSV are attached as the workflow artifact **base-external-readback-audit**.", "",
+              anomalies.length ? "## Anomalies\n\n```json\n" + JSON.stringify(anomalies, null, 2) + "\n```" : "No discrepancies detected in the returned listing set.",
               "",
             ].join("\n");
             await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
             console.log(JSON.stringify({ ...report, anomalies: anomalies.slice(0, 50) }, null, 2));
-            if (totals.readErrors > 0) process.exitCode = 1;
+
+            const incomplete = totals.rowsReturned !== totalRows;
+            const mismatches = totals.priceMismatches > 0 || totals.visibilityMismatches > 0 ||
+              totals.readErrors > 0 || totals.missingSku > 0 || anomalies.length > 0;
+            if (incomplete) console.error(`Incomplete audit: scanned ${totals.rowsReturned} of ${totalRows} rows`);
+            if (mismatches) console.error("Audit found discrepancies; inspect the JSON/CSV artifact and step summary.");
+            if (incomplete || mismatches) process.exitCode = 1;
           })().catch((error) => {
             console.error(error);
             process.exitCode = 1;
           });
           NODE
+      - name: Upload JSON and CSV audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: base-external-readback-audit
+          path: base-external-readback-artifacts/
+          if-no-files-found: warn
+          retention-days: 30
