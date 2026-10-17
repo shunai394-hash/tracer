@@ -11,8 +11,8 @@ assert.match(supplierSync, /tracking_number/,
   "supplier order sync must persist supplier-reported tracking numbers");
 assert.match(reconcile, /trackingResult\.trackingNumber[\s\S]*?update\.tracking_number = trackingResult\.trackingNumber/,
   "reconciliation must persist a supplier-reported tracking number");
-assert.match(reconcile, /if \\(trackingResult\.trackingNumber\\)/,
+assert.match(reconcile, /if \(trackingResult\.trackingNumber\)/,
   "reconciliation must not write an absent tracking number");
-assert.match(reconcile, /if \\(updateError\\) throw new Error\\(updateError\.message\\)/,
+assert.match(reconcile, /if \(updateError\) throw new Error\(updateError\.message\)/,
   "reconciliation must surface persistence failures instead of reporting success");
 console.log("Supplier tracking persistence: schema and sync regression checks passed");
