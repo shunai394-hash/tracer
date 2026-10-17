@@ -215,11 +215,24 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   const { data, error } = await candidateQuery.order("updated_at", { ascending: false }).limit(1000);
   if (error) throw new Error("commerce_candidates_read_failed:" + error.message);
   const allCandidates = (data ?? []) as unknown as Candidate[];
-  const { data: listingStates, error: stateError } = await db.from("channel_listings")
-    .select("variant_id,status,last_synced_at,external_product_id,external_variant_id,last_error").eq("channel", channel)
-    .in("variant_id", allCandidates.map((row) => row.id));
-  if (stateError) throw new Error("commerce_listing_state_read_failed:" + stateError.message);
-  const stateByVariant = new Map((listingStates ?? []).map((row) => [String(row.variant_id), row]));
+  // PostgREST GET URLs can exceed gateway limits when .in() contains the
+  // entire 1,000-row candidate batch. Read listing state in small bounded chunks.
+  const candidateVariantIds = [...new Set(allCandidates.map((row) => row.id))];
+  const listingStates: Array<{
+    variant_id: string; status: string; last_synced_at: string | null;
+    external_product_id: string | null; external_variant_id: string | null; last_error: string | null;
+  }> = [];
+  for (let offset = 0; offset < candidateVariantIds.length; offset += 100) {
+    const ids = candidateVariantIds.slice(offset, offset + 100);
+    const { data: batch, error: stateError } = await db.from("channel_listings")
+      .select("variant_id,status,last_synced_at,external_product_id,external_variant_id,last_error")
+      .eq("channel", channel)
+      .in("variant_id", ids);
+    if (stateError) throw new Error("commerce_listing_state_read_failed:batch=" +
+      Math.floor(offset / 100) + ":" + stateError.message);
+    listingStates.push(...((batch ?? []) as typeof listingStates));
+  }
+  const stateByVariant = new Map(listingStates.map((row) => [String(row.variant_id), row]));
   const rank = (row: Candidate) => {
     const state = stateByVariant.get(row.id);
     if (!state) return 0;
