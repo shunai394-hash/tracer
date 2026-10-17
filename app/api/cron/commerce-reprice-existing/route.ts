@@ -160,7 +160,7 @@ export async function GET(request: Request) {
         .map((row) => String(row.variant_id)))];
       // Keep each channel update small enough to leave headroom under the 300s function timeout.
       // Ten variants per channel is bounded and retries rotate through the oldest stale listings.
-      const batchIds = allChannelIds.slice(0, 10);
+      const batchIds = allChannelIds.slice(0, 25);
       if (batchIds.length === 0) continue;
       try {
         const synced = await syncCommerceListings(channel, batchIds.length, false, batchIds);
