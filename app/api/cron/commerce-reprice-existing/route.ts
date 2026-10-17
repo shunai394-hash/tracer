@@ -105,7 +105,6 @@ export async function GET(request: Request) {
     storefrontSyncRemaining: { base: 0, shopify: 0 },
     storefrontSyncErrors: [] as Array<{ channel: string; reason: string }>,
   };
-  const repricedVariantIds: string[] = [];
   for (const offer of candidates) {
     try {
       const price = await recalculatePrice({
@@ -119,7 +118,6 @@ export async function GET(request: Request) {
       const variantId = String(offer.variant_id);
       const previous = priceByVariant.get(variantId);
       canonicalPriceByVariant.set(variantId, price.sellingPrice);
-      if (!previous || Number(previous.selling_price) !== price.sellingPrice) repricedVariantIds.push(variantId);
     } catch (error) {
       result.skipped++;
       result.errors.push({
@@ -130,7 +128,7 @@ export async function GET(request: Request) {
   }
 
   // Reconcile storefront prices already published before the canonical price change.
-  // Process ten variants per channel; the cron is staggered from publication and order-poll jobs.
+  // Process up to twenty actually stale variants per channel; the cron is staggered from publication and order-poll jobs.
   // Query all states so a failed sync remains eligible for retry on the next cron run.
   const { data: listings, error: listingReadError } = await db.from("channel_listings")
     .select("variant_id,channel,selling_price,status")
@@ -138,18 +136,16 @@ export async function GET(request: Request) {
   if (listingReadError) {
     result.storefrontSyncErrors.push({ channel: "lookup", reason: listingReadError.message.slice(0, 180) });
   } else {
-    const needsSync = new Set(repricedVariantIds);
-    for (const listing of listings ?? []) {
-      const variantId = String(listing.variant_id);
-      const canonicalPrice = canonicalPriceByVariant.get(variantId);
-      if (canonicalPrice !== undefined &&
-          (Number(listing.selling_price) !== canonicalPrice || listing.status !== "published")) {
-        needsSync.add(variantId);
-      }
-    }
+    // Select only rows that are still stale. Including every repriced variant here
+    // re-synced already-correct listings and starved the real backlog on each cron run.
     for (const channel of ["base", "shopify"] as const) {
       const allChannelIds = [...new Set((listings ?? [])
-        .filter((row) => row.channel === channel && needsSync.has(String(row.variant_id)))
+        .filter((row) => {
+          if (row.channel !== channel) return false;
+          const canonicalPrice = canonicalPriceByVariant.get(String(row.variant_id));
+          return canonicalPrice !== undefined &&
+            (Number(row.selling_price) !== canonicalPrice || row.status !== "published");
+        })
         .map((row) => String(row.variant_id)))];
       // Keep each channel update bounded while draining the backlog materially faster.
       const batchIds = allChannelIds.slice(0, 20);
