@@ -646,9 +646,9 @@ test("CJ import keeps unknown stock and unknown Japan freight excluded", async (
 
 test("CJ unknown stock still skips before supplier offer upsert", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  const guard = importer.indexOf("if (stock === null)");
+  const guard = importer.indexOf("if (stock === null || stock <= 0)");
   const save = importer.indexOf("const saved = await upsertSupplierOffer", guard);
-  assert.ok(guard >= 0 && save > guard, "unknown stock must skip before supplier offer upsert");
+  assert.ok(guard >= 0 && save > guard, "unknown or zero stock must skip before supplier offer upsert");
   assert.ok(importer.includes("shippingCostForPricing = shipping;"));
 });
 
