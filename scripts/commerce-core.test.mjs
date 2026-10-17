@@ -122,10 +122,11 @@ test("publication matches each JPY profitable price to its own cost-bearing supp
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /asRelationRows\(candidate\.supplier_offers\)/);
   assert.match(publish, /asRelationRows\(candidate\.commerce_prices\)/);
-  assert.match(publish, /const validOfferIds = new Set\(validOffers\.map\(\(x\) => x\.id\)\)/);
-  assert.match(publish, /validOfferIds\.has\(x\.supplier_offer_id\) && x\.currency === "JPY"/);
-  assert.match(publish, /validOffers\.find\(\(x\) => x\.id === price\.supplier_offer_id\)/);
-  assert.doesNotMatch(publish, /candidate\.commerce_prices\.supplier_offer_id/);
+  assert.match(publish, /currentPriceRows = asRelationRows\\(candidate\\.commerce_prices\\)\\.sort/);
+  assert.match(publish, /const currentCanonicalPrice = currentPriceRows\\[0\\]/);
+  assert.match(publish, /const price = currentCanonicalPrice && currentPriceOffer/);
+  assert.match(publish, /validOffers\\.find\\(\\(candidateOffer\\) => String\\(candidateOffer\\.id\\) === currentPriceOfferId\\)/);
+  assert.doesNotMatch(publish, /candidate\\.commerce_prices\\.supplier_offer_id/);
 });
 test("supplier readiness failures do not automatically unpublish profitable catalog listings", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
