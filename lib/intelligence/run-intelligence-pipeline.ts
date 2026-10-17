@@ -456,9 +456,8 @@ export async function runIntelligencePipeline(options: {
   };
   steps.push(supplySalesStep);
 
-  // Only supplier-native CJ offers may enter the sale-selection path.
-  // Marketplace bestseller sales tests and NEWFIND delivery are out of scope;
-  // this pipeline owns TRACER, BASE, and Shopify only.
+  // Legacy marketplace sales-test selection is disabled here. The canonical
+  // commerce catalog owns supplier evidence and shared BASE/Shopify publication.
   const salesTestStep: PipelineStepResult = {
     name: "sales_test_select",
     ok: true,
