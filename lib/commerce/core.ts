@@ -151,27 +151,27 @@ export async function ingestPaidOrder(input: {
     if (!Number.isInteger(line.quantity) || line.quantity <= 0 || !Number.isFinite(line.unitPrice) || line.unitPrice < 0) throw new Error("invalid_order_line");
   }
   const db = createSupabaseAdminClient();
-  const quantityByOffer = new Map<string, number>();
-  for (const line of input.lines) {
-    quantityByOffer.set(line.offerId, (quantityByOffer.get(line.offerId) ?? 0) + line.quantity);
-  }
-  // Validate every supplier offer before persisting a paid order or procurement intent.
-  // Aggregate repeated order lines so split lines cannot oversell one supplier offer.
+  const offersById = new Map<string, {
+    id: string; variant_id: string; supplier_code: string;
+    supplier_product_id: string; supplier_variant_id: string;
+  }>();
+  // Intake persists paid orders even when fulfillment evidence is stale or incomplete.
+  // The procurement worker rechecks live stock, destination, tracking, price and IDs
+  // before any supplier call; intake only requires an exact, existing supplier offer.
   for (const line of input.lines) {
     const { data: offer, error: offerError } = await db.from("supplier_offers")
-      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,ship_to,tracking_supported,source_status,last_checked_at")
-      .eq("id", line.offerId).eq("variant_id", line.variantId).single();
+      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id")
+      .eq("id", line.offerId).eq("variant_id", line.variantId).maybeSingle();
     if (offerError || !offer) throw new Error("order_line_supplier_offer_missing");
-    if (offer.supplier_code === "cj" && (!isCanonicalCjNativeId(offer.supplier_product_id) || !isCanonicalCjNativeId(offer.supplier_variant_id))) {
-      throw new Error("invalid_cj_native_supplier_ids");
+    if (!String(offer.supplier_code ?? "").trim() ||
+        !String(offer.supplier_product_id ?? "").trim() ||
+        !String(offer.supplier_variant_id ?? "").trim()) {
+      throw new Error("order_line_supplier_identity_missing");
     }
-    if (offer.source_status !== "verified" || offer.tracking_supported !== true || offer.ship_to !== "JP") throw new Error("supplier_offer_not_fulfillable");
-    const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
-    if (!Number.isFinite(checkedAt) || checkedAt > Date.now() + 5 * 60_000 || Date.now() - checkedAt > 24 * 60 * 60_000) throw new Error("supplier_offer_verification_stale");
-    if (Number(offer.inventory) < (quantityByOffer.get(line.offerId) ?? line.quantity)) throw new Error("supplier_offer_not_fulfillable");
-    const { data: price, error: priceError } = await db.from("commerce_prices")
-      .select("supplier_offer_id,expected_profit").eq("variant_id", line.variantId).single();
-    if (priceError || !price || price.supplier_offer_id !== line.offerId || Number(price.expected_profit) <= 0) throw new Error("supplier_offer_price_not_fulfillable");
+    offersById.set(line.offerId, offer as {
+      id: string; variant_id: string; supplier_code: string;
+      supplier_product_id: string; supplier_variant_id: string;
+    });
   }
   const { data: order, error } = await db.from("commerce_orders").upsert({
     channel: input.channel, external_order_id: input.externalOrderId, total_amount: Math.round(input.totalAmount),
@@ -184,11 +184,28 @@ export async function ingestPaidOrder(input: {
   if (order) {
     orderId = order.id as string;
   } else {
-    const { data: existing, error: lookupError } = await db.from("commerce_orders").select("id")
+    const { data: existing, error: lookupError } = await db.from("commerce_orders")
+      .select("id,customer_name,shipping_address")
       .eq("channel", input.channel).eq("external_order_id", input.externalOrderId).single();
     if (lookupError || !existing) throw new Error("order_idempotency_lookup_failed:" + (lookupError?.message ?? ""));
     orderId = existing.id as string;
     duplicate = true;
+    // Retry intake can repair an incomplete shipping address. Merge only non-empty
+    // values and do not reset fulfillment_status or payment_status on duplicate delivery.
+    const previousAddress = existing.shipping_address && typeof existing.shipping_address === "object" && !Array.isArray(existing.shipping_address)
+      ? existing.shipping_address as Record<string, unknown> : {};
+    const refreshedAddress = { ...previousAddress };
+    for (const [key, value] of Object.entries(input.shippingAddress)) {
+      if (value !== null && value !== undefined && String(value).trim() !== "") refreshedAddress[key] = value;
+    }
+    const { error: refreshError } = await db.from("commerce_orders").update({
+      total_amount: Math.round(input.totalAmount),
+      customer_name: input.customerName || existing.customer_name || null,
+      shipping_address: refreshedAddress,
+      raw_payload: input.rawPayload,
+      updated_at: new Date().toISOString(),
+    }).eq("id", orderId);
+    if (refreshError) throw new Error("order_refresh_failed:" + refreshError.message);
   }
   // Reconcile lines on retries so a prior partial write can be repaired.
   for (const line of input.lines) {
@@ -197,11 +214,8 @@ export async function ingestPaidOrder(input: {
       sku: line.sku ?? null, quantity: line.quantity, unit_price: Math.round(line.unitPrice), supplier_offer_id: line.offerId
     }, { onConflict: "order_id,external_line_id" }).select("id").single();
     if (lineError || !savedLine) throw new Error("order_line_upsert_failed:" + (lineError?.message ?? ""));
-    const { data: offer, error: offerError } = await db.from("supplier_offers")
-      .select("supplier_code,supplier_product_id,supplier_variant_id,inventory,ship_to")
-      .eq("id", line.offerId).eq("variant_id", line.variantId).single();
-    if (offerError || !offer) throw new Error("order_line_supplier_offer_missing");
-    if (Number(offer.inventory) < line.quantity || offer.ship_to !== "JP") throw new Error("supplier_offer_not_fulfillable");
+    const offer = offersById.get(line.offerId);
+    if (!offer) throw new Error("order_line_supplier_offer_missing");
     const { error: poError } = await db.from("procurement_orders").upsert({
       order_line_id: savedLine.id, supplier_code: offer.supplier_code,
       supplier_product_id: offer.supplier_product_id, supplier_variant_id: offer.supplier_variant_id,
