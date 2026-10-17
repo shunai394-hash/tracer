@@ -22,7 +22,7 @@ test("rejects negative costs", () => {
   assert.throws(() => calculateSellingPrice({ unitCostJpy: -1, shippingCostJpy: 0, feeRate: 0.1 }), /invalid_unitCostJpy/);
 });
 
-test("storefront publication is profit-first and independent from live supplier readiness", async () => {
+test("storefront publication requires a fresh verified Japan-shippable offer but not tracking availability", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
   assert.match(publish, /commerce_prices\.expected_profit", 0/);
@@ -31,13 +31,17 @@ test("storefront publication is profit-first and independent from live supplier 
   assert.match(publish, /Math\.max\(1, Number\(offer\.inventory\) \|\| 0\)/);
 });
 
-test("catalog publication requires positive profit, not current stock or tracking readiness", async () => {
+test("catalog publication requires positive profit and current supplier stock, but not tracking availability", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
   assert.match(publish, /\.gt\("commerce_prices\.expected_profit", 0\)/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
   assert.match(publish, /supplier_offer_missing_or_cost_unknown/);
+  assert.match(publish, /x\.source_status === "verified"/);
+  assert.match(publish, /x\.ship_to === "JP"/);
+  assert.match(publish, /Number\(x\.inventory\) > 0/);
+  assert.match(publish, /fresh && nativeIdsValid/);
   assert.match(publish, /Cover the complete current catalog/);
   assert.match(publish, /\.limit\(1000\)/);
 });
