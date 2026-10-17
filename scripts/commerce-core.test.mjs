@@ -69,6 +69,13 @@ test("storefront publication requires exact supplier identity and evidenced land
   assert.match(dashboard, /offer\.raw_data\?\.shippingKnown === true/);
 });
 
+test("explicit compliance blocks cannot keep stale Shopify/BASE listings live", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /const complianceBlocked = typeof offer\.raw_data\?\.complianceBlockReason === "string"/);
+  assert.match(publish, /unitCostKnown && shippingKnown && !complianceBlocked/);
+  assert.match(publish, /status: "error",[\s\S]{0,120}supplier_offer_no_longer_fulfillable/);
+});
+
 test("new storefront candidates require evidenced landed costs and exact supplier identity", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /supplier_offers!inner\([^)]*raw_data/);

@@ -106,9 +106,13 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
         const shippingKnown = offer.raw_data?.shippingKnown === true ||
           (offer.raw_data?.shippingKnown === undefined && offer.source_status === "verified" &&
             Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0);
+        // An explicit compliance block is not a transient evidence gap. Never
+        // treat a profitable cached price as sufficient to keep this item live.
+        const complianceBlocked = typeof offer.raw_data?.complianceBlockReason === "string" &&
+          offer.raw_data.complianceBlockReason.trim().length > 0;
         return Boolean(
           offer.supplier_product_id && offer.supplier_variant_id && nativeIdsValid &&
-          unitCostKnown && shippingKnown &&
+          unitCostKnown && shippingKnown && !complianceBlocked &&
           price && price.currency === "JPY" && Number(price.selling_price) > 0 && Number(price.expected_profit) > 0
         );
       });
