@@ -130,7 +130,7 @@ test("publication matches each JPY profitable price to its own cost-bearing supp
 test("supplier readiness failures do not automatically unpublish profitable catalog listings", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /const staleListings = await unpublishUnfulfillableListings\(channel, db\)/);
-  assert.match(publish, /Do not unpublish profitable catalog items merely because live supplier verification is temporarily unavailable/);
+  assert.match(publish, /disable external purchase until the exact priced offer has verified stock and Japan-bound freight/);
   assert.match(publish, /supplier_offer_no_longer_fulfillable:/);
 });
 test("patrol readiness and snapshots include canonical commerce tables after legacy reset", async () => {
