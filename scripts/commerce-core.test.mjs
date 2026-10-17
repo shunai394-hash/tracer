@@ -96,8 +96,8 @@ test("bounded recovery processes only unpublished channel listings", async () =>
   assert.match(publish, /sortedCandidates\.filter\(\(candidate\) => stateByVariant\.get\(candidate\.id\)\?\.status !== "published"\)/);
   assert.match(baseRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/, "BASE cron defaults to unpublished-only unless full refresh is explicitly requested");
   assert.match(shopifyRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/, "Shopify cron defaults to unpublished-only unless full refresh is explicitly requested");
-  assert.match(baseRoute, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/, "BASE cron caps each run at 25 listings");
-  assert.match(shopifyRoute, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/, "Shopify cron caps each run at 25 listings");
+  assert.match(baseRoute, /Math\.min\(5, Math\.max\(1, Math\.floor\(requested\)\)\)/, "BASE cron caps each run at five listings");
+  assert.match(shopifyRoute, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/, "Shopify cron caps each run at ten listings");
   assert.match(workflow, /commerce-publish-base\?limit=10&onlyUnpublished=true/);
   assert.match(workflow, /commerce-publish-shopify\?limit=10&onlyUnpublished=true/);
 });
@@ -726,10 +726,11 @@ test("commerce publication cron defaults to small batches and caps explicit requ
   const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
   for (const route of [baseRoute, shopifyRoute]) {
     assert.match(route, /searchParams\.get\("limit"\) \|\| 5/);
-    assert.match(route, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/);
     assert.match(route, /Number\.isFinite\(requested\) \?[^\n]*: 5/);
     assert.match(route, /searchParams\.get\("onlyUnpublished"\) !== "false"/);
   }
+  assert.match(baseRoute, /Math\.min\(5, Math\.max\(1, Math\.floor\(requested\)\)\)/);
+  assert.match(shopifyRoute, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/);
 });
 
 
