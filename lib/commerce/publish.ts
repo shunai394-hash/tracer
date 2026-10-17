@@ -204,7 +204,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   if (error) throw new Error("commerce_candidates_read_failed:" + error.message);
   const allCandidates = (data ?? []) as unknown as Candidate[];
   const { data: listingStates, error: stateError } = await db.from("channel_listings")
-    .select("variant_id,status,last_synced_at,external_product_id,last_error").eq("channel", channel)
+    .select("variant_id,status,last_synced_at,external_product_id,external_variant_id,last_error").eq("channel", channel)
     .in("variant_id", allCandidates.map((row) => row.id));
   if (stateError) throw new Error("commerce_listing_state_read_failed:" + stateError.message);
   const stateByVariant = new Map((listingStates ?? []).map((row) => [String(row.variant_id), row]));
@@ -232,7 +232,13 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   type BaseSnapshotItem = Record<string, unknown>;
   let baseSnapshotItems: BaseSnapshotItem[] | null = null;
   let baseSnapshotFailure: string | null = null;
-  if (channel === "base" && candidates.some((candidate) => !stateByVariant.get(candidate.id)?.external_product_id)) {
+  // A full 5,000-item BASE scan is only needed to recover an interrupted
+  // create for a listing that already existed in our ledger. A brand-new variant
+  // has no previous external item to recover, so create it directly with its stable SKU.
+  if (channel === "base" && candidates.some((candidate) => {
+    const state = stateByVariant.get(candidate.id);
+    return Boolean(state && !state.external_product_id);
+  })) {
     try {
       const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES });
       if (snapshot.complete !== true || !Array.isArray(snapshot.items)) throw new Error("base_create_recovery_snapshot_incomplete");
@@ -246,7 +252,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const id = String(item.item_id ?? "").trim();
     if (id) baseItemsById.set(id, item);
   }
-  const results: Array<{ variantId: string; ok: boolean; externalId?: string; error?: string }> = [];
+  const results: Array<{ variantId: string; ok: boolean; externalId?: string; error?: string; action?: "published" | "unpublished" }> = [];
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
     const validOffers = asRelationRows(candidate.supplier_offers)
@@ -264,11 +270,89 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       .sort((a, b) => Number(b.expected_profit) - Number(a.expected_profit))[0];
     const offer = price ? validOffers.find((x) => x.id === price.supplier_offer_id) : undefined;
     const imageUrl = safeUrl(product.image_url);
+    const title = candidate.title_ja.trim() || product.title_ja.trim();
+    const allOffers = asRelationRows(candidate.supplier_offers);
+    const rawOffer = offer ?? allOffers[0] ?? null;
+    const rawOfferData = rawOffer?.raw_data && typeof rawOffer.raw_data === "object" && !Array.isArray(rawOffer.raw_data)
+      ? rawOffer.raw_data as Record<string, unknown>
+      : {};
+    const supplierShippingKnown =
+      (Number.isFinite(Number(rawOffer?.shipping_cost)) && Number(rawOffer?.shipping_cost) > 0) ||
+      rawOfferData.shippingKnown === true;
+    const supplierStockKnown = rawOfferData.stockKnown === true ||
+      (rawOfferData.stockKnown === undefined && rawOffer?.source_status === "verified");
+    const supplierEvidenceUnverified = !rawOffer || rawOffer.source_status !== "verified" ||
+      !supplierShippingKnown || !supplierStockKnown;
+    const currentState = stateByVariant.get(candidate.id);
+    if (!onlyUnpublished && currentState?.status === "published" && currentState.external_product_id && supplierEvidenceUnverified) {
+      const reason = !rawOffer ? "supplier_offer_missing" :
+        rawOffer.source_status !== "verified" ? "supplier_offer_not_verified" :
+        !supplierShippingKnown ? "japan_freight_unconfirmed" : "supplier_stock_unconfirmed";
+      const nowIso = new Date().toISOString();
+      try {
+        const fallbackPrice = Math.max(1, Math.round(Number(asRelationRows(candidate.commerce_prices)[0]?.selling_price) || Number(currentState.selling_price) || 1));
+        if (channel === "base") {
+          await editBaseItem({
+            itemId: String(currentState.external_product_id),
+            title,
+            detail: String(product.description_ja || title) + "\n\n仕入先の在庫・日本向け送料を確認中のため、現在購入できません。",
+            price: fallbackPrice,
+            stock: 0,
+            visible: false,
+          });
+        } else {
+          const productId = toShopifyGid("Product", String(currentState.external_product_id));
+          if (!productId) throw new Error("shopify_product_id_missing");
+          const updated = await shopifyGraphQL<{
+            productUpdate: { product: { id: string; status: string } | null; userErrors: Array<{ message: string }> };
+          }>(
+            "mutation TracerHideUnfulfillable($input: ProductUpdateInput!) { productUpdate(product: $input) { product { id status } userErrors { message } } }",
+            { input: { id: productId, status: "DRAFT" } },
+          );
+          if (updated.productUpdate.userErrors.length || !updated.productUpdate.product) {
+            throw new Error("shopify_unpublish_failed:" + (updated.productUpdate.userErrors.map((x) => x.message).join("; ") || "product_missing"));
+          }
+          if (currentState.external_variant_id) {
+            await setShopifyVariantInventory({
+              variantId: String(currentState.external_variant_id),
+              quantity: 0,
+              reference: "unverified-supplier-offer:" + candidate.id,
+            });
+          }
+        }
+        const { error: saveError } = await db.from("channel_listings").update({
+          status: "error",
+          last_error: "supplier_offer_not_fulfillable:" + reason,
+          last_synced_at: nowIso,
+          updated_at: nowIso,
+        }).eq("channel", channel).eq("variant_id", candidate.id);
+        if (saveError) throw new Error("supplier_offer_disable_state_save_failed:" + saveError.message);
+        staleListings.checked++;
+        staleListings.unpublished++;
+        stateByVariant.set(candidate.id, {
+          ...currentState,
+          status: "error",
+          last_error: "supplier_offer_not_fulfillable:" + reason,
+          last_synced_at: nowIso,
+        });
+        results.push({ variantId: candidate.id, ok: true, externalId: String(currentState.external_product_id), action: "unpublished" });
+      } catch (error) {
+        staleListings.checked++;
+        staleListings.failed++;
+        const message = error instanceof Error ? error.message : String(error);
+        staleListings.errors.push(candidate.id + ":" + message.slice(0, 160));
+        await db.from("channel_listings").update({
+          last_error: "supplier_offer_disable_failed:" + reason + ":" + message.slice(0, 120),
+          updated_at: nowIso,
+        }).eq("channel", channel).eq("variant_id", candidate.id);
+        results.push({ variantId: candidate.id, ok: false, error: "supplier_offer_disable_failed:" + reason });
+      }
+      continue;
+    }
     if (!offer || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0) {
       results.push({ variantId: candidate.id, ok: false, error: !offer ? "supplier_offer_missing_or_cost_unknown" : !imageUrl ? "image_url_invalid" : "price_not_profitable" });
       continue;
     }
-    const title = candidate.title_ja.trim() || product.title_ja.trim();
     // Never manufacture storefront inventory. A listing can remain visible, but it is
     // purchasable only when supplier stock and Japan-bound shipping are evidenced.
     const rawOfferData = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
@@ -319,7 +403,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         const markerId = String(listing.last_error ?? "").match(/^base_create_id_persist_failed:([^:]+)(?::|$)/)?.[1] ?? null;
         let recoveredId = markerId;
         if (markerId && baseSnapshotItems && !baseItemsById.has(markerId)) throw new Error("base_create_marker_item_not_found:" + markerId);
-        if (!recoveredId) {
+        if (!recoveredId && stateByVariant.has(candidate.id)) {
+          // Existing pending/error rows may represent a timed-out BASE create.
+          // Require a complete snapshot before retrying them, to avoid duplicates.
           if (!baseSnapshotItems) throw new Error("base_create_recovery_snapshot_unavailable:" + (baseSnapshotFailure ?? "unknown"));
           const exactMatches = baseSnapshotItems.filter((item) => String(item.identifier ?? "").trim().toUpperCase() === sku);
           if (exactMatches.length > 1) throw new Error("base_identifier_ambiguous:" + sku);
@@ -456,5 +542,5 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       results.push({ variantId: candidate.id, ok: false, error: message.slice(0, 300) });
     }
   }
-  return { channel, staleListings, considered: candidates.length, published: results.filter((x) => x.ok).length, failed: results.filter((x) => !x.ok).length + staleListings.failed, results };
+  return { channel, staleListings, considered: candidates.length, published: results.filter((x) => x.ok && x.action !== "unpublished").length, processed: results.filter((x) => x.ok).length, failed: results.filter((x) => !x.ok).length, results };
 }
