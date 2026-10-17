@@ -158,11 +158,13 @@ export async function GET(request: Request) {
 
     const summary = {
       apiReadComplete: true,
+      apiErrors: 0,
       itemCount: snapshot.items.length,
       dbListingCount: listings.length,
       mappedItems: auditRows.filter((row) => row.details.mappingStatus === "matched").length,
       unmappedItems: auditRows.filter((row) => row.details.mappingStatus === "unmapped").length,
       ambiguousItems: auditRows.filter((row) => row.details.mappingStatus === "ambiguous").length,
+      missingSku: auditRows.filter((row) => !textValue(row.external_sku)).length,
       unknownVisibility: auditRows.filter((row) => row.product_status === "visibility_unknown").length,
       unreadablePrices: auditRows.filter((row) => row.external_price === null).length,
       priceMismatches: auditRows.filter((row) => row.price_matches === false).length,
