@@ -21,11 +21,11 @@ test("CJ import prioritizes supplier refreshes for existing BASE/Shopify publica
 
 test("CJ import keeps a discovery slot when recovery queues are full and scans beyond existing parents", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  assert.match(route, /while (newCandidates\\.length < limit && scanPage <= page \\+ 2)/);
-  assert.match(route, /const recoveryCapacity = Math\\.max\\(0, limit - \\(newCandidates\\.length > 0 \\? 1 : 0\\)\\)/);
-  assert.match(route, /\\.slice\\(0, recoveryCapacity\\)/);
-  assert.match(route, /\\.slice\\(0, Math\\.max\\(0, recoveryCapacity - dedupedEvidenceCandidates\\.length\\)\\)/);
-  assert.match(route, /const discoverySlots = Math\\.max\\(0, limit - dedupedEvidenceCandidates\\.length - missingPublicationRetries\\.length\\)/);
+  assert.match(route, /while \(newCandidates\.length < limit && scanPage <= page \+ 2\)/);
+  assert.match(route, /const recoveryCapacity = Math\.max\(0, limit - \(newCandidates\.length > 0 \? 1 : 0\)\)/);
+  assert.match(route, /\.slice\(0, recoveryCapacity\)/);
+  assert.match(route, /\.slice\(0, Math\.max\(0, recoveryCapacity - dedupedEvidenceCandidates\.length\)\)/);
+  assert.match(route, /const discoverySlots = Math\.max\(0, limit - dedupedEvidenceCandidates\.length - missingPublicationRetries\.length\)/);
 });
 
 test("CJ freight parsing searches nested object and array wrappers and preserves explicit free-shipping values", async () => {
