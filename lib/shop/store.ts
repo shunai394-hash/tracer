@@ -231,6 +231,7 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
     .eq("orderable", true)
     .gt("inventory", 0)
     .eq("tracking_available", true)
+    .eq("currency", "JPY")
     .gt("selling_price", 0)
     .maybeSingle();
 
@@ -446,6 +447,7 @@ export async function placeShopOrder(args: {
     .eq("orderable", true)
     .gt("inventory", 0)
     .eq("tracking_available", true)
+    .eq("currency", "JPY")
     .gt("selling_price", 0);
 
   if (error) throw new Error(error.message);
