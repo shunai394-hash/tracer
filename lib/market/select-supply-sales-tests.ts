@@ -310,7 +310,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (shippingEstimated) reasons.push(`shipping_allowance_estimated_usd_${shippingAllowanceUsd}_not_supplier_quote`);
     const pricingShippingCost = shippingCost ?? (shippingEstimated ? shippingAllowanceUsd : null);
     sellingPrice = calculateSupplySellingPriceJpy({
-      existingSellingPriceJpy: sellingPrice,
+      existingSellingPriceJpy: shippingEstimated ? null : sellingPrice,
       sourceCost,
       shippingCost: pricingShippingCost,
       sourceFxRateToSelling,
