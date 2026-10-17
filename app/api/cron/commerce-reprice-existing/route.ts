@@ -231,7 +231,8 @@ export async function GET(request: Request) {
     }
   }
   const storefrontSyncComplete = result.storefrontSyncRemaining.base === 0 && result.storefrontSyncRemaining.shopify === 0;
-  const ok = result.skipped === 0 && result.errors.length === 0 && result.storefrontSyncErrors.length === 0;
+  // A drained queue is part of success: a healthy batch with a remaining backlog is partial, not complete.
+  const ok = result.skipped === 0 && result.errors.length === 0 && result.storefrontSyncErrors.length === 0 && storefrontSyncComplete;
   console.info("[TRACER STOREFRONT PRICE RECONCILE]", {
     generatedAt: new Date().toISOString(),
     ok,
