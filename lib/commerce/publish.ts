@@ -351,7 +351,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       }
       continue;
     }
-    if (!offer || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0) {
+    if (!price || !offer || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0) {
       results.push({ variantId: candidate.id, ok: false, error: !offer ? "supplier_offer_missing_or_cost_unknown" : !imageUrl ? "image_url_invalid" : "price_not_profitable" });
       continue;
     }
