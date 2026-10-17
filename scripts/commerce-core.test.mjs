@@ -951,6 +951,8 @@ test("CJ freight uses the detailed API when required product logistics fields ar
 test("CJ freight quote misses use a conservative historical reserve while preserving unknown status", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.ok(importer.includes("const shippingCostForPricing = shipping ?? 7.76"));
+  assert.ok(importer.includes("if (Number.isFinite(shippingCostForPricing) && shippingCostForPricing >= 0)"), "a documented historical freight reserve must still be included in the 50% target-margin price calculation");
+  assert.ok(!importer.includes("if (shipping !== null && shipping >= 0)"), "unknown live freight must not skip repricing when a conservative reserve is available");
   assert.ok(importer.includes("shippingKnown: shipping !== null"));
   assert.ok(importer.includes("shippingEstimated: shippingWasEstimated"));
   assert.ok(importer.includes('shippingEstimateSource: shippingWasEstimated ? "cj_historical_p90_570_offers" : null'));
