@@ -109,7 +109,7 @@ assert.match(cleanSandboxRoute, /previousErrorText\.startsWith\("CJ_SANDBOX_CREA
 assert.match(cleanSandboxRoute, /cj-sandbox-core:retry-1/);
 assert.match(cleanSandboxRoute, /cj-sandbox-core:retry-2/);
 assert.ok(commerceImporter.includes('url.searchParams.has("productIds")'), "importer must refresh exact existing CJ products by supplier ID");
-assert.match(commerceImporter, /if \(stock !== null && shipping !== null\)/, "supplier-listing freshness must only be refreshed when live stock and Japan freight are both known");
+assert.match(commerceImporter, /if \(stock !== null && stock > 0 && shipping !== null && !shippingWasEstimated\)/, "supplier-listing freshness must only be refreshed when positive live stock and confirmed Japan freight are both known");
 assert.match(commerceImporter, /\.eq\("supplier_product_id", supplierProductId\)/, "fresh evidence must match the canonical CJ product ID exactly");
 assert.match(commerceImporter, /\.eq\("supplier_variant_id", exactVariant\.vid\)/, "fresh evidence must match the exact CJ variant ID");
 assert.match(commerceImporter, /shipping_checked_at: checkedAt/);
