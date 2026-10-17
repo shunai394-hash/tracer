@@ -28,6 +28,7 @@ type ShopifyPage = {
       publishedOnPublication: boolean;
       totalInventory: number;
       variants: { nodes: Array<{ id: string; sku: string | null; price: string | null }> };
+      variantsCount: { count: number };
     }>;
     pageInfo: { hasNextPage: boolean; endCursor: string | null };
   };
@@ -99,11 +100,14 @@ export async function GET(request: Request) {
       const onlineStorePublicationId = await getOnlineStorePublicationId();
       for (let page = 0; page < 200; page += 1) {
         const result = await shopifyGraphQL<ShopifyPage>(
-          "query LivePriceAudit($first: Int!, $after: String, $publicationId: ID!) { products(first: $first, after: $after) { nodes { id title status publishedOnPublication(publicationId: $publicationId) totalInventory variants(first: 100) { nodes { id sku price } } } pageInfo { hasNextPage endCursor } } }",
+          "query LivePriceAudit($first: Int!, $after: String, $publicationId: ID!) { products(first: $first, after: $after) { nodes { id title status publishedOnPublication(publicationId: $publicationId) totalInventory variantsCount { count } variants(first: 100) { nodes { id sku price } } } pageInfo { hasNextPage endCursor } } }",
           { first: 50, after: after ?? null, publicationId: onlineStorePublicationId },
         );
         shopifyPages += 1;
         for (const product of result.products.nodes) {
+          if (product.variantsCount.count > product.variants.nodes.length) {
+            throw new Error("SHOPIFY_VARIANT_SCAN_INCOMPLETE");
+          }
           for (const variant of product.variants.nodes) {
             const sku = norm(variant.sku);
             if (!sku) continue;
