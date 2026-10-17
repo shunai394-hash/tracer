@@ -37,7 +37,7 @@ test("catalog publication requires positive profit, not current stock or trackin
   assert.match(publish, /\.gt\("commerce_prices\.expected_profit", 0\)/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
-  assert.match(publish, /supplier_offer_missing_or_cost_unknown/);
+  assert.match(publish, /supplier_link_or_cost_missing/);
   assert.match(publish, /Cover the complete current catalog/);
   assert.match(publish, /\.limit\(1000\)/);
 });
@@ -139,7 +139,7 @@ test("publication and price calculation require fresh verified supplier evidence
   assert.match(core, /quantityByOffer\.get\(line\.offerId\)/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
-  assert.match(publish, /supplier_offer_missing_or_cost_unknown/);
+  assert.match(publish, /supplier_link_or_cost_missing/);
   assert.match(publish, /createBaseItem\(\{[^}]*stock: storefrontStock/s, "first BASE publication must obey the same inventory cap as updates");
   assert.doesNotMatch(publish, /createBaseItem\(\{[^}]*stock: Number\(offer\.inventory\)/s, "raw supplier inventory must never be exposed to the storefront");
   assert.match(publish, /base_created_item_id_save_failed/);
