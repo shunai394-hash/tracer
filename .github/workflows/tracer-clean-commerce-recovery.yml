@@ -99,6 +99,7 @@ jobs:
               errors=len(d.get("errors",[]))+len(d.get("storefrontSyncErrors",[]))
               print(f"| {i} | {d.get('ok')} | {d.get('repriced')} | {rem.get('base')} | {rem.get('shopify')} | {errors} |")
           PY
+          [[ "$failed" == "0" ]] || { echo "One or more price reconciliation passes failed; stopping before publication."; exit 1; }
 
       - name: Publish verified commerce backlog in bounded batches
         shell: bash
