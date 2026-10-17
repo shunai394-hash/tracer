@@ -563,6 +563,10 @@ test("scheduled CJ discovery only retries errored variants missing Shopify publi
   assert.match(importer, /\.eq\("source_status", "error"\)/);
   assert.match(importer, /shopifyVariantIds\.has\(String\(offer\.variant_id\)\)/);
   assert.match(importer, /retryVariantIds/);
+  assert.match(importer, /event_type", "cj_import_exclusion"/);
+  assert.match(importer, /lastAttemptByIdentity/);
+  assert.match(importer, /detail\.recordedAt/);
+  assert.match(importer, /\.sort\(\(a, b\) => a\[1\]\.lastAttemptedAt - b\[1\]\.lastAttemptedAt\)/);
   assert.doesNotMatch(importer, /const recoveryPool/);
 });
 
