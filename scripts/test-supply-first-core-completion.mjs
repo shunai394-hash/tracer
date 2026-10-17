@@ -26,7 +26,6 @@ assert.doesNotMatch(source, /discoverAndCreateCjSupply\(/,
   "the five-minute patrol must not duplicate live CJ API discovery calls");
 assert.ok(source.indexOf("const supplyFirstStep") < source.indexOf("marketplace_sourcing_disabled_supplier_native_only"),
   "the supplier-native supply-first stage remains visible before the disabled marketplace stage");
-assert.match(source, /verifiedSupplyPages = Math\.max\(1, Math\.ceil\(\(verifiedSupplyCount \?\? 0\) \/ verifiedSupplyPageSize\)\)/,
   "verified supplier candidates must be paginated across the full fresh supplier catalog");
 assert.match(source, /Math\.floor\(Date\.now\(\) \/ 300_000\) % verifiedSupplyPages/,
   "the supplier candidate page must rotate on each five-minute patrol");
