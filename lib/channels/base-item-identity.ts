@@ -28,6 +28,7 @@ export type CommerceListingRef = { id: string; externalProductId: string | null 
 export type CommerceLinkDecision = {
   outcome:
     | "repairable"
+    | "repairable_stale_external_id"
     | "already_linked"
     | "listing_has_different_base_item"
     | "base_item_already_mapped"
@@ -35,6 +36,7 @@ export type CommerceLinkDecision = {
     | "ambiguous_base_item"
     | "no_listing";
   listingId?: string;
+  previousExternalProductId?: string;
 };
 
 /** One BASE item, one commerce SKU, one channel listing, and a null external id. */
@@ -43,6 +45,8 @@ export function decideCommerceSkuLink(input: {
   listingsForSku: CommerceListingRef[];
   otherBaseItemIdsWithSameSku: string[];
   listingIdsAlreadyUsingBaseItem: string[];
+  /** True only when the complete BASE snapshot still contains the current external ID. */
+  currentExternalIdExists?: boolean;
 }): CommerceLinkDecision {
   if (input.listingsForSku.length !== 1) {
     return { outcome: input.listingsForSku.length === 0 ? "no_listing" : "ambiguous_sku" };
@@ -50,9 +54,14 @@ export function decideCommerceSkuLink(input: {
   const listing = input.listingsForSku[0];
   if (input.otherBaseItemIdsWithSameSku.length > 0) return { outcome: "ambiguous_base_item", listingId: listing.id };
   const current = listing.externalProductId;
-  if (current === input.baseItemId) return { outcome: "already_linked", listingId: listing.id };
-  if (current) return { outcome: "listing_has_different_base_item", listingId: listing.id };
   const conflicts = input.listingIdsAlreadyUsingBaseItem.filter((id) => id !== listing.id);
   if (conflicts.length > 0) return { outcome: "base_item_already_mapped", listingId: listing.id };
+  if (current === input.baseItemId) return { outcome: "already_linked", listingId: listing.id };
+  if (current) {
+    if (input.currentExternalIdExists === false) {
+      return { outcome: "repairable_stale_external_id", listingId: listing.id, previousExternalProductId: current };
+    }
+    return { outcome: "listing_has_different_base_item", listingId: listing.id };
+  }
   return { outcome: "repairable", listingId: listing.id };
 }
