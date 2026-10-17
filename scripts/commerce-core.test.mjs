@@ -361,7 +361,7 @@ test("BASE Japanese address separates municipality from street without inventing
 test("CJ variant suffixes disambiguate non-color supplier options in Japanese", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /4ピン・No\.5斜めクリップ/);
-  assert.match(importer, /シルバー・タイプ/);
+  assert.match(importer, /numberedColor/);
   assert.match(importer, /パールトート・グラデーション/);
   assert.match(importer, /巾着型ショルダー/);
   assert.ok(importer.includes('[/khaki/, "カーキ"]'));
