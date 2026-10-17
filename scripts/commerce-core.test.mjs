@@ -15,6 +15,15 @@ test("price calculation preserves positive profit after fees and target margin",
   assert.ok(result.expectedProfit > 0);
   assert.ok(result.marginRate >= 0.5);
 });
+test("canonical repricing uses the highest existing storefront price and preserves the 50% net-margin floor", async () => {
+  const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
+  const start = core.indexOf("export async function recalculatePrice");
+  const end = core.indexOf("/** Channel state is independent.", start);
+  const pricing = core.slice(start, end);
+  assert.match(pricing, /from\("channel_listings"\)[\s\S]*?\.eq\("variant_id", input\.variantId\)/);
+  assert.match(pricing, /Math\.max\(minimumPrice\.sellingPrice, highestExistingPrice\)/);
+  assert.match(pricing, /marginRate \+ Number\.EPSILON < \(input\.targetMarginRate \?\? 0\.5\)/);
+});
 test("rejects invalid rates", () => {
   assert.throws(() => calculateSellingPrice({ unitCostJpy: 100, shippingCostJpy: 0, feeRate: 1, targetMarginRate: 0.1 }), /invalid_rate/);
 });
