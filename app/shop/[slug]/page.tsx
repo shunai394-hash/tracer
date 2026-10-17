@@ -188,7 +188,7 @@ export default async function ShopProductPage({
           <div className="mt-6 border-l border-cyan-300/30 pl-4">
             <p className="text-xs font-medium text-zinc-200">掲載理由を、隠さない。</p>
             <p className="mt-2 text-xs leading-6 text-zinc-500">
-              商品の対応機種や仕様は、購入前に商品画像と販売元の最新情報をご確認ください。
+              サイズ・素材・カラー・仕様は、購入前に商品画像と販売先の最新情報をご確認ください。
             </p>
           </div>
         </div>
@@ -199,26 +199,26 @@ export default async function ShopProductPage({
           <div>
             <p className="text-xs tracking-wide text-cyan-300/70">この商品について</p>
             <h2 id="why-heading" className="mt-3 max-w-sm text-2xl font-medium tracking-tight text-zinc-100 sm:text-3xl">
-              「気になる」で終わらせない。
+              商品情報を確認してから購入する。
             </h2>
             <p className="mt-4 max-w-sm text-sm leading-7 text-zinc-500">
-              対応機種を確認して、お使いの端末に合うケースをお選びください。
+              サイズ・素材・カラーなど、商品ごとの仕様を購入前にご確認ください。
             </p>
           </div>
 
           <div className="grid gap-px overflow-hidden border border-white/10 bg-white/10 sm:grid-cols-2">
             <div className="bg-zinc-950/70 p-6 sm:p-7">
-              <p className="text-xs text-zinc-500">選定について</p>
-              <p className="mt-4 text-base font-medium text-zinc-200">市場シグナル</p>
+              <p className="text-xs text-zinc-500">掲載情報</p>
+              <p className="mt-4 text-base font-medium text-zinc-200">TRACERの商品データ</p>
               <p className="mt-2 text-sm leading-7 text-zinc-500">
-                対応する機種はシリーズやモデルによって異なります。ご購入前に端末名をご確認ください。
+                商品名・画像・価格は登録された掲載情報を表示しています。詳細は販売先の商品ページでもご確認ください。
               </p>
             </div>
             <div className="bg-zinc-950/70 p-6 sm:p-7">
-              <p className="text-xs text-zinc-500">商品情報</p>
-              <p className="mt-4 text-base font-medium text-zinc-200">確認できた情報</p>
+              <p className="text-xs text-zinc-500">購入前の確認</p>
+              <p className="mt-4 text-base font-medium text-zinc-200">販売先の最新情報</p>
               <p className="mt-2 text-sm leading-7 text-zinc-500">
-                iPhone 11・12・13・14シリーズ向けの商品です。商品画像に記載された対応範囲をご確認ください。
+                在庫・配送日数・送料・返品条件は商品や配送先によって異なります。購入手続きの前に販売先でご確認ください。
               </p>
             </div>
           </div>
