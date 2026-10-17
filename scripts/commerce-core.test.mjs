@@ -97,10 +97,11 @@ test("publication matches each JPY profitable price to its own cost-bearing supp
   assert.match(publish, /validOffers\.find\(\(x\) => x\.id === price\.supplier_offer_id\)/);
   assert.doesNotMatch(publish, /candidate\.commerce_prices\.supplier_offer_id/);
 });
-test("supplier readiness failures do not automatically unpublish profitable catalog listings", async () => {
+test("missing tracking support alone does not make a linked listing unfulfillable", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /const staleListings = await unpublishUnfulfillableListings\(channel, db\)/);
-  assert.match(publish, /Do not unpublish profitable catalog items merely because live supplier verification is temporarily unavailable/);
+  assert.doesNotMatch(publish, /offer\.tracking_supported !== true/);
+  assert.doesNotMatch(publish, /tracking_not_verified/);
   assert.match(publish, /supplier_offer_no_longer_fulfillable:/);
 });
 test("patrol readiness and snapshots include canonical commerce tables after legacy reset", async () => {
