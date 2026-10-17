@@ -109,9 +109,12 @@ export async function reconcileSupplierOrders(limit = 50): Promise<ReconcileResu
       };
 
       if (trackingResult) {
-        update.tracking_carrier = trackingResult.carrier;
-        update.tracking_url = trackingResult.trackingUrl;
-        update.shipped_at = trackingResult.shippedAt;
+        if (trackingResult.trackingNumber) {
+          update.tracking_number = trackingResult.trackingNumber;
+        }
+        if (trackingResult.carrier) update.tracking_carrier = trackingResult.carrier;
+        if (trackingResult.trackingUrl) update.tracking_url = trackingResult.trackingUrl;
+        if (trackingResult.shippedAt) update.shipped_at = trackingResult.shippedAt;
       }
 
       stage = "purchase_order_status_update";
