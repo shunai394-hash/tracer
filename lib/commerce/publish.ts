@@ -207,7 +207,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     candidateQuery = candidateQuery.in("id", uniqueVariantIds);
   }
   // Targeted price reconciliation only republishes variants whose canonical price changed.
-  // Normal scheduled publishing still scans the full bounded catalog.
+  // Cover the complete current catalog (543 variants) so older error rows are not starved when no variant filter is supplied.
   const { data, error } = await candidateQuery.limit(1000);
   if (error) throw new Error("commerce_candidates_read_failed:" + error.message);
   const allCandidates = (data ?? []) as unknown as Candidate[];
