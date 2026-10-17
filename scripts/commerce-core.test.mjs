@@ -358,6 +358,17 @@ test("BASE Japanese address separates municipality from street without inventing
   assert.match(baseOrders, /address1: parsedAddress\.address1/);
 });
 
+test("CJ variant suffix coverage includes translated sets and color names", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /20点セット/);
+  assert.match(importer, /収納ポーチ付き/);
+  assert.match(importer, /アッシュグレー/);
+  assert.match(importer, /蛍光グリーン/);
+  assert.match(importer, /ローズレッド/);
+  assert.ok(importer.includes('[/cyan/, "シアン"]'));
+  assert.ok(importer.includes('[/khaki/, "カーキ"]'));
+});
+
 test("CJ variant suffixes disambiguate non-color supplier options in Japanese", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /4ピン・No\.5斜めクリップ/);
