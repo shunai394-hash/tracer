@@ -20,6 +20,8 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const requestedLimit = Number(url.searchParams.get("limit") || 100);
   const limit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, Math.floor(requestedLimit))) : 100;
+  // Never accept the old 20% default: require at least 50% net margin after supplier landed cost and platform fees.
+  const targetMarginRate = 0.5;
 
   const [{ data: offers, error: offersError }, { data: activeProducts, error: productsError }, { data: prices, error: pricesError }] = await Promise.all([
     db.from("supplier_offers")
@@ -27,7 +29,7 @@ export async function GET(request: Request) {
       .order("updated_at", { ascending: true })
       .limit(2000),
     db.from("commerce_products").select("id").eq("active", true).limit(2000),
-    db.from("commerce_prices").select("variant_id,supplier_offer_id,expected_profit,calculated_at").limit(4000),
+    db.from("commerce_prices").select("variant_id,supplier_offer_id,expected_profit,margin_rate,calculated_at").limit(4000),
   ]);
   if (offersError || productsError || pricesError) {
     return NextResponse.json({
@@ -73,14 +75,14 @@ export async function GET(request: Request) {
   const candidates = [...oneOfferPerVariant.values()]
     .filter((offer) => {
       const price = priceByVariant.get(String(offer.variant_id));
-      return !price || Number(price.expected_profit) <= 0 || String(price.supplier_offer_id) !== String(offer.id) ||
+      return !price || Number(price.expected_profit) <= 0 || Number(price.margin_rate) < targetMarginRate || String(price.supplier_offer_id) !== String(offer.id) ||
         String(price.calculated_at ?? "") < String(offer.updated_at ?? "");
     })
     .sort((a, b) => {
       const ap = priceByVariant.get(String(a.variant_id));
       const bp = priceByVariant.get(String(b.variant_id));
-      const aNeedsPrice = !ap || Number(ap.expected_profit) <= 0 || String(ap.supplier_offer_id) !== String(a.id);
-      const bNeedsPrice = !bp || Number(bp.expected_profit) <= 0 || String(bp.supplier_offer_id) !== String(b.id);
+      const aNeedsPrice = !ap || Number(ap.expected_profit) <= 0 || Number(ap.margin_rate) < targetMarginRate || String(ap.supplier_offer_id) !== String(a.id);
+      const bNeedsPrice = !bp || Number(bp.expected_profit) <= 0 || Number(bp.margin_rate) < targetMarginRate || String(bp.supplier_offer_id) !== String(b.id);
       if (aNeedsPrice !== bNeedsPrice) return aNeedsPrice ? -1 : 1;
       return String(ap?.calculated_at ?? a.updated_at ?? "").localeCompare(String(bp?.calculated_at ?? b.updated_at ?? ""));
     })
@@ -99,7 +101,7 @@ export async function GET(request: Request) {
         offerId: String(offer.id),
         exchangeRateToJpy: String(offer.currency).toUpperCase() === "JPY" ? 1 : usdJpy.rate,
         feeRate: 0.1,
-        targetMarginRate: 0.2,
+        targetMarginRate,
       });
       result.repriced++;
     } catch (error) {
