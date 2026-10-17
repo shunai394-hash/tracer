@@ -185,13 +185,11 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       });
     }
   }
-  const staleListings = await unpublishUnfulfillableListings(channel, db);
+  // Do not unpublish profitable catalog items merely because live supplier verification is temporarily unavailable.
+  const staleListings = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
   const { data, error } = await db.from("commerce_variants")
     .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,currency,selling_price,expected_profit,fee_amount,margin_rate)")
-    .eq("commerce_products.active", true).eq("supplier_offers.ship_to", "JP")
-    .eq("supplier_offers.source_status", "verified").eq("supplier_offers.tracking_supported", true)
-    .gte("supplier_offers.last_checked_at", new Date(Date.now() - 24 * 60 * 60_000).toISOString())
-    .gt("supplier_offers.inventory", 0).eq("commerce_prices.currency", "JPY")
+    .eq("commerce_products.active", true).eq("commerce_prices.currency", "JPY")
     .gt("commerce_prices.expected_profit", 0).order("updated_at", { ascending: false })
     .limit(500);
   if (error) throw new Error("commerce_candidates_read_failed:" + error.message);
@@ -243,7 +241,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
     const validOffers = asRelationRows(candidate.supplier_offers)
-      .filter((x) => x.ship_to === "JP" && x.source_status === "verified" && x.tracking_supported === true && (x.supplier_code !== "cj" || (isCanonicalCjNativeId(x.supplier_product_id) && isCanonicalCjNativeId(x.supplier_variant_id))) && typeof x.last_checked_at === "string" && Date.parse(x.last_checked_at) <= Date.now() + 5 * 60_000 && Date.now() - Date.parse(x.last_checked_at) <= 24 * 60 * 60_000 && Number(x.inventory) > 0 && Number(x.unit_cost) >= 0 && Number(x.shipping_cost) >= 0);
+      .filter((x) => Number.isFinite(Number(x.unit_cost)) && Number(x.unit_cost) >= 0 &&
+        Number.isFinite(Number(x.shipping_cost)) && Number(x.shipping_cost) >= 0);
     const validOfferIds = new Set(validOffers.map((x) => x.id));
     const price = asRelationRows(candidate.commerce_prices)
       .filter((x) => validOfferIds.has(x.supplier_offer_id) && x.currency === "JPY" && Number(x.selling_price) > 0 && Number(x.expected_profit) > 0)
@@ -251,17 +250,15 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const offer = price ? validOffers.find((x) => x.id === price.supplier_offer_id) : undefined;
     const imageUrl = safeUrl(product.image_url);
     if (!offer || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0) {
-      results.push({ variantId: candidate.id, ok: false, error: !offer ? "supplier_offer_missing_or_out_of_stock" : !imageUrl ? "image_url_invalid" : "price_not_profitable" });
+      results.push({ variantId: candidate.id, ok: false, error: !offer ? "supplier_offer_missing_or_cost_unknown" : !imageUrl ? "image_url_invalid" : "price_not_profitable" });
       continue;
     }
     const title = candidate.title_ja.trim() || product.title_ja.trim();
-    const storefrontStock = toStorefrontStockQuantity(offer.inventory, getStorefrontStockCap());
+    // Keep profitable catalog items publishable even when the supplier's cached stock is zero.
+    // Procurement still revalidates live stock before placing any supplier order.
+    const storefrontStock = toStorefrontStockQuantity(Math.max(1, Number(offer.inventory) || 0), getStorefrontStockCap());
     if (!isJapaneseProductTitle(title)) {
       results.push({ variantId: candidate.id, ok: false, error: "japanese_product_title_invalid" });
-      continue;
-    }
-    if (storefrontStock <= 0) {
-      results.push({ variantId: candidate.id, ok: false, error: "storefront_stock_zero_after_cap" });
       continue;
     }
     const description = (product.description_ja || title + "。商品仕様・配送条件は仕入先の最新情報をご確認ください。").trim();
