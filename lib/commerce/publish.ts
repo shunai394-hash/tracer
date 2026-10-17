@@ -232,7 +232,13 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   type BaseSnapshotItem = Record<string, unknown>;
   let baseSnapshotItems: BaseSnapshotItem[] | null = null;
   let baseSnapshotFailure: string | null = null;
-  if (channel === "base" && candidates.some((candidate) => !stateByVariant.get(candidate.id)?.external_product_id)) {
+  // A full 5,000-item BASE scan is only needed to recover an interrupted
+  // create for a listing that already existed in our ledger. A brand-new variant
+  // has no previous external item to recover, so create it directly with its stable SKU.
+  if (channel === "base" && candidates.some((candidate) => {
+    const state = stateByVariant.get(candidate.id);
+    return Boolean(state && !state.external_product_id);
+  })) {
     try {
       const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES });
       if (snapshot.complete !== true || !Array.isArray(snapshot.items)) throw new Error("base_create_recovery_snapshot_incomplete");
@@ -319,7 +325,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         const markerId = String(listing.last_error ?? "").match(/^base_create_id_persist_failed:([^:]+)(?::|$)/)?.[1] ?? null;
         let recoveredId = markerId;
         if (markerId && baseSnapshotItems && !baseItemsById.has(markerId)) throw new Error("base_create_marker_item_not_found:" + markerId);
-        if (!recoveredId) {
+        if (!recoveredId && stateByVariant.has(candidate.id)) {
+          // Existing pending/error rows may represent a timed-out BASE create.
+          // Require a complete snapshot before retrying them, to avoid duplicates.
           if (!baseSnapshotItems) throw new Error("base_create_recovery_snapshot_unavailable:" + (baseSnapshotFailure ?? "unknown"));
           const exactMatches = baseSnapshotItems.filter((item) => String(item.identifier ?? "").trim().toUpperCase() === sku);
           if (exactMatches.length > 1) throw new Error("base_identifier_ambiguous:" + sku);
