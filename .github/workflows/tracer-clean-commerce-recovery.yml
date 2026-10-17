@@ -183,3 +183,4 @@ jobs:
           # Paid-order procurement remains separate and requires payment_status=paid.
           echo "Bounded publication passes finished; inspect each JSON response for published/failed counts."
           exit "$failed"
+# 2026-10-18: TRACER_CLEAN_COMMERCE_RECOVERY after #1344 newest-first supplier offer scan is live; reconcile prices and publish bounded eligible backlog.
