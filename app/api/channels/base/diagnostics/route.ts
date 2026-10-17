@@ -33,6 +33,17 @@ export async function GET(request: Request) {
       visibleItemsUnlinked: 0,
       visibleItemsWithoutDbMapping: 0,
       visibleItemsWithAmbiguousDbMapping: 0,
+      priceAudit: {
+        visibleItemsWithExternalPrice: 0,
+        visibleItemsWithoutExternalPrice: 0,
+        visibleItemsPriceCompared: 0,
+        externalVsDbPriceMatches: 0,
+        externalVsDbPriceMismatches: 0,
+        dbPriceUnknown: 0,
+        externalVsCanonicalPriceMatches: 0,
+        externalVsCanonicalPriceMismatches: 0,
+        canonicalPriceMissing: 0,
+      },
       itemIdentifierPresentCount: probe.items.entries.filter((entry) => Boolean(entry.identifier)).length,
       stableTracerIdentifierCount: probe.items.entries.filter((entry) => /^TRC-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry.identifier ?? "")).length,
       itemIdMissingCount: probe.items.entries.filter((entry) => !entry.itemId).length,
@@ -66,18 +77,18 @@ export async function GET(request: Request) {
       } else if (externalIds.length > 0) {
         try {
           const db = createSupabaseAdminClient();
-          const listingRows: Array<{ id: string; base_item_id: string | number | null; supplier_listing_id: string | null }> = [];
+          const listingRows: Array<{ id: string; base_item_id: string | number | null; supplier_listing_id: string | null; selling_price: number | string | null }> = [];
           for (let offset = 0; offset < externalIds.length; offset += 100) {
             const batch = externalIds.slice(offset, offset + 100);
             const { data, error: listingError } = await db
               .from("shop_listings")
-              .select("id,base_item_id,supplier_listing_id")
+              .select("id,base_item_id,supplier_listing_id,selling_price")
               .in("base_item_id", batch);
             if (listingError) throw new Error("base_listing_mapping_db_read_failed");
             listingRows.push(...(data ?? []));
           }
 
-          const rowsByBaseId = new Map<string, Array<{ id: string; base_item_id: string | number | null; supplier_listing_id: string | null }>>();
+          const rowsByBaseId = new Map<string, Array<{ id: string; base_item_id: string | number | null; supplier_listing_id: string | null; selling_price: number | string | null }>>();
           for (const row of listingRows ?? []) {
             const key = String(row.base_item_id ?? "");
             const existing = rowsByBaseId.get(key) ?? [];
@@ -85,6 +96,7 @@ export async function GET(request: Request) {
               id: String(row.id),
               base_item_id: row.base_item_id,
               supplier_listing_id: row.supplier_listing_id == null ? null : String(row.supplier_listing_id),
+              selling_price: row.selling_price,
             });
             rowsByBaseId.set(key, existing);
           }
@@ -96,12 +108,12 @@ export async function GET(request: Request) {
           // supplier_offers, not the retired shop_listings table. Include both
           // representations so diagnostics don't falsely report zero managed
           // BASE items after the commerce migration.
-          const commerceRows: Array<{ id: string; variant_id: string | null; external_product_id: string | null; status: string | null }> = [];
+          const commerceRows: Array<{ id: string; variant_id: string | null; external_product_id: string | null; status: string | null; selling_price: number | string | null }> = [];
           for (let offset = 0; offset < externalIds.length; offset += 100) {
             const batch = externalIds.slice(offset, offset + 100);
             const { data, error: commerceError } = await db
               .from("channel_listings")
-              .select("id,variant_id,external_product_id,status")
+              .select("id,variant_id,external_product_id,status,selling_price")
               .eq("channel", "base")
               .in("external_product_id", batch);
             if (commerceError) throw new Error("base_commerce_mapping_db_read_failed");
@@ -134,14 +146,26 @@ export async function GET(request: Request) {
           const variantById = new Map(variants.map((row) => [String(row.id), row]));
           const priceByVariant = new Map(prices.map((row) => [String(row.variant_id), row]));
           const offerById = new Map(offers.map((row) => [String(row.id), row]));
-          const commerceByBaseId = new Map<string, Array<{ listingId: string; variantId: string; status: string | null }>>();
+          const commerceByBaseId = new Map<string, Array<{ listingId: string; variantId: string; status: string | null; sellingPrice: number | null }>>();
           for (const row of commerceRows ?? []) {
             const key = String(row.external_product_id ?? "");
             const group = commerceByBaseId.get(key) ?? [];
-            group.push({ listingId: String(row.id), variantId: String(row.variant_id), status: row.status == null ? null : String(row.status) });
+            group.push({ listingId: String(row.id), variantId: String(row.variant_id), status: row.status == null ? null : String(row.status), sellingPrice: row.selling_price == null ? null : Number(row.selling_price) });
             commerceByBaseId.set(key, group);
           }
 
+          mappingAudit.priceAudit.visibleItemsWithExternalPrice = visibleEntries.filter((entry) => entry.price !== null).length;
+          mappingAudit.priceAudit.visibleItemsWithoutExternalPrice = visibleEntries.filter((entry) => entry.price === null).length;
+          const compareExternalPrice = (externalPrice: number | null, dbPrice: number | null) => {
+            if (externalPrice === null || !Number.isFinite(externalPrice)) return;
+            if (dbPrice === null || !Number.isFinite(dbPrice)) {
+              mappingAudit.priceAudit.dbPriceUnknown += 1;
+              return;
+            }
+            mappingAudit.priceAudit.visibleItemsPriceCompared += 1;
+            if (externalPrice === dbPrice) mappingAudit.priceAudit.externalVsDbPriceMatches += 1;
+            else mappingAudit.priceAudit.externalVsDbPriceMismatches += 1;
+          };
           const unmappedEntries: typeof visibleEntries = [];
           for (const entry of visibleEntries) {
             const key = String(entry.itemId);
@@ -165,6 +189,14 @@ export async function GET(request: Request) {
               const variant = variantById.get(listing.variantId);
               const price = priceByVariant.get(listing.variantId);
               const offer = price?.supplier_offer_id ? offerById.get(String(price.supplier_offer_id)) : null;
+              const externalPrice = entry.price;
+              compareExternalPrice(externalPrice, listing.sellingPrice);
+              if (externalPrice !== null && Number.isFinite(externalPrice)) {
+                const canonicalPrice = price?.selling_price == null ? null : Number(price.selling_price);
+                if (canonicalPrice === null || !Number.isFinite(canonicalPrice)) mappingAudit.priceAudit.canonicalPriceMissing += 1;
+                else if (externalPrice === canonicalPrice) mappingAudit.priceAudit.externalVsCanonicalPriceMatches += 1;
+                else mappingAudit.priceAudit.externalVsCanonicalPriceMismatches += 1;
+              }
               const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
               const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 && Date.now() - checkedAt <= 24 * 60 * 60_000;
               const exactVariant = Boolean(variant && offer && String(variant.source_variant_key) === String(offer.supplier_variant_id));
@@ -179,6 +211,9 @@ export async function GET(request: Request) {
               continue;
             }
 
+            if (legacyMatches.length === 1 && commerceMatches.length === 0) {
+              compareExternalPrice(entry.price, legacyMatches[0].selling_price == null ? null : Number(legacyMatches[0].selling_price));
+            }
             const supplierId = legacyMatches[0].supplier_listing_id;
             if (!supplierId || !linkedSupplierIds.has(supplierId)) {
               mappingAudit.visibleItemsUnlinked += 1;
