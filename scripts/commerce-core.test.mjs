@@ -29,6 +29,8 @@ test("storefront publication is profit-first and independent from live supplier 
   assert.doesNotMatch(publish, /supplier_offers\.source_status", "verified/);
   assert.doesNotMatch(publish, /supplier_offers\.tracking_supported", true/);
   assert.match(publish, /Math\.max\(1, Number\(offer\.inventory\) \|\| 0\)/);
+  assert.doesNotMatch(publish, /offer\.tracking_supported === true/);
+  assert.doesNotMatch(publish, /tracking_not_verified/);
 });
 
 test("catalog publication requires positive profit, not current stock or tracking readiness", async () => {
@@ -97,10 +99,15 @@ test("publication matches each JPY profitable price to its own cost-bearing supp
   assert.match(publish, /validOffers\.find\(\(x\) => x\.id === price\.supplier_offer_id\)/);
   assert.doesNotMatch(publish, /candidate\.commerce_prices\.supplier_offer_id/);
 });
-test("supplier readiness failures do not automatically unpublish profitable catalog listings", async () => {
+test("stale, unverified, out-of-stock, or non-Japan supplier offers cannot preserve storefront listings", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /const staleListings = await unpublishUnfulfillableListings\(channel, db\)/);
-  assert.match(publish, /Do not unpublish profitable catalog items merely because live supplier verification is temporarily unavailable/);
+  assert.match(publish, /Hide listings when the linked supplier offer is no longer freshly verified, in stock, and Japan-shippable/);
+  assert.match(publish, /x\.source_status === "verified"/);
+  assert.match(publish, /x\.ship_to === "JP"/);
+  assert.match(publish, /fresh && Number\(x\.inventory\) > 0/);
+  assert.doesNotMatch(publish, /offer\.tracking_supported !== true/);
+  assert.doesNotMatch(publish, /tracking_not_verified/);
   assert.match(publish, /supplier_offer_no_longer_fulfillable:/);
 });
 test("patrol readiness and snapshots include canonical commerce tables after legacy reset", async () => {
