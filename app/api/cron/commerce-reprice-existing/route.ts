@@ -102,6 +102,7 @@ export async function GET(request: Request) {
     skippedUnknownShipping,
     errors: [] as Array<{ offerId: string; reason: string }>,
     storefrontSync: { base: 0, shopify: 0 },
+    storefrontSyncRemaining: { base: 0, shopify: 0 },
     storefrontSyncErrors: [] as Array<{ channel: string; reason: string }>,
   };
   const repricedVariantIds: string[] = [];
@@ -155,10 +156,11 @@ export async function GET(request: Request) {
       try {
         const synced = await syncCommerceListings(channel, channelVariantIds.length, false, channelVariantIds);
         result.storefrontSync[channel] += synced.published;
-        if (synced.failed > 0) {
+        result.storefrontSyncRemaining[channel] = Math.max(0, channelVariantIds.length - synced.published);
+        if (synced.failed > 0 || synced.considered < channelVariantIds.length) {
           result.storefrontSyncErrors.push({
             channel,
-            reason: `updated=${synced.published}, failed=${synced.failed}`,
+            reason: `requested=${channelVariantIds.length}, considered=${synced.considered}, updated=${synced.published}, failed=${synced.failed}`,
           });
         }
       } catch (error) {
@@ -170,6 +172,6 @@ export async function GET(request: Request) {
     }
   }
 
-  const ok = result.skipped === 0 && result.errors.length === 0 && result.storefrontSyncErrors.length === 0;
+  const ok = result.skipped === 0 && result.errors.length === 0 && result.storefrontSyncErrors.length === 0 && result.storefrontSyncRemaining.base === 0 && result.storefrontSyncRemaining.shopify === 0;
   return NextResponse.json({ ok, ...result, sourceApiCalls: 0, fxRate: usdJpy.rate }, { status: ok ? 200 : 207 });
 }
