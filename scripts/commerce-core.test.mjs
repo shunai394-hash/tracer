@@ -137,6 +137,11 @@ test("supplier readiness failures do not automatically unpublish profitable cata
   assert.doesNotMatch(publish, /const staleListings = await unpublishUnfulfillableListings\(channel, db\)/);
   assert.match(publish, /disable external purchase until the exact priced offer has verified stock and Japan-bound freight/);
   assert.match(publish, /supplier_offer_no_longer_fulfillable:/);
+  assert.match(publish, /Keep the catalog item visible; zero stock prevents purchase until supplier evidence recovers/);
+  assert.match(publish, /Keep the catalog product published with zero inventory instead of oscillating DRAFT\/ACTIVE/);
+  assert.match(publish, /status: "published",[\s\S]*?last_error: "supplier_offer_not_fulfillable:"/);
+  const repricer = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(repricer, /last_error\)\.startsWith\("supplier_offer_not_fulfillable:"\)/);
 });
 test("patrol readiness and snapshots include canonical commerce tables after legacy reset", async () => {
   const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
