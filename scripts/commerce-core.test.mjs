@@ -700,3 +700,12 @@ test("published storefront price reconciliation uses exact variants and bounded 
   assert.match(publish, /variantIds\?: string\[\]/);
   assert.match(publish, /candidateQuery\.in\("id", \[\.\.\.new Set\(variantIds\)\]\)/);
 });
+
+
+test("storefront price reconciliation emits bounded, privacy-safe completion telemetry", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(route, /storefrontSyncComplete/);
+  assert.match(route, /\[TRACER STOREFRONT PRICE RECONCILE\]/);
+  assert.match(route, /storefrontSyncErrorCount: result\.storefrontSyncErrors\.length/);
+  assert.doesNotMatch(route, /console\.info\([^\n]*(?:customer|orderId|supplierVariantId|accessToken)/i);
+});
