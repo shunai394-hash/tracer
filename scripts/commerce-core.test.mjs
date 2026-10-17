@@ -961,3 +961,12 @@ test("CJ freight quote misses use a conservative historical reserve while preser
   assert.ok(repricer.includes("rawData.shippingEstimated === true"));
   assert.ok(importer.includes("targetMarginRate: 0.5"));
 });
+
+test("bounded recovery refuses publication unless final price reconciliation is drained and error-free", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/tracer-clean-commerce-recovery.yml", import.meta.url), "utf8");
+  assert.match(workflow, /Final price reconciliation is incomplete; refusing publication/);
+  assert.match(workflow, /remaining\.get\("base"\) != 0/);
+  assert.match(workflow, /remaining\.get\("shopify"\) != 0/);
+  assert.match(workflow, /if \(data\.get\("ok"\) is not True/);
+  assert.match(workflow, /sys\.exit\(1\)/);
+});
