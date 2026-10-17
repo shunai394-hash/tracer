@@ -26,7 +26,7 @@ test("storefront publication requires exact supplier identity and evidenced land
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   const dashboard = await readFile(new URL("../app/products/page.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
-  assert.match(publish, /commerce_prices\.expected_profit", 0/);
+  assert.doesNotMatch(publish, /commerce_prices\.expected_profit", 0/);
   assert.match(publish, /const hasPublishableLinkedOffer = offers\.some/);
   assert.match(publish, /offer\.supplier_product_id && offer\.supplier_variant_id && nativeIdsValid/);
   assert.match(publish, /unitCostKnown/);
@@ -71,7 +71,7 @@ test("catalog publication requires positive profit, not current stock or trackin
   assert.doesNotMatch(pricing, /supplier_offer_verification_stale/);
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
-  assert.match(publish, /\.gt\("commerce_prices\.expected_profit", 0\)/);
+  assert.doesNotMatch(publish, /\.gt\("commerce_prices\.expected_profit", 0\)/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
   assert.match(publish, /supplier_offer_missing_or_cost_unknown/);
@@ -125,6 +125,10 @@ test("publication matches each JPY profitable price to its own cost-bearing supp
   assert.match(publish, /currentPriceRows = asRelationRows\(candidate\.commerce_prices\)\.sort/);
   assert.match(publish, /const currentCanonicalPrice = currentPriceRows\[0\]/);
   assert.match(publish, /const price = currentCanonicalPrice && currentPriceOffer/);
+  assert.match(publish, /Number\(currentCanonicalPrice\.margin_rate\) >= 0\.5/);
+  assert.doesNotMatch(publish, /\.eq\("commerce_prices\.currency", "JPY"\)/);
+  assert.doesNotMatch(publish, /\.gt\("commerce_prices\.expected_profit", 0\)/);
+  assert.doesNotMatch(publish, /\.gte\("commerce_prices\.margin_rate", 0\.5\)/);
   assert.match(publish, /validOffers\.find\(\(candidateOffer\) => String\(candidateOffer\.id\) === currentPriceOfferId\)/);
   assert.doesNotMatch(publish, /candidate\.commerce_prices\.supplier_offer_id/);
 });
