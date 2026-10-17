@@ -543,7 +543,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         updated_at: new Date().toISOString()
       }).eq("id", listing.id);
       if (finishError) throw new Error("listing_result_save_failed:" + finishError.message);
-      results.push({ variantId: candidate.id, ok: true, externalId: externalProductId, externalVariantId: mappedExternalVariantId, expectedPrice: Math.round(Number(price.selling_price)) });
+      results.push({ variantId: candidate.id, ok: true, externalId: externalProductId, externalVariantId: mappedExternalVariantId ?? undefined, expectedPrice: Math.round(Number(price.selling_price)) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const recoverableBaseError = channel === "base" && baseCreateIdNeedsRecovery
