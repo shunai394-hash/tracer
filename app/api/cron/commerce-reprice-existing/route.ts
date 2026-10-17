@@ -160,7 +160,7 @@ export async function GET(request: Request) {
   // Process up to twenty-five stale variants per channel while keeping each run bounded.
   // Query all states so a failed sync remains eligible for retry on the next cron run.
   const { data: listings, error: listingReadError } = await db.from("channel_listings")
-    .select("variant_id,channel,selling_price,status,last_synced_at")
+    .select("variant_id,channel,selling_price,status,last_synced_at,last_error")
     // Rotate through oldest sync timestamps so an unchanged first batch cannot starve later stale rows.
     .order("last_synced_at", { ascending: true, nullsFirst: true })
     .limit(5000);
@@ -178,8 +178,11 @@ export async function GET(request: Request) {
         const productUpdatedAt = productUpdatedAtByVariant.get(variantId);
         const contentNeedsSync = Boolean(productUpdatedAt) &&
           (!row.last_synced_at || Date.parse(productUpdatedAt!) > Date.parse(String(row.last_synced_at)));
-        if (canonicalPrice !== undefined && row.status === "published" && unverifiedVariantIds.has(variantId)) return true;
-        if (canonicalPrice !== undefined && unverifiedVariantIds.has(variantId)) return false;
+        // Disable unverified supplier listings once, then stop re-queueing the safety state.
+        if (canonicalPrice !== undefined && unverifiedVariantIds.has(variantId)) {
+          return row.status === "published" &&
+            !String(row.last_error ?? "").startsWith("supplier_offer_not_fulfillable:");
+        }
         return canonicalPrice !== undefined &&
           (Number(row.selling_price) !== canonicalPrice || row.status !== "published" || contentNeedsSync);
       });

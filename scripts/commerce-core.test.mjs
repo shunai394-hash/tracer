@@ -781,7 +781,7 @@ test("published storefront price reconciliation uses exact variants and bounded 
   assert.match(route, /Number\(row\.selling_price\) !== canonicalPrice/);
   assert.doesNotMatch(route, /needsSync/);
   assert.match(route, /allChannelIds\.slice\(0, 25\)/);
-  assert.match(route, /\.select\("variant_id,channel,selling_price,status,last_synced_at"\)/);
+  assert.match(route, /\.select\("variant_id,channel,selling_price,status,last_synced_at,last_error"\)/);
   assert.match(route, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)/);
   assert.match(publish, /variantIds\?: string\[\]/);
   assert.match(publish, /candidateQuery\.in\("id", \[\.\.\.new Set\(variantIds\)\]\)/);
@@ -837,11 +837,13 @@ test("storefront sync reads back real BASE and Shopify prices before reporting s
   assert.match(publish, /actual !== item\.expectedPrice/);
 });
 
-test("price reconciliation disables published listings with unverified supplier evidence", async () => {
+test("price reconciliation disables unverified listings once without starving stale price sync", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(route, /unverifiedVariantIds/);
+  assert.match(route, /last_synced_at,last_error/);
   assert.match(route, /row\.status === "published" && unverifiedVariantIds\.has\(variantId\)/);
+  assert.match(route, /startsWith\("supplier_offer_not_fulfillable:"\)/);
   assert.match(route, /synced\.processed \?\? synced\.published/);
   assert.match(publish, /supplierEvidenceUnverified/);
   assert.match(publish, /supplier_offer_not_fulfillable:/);
@@ -857,10 +859,11 @@ test("storefront reconciliation also syncs updated Japanese product copy", async
 });
 
 
-test("storefront reconciliation prioritizes unverified listings and recently changed Japanese copy", async () => {
+test("storefront reconciliation prioritizes stale prices and recently changed Japanese copy without unverified-listing churn", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
   assert.match(route, /recentCopyCutoff/);
-  assert.match(route, /unverifiedVariantIds\.has\(variantId\)/);
   assert.match(route, /contentNeedsSync/);
+  assert.match(route, /row\.status === "published" && unverifiedVariantIds\.has\(variantId\)/);
+  assert.match(route, /startsWith\("supplier_offer_not_fulfillable:"\)/);
   assert.match(route, /const priority =/);
 });
