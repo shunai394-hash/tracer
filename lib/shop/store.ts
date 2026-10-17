@@ -275,29 +275,46 @@ async function loadCanonicalCommerceListings(): Promise<ShopListing[]> {
   const rows = (channelRows ?? []) as Record<string, unknown>[];
   if (rows.length === 0) return [];
   const variantIds = [...new Set(rows.map((row) => String(row.variant_id ?? "")).filter(Boolean))];
-  const [{ data: variants, error: variantError }, { data: offers, error: offerError }, { data: prices, error: priceError }] = await Promise.all([
-    supabase.from("commerce_variants")
-      .select("id,product_id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,category,active)")
-      .in("id", variantIds)
-      .eq("commerce_products.active", true),
-    supabase.from("supplier_offers")
-      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,ship_to,tracking_supported,source_status,last_checked_at")
-      .in("variant_id", variantIds)
-      .eq("source_status", "verified")
-      .eq("tracking_supported", true)
-      .eq("ship_to", "JP")
-      .gt("inventory", 0)
-      .gte("last_checked_at", freshAfter),
-    supabase.from("commerce_prices")
-      .select("variant_id,supplier_offer_id,currency,selling_price,expected_profit,margin_rate")
-      .in("variant_id", variantIds)
-      .eq("currency", "JPY")
-      .gt("selling_price", 0)
-      .gt("expected_profit", 0),
-  ]);
-  if (variantError) throw new Error(variantError.message);
-  if (offerError) throw new Error(offerError.message);
-  if (priceError) throw new Error(priceError.message);
+  const variants: Record<string, unknown>[] = [];
+  const validOffers: Record<string, unknown>[] = [];
+  const validPrices: Record<string, unknown>[] = [];
+  // Keep PostgREST URLs bounded: large .in() filters can exceed proxy/request limits
+  // and return HTTP 400 before any rows are read. Fetch the three related datasets
+  // in small, deterministic batches and combine them before matching.
+  const queryBatchSize = 40;
+  for (let offset = 0; offset < variantIds.length; offset += queryBatchSize) {
+    const batch = variantIds.slice(offset, offset + queryBatchSize);
+    const [
+      { data: batchVariants, error: variantError },
+      { data: batchOffers, error: offerError },
+      { data: batchPrices, error: priceError },
+    ] = await Promise.all([
+      supabase.from("commerce_variants")
+        .select("id,product_id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,category,active)")
+        .in("id", batch)
+        .eq("commerce_products.active", true),
+      supabase.from("supplier_offers")
+        .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,ship_to,tracking_supported,source_status,last_checked_at")
+        .in("variant_id", batch)
+        .eq("source_status", "verified")
+        .eq("tracking_supported", true)
+        .eq("ship_to", "JP")
+        .gt("inventory", 0)
+        .gte("last_checked_at", freshAfter),
+      supabase.from("commerce_prices")
+        .select("variant_id,supplier_offer_id,currency,selling_price,expected_profit,margin_rate")
+        .in("variant_id", batch)
+        .eq("currency", "JPY")
+        .gt("selling_price", 0)
+        .gt("expected_profit", 0),
+    ]);
+    if (variantError) throw new Error(variantError.message);
+    if (offerError) throw new Error(offerError.message);
+    if (priceError) throw new Error(priceError.message);
+    variants.push(...((batchVariants ?? []) as Record<string, unknown>[]));
+    validOffers.push(...((batchOffers ?? []) as Record<string, unknown>[]));
+    validPrices.push(...((batchPrices ?? []) as Record<string, unknown>[]));
+  }
   const variantsById = new Map<string, Record<string, unknown>>();
   for (const variant of (variants ?? []) as Record<string, unknown>[]) variantsById.set(String(variant.id), variant);
   const validOffers = (offers ?? []) as Record<string, unknown>[];
