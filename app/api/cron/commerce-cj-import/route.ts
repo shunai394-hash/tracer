@@ -242,6 +242,7 @@ export async function GET(request: Request) {
     }
     const forcedDetails = new Map<string, Awaited<ReturnType<typeof getCJProductDetail>>>();
     let candidates: ImportCandidate[] = [];
+    const retryOfferByVariantId = new Map<string, { id: string; raw_data: unknown }>();
     if (requestedProductIds.length > 0) {
       for (const id of requestedProductIds) {
         const detail = await getCJProductDetail(id);
@@ -269,12 +270,11 @@ export async function GET(request: Request) {
         const id = String(item.id ?? "").trim();
         if (/^\d{10,22}$/.test(id) && !uniqueSearchProducts.has(id)) uniqueSearchProducts.set(id, item);
       }
-      // Prioritize exact supplier variants that are missing from Shopify publication.
-      // This is a narrow recovery lane, not a broad retry of every known CJ parent:
-      // only errored offers without a Shopify channel row are eligible.
+      // Keep missing-publication recovery narrow and separately recheck existing listings
+      // whose saved supplier status, stock, or Japan-bound freight evidence is in error.
       const [{ data: erroredOffers, error: erroredOffersError }, { data: shopifyRows, error: shopifyRowsError }] = await Promise.all([
         db.from("supplier_offers")
-          .select("variant_id,supplier_product_id,supplier_variant_id,source_status,raw_data,updated_at")
+          .select("id,variant_id,supplier_product_id,supplier_variant_id,source_status,raw_data,updated_at")
           .eq("supplier_code", "cj").eq("source_status", "error")
           .order("updated_at", { ascending: true }).limit(2000),
         db.from("channel_listings").select("variant_id").eq("channel", "shopify").limit(5000),
@@ -329,12 +329,41 @@ export async function GET(request: Request) {
         .sort((a, b) => a[1].lastAttemptedAt - b[1].lastAttemptedAt)
         .slice(0, limit)
         .map(([id, group]) => ({ id, title: "", retryVariantIds: group.variantIds }));
+      const retryVariantLimit = Math.min(3, Math.max(1, limit));
+      const evidenceRetryByParent = new Map<string, string[]>();
+      let evidenceRetryCount = 0;
+      const existingOffersNeedingEvidence = [...(erroredOffers ?? [])].sort((a, b) =>
+        String(a.updated_at ?? "").localeCompare(String(b.updated_at ?? "")),
+      );
+      for (const offer of existingOffersNeedingEvidence) {
+        if (!shopifyVariantIds.has(String(offer.variant_id))) continue;
+        const parentId = String(offer.supplier_product_id ?? "").trim();
+        const variantId = String(offer.supplier_variant_id ?? "").trim();
+        if (!/^\d{10,22}$/.test(parentId) || !/^\d{10,25}$/.test(variantId)) continue;
+        const rawData = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
+          ? offer.raw_data as Record<string, unknown>
+          : {};
+        const nextReverifyAt = Date.parse(String(rawData.nextReverifyAt ?? ""));
+        if (Number.isFinite(nextReverifyAt) && nextReverifyAt > Date.now()) continue;
+        if (rawData.complianceBlockReason) continue;
+        if (evidenceRetryCount >= retryVariantLimit) break;
+        const variantIds = evidenceRetryByParent.get(parentId) ?? [];
+        if (!variantIds.includes(variantId)) {
+          variantIds.push(variantId);
+          evidenceRetryCount += 1;
+          retryOfferByVariantId.set(variantId, offer);
+        }
+        evidenceRetryByParent.set(parentId, variantIds);
+      }
+      const evidenceRetryCandidates: ImportCandidate[] = [...evidenceRetryByParent.entries()]
+        .slice(0, limit)
+        .map(([id, variantIds]) => ({ id, title: "", retryVariantIds: variantIds }));
 
       // Prefer never-imported CJ parents for remaining slots so search pages
       // containing existing products cannot consume the entire discovery batch.
       const newCandidates = [...uniqueSearchProducts.values()].filter((item) => !knownParentIds.has(item.id));
       let scanPage = page + 1;
-      while (newCandidates.length < Math.max(0, limit - retryCandidates.length) && scanPage <= page + 2) {
+      while (newCandidates.length < Math.max(0, limit - retryCandidates.length - evidenceRetryCandidates.length) && scanPage <= page + 2) {
         const extra = await searchCJProducts(query, { page: scanPage, size: Math.min(20, limit * 2) });
         stats.searched += extra.products.length;
         for (const item of extra.products) {
@@ -347,7 +376,11 @@ export async function GET(request: Request) {
       }
       // Broad discovery still only imports new parents. Existing-parent retries are
       // limited to exact errored variants with no Shopify publication record.
-      candidates = [...retryCandidates, ...newCandidates.slice(0, Math.max(0, limit - retryCandidates.length))];
+      const evidenceParentIds = new Set(evidenceRetryCandidates.map((candidate) => candidate.id));
+      const missingPublicationRetries = retryCandidates.filter((candidate) => !evidenceParentIds.has(candidate.id))
+        .slice(0, Math.max(0, limit - evidenceRetryCandidates.length));
+      const discoverySlots = Math.max(0, limit - evidenceRetryCandidates.length - missingPublicationRetries.length);
+      candidates = [...evidenceRetryCandidates, ...missingPublicationRetries, ...newCandidates.slice(0, discoverySlots)];
     }
     for (const candidate of candidates) {
       try {
@@ -430,6 +463,27 @@ export async function GET(request: Request) {
                 shippingKnown: shipping !== null,
               });
               if (logError) stats.errors.push("exclusion_log:" + logError.slice(0, 80));
+              const retryOffer = retryOfferByVariantId.get(String(exactVariant.vid));
+              if (retryOffer?.id) {
+                const retryRawData = retryOffer.raw_data && typeof retryOffer.raw_data === "object" && !Array.isArray(retryOffer.raw_data)
+                  ? retryOffer.raw_data as Record<string, unknown>
+                  : {};
+                const attempts = Math.max(0, Number(retryRawData.reverifyAttempts) || 0) + 1;
+                const now = Date.now();
+                const nowIso = new Date(now).toISOString();
+                const delayMs = Math.min(6 * 60 * 60_000, 30 * 60_000 * (2 ** Math.min(attempts - 1, 4)));
+                const { error: retryBackoffError } = await db.from("supplier_offers").update({
+                  raw_data: {
+                    ...retryRawData,
+                    reverifyAttempts: attempts,
+                    lastReverifyAt: nowIso,
+                    nextReverifyAt: new Date(now + delayMs).toISOString(),
+                    lastReverifyReason: reason,
+                  },
+                  updated_at: nowIso,
+                }).eq("id", retryOffer.id);
+                if (retryBackoffError) stats.errors.push("reverify_backoff_persist:" + retryBackoffError.message.slice(0, 80));
+              }
               continue;
             }
             const complianceBlockReason = japaneseCommerceComplianceBlockReason(canonicalDetail.title, canonicalDetail.productType);

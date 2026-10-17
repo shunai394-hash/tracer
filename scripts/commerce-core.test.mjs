@@ -559,7 +559,7 @@ test("CJ transient stock or freight lookup failures do not overwrite previously 
 test("scheduled CJ discovery only retries errored variants missing Shopify publication", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /requestedProductIds/);
-  assert.match(importer, /candidates = \[\.\.\.retryCandidates, \.\.\.newCandidates/);
+  assert.match(importer, /candidates = \[\.\.\.evidenceRetryCandidates, \.\.\.missingPublicationRetries/);
   assert.match(importer, /\.eq\("source_status", "error"\)/);
   assert.match(importer, /shopifyVariantIds\.has\(String\(offer\.variant_id\)\)/);
   assert.match(importer, /retryVariantIds/);
@@ -568,6 +568,15 @@ test("scheduled CJ discovery only retries errored variants missing Shopify publi
   assert.match(importer, /detail\.recordedAt/);
   assert.match(importer, /\.sort\(\(a, b\) => a\[1\]\.lastAttemptedAt - b\[1\]\.lastAttemptedAt\)/);
   assert.doesNotMatch(importer, /const recoveryPool/);
+});
+
+test("scheduled CJ discovery rechecks already-listed variants with missing supplier evidence", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /retryOfferByVariantId/);
+  assert.match(importer, /evidenceRetryCandidates/);
+  assert.match(importer, /rawData\.nextReverifyAt/);
+  assert.match(importer, /reverifyAttempts/);
+  assert.match(importer, /retryVariantLimit/);
 });
 
 test("BASE publication retries recover exact created IDs and refuse ambiguous stable SKUs", async () => {
@@ -597,8 +606,8 @@ test("CJ catalog importer prioritizes unseen parent products and scans bounded e
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /from\("commerce_products"\)\.select\("source_key"\)\.like\("source_key", "cj:%"\)/);
   assert.match(importer, /Prefer never-imported CJ parents/);
-  assert.match(importer, /while \(newCandidates\.length < Math\.max\(0, limit - retryCandidates\.length\) && scanPage <= page \+ 2\)/);
-  assert.ok(importer.includes("candidates = [...retryCandidates, ...newCandidates.slice(0, Math.max(0, limit - retryCandidates.length))]"));
+  assert.match(importer, /while \(newCandidates\.length < Math\.max\(0, limit - retryCandidates\.length - evidenceRetryCandidates\.length\) && scanPage <= page \+ 2\)/);
+  assert.ok(importer.includes("candidates = [...evidenceRetryCandidates, ...missingPublicationRetries, ...newCandidates.slice(0, discoverySlots)]"));
   assert.match(importer, /shopifyVariantIds = new Set/);
   assert.match(importer, /retryVariantIds\?\.length/);
   assert.match(importer, /searchParams\.get\("limit"\) \|\| 3/);
@@ -756,4 +765,24 @@ test("TRACER product detail copy stays generic to the actual product", async () 
   assert.match(page, /在庫・配送日数・送料・返品条件は商品や配送先によって異なります/);
   assert.doesNotMatch(page, /iPhone 11・12・13・14シリーズ向け/);
   assert.doesNotMatch(page, /お使いの端末に合うケース/);
+});
+
+
+test("price reconciliation disables published listings with unverified supplier evidence", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(route, /unverifiedVariantIds/);
+  assert.match(route, /row\.status === "published" && unverifiedVariantIds\.has\(variantId\)/);
+  assert.match(route, /synced\.processed \?\? synced\.published/);
+  assert.match(publish, /supplierEvidenceUnverified/);
+  assert.match(publish, /supplier_offer_not_fulfillable:/);
+  assert.match(publish, /shopify_unpublish_failed:/);
+  assert.match(publish, /staleListings\.unpublished\+\+/);
+});
+
+test("storefront reconciliation also syncs updated Japanese product copy", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(route, /commerce_products!inner\(updated_at\)/);
+  assert.match(route, /productUpdatedAtByVariant/);
+  assert.match(route, /contentNeedsSync/);
 });
