@@ -9,7 +9,7 @@ const firstEnrichment = source.indexOf('runStep("auxiliary_trends"');
 assert.ok(supplyFirst >= 0, "supply-first discovery step must exist");
 assert.ok(firstEnrichment >= 0, "supplier-native patrol enrichment stage must exist");
 assert.ok(supplyFirst < firstEnrichment, "supply-first stage marker must remain before secondary intelligence enrichment");
-assert.match(source, /dedicated_supply_first_cron_owns_live_cj_discovery/);
+assert.match(source, /dedicated_commerce_cj_import_cron_owns_live_cj_discovery/);
 assert.doesNotMatch(source, /discoverAndCreateCjSupply\(/, "short patrol must not duplicate live CJ requests");
 assert.match(source, /discoveryCron: "\/api\/cron\/supply-first"/);
 assert.match(discovery, /reason: "supplier_quota_cooldown"/, "an open CJ quota circuit must report the actual blocker");
