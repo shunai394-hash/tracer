@@ -350,7 +350,7 @@ test("clean commerce cron schedule preserves canonical routes and the required f
   assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,16,31,46 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-procurement"), "13,28,43,58 * * * *");
   assert.equal(schedules.get("/api/cron/patrol-ai"), "*/5 * * * *", "the existing patrol must remain enabled every five minutes");
-  assert.equal(schedules.has("/api/cron/market-sourcing"), false);
+  assert.equal(schedules.get("/api/cron/market-sourcing"), "5,25,45 * * * *", "market sourcing observation must remain scheduled");
   assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
   assert.equal(schedules.has("/api/cron/supply-first"), false);
 });
