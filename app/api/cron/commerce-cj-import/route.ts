@@ -8,6 +8,7 @@ import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { upsertSupplierOffer, recalculatePrice } from "@/lib/commerce/core";
 import { selectRotatingVariantBatch } from "@/lib/commerce/variant-batch";
 import { japaneseCommerceDescription } from "@/lib/commerce/japanese-copy.mjs";
+import { persistCjInternalSupplyCandidate } from "@/lib/suppliers/persist-cj-internal-supply";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -730,6 +731,32 @@ export async function GET(request: Request) {
                 },
               },
             });
+            // Mirror only live-verified exact CJ product+variant evidence into the internal supply catalog.
+            // Estimated freight, compliance-blocked products, missing images, and zero-cost shipping
+            // are deliberately excluded; this is not a marketplace identity link or publish action.
+            const internalImageUrl = canonicalDetail.imageUrl ?? (supplierProductId === candidate.id ? candidate.imageUrl : null);
+            if (!complianceBlockReason && stock !== null && stock > 0 && shipping !== null && !shippingWasEstimated
+              && cost > 0 && shipping > 0 && internalImageUrl) {
+              try {
+                await persistCjInternalSupplyCandidate({
+                  supplierProductId,
+                  supplierVariantId: exactVariant.vid,
+                  supplierSku: exactVariant.sku ?? null,
+                  title,
+                  imageUrl: internalImageUrl,
+                  barcode: typeof exactVariant.barcode === "string" ? exactVariant.barcode : null,
+                  costUsd: cost,
+                  shippingUsd: shipping,
+                  inventory: Math.floor(stock),
+                  fxRate: fx.rate,
+                  // Informational catalog estimate only; channel pricing remains owned by recalculatePrice.
+                  sellingPriceJpy: Math.max(1980, Math.ceil(((cost + shipping) * fx.rate * 2.5) / 100) * 100),
+                  query,
+                });
+              } catch (internalSupplyError) {
+                stats.errors.push("internal_supply_persist:" + supplierProductId + ":" + exactVariant.vid + ":" + (internalSupplyError instanceof Error ? internalSupplyError.message : String(internalSupplyError)).slice(0, 140));
+              }
+            }
             stats.variants++;
             stats.offers++;
             // The importer writes commerce supplier_offers, while procurement freshness
