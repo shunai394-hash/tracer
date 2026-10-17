@@ -10,7 +10,7 @@ import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
 
 type Channel = "base" | "shopify";
 type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
-type CommercePriceRow = { supplier_offer_id: string; currency: string; selling_price: number; expected_profit: number; fee_amount: number; margin_rate: number };
+type CommercePriceRow = { supplier_offer_id: string; currency: string; selling_price: number; expected_profit: number; fee_amount: number; margin_rate: number; calculated_at: string | null };
 type Candidate = {
   id: string; source_variant_key: string; title_ja: string; sku: string | null;
   commerce_products: { id: string; source_key: string; title_ja: string; description_ja: string; image_url: string | null; active: boolean };
@@ -196,9 +196,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   // Do not unpublish profitable catalog items merely because live supplier verification is temporarily unavailable.
   const staleListings = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
   let candidateQuery = db.from("commerce_variants")
-    .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,currency,selling_price,expected_profit,fee_amount,margin_rate)")
-    .eq("commerce_products.active", true).eq("commerce_prices.currency", "JPY")
-    .gt("commerce_prices.expected_profit", 0).gte("commerce_prices.margin_rate", 0.5);
+    .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,currency,selling_price,expected_profit,fee_amount,margin_rate,calculated_at)")
+    .eq("commerce_products.active", true);
   if (variantIds?.length) candidateQuery = candidateQuery.in("id", [...new Set(variantIds)]);
   const { data, error } = await candidateQuery.order("updated_at", { ascending: false }).limit(1000);
   if (error) throw new Error("commerce_candidates_read_failed:" + error.message);
@@ -265,9 +264,12 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         return Boolean(x.supplier_product_id && x.supplier_variant_id && nativeIdsValid && unitCostKnown && shippingKnown);
       });
     const validOfferIds = new Set(validOffers.map((x) => x.id));
-    const price = asRelationRows(candidate.commerce_prices)
-      .filter((x) => validOfferIds.has(x.supplier_offer_id) && x.currency === "JPY" && Number(x.selling_price) > 0 && Number(x.expected_profit) > 0)
-      .sort((a, b) => Number(b.expected_profit) - Number(a.expected_profit))[0];
+    const latestPrice = asRelationRows(candidate.commerce_prices)
+      .sort((a, b) => Date.parse(String(b.calculated_at ?? "")) - Date.parse(String(a.calculated_at ?? ""))[0];
+    const price = latestPrice && validOfferIds.has(latestPrice.supplier_offer_id) && latestPrice.currency === "JPY" &&
+      Number(latestPrice.selling_price) > 0 && Number(latestPrice.expected_profit) > 0 && Number(latestPrice.margin_rate) >= 0.5
+      ? latestPrice
+      : undefined;
     const offer = price ? validOffers.find((x) => x.id === price.supplier_offer_id) : undefined;
     const imageUrl = safeUrl(product.image_url);
     const title = candidate.title_ja.trim() || product.title_ja.trim();
