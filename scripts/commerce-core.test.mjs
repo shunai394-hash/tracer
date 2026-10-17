@@ -570,6 +570,10 @@ test("CJ import records exclusion reasons without treating a missing freight quo
   assert.match(importer, /cj_import_exclusion/);
   assert.match(importer, /japan_freight_unconfirmed/);
   assert.match(importer, /japanese_title_unavailable/);
+  assert.match(importer, /exactVariant\.inventoryByCountry/);
+  assert.match(importer, /slice\(0, 2\)[\s\S]*?map\(\(warehouse\) => warehouse\.countryCode\)/);
+  assert.match(importer, /TRACER_CJ_FREIGHT_QUOTE_ZIP/);
+  assert.match(importer, /if \(shipping === null && freightErrors\.length > 0\)/);
 });
 
 test("CJ transient stock or freight lookup failures do not overwrite previously verified supplier offers", async () => {
