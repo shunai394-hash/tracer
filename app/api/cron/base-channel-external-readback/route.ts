@@ -74,7 +74,12 @@ export async function GET(request: Request) {
         listingId, baseItemId, status: listing.status,
         skuPresent: Boolean(listing.external_sku), expectedPrice: Number.isFinite(expectedPrice) ? expectedPrice : null,
         externalPrice: null, externalVisible: null, externalStock: null,
-        priceMatches: false, visibilityMatches: false, error: message.split(":")[0].slice(0, 100),
+        priceMatches: false, visibilityMatches: false,
+        error: (() => {
+          // Keep the HTTP status while excluding provider response bodies and credentials.
+          const match = message.match(/^([A-Z0-9_]+)(?::HTTP_(\d{3}))?/);
+          return match ? [match[1], match[2] ? `HTTP_${match[2]}` : null].filter(Boolean).join(":") : "BASE_ITEM_DETAIL_FAILED";
+        })(),
       };
     }
   }));
@@ -87,6 +92,10 @@ export async function GET(request: Request) {
     visibilityMatches: results.filter((row) => row.visibilityMatches).length,
     visibilityMismatches: results.filter((row) => !row.error && !row.visibilityMatches).length,
     readErrors: results.filter((row) => row.error !== null).length,
+    readErrorCounts: results.reduce<Record<string, number>>((counts, row) => {
+      if (row.error) counts[row.error] = (counts[row.error] ?? 0) + 1;
+      return counts;
+    }, {}),
     missingSku: results.filter((row) => !row.skuPresent).length,
     nextOffset: offset + results.length,
     complete: count !== null && offset + results.length >= count,
