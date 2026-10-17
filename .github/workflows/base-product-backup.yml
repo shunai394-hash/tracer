@@ -9,6 +9,7 @@ on:
       - ".github/workflows/base-product-backup.yml"
       - "app/api/admin/channels/base/reconciliation/route.ts"
       - "app/api/admin/channels/base/snapshot/route.ts"
+      - "app/api/cron/base-channel-external-readback/route.ts"
       - "lib/channels/base-publisher.ts"
 
 permissions:
