@@ -59,7 +59,7 @@ jobs:
           with open("base-diagnostics.json", encoding="utf-8") as f:
               r=json.load(f)
           print("ok:", r.get("ok"), "configured:", r.get("configured"), "baseApi:", r.get("baseApi"))
-          for key in ("ordersApiStatus", "itemsApiStatus", "itemsScanned", "visibleItems", "hiddenItems", "scanComplete", "mappingAudit", "error"):
+          for key in ("ordersApiStatus", "orderCountReturned", "dispatchStatuses", "itemsApiStatus", "itemCountReturned", "visibleItemsReturned", "hiddenItemsReturned", "unknownVisibilityCount", "itemPages", "itemAuditComplete", "itemErrorStage", "mappingAuditOk", "visibleItemsMatchedToDatabase", "visibleItemsManagedByCommerce", "visibleItemsLinked", "visibleItemsUnlinked", "visibleItemsWithoutDbMapping", "visibleItemsWithAmbiguousDbMapping", "itemIdentifierPresentCount", "stableTracerIdentifierCount", "itemIdMissingCount", "duplicateItemCount", "unmappedVisibleItems", "mappingAuditErrorStage"):
               if key in r:
                   print(key + ":", json.dumps(r[key], ensure_ascii=False, separators=(",", ":")))
           PY
