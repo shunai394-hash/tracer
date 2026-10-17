@@ -83,9 +83,10 @@ jobs:
             [[ "$code" == "200" ]]
           }
           failed=0
-          # Replaces the previous paired calls to commerce-publish-base?limit=10&onlyUnpublished=true and commerce-publish-shopify?limit=10&onlyUnpublished=true with one runner.
-          # Supplier discovery and paid-order procurement remain separate.
-          # This runner only publishes existing linked, profitable catalog items.
+          # One recovery workflow: first recalculate existing linked offers and reconcile stale storefront prices,
+          # then publish bounded eligible items to both channels through the shared publisher.
+          # Supplier discovery and paid-order procurement remain separate; no stock/shipping evidence is fabricated.
+          call_publish "api/cron/commerce-reprice-existing?limit=100" "commerce-reprice.json" || failed=1
           for pass in 1 2 3; do
             call_publish "api/cron/commerce-publish-all?limit=5&onlyUnpublished=true" "commerce-publish-${pass}.json" || failed=1
           done
