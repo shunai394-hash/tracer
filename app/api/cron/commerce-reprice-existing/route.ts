@@ -156,7 +156,7 @@ export async function GET(request: Request) {
   }).map(([variantId]) => variantId));
 
   // Reconcile storefront prices already published before the canonical price change.
-  // Process up to twenty actually stale variants per channel; the cron is staggered from publication and order-poll jobs.
+  // Process up to ten actually stale variants per channel to keep each run below the function timeout.
   // Query all states so a failed sync remains eligible for retry on the next cron run.
   const { data: listings, error: listingReadError } = await db.from("channel_listings")
     .select("variant_id,channel,selling_price,status,last_synced_at")
