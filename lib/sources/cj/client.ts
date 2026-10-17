@@ -418,7 +418,7 @@ export async function fetchCJVariantByVid(vid: string): Promise<CJProductVariant
   }
 
   const token = await getAccessToken();
-  const params = new URLSearchParams({ vid: normalizedVid, features: "enable_inventory" });
+  const params = new URLSearchParams({ vid: vid.trim(), features: "enable_inventory" });
   const response = await fetchCJWithRateLimit(
     `https://developers.cjdropshipping.com/api2.0/v1/product/variant/queryByVid?${params.toString()}`,
     {
@@ -766,6 +766,11 @@ export async function calculateCJFreight(
     // Never log the full CJ response or credentials. Key names and response shape
     // are enough to identify API schema changes without exposing product payloads.
     console.warn("[CJ FREIGHT QUOTE UNRESOLVED]", {
+      vid,
+      startCountryCode: options?.startCountryCode ?? "CN",
+      endCountryCode: options?.endCountryCode ?? "JP",
+      quantity: options?.quantity ?? 1,
+      zipProvided: Boolean(options?.zip),
       result: payload.result ?? null,
       message: typeof payload.message === "string" ? payload.message.slice(0, 120) : null,
       dataType: Array.isArray(data) ? "array" : data === null ? "null" : typeof data,
