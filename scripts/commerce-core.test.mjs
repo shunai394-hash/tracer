@@ -534,6 +534,18 @@ test("BASE audit workflow waits for commerce-aware production reconciliation", a
   assert.match(workflow, /"commerceChannelListingCount": d\.get\("commerceChannelListingCount"\)/);
 });
 
+test("BASE live price audit compares live, stored, and latest canonical prices after deployment", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/tracer-base-live-price-audit.yml", import.meta.url), "utf8");
+  const route = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
+  assert.match(workflow, /api\/admin\/channels\/base\/reconciliation/);
+  assert.match(workflow, /BASE_AUDIT_PRODUCTION_DEPLOYMENT_NOT_AT_WORKFLOW_SHA/);
+  assert.match(workflow, /priceMismatchVsStored/);
+  assert.match(workflow, /priceMismatchVsCanonical/);
+  assert.match(workflow, /canonicalVsStoredMismatch/);
+  assert.match(route, /canonicalSellingPrice/);
+  assert.match(route, /exactBaseIdMatches: exactIdListings\.map[\s\S]*?canonicalSellingPrice/);
+});
+
 test("BASE reconciliation matches stable commerce TRC SKUs as well as legacy UUID identifiers", async () => {
   const route = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
   assert.ok(route.includes("|([0-9a-f]{24})"));
