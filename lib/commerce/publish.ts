@@ -9,7 +9,7 @@ import { asRelationRows } from "@/lib/commerce/relation-rows";
 import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
 
 type Channel = "base" | "shopify";
-type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
+type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null; raw_data: Record<string, unknown> | null };
 type CommercePriceRow = { supplier_offer_id: string; currency: string; selling_price: number; expected_profit: number; fee_amount: number; margin_rate: number };
 type Candidate = {
   id: string; source_variant_key: string; title_ja: string; sku: string | null;
@@ -196,7 +196,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   // Do not unpublish profitable catalog items merely because live supplier verification is temporarily unavailable.
   const staleListings = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
   const { data, error } = await db.from("commerce_variants")
-    .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,currency,selling_price,expected_profit,fee_amount,margin_rate)")
+    .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported,source_status,last_checked_at,raw_data),commerce_prices!inner(supplier_offer_id,currency,selling_price,expected_profit,fee_amount,margin_rate)")
     .eq("commerce_products.active", true).eq("commerce_prices.currency", "JPY")
     .gt("commerce_prices.expected_profit", 0).order("updated_at", { ascending: false })
     // Cover the complete current catalog (543 variants) so older error rows are not starved.
@@ -250,8 +250,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
     const validOffers = asRelationRows(candidate.supplier_offers)
-      .filter((x) => Number.isFinite(Number(x.unit_cost)) && Number(x.unit_cost) >= 0 &&
-        Number.isFinite(Number(x.shipping_cost)) && Number(x.shipping_cost) >= 0);
+      .filter((x) => Number.isFinite(Number(x.unit_cost)) && Number(x.unit_cost) > 0 &&
+        Number.isFinite(Number(x.shipping_cost)) && Number(x.shipping_cost) >= 0 &&
+        (Number(x.shipping_cost) > 0 || (x.raw_data && typeof x.raw_data === "object" && x.raw_data.shippingKnown === true)));
     const validOfferIds = new Set(validOffers.map((x) => x.id));
     const price = asRelationRows(candidate.commerce_prices)
       .filter((x) => validOfferIds.has(x.supplier_offer_id) && x.currency === "JPY" && Number(x.selling_price) > 0 && Number(x.expected_profit) > 0)
@@ -265,7 +266,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const title = candidate.title_ja.trim() || product.title_ja.trim();
     // Keep profitable catalog items publishable even when the supplier's cached stock is zero.
     // Procurement still revalidates live stock before placing any supplier order.
-    const storefrontStock = toStorefrontStockQuantity(Math.max(1, Number(offer.inventory) || 0), getStorefrontStockCap());
+    const storefrontStock = toStorefrontStockQuantity(Math.max(0, Number(offer.inventory) || 0), getStorefrontStockCap());
     if (!isJapaneseProductTitle(title)) {
       results.push({ variantId: candidate.id, ok: false, error: "japanese_product_title_invalid" });
       continue;
