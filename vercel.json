@@ -36,7 +36,7 @@
     },
     {
       "path": "/api/cron/market-sourcing",
-      "schedule": "7,22,37,52 * * * *"
+      "schedule": "5,25,45 * * * *"
     },
     {
       "path": "/api/cron/shopify-fulfillment",
