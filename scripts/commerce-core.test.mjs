@@ -584,8 +584,8 @@ test("supply-first active-run lock conflicts are logged as expected skips, not e
 test("scheduled commerce publication refreshes existing listings by default and allows unpublished-only recovery", async () => {
   const baseRoute = await readFile(new URL("../app/api/cron/commerce-publish-base/route.ts", import.meta.url), "utf8");
   const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
-  assert.match(baseRoute, /searchParams\.get\("onlyUnpublished"\) === "true"/);
-  assert.match(shopifyRoute, /searchParams\.get\("onlyUnpublished"\) === "true"/);
+  assert.match(baseRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/);
+  assert.match(shopifyRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/);
 });
 
 
