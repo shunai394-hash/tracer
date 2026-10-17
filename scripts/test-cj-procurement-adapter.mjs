@@ -114,6 +114,15 @@ assert.match(commerceImporter, /\.eq\("supplier_product_id", supplierProductId\)
 assert.match(commerceImporter, /\.eq\("supplier_variant_id", exactVariant\.vid\)/, "fresh evidence must match the exact CJ variant ID");
 assert.match(commerceImporter, /shipping_checked_at: checkedAt/);
 assert.match(commerceImporter, /inventory_checked_at: checkedAt/);
+
+const identityReverify = read("lib/suppliers/reverify-cj-identity.ts");
+assert.match(identityReverify, /shipping_checked_at,inventory,inventory_checked_at/, "identity reverify must read persisted freshness timestamps");
+assert.match(identityReverify, /evidenceTimestampRepairDue\(row, nowMs\)/, "verified rows with missing freshness timestamps must bypass the longer identity retry interval");
+assert.match(identityReverify, /shipping_checked_at = checkedAt\.toISOString\(\)/, "shipping freshness may be stamped only after a live freight quote");
+assert.match(identityReverify, /inventory_checked_at = checkedAt\.toISOString\(\)/, "inventory freshness may be stamped only after a live stock read");
+assert.match(identityReverify, /let shippingQuoteVerified = row\.shipping_status === "verified" && shippingCost !== null && hasFreshEvidenceTimestamp/, "a stored verified flag without a timestamp must not count as fresh shipping evidence");
+assert.match(identityReverify, /let inventoryVerified = inventory !== null && row\.inventory_confirmed === true && hasFreshEvidenceTimestamp/, "a stored confirmed flag without a timestamp must not count as fresh inventory evidence");
+
 assert.match(commerceImporter, /supplierListingEvidenceUpdated/);
 assert.match(commerceImporter, /from\("supplier_listings"\)[\s\S]*?\.eq\("supplier", "cj"\)/, "stale procurement evidence must be rechecked from supplier_listings, not only commerce supplier_offers");
 assert.match(commerceImporter, /shippingAt <= evidenceCutoff \|\| inventoryAt <= evidenceCutoff/, "missing or stale freight/inventory timestamps must enter the bounded exact-ID refresh queue");
