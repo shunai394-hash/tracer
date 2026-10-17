@@ -394,8 +394,8 @@ export async function runIntelligencePipeline(options: {
 
 
 
-  // Supply-first is the primary product-discovery path. Run it before marketplace
-  // scraping and broad intelligence so a short patrol deadline cannot starve CJ discovery.
+  // Supplier discovery is handled by commerce-cj-import. This patrol prioritizes
+  // persisted products for intelligence and publication without duplicate CJ calls.
   // Rotate over every product_intelligence page. The previous fixed
   // "% 7" rotation only ever reached the first 350 rows (ordered by
   // product_id), so most products never got opportunity_intelligence.
