@@ -274,7 +274,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       results.push({ variantId: candidate.id, ok: false, error: "latest_price_missing_or_unprofitable" });
       continue;
     }
-    const offer = validOffers.find((x) => x.id === price.supplier_offer_id);
+    // Keep a non-optional snapshot for later async operations and catch handlers.
+    const canonicalPrice: CommercePriceRow = price;
+    const offer = validOffers.find((x) => x.id === canonicalPrice.supplier_offer_id);
     const imageUrl = safeUrl(product.image_url);
     const title = candidate.title_ja.trim() || product.title_ja.trim();
     const allOffers = asRelationRows(candidate.supplier_offers);
@@ -355,7 +357,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       }
       continue;
     }
-    if (!offer || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0) {
+    if (!offer || !imageUrl || Number(canonicalPrice.selling_price) <= 0 || Number(canonicalPrice.expected_profit) <= 0) {
       results.push({ variantId: candidate.id, ok: false, error: !offer ? "supplier_offer_missing_or_cost_unknown" : !imageUrl ? "image_url_invalid" : "price_not_profitable" });
       continue;
     }
@@ -398,7 +400,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     let baseCreateIdNeedsRecovery: string | null = null;
     try {
       const { data: listing, error: listingError } = await db.from("channel_listings").upsert({
-        variant_id: candidate.id, channel, selling_price: Math.round(Number(price.selling_price)),
+        variant_id: candidate.id, channel, selling_price: Math.round(Number(canonicalPrice.selling_price)),
         external_sku: sku, status: "pending", updated_at: new Date().toISOString()
       }, { onConflict: "channel,variant_id" }).select("id,external_product_id,external_variant_id,last_error").single();
       if (listingError || !listing) throw new Error("listing_claim_failed:" + (listingError?.message ?? "no_row"));
@@ -443,10 +445,10 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         let baseResponse: unknown = null;
         const itemId = externalProductId;
         if (itemId) {
-          baseResponse = await editBaseItem({ itemId, title, detail: storefrontDescription, price: Number(price.selling_price), stock: storefrontStock, visible: false });
+          baseResponse = await editBaseItem({ itemId, title, detail: storefrontDescription, price: Number(canonicalPrice.selling_price), stock: storefrontStock, visible: false });
           externalProductId = itemId;
         } else {
-          const response = await createBaseItem({ title, identifier: sku, detail: storefrontDescription, price: Number(price.selling_price), stock: storefrontStock, visible: false });
+          const response = await createBaseItem({ title, identifier: sku, detail: storefrontDescription, price: Number(canonicalPrice.selling_price), stock: storefrontStock, visible: false });
           baseResponse = response;
           const returned = response.item?.item_id ?? response.item_id;
           externalProductId = String(returned ?? "");
@@ -462,7 +464,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         }
         await addBaseItemImage({ itemId: externalProductId, imageNo: 1, imageUrl });
         // Only make the item visible after the external ID and image are saved.
-        const visibleResponse = await editBaseItem({ itemId: externalProductId, title, detail: storefrontDescription, price: Number(price.selling_price), stock: storefrontStock, visible: true });
+        const visibleResponse = await editBaseItem({ itemId: externalProductId, title, detail: storefrontDescription, price: Number(canonicalPrice.selling_price), stock: storefrontStock, visible: true });
         publishedUrl = resolveBasePublicUrl(visibleResponse, externalProductId, basePublicShopUrl)
           ?? resolveBasePublicUrl(baseResponse, externalProductId, basePublicShopUrl);
       } else {
@@ -513,10 +515,10 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         }
         const recoveredVariantId = recoveredProduct?.variants.nodes.find((variant) => variant.sku === sku)?.id ?? null;
         const productResult = productId && variantId
-          ? await updateShopifyProduct({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId, sku, imageUrl: null })
+          ? await updateShopifyProduct({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(canonicalPrice.selling_price), variantId, sku, imageUrl: null })
           : recoveredProduct && recoveredVariantId
-            ? await updateShopifyProduct({ productId: recoveredProduct.id, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId: recoveredVariantId, sku, imageUrl: null })
-            : await createShopifyProduct({ title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), sku, imageUrl });
+            ? await updateShopifyProduct({ productId: recoveredProduct.id, title, descriptionHtml: storefrontDescription, handle, price: Number(canonicalPrice.selling_price), variantId: recoveredVariantId, sku, imageUrl: null })
+            : await createShopifyProduct({ title, descriptionHtml: storefrontDescription, handle, price: Number(canonicalPrice.selling_price), sku, imageUrl });
         externalProductId = productResult.id;
         const variant = productResult.variants?.nodes?.[0];
         if (!variant?.id) throw new Error("shopify_variant_id_missing");
@@ -532,7 +534,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       const mappedExternalVariantId = channel === "base" ? externalProductId : externalVariantId;
       const { error: finishError } = await db.from("channel_listings").update({
         external_product_id: externalProductId, external_variant_id: mappedExternalVariantId, external_sku: sku,
-        selling_price: Number(price.selling_price),
+        selling_price: Number(canonicalPrice.selling_price),
         status: "published", published_url: publishedUrl, last_error: null, last_synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }).eq("id", listing.id);
