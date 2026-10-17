@@ -17,7 +17,10 @@ type ShopifyNode = {
   vendor: string | null;
   publishedOnPublication: boolean;
   totalInventory: number | null;
-  variants: { nodes: Array<{ id: string; sku: string | null; price: string | null; inventoryQuantity: number | null }> };
+  variants: {
+    nodes: Array<{ id: string; sku: string | null; price: string | null; inventoryQuantity: number | null }>;
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+  };
   featuredMedia: { id: string } | null;
 };
 
@@ -51,7 +54,7 @@ export async function GET(request: Request) {
                   id handle status vendor totalInventory
                   publishedOnPublication(publicationId: $publicationId)
                   featuredMedia { id }
-                  variants(first: 5) { nodes { id sku price inventoryQuantity } }
+                  variants(first: 100) { nodes { id sku price inventoryQuantity } pageInfo { hasNextPage endCursor } }
                 }
                 pageInfo { hasNextPage endCursor }
               }
@@ -139,7 +142,8 @@ export async function GET(request: Request) {
     });
     const checks = (rows ?? []).map((row) => {
       const node = byId.get(tail(row.shopify_product_id));
-      const variant = node?.variants.nodes.find((v) => tail(v.id) === tail(row.shopify_variant_id)) ?? node?.variants.nodes[0];
+      const variant = node?.variants.nodes.find((v) => tail(v.id) === tail(row.shopify_variant_id))
+        ?? (!row.shopify_variant_id ? node?.variants.nodes[0] : undefined);
       const expectedSku = `TRC-${row.id}`.slice(0, 100);
       const gate = Array.isArray(row.selection_reasons) && row.selection_reasons.map(String).includes("sales_test_gate_passed");
       const expectedStorefrontInventory = toStorefrontStockQuantity(row.inventory, getStorefrontStockCap());
@@ -150,15 +154,25 @@ export async function GET(request: Request) {
         listingId: String(row.id),
         existsInShopify: Boolean(node),
         shopifyProductId: node?.id ?? null,
+        dbShopifyProductId: row.shopify_product_id ?? null,
+        shopifyHandle: node?.handle ?? null,
         shopifyStatus: node?.status ?? null,
         publishedOnOnlineStore: node?.publishedOnPublication ?? null,
         dbPublished: row.published === true,
         expectedLive,
         publicationMatches: node ? actualLive === expectedLive : null,
         gatePassed: gate,
+        expectedSku,
+        shopifySku: variant?.sku ?? null,
         skuMatches: variant ? variant.sku === expectedSku : null,
-        variantIdMatches: variant ? !row.shopify_variant_id || tail(variant.id) === tail(row.shopify_variant_id) : null,
+        dbShopifyVariantId: row.shopify_variant_id ?? null,
+        shopifyVariantId: variant?.id ?? null,
+        variantScanComplete: node ? !node.variants.pageInfo.hasNextPage : null,
+        variantIdMatches: variant ? !row.shopify_variant_id || tail(variant.id) === tail(row.shopify_variant_id)
+          : node ? (node.variants.pageInfo.hasNextPage ? null : false) : null,
         legacyNumericId: /^\d+$/.test(String(row.shopify_product_id ?? "")),
+        dbSellingPrice: row.selling_price,
+        shopifyPrice: variant?.price ?? null,
         priceMatches: variant ? Number(variant.price) === Number(row.selling_price) : null,
         inventoryMatches: variant && variant.inventoryQuantity !== null
           ? Number(variant.inventoryQuantity) === expectedStorefrontInventory
@@ -217,6 +231,23 @@ export async function GET(request: Request) {
         published: commerceRows.filter((row) => row.status === "published").length,
         withExternalProductId: commerceRows.filter((row) => row.external_product_id).length,
       },
+      // Full row-level evidence is returned to the authenticated audit workflow for artifact export.
+      items: checks,
+      unlinkedProducts: shopify.filter((node) => !linkedIds.has(tail(node.id))).map((node) => ({
+        shopifyProductId: node.id,
+        handle: node.handle,
+        status: node.status,
+        publishedOnOnlineStore: node.publishedOnPublication,
+        vendor: node.vendor,
+        totalInventory: node.totalInventory,
+        variantScanComplete: !node.variants.pageInfo.hasNextPage,
+        variants: node.variants.nodes.map((variant) => ({
+          shopifyVariantId: variant.id,
+          sku: variant.sku,
+          price: variant.price,
+          inventoryQuantity: variant.inventoryQuantity,
+        })),
+      })),
       db: {
         linkedRows: checks.length,
         missingInShopify: count((c) => !c.existsInShopify),
