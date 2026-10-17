@@ -118,6 +118,7 @@ assert.match(commerceImporter, /supplierListingEvidenceUpdated/);
 assert.match(commerceImporter, /from\("supplier_listings"\)[\s\S]*?\.eq\("supplier", "cj"\)/, "stale procurement evidence must be rechecked from supplier_listings, not only commerce supplier_offers");
 assert.match(commerceImporter, /shippingAt <= evidenceCutoff \|\| inventoryAt <= evidenceCutoff/, "missing or stale freight/inventory timestamps must enter the bounded exact-ID refresh queue");
 assert.match(commerceImporter, /staleListingRetryCandidates/, "legacy supplier listings must be prioritized for evidence refresh");
+assert.match(commerceImporter, /!evidenceMissing && Number\.isFinite\(nextAt\) && nextAt > Date\.now\(\)/, "future backoff must not suppress rows missing either required evidence timestamp");
 assert.ok(commerceImporter.includes("hair tie|rubber band.*hair|hair rope"), "hair-tie titles must remain specific Japanese titles");
 assert.ok(commerceImporter.includes("color changing in the sun.*acetate shark clip"), "sun-reactive acetate shark clips need a specific Japanese title");
 assert.ok(commerceImporter.includes("pu leather headband.*ponytail clip"), "PU headband ponytail clips need a specific Japanese title");
