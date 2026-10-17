@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { classifyBaseIdentifier, decideCommerceSkuLink } from "../lib/channels/base-item-identity.ts";
 import { nextShopifyVendorPage, SHOPIFY_VENDOR_SCAN_MAX_PAGES } from "../lib/shopify/catalog-scan.ts";
+
+const baseReadbackRoute = readFileSync(new URL("../app/api/cron/base-channel-external-readback/route.ts", import.meta.url), "utf8");
+assert.ok(baseReadbackRoute.includes(String.raw`if (!/^\d+$/.test(baseItemId))`), "BASE readback must accept numeric external item IDs");
+assert.equal(/^\d+$/.test("123456789"), true);
+assert.equal(/^\d+$/.test("123abc"), false);
 
 assert.deepEqual(classifyBaseIdentifier(null), { kind: "missing" });
 assert.deepEqual(classifyBaseIdentifier("  "), { kind: "missing" });
