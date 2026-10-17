@@ -580,3 +580,13 @@ test("BASE paid orders never procure a mapped subset when any non-cancelled line
   assert.ok(blockPartial >= 0 && ingest > blockPartial, "an unmapped line must block the entire order before canonical ingestion");
   assert.doesNotMatch(route, /filter\(\(item\) => item\.status !== "cancelled" && item\.item_id !== undefined\)/);
 });
+
+test("BASE order polling rotates through older pages while always rescanning the newest page", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
+  assert.match(route, /listBaseOrders\(\{ limit: BASE_ORDER_PAGE_SIZE, offset: 0 \}\)/);
+  assert.match(route, /listBaseOrders\(\{ limit: BASE_ORDER_PAGE_SIZE, offset: scanOffset \}\)/);
+  assert.match(route, /from\("commerce_events"\)[\s\S]*?BASE_ORDER_SCAN_CURSOR_EVENT/);
+  assert.match(route, /detail: \{ offset: nextOffset, pageSize: BASE_ORDER_PAGE_SIZE/);
+  assert.match(route, /nextScanOffset: nextOffset/);
+  assert.match(route, /new Map\(\[\.\.\.recentSummaries, \.\.\.rotatingSummaries\]/);
+});
