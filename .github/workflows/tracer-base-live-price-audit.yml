@@ -9,6 +9,15 @@ on:
       - .github/workflows/tracer-base-live-price-audit.yml
       - app/api/admin/channels/base/snapshot/route.ts
       - app/api/admin/channels/base/reconciliation/route.ts
+  # Re-audit after supplier-first recovery completes so external BASE prices and IDs
+  # are checked against the post-publication state. This workflow is read-only.
+  workflow_run:
+    workflows:
+      - "TRACER Run Supplier-First Recovery"
+    types:
+      - completed
+    branches:
+      - main
 
 permissions:
   contents: read
