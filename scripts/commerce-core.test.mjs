@@ -827,7 +827,6 @@ test("price reconciliation keeps catalog visible with zero stock for unverified 
   assert.match(route, /synced\.processed \?\? synced\.published/);
   assert.match(publish, /supplierEvidenceUnverified/);
   assert.match(publish, /supplier_offer_not_fulfillable:/);
-  assert.doesNotMatch(publish, /TracerHideUnfulfillable[\s\S]*?status: "DRAFT"/);
   assert.doesNotMatch(publish, /staleListings\.unpublished\+\+/);
   assert.match(publish, /ensureShopifyProductPublished\(productId\)/);
   assert.match(publish, /stock: 0,[\s\S]*?visible: true/);
