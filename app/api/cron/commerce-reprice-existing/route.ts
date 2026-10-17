@@ -166,10 +166,10 @@ export async function GET(request: Request) {
           if (row.channel !== channel) return false;
           const variantId = String(row.variant_id);
           const canonicalPrice = canonicalPriceByVariant.get(variantId);
-          if (canonicalPrice === undefined) return false;
-          if (row.status === "published" && unverifiedVariantIds.has(variantId)) return true;
-          if (unverifiedVariantIds.has(variantId)) return false;
-          return Number(row.selling_price) !== canonicalPrice || row.status !== "published";
+          if (canonicalPrice !== undefined && row.status === "published" && unverifiedVariantIds.has(variantId)) return true;
+          if (canonicalPrice !== undefined && unverifiedVariantIds.has(variantId)) return false;
+          return canonicalPrice !== undefined &&
+            (Number(row.selling_price) !== canonicalPrice || row.status !== "published");
         })
         .map((row) => String(row.variant_id)))];
       // Keep each channel update small enough to leave headroom under the 300s function timeout.
