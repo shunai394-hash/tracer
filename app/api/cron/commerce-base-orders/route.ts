@@ -33,7 +33,10 @@ function isPaid(order: Awaited<ReturnType<typeof getBaseOrderDetail>>): boolean 
 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
-  if (authError) return authError;
+  if (authError) {
+    console.warn("[TRACER BASE ORDER POLL AUTH REJECTED]", { status: authError.status });
+    return authError;
+  }
   if (!isBaseConfigured()) return NextResponse.json({ ok: false, error: "base_oauth_not_configured" }, { status: 503 });
   const db = createSupabaseAdminClient();
   const result = { checked: 0, paid: 0, imported: 0, duplicate: 0, ignored: 0, failed: 0, unmappedItems: 0, scanOffsets: [] as number[], errors: [] as string[] };
@@ -168,8 +171,17 @@ export async function GET(request: Request) {
     }, { onConflict: "event_key" });
     if (cursorWriteError) throw new Error("base_order_scan_cursor_write_failed:" + cursorWriteError.message);
     const healthy = result.failed === 0 && result.unmappedItems === 0;
+    console.info("[TRACER BASE ORDER POLL]", {
+      ok: healthy, checked: result.checked, paid: result.paid, imported: result.imported,
+      duplicate: result.duplicate, ignored: result.ignored, failed: result.failed,
+      unmappedItems: result.unmappedItems, scanOffsets: result.scanOffsets, nextScanOffset: nextOffset,
+    });
     return NextResponse.json({ ok: healthy, channel: "base", nextScanOffset: nextOffset, ...result }, { status: healthy ? 200 : 207 });
   } catch (error) {
+    console.error("[TRACER BASE ORDER POLL FAILED]", {
+      checked: result.checked, paid: result.paid, imported: result.imported,
+      failed: result.failed, error: error instanceof Error ? error.message : String(error),
+    });
     return NextResponse.json({ ok: false, channel: "base", ...result, error: error instanceof Error ? error.message : String(error) }, { status: 502 });
   }
 }
