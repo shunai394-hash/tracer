@@ -185,11 +185,29 @@ export async function ingestPaidOrder(input: {
   if (order) {
     orderId = order.id as string;
   } else {
-    const { data: existing, error: lookupError } = await db.from("commerce_orders").select("id")
+    const { data: existing, error: lookupError } = await db.from("commerce_orders")
+      .select("id,customer_name,shipping_address,payment_status,fulfillment_status")
       .eq("channel", input.channel).eq("external_order_id", input.externalOrderId).single();
     if (lookupError || !existing) throw new Error("order_idempotency_lookup_failed:" + (lookupError?.message ?? ""));
     orderId = existing.id as string;
     duplicate = true;
+    // A later poll/webhook may repair an address that was incomplete at first
+    // intake. Refresh only source fields and merge non-empty address values;
+    // never reset an already advanced fulfillment state on duplicate delivery.
+    const previousAddress = existing.shipping_address && typeof existing.shipping_address === "object" && !Array.isArray(existing.shipping_address)
+      ? existing.shipping_address as Record<string, unknown> : {};
+    const refreshedAddress = { ...previousAddress };
+    for (const [key, value] of Object.entries(input.shippingAddress)) {
+      if (value !== null && value !== undefined && String(value).trim() !== "") refreshedAddress[key] = value;
+    }
+    const { error: refreshError } = await db.from("commerce_orders").update({
+      total_amount: Math.round(input.totalAmount),
+      customer_name: input.customerName || existing.customer_name || null,
+      shipping_address: refreshedAddress,
+      raw_payload: input.rawPayload,
+      updated_at: new Date().toISOString(),
+    }).eq("id", orderId);
+    if (refreshError) throw new Error("order_refresh_failed:" + refreshError.message);
   }
   // Reconcile lines on retries so a prior partial write can be repaired.
   for (const line of input.lines) {
