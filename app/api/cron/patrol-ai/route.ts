@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
-import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { runIntelligencePipeline } from "@/lib/intelligence/run-intelligence-pipeline";
 import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { rescueUndeliveredGatePassedListings, retryPendingNewfindPromotions } from "@/lib/integration/newfind";
@@ -307,8 +306,8 @@ export async function GET(request: Request) {
     // The patrol must always execute the canonical full intelligence loop.
     // AI patrol must not choose a shallow repair path that bypasses Market,
     // Identity, Demand, Supply, Opportunity, and the Sales Test Gate.
-    // Leave room for BASE publication, NEWFIND rescue and the cron_runs
-    // bookkeeping below; deferred stages resume on the next patrol.
+    // BASE and Shopify publication run through their canonical commerce crons.
+    // Leave room for NEWFIND rescue and cron_runs bookkeeping; deferred stages resume next patrol.
     const pipeline = await runIntelligencePipeline({
       deadlineAt: startedAt + 270_000,
       // Heartbeat: if Vercel still kills the function, the lock row shows the
@@ -350,26 +349,10 @@ export async function GET(request: Request) {
       );
     }
 
-    // Publication is independent of whether today's discovery cycle completed.
-    // The publisher rechecks supplier identity, recorded stock, price and profit;
-    // procurement itself must revalidate live supplier stock/API at order time.
-    try {
-      const base = await withinBudget(publishPublishedListingsToBase(15), startedAt + 285_000, "publish_base");
-      actions.push({
-        action: "publish_base",
-        attempted: base.attempted,
-        published: base.published,
-        skipped: base.skipped,
-        failed: base.failed,
-        results: base.results,
-      });
-      for (const item of base.results) {
-        if (!item.ok && !item.skipped && item.error) errors.push(String(item.error));
-      }
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
-      actions.push({ action: "publish_base", ok: false, error: errors.at(-1) });
-    }
+    // Do not publish legacy shop_listings directly to BASE from patrol-ai.
+    // That created BASE-only products without matching canonical Shopify IDs.
+    // The canonical commerce-publish-base and commerce-publish-shopify crons
+    // are the only publication path for newly discovered saleable variants.
 
     // NEWFIND delivery retries are independent from supplier discovery.
     try {
