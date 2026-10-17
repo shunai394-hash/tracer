@@ -51,7 +51,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       .in("variant_id", variantIds)
       .order("calculated_at", { ascending: false }),
     db.from("supplier_offers")
-      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,source_status,tracking_supported,ship_to,last_checked_at")
+      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,unit_cost,shipping_cost,inventory,source_status,tracking_supported,ship_to,last_checked_at")
       .in("variant_id", variantIds)
       .order("last_checked_at", { ascending: false }),
     db.from("commerce_variants")
@@ -63,7 +63,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   if (variantsRead.error) throw new Error("stale_variant_batch_read_failed:" + variantsRead.error.message);
 
   type StalePrice = { variant_id: string; supplier_offer_id: string | null; currency: string; selling_price: number; expected_profit: number; calculated_at: string | null };
-  type StaleOffer = { id: string; variant_id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; inventory: number; source_status: string; tracking_supported: boolean; ship_to: string; last_checked_at: string | null };
+  type StaleOffer = { id: string; variant_id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; unit_cost: number; shipping_cost: number; inventory: number; source_status: string; tracking_supported: boolean; ship_to: string; last_checked_at: string | null };
   type StaleVariant = { id: string; title_ja: string | null; commerce_products: { title_ja?: string | null; description_ja?: string | null } | Array<{ title_ja?: string | null; description_ja?: string | null }> | null };
   const pricesByVariant = new Map<string, StalePrice[]>();
   for (const price of (pricesRead.data ?? []) as StalePrice[]) {
