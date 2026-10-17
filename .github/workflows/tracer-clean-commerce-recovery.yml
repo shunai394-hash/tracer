@@ -67,7 +67,7 @@ jobs:
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
           call_publish() {
-            local path="$1" out="$2" t code
+            local path="$1" out="$2" allow_partial="\${3:-false}" t code
             t="$(token)" || { echo "OIDC token failed for $path"; return 1; }
             code="$(curl -sS -o "$out" -w "%{http_code}" --max-time 300 \
               -H "Authorization: Bearer $t" "$BASE/$path" || true)"
@@ -80,15 +80,36 @@ jobs:
           except Exception:
               print(open(sys.argv[1]).read()[:1200])
           PY
+            if [[ "$allow_partial" == "true" && ( "$code" == "200" || "$code" == "207" ) ]]; then
+              return 0
+            fi
             [[ "$code" == "200" ]]
           }
           failed=0
-          # One recovery workflow: first recalculate existing linked offers and reconcile stale storefront prices,
-          # then publish bounded eligible items to both channels through the shared publisher.
-          # Supplier discovery and paid-order procurement remain separate; no stock/shipping evidence is fabricated.
-          call_publish "api/cron/commerce-reprice-existing?limit=100" "commerce-reprice.json" || failed=1
+          # Reprice and reconcile existing listings repeatedly: each call syncs up to 25 stale variants per channel.
+          # Accept HTTP 207 during intermediate passes, then require the final pass to report a drained backlog.
+          # No supplier discovery or paid-order procurement is performed by this workflow.
+          for pass in 1 2 3 4 5 6; do
+            call_publish "api/cron/commerce-reprice-existing?limit=100" "commerce-reprice-\${pass}.json" true || failed=1
+          done
+          python3 - <<'PY'
+          import json,sys
+          from pathlib import Path
+          paths = [Path(f"commerce-reprice-{i}.json") for i in range(1, 7)]
+          valid = []
+          for path in paths:
+              try:
+                  valid.append(json.loads(path.read_text()))
+              except Exception:
+                  pass
+          if len(valid) != 6 or not valid[-1].get("ok") or not valid[-1].get("storefrontSyncComplete"):
+              print("Final price reconciliation is incomplete; see response files and runtime logs.")
+              sys.exit(1)
+          print("Final price reconciliation reports a drained storefront backlog.")
+          PY
+          [[ "$?" == "0" ]] || failed=1
           for pass in 1 2 3; do
-            call_publish "api/cron/commerce-publish-all?limit=5&onlyUnpublished=true" "commerce-publish-${pass}.json" || failed=1
+            call_publish "api/cron/commerce-publish-all?limit=5&onlyUnpublished=true" "commerce-publish-\${pass}.json" || failed=1
           done
           python3 <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json, pathlib
