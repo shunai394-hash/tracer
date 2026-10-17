@@ -23,6 +23,20 @@ function japaneseCommerceComplianceBlockReason(title: string, productType?: stri
 function japaneseCommerceTitle(title: string, productType?: string | null, variantNames: string[] = []): string | null {
   const source = (String(title ?? "") + " " + String(productType ?? "")).toLowerCase();
 
+  // Prefer source-specific localization before broad importer fallbacks. This
+  // prevents detailed CJ titles from collapsing to generic labels such as
+  // "ヘアケアアイテム" or "ヘアバンド".
+  const localizedFirst = localizeProductTitle(title, productType);
+  const genericLocalizedTitles = new Set([
+    "ヘアケアアイテム", "ヘアバンド", "ヘアアクセサリー",
+    "レディース ヘアアクセサリー", "美容・メイクアイテム",
+    "美容ツール", "バッグ・収納アイテム", "レディースハンドバッグ",
+    "ハンドバッグ", "メイクブラシ",
+  ]);
+  if (localizedFirst && !genericLocalizedTitles.has(localizedFirst)) {
+    return localizedFirst;
+  }
+
   const normalizedTitle = String(title ?? "").trim().toLowerCase();
   if (/^women handbag$/.test(normalizedTitle) && variantNames.length === 1) {
     const variant = String(variantNames[0] ?? "").toLowerCase();
