@@ -169,7 +169,8 @@ test("publication matches each JPY profitable price to its own cost-bearing supp
   assert.match(publish, /asRelationRows\(candidate\.supplier_offers\)/);
   assert.match(publish, /asRelationRows\(candidate\.commerce_prices\)/);
   assert.match(publish, /currentPriceRows = asRelationRows\(candidate\.commerce_prices\)\.sort/);
-  assert.match(publish, /const currentCanonicalPrice = currentPriceRows\[0\]/);
+  assert.match(publish, /const eligiblePriceOfferPair = currentPriceRows[\s\S]*?\.find\(\(\{ price: candidatePrice, offer: candidateOffer \}\) => Boolean\(/, "choose a price paired with an eligible exact supplier offer");
+  assert.match(publish, /const currentCanonicalPrice = eligiblePriceOfferPair\?\.price/);
   assert.match(publish, /const price = currentCanonicalPrice && currentPriceOffer/);
   assert.match(publish, /Number\(currentCanonicalPrice\.margin_rate\) >= 0\.5/);
   assert.doesNotMatch(publish, /\.eq\("commerce_prices\.currency", "JPY"\)/);
