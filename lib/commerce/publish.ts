@@ -269,16 +269,27 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       continue;
     }
     const title = candidate.title_ja.trim() || product.title_ja.trim();
-    // Keep profitable catalog items publishable even when the supplier's cached stock is zero.
-    // Procurement still revalidates live stock before placing any supplier order.
-    const storefrontStock = toStorefrontStockQuantity(Math.max(1, Number(offer.inventory) || 0), getStorefrontStockCap());
+    // Never manufacture storefront inventory. Landed shipping cost must be known,
+    // and an explicitly unknown supplier stock value must remain zero. Listing visibility
+    // remains independent from procurement and tracking readiness.
+    const rawOfferData = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
+      ? offer.raw_data as Record<string, unknown>
+      : {};
+    const supplierShippingKnown = rawOfferData.shippingKnown === true;
+    const supplierStockKnown = rawOfferData.stockKnown === true
+      || (rawOfferData.stockKnown === undefined && offer.source_status === "verified");
+    const supplierSaleable = supplierShippingKnown && supplierStockKnown && Number(offer.inventory) > 0;
+    const storefrontStock = toStorefrontStockQuantity(supplierSaleable ? Number(offer.inventory) : 0, getStorefrontStockCap());
     if (!isJapaneseProductTitle(title)) {
       results.push({ variantId: candidate.id, ok: false, error: "japanese_product_title_invalid" });
       continue;
     }
     const description = (product.description_ja || title + "。商品仕様・配送条件は仕入先の最新情報をご確認ください。").trim();
     // Selling price already includes supplier shipping; make free shipping explicit on both storefronts.
-    const storefrontDescription = `${description}\n\n送料込み・送料無料。送料は商品価格に含まれています。`;
+    const storefrontDescription = supplierShippingKnown
+      ? `${description}\n\n送料込み・送料無料。送料は商品価格に含まれています。`
+      : `${description}\n\n現在、仕入先の日本向け送料を再確認中のため、購入できません。確認が完了次第、販売を再開します。`;
+
     const sku = "TRC-" + candidate.id.replace(/-/g, "").slice(0, 24).toUpperCase();
     let baseCreateIdNeedsRecovery: string | null = null;
     try {
