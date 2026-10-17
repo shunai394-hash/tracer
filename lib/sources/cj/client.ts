@@ -589,14 +589,6 @@ export async function getCJFreightOptions(
     quantity?: number;
   },
 ): Promise<CJFreightOption[]> {
-  const tipQuote = await calculateCJFreightTipFromProductDetail(vid, {
-    startCountryCode: options?.startCountryCode ?? "CN",
-    endCountryCode: options?.endCountryCode ?? "JP",
-    quantity: options?.quantity ?? 1,
-    ...(options?.zip ? { zip: options.zip } : {}),
-  });
-  if (tipQuote !== null) return tipQuote;
-
   const token = await getAccessToken();
   const response = await fetchCJWithRateLimit(
     "https://developers.cjdropshipping.com/api2.0/v1/logistic/freightCalculate",
@@ -799,6 +791,14 @@ export async function calculateCJFreight(
     zip?: string;
   },
 ): Promise<number | null> {
+  const tipQuote = await calculateCJFreightTipFromProductDetail(vid, {
+    startCountryCode: options?.startCountryCode ?? "CN",
+    endCountryCode: options?.endCountryCode ?? "JP",
+    quantity: options?.quantity ?? 1,
+    ...(options?.zip ? { zip: options.zip } : {}),
+  });
+  if (tipQuote !== null) return tipQuote;
+
   const token = await getAccessToken();
   const response = await fetchCJWithRateLimit(
     "https://developers.cjdropshipping.com/api2.0/v1/logistic/freightCalculate",
