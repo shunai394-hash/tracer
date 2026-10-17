@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     const batch = productIds.slice(offset, offset + 100);
     const { data, error } = await db
       .from("supplier_listings")
-      .select("id,product_id,supplier,supplier_product_id,supplier_variant_id,identity_status,verification_status,identity_method,identity_confidence,inventory_confirmed,orderable,inventory,cost,currency,shipping_cost,tracking_available,api_available,price_confirmed,last_verified_at,verification_error")
+      .select("id,product_id,supplier,supplier_product_id,supplier_variant_id,identity_status,verification_status,identity_method,identity_confidence,inventory_confirmed,orderable,inventory,cost,currency,shipping_cost,tracking_available,api_available,price_confirmed,last_verified_at,verification_error,shipping_status,configured,ship_to")
       .eq("supplier", "cj")
       .in("supplier_product_id", batch);
     if (error) {
