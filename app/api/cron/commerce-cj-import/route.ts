@@ -285,7 +285,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "usd_jpy_rate_unavailable", imported: 0 }, { status: 503 });
   }
 
-  const stats = { searched: 0, products: 0, variantsAvailable: 0, variants: 0, offers: 0, priced: 0, complianceBlocked: 0, skipped: 0, errors: [] as string[] };
+  const stats = { searched: 0, products: 0, variantsAvailable: 0, variants: 0, offers: 0, priced: 0, complianceBlocked: 0, skipped: 0, skipReasons: {} as Record<string, number>, errors: [] as string[] };
+  const recordSkip = (reason: string) => { stats.skipped++; stats.skipReasons[reason] = (stats.skipReasons[reason] ?? 0) + 1; };
   try {
     type ImportCandidate = { id: string; title: string; productType?: string | null; imageUrl?: string | null; retryVariantIds?: string[] };
     const requestedProductIds = url.searchParams.has("productIds")
@@ -439,9 +440,9 @@ export async function GET(request: Request) {
     for (const candidate of candidates) {
       try {
         const detail = forcedDetails.get(candidate.id) ?? await getCJProductDetail(candidate.id);
-        if (!detail) { stats.skipped++; continue; }
+        if (!detail) { recordSkip("product_detail_missing"); continue; }
         const variants = await fetchCJProductVariants(candidate.id);
-        if (!variants.length) { stats.skipped++; continue; }
+        if (!variants.length) { recordSkip("variants_missing"); continue; }
         stats.products++;
         stats.variantsAvailable += variants.length;
         // Retry only the exact errored child IDs that lack a Shopify publication row;
@@ -454,12 +455,12 @@ export async function GET(request: Request) {
         }
         for (const variant of variantBatch) {
           try {
-            if (!variant.vid) { stats.skipped++; continue; }
+            if (!variant.vid) { recordSkip("variant_id_missing"); continue; }
             // Always resolve the exact live VID. A non-empty productId in a
             // product-scoped response may be stale or point at a backup parent.
             const exactVariant = await fetchCJVariantByVid(variant.vid);
             if (!exactVariant || exactVariant.vid !== variant.vid || !String(exactVariant.productId ?? "").trim()) {
-              stats.skipped++;
+              recordSkip("canonical_supplier_product_id_unresolved");
               const reason = "canonical_supplier_product_id_unresolved";
               stats.errors.push(reason + ":" + candidate.id + ":" + variant.vid);
               const logError = await recordCjExclusion(candidate.id + ":" + variant.vid, reason, { catalogProductId: candidate.id, variantId: variant.vid });
@@ -469,7 +470,7 @@ export async function GET(request: Request) {
             const supplierProductId = String(exactVariant.productId).trim();
             const cost = Number(exactVariant.sellPrice);
             if (!Number.isFinite(cost) || cost <= 0) {
-              stats.skipped++;
+              recordSkip("canonical_supplier_variant_price_unresolved");
               const reason = "canonical_supplier_variant_price_unresolved";
               stats.errors.push(reason + ":" + supplierProductId + ":" + exactVariant.vid);
               const logError = await recordCjExclusion(supplierProductId + ":" + exactVariant.vid, reason, { catalogProductId: candidate.id, supplierProductId, variantId: exactVariant.vid });
@@ -507,7 +508,7 @@ export async function GET(request: Request) {
             // Preserve its last known evidence; the freshness gate will stop publication once it expires.
             // Do not overwrite it with inventory=0, shipping=0, or sourceStatus=error on transient API failures.
             if (stock === null || shipping === null) {
-              stats.skipped++;
+              recordSkip(stock === null ? "supplier_stock_unconfirmed" : "japan_freight_unconfirmed");
               const reason = stock === null ? "supplier_stock_unconfirmed" : "japan_freight_unconfirmed";
               const logError = await recordCjExclusion(supplierProductId + ":" + exactVariant.vid, reason, {
                 catalogProductId: candidate.id,
@@ -543,7 +544,7 @@ export async function GET(request: Request) {
             const complianceBlockReason = japaneseCommerceComplianceBlockReason(canonicalDetail.title, canonicalDetail.productType);
             const title = japaneseCommerceTitle(canonicalDetail.title, canonicalDetail.productType, supplierProductId === candidate.id ? variants.flatMap((item) => typeof item.nameEn === "string" && item.nameEn.trim().length > 0 ? [item.nameEn] : []) : []) || (supplierProductId === candidate.id ? japaneseCommerceTitle(candidate.title, candidate.productType) : null);
             if (!title) {
-              stats.skipped++;
+              recordSkip("japanese_title_unavailable");
               const logError = await recordCjExclusion(supplierProductId + ":" + exactVariant.vid, "japanese_title_unavailable", {
                 catalogProductId: candidate.id,
                 sourceTitle: canonicalDetail.title,
@@ -578,7 +579,7 @@ export async function GET(request: Request) {
             stats.offers++;
             if (complianceBlockReason) {
               stats.complianceBlocked++;
-              stats.skipped++;
+              recordSkip("compliance_blocked:" + complianceBlockReason);
               const logError = await recordCjExclusion(supplierProductId + ":" + exactVariant.vid, complianceBlockReason, {
                 catalogProductId: candidate.id,
                 supplierProductId,
@@ -593,7 +594,7 @@ export async function GET(request: Request) {
               await recalculatePrice({ variantId: saved.variantId, offerId: saved.offerId, exchangeRateToJpy: fx.rate, feeRate: 0.1, targetMarginRate: 0.5 });
               stats.priced++;
             } else {
-              stats.skipped++;
+              recordSkip("shipping_not_priced");
             }
           } catch (error) {
             stats.errors.push("variant:" + candidate.id + ":" + variant.vid + ":" + (error instanceof Error ? error.message : String(error)).slice(0, 180));
