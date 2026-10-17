@@ -772,6 +772,101 @@ async function calculateCJFreightTipFromProductDetail(
     return null;
   }).filter((value): value is number => value !== null);
   if (prices.length === 0) {
+    // One-shot, explicitly allowlisted diagnosis only. This endpoint is expensive
+    // and returns reasons, not prices, so it must never run in the normal quote path.
+    const diagnosticVid = process.env.CJ_FREIGHT_DIAGNOSTIC_VID?.trim();
+    if (diagnosticVid && diagnosticVid === vid) {
+      const jobName = ("cj-freight-diagnostic:" + vid).slice(0, 180);
+      try {
+        const db = createSupabaseAdminClient();
+        const { data: priorRuns, error: priorError } = await db
+          .from("cron_runs")
+          .select("id")
+          .eq("job_name", jobName)
+          .limit(1);
+        if (priorError) throw priorError;
+        if (!priorRuns?.length) {
+          const now = new Date().toISOString();
+          const { error: reserveError } = await db.from("cron_runs").insert({
+            job_name: jobName,
+            status: "running",
+            started_at: now,
+            processed: 0,
+            failed: 0,
+            metadata: { vid, diagnostic: "unavailableShippingMethods", oneShot: true },
+          });
+          if (reserveError) throw reserveError;
+          try {
+            const diagnosticResponse = await fetchCJWithRateLimit(
+              "https://developers.cjdropshipping.com/api2.0/v1/logistic/unavailableShippingMethods",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "CJ-Access-Token": token },
+                body: JSON.stringify(body),
+                cache: "no-store",
+              },
+            );
+            const diagnosticPayload = await diagnosticResponse.json() as {
+              code?: number; result?: boolean; message?: string; requestId?: string;
+              data?: { availableList?: Array<{ optionName?: string }>; unavailableList?: Array<{ optionName?: string; errorCode?: number; errorEn?: string }> };
+            };
+            const available = Array.isArray(diagnosticPayload.data?.availableList)
+              ? diagnosticPayload.data.availableList.slice(0, 30).map((row) => ({
+                  optionName: String(row.optionName ?? "").slice(0, 100),
+                }))
+              : [];
+            const unavailable = Array.isArray(diagnosticPayload.data?.unavailableList)
+              ? diagnosticPayload.data.unavailableList.slice(0, 60).map((row) => ({
+                  optionName: String(row.optionName ?? "").slice(0, 100),
+                  errorCode: typeof row.errorCode === "number" ? row.errorCode : null,
+                  errorEn: String(row.errorEn ?? "").slice(0, 240),
+                }))
+              : [];
+            console.warn("[CJ FREIGHT UNAVAILABLE METHODS DIAGNOSTIC]", {
+              vid,
+              httpStatus: diagnosticResponse.status,
+              code: diagnosticPayload.code ?? null,
+              result: diagnosticPayload.result ?? null,
+              message: String(diagnosticPayload.message ?? "").slice(0, 180),
+              requestId: String(diagnosticPayload.requestId ?? "").slice(0, 48),
+              availableCount: Array.isArray(diagnosticPayload.data?.availableList) ? diagnosticPayload.data!.availableList!.length : 0,
+              unavailableCount: Array.isArray(diagnosticPayload.data?.unavailableList) ? diagnosticPayload.data!.unavailableList!.length : 0,
+              available,
+              unavailable,
+            });
+            await db.from("cron_runs").update({
+              status: diagnosticResponse.ok && diagnosticPayload.result !== false ? "succeeded" : "failed",
+              finished_at: new Date().toISOString(),
+              processed: available.length + unavailable.length,
+              failed: diagnosticResponse.ok && diagnosticPayload.result !== false ? 0 : 1,
+              metadata: {
+                vid, diagnostic: "unavailableShippingMethods", oneShot: true,
+                httpStatus: diagnosticResponse.status,
+                code: diagnosticPayload.code ?? null,
+                result: diagnosticPayload.result ?? null,
+                requestId: String(diagnosticPayload.requestId ?? "").slice(0, 48),
+                availableCount: Array.isArray(diagnosticPayload.data?.availableList) ? diagnosticPayload.data!.availableList!.length : 0,
+                unavailableCount: Array.isArray(diagnosticPayload.data?.unavailableList) ? diagnosticPayload.data!.unavailableList!.length : 0,
+              },
+            }).eq("job_name", jobName);
+          } catch (diagnosticError) {
+            await db.from("cron_runs").update({
+              status: "failed", finished_at: new Date().toISOString(), processed: 0, failed: 1,
+              metadata: { vid, diagnostic: "unavailableShippingMethods", oneShot: true, error: diagnosticError instanceof Error ? diagnosticError.message.slice(0, 180) : "unknown_error" },
+            }).eq("job_name", jobName);
+            console.warn("[CJ FREIGHT UNAVAILABLE METHODS DIAGNOSTIC FAILED]", {
+              vid, error: diagnosticError instanceof Error ? diagnosticError.message.slice(0, 180) : "unknown_error",
+            });
+          }
+        }
+      } catch (diagnosticGuardError) {
+        // Fail closed: do not call the costly diagnostic API if one-shot state
+        // cannot be checked and reserved durably.
+        console.warn("[CJ FREIGHT UNAVAILABLE METHODS DIAGNOSTIC SKIPPED]", {
+          vid, reason: diagnosticGuardError instanceof Error ? diagnosticGuardError.message.slice(0, 160) : "guard_failed",
+        });
+      }
+    }
     console.warn("[CJ FREIGHT TIP NO OPTIONS]", {
       vid, srcAreaCode: options.startCountryCode, destAreaCode: options.endCountryCode,
       result: payload.result ?? null, dataType: Array.isArray(payload.data) ? "array" : typeof payload.data,
