@@ -7,10 +7,10 @@ export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   try {
-    const requested = Number(new URL(request.url).searchParams.get("limit") || 25);
+    const requested = Number(new URL(request.url).searchParams.get("limit") || 5);
     // Reprocess published rows so recalculated 50% margin prices reach the storefront.
-    // Process larger bounded batches so existing published prices and titles converge promptly.
-    const limit = Number.isFinite(requested) ? Math.min(25, Math.max(1, Math.floor(requested))) : 25;
+    // Keep scheduled work small to reduce function timeouts while refreshing published prices.
+    const limit = Number.isFinite(requested) ? Math.min(10, Math.max(1, Math.floor(requested))) : 5;
     const onlyUnpublished = new URL(request.url).searchParams.get("onlyUnpublished") === "true";
     const result = await syncCommerceListings("shopify", limit, onlyUnpublished);
     return NextResponse.json({ ok: result.failed === 0, ...result }, { status: result.failed ? 207 : 200 });
