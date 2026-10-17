@@ -43,7 +43,7 @@ jobs:
           with open("commerce-status.json", encoding="utf-8") as f:
               r=json.load(f)
           print("ok:", r.get("ok"), "readOnly:", r.get("readOnly"), "generatedAt:", r.get("generatedAt"))
-          for key in ("catalog", "supplierOffers", "prices", "channels", "livePlatforms", "orders", "procurement", "approvalEvents", "cronRuns", "listingErrors"):
+          for key in ("catalog", "supplierOffers", "supplierOfferErrors", "prices", "channels", "livePlatforms", "orders", "procurement", "approvalEvents", "cronRuns", "listingErrors"):
               if key in r:
                   print(key + ":", json.dumps(r[key], ensure_ascii=False, separators=(",", ":")))
           items = r.get("listingErrorItems", [])
