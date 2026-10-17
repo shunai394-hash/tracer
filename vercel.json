@@ -45,6 +45,10 @@
     {
       "path": "/api/cron/base-legacy-price-reconcile",
       "schedule": "2,17,32,47 * * * *"
+    },
+    {
+      "path": "/api/cron/shopify-publish",
+      "schedule": "9,24,39,54 * * * *"
     }
   ]
 }
