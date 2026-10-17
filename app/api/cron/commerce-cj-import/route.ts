@@ -589,7 +589,6 @@ export async function GET(request: Request) {
             // Preserve its last known evidence; the freshness gate will stop publication once it expires.
             // Do not overwrite it with inventory=0, shipping=0, or sourceStatus=error on transient API failures.
             const shippingWasEstimated = shipping === null;
-            const shippingCostForPricing = shipping ?? 7.76;
             if (stock === null) {
               recordSkip("supplier_stock_unconfirmed");
               const reason = "supplier_stock_unconfirmed";
@@ -631,6 +630,23 @@ export async function GET(request: Request) {
               }
               continue;
             }
+            if (shipping === null) {
+              recordSkip("shipping_unconfirmed");
+              const logError = await recordCjExclusion(supplierProductId + ":" + exactVariant.vid, "japan_freight_unconfirmed", {
+                catalogProductId: candidate.id,
+                supplierProductId,
+                variantId: exactVariant.vid,
+                stockKnown: true,
+                observedInventory: Math.max(0, Math.floor(stock)),
+                shippingKnown: false,
+                freightAttempts,
+                freightZipConfigured: Boolean(freightZip),
+                freightErrors: freightErrors.slice(0, 4),
+              });
+              if (logError) stats.errors.push("exclusion_log:" + logError.slice(0, 80));
+              continue;
+            }
+            const shippingCostForPricing = shipping;
             const complianceBlockReason = japaneseCommerceComplianceBlockReason(canonicalDetail.title, canonicalDetail.productType);
             const title = japaneseCommerceTitle(canonicalDetail.title, canonicalDetail.productType, supplierProductId === candidate.id ? variants.flatMap((item) => typeof item.nameEn === "string" && item.nameEn.trim().length > 0 ? [item.nameEn] : []) : []) || (supplierProductId === candidate.id ? japaneseCommerceTitle(candidate.title, candidate.productType) : null);
             if (!title) {
@@ -665,9 +681,7 @@ export async function GET(request: Request) {
                 rawData: {
                   query, page, catalogProductId: candidate.id, productId: supplierProductId, variantId: exactVariant.vid,
                   stockKnown: stock !== null, shippingKnown: shipping !== null,
-                  shippingEstimated: shippingWasEstimated,
-                  shippingEstimateUsd: shippingWasEstimated ? 7.76 : null,
-                  shippingEstimateSource: shippingWasEstimated ? "cj_historical_p90_570_offers" : null,
+                  shippingEstimated: false,
                   freightAttempts,
                   ...(stock !== null ? { observedInventory: Math.max(0, Math.floor(stock)) } : {}),
                   fxRate: fx.rate, complianceBlockReason,
@@ -806,8 +820,7 @@ export async function GET(request: Request) {
             }
             // Price the mapped offer even at zero stock; listing availability and live procurement are separate.
             // The paid-order procurement path independently rechecks inventory before supplier submission.
-            // Use a live freight quote when available; otherwise include the documented historical P90 reserve (7.76 USD).
-            // shippingKnown remains false when estimated; this reserve is not presented as a live quote.
+            // Unknown Japan freight is excluded before offer upsert; only live quotes reach price calculation.
             if (Number.isFinite(shippingCostForPricing) && shippingCostForPricing >= 0) {
               await recalculatePrice({ variantId: saved.variantId, offerId: saved.offerId, exchangeRateToJpy: fx.rate, feeRate: 0.1, targetMarginRate: 0.5 });
               stats.priced++;
