@@ -178,14 +178,11 @@ export async function GET(request: Request) {
         const productUpdatedAt = productUpdatedAtByVariant.get(variantId);
         const contentNeedsSync = Boolean(productUpdatedAt) &&
           (!row.last_synced_at || Date.parse(productUpdatedAt!) > Date.parse(String(row.last_synced_at)));
-        if (canonicalPrice !== undefined && row.status === "published" && unverifiedVariantIds.has(variantId)) return true;
-        if (canonicalPrice !== undefined && unverifiedVariantIds.has(variantId)) return false;
         return canonicalPrice !== undefined &&
           (Number(row.selling_price) !== canonicalPrice || row.status !== "published" || contentNeedsSync);
       });
       const priority = (row: (typeof eligibleRows)[number]) => {
         const variantId = String(row.variant_id);
-        if (row.status === "published" && unverifiedVariantIds.has(variantId)) return 0;
         const productUpdatedAt = productUpdatedAtByVariant.get(variantId);
         const contentNeedsSync = Boolean(productUpdatedAt) &&
           (!row.last_synced_at || Date.parse(productUpdatedAt!) > Date.parse(String(row.last_synced_at)));
