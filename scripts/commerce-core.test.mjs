@@ -978,3 +978,15 @@ test("bounded recovery refuses publication unless final price reconciliation is 
   assert.match(workflow, /if \(data\.get\("ok"\) is not True/);
   assert.match(workflow, /sys\.exit\(1\)/);
 });
+
+
+test("CJ native identity accepts decimal provider IDs and rejects TRACER UUIDs, SKUs, and malformed values", () => {
+  assert.equal(isCanonicalCJNativeId("25012345678901"), true);
+  assert.equal(isCanonicalCJNativeId("2501234567890123456789"), true);
+  assert.equal(isCanonicalCJNativeId("550e8400-e29b-41d4-a716-446655440000"), false);
+  assert.equal(isCanonicalCJNativeId("SKU-25012345678901"), false);
+  assert.equal(isCanonicalCJNativeId("123456789"), false);
+  assert.equal(isCanonicalCJNativeId("25012345678901234567890"), false);
+  assert.equal(isCanonicalCJNativeId(""), false);
+  assert.equal(isCanonicalCJNativeId(null), false);
+});
