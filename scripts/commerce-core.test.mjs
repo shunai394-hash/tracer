@@ -554,6 +554,9 @@ test("BASE live price audit compares live, stored, and latest canonical prices a
   assert.match(workflow, /canonicalVsStoredMismatch/);
   assert.match(route, /canonicalSellingPrice/);
   assert.match(route, /exactBaseIdMatches: exactIdListings\.map[\s\S]*?canonicalSellingPrice/);
+  assert.match(workflow, /const numericPrice = value =>/);
+  assert.match(workflow, /livePrice !== null && canonicalPrice !== null/);
+  assert.match(workflow, /numericPrice\(item\.exactBaseIdMatches\?\.\[0\]\?\.canonicalSellingPrice\)/);
 });
 
 test("BASE reconciliation matches stable commerce TRC SKUs as well as legacy UUID identifiers", async () => {
