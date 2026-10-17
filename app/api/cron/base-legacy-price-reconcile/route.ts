@@ -181,7 +181,8 @@ export async function GET(request: Request) {
   const expectedPriceByListingId = new Map(candidates.map(({ listing, canonicalPrice }) => [
     String(listing.id), canonicalPrice,
   ]));
-  const externalReadback = await Promise.all((listings ?? []).map(async (listing) => {
+  const readbackListings = (listings ?? []).slice(0, 25);
+  const externalReadback = await Promise.all(readbackListings.map(async (listing) => {
     const baseItemId = String(listing.base_item_id ?? "");
     const expectedPrice = expectedPriceByListingId.get(String(listing.id)) ?? Number(listing.selling_price);
     try {
