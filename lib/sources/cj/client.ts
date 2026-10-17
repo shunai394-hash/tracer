@@ -10,6 +10,7 @@ import {
 } from "@/lib/sources/cj/variant-select";
 import { firstCJImageUrl, parseCJStockData } from "@/lib/sources/cj/parse";
 import { getCJQuotaCooldownUntil, isCJQuotaCircuitActive, isCJQuotaExhausted } from "@/lib/sources/cj/rate-limit-policy";
+import { readCJFreightPrice } from "@/lib/sources/cj/freight-cost";
 
 export { selectUnambiguousVariant, verifyVariantSelectionInvariants };
 export type { CJProductVariant };
@@ -721,15 +722,6 @@ export async function calculateCJFreight(
   // CJ has returned several freight field names across API versions and
   // wrappers. Accept the documented price fields plus equivalent numeric
   // postage/shipping fields, while never treating an unknown value as zero.
-  const readPrice = (value: unknown): number | null => {
-    if (typeof value === "number") return Number.isFinite(value) && value > 0 ? value : null;
-    if (typeof value === "string" && value.trim()) {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-    }
-    return null;
-  };
-
   const rows: unknown[] = Array.isArray(payload.data)
     ? payload.data
     : payload.data && typeof payload.data === "object"
@@ -751,7 +743,7 @@ export async function calculateCJFreight(
         "freight",
         "freightCost",
       ]) {
-        const price = readPrice(record[key]);
+        const price = readCJFreightPrice(record[key]);
         if (price !== null) return price;
       }
       return null;
