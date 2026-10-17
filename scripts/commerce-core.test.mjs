@@ -16,7 +16,8 @@ test("legacy Shopify sync recovers exact-SKU TRACER products and fails closed on
   assert.match(legacy, /exactMatches\.length > 1/);
   assert.match(legacy, /shopify_sku_ambiguous/);
   assert.match(legacy, /shopify_sku_owned_by_non_tracer_product/);
-  assert.match(legacy, /findByHandle\(productInput\.handle\)\) \?\? \(await findByExactSku\(productInput\.sku\)\)/);
+  assert.match(legacy, /const existingBySku = await findByExactSku\(productInput\.sku\);/);
+  assert.match(legacy, /let existing = existingBySku \?\? existingById \?\? \(await findByHandle\(productInput\.handle\)\);/);
 });
 
 test("CJ freight parsing searches nested object and array wrappers and preserves explicit free-shipping values", async () => {
