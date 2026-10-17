@@ -1045,6 +1045,15 @@ test("bounded recovery refuses publication unless final price reconciliation is 
 });
 
 
+test("publisher distinguishes stale supplier evidence from unconfirmed stock", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /!preflightFresh \? "supplier_verification_stale"/);
+  assert.match(publish, /preflightRawOfferData\.stockKnown === false \? "supplier_stock_unconfirmed"/);
+  assert.match(publish, /rawOffer\.tracking_supported !== true \? "tracking_not_verified"/);
+  assert.match(publish, /rawOffer\.ship_to !== "JP" \? "supplier_not_shipping_to_japan"/);
+  assert.match(publish, /supplier_out_of_stock/);
+});
+
 test("CJ stale-listing evidence retry accepts canonical numeric IDs", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   const badGuard = 'if (!/^\\\\d{10,22}$/.test(parentId) || !/^\\\\d{10,25}$/.test(variantId)) continue;';
