@@ -389,7 +389,7 @@ export async function runIntelligencePipeline(options: {
   steps.push(await runStep("demand_analyze", () => persistDemandIntelligence(), { budgetMs: 25_000 }));
   // Do not run the legacy one-candidate CJ research call in the critical patrol.
   // It repeatedly consumes its 18s budget and stops downstream publication. The
-  // bounded supply-first catalog route handles fresh CJ discovery independently.
+  // scheduled commerce-cj-import route handles fresh CJ discovery independently.
 
 
 
@@ -597,7 +597,7 @@ export async function runIntelligencePipeline(options: {
     result: {
       skipped: true,
       reason: "marketplace_rankings_not_used_for_supplier_procurement",
-      discoveryCron: "/api/cron/supply-first",
+      discoveryCron: "/api/cron/commerce-cj-import",
     },
   });
 
