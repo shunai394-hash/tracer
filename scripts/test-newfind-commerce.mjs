@@ -41,6 +41,18 @@ check("failures back off and stop after the attempt cap", () => {
   assert.deepEqual(decideNewfindCommerceDelivery(variant, { status: "failed", detail: recent }, now), { action: "skip", reason: "backoff" });
   const old = detail({ attempts: 2, lastAttemptAt: new Date(now - newfindCommerceBackoffMs(2) - 1).toISOString() });
   assert.equal(decideNewfindCommerceDelivery(variant, { status: "failed", detail: old }, now).action, "send");
+  const duplicateConflict = detail({
+    attempts: 5,
+    lastAttemptAt: new Date(now - 60_000).toISOString(),
+    lastError: 'discovery insert failed: duplicate key value violates unique constraint "discovery_products_duplicate_key_uidx"',
+  });
+  assert.equal(decideNewfindCommerceDelivery(variant, { status: "failed", detail: duplicateConflict }, now).action, "send");
+  const earlyDuplicateConflict = detail({
+    attempts: 3,
+    lastAttemptAt: new Date(now - 60_000).toISOString(),
+    lastError: 'discovery insert failed: duplicate key value violates unique constraint "discovery_products_duplicate_key_uidx"',
+  });
+  assert.deepEqual(decideNewfindCommerceDelivery(variant, { status: "failed", detail: earlyDuplicateConflict }, now), { action: "skip", reason: "backoff" });
   const capped = detail({ attempts: NEWFIND_COMMERCE_MAX_ATTEMPTS, lastAttemptAt: new Date(now - 24 * 60 * 60_000).toISOString() });
   assert.deepEqual(decideNewfindCommerceDelivery(variant, { status: "failed", detail: capped }, now), { action: "skip", reason: "max_attempts" });
   assert.equal(newfindCommerceBackoffMs(100), 6 * 60 * 60_000);

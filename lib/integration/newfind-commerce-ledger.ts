@@ -83,7 +83,14 @@ export function decideNewfindCommerceDelivery(variantId: string, row: NewfindCom
   }
   if (detail.attempts >= NEWFIND_COMMERCE_MAX_ATTEMPTS) return { action: "skip", reason: "max_attempts" };
   const last = detail.lastAttemptAt ? Date.parse(detail.lastAttemptAt) : Number.NaN;
-  if (status !== "pending" && Number.isFinite(last) && nowMs - last < newfindCommerceBackoffMs(detail.attempts)) {
+  // Old duplicate-key intake failures were caused by a receiver bug that has
+  // now been deployed. Once such a failure has already reached four attempts,
+  // retry it immediately instead of making the fixed receiver wait another
+  // exponentially increasing backoff window. The attempt cap still applies.
+  const duplicateConflictRecovery = status === "failed"
+    && detail.attempts >= 4
+    && /discovery insert failed: duplicate key value violates unique constraint/i.test(detail.lastError ?? "");
+  if (status !== "pending" && !duplicateConflictRecovery && Number.isFinite(last) && nowMs - last < newfindCommerceBackoffMs(detail.attempts)) {
     return { action: "skip", reason: "backoff" };
   }
   return { action: "send", fromStatus: status, detail };
