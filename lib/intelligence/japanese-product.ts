@@ -235,7 +235,9 @@ export function localizeProductTitle(value: unknown, category?: string | null): 
 
   const fallback = FALLBACK_TITLE_RULES.find(([pattern]) => pattern.test(source));
   if (fallback) return fallback[1];
-  if (typeof category === "string" && category.trim()) return "トレンド・" + category.trim().slice(0, 20) + "アイテム";
+  // The second argument may be a search query, not a verified product category.
+  // Never turn it into a fabricated product title; keep the item retryable until
+  // a source-grounded title can be localized.
   return null;
 }
 
