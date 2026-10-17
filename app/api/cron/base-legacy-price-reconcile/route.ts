@@ -155,9 +155,15 @@ export async function GET(request: Request) {
         stock: toStorefrontStockQuantity(inventory),
         visible: true,
       });
+      const canonicalMarginRate = Number(price.margin_rate);
+      if (!Number.isFinite(canonicalMarginRate) || canonicalMarginRate <= 0 || canonicalMarginRate > 1) {
+        throw new Error("canonical_margin_rate_invalid");
+      }
       const { error: updateError } = await db.from("shop_listings").update({
         selling_price: canonicalPrice,
         contribution_profit: Number(price.expected_profit),
+        // commerce_prices.margin_rate is a ratio (e.g. 0.5); shop_listings stores percent (e.g. 50).
+        contribution_margin: Math.round(canonicalMarginRate * 10000) / 100,
         updated_at: new Date().toISOString(),
       }).eq("id", listingId).eq("base_item_id", baseItemId);
       if (updateError) throw new Error("base_price_updated_db_write_failed:" + updateError.message);
