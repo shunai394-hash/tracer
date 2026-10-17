@@ -127,7 +127,7 @@ test("publication matches each JPY profitable price to its own cost-bearing supp
   assert.match(publish, /asRelationRows\(candidate\.commerce_prices\)/);
   assert.match(publish, /const validOfferIds = new Set\(validOffers\.map\(\(x\) => x\.id\)\)/);
   assert.match(publish, /validOfferIds\.has\(latestPrice\.supplier_offer_id\) && latestPrice\.currency === "JPY"/);
-  assert.match(publish, /validOffers\.find\(\(x\) => x\.id === price\.supplier_offer_id\)/);
+  assert.match(publish, /validOffers\.find\(\(x\) => x\.id === canonicalPrice\.supplier_offer_id\)/);
   assert.doesNotMatch(publish, /candidate\.commerce_prices\.supplier_offer_id/);
 });
 test("supplier readiness failures do not automatically unpublish profitable catalog listings", async () => {
@@ -770,7 +770,7 @@ test("published storefront price reconciliation uses exact variants and bounded 
   assert.match(route, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)/);
   assert.match(publish, /variantIds\?: string\[\]/);
   assert.match(publish, /candidateQuery\.in\("id", \[\.\.\.new Set\(variantIds\)\]\)/);
-  assert.match(publish, /selling_price: Number\(price\.selling_price\)/, "successful storefront sync persists the exact published price");
+  assert.match(publish, /selling_canonicalPrice: Number\(price\.selling_price\)/, "successful storefront sync persists the exact published price");
 });
 
 
