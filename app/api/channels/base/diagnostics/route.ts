@@ -313,6 +313,7 @@ export async function GET(request: Request) {
       itemAuditComplete: probe.items.complete,
       itemErrorStage: probe.items.errorStage,
       mappingAuditOk: mappingAudit.ok,
+      priceAudit: mappingAudit.priceAudit,
       visibleItemsMatchedToDatabase: mappingAudit.visibleItemsMatchedToDatabase,
       visibleItemsManagedByCommerce: mappingAudit.visibleItemsManagedByCommerce,
       visibleItemsLinked: mappingAudit.visibleItemsLinked,
