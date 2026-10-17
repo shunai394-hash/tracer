@@ -59,7 +59,10 @@ export async function GET(request: Request) {
     const variantId = String(row.variant_id);
     if (priceByVariant.has(variantId)) continue;
     priceByVariant.set(variantId, row);
-    canonicalPriceByVariant.set(variantId, Number(row.selling_price));
+    // Seed every known canonical price, not only variants repriced during this run.
+    // This lets the reconciliation pass repair stale channel prices across the full backlog.
+    const sellingPrice = Number(row.selling_price);
+    if (Number.isFinite(sellingPrice) && sellingPrice > 0) canonicalPriceByVariant.set(variantId, sellingPrice);
   }
   let skippedUnknownShipping = 0;
   const oneOfferPerVariant = new Map<string, NonNullable<typeof offers>[number]>();
@@ -158,9 +161,10 @@ export async function GET(request: Request) {
             (Number(row.selling_price) !== canonicalPrice || row.status !== "published");
         })
         .map((row) => String(row.variant_id)))];
-      // Keep each channel update small enough to leave headroom under the 300s function timeout.
-      // Ten variants per channel is bounded and retries rotate through the oldest stale listings.
-      const batchIds = allChannelIds.slice(0, 10);
+      // Process a bounded batch per channel; oldest stale rows rotate forward on subsequent cron runs.
+      // The canonical-price map includes all known prices, so existing listings are reconciled even
+      // when their variants did not need recalculation in this invocation.
+      const batchIds = allChannelIds.slice(0, 25);
       if (batchIds.length === 0) continue;
       try {
         const synced = await syncCommerceListings(channel, batchIds.length, false, batchIds);
