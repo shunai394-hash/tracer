@@ -299,7 +299,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "usd_jpy_rate_unavailable", imported: 0 }, { status: 503 });
   }
 
-  const stats = { searched: 0, products: 0, variantsAvailable: 0, variants: 0, offers: 0, priced: 0, supplierListingEvidenceUpdated: 0, supplierListingEvidenceCreated: 0, supplierListingEvidenceUnmatched: 0, complianceBlocked: 0, skipped: 0, skipReasons: {} as Record<string, number>, errors: [] as string[] };
+  const stats = { searched: 0, products: 0, variantsAvailable: 0, variants: 0, offers: 0, priced: 0, supplierListingEvidenceUpdated: 0, supplierListingEvidenceCreated: 0, supplierListingEvidenceUnmatched: 0, complianceBlocked: 0, skipped: 0, verifiedOffersStaleEligible: 0, publicationBlockedVariantsSeen: 0, evidenceRetryVariantsQueued: 0, evidenceRetryDeferredByBackoff: 0, staleLegacyListingVariantsQueued: 0, finalEvidenceParentCount: 0, missingPublicationRetriesQueued: 0, newDiscoveryCandidatesQueued: 0, finalCandidateCount: 0, skipReasons: {} as Record<string, number>, errors: [] as string[] };
   const recordSkip = (reason: string) => { stats.skipped++; stats.skipReasons[reason] = (stats.skipReasons[reason] ?? 0) + 1; };
   try {
     type ImportCandidate = { id: string; title: string; productType?: string | null; imageUrl?: string | null; retryVariantIds?: string[] };
@@ -424,6 +424,8 @@ export async function GET(request: Request) {
         const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
         return !Number.isFinite(checkedAt) || checkedAt <= evidenceCutoff;
       });
+      stats.verifiedOffersStaleEligible = staleVerifiedForEvidence.length;
+      stats.publicationBlockedVariantsSeen = publicationErrorVariantIds.size;
       const existingOffersNeedingEvidence = [...(erroredOffers ?? []), ...staleVerifiedForEvidence].sort((a, b) => {
         const aBlocked = publicationErrorVariantIds.has(String(a.variant_id)) ? 0 : 1;
         const bBlocked = publicationErrorVariantIds.has(String(b.variant_id)) ? 0 : 1;
@@ -439,7 +441,10 @@ export async function GET(request: Request) {
           ? offer.raw_data as Record<string, unknown>
           : {};
         const nextReverifyAt = Date.parse(String(rawData.nextReverifyAt ?? ""));
-        if (Number.isFinite(nextReverifyAt) && nextReverifyAt > Date.now()) continue;
+        if (Number.isFinite(nextReverifyAt) && nextReverifyAt > Date.now()) {
+          stats.evidenceRetryDeferredByBackoff++;
+          continue;
+        }
         if (evidenceRetryCount >= retryVariantLimit) break;
         const variantIds = evidenceRetryByParent.get(parentId) ?? [];
         if (!variantIds.includes(variantId)) {
@@ -452,6 +457,7 @@ export async function GET(request: Request) {
       const evidenceRetryCandidates: ImportCandidate[] = [...evidenceRetryByParent.entries()]
         .slice(0, limit)
         .map(([id, variantIds]) => ({ id, title: "", retryVariantIds: variantIds }));
+      stats.evidenceRetryVariantsQueued = evidenceRetryCount;
 
       // Build a separate exact-ID queue for supplier_listings whose procurement
       // evidence is missing or stale. Do not infer supplier IDs from titles/SKUs.
@@ -479,6 +485,7 @@ export async function GET(request: Request) {
         .sort((a, b) => a[1].oldestAt - b[1].oldestAt)
         .slice(0, limit)
         .map(([id, group]) => ({ id, title: "", retryVariantIds: group.variantIds.slice(0, 3) }));
+      stats.staleLegacyListingVariantsQueued = staleListingRetryCandidates.reduce((total, candidate) => total + (candidate.retryVariantIds?.length ?? 0), 0);
 
       // Prefer never-imported CJ parents for remaining slots so search pages
       // containing existing products cannot consume the entire discovery batch.
@@ -512,7 +519,12 @@ export async function GET(request: Request) {
       const missingPublicationRetries = retryCandidates.filter((candidate) => !evidenceParentIds.has(candidate.id))
         .slice(0, Math.max(0, limit - dedupedEvidenceCandidates.length));
       const discoverySlots = Math.max(0, limit - dedupedEvidenceCandidates.length - missingPublicationRetries.length);
-      candidates = [...dedupedEvidenceCandidates, ...missingPublicationRetries, ...newCandidates.slice(0, discoverySlots)];
+      const queuedDiscoveryCandidates = newCandidates.slice(0, discoverySlots);
+      stats.finalEvidenceParentCount = dedupedEvidenceCandidates.length;
+      stats.missingPublicationRetriesQueued = missingPublicationRetries.length;
+      stats.newDiscoveryCandidatesQueued = queuedDiscoveryCandidates.length;
+      candidates = [...dedupedEvidenceCandidates, ...missingPublicationRetries, ...queuedDiscoveryCandidates];
+      stats.finalCandidateCount = candidates.length;
     }
     for (const candidate of candidates) {
       try {
