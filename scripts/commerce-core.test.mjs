@@ -134,18 +134,21 @@ test("product dashboard displays the canonical commerce catalog instead of legac
   assert.match(page, /BASE・Shopify 自動販売カタログ/);
   assert.match(page, /旧Intelligenceテーブルの件数とは分けて表示/);
 });
-test("publication and price calculation require fresh verified supplier evidence", async () => {
+test("catalog publication is independent of live fulfillment evidence while procurement rechecks it", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
-  assert.match(core, /offer\.source_status !== "verified"/);
+  const worker = await readFile(new URL("../app/api/cron/commerce-procurement/route.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(core, /offer\.source_status !== "verified"/);
   assert.match(core, /isCanonicalCjNativeId/);
   assert.match(core, /invalid_cj_native_supplier_ids/);
   assert.match(publish, /isCanonicalCjNativeId/);
-  assert.match(core, /offer\.tracking_supported !== true/);
-  assert.match(core, /supplier_offer_verification_stale/);
-  assert.match(core, /supplier_offer_price_not_fulfillable/);
-  assert.match(core, /const quantityByOffer = new Map<string, number>\(\)/);
-  assert.match(core, /quantityByOffer\.get\(line\.offerId\)/);
+  assert.doesNotMatch(core, /offer\.tracking_supported !== true/);
+  assert.doesNotMatch(core, /supplier_offer_verification_stale/);
+  assert.doesNotMatch(core, /supplier_offer_price_not_fulfillable/);
+  assert.match(worker, /offer\.source_status !== "verified"/);
+  assert.match(worker, /offer\.tracking_supported !== true/);
+  assert.match(worker, /supplier_offer_not_fresh_and_fulfillable/);
+  assert.match(worker, /exact_supplier_offer_price_missing_or_unprofitable/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
   assert.match(publish, /supplier_offer_missing_or_cost_unknown/);
