@@ -73,7 +73,7 @@ check("NEWFIND: delivered requires the receiver ACK; one definition for every co
     { total: 4, delivered: 1, failed: 1, open: 1, withdrawn: 1, status_without_ack: 0 });
 });
 
-const [shopifyRoute, repairRoute, baseLib, statusRoute, funnel, reconciliationRoute, baseWorkflow] = await Promise.all([
+const [shopifyRoute, repairRoute, baseLib, statusRoute, funnel, reconciliationRoute, baseWorkflow, basePriceWorkflow] = await Promise.all([
   "../app/api/admin/shopify/reconcile/route.ts",
   "../app/api/channels/base/identity-repair/route.ts",
   "../lib/channels/base.ts",
@@ -81,6 +81,7 @@ const [shopifyRoute, repairRoute, baseLib, statusRoute, funnel, reconciliationRo
   "../app/api/intelligence/e2e-funnel/route.ts",
   "../app/api/admin/channels/base/reconciliation/route.ts",
   "../.github/workflows/base-product-backup.yml",
+  "../.github/workflows/tracer-base-live-price-audit.yml",
 ].map((path) => readFile(new URL(path, import.meta.url), "utf8")));
 check("Shopify reconcile scans to the last page instead of stopping at 800", () => {
   assert.doesNotMatch(shopifyRoute, /page < 8;/);
@@ -105,6 +106,12 @@ check("status and funnel share the NEWFIND outcome rule; reconciliation pages ch
   assert.match(reconciliationRoute, /classifyUnmappedBaseItem\(/);
   assert.doesNotMatch(reconciliationRoute, /\.(insert|update|upsert|delete)\(/);
   assert.match(baseWorkflow, /candidate\.schemaVersion >= 3/);
+});
+check("BASE canonical price audit resolves only unique legacy source-variant keys and counts missing prices separately", () => {
+  assert.match(reconciliationRoute, /legacySupplierVariantIds/);
+  assert.match(reconciliationRoute, /\.in\("source_variant_key", ids\)/);
+  assert.match(reconciliationRoute, /uniqueVariantBySourceKey/);
+  assert.match(basePriceWorkflow, /canonicalPriceMissingExactMappingCount/);
 });
 
 const baseOrders = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
