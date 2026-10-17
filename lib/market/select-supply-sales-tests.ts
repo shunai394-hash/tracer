@@ -306,7 +306,6 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // evidence. Do not publish that simulation as a known landed cost.
     const shippingAllowanceUsd = resolveUnknownShippingAllowanceUsd(process.env.TRACER_CJ_UNKNOWN_SHIPPING_ALLOWANCE_USD);
     const shippingEstimated = shippingCost === null && String(listing.supplier ?? "").trim().toLowerCase() === "cj" && Boolean(listing.supplier_product_id) && Boolean(listing.supplier_variant_id) && listing.orderable === true && sourceCurrency === "USD";
-    const supplierShippingKnown = shippingCost !== null && Number.isFinite(shippingCost) && shippingCost >= 0;
     const pricingShippingCost = shippingCost ?? (shippingEstimated ? shippingAllowanceUsd : null);
     sellingPrice = calculateSupplySellingPriceJpy({
       existingSellingPriceJpy: sellingPrice,
@@ -337,7 +336,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
       sourceFxRateToSelling,
       sourceFxRateSource: sourceFxRateSource ?? undefined,
     });
-    const gate = evaluateSalesTestGate({ rank: null, title: localizedTitle, sellingPrice, identityLinked: supplierVerifiedIdentity || (listing.identity_status === "linked" && identifierGradeMethods.has(identityMethod)), identityMethod, identityConfidence: nativeCjSupplyIdentity ? 1 : num(listing.identity_confidence), sourceCost, shippingCost: supplierShippingKnown ? shippingCost : null, trackingAvailable: listing.tracking_available === true, apiAvailable: listing.api_available === true, profitCalculable: profit.calculable, shippingUnknown: profit.shippingUnknown, contributionProfit: profit.contributionProfit, currencyMismatch: false, priceConfirmed: listing.price_confirmed === true, inventoryConfirmed: listing.inventory_confirmed === true, inventory: num(listing.inventory), orderable: listing.orderable === true, supplierProductId: typeof listing.supplier_product_id === "string" ? listing.supplier_product_id : null, supplierVariantId: typeof listing.supplier_variant_id === "string" ? listing.supplier_variant_id : null, requireRank: false });
+    const gate = evaluateSalesTestGate({ rank: null, title: localizedTitle, sellingPrice, identityLinked: supplierVerifiedIdentity || (listing.identity_status === "linked" && identifierGradeMethods.has(identityMethod)), identityMethod, identityConfidence: nativeCjSupplyIdentity ? 1 : num(listing.identity_confidence), sourceCost, shippingCost: pricingShippingCost, trackingAvailable: listing.tracking_available === true, apiAvailable: listing.api_available === true, profitCalculable: profit.calculable, shippingUnknown: profit.shippingUnknown, contributionProfit: profit.contributionProfit, currencyMismatch: false, priceConfirmed: listing.price_confirmed === true, inventoryConfirmed: listing.inventory_confirmed === true, inventory: num(listing.inventory), orderable: listing.orderable === true, supplierProductId: typeof listing.supplier_product_id === "string" ? listing.supplier_product_id : null, supplierVariantId: typeof listing.supplier_variant_id === "string" ? listing.supplier_variant_id : null, requireRank: false });
     if (!gate.eligible) reasons.push(...gate.reasons);
     // Demand and AI quality scores prioritize the queue. Publication still
     // requires Japanese copy, a real image, exact supplier product and variant
