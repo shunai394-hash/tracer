@@ -7,11 +7,11 @@ export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   try {
-    const requested = Number(new URL(request.url).searchParams.get("limit") || 5);
-    // Keep each scheduled run bounded. New, pending and failed rows are retried;
-    // already-published rows are not rewritten every 15 minutes.
-    const limit = Number.isFinite(requested) ? Math.min(10, Math.max(1, Math.floor(requested))) : 5;
-    const onlyUnpublished = new URL(request.url).searchParams.get("onlyUnpublished") !== "false";
+    const requested = Number(new URL(request.url).searchParams.get("limit") || 25);
+    // Reprocess published rows so recalculated 50% margin prices reach the storefront.
+    // Bound each run to 25 products per channel to respect external API rate limits.
+    const limit = Number.isFinite(requested) ? Math.min(25, Math.max(1, Math.floor(requested))) : 25;
+    const onlyUnpublished = new URL(request.url).searchParams.get("onlyUnpublished") === "true";
     const result = await syncCommerceListings("base", limit, onlyUnpublished);
     return NextResponse.json({ ok: result.failed === 0, ...result }, { status: result.failed ? 207 : 200 });
   } catch (error) {
