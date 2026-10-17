@@ -242,6 +242,7 @@ export async function GET(request: Request) {
     }
     const forcedDetails = new Map<string, Awaited<ReturnType<typeof getCJProductDetail>>>();
     let candidates: ImportCandidate[] = [];
+    const retryOfferByVariantId = new Map<string, { id: string; raw_data: unknown }>();
     if (requestedProductIds.length > 0) {
       for (const id of requestedProductIds) {
         const detail = await getCJProductDetail(id);
@@ -284,7 +285,6 @@ export async function GET(request: Request) {
       }
       const shopifyVariantIds = new Set((shopifyRows ?? []).map((row) => String(row.variant_id)));
       const missingShopifyByParent = new Map<string, string[]>();
-      const retryOfferByVariantId = new Map<string, (typeof erroredOffers extends (infer T)[] | null ? T : never)>();
       const retryVariantLimit = Math.min(3, Math.max(1, limit));
       let retryVariantCount = 0;
       for (const offer of erroredOffers ?? []) {
