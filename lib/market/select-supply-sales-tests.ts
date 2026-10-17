@@ -305,7 +305,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // A missing freight quote can inform a price simulation, but it is not
     // evidence. Do not publish that simulation as a known landed cost.
     const shippingAllowanceUsd = resolveUnknownShippingAllowanceUsd(process.env.TRACER_CJ_UNKNOWN_SHIPPING_ALLOWANCE_USD);
-    const shippingEstimated = shippingCost === null && String(listing.supplier ?? "").trim().toLowerCase() === "cj" && Boolean(listing.supplier_product_id) && Boolean(listing.supplier_variant_id) && listing.orderable === true && sourceCurrency === "USD";
+    const shippingEstimated = shippingCost === null && String(listing.supplier ?? "").trim().toLowerCase() === "cj" && /^[0-9]{10,22}$/.test(String(listing.supplier_product_id ?? "")) && /^[0-9]{10,22}$/.test(String(listing.supplier_variant_id ?? "")) && listing.orderable === true && sourceCurrency === "USD";
     const pricingShippingCost = shippingCost ?? (shippingEstimated ? shippingAllowanceUsd : null);
     sellingPrice = calculateSupplySellingPriceJpy({
       existingSellingPriceJpy: sellingPrice,
