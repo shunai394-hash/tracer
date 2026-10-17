@@ -112,8 +112,9 @@ export async function GET(request: Request) {
       .from("shop_listings")
       .select("id, published, pipeline_reason, selection_reasons, selling_price, inventory, orderable, tracking_available, supplier_name, supplier_product_id, supplier_variant_id, shopify_product_id, shopify_variant_id, shopify_sync_status")
       .not("shopify_product_id", "is", null)
-      .limit(10000);
+      .limit(10001);
     if (error) throw new Error(error.message);
+    if ((rows ?? []).length > 10000) throw new Error("shop_listings_scan_incomplete");
 
     // Legacy rows may hold numeric REST ids; compare on the numeric tail.
     const tail = (id: unknown) => String(id ?? "").split("/").pop() ?? "";
