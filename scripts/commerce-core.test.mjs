@@ -1004,7 +1004,8 @@ test("CJ freight quote misses never use estimated shipping for pricing or public
   assert.ok(publisher.includes("offer.raw_data?.shippingKnown === true ||"));
   assert.ok(publisher.includes("x.raw_data?.shippingKnown === true ||"));
   assert.ok(publisher.includes("preflightRawOfferData.shippingEstimated !== true"));
-  assert.ok(repricer.includes("rawData.shippingEstimated !== true"));
+  assert.ok(repricer.includes("rawData.shippingEstimated !== true && ("), "estimated freight must never count as confirmed in the unverified-listing reconciliation gate");
+  assert.ok(!repricer.includes("rawData.shippingKnown === true || rawData.shippingEstimated === true"), "estimated freight must not satisfy shipping verification");
   assert.ok(importer.includes("targetMarginRate: 0.5"));
 });
 
