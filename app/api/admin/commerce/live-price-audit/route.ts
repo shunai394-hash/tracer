@@ -36,6 +36,7 @@ function norm(value: unknown): string {
 }
 
 function yen(value: unknown): number | null {
+  if (value === null || value === undefined || (typeof value === "string" && !value.trim())) return null;
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
 }
