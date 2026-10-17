@@ -928,6 +928,9 @@ test("CJ freight uses the detailed API when required product logistics fields ar
   assert.match(client, /destAreaCode: options\.endCountryCode/);
   assert.match(client, /if \(tipQuote !== null\) return tipQuote/);
   assert.match(client, /CJ FREIGHT TIP INPUT INCOMPLETE/);
+  assert.match(client, /tip_input_incomplete:/);
+  assert.match(client, /freight_no_quote:rows=/);
+  assert.match(importer, /diagnostics\.slice\(0, 8\)/);
   assert.match(client, /Do not silently convert or interpret CNY fields/);
 });
 
