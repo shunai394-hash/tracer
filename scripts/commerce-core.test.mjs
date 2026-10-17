@@ -405,7 +405,7 @@ test("CJ freight uses the detailed API when required product logistics fields ar
   assert.match(client, /destAreaCode: options\.endCountryCode/);
   assert.match(client, /if \(tipQuote !== null\) return tipQuote/);
   assert.match(client, /CJ FREIGHT TIP INPUT INCOMPLETE/);
-  assert.match(client, /Never silently convert or interpret CNY fields|Do not silently convert or interpret CNY fields/);
+  assert.match(client, /Do not silently convert or interpret CNY fields/);
 });
 
 test("CJ importer serializes stock and freight requests to respect the supplier QPS limit", async () => {
@@ -508,4 +508,391 @@ test("CJ discovery rotates through search pages instead of repeatedly fetching p
   assert.match(importer, /const discoveryBucket = Math\.floor\(Date\.now\(\) \/ 600_000\)/);
   assert.match(importer, /url\.searchParams\.get\("page"\) \|\| \(discoveryBucket % 10\) \+ 1/);
   assert.match(importer, /searchCJProducts\(query, \{ page, size: Math\.min\(20, limit \* 2\) \}\)/);
+});
+
+test("BASE diagnostics reconcile both legacy and commerce-native channel listings", async () => {
+  const diagnostics = await readFile(new URL("../app/api/channels/base/diagnostics/route.ts", import.meta.url), "utf8");
+  assert.match(diagnostics, /from\("channel_listings"\)/);
+  assert.match(diagnostics, /from\("commerce_variants"\)/);
+  assert.match(diagnostics, /from\("commerce_prices"\)/);
+  assert.match(diagnostics, /from\("supplier_offers"\)/);
+  assert.match(diagnostics, /visibleItemsManagedByCommerce/);
+  assert.match(diagnostics, /String\(variant\.source_variant_key\) === String\(offer\.supplier_variant_id\)/);
+});
+
+test("BASE reconciliation recognizes commerce-native supplier SKUs without auto-mapping", async () => {
+  const reconciliation = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
+  assert.match(reconciliation, /from\("channel_listings"\)/);
+  assert.match(reconciliation, /from\("commerce_variants"\)/);
+  assert.match(reconciliation, /from\("commerce_products"\)/);
+  assert.match(reconciliation, /from\("supplier_offers"\)/);
+  assert.match(reconciliation, /commercePrices = \(await readIn/);
+  assert.match(reconciliation, /calculated_at/);
+  assert.match(reconciliation, /if \(!priceByVariant\.has\(variantId\)\)/);
+  assert.match(reconciliation, /canonical_selling_price/);
+  assert.match(reconciliation, /canonicalSellingPrice/);
+  assert.match(reconciliation, /const reconciliationListings = \[\.\.\.listings, \.\.\.commerceListingRows\]/);
+  assert.match(reconciliation, /addSupplierIdentifier\(evidence\?\.sku, listing\)/);
+  assert.match(reconciliation, /Exact-title candidates are unverified suggestions only/);
+  assert.doesNotMatch(reconciliation, /\.update\(|\.insert\(|\.upsert\(/);
+});
+
+test("BASE audit workflow waits for commerce-aware production reconciliation", async () => {
+  const route = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
+  const workflow = await readFile(new URL("../.github/workflows/base-product-backup.yml", import.meta.url), "utf8");
+  assert.match(route, /commerceChannelListingCount: commerceRows\.length,/);
+  assert.match(workflow, /hasOwnProperty\.call\(candidate, "commerceChannelListingCount"\)/);
+  assert.match(workflow, /"commerceChannelListingCount": d\.get\("commerceChannelListingCount"\)/);
+});
+
+test("BASE reconciliation matches stable commerce TRC SKUs as well as legacy UUID identifiers", async () => {
+  const route = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
+  assert.ok(route.includes("|([0-9a-f]{24})"));
+  assert.match(route, /addSupplierIdentifier\(channelRow\.external_sku, listing\)/);
+  assert.match(route, /stableIdentifierMatch\?\.\[2\] && supplierIdentifierCandidates\.length === 1/);
+});
+
+test("BASE audit waits for exact commerce TRC identifier match support", async () => {
+  const route = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
+  const workflow = await readFile(new URL("../.github/workflows/base-product-backup.yml", import.meta.url), "utf8");
+  assert.match(route, /commerceTrcIdentifierMatchCount: items\.filter/);
+  assert.match(workflow, /hasOwnProperty\.call\(candidate, "commerceTrcIdentifierMatchCount"\)/);
+  assert.match(workflow, /"commerceTrcIdentifierMatchCount": d\.get\("commerceTrcIdentifierMatchCount"\)/);
+});
+
+
+test("CJ imported products use specific customer-facing Japanese descriptions", async () => {
+  assert.match(japaneseCommerceDescription("メタルバックル付きラウンドバッグ"), /メタルバックルをあしらったラウンドバッグ/);
+  assert.match(japaneseCommerceDescription("日光で色が変わるアセテート製シャーククリップ"), /日光で色の変化を楽しめるアセテート製/);
+  assert.match(japaneseCommerceDescription("メイク用ファンブラシ"), /ファン型のメイクブラシ/);
+  assert.doesNotMatch(japaneseCommerceDescription("レディースハンドバッグ"), /仕入先の最新情報に基づき確認してください/);
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /descriptionJa: japaneseCommerceDescription\(title\)/);
+  for (const title of [
+    "ダイヤモンド風アルファベット付きパーティーヘアバンド",
+    "柄デザインのレディース斜めがけバッグ",
+    "ウェーブ編みデザインのニットハンドバッグ",
+    "フェイスケア・メイクツール40点セット",
+  ]) assert.ok(importer.includes(title), "specific source title mapping missing: " + title);
+  assert.match(japaneseCommerceDescription("柄デザインのレディース斜めがけバッグ"), /斜めがけバッグ/);
+  assert.match(japaneseCommerceDescription("ウェーブ編みデザインのニットハンドバッグ"), /ウェーブ状の編みデザイン/);
+});
+
+
+test("Shopify publication adopts an existing TRACER product by exact SKU before creating another handle", async () => {
+  const publisher = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publisher, /sku:" \+ sku/);
+  assert.match(publisher, /shopify_sku_ambiguous/);
+  assert.match(publisher, /candidate\.id\.slice\(0, 8\)/);
+  assert.match(publisher, /shopify_legacy_handle_sku_mismatch/);
+});
+
+test("failed supplier procurement retries only when no supplier order id exists", async () => {
+  const worker = await readFile(new URL("../app/api/cron/commerce-procurement/route.ts", import.meta.url), "utf8");
+  assert.match(worker, /\.eq\("status", "failed"\)/);
+  assert.match(worker, /\.is\("external_order_id", null\)/);
+  assert.match(worker, /retry_count/);
+  assert.match(worker, /retryCount >= 3/);
+});
+
+test("CJ import records exclusion reasons without treating a missing freight quote as a verified offer", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /cj_import_exclusion/);
+  assert.match(importer, /japan_freight_unconfirmed/);
+  assert.match(importer, /japanese_title_unavailable/);
+});
+
+test("CJ transient stock or freight lookup failures do not overwrite previously verified supplier offers", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  const guard = importer.indexOf("if (stock === null || shipping === null)");
+  const save = importer.indexOf("const saved = await upsertSupplierOffer", guard);
+  assert.ok(guard >= 0 && save > guard, "unknown live evidence must skip before supplier offer upsert");
+  assert.match(importer, /Do not overwrite it with inventory=0, shipping=0, or sourceStatus=error on transient API failures/);
+});
+
+test("CJ freight lookup tries multiple stocked origins plus CN fallback and records why quotes were unavailable", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /stockedOrigins\.slice\(0, 3\)/);
+  assert.match(importer, /\.filter\(\(countryCode, index, values\) => values\.indexOf\(countryCode\) === index\)/);
+  assert.match(importer, /freightAttempts\.push\(\{ origin: startCountryCode, result: "no_quote" \}\)/);
+  assert.match(importer, /freightZipConfigured: Boolean\(freightZip\)/);
+  assert.match(importer, /freightErrors: freightErrors\.slice\(0, 4\)/);
+});
+
+
+test("scheduled CJ discovery only retries errored variants missing Shopify publication", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /requestedProductIds/);
+  assert.match(importer, /candidates = \[\.\.\.evidenceRetryCandidates, \.\.\.missingPublicationRetries/);
+  assert.match(importer, /\.eq\("source_status", "error"\)/);
+  assert.match(importer, /shopifyVariantIds\.has\(String\(offer\.variant_id\)\)/);
+  assert.match(importer, /retryVariantIds/);
+  assert.match(importer, /event_type", "cj_import_exclusion"/);
+  assert.match(importer, /lastAttemptByIdentity/);
+  assert.match(importer, /detail\.recordedAt/);
+  assert.match(importer, /\.sort\(\(a, b\) => a\[1\]\.lastAttemptedAt - b\[1\]\.lastAttemptedAt\)/);
+  assert.doesNotMatch(importer, /const recoveryPool/);
+});
+
+test("scheduled CJ discovery rechecks already-listed variants including compliance-blocked stock evidence", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /retryOfferByVariantId/);
+  assert.match(importer, /evidenceRetryCandidates/);
+  assert.match(importer, /rawData\.nextReverifyAt/);
+  assert.match(importer, /reverifyAttempts/);
+  assert.match(importer, /retryVariantLimit/);
+  assert.doesNotMatch(importer, /if \(rawData\.complianceBlockReason\) continue;/);
+  assert.match(importer, /observedInventory/);
+  assert.match(importer, /nextReverifyAt: new Date\(Date\.now\(\) \+ 24 \* 60 \* 60_000\)/);
+});
+
+test("BASE publication retries recover exact created IDs and refuse ambiguous stable SKUs", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /fetchBaseItemsSnapshot\(\{ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES \}\)/);
+  assert.match(publish, /const state = stateByVariant\.get\(candidate\.id\);\s*return Boolean\(state && !state\.external_product_id\);/);
+  assert.match(publish, /if \(!recoveredId && stateByVariant\.has\(candidate\.id\)\)/);
+  assert.match(publish, /base_create_recovery_snapshot_unavailable:/);
+  assert.match(publish, /base_create_id_persist_failed:/);
+  assert.match(publish, /base_identifier_ambiguous:/);
+  assert.match(publish, /base_sku_already_mapped_to_other_variant:/);
+  assert.doesNotMatch(publish, /external_sku: sku, status: "pending", last_error: null/);
+});
+
+
+test("patrol counts canonical commerce eligibility independently from the legacy listing table", async () => {
+  const patrol = await readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8");
+  assert.match(patrol, /commerce_variants/);
+  assert.match(patrol, /supplier_offers\.source_status", "verified"/);
+  assert.match(patrol, /commerce_prices\.expected_profit", 0/);
+  assert.match(patrol, /eligibleForBase: eligibleVariantIds\.size/);
+  assert.match(patrol, /newEligibleForBase/);
+  assert.match(patrol, /newEligibleForShopify/);
+});
+
+test("CJ catalog importer prioritizes unseen parent products and scans bounded extra pages", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /from\("commerce_products"\)\.select\("source_key"\)\.like\("source_key", "cj:%"\)/);
+  assert.match(importer, /Prefer never-imported CJ parents/);
+  assert.match(importer, /while \(newCandidates\.length < Math\.max\(0, limit - retryCandidates\.length - evidenceRetryCandidates\.length\) && scanPage <= page \+ 2\)/);
+  assert.ok(importer.includes("candidates = [...evidenceRetryCandidates, ...missingPublicationRetries, ...newCandidates.slice(0, discoverySlots)]"));
+  assert.match(importer, /shopifyVariantIds = new Set/);
+  assert.match(importer, /retryVariantIds\?\.length/);
+  assert.match(importer, /searchParams\.get\("limit"\) \|\| 3/);
+  assert.match(importer, /searchParams\.get\("variantLimit"\) \|\| 2/);
+  assert.doesNotMatch(importer, /const fallbackCandidates/);
+});
+
+
+test("supply-first active-run lock conflicts are logged as expected skips, not errors", async () => {
+  const route = await readFile(new URL("../app/api/cron/supply-first/route.ts", import.meta.url), "utf8");
+  assert.match(route, /TRACER SUPPLY-FIRST RUN SKIPPED/);
+  assert.match(route, /active_run_lock_conflict/);
+  assert.doesNotMatch(route, /console\.error\("\[TRACER SUPPLY-FIRST RUN LOG START FAILED\]"/);
+  assert.match(route, /reason: "supply_first_already_running"/);
+});
+
+test("scheduled publication skips already-published rows while price reconciliation explicitly refreshes stale prices", async () => {
+  const baseRoute = await readFile(new URL("../app/api/cron/commerce-publish-base/route.ts", import.meta.url), "utf8");
+  const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
+  const repricer = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(baseRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/);
+  assert.match(shopifyRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/);
+  assert.match(repricer, /syncCommerceListings\(channel, batchIds\.length, false, batchIds\)/);
+});
+
+
+test("clean commerce CJ importer respects the shared daily-points cooldown before provider calls", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /isCJQuotaCircuitActive/);
+  assert.match(importer, /CJ_QUOTA_CIRCUIT_LOOKUP_FAILED/);
+  assert.match(importer, /reason: "cj_daily_api_points_cooldown"/);
+  assert.match(importer, /return NextResponse\.json\([\s\S]*?status: 202/);
+  assert.ok(importer.indexOf("isCJQuotaCircuitActive(quotaMetadata)") < importer.indexOf("searchCJProducts(query"),
+    "the quota circuit must stop CJ calls before search begins");
+});
+
+
+test("clean commerce CJ importer prices linked offers even when cached stock is zero or unknown", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /if \(shipping !== null && shipping >= 0\)\s*\{\s*await recalculatePrice/);
+  assert.doesNotMatch(importer, /if \(stock !== null &&/);
+});
+
+
+test("existing supplier offers are repriced from database evidence without consuming supplier API quota", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  const schedule = await readFile(new URL("../vercel.json", import.meta.url), "utf8");
+  assert.match(route, /from\("supplier_offers"\)/);
+  assert.match(route, /recalculatePrice\(/);
+  assert.match(route, /sourceApiCalls: 0/);
+  assert.match(route, /\.order\("calculated_at", \{ ascending: false, nullsFirst: false \}\)/, "canonical price rows must be loaded newest first");
+  assert.match(route, /if \(priceByVariant\.has\(variantId\)\) continue/, "older price history must not overwrite the newest price for a variant");
+  assert.match(route, /aNeedsPrice/);
+  assert.match(route, /rawData\.shippingKnown === true/);
+  assert.match(route, /skippedUnknownShipping/);
+  assert.match(route, /price\.calculated_at[^\n]*offer\.updated_at/);
+  const cronEntries = JSON.parse(schedule).crons;
+  assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/commerce-reprice-existing" && entry.schedule === "3,8,13,18,23,28,33,38,43,48,53,58 * * * *"));
+  assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/patrol-ai" && entry.schedule === "*/5 * * * *"));
+});
+
+test("BASE paid orders never procure a mapped subset when any non-cancelled line is unmapped", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
+  assert.match(route, /filter\(\(item\) => item\.status !== "cancelled"\)/);
+  assert.match(route, /base_order_line_identity_missing/);
+  assert.match(route, /let hasUnmappedLine = false/);
+  assert.match(route, /hasUnmappedLine = true/);
+  const blockPartial = route.indexOf("if (hasUnmappedLine)");
+  const ingest = route.indexOf("await ingestPaidOrder(");
+  assert.ok(blockPartial >= 0 && ingest > blockPartial, "an unmapped line must block the entire order before canonical ingestion");
+  assert.doesNotMatch(route, /filter\(\(item\) => item\.status !== "cancelled" && item\.item_id !== undefined\)/);
+});
+
+test("BASE order polling rotates through older pages while always rescanning the newest page", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
+  assert.match(route, /listBaseOrders\(\{ limit: BASE_ORDER_PAGE_SIZE, offset: 0 \}\)/);
+  assert.match(route, /listBaseOrders\(\{ limit: BASE_ORDER_PAGE_SIZE, offset: scanOffset \}\)/);
+  assert.match(route, /from\("commerce_events"\)[\s\S]*?BASE_ORDER_SCAN_CURSOR_EVENT/);
+  assert.match(route, /detail: \{ offset: nextOffset, pageSize: BASE_ORDER_PAGE_SIZE/);
+  assert.match(route, /nextScanOffset: nextOffset/);
+  assert.match(route, /new Map\(\[\.\.\.recentSummaries, \.\.\.rotatingSummaries\]/);
+  assert.match(route, /base_order_import_error:/);
+  assert.match(route, /status: "needs_review"/);
+  assert.match(route, /status: "resolved"/);
+});
+
+
+test("canonical order pollers emit privacy-safe invocation and outcome counters", async () => {
+  const base = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
+  const shopify = await readFile(new URL("../app/api/cron/shopify-orders/route.ts", import.meta.url), "utf8");
+  assert.match(base, /TRACER BASE ORDER POLL AUTH REJECTED/);
+  assert.match(base, /TRACER BASE ORDER POLL FAILED/);
+  assert.match(base, /\[TRACER BASE ORDER POLL\]/);
+  assert.match(base, /checked: result\.checked, paid: result\.paid, imported: result\.imported/);
+  assert.match(shopify, /TRACER SHOPIFY ORDER POLL AUTH REJECTED/);
+  assert.match(shopify, /TRACER SHOPIFY ORDER POLL FAILED/);
+  assert.match(shopify, /\[TRACER SHOPIFY ORDER POLL\]/);
+  assert.match(shopify, /configured: imported\.configured, fetched: imported\.fetched/);
+  assert.match(shopify, /errorCategories: imported\.errors\.map/);
+  assert.doesNotMatch(shopify, /console\.info\([^\n]*orderIds/);
+});
+
+
+test("existing commerce prices below 50% margin are automatically repriced", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(route, /const targetMarginRate = 0\.5/);
+  assert.match(route, /margin_rate,calculated_at/);
+  assert.match(route, /Number\(price\.margin_rate\) < targetMarginRate/);
+  assert.match(route, /targetMarginRate,/);
+  assert.doesNotMatch(route, /targetMarginRate: 0\.2/);
+});
+
+ 
+test("commerce publication cron defaults to small batches and caps explicit requests", async () => {
+  const baseRoute = await readFile(new URL("../app/api/cron/commerce-publish-base/route.ts", import.meta.url), "utf8");
+  const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
+  for (const route of [baseRoute, shopifyRoute]) {
+    assert.match(route, /searchParams\.get\("limit"\) \|\| 5/);
+    assert.match(route, /Number\.isFinite\(requested\) \?[^\n]*: 5/);
+    assert.match(route, /searchParams\.get\("onlyUnpublished"\) !== "false"/);
+  }
+  assert.match(baseRoute, /Math\.min\(5, Math\.max\(1, Math\.floor\(requested\)\)\)/);
+  assert.match(shopifyRoute, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/);
+});
+
+
+test("published storefront price reconciliation uses exact variants and bounded retry batches", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(route, /syncCommerceListings/);
+  assert.match(route, /storefrontSyncRemaining/);
+  assert.match(route, /canonicalPrice !== undefined/);
+  assert.match(route, /Number\(row\.selling_price\) !== canonicalPrice/);
+  assert.doesNotMatch(route, /needsSync/);
+  assert.match(route, /allChannelIds\.slice\(0, 25\)/);
+  assert.match(route, /\.select\("variant_id,channel,selling_price,status,last_synced_at,last_error"\)/);
+  assert.match(route, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)/);
+  assert.match(publish, /variantIds\?: string\[\]/);
+  assert.match(publish, /candidateQuery\.in\("id", \[\.\.\.new Set\(variantIds\)\]\)/);
+  assert.match(publish, /selling_price: Number\(price\.selling_price\)/, "successful storefront sync persists the exact published price");
+});
+
+
+test("storefront price reconciliation emits bounded, privacy-safe completion telemetry", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(route, /storefrontSyncComplete/);
+  assert.match(route, /&& storefrontSyncComplete;/, "a non-empty storefront backlog must not report ok=true");
+  assert.match(route, /\[TRACER STOREFRONT PRICE RECONCILE\]/);
+  assert.match(route, /storefrontSyncErrorCount: result\.storefrontSyncErrors\.length/);
+  assert.match(route, /storefrontSyncFailureDetails/);
+  assert.ok(route.includes("variantId: String(failure.variantId)"));
+  assert.ok(route.includes('reason: String(failure.error ?? "storefront_sync_failed")'));
+  assert.doesNotMatch(route, /console\.info\([^\n]*(?:customer|orderId|supplierVariantId|accessToken)/i);
+});
+
+
+test("TRACER product detail copy stays generic to the actual product", async () => {
+  const page = await readFile(new URL("../app/shop/[slug]/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /サイズ・素材・カラーなど、商品ごとの仕様を購入前にご確認ください/);
+  assert.match(page, /在庫・配送日数・送料・返品条件は商品や配送先によって異なります/);
+  assert.doesNotMatch(page, /iPhone 11・12・13・14シリーズ向け/);
+  assert.doesNotMatch(page, /お使いの端末に合うケース/);
+});
+
+
+test("publisher selects the latest canonical price calculation before matching its supplier offer", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /commerce_prices!inner\(supplier_offer_id,calculated_at,currency/);
+  assert.match(publish, /currentPriceRows = asRelationRows\(candidate\.commerce_prices\)\.sort/);
+});
+
+test("unpublish safety checks the exact supplier offer behind the canonical price", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /currentPriceOfferId/);
+  assert.match(publish, /const currentCanonicalPrice = currentPriceRows\[0\]/);
+  assert.match(publish, /const price = currentCanonicalPrice && currentPriceOffer/);
+  assert.match(publish, /allOffers\.find\(\(candidateOffer\) => String\(candidateOffer\.id\) === currentPriceOfferId\)/);
+  assert.doesNotMatch(publish, /const rawOffer = offer \?\? allOffers\[0\]/);
+  assert.doesNotMatch(publish, /price\?\.supplier_offer_id \?\? currentPriceRows\[0\]/);
+});
+
+test("storefront sync reads back real BASE and Shopify prices before reporting success", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /TracerStorefrontPriceReadback/);
+  assert.match(publish, /fetchBaseItemsSnapshot\(\{ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES \}\)/);
+  assert.match(publish, /storefront_price_readback_mismatch:/);
+  assert.match(publish, /storefront_price_readback_failed:/);
+  assert.match(publish, /status: "error",[\s\S]*?last_error: mismatch/);
+  assert.match(publish, /actual !== item\.expectedPrice/);
+});
+
+test("price reconciliation disables unverified listings once without starving stale price sync", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(route, /unverifiedVariantIds/);
+  assert.match(route, /last_synced_at,last_error/);
+  assert.match(route, /row\.status === "published" && unverifiedVariantIds\.has\(variantId\)/);
+  assert.match(route, /startsWith\("supplier_offer_not_fulfillable:"\)/);
+  assert.match(route, /synced\.processed \?\? synced\.published/);
+  assert.match(publish, /supplierEvidenceUnverified/);
+  assert.match(publish, /supplier_offer_not_fulfillable:/);
+  assert.match(publish, /shopify_unpublish_failed:/);
+  assert.match(publish, /staleListings\.unpublished\+\+/);
+});
+
+test("storefront reconciliation also syncs updated Japanese product copy", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(route, /commerce_products!inner\(updated_at\)/);
+  assert.match(route, /productUpdatedAtByVariant/);
+  assert.match(route, /contentNeedsSync/);
+});
+
+
+test("storefront reconciliation prioritizes stale prices and recently changed Japanese copy without unverified-listing churn", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(route, /recentCopyCutoff/);
+  assert.match(route, /contentNeedsSync/);
+  assert.match(route, /row\.status === "published" && unverifiedVariantIds\.has\(variantId\)/);
+  assert.match(route, /startsWith\("supplier_offer_not_fulfillable:"\)/);
+  assert.match(route, /const priority =/);
 });
