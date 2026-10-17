@@ -559,7 +559,7 @@ test("CJ transient stock or freight lookup failures do not overwrite previously 
 test("scheduled CJ discovery only retries errored variants missing Shopify publication", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /requestedProductIds/);
-  assert.match(importer, /candidates = \[\.\.\.retryCandidates, \.\.\.newCandidates/);
+  assert.match(importer, /candidates = \[\.\.\.evidenceRetryCandidates, \.\.\.missingPublicationRetries/);
   assert.match(importer, /\.eq\("source_status", "error"\)/);
   assert.match(importer, /shopifyVariantIds\.has\(String\(offer\.variant_id\)\)/);
   assert.match(importer, /retryVariantIds/);
@@ -608,7 +608,7 @@ test("CJ catalog importer prioritizes unseen parent products and scans bounded e
   assert.match(importer, /from\("commerce_products"\)\.select\("source_key"\)\.like\("source_key", "cj:%"\)/);
   assert.match(importer, /Prefer never-imported CJ parents/);
   assert.match(importer, /while \(newCandidates\.length < Math\.max\(0, limit - retryCandidates\.length\) && scanPage <= page \+ 2\)/);
-  assert.ok(importer.includes("candidates = [...retryCandidates, ...newCandidates.slice(0, Math.max(0, limit - retryCandidates.length))]"));
+  assert.ok(importer.includes("candidates = [...evidenceRetryCandidates, ...missingPublicationRetries, ...newCandidates.slice(0, discoverySlots)]"));
   assert.match(importer, /shopifyVariantIds = new Set/);
   assert.match(importer, /retryVariantIds\?\.length/);
   assert.match(importer, /searchParams\.get\("limit"\) \|\| 3/);
