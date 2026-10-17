@@ -1,0 +1,110 @@
+name: TRACER Detailed Channel Reconciliation (Read Only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tracer-detailed-channel-reconciliation
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Read production BASE, Shopify and TRACER mapping evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://tracer-pied-alpha.vercel.app"
+          mkdir -p audit-results
+
+          get_oidc_token() {
+            curl --fail-with-body --silent --show-error --max-time 20 \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+
+          call_get() {
+            local path="$1" output="$2" label="$3"
+            local token code
+            token="$(get_oidc_token)"
+            code="$(curl --silent --show-error --max-time 300 -o "$output" -w "%{http_code}" \
+              -H "Authorization: Bearer ${token}" "${BASE}${path}")"
+            echo "=== ${label}: HTTP ${code} ==="
+            [[ "$code" == "200" || "$code" == "207" ]] || { cat "$output"; return 1; }
+          }
+
+          call_get "/api/channels/base/diagnostics" "audit-results/base-diagnostics.json" "BASE mapping diagnostics"
+
+          token="$(get_oidc_token)"
+          code="$(curl --silent --show-error --max-time 300 -o audit-results/base-identity-dry-run.json -w "%{http_code}" \
+            -X POST -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" \
+            --data '{"apply":false,"repairStaleExternalIds":false,"limit":1000}' \
+            "${BASE}/api/channels/base/identity-repair")"
+          echo "=== BASE identity repair dry-run: HTTP ${code} ==="
+          [[ "$code" == "200" ]] || { cat audit-results/base-identity-dry-run.json; exit 1; }
+
+          call_get "/api/admin/commerce/live-price-audit" "audit-results/live-price-audit.json" "Live price and identity audit"
+          call_get "/api/admin/shopify/reconcile" "audit-results/shopify-reconcile.json" "Shopify publication and mapping reconciliation"
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          def read(name):
+              return json.loads(Path("audit-results", name).read_text(encoding="utf-8"))
+
+          base = read("base-diagnostics.json")
+          dry = read("base-identity-dry-run.json")
+          audit = read("live-price-audit.json")
+          shopify = read("shopify-reconcile.json")
+
+          print("=== BASE SUMMARY ===")
+          for key in ("itemAuditComplete", "visibleItemsReturned", "visibleItemsMatchedToDatabase",
+                      "visibleItemsLinked", "visibleItemsUnlinked", "visibleItemsWithoutDbMapping",
+                      "visibleItemsWithAmbiguousDbMapping", "unmappedVisibleItems"):
+              if key in base:
+                  print(f"{key}: {json.dumps(base[key], ensure_ascii=False, separators=(',', ':'))}")
+
+          print("=== BASE IDENTITY DRY-RUN SUMMARY ===")
+          for key in ("snapshotComplete", "scannedBaseItems", "repairable", "repaired",
+                      "commerceRepairable", "commerceRepaired", "ambiguous", "listingNotFound",
+                      "listingAlreadyLinked", "baseItemAlreadyMapped", "publicationChanged"):
+              if key in dry:
+                  print(f"{key}: {json.dumps(dry[key], ensure_ascii=False, separators=(',', ':'))}")
+          # Row evidence contains external item/listing IDs but no credentials or customer data.
+          print("=== BASE IDENTITY DRY-RUN ROWS ===")
+          for row in dry.get("results", []):
+              print(json.dumps(row, ensure_ascii=False, separators=(',', ':')))
+
+          print("=== LIVE PRICE / IDENTITY DISCREPANCIES (ROW LEVEL) ===")
+          print("summary:", json.dumps(audit.get("summary", {}), ensure_ascii=False, separators=(',', ':')))
+          print("discrepanciesTruncated:", audit.get("discrepanciesTruncated"))
+          for row in audit.get("discrepancies", []):
+              print(json.dumps(row, ensure_ascii=False, separators=(',', ':')))
+
+          print("=== SHOPIFY RECONCILIATION SUMMARY ===")
+          print("ok:", shopify.get("ok"), "complete:", shopify.get("complete"))
+          for key, value in shopify.items():
+              if key not in ("products", "samples", "checks"):
+                  print(f"{key}: {json.dumps(value, ensure_ascii=False, separators=(',', ':'))}")
+          print("=== SHOPIFY MISMATCH SAMPLES ===")
+          for key, rows in (shopify.get("samples") or {}).items():
+              print(key + ":")
+              for row in rows:
+                  print(json.dumps(row, ensure_ascii=False, separators=(',', ':')))
+          PY
+
+      - name: Upload detailed audit evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: tracer-channel-reconciliation-read-only
+          path: audit-results/*.json
+          if-no-files-found: error
+          retention-days: 14
