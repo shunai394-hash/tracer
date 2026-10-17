@@ -569,6 +569,9 @@ test("scheduled CJ discovery only retries errored variants missing Shopify publi
 test("BASE publication retries recover exact created IDs and refuse ambiguous stable SKUs", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /fetchBaseItemsSnapshot\(\{ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES \}\)/);
+  assert.match(publish, /const state = stateByVariant\.get\(candidate\.id\);\s*return Boolean\(state && !state\.external_product_id\);/);
+  assert.match(publish, /if \(!recoveredId && stateByVariant\.has\(candidate\.id\)\)/);
+  assert.match(publish, /base_create_recovery_snapshot_unavailable:/);
   assert.match(publish, /base_create_id_persist_failed:/);
   assert.match(publish, /base_identifier_ambiguous:/);
   assert.match(publish, /base_sku_already_mapped_to_other_variant:/);
