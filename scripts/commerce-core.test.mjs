@@ -941,3 +941,18 @@ test("CJ freight uses the detailed API when required product logistics fields ar
   assert.match(client, /Do not silently convert or interpret CNY fields/);
 });
 
+
+
+test("CJ freight quote misses use a conservative historical reserve while preserving unknown status", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.ok(importer.includes("const shippingCostForPricing = shipping ?? 7.76"));
+  assert.ok(importer.includes("shippingKnown: shipping !== null"));
+  assert.ok(importer.includes("shippingEstimated: shippingWasEstimated"));
+  assert.ok(importer.includes('shippingEstimateSource: shippingWasEstimated ? "cj_historical_p90_570_offers" : null'));
+  const publisher = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  const repricer = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.ok(publisher.includes("offer.raw_data?.shippingEstimated === true"));
+  assert.ok(publisher.includes("preflightRawOfferData.shippingEstimated === true"));
+  assert.ok(repricer.includes("rawData.shippingEstimated === true"));
+  assert.ok(importer.includes("targetMarginRate: 0.5"));
+});
