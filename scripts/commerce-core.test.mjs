@@ -31,7 +31,7 @@ test("storefront publication requires exact supplier identity and evidenced land
   assert.match(publish, /offer\.supplier_product_id && offer\.supplier_variant_id && nativeIdsValid/);
   assert.match(publish, /unitCostKnown/);
   assert.match(publish, /offer\.raw_data\?\.shippingKnown === true/);
-  assert.doesNotMatch(publish, /offer\.tracking_supported === true/);
+  assert.match(publish, /offer\.tracking_supported === true/);
   assert.doesNotMatch(publish, /offer\.source_status === "verified" && nativeIdsValid/);
   assert.match(publish, /const supplierShippingKnown =/);
   assert.match(publish, /const supplierStockKnown =/);
