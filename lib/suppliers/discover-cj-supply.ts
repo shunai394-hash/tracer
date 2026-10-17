@@ -881,6 +881,12 @@ export async function discoverAndCreateCjSupply(
               ship_to: "JP",
               order_method: "cj_api",
               shipping_status: "verified",
+              // These timestamps are written only after the live stock and
+              // Japan-freight calls above returned usable values. Without
+              // them the verification queue cannot distinguish fresh evidence
+              // from legacy rows that were incorrectly marked verified.
+              shipping_checked_at: now,
+              inventory_checked_at: now,
               api_available: isCJLiveOrderPathReady(),
               verification_status: isCJLiveOrderPathReady() ? "verified" : "unverified",
               identity_method: "supply_discovered",
