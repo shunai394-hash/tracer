@@ -909,7 +909,8 @@ test("publisher selects the latest canonical price calculation before matching i
 test("unpublish safety checks the exact supplier offer behind the canonical price", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /currentPriceOfferId/);
-  assert.match(publish, /const currentCanonicalPrice = currentPriceRows\[0\]/);
+  assert.match(publish, /const eligiblePriceOfferPair = currentPriceRows[\\s\\S]*?\\.find\\(\\(\\{ price: candidatePrice, offer: candidateOffer \\}\\) => Boolean\\(/, "select an eligible exact supplier offer with its price");
+  assert.match(publish, /const currentCanonicalPrice = eligiblePriceOfferPair\\?\\.price/);
   assert.match(publish, /const price = currentCanonicalPrice && currentPriceOffer/);
   assert.match(publish, /allOffers\.find\(\(candidateOffer\) => String\(candidateOffer\.id\) === currentPriceOfferId\)/);
   assert.doesNotMatch(publish, /const rawOffer = offer \?\? allOffers\[0\]/);
