@@ -310,20 +310,15 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
             detail: String(product.description_ja || title) + "\n\n仕入先の在庫・日本向け送料を確認中のため、現在購入できません。",
             price: fallbackPrice,
             stock: 0,
-            visible: false,
+            // Keep the catalog item visible; zero stock prevents purchase until supplier evidence recovers.
+            visible: true,
           });
         } else {
           const productId = toShopifyGid("Product", String(currentState.external_product_id));
           if (!productId) throw new Error("shopify_product_id_missing");
-          const updated = await shopifyGraphQL<{
-            productUpdate: { product: { id: string; status: string } | null; userErrors: Array<{ message: string }> };
-          }>(
-            "mutation TracerHideUnfulfillable($input: ProductUpdateInput!) { productUpdate(product: $input) { product { id status } userErrors { message } } }",
-            { input: { id: productId, status: "DRAFT" } },
-          );
-          if (updated.productUpdate.userErrors.length || !updated.productUpdate.product) {
-            throw new Error("shopify_unpublish_failed:" + (updated.productUpdate.userErrors.map((x) => x.message).join("; ") || "product_missing"));
-          }
+          // Keep the catalog product published with zero inventory instead of oscillating DRAFT/ACTIVE.
+          const publication = await ensureShopifyProductPublished(productId);
+          if (!publication.published) throw new Error("shopify_publication_not_confirmed");
           if (currentState.external_variant_id) {
             await setShopifyVariantInventory({
               variantId: String(currentState.external_variant_id),
@@ -333,21 +328,23 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           }
         }
         const { error: saveError } = await db.from("channel_listings").update({
-          status: "error",
+          // Catalog presence is separate from purchase readiness: keep the listing mapped and published,
+          // while zero inventory prevents orders until supplier evidence becomes valid again.
+          status: "published",
           last_error: "supplier_offer_not_fulfillable:" + reason,
           last_synced_at: nowIso,
           updated_at: nowIso,
         }).eq("channel", channel).eq("variant_id", candidate.id);
         if (saveError) throw new Error("supplier_offer_disable_state_save_failed:" + saveError.message);
         staleListings.checked++;
-        staleListings.unpublished++;
+        // The catalog item remains published; only its purchasable inventory is disabled.
         stateByVariant.set(candidate.id, {
           ...currentState,
-          status: "error",
+          status: "published",
           last_error: "supplier_offer_not_fulfillable:" + reason,
           last_synced_at: nowIso,
         });
-        results.push({ variantId: candidate.id, ok: true, externalId: String(currentState.external_product_id), action: "unpublished" });
+        results.push({ variantId: candidate.id, ok: true, externalId: String(currentState.external_product_id), action: "published" });
       } catch (error) {
         staleListings.checked++;
         staleListings.failed++;

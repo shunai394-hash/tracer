@@ -137,6 +137,11 @@ test("supplier readiness failures do not automatically unpublish profitable cata
   assert.doesNotMatch(publish, /const staleListings = await unpublishUnfulfillableListings\(channel, db\)/);
   assert.match(publish, /disable external purchase until the exact priced offer has verified stock and Japan-bound freight/);
   assert.match(publish, /supplier_offer_no_longer_fulfillable:/);
+  assert.match(publish, /Keep the catalog item visible; zero stock prevents purchase until supplier evidence recovers/);
+  assert.match(publish, /Keep the catalog product published with zero inventory instead of oscillating DRAFT\/ACTIVE/);
+  assert.match(publish, /status: "published",[\s\S]*?last_error: "supplier_offer_not_fulfillable:"/);
+  const repricer = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(repricer, /String\(row\.last_error \?\? ""\)\.startsWith\("supplier_offer_not_fulfillable:"\)/);
 });
 test("patrol readiness and snapshots include canonical commerce tables after legacy reset", async () => {
   const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
@@ -768,7 +773,7 @@ test("published storefront price reconciliation uses exact variants and bounded 
   assert.match(route, /Number\(row\.selling_price\) !== canonicalPrice/);
   assert.doesNotMatch(route, /needsSync/);
   assert.match(route, /allChannelIds\.slice\(0, 25\)/);
-  assert.match(route, /\.select\("variant_id,channel,selling_price,status,last_synced_at"\)/);
+  assert.match(route, /\.select\("variant_id,channel,selling_price,status,last_synced_at,last_error"\)/);
   assert.match(route, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)/);
   assert.match(publish, /variantIds\?: string\[\]/);
   assert.match(publish, /candidateQuery\.in\("id", \[\.\.\.new Set\(variantIds\)\]\)/);
@@ -814,7 +819,7 @@ test("unpublish safety checks the exact supplier offer behind the canonical pric
   assert.doesNotMatch(publish, /price\?\.supplier_offer_id \?\? currentPriceRows\[0\]/);
 });
 
-test("price reconciliation disables published listings with unverified supplier evidence", async () => {
+test("price reconciliation keeps catalog visible with zero stock for unverified supplier evidence", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(route, /unverifiedVariantIds/);
@@ -822,8 +827,9 @@ test("price reconciliation disables published listings with unverified supplier 
   assert.match(route, /synced\.processed \?\? synced\.published/);
   assert.match(publish, /supplierEvidenceUnverified/);
   assert.match(publish, /supplier_offer_not_fulfillable:/);
-  assert.match(publish, /shopify_unpublish_failed:/);
-  assert.match(publish, /staleListings\.unpublished\+\+/);
+  assert.doesNotMatch(publish, /staleListings\.unpublished\+\+/);
+  assert.match(publish, /ensureShopifyProductPublished\(productId\)/);
+  assert.match(publish, /stock: 0,[\s\S]*?visible: true/);
 });
 
 test("storefront reconciliation also syncs updated Japanese product copy", async () => {
