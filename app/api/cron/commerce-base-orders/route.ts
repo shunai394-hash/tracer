@@ -57,7 +57,7 @@ export async function GET(request: Request) {
     result.scanOffsets = [0, scanOffset];
     const summaries = [...new Map([...recentSummaries, ...rotatingSummaries]
       .filter((summary) => Boolean(summary.unique_key))
-      .map((summary) => [String(summary.unique_key), summary] as const)].values());
+      .map((summary) => [String(summary.unique_key), summary] as const)).values()];
     const nextOffset = rotatingSummaries.length < BASE_ORDER_PAGE_SIZE || scanOffset >= BASE_ORDER_SCAN_MAX_OFFSET
       ? BASE_ORDER_PAGE_SIZE
       : scanOffset + BASE_ORDER_PAGE_SIZE;
