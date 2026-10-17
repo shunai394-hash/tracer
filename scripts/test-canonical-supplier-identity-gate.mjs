@@ -215,3 +215,14 @@ assert.match(targetedReverifyWorkflow, /No Shopify product write, unpublish, sup
 
 assert.match(identityAuditRoute, /shipping_status,configured,ship_to/,
   "native readiness audit must actually select the shipping/configuration/destination fields it evaluates");
+
+
+// The six-listing publication workflow must intersect native CJ readiness with the dry-run gate and use bounded batches.
+const sixListingPublishWorkflow = await readFile(new URL("../.github/workflows/tracer-shopify-publish-six-ready.yml", import.meta.url), "utf8");
+assert.match(sixListingPublishWorkflow, /if: contains\(github\.event\.head_commit\.message, 'publish the six CJ-ready Shopify listings'\)/);
+assert.match(sixListingPublishWorkflow, /row\.get\("eligible"\) is True and item\.get\("eligible"\) is True/);
+assert.match(sixListingPublishWorkflow, /ids = ids\[:6\]/);
+assert.match(sixListingPublishWorkflow, /ids\[i:i\+3\]/, "Shopify product sync must use batches of three to reduce timeout risk");
+assert.match(sixListingPublishWorkflow, /-d "@publish-batch-\$index\.json"/);
+assert.doesNotMatch(sixListingPublishWorkflow, /api\/cron\/commerce-procurement|api\/cron\/shopify-orders/);
+assert.match(sixListingPublishWorkflow, /Block(ed|ed) listings were not sent/);
