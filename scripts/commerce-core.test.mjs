@@ -135,9 +135,9 @@ test("publication and price calculation require fresh verified supplier evidence
   assert.match(core, /supplier_offer_price_not_fulfillable/);
   assert.match(core, /const quantityByOffer = new Map<string, number>\(\)/);
   assert.match(core, /quantityByOffer\.get\(line\.offerId\)/);
-  assert.match(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
-  assert.match(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
-  assert.match(publish, /supplier_offer_missing_or_out_of_stock/);
+  assert.doesNotMatch(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
+  assert.doesNotMatch(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
+  assert.match(publish, /supplier_offer_missing_or_cost_unknown/);
   assert.match(publish, /createBaseItem\(\{[^}]*stock: storefrontStock/s, "first BASE publication must obey the same inventory cap as updates");
   assert.doesNotMatch(publish, /createBaseItem\(\{[^}]*stock: Number\(offer\.inventory\)/s, "raw supplier inventory must never be exposed to the storefront");
   assert.match(publish, /base_created_item_id_save_failed/);
@@ -232,7 +232,7 @@ test("clean commerce cron schedule preserves canonical routes and the required f
 test("both channels use the shared capped storefront quantity and Japanese title validation", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /getStorefrontStockCap, toStorefrontStockQuantity/);
-  assert.match(publish, /toStorefrontStockQuantity\(offer\.inventory, getStorefrontStockCap\(\)\)/);
+  assert.match(publish, /toStorefrontStockQuantity\(Math\.max\(1, Number\(offer\.inventory\) \|\| 0\), getStorefrontStockCap\(\)\)/);
   assert.match(publish, /isJapaneseProductTitle\(title\)/);
   assert.match(publish, /stock: storefrontStock/);
   assert.match(publish, /quantity: storefrontStock/);
