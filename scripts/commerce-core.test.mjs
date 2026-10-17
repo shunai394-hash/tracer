@@ -26,7 +26,7 @@ test("storefront publication requires exact supplier identity and evidenced land
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   const dashboard = await readFile(new URL("../app/products/page.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
-  assert.match(publish, /commerce_prices\.expected_profit", 0/);
+  assert.doesNotMatch(publish, /commerce_prices\.expected_profit", 0/);
   assert.match(publish, /const hasPublishableLinkedOffer = offers\.some/);
   assert.match(publish, /offer\.supplier_product_id && offer\.supplier_variant_id && nativeIdsValid/);
   assert.match(publish, /unitCostKnown/);
