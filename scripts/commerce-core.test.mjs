@@ -38,6 +38,7 @@ test("catalog publication requires positive profit, not current stock or trackin
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
   assert.match(publish, /supplier_offer_missing_or_cost_unknown/);
+  assert.match(publish, /Cover the complete current catalog[\\s\\S]*?\\.limit\\(1000\\)/);
 });
 
 test("Supabase nested relations normalize object, array, and null shapes", () => {
