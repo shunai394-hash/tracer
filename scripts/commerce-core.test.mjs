@@ -22,20 +22,23 @@ test("rejects negative costs", () => {
   assert.throws(() => calculateSellingPrice({ unitCostJpy: -1, shippingCostJpy: 0, feeRate: 0.1 }), /invalid_unitCostJpy/);
 });
 
-test("storefront publication is independent from live supplier purchasing", async () => {
+test("storefront publication is independent from live supplier purchasing verification", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
-  assert.match(publish, /source_status", "verified/);
+  assert.doesNotMatch(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
   assert.match(publish, /expected_profit", 0/);
-  assert.match(publish, /tracking_supported", true/);
+  assert.match(publish, /supplier_product_id\) && Boolean\(x\.supplier_variant_id/);
 });
 
-test("catalog publication is independent of live supplier-ordering capability but still requires a verified profitable offer", async () => {
+test("catalog publication includes linked profitable in-stock offers while procurement keeps stricter verification gates", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
-  assert.match(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
-  assert.match(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
+  assert.doesNotMatch(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
+  assert.doesNotMatch(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
   assert.match(publish, /supplier_offer_missing_or_out_of_stock/);
+  assert.match(core, /offer\.source_status !== "verified"/);
+  assert.match(core, /offer\.tracking_supported !== true/);
 });
 
 test("Supabase nested relations normalize object, array, and null shapes", () => {
@@ -122,7 +125,7 @@ test("product dashboard displays the canonical commerce catalog instead of legac
   assert.match(page, /BASE・Shopify 自動販売カタログ/);
   assert.match(page, /旧Intelligenceテーブルの件数とは分けて表示/);
 });
-test("publication and price calculation require fresh verified supplier evidence", async () => {
+test("procurement and price calculation require fresh verified supplier evidence while storefront publication does not", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(core, /offer\.source_status !== "verified"/);
@@ -134,8 +137,9 @@ test("publication and price calculation require fresh verified supplier evidence
   assert.match(core, /supplier_offer_price_not_fulfillable/);
   assert.match(core, /const quantityByOffer = new Map<string, number>\(\)/);
   assert.match(core, /quantityByOffer\.get\(line\.offerId\)/);
-  assert.match(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
-  assert.match(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
+  assert.doesNotMatch(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
+  assert.doesNotMatch(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
+  assert.match(publish, /hasPublishableLinkedOffer/);
   assert.match(publish, /supplier_offer_missing_or_out_of_stock/);
   assert.match(publish, /createBaseItem\(\{[^}]*stock: storefrontStock/s, "first BASE publication must obey the same inventory cap as updates");
   assert.doesNotMatch(publish, /createBaseItem\(\{[^}]*stock: Number\(offer\.inventory\)/s, "raw supplier inventory must never be exposed to the storefront");
