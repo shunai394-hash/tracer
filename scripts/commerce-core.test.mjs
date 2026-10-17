@@ -134,18 +134,22 @@ test("product dashboard displays the canonical commerce catalog instead of legac
   assert.match(page, /BASE・Shopify 自動販売カタログ/);
   assert.match(page, /旧Intelligenceテーブルの件数とは分けて表示/);
 });
-test("publication and price calculation require fresh verified supplier evidence", async () => {
+test("order intake preserves mapped supplier offers while procurement enforces fresh fulfillment evidence", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
-  assert.match(core, /offer\.source_status !== "verified"/);
+  const worker = await readFile(new URL("../app/api/cron/commerce-procurement/route.ts", import.meta.url), "utf8");
   assert.match(core, /isCanonicalCjNativeId/);
-  assert.match(core, /invalid_cj_native_supplier_ids/);
   assert.match(publish, /isCanonicalCjNativeId/);
-  assert.match(core, /offer\.tracking_supported !== true/);
-  assert.match(core, /supplier_offer_verification_stale/);
-  assert.match(core, /supplier_offer_price_not_fulfillable/);
-  assert.match(core, /const quantityByOffer = new Map<string, number>\(\)/);
-  assert.match(core, /quantityByOffer\.get\(line\.offerId\)/);
+  assert.match(core, /order_line_supplier_offer_missing/);
+  assert.match(core, /order_line_supplier_identity_missing/);
+  assert.doesNotMatch(core, /offer\.source_status !== "verified"/);
+  assert.doesNotMatch(core, /offer\.tracking_supported !== true/);
+  assert.doesNotMatch(core, /supplier_offer_verification_stale/);
+  assert.doesNotMatch(core, /supplier_offer_price_not_fulfillable/);
+  assert.match(worker, /offer\.source_status !== "verified"/);
+  assert.match(worker, /offer\.tracking_supported !== true/);
+  assert.match(worker, /supplier_offer_not_fresh_and_fulfillable/);
+  assert.match(worker, /exact_supplier_offer_price_missing_or_unprofitable/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
   assert.match(publish, /supplier_offer_missing_or_cost_unknown/);
@@ -156,11 +160,14 @@ test("publication and price calculation require fresh verified supplier evidence
   assert.doesNotMatch(publish, /createBaseItem\(\{[^}]*visible: true/s, "new BASE items must stay hidden until image setup succeeds");
 });
 
-test("paid-order supplier preflight runs before writing the order record", async () => {
+test("paid-order intake validates exact offer identity before writing but leaves live fulfillment checks to procurement", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
-  const preflight = core.indexOf("Validate every supplier offer before persisting a paid order");
+  const preflight = core.indexOf("Intake only rejects a broken/mismatched identity");
   const orderWrite = core.indexOf('from("commerce_orders").upsert');
-  assert.ok(preflight >= 0 && orderWrite > preflight, "invalid or stale supplier offers must be rejected before order persistence");
+  assert.ok(preflight >= 0 && orderWrite > preflight, "the exact supplier offer must be resolved before order persistence");
+  assert.doesNotMatch(core.slice(preflight, orderWrite), /source_status|tracking_supported|last_checked_at|expected_profit|inventory|ship_to/);
+  assert.match(core, /supplier_offer_id: line\.offerId/);
+  assert.match(core, /status: "pending"/);
 });
 
 test("supplier importer never substitutes a search-result product ID for unresolved variant identity", async () => {
