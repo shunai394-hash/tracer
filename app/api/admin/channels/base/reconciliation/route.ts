@@ -189,7 +189,63 @@ export async function POST(request: Request) {
         base_publication_status: channelRow.status == null ? null : String(channelRow.status),
       };
     });
-    const reconciliationListings = [...listings, ...commerceListingRows];
+    // Legacy shop_listings may already carry an exact supplier variant ID even
+    // when no channel_listings row exists. Resolve canonical prices only through
+    // a unique exact supplier_offers variant ID -> commerce_prices supplier_offer_id
+    // chain; never infer a price from title, selling price, or a non-unique variant.
+    const legacySupplierVariantIds = [...new Set(listings
+      .map((row) => String(row.supplier_variant_id ?? "").trim())
+      .filter(Boolean))];
+    const legacyOffers = await readIn(
+      legacySupplierVariantIds,
+      (ids) => db.from("supplier_offers")
+        .select("id,variant_id,supplier_code,supplier_variant_id")
+        .in("supplier_variant_id", ids),
+      "TRACER_LEGACY_SUPPLIER_OFFER_READ_FAILED",
+    );
+    const legacyOfferIds = [...new Set(legacyOffers.map((row) => String(row.id ?? "")).filter(Boolean))];
+    const legacyPrices = (await readIn(
+      legacyOfferIds,
+      (ids) => db.from("commerce_prices")
+        .select("variant_id,supplier_offer_id,selling_price,expected_profit,calculated_at")
+        .in("supplier_offer_id", ids),
+      "TRACER_LEGACY_COMMERCE_PRICE_READ_FAILED",
+    )).sort((a, b) => Date.parse(String(b.calculated_at ?? "")) - Date.parse(String(a.calculated_at ?? "")));
+    const legacyPriceByOffer = new Map<string, Record<string, unknown>>();
+    for (const price of legacyPrices) {
+      const offerId = String(price.supplier_offer_id ?? "");
+      if (offerId && !legacyPriceByOffer.has(offerId)) legacyPriceByOffer.set(offerId, price);
+    }
+    const legacyOffersByVariant = new Map<string, Array<Record<string, unknown>>>();
+    for (const offer of legacyOffers) {
+      const variantId = String(offer.supplier_variant_id ?? "");
+      if (!variantId) continue;
+      const group = legacyOffersByVariant.get(variantId) ?? [];
+      group.push(offer);
+      legacyOffersByVariant.set(variantId, group);
+    }
+    const canonicalEnrichedListings = listings.map((listing) => {
+      if (listing.canonical_selling_price != null) return listing;
+      const variantId = String(listing.supplier_variant_id ?? "").trim();
+      if (!variantId) return listing;
+      const candidates = (legacyOffersByVariant.get(variantId) ?? [])
+        .filter((offer) => legacyPriceByOffer.has(String(offer.id ?? "")));
+      const listingSupplier = String(listing.supplier_name ?? "").trim().toLocaleLowerCase("en-US");
+      const supplierMatched = listingSupplier
+        ? candidates.filter((offer) => String(offer.supplier_code ?? "").trim().toLocaleLowerCase("en-US") === listingSupplier)
+        : [];
+      const exactCandidates = supplierMatched.length === 1 ? supplierMatched : candidates;
+      if (exactCandidates.length !== 1) return listing;
+      const offer = exactCandidates[0];
+      const price = legacyPriceByOffer.get(String(offer.id ?? ""));
+      if (!price || String(price.variant_id ?? "") !== String(offer.variant_id ?? "")) return listing;
+      return {
+        ...listing,
+        canonical_selling_price: price.selling_price as number | string | null ?? null,
+        canonical_expected_profit: price.expected_profit as number | string | null ?? null,
+      };
+    });
+    const reconciliationListings = [...canonicalEnrichedListings, ...commerceListingRows];
 
     const identifierKey = (value: unknown): string => String(value ?? "").normalize("NFKC").trim().toLocaleLowerCase("en-US");
     const bySupplierIdentifier = new Map<string, ListingRow[]>();
