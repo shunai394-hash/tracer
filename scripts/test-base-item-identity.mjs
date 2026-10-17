@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { classifyBaseIdentifier, decideCommerceSkuLink } from "../lib/channels/base-item-identity.ts";
+import { classifyBaseMappingCounts } from "../lib/channels/base-mapping-audit.ts";
 import { nextShopifyVendorPage, SHOPIFY_VENDOR_SCAN_MAX_PAGES } from "../lib/shopify/catalog-scan.ts";
 
 const baseReadbackRoute = readFileSync(new URL("../app/api/cron/base-channel-external-readback/route.ts", import.meta.url), "utf8");
 assert.ok(baseReadbackRoute.includes(String.raw`if (!/^\d+$/.test(baseItemId))`), "BASE readback must accept numeric external item IDs");
 assert.equal(/^\d+$/.test("123456789"), true);
 assert.equal(/^\d+$/.test("123abc"), false);
+
+assert.deepEqual(classifyBaseMappingCounts(0, 0), { kind: "none" });
+assert.deepEqual(classifyBaseMappingCounts(1, 0), { kind: "legacy" });
+assert.deepEqual(classifyBaseMappingCounts(2, 0), { kind: "ambiguous" });
+assert.deepEqual(classifyBaseMappingCounts(1, 1), { kind: "commerce" }, "one active commerce mapping must take precedence over a migrated legacy row");
+assert.deepEqual(classifyBaseMappingCounts(3, 1), { kind: "commerce" }, "legacy migration leftovers must not shadow a unique active commerce mapping");
+assert.deepEqual(classifyBaseMappingCounts(0, 2), { kind: "ambiguous" }, "duplicate active commerce mappings remain ambiguous");
 
 assert.deepEqual(classifyBaseIdentifier(null), { kind: "missing" });
 assert.deepEqual(classifyBaseIdentifier("  "), { kind: "missing" });
