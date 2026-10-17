@@ -310,10 +310,21 @@ async function loadCanonicalCommerceListings(): Promise<ShopListing[]> {
     const rawProduct = variant.commerce_products;
     const product = (Array.isArray(rawProduct) ? rawProduct[0] : rawProduct) as Record<string, unknown> | null;
     if (!product || product.active !== true) continue;
-    const price = validPrices.find((item) => String(item.variant_id) === variantId && String(item.supplier_offer_id));
-    if (!price) continue;
-    const offer = validOffers.find((item) => String(item.id) === String(price.supplier_offer_id) && String(item.variant_id) === variantId);
-    if (!offer || Number(offer.inventory) <= 0) continue;
+    // Match price and offer as a pair. An unrelated/stale price row must not
+    // hide a variant that has another profitable price linked to a verified offer.
+    const linkedPairs = validPrices
+      .filter((item) => String(item.variant_id) === variantId && Number(item.selling_price) > 0 && Number(item.expected_profit) > 0)
+      .map((item) => ({ price: item, offer: validOffers.find((candidate) =>
+        String(candidate.id) === String(item.supplier_offer_id) && String(candidate.variant_id) === variantId &&
+        Boolean(candidate.supplier_product_id) && Boolean(candidate.supplier_variant_id) &&
+        Number(candidate.inventory) > 0 && candidate.source_status === "verified" &&
+        candidate.tracking_supported === true && candidate.ship_to === "JP"
+      ) }))
+      .filter((pair): pair is { price: Record<string, unknown>; offer: Record<string, unknown> } => Boolean(pair.offer))
+      .sort((a, b) => Number(b.price.expected_profit) - Number(a.price.expected_profit));
+    const selectedPair = linkedPairs[0];
+    if (!selectedPair) continue;
+    const { price, offer } = selectedPair;
     const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
     if (!Number.isFinite(checkedAt) || Date.now() - checkedAt > 24 * 60 * 60_000 || checkedAt > Date.now() + 5 * 60_000) continue;
     const title = String(variant.title_ja || product.title_ja || "").trim();
