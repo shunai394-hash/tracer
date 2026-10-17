@@ -207,7 +207,7 @@ test("Shopify paid-order polling uses the canonical commerce order and procureme
 });
 test("BASE order ingestion requires the true order_item_id for tracking reflection", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
-  assert.match(route, /base_order_item_id_missing_for_fulfillment_mapping/);
+  assert.match(route, /base_order_line_identity_missing/);
   assert.match(route, /externalLineId: String\(item\.order_item_id\)/);
   assert.doesNotMatch(route, /externalLineId: String\(item\.order_item_id \?\? item\.item_id\)/);
 });
