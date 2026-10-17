@@ -545,3 +545,26 @@ test("clean commerce CJ importer respects the shared daily-points cooldown befor
   assert.ok(importer.indexOf("isCJQuotaCircuitActive(quotaMetadata)") < importer.indexOf("searchCJProducts(query"),
     "the quota circuit must stop CJ calls before search begins");
 });
+
+
+test("clean commerce CJ importer prices linked offers even when cached stock is zero or unknown", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /if \(shipping !== null && shipping >= 0\)\s*\{\s*await recalculatePrice/);
+  assert.doesNotMatch(importer, /if \(stock !== null &&/);
+});
+
+
+test("existing supplier offers are repriced from database evidence without consuming supplier API quota", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  const schedule = await readFile(new URL("../vercel.json", import.meta.url), "utf8");
+  assert.match(route, /from\("supplier_offers"\)/);
+  assert.match(route, /recalculatePrice\(/);
+  assert.match(route, /sourceApiCalls: 0/);
+  assert.match(route, /aNeedsPrice/);
+  assert.match(route, /rawData\.shippingKnown === true/);
+  assert.match(route, /skippedUnknownShipping/);
+  assert.match(route, /price\.calculated_at[^\n]*offer\.updated_at/);
+  const cronEntries = JSON.parse(schedule).crons;
+  assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/commerce-reprice-existing" && entry.schedule === "*/10 * * * *"));
+  assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/patrol-ai" && entry.schedule === "*/5 * * * *"));
+});
