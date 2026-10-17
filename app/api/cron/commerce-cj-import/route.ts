@@ -506,6 +506,7 @@ export async function GET(request: Request) {
             for (const startCountryCode of freightOrigins) {
               try {
                 const quote = await calculateCJFreight(variant.vid, {
+                  productId: exactVariant.productId,
                   startCountryCode,
                   endCountryCode: "JP",
                   quantity: 1,
