@@ -133,7 +133,9 @@ export async function GET(request: Request) {
   // Process ten variants per channel; the cron is staggered from publication and order-poll jobs.
   // Query all states so a failed sync remains eligible for retry on the next cron run.
   const { data: listings, error: listingReadError } = await db.from("channel_listings")
-    .select("variant_id,channel,selling_price,status")
+    .select("variant_id,channel,selling_price,status,last_synced_at")
+    // Rotate through stale rows; otherwise a fixed first batch can starve the remaining backlog.
+    .order("last_synced_at", { ascending: true, nullsFirst: true })
     .limit(5000);
   if (listingReadError) {
     result.storefrontSyncErrors.push({ channel: "lookup", reason: listingReadError.message.slice(0, 180) });
