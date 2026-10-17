@@ -613,19 +613,20 @@ test("failed supplier procurement retries only when no supplier order id exists"
   assert.match(worker, /retryCount >= 3/);
 });
 
-test("CJ import records exclusion reasons without treating a missing freight quote as a verified offer", async () => {
+test("CJ import keeps unknown stock excluded and labels missing freight as an estimate", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /cj_import_exclusion/);
-  assert.match(importer, /japan_freight_unconfirmed/);
+  assert.match(importer, /shippingKnown: shipping !== null/);
+  assert.match(importer, /shippingEstimated: shippingWasEstimated/);
   assert.match(importer, /japanese_title_unavailable/);
 });
 
-test("CJ transient stock or freight lookup failures do not overwrite previously verified supplier offers", async () => {
+test("CJ unknown stock still skips before supplier offer upsert", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  const guard = importer.indexOf("if (stock === null || shipping === null)");
+  const guard = importer.indexOf("if (stock === null)");
   const save = importer.indexOf("const saved = await upsertSupplierOffer", guard);
-  assert.ok(guard >= 0 && save > guard, "unknown live evidence must skip before supplier offer upsert");
-  assert.match(importer, /Do not overwrite it with inventory=0, shipping=0, or sourceStatus=error on transient API failures/);
+  assert.ok(guard >= 0 && save > guard, "unknown stock must skip before supplier offer upsert");
+  assert.match(importer, /shippingCostForPricing = shipping \\?\\? 7\\.76/);
 });
 
 
