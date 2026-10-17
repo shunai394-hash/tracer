@@ -984,12 +984,8 @@ test("bounded recovery refuses publication unless final price reconciliation is 
 
 test("CJ stale-listing evidence retry accepts canonical numeric IDs", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  assert.ok(
-    importer.includes(String.raw`if (!/^\\d{10,22}$/.test(parentId) || !/^\\d{10,25}$/.test(variantId)) continue;`) === false,
-    "stale-listing retry must not use a double-escaped digit class",
-  );
-  assert.ok(
-    importer.includes(String.raw`if (!/^\\d{10,22}$/.test(parentId) || !/^\\d{10,25}$/.test(variantId)) continue;`) === false,
-    "guard check placeholder",
-  );
+  const badGuard = 'if (!/^\\\\d{10,22}$/.test(parentId) || !/^\\\\d{10,25}$/.test(variantId)) continue;';
+  const goodGuard = 'if (!/^\\d{10,22}$/.test(parentId) || !/^\\d{10,25}$/.test(variantId)) continue;';
+  assert.ok(!importer.includes(badGuard), "must not use a double-escaped digit class");
+  assert.ok(importer.includes(goodGuard), "must validate canonical numeric CJ IDs");
 });
