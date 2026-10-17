@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
 import { probeBaseReadOnly, isBaseConfigured, BASE_ITEMS_MAX_PAGES } from "@/lib/channels/base";
 import { classifyBaseIdentifier, decideCommerceSkuLink } from "@/lib/channels/base-item-identity";
+import { classifyBaseMappingCounts } from "@/lib/channels/base-mapping-audit";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -147,19 +148,23 @@ export async function GET(request: Request) {
             const key = String(entry.itemId);
             const legacyMatches = rowsByBaseId.get(key) ?? [];
             const commerceMatches = commerceByBaseId.get(key) ?? [];
-            const totalMatches = legacyMatches.length + commerceMatches.length;
-            if (totalMatches === 0) {
+            const mapping = classifyBaseMappingCounts(legacyMatches.length, commerceMatches.length);
+            if (mapping.kind === "none") {
               mappingAudit.visibleItemsWithoutDbMapping += 1;
               unmappedEntries.push(entry);
               continue;
             }
             mappingAudit.visibleItemsMatchedToDatabase += 1;
-            if (totalMatches > 1) {
+            if (mapping.kind === "ambiguous") {
               mappingAudit.visibleItemsWithAmbiguousDbMapping += 1;
               continue;
             }
 
-            if (commerceMatches.length === 1) {
+            // channel_listings is the active commerce source of truth. A single
+            // exact commerce mapping takes precedence over retired shop_listings
+            // rows left behind by migration; only duplicate candidates within
+            // the authoritative table (or legacy-only candidates) are ambiguous.
+            if (mapping.kind === "commerce") {
               mappingAudit.visibleItemsManagedByCommerce += 1;
               const listing = commerceMatches[0];
               const variant = variantById.get(listing.variantId);
