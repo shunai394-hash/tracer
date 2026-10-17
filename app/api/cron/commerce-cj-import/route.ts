@@ -438,7 +438,7 @@ export async function GET(request: Request) {
       for (const listing of cjListingRows ?? []) {
         const parentId = String(listing.supplier_product_id ?? "").trim();
         const variantId = String(listing.supplier_variant_id ?? "").trim();
-        if (!/^\\d{10,22}$/.test(parentId) || !/^\\d{10,25}$/.test(variantId)) continue;
+        if (!/^\d{10,22}$/.test(parentId) || !/^\d{10,25}$/.test(variantId)) continue;
         const shippingAt = typeof listing.shipping_checked_at === "string" ? Date.parse(listing.shipping_checked_at) : Number.NaN;
         const inventoryAt = typeof listing.inventory_checked_at === "string" ? Date.parse(listing.inventory_checked_at) : Number.NaN;
         const nextAt = typeof listing.next_verification_at === "string" ? Date.parse(listing.next_verification_at) : Number.NaN;
