@@ -38,8 +38,11 @@ assert.match(shopifySync, /return listingEligible/, "legacy hidden rows must be 
 assert.match(shopifySync, /const baseSelect = "[^"]*shopify_sync_status,shopify_sync_error"/, "the main sync query must load the persisted unpublish-verification marker so already-hidden listings are not repeatedly mutated");
 assert.match(unlinkedRoute, /shopify_sync_status\.eq\.blocked,shopify_sync_error\.neq\.shopify_unpublished_verified/, "unlinked reconciliation must include stale blocked Shopify rows");
 assert.match(unlinkedRoute, /row\.shopify_sync_error !== "shopify_unpublished_verified"/, "unlinked reconciliation must retry unverified external unpublication");
-assert.match(shopifySync, /getLiveShopifyStock\(alreadySyncedVariantIds\)/, "already-synced Shopify products must be checked against actual live inventory before deciding they need no work");
-assert.match(shopifySync, /liveQuantity !== toStorefrontStockQuantity\(row\.inventory, getStorefrontStockCap\(\)\)/, "inventory drift above or below the shared storefront cap must trigger bounded reconciliation");
+assert.match(shopifySync, /getLiveShopifyVariantState\(alreadySyncedVariantIds\)/, "already-synced Shopify products must be checked against live inventory, price, and SKU before deciding they need no work");
+assert.match(shopifySync, /liveState\.quantity !== toStorefrontStockQuantity\(row\.inventory, getStorefrontStockCap\(\)\)/, "inventory drift above or below the shared storefront cap must trigger bounded reconciliation");
+assert.match(shopifySync, /liveState\.price !== expectedPrice/, "live Shopify price drift must trigger canonical price synchronization");
+assert.match(shopifySync, /liveState\.sku !== sku\(row\)/, "live Shopify SKU drift must trigger the exact legacy listing SKU synchronization");
+assert.match(shopifySync, /price\s+sku/, "live Shopify state query must fetch both price and SKU");
 assert.match(store, /shopify_live_stock_variant_ids_empty/, "empty live-stock request must not use cached stock");
 assert.doesNotMatch(store, /shopify_live_stock_response_incomplete/, "one missing variant must not suppress every healthy storefront listing");
 assert.match(store, /Missing\/retired variants fail closed per listing below/);
