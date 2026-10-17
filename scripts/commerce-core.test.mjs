@@ -206,6 +206,8 @@ test("Shopify paid-order polling uses the canonical commerce order and procureme
   assert.match(sync, /from\("commerce_orders"\)/);
   assert.match(sync, /from\("channel_listings"\)/);
   assert.match(sync, /from\("commerce_prices"\)/);
+  assert.match(sync, /listingBySku\.get\(String\(item\.variant\?\.sku \?\? ""\)\.trim\(\)\)/);
+  assert.match(sync, /shopify_sku_mapping_ambiguous/);
   assert.match(sync, /ingestPaidOrder\(/);
   assert.match(sync, /canonicalShopifyId\(order\.id, "Order"\)/);
   assert.match(sync, /canonicalShopifyId\(item\.id, "LineItem"\)/);
