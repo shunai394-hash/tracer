@@ -18,6 +18,7 @@ const procurement = read("app/api/cron/commerce-procurement/route.ts");
 const cleanSandboxRoute = read("app/api/cron/commerce-cj-sandbox-test/route.ts");
 const commerceImporter = read("app/api/cron/commerce-cj-import/route.ts");
 const commercePublish = read("lib/commerce/publish.ts");
+assert.match(commercePublish, /const mappedExternalVariantId = channel === "base" \? externalProductId : externalVariantId/, "BASE item IDs must be stored as canonical sellable-unit IDs because BASE has no separate variant resource");
 
 assert.match(adapter, /name: "cj"/);
 assert.match(commerceImporter, /ヴィンテージPUレザーハンドバッグ/);
@@ -27,6 +28,9 @@ assert.match(commerceImporter, /ゴールドカラーのレディースハンド
 assert.match(commerceImporter, /ダブルバング風ヘアアクセサリー/);
 assert.match(commerceImporter, /幾何学模様のメタルヘアクリップ/);
 assert.match(commerceImporter, /パール・ラインストーン付きメタルヘアクリップ/);
+assert.match(commerceImporter, /誕生日パーティー用ラインストーン文字カチューシャ/, "specific supplier title must replace the generic hair-accessory category");
+assert.match(commerceImporter, /木製ハンドルのフェイスケアブラシ/, "specific beauty-tool titles must preserve product type and construction");
+assert.match(commerceImporter, /折りたたみ式シリコン製メイクブラシ洗浄パッド/, "specific accessory titles must be available to the importer");
 assert.match(commerceImporter, /スタイル/);
 assert.match(commerceImporter, /japan_compliance_unverified_disinfection_cabinet/);
 assert.match(commerceImporter, /const queryOptions = \[\s*"women handbag", "beauty tools", "hair accessories women",\s*\]/, "CJ discovery must prioritize bags, beauty tools and hair accessories");
