@@ -147,7 +147,7 @@ const sandboxOnceWorkflow = read(".github/workflows/tracer-cj-sandbox-once.yml")
 assert.ok(sandboxOnceWorkflow.includes('cron: "1 0 16 10 *"'), "one-time CJ sandbox lifecycle proof must run in the reserved quota window");
 assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule), ["*/10 * * * *"], "clean supplier discovery must run every 10 minutes");
 assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/cj-identity-reverify"), [], "legacy identity re-verification must not query the cleared legacy supplier table");
-assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/supply-first"), [], "legacy supply-first discovery must not run beside the clean importer");
+assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/supply-first").map((job) => job.schedule), ["3,18,33,48 * * * *"], "dedicated supply-first discovery must run on its own staggered schedule");
 
 const cjReverifySource = read("lib/suppliers/reverify-cj-identity.ts");
 assert.match(cjReverifySource, /verification_error === "storefront_stock_cap_deploy_pending"/, "only the explicit storefront stock-cap hold may be recovered");
