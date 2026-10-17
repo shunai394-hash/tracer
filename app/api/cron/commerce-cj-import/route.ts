@@ -637,7 +637,12 @@ export async function GET(request: Request) {
             }
             // Price the mapped offer even at zero stock; listing availability and live procurement are separate.
             // The paid-order procurement path independently rechecks inventory before supplier submission.
-            if (shipping !== null && shipping >= 0) {
+            // Always price with the explicit live quote when available, otherwise
+            // use the documented historical P90 reserve (7.76 USD) already stored
+            // on this offer. rawData.shippingKnown remains false and the publisher
+            // must preserve the estimate label; unknown freight is never presented
+            // as a confirmed quote.
+            if (Number.isFinite(shippingCostForPricing) && shippingCostForPricing >= 0) {
               await recalculatePrice({ variantId: saved.variantId, offerId: saved.offerId, exchangeRateToJpy: fx.rate, feeRate: 0.1, targetMarginRate: 0.5 });
               stats.priced++;
             } else {
