@@ -654,6 +654,26 @@ test("CJ unknown stock still skips before supplier offer upsert", async () => {
 });
 
 
+test("CJ import reports stale supplier-evidence retry queue progress", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  for (const field of [
+    "verifiedOffersStaleEligible",
+    "publicationBlockedVariantsSeen",
+    "evidenceRetryVariantsQueued",
+    "evidenceRetryDeferredByBackoff",
+    "staleLegacyListingVariantsQueued",
+    "finalEvidenceParentCount",
+    "missingPublicationRetriesQueued",
+    "newDiscoveryCandidatesQueued",
+    "finalCandidateCount",
+  ]) {
+    assert.match(importer, new RegExp(field + ": 0"));
+  }
+  assert.ok(importer.includes("stats.verifiedOffersStaleEligible = staleVerifiedForEvidence.length;"));
+  assert.ok(importer.includes("stats.evidenceRetryVariantsQueued = evidenceRetryCount;"));
+  assert.ok(importer.includes("stats.finalCandidateCount = candidates.length;"));
+});
+
 test("scheduled CJ discovery only retries errored variants missing Shopify publication", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /requestedProductIds/);
