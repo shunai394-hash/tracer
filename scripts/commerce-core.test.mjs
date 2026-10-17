@@ -219,6 +219,25 @@ test("supplier importer never substitutes a search-result product ID for unresol
   assert.match(importer, /const queryOptions = \[\s*"women handbag", "beauty tools", "hair accessories women",\s*\]/, "CJ discovery must prioritize women's bags, beauty tools and hair accessories");
 });
 
+test("CJ supplier source titles produce specific Japanese names and descriptions", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  const copy = await readFile(new URL("../lib/commerce/japanese-copy.mjs", import.meta.url), "utf8");
+  for (const title of [
+    "ダイヤモンド風アルファベット付きパーティーヘアバンド",
+    "柄デザインのレディース斜めがけバッグ",
+    "木製ハンドルのフェイスケアブラシ",
+    "ペーパー素材の編み込みハンドバッグ",
+  ]) assert.ok(importer.includes(title), "missing specific Japanese title: " + title);
+  for (const description of [
+    "イベントや記念日のヘアアレンジ",
+    "コーディネートのアクセントになるレディース斜めがけバッグ",
+    "木製ハンドルを採用したフェイスケア用ブラシ",
+    "ペーパー素材を編み込んだデザインのハンドバッグ",
+  ]) assert.ok(copy.includes(description), "missing grounded Japanese description: " + description);
+  assert.match(importer, /metadata: \{ sourceTitle: canonicalDetail\.title, sourceProductType: canonicalDetail\.productType \?\? null \}/);
+  assert.match(importer, /sourceVariantKey: exactVariant\.vid/);
+});
+
 test("procurement revalidates the exact fresh profitable offer and preserves a created supplier order ID", async () => {
   const worker = await readFile(new URL("../app/api/cron/commerce-procurement/route.ts", import.meta.url), "utf8");
   assert.match(worker, /supplier_offer_not_fresh_and_fulfillable/);
