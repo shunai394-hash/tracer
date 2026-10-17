@@ -12,13 +12,13 @@ import { promoteShopListingToNewfind } from "@/lib/integration/newfind";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-// Keep supplier discovery bounded so the same invocation has time to finish
-// opportunity scoring and channel sync. The previous batch of 40 routinely
-// crossed its 150-second deadline after ~15 slow CJ candidates and ended as a
-// failed run with no publication attempt. Ten total candidates leave a margin
-// for the 5-minute route's later stages while still refreshing seeded supply.
-const DISCOVERY_BUDGET_MS = 105_000;
-const DISCOVERY_BATCH_SIZE = 10;
+// Keep discovery deliberately small: the latest production run processed only
+// six candidates yet took ~152 seconds and hit its discovery deadline. A smaller
+// batch gives opportunity scoring and channel sync room within Vercel's 5-minute
+// route limit. The cursor advances between runs, so smaller batches still make
+// progress without letting one slow CJ response poison the entire invocation.
+const DISCOVERY_BUDGET_MS = 75_000;
+const DISCOVERY_BATCH_SIZE = 4;
 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
