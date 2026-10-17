@@ -727,7 +727,13 @@ export async function calculateCJFreight(
 
   if (prices.length === 0) {
     const data = payload.data;
-    const rowsForDiagnostics = collectCJFreightRows(data);
+    const rowsForDiagnostics: unknown[] = Array.isArray(data)
+      ? data
+      : data && typeof data === "object"
+        ? Object.values(data as Record<string, unknown>).flatMap((value) =>
+            Array.isArray(value) ? value : [value],
+          )
+        : [];
     const firstRow = rowsForDiagnostics.find(
       (row): row is Record<string, unknown> =>
         Boolean(row) && typeof row === "object" && !Array.isArray(row),
