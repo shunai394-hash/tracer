@@ -531,7 +531,7 @@ test("BASE reconciliation recognizes commerce-native supplier SKUs without auto-
   assert.match(reconciliation, /canonicalSellingPrice/);
   assert.match(reconciliation, /exactBaseIdMatches: exactIdListings\.map[\s\S]*?canonicalSellingPrice/);
   assert.match(reconciliation, /const canonicalEnrichedListings = listings\.map/);
-  assert.match(reconciliation, /const reconciliationListings = \\[\.\.\.canonicalEnrichedListings, \.\.\.commerceListingRows\]/);
+  assert.ok(reconciliation.includes("const reconciliationListings = [...canonicalEnrichedListings, ...commerceListingRows]"));
   assert.match(reconciliation, /addSupplierIdentifier\(evidence\?\.sku, listing\)/);
   assert.match(reconciliation, /Exact-title candidates are unverified suggestions only/);
   assert.doesNotMatch(reconciliation, /\.update\(|\.insert\(|\.upsert\(/);
