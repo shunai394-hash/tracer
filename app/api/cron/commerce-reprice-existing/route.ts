@@ -169,22 +169,46 @@ export async function GET(request: Request) {
     // Select only rows that are still stale. Including every repriced variant here
     // re-synced already-correct listings and starved the real backlog on each cron run.
     for (const channel of ["base", "shopify"] as const) {
-      const allChannelIds = [...new Set((listings ?? [])
-        .filter((row) => {
-          if (row.channel !== channel) return false;
-          const variantId = String(row.variant_id);
-          const canonicalPrice = canonicalPriceByVariant.get(variantId);
-          const productUpdatedAt = productUpdatedAtByVariant.get(variantId);
-          const contentNeedsSync = Boolean(productUpdatedAt) &&
-            (!row.last_synced_at || Date.parse(productUpdatedAt!) > Date.parse(String(row.last_synced_at)));
-          if (canonicalPrice !== undefined && row.status === "published" && unverifiedVariantIds.has(variantId)) return true;
-          if (canonicalPrice !== undefined && unverifiedVariantIds.has(variantId)) return false;
-          return canonicalPrice !== undefined &&
-            (Number(row.selling_price) !== canonicalPrice || row.status !== "published" || contentNeedsSync);
+      const recentCopyCutoff = Date.now() - 24 * 60 * 60_000;
+      const eligibleRows = (listings ?? []).filter((row) => {
+        if (row.channel !== channel) return false;
+        const variantId = String(row.variant_id);
+        const canonicalPrice = canonicalPriceByVariant.get(variantId);
+        const productUpdatedAt = productUpdatedAtByVariant.get(variantId);
+        const contentNeedsSync = Boolean(productUpdatedAt) &&
+          (!row.last_synced_at || Date.parse(productUpdatedAt!) > Date.parse(String(row.last_synced_at)));
+        if (canonicalPrice !== undefined && row.status === "published" && unverifiedVariantIds.has(variantId)) return true;
+        if (canonicalPrice !== undefined && unverifiedVariantIds.has(variantId)) return false;
+        return canonicalPrice !== undefined &&
+          (Number(row.selling_price) !== canonicalPrice || row.status !== "published" || contentNeedsSync);
+      });
+      const priority = (row: (typeof eligibleRows)[number]) => {
+        const variantId = String(row.variant_id);
+        if (row.status === "published" && unverifiedVariantIds.has(variantId)) return 0;
+        const productUpdatedAt = productUpdatedAtByVariant.get(variantId);
+        const contentNeedsSync = Boolean(productUpdatedAt) &&
+          (!row.last_synced_at || Date.parse(productUpdatedAt!) > Date.parse(String(row.last_synced_at)));
+        if (contentNeedsSync && productUpdatedAt && Date.parse(productUpdatedAt) >= recentCopyCutoff) return 1;
+        if (row.status !== "published") return 2;
+        if (Number(row.selling_price) !== canonicalPriceByVariant.get(variantId)) return 3;
+        return 4;
+      };
+      const allChannelIds = [...new Set(eligibleRows
+        .sort((a, b) => {
+          const priorityDiff = priority(a) - priority(b);
+          if (priorityDiff !== 0) return priorityDiff;
+          if (priority(a) === 1) {
+            const aUpdated = Date.parse(String(productUpdatedAtByVariant.get(String(a.variant_id)) ?? ""));
+            const bUpdated = Date.parse(String(productUpdatedAtByVariant.get(String(b.variant_id)) ?? ""));
+            if (aUpdated !== bUpdated) return bUpdated - aUpdated;
+          }
+          const aTime = a.last_synced_at ? Date.parse(String(a.last_synced_at)) : 0;
+          const bTime = b.last_synced_at ? Date.parse(String(b.last_synced_at)) : 0;
+          return aTime - bTime;
         })
         .map((row) => String(row.variant_id)))];
       // Keep each channel update small enough to leave headroom under the 300s function timeout.
-      // Ten variants per channel is bounded and retries rotate through the oldest stale listings.
+      // Twenty-five variants per channel is bounded; safety and fresh copy outrank stale-price backlog.
       const batchIds = allChannelIds.slice(0, 25);
       if (batchIds.length === 0) continue;
       try {
