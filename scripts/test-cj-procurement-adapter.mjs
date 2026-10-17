@@ -114,6 +114,11 @@ assert.match(commerceImporter, /\.eq\("supplier_product_id", supplierProductId\)
 assert.match(commerceImporter, /\.eq\("supplier_variant_id", exactVariant\.vid\)/, "fresh evidence must match the exact CJ variant ID");
 assert.match(commerceImporter, /shipping_checked_at: checkedAt/);
 assert.match(commerceImporter, /inventory_checked_at: checkedAt/);
+assert.match(commerceImporter, /api_available: !complianceBlockReason/, "exact live-stock + Japan-freight evidence must update API capability state only when compliance permits");
+assert.match(commerceImporter, /tracking_available: !complianceBlockReason/, "tracking capability must follow the proven CJ sandbox lifecycle rather than remain permanently false on new exact-ID rows");
+assert.match(commerceImporter, /orderable: !complianceBlockReason/, "exact native variant rows with positive live stock and confirmed Japan freight must become orderable unless compliance blocks them");
+assert.match(commerceImporter, /live_order_path_proof: "cj_sandbox_lifecycle"/, "order-path capability evidence must identify the successful sandbox proof");
+assert.match(commerceImporter, /\.eq\("supplier_variant_id", exactVariant\.vid\)/, "orderability propagation must remain scoped to the exact supplier variant");
 
 const identityReverify = read("lib/suppliers/reverify-cj-identity.ts");
 assert.match(identityReverify, /shipping_checked_at,inventory,inventory_checked_at/, "identity reverify must read persisted freshness timestamps");
