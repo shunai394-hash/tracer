@@ -1,0 +1,146 @@
+name: TRACER publish six CJ-ready Shopify listings
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/tracer-shopify-publish-six-ready.yml"
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
+jobs:
+  publish:
+    # One-shot guard: only run for the reviewed publication-recovery merge commit.
+    if: contains(github.event.head_commit.message, 'publish the six CJ-ready Shopify listings')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout commit history for deployment ancestry check
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait for this production deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for i in $(seq 1 20); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected-or-ancestor=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              echo "Production contains the reviewed publication-recovery commit."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Production is not at this commit or a descendant; refusing product writes."
+          exit 1
+
+      - name: Preview, publish only eligible rows, and reconcile
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token() {
+            curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          AUTH="$(token)"
+          audit_code=$(curl -sS -o identity.json -w "%{http_code}" --max-time 60 -H "Authorization: Bearer $AUTH" "$BASE/api/admin/shopify/identity-audit" || echo 000)
+          preview_code=$(curl -sS -o sync-preview.json -w "%{http_code}" --max-time 90 -H "Authorization: Bearer $AUTH" -H "Content-Type: application/json" -X POST "$BASE/api/admin/shopify/sync" -d '{"dryRun":true,"limit":1000}' || echo 000)
+          echo "native CJ audit HTTP $audit_code; Shopify dry-run HTTP $preview_code"
+
+          python3 - <<'PY' > batches.json
+          import json
+          def read(path):
+              try:
+                  return json.load(open(path))
+              except Exception:
+                  return {}
+          audit = read("identity.json")
+          preview = read("sync-preview.json")
+          readiness = audit.get("nativeCjPublicationReadiness") or {}
+          previews = {row.get("listingId"): row for row in (preview.get("rows") or [])}
+          ids = []
+          for row in readiness.get("rows") or []:
+              item = previews.get(row.get("shopListingId")) or {}
+              if row.get("eligible") is True and item.get("eligible") is True:
+                  listing_id = row.get("shopListingId")
+                  if isinstance(listing_id, str) and listing_id and listing_id not in ids:
+                      ids.append(listing_id)
+          ids = ids[:6]
+          batches = [{"listingIds": ids[i:i+3], "limit": len(ids[i:i+3])} for i in range(0, len(ids), 3)]
+          print(json.dumps({"eligibleListingCount": len(ids), "batches": batches}))
+          PY
+          echo "eligible listings selected for publication:"
+          python3 -c 'import json; d=json.load(open("batches.json")); print(json.dumps({"eligibleListingCount":d["eligibleListingCount"],"batchSizes":[len(b["listingIds"]) for b in d["batches"]]},indent=1))'
+
+          python3 - <<'PY'
+          import json
+          d=json.load(open("batches.json"))
+          batches=d.get("batches") or []
+          for index,batch in enumerate(batches):
+              json.dump(batch,open(f"publish-batch-{index}.json","w"))
+          for index in range(len(batches),2):
+              json.dump({"listingIds":[],"limit":0},open(f"publish-batch-{index}.json","w"))
+          PY
+          for index in 0 1; do
+            count=$(python3 -c "import json; print(len(json.load(open('publish-batch-$index.json')).get('listingIds') or []))")
+            if [ "$count" -gt 0 ]; then
+              code=$(curl -sS -o "publish-result-$index.json" -w "%{http_code}" --max-time 105 -H "Authorization: Bearer $AUTH" -H "Content-Type: application/json" -X POST "$BASE/api/admin/shopify/sync" -d "@publish-batch-$index.json" || echo 000)
+            else
+              printf '%s\n' '{"ok":true,"attempted":0,"synced":0,"skipped":"no_eligible_rows_in_batch"}' > "publish-result-$index.json"
+              code=200
+            fi
+            echo "Shopify publish batch $index HTTP $code"
+            python3 - "$index" <<'PY'
+          import json,sys
+          i=sys.argv[1]
+          try:
+              d=json.load(open(f"publish-result-{i}.json"))
+          except Exception:
+              d={"ok":False,"error":"response_unavailable"}
+          print(json.dumps({k:d.get(k) for k in ("ok","attempted","synced","failed","listingIds","error","skipped")},ensure_ascii=False,indent=1))
+          PY
+          done
+
+          reconcile_code=$(curl -sS -o reconcile.json -w "%{http_code}" --max-time 60 -H "Authorization: Bearer $AUTH" "$BASE/api/admin/shopify/reconcile" || echo 000)
+          echo "Shopify post-sync reconciliation HTTP $reconcile_code"
+
+          python3 - <<'PY' > report.md
+          import json, os
+          def read(path):
+              try:
+                  return json.load(open(path))
+              except Exception:
+                  return {"ok":False,"error":"response_unavailable"}
+          audit=read("identity.json")
+          preview=read("sync-preview.json")
+          batches=read("batches.json")
+          results=[read("publish-result-0.json"),read("publish-result-1.json")]
+          reconcile=read("reconcile.json")
+          report={
+              "productionCommit":os.environ.get("GITHUB_SHA"),
+              "nativeCjPublicationReadiness":audit.get("nativeCjPublicationReadiness"),
+              "shopifyDryRun":{"ok":preview.get("ok"),"considered":preview.get("considered"),"eligible":preview.get("eligible"),"reasonCounts":preview.get("reasonCounts")},
+              "eligibleListingCount":batches.get("eligibleListingCount"),
+              "publishResults":[{k:r.get(k) for k in ("ok","attempted","synced","failed","listingIds","error","skipped")} for r in results],
+              "postSyncReconciliation":{k:reconcile.get(k) for k in ("ok","shopify","db","error","samples")},
+              "writePolicy":"Only listings passing both the live native-CJ evidence audit and the catalog dry-run were sent to the Shopify sync endpoint, in batches of three. Blocked listings were not sent. No supplier order or payment was created."
+          }
+          print("# TRACER Shopify six-listing publication recovery")
+          print()
+          print(json.dumps(report,ensure_ascii=False,indent=2))
+          PY
+          gh issue create --repo shunai394-hash/tracer --title "[TRACER Shopify six-listing sync] Run $GITHUB_RUN_ID" --body-file report.md
