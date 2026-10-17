@@ -72,7 +72,7 @@ check("delivery is gated on the receiver flag, claims by compare-and-set and che
   assert.match(source, /loadCanonicalCommerceListings\(\)/);
 });
 check("patrol runs the commerce delivery within its time budget", () => {
-  assert.match(patrol, /promoteCommerceListingsToNewfind\(\{ limit: 2, deadlineAt: startedAt \+ 285_000 \}\)/);
+  assert.match(patrol, /promoteCommerceListingsToNewfind\(\{ limit: 5, deadlineAt: startedAt \+ 285_000 \}\)/);
   assert.match(patrol, /if \(Date\.now\(\) < startedAt \+ 250_000\) \{/);
 });
 check("status reports both NEWFIND ledgers without writing", () => {
