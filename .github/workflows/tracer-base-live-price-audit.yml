@@ -1,7 +1,6 @@
 name: TRACER BASE Live Price Audit (Read Only)
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
@@ -69,7 +68,7 @@ jobs:
             pages: snapshot.pages, itemCount: snapshot.itemCount, visibleCount: visible,
             hiddenCount: hidden, unknownVisibilityCount: snapshot.itemCount - visible - hidden,
             missingOrInvalidPriceCount: missingPrice, duplicateItemIds: false,
-            artifacts: ["base-live-price-snapshot.json", "base-live-prices.csv"]
+            artifacts: ["base-live-price-snapshot.json", "base-live-prices.csv", "base-live-reconciliation.json", "base-live-price-reconciliation.csv"]
           };
           // Wait for the matching production deployment before reconciling against its database.
           let deploymentReady = false;
