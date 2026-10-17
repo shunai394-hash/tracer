@@ -119,6 +119,7 @@ export async function GET(request: Request) {
     storefrontSync: { base: 0, shopify: 0 },
     storefrontSyncRemaining: { base: 0, shopify: 0 },
     storefrontSyncErrors: [] as Array<{ channel: string; reason: string }>,
+    storefrontSyncFailureDetails: [] as Array<{ channel: string; variantId: string; reason: string }>,
   };
   for (const offer of candidates) {
     try {
@@ -216,6 +217,13 @@ export async function GET(request: Request) {
         const processed = Number(synced.processed ?? synced.published);
         result.storefrontSync[channel] += processed;
         result.storefrontSyncRemaining[channel] = Math.max(0, allChannelIds.length - processed);
+        for (const failure of (synced.results ?? []).filter((item) => !item.ok).slice(0, 10)) {
+          result.storefrontSyncFailureDetails.push({
+            channel,
+            variantId: String(failure.variantId),
+            reason: String(failure.error ?? "storefront_sync_failed").slice(0, 180),
+          });
+        }
         if (synced.failed > 0 || synced.considered < batchIds.length) {
           result.storefrontSyncErrors.push({
             channel,
@@ -245,6 +253,7 @@ export async function GET(request: Request) {
     storefrontSyncRemaining: result.storefrontSyncRemaining,
     storefrontSyncErrorCount: result.storefrontSyncErrors.length,
     storefrontSyncErrors: result.storefrontSyncErrors.map(({ channel, reason }) => ({ channel, reason })),
+    storefrontSyncFailureDetails: result.storefrontSyncFailureDetails.slice(0, 20),
     repriceErrorCount: result.errors.length,
     repriceErrors: result.errors.slice(0, 5).map(({ offerId, reason }) => ({ offerId, reason })),
   });
