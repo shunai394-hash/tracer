@@ -67,7 +67,7 @@ jobs:
               python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
           call_publish() {
-            local path="$1" out="$2" allow_partial="\${3:-false}" t code
+            local path="$1" out="$2" allow_partial="${3:-false}" t code
             t="$(token)" || { echo "OIDC token failed for $path"; return 1; }
             code="$(curl -sS -o "$out" -w "%{http_code}" --max-time 300 \
               -H "Authorization: Bearer $t" "$BASE/$path" || true)"
@@ -90,7 +90,7 @@ jobs:
           # Accept HTTP 207 during intermediate passes, then require the final pass to report a drained backlog.
           # No supplier discovery or paid-order procurement is performed by this workflow.
           for pass in 1 2 3 4 5 6; do
-            call_publish "api/cron/commerce-reprice-existing?limit=100" "commerce-reprice-\${pass}.json" true || failed=1
+            call_publish "api/cron/commerce-reprice-existing?limit=100" "commerce-reprice-${pass}.json" true || failed=1
           done
           python3 - <<'PY'
           import json,sys
@@ -109,7 +109,7 @@ jobs:
           PY
           [[ "$?" == "0" ]] || failed=1
           for pass in 1 2 3; do
-            call_publish "api/cron/commerce-publish-all?limit=5&onlyUnpublished=true" "commerce-publish-\${pass}.json" || failed=1
+            call_publish "api/cron/commerce-publish-all?limit=5&onlyUnpublished=true" "commerce-publish-${pass}.json" || failed=1
           done
           python3 <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json, pathlib
