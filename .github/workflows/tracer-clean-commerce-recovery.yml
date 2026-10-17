@@ -2,15 +2,13 @@ name: TRACER clean-commerce bounded recovery
 
 # TRACER_CLEAN_COMMERCE_RECOVERY: bounded production recovery requested 2026-10-16; wait for exact production commit before supplier import and gated channel publication.
 # Recovery re-trigger after CJ identity parser, bounded batch, and Shopify inventory idempotency fixes (2026-10-17).
-# Run the bounded publication recovery after the timeout fix is deployed.
+# Publish both storefronts through one shared commerce entry point.
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-# Isolate recovery runs by commit. A shared group allows a newer ordinary push
-# to cancel the queued run before its job-level commit-message guard can skip it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
@@ -57,7 +55,7 @@ jobs:
           done
           [[ "$ready" == "1" ]] || { echo "Production did not serve this commit within 6 minutes."; exit 1; }
 
-      - name: Publish verified commerce backlog in bounded batches
+      - name: Publish both storefronts through the unified commerce runner
         shell: bash
         run: |
           set -uo pipefail
@@ -85,16 +83,11 @@ jobs:
             [[ "$code" == "200" ]]
           }
           failed=0
-          # CJ's daily API points are exhausted. Publish only already verified,
-          # fresh, profitable Japanese listings; supplier import remains separate.
-          # Each pass is deliberately small: the previous 100-item requests timed out
-          # at the platform 300-second limit. Three sequential passes make progress
-          # without overwhelming BASE/Shopify APIs or the stale-listing audit.
+          # Replaces the previous paired calls to commerce-publish-base?limit=10&onlyUnpublished=true and commerce-publish-shopify?limit=10&onlyUnpublished=true with one runner.
+          # Supplier discovery and paid-order procurement remain separate.
+          # This runner only publishes existing linked, profitable catalog items.
           for pass in 1 2 3; do
-            call_publish "api/cron/commerce-publish-base?limit=10&onlyUnpublished=true" "base-publish-${pass}.json" || failed=1
-            call_publish "api/cron/commerce-publish-shopify?limit=10&onlyUnpublished=true" "shopify-publish-${pass}.json" || failed=1
+            call_publish "api/cron/commerce-publish-all?limit=5&onlyUnpublished=true" "commerce-publish-${pass}.json" || failed=1
           done
-          # No supplier purchase or customer order is created by this workflow.
-          # Paid-order procurement remains separate and requires payment_status=paid.
-          echo "Bounded publication passes finished; inspect each JSON response for published/failed counts."
+          echo "Unified bounded publication passes finished; inspect each JSON response for published/failed counts."
           exit "$failed"
