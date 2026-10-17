@@ -921,6 +921,7 @@ test("Shopify live reconciliation exports full row-level IDs, SKUs, prices, and 
 
 test("CJ freight uses the detailed API when required product logistics fields are available", async () => {
   const client = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(client, /freightCalculateTip/);
   assert.match(client, /productProEnSet/);
   assert.match(client, /variant\.variantWeight/);
