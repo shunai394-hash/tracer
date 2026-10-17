@@ -290,7 +290,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         !preflightShippingKnown ? "japan_freight_unconfirmed" : "supplier_stock_unconfirmed";
       const nowIso = new Date().toISOString();
       try {
-        const fallbackPrice = Math.max(1, Math.round(Number(asRelationRows(candidate.commerce_prices)[0]?.selling_price) || Number(currentState.selling_price) || 1));
+        const fallbackPrice = Math.max(1, Math.round(Number(asRelationRows(candidate.commerce_prices)[0]?.selling_price) || 1));
         if (channel === "base") {
           await editBaseItem({
             itemId: String(currentState.external_product_id),
