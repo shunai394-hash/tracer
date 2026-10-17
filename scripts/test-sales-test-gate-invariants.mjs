@@ -32,6 +32,9 @@ assert.equal(isPublishableCatalogTitle("トレンド・seeded_dueアイテム"),
 assert.equal(isPublishableCatalogTitle("Aroma Filter"), true);
 assert.match(supplySelector, /generic_non_merchandisable_title/);
 assert.match(supplySelector, /profitCalculable: profit\.calculable/, "estimated CJ freight is included in landed-profit calculation");
+assert.match(supplySelector, /shippingEstimated \? null : sellingPrice/, "estimated shipping forces landed-price recalculation");
+assert.doesNotMatch(supplySelector, /if \(shippingEstimated\) reasons\.push\(/, "an estimated allowance must not itself reject a candidate; profitability is evaluated after allowance");
+assert.match(supplySelector, /shippingCost: pricingShippingCost/, "the configured allowance must reach the shipping gate for profitability evaluation");
 assert.match(supplySelector, /shippingUnknown: profit\.shippingUnknown/);
 assert.match(marketSelector, /requireDomesticShipping: true/);
 assert.match(supplySelector, /rejectedCount: rejected\.length/);
