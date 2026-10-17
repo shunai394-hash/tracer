@@ -750,7 +750,34 @@ export async function calculateCJFreight(
     })
     .filter((value): value is number => value !== null);
 
-  return prices.length > 0 ? Math.min(...prices) : null;
+  if (prices.length === 0) {
+    const data = payload.data;
+    const rowsForDiagnostics: unknown[] = Array.isArray(data)
+      ? data
+      : data && typeof data === "object"
+        ? Object.values(data as Record<string, unknown>).flatMap((value) =>
+            Array.isArray(value) ? value : [value],
+          )
+        : [];
+    const firstRow = rowsForDiagnostics.find(
+      (row): row is Record<string, unknown> =>
+        Boolean(row) && typeof row === "object" && !Array.isArray(row),
+    );
+    // Never log the full CJ response or credentials. Key names and response shape
+    // are enough to identify API schema changes without exposing product payloads.
+    console.warn("[CJ FREIGHT QUOTE UNRESOLVED]", {
+      result: payload.result ?? null,
+      message: typeof payload.message === "string" ? payload.message.slice(0, 120) : null,
+      dataType: Array.isArray(data) ? "array" : data === null ? "null" : typeof data,
+      dataKeys: data && typeof data === "object" && !Array.isArray(data)
+        ? Object.keys(data as Record<string, unknown>).slice(0, 20)
+        : [],
+      rowKeys: firstRow ? Object.keys(firstRow).slice(0, 30) : [],
+      rows: rowsForDiagnostics.length,
+    });
+    return null;
+  }
+  return Math.min(...prices);
 }
 
 export async function searchCJProducts(
