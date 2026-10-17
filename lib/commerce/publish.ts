@@ -93,12 +93,23 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           offer.source_status === "verified" && nativeIdsValid && offer.tracking_supported === true &&
           offer.ship_to === "JP" && fresh && Number(offer.inventory) > 0);
       };
-      if (offers.some(offerIsValid)) {
-        // Rotate healthy rows to the back of the next bounded scan.
+      const hasPublishableLinkedOffer = offers.some((offer) => {
+        const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id);
+        return Boolean(
+          offer.supplier_product_id && offer.supplier_variant_id &&
+          offer.ship_to === "JP" && Number(offer.inventory) > 0 &&
+          price && price.currency === "JPY" &&
+          Number(price.selling_price) > 0 && Number(price.expected_profit) > 0
+        );
+      });
+      if (offers.some(offerIsValid) || hasPublishableLinkedOffer) {
+        // Storefront publication is based on a linked offer and positive economics.
+        // Supplier verification/tracking freshness gates procurement, not listing visibility.
         const checkedAt = new Date().toISOString();
         const { error: markCheckedError } = await db.from("channel_listings").update({
           last_synced_at: checkedAt,
           updated_at: checkedAt,
+          ...(hasPublishableLinkedOffer ? { last_error: null } : {}),
         }).eq("id", listing.id);
         if (markCheckedError) throw new Error("stale_listing_check_timestamp_failed:" + markCheckedError.message);
         continue;
@@ -189,8 +200,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   const { data, error } = await db.from("commerce_variants")
     .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,currency,selling_price,expected_profit,fee_amount,margin_rate)")
     .eq("commerce_products.active", true).eq("supplier_offers.ship_to", "JP")
-    .eq("supplier_offers.source_status", "verified").eq("supplier_offers.tracking_supported", true)
-    .gte("supplier_offers.last_checked_at", new Date(Date.now() - 24 * 60 * 60_000).toISOString())
+    // Publish linked, profitable in-stock products even when supplier verification
+    // or tracking evidence needs refresh. The paid-order procurement gate remains strict.
     .gt("supplier_offers.inventory", 0).eq("commerce_prices.currency", "JPY")
     .gt("commerce_prices.expected_profit", 0).order("updated_at", { ascending: false })
     .limit(500);
@@ -243,7 +254,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
     const validOffers = asRelationRows(candidate.supplier_offers)
-      .filter((x) => x.ship_to === "JP" && x.source_status === "verified" && x.tracking_supported === true && (x.supplier_code !== "cj" || (isCanonicalCjNativeId(x.supplier_product_id) && isCanonicalCjNativeId(x.supplier_variant_id))) && typeof x.last_checked_at === "string" && Date.parse(x.last_checked_at) <= Date.now() + 5 * 60_000 && Date.now() - Date.parse(x.last_checked_at) <= 24 * 60 * 60_000 && Number(x.inventory) > 0 && Number(x.unit_cost) >= 0 && Number(x.shipping_cost) >= 0);
+      .filter((x) => x.ship_to === "JP" && Boolean(x.supplier_product_id) && Boolean(x.supplier_variant_id) && (x.supplier_code !== "cj" || (isCanonicalCjNativeId(x.supplier_product_id) && isCanonicalCjNativeId(x.supplier_variant_id))) && Number(x.inventory) > 0 && Number(x.unit_cost) >= 0 && Number(x.shipping_cost) >= 0);
     const validOfferIds = new Set(validOffers.map((x) => x.id));
     const price = asRelationRows(candidate.commerce_prices)
       .filter((x) => validOfferIds.has(x.supplier_offer_id) && x.currency === "JPY" && Number(x.selling_price) > 0 && Number(x.expected_profit) > 0)
