@@ -71,6 +71,10 @@ assert.equal(isPublishableCatalogTitle(nativeHeadbandTitle), true, "verified nat
 assert.equal(isPublishableCatalogDescription(localizeProductDescription(nativeHeadbandSource)), true, "verified native CJ product must have a specific Japanese description");
 assert.equal(womenProductPriority({ title: nativeHeadbandSource }).isWomenFocused, true);
 assert.equal(isPublishableCatalogTitle("トレンド・beautyアイテム"), false);
+assert.equal(localizeProductTitle("Self-Care Journal Gift Set (Suit Beige XINGX)"), "セルフケアノート ギフトセット");
+assert.equal(localizeProductTitle("Creative Trend Linen Plan New Self-care Notebook (Notebook Beige)"), "リネン調 セルフケアノート");
+assert.equal(isPublishableCatalogTitle(localizeProductTitle("Self-Care Journal Gift Set (Suit Beige XINGX)")), true);
+assert.equal(isPublishableCatalogTitle(localizeProductTitle("Creative Trend Linen Plan New Self-care Notebook (Notebook Beige)")), true);
 assert.equal(isPublishableCatalogTitle("アフリカンアート柄 シャワーカーテン"), true);
 const candidateTitles = [
   ["aroma diffuser", "50ml Aromatherapy Machine Timed Automatic Spraying Fragrance Household Perfume Machine Toilet Deodorizing Air Purifying Diffuser", "タイマー付き 自動噴霧アロマディフューザー"],
