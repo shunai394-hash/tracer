@@ -1,14 +1,10 @@
 name: TRACER Publish CJ Products Now
 
-# Bounded recovery cycle. The application endpoints enforce supplier quota
-# cooldowns and publication eligibility; this workflow must remain manually
-# runnable and must not be tied to a single calendar date.
+# Manual recovery only. Scheduled discovery is owned by the canonical
+# /api/cron/commerce-cj-import route every 10 minutes; patrol-ai remains on
+# its five-minute schedule. Avoid a second legacy discovery schedule.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "5 0 * * *"
-  push:
-    branches: [main]
 
 permissions:
   id-token: write
@@ -20,7 +16,6 @@ concurrency:
 
 jobs:
   publish-cj-now:
-    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[publish-cj-now]')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

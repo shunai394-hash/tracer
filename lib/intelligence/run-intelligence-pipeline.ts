@@ -328,12 +328,10 @@ export async function runIntelligencePipeline(options: {
   pipelineTimedOut = false;
   const db = createSupabaseAdminClient();
 
-  // Live CJ catalog discovery runs in /api/cron/supply-first on its own
-  // four-times-daily 4-minute budget. Calling it again from every five-minute
-  // patrol repeatedly hit the 18-second sub-budget, produced deadlineReached
-  // with no candidates, and competed with the same supplier API quota.
-  // Keep the stage explicit for pipeline observability; this patrol consumes
-  // already-persisted verified supplier rows below.
+  // Live CJ catalog discovery is owned by /api/cron/commerce-cj-import,
+  // scheduled every 10 minutes. Do not duplicate live CJ requests from this
+  // five-minute patrol: it consumes persisted supplier offers, recalculates
+  // economics, and continues the BASE/Shopify/NEWFIND delivery work below.
   const supplyFirstStep: PipelineStepResult = {
     name: "supply_first",
     ok: true,
@@ -341,8 +339,8 @@ export async function runIntelligencePipeline(options: {
     retryable: false,
     result: {
       skipped: true,
-      reason: "dedicated_supply_first_cron_owns_live_cj_discovery",
-      discoveryCron: "/api/cron/supply-first",
+      reason: "dedicated_commerce_cj_import_cron_owns_live_cj_discovery",
+      discoveryCron: "/api/cron/commerce-cj-import",
     },
   };
   steps.push(supplyFirstStep);
@@ -391,13 +389,13 @@ export async function runIntelligencePipeline(options: {
   steps.push(await runStep("demand_analyze", () => persistDemandIntelligence(), { budgetMs: 25_000 }));
   // Do not run the legacy one-candidate CJ research call in the critical patrol.
   // It repeatedly consumes its 18s budget and stops downstream publication. The
-  // bounded supply-first catalog route handles fresh CJ discovery independently.
+  // scheduled commerce-cj-import route handles fresh CJ discovery independently.
 
 
 
 
-  // Supply-first is the primary product-discovery path. Run it before marketplace
-  // scraping and broad intelligence so a short patrol deadline cannot starve CJ discovery.
+  // Supplier discovery is handled by commerce-cj-import. This patrol prioritizes
+  // persisted products for intelligence and publication without duplicate CJ calls.
   // Rotate over every product_intelligence page. The previous fixed
   // "% 7" rotation only ever reached the first 350 rows (ordered by
   // product_id), so most products never got opportunity_intelligence.
@@ -599,7 +597,7 @@ export async function runIntelligencePipeline(options: {
     result: {
       skipped: true,
       reason: "marketplace_rankings_not_used_for_supplier_procurement",
-      discoveryCron: "/api/cron/supply-first",
+      discoveryCron: "/api/cron/commerce-cj-import",
     },
   });
 

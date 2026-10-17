@@ -9,6 +9,6 @@ assert.ok(!pipeline.includes("persistMarketplaceBestsellers"), "patrol must not 
 assert.ok(pipeline.includes("name: \"sales_test_select\"") && pipeline.includes("marketplace_sourcing_disabled_supplier_native_only"), "marketplace sales-test selection must be explicitly skipped");
 assert.ok(gate.includes("stage.ok && stage.skipped !== true && stage.retryable !== true"), "skipped source rows must never feed the sales gate");
 assert.ok(pipeline.includes('reason: "marketplace_rankings_not_used_for_supplier_procurement"'), "ranking observations must not be treated as supplier procurement inputs");
-assert.ok(pipeline.includes('discoveryCron: "/api/cron/supply-first"'), "supplier procurement must be routed to the dedicated supply-first cron");
+assert.ok(pipeline.includes('discoveryCron: "/api/cron/commerce-cj-import"'), "supplier procurement must be routed to the canonical commerce CJ importer");
 assert.doesNotMatch(pipeline, /investigateDropshipForBestsellers/, "legacy ranking-driven supplier investigation must not run in the intelligence pipeline");
 console.log("Marketplace canonical evidence policy: 8 assertions passed");
