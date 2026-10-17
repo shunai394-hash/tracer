@@ -640,6 +640,8 @@ test("existing supplier offers are repriced from database evidence without consu
   assert.match(route, /from\("supplier_offers"\)/);
   assert.match(route, /recalculatePrice\(/);
   assert.match(route, /sourceApiCalls: 0/);
+  assert.match(route, /\.order\("calculated_at", \{ ascending: false, nullsFirst: false \}\)/, "canonical price rows must be loaded newest first");
+  assert.match(route, /if \(priceByVariant\.has\(variantId\)\) continue/, "older price history must not overwrite the newest price for a variant");
   assert.match(route, /aNeedsPrice/);
   assert.match(route, /rawData\.shippingKnown === true/);
   assert.match(route, /skippedUnknownShipping/);

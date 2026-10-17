@@ -30,7 +30,9 @@ export async function GET(request: Request) {
       .order("updated_at", { ascending: true })
       .limit(2000),
     db.from("commerce_products").select("id").eq("active", true).limit(2000),
-    db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit,margin_rate,calculated_at").limit(4000),
+    db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit,margin_rate,calculated_at")
+      .order("calculated_at", { ascending: false, nullsFirst: false })
+      .limit(4000),
   ]);
   if (offersError || productsError || pricesError) {
     return NextResponse.json({
@@ -49,8 +51,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "existing_variant_read_failed", detail: variantsError.message }, { status: 500 });
   }
   const activeVariantIds = new Set((variants ?? []).map((row) => String(row.id)));
-  const priceByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), row]));
-  const canonicalPriceByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), Number(row.selling_price)]));
+  // The query is newest-first. Keep the first row per variant so a later/older
+  // historical price cannot overwrite the canonical current price in either map.
+  const priceByVariant = new Map<string, NonNullable<typeof prices>[number]>();
+  const canonicalPriceByVariant = new Map<string, number>();
+  for (const row of prices ?? []) {
+    const variantId = String(row.variant_id);
+    if (priceByVariant.has(variantId)) continue;
+    priceByVariant.set(variantId, row);
+    canonicalPriceByVariant.set(variantId, Number(row.selling_price));
+  }
   let skippedUnknownShipping = 0;
   const oneOfferPerVariant = new Map<string, NonNullable<typeof offers>[number]>();
   for (const offer of offers ?? []) {
