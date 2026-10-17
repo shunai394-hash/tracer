@@ -170,6 +170,19 @@ export async function GET(request: Request) {
       }
     }
   }
+  const storefrontSyncComplete = result.storefrontSyncRemaining.base === 0 && result.storefrontSyncRemaining.shopify === 0;
   const ok = result.skipped === 0 && result.errors.length === 0 && result.storefrontSyncErrors.length === 0;
-  return NextResponse.json({ ok, ...result, sourceApiCalls: 0, fxRate: usdJpy.rate }, { status: ok ? 200 : 207 });
+  console.info("[TRACER STOREFRONT PRICE RECONCILE]", {
+    generatedAt: new Date().toISOString(),
+    ok,
+    storefrontSyncComplete,
+    considered: result.considered,
+    repriced: result.repriced,
+    skipped: result.skipped,
+    skippedUnknownShipping: result.skippedUnknownShipping,
+    storefrontSync: result.storefrontSync,
+    storefrontSyncRemaining: result.storefrontSyncRemaining,
+    storefrontSyncErrorCount: result.storefrontSyncErrors.length,
+  });
+  return NextResponse.json({ ok, storefrontSyncComplete, ...result, sourceApiCalls: 0, fxRate: usdJpy.rate }, { status: ok ? 200 : 207 });
 }
