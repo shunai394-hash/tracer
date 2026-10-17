@@ -265,9 +265,10 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
         const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 &&
           Date.now() - checkedAt <= 24 * 60 * 60_000;
-        const shippingKnown = Boolean(offer && (
-          (Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0) ||
-          data.shippingKnown === true || data.shippingEstimated === true
+        const shippingKnown = Boolean(offer && data.shippingEstimated !== true && (
+          data.shippingKnown === true ||
+          (data.shippingKnown === undefined && offer.source_status === "verified" &&
+            Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0)
         ));
         const stockKnown = data.stockKnown === true ||
           (data.stockKnown === undefined && offer?.source_status === "verified");
@@ -438,9 +439,11 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const rawOfferData = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
       ? offer.raw_data as Record<string, unknown>
       : {};
-    const supplierShippingKnown =
-      (Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0) ||
-      rawOfferData.shippingKnown === true;
+    const supplierShippingKnown = rawOfferData.shippingEstimated !== true && (
+      rawOfferData.shippingKnown === true ||
+      (rawOfferData.shippingKnown === undefined && offer.source_status === "verified" &&
+        Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0)
+    );
     const supplierStockKnown = rawOfferData.stockKnown === true ||
       (rawOfferData.stockKnown === undefined && offer.source_status === "verified");
     const supplierCheckedAt = typeof offer.last_checked_at === "string"
