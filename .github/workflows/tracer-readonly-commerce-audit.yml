@@ -6,6 +6,9 @@ on:
     paths:
       - ".github/workflows/tracer-readonly-commerce-audit.yml"
       - "app/api/admin/commerce/status/route.ts"
+      - "app/api/admin/commerce/live-price-audit/route.ts"
+      - "app/api/channels/base/diagnostics/route.ts"
+      - "app/api/cron/commerce-reprice-existing/route.ts"
       - "lib/commerce/publish.ts"
   workflow_dispatch:
 
@@ -47,7 +50,7 @@ jobs:
           print("ok:", r.get("ok"), "readOnly:", r.get("readOnly"), "generatedAt:", r.get("generatedAt"))
           for key in ("catalog", "supplierOffers", "supplierOfferErrors", "prices", "channels", "livePlatforms", "orders", "procurement", "approvalEvents", "cronRuns", "listingErrors"):
               if key in r:
-                  print(key + ":", json.dumps(r[key], ensure_ascii=False, separators=(",", ":")))
+                  print(key + ":", json.dumps(r[key], ensure_ascii=False, separators=(",",":")))
           items = r.get("listingErrorItems", [])
           print("listingErrorEvidence:", json.dumps([{
               "channel": item.get("channel"),
@@ -59,7 +62,7 @@ jobs:
                   "hasVariantId": bool(offer.get("variantId")),
                   "lastCheckedAt": offer.get("lastCheckedAt"),
               } for offer in item.get("offers", [])]
-          } for item in items], ensure_ascii=False, separators=(",", ":")))
+          } for item in items], ensure_ascii=False, separators=(",",":")))
           PY
           test "${status_code}" = "200"
 
@@ -75,11 +78,10 @@ jobs:
           print("ok:", r.get("ok"), "configured:", r.get("configured"), "baseApi:", r.get("baseApi"))
           for key in ("ordersApiStatus", "orderCountReturned", "dispatchStatuses", "itemsApiStatus", "itemCountReturned", "visibleItemsReturned", "hiddenItemsReturned", "unknownVisibilityCount", "itemPages", "itemAuditComplete", "itemErrorStage", "mappingAuditOk", "visibleItemsMatchedToDatabase", "visibleItemsManagedByCommerce", "visibleItemsLinked", "visibleItemsUnlinked", "visibleItemsWithoutDbMapping", "visibleItemsWithAmbiguousDbMapping", "itemIdentifierPresentCount", "stableTracerIdentifierCount", "itemIdMissingCount", "duplicateItemCount", "unmappedVisibleItems", "mappingAuditErrorStage"):
               if key in r:
-                  print(key + ":", json.dumps(r[key], ensure_ascii=False, separators=(",", ":")))
+                  print(key + ":", json.dumps(r[key], ensure_ascii=False, separators=(",",":")))
           PY
           test "${base_code}" = "200"
 
-          # The identity-repair endpoint defaults to dry-run; explicitly keep apply=false.
           repair_token="$(get_oidc_token)"
           repair_code="$(curl --silent --show-error --max-time 150 -o base-identity-repair-dry-run.json -w "%{http_code}" \
             -X POST \
@@ -95,13 +97,10 @@ jobs:
           print("ok:", r.get("ok"), "readOnly:", r.get("readOnly"), "apply:", r.get("apply"))
           for key in ("snapshotComplete", "scannedBaseItems", "stableIdentifierCandidates", "recoveryMarkerCandidates", "uniqueEvidencePairs", "repairable", "repaired", "commerceRepairable", "commerceRepaired", "ambiguous", "listingNotFound", "listingAlreadyLinked", "baseItemAlreadyMapped", "publicationChanged"):
               if key in r:
-                  print(key + ":", json.dumps(r[key], ensure_ascii=False, separators=(",", ":")))
+                  print(key + ":", json.dumps(r[key], ensure_ascii=False, separators=(",",":")))
           PY
           test "${repair_code}" = "200"
 
-          # This endpoint reads complete BASE and Shopify snapshots and compares
-          # them with recorded external IDs/SKUs and canonical TRACER prices.
-          # HTTP 207 means a complete audit found discrepancies, not a transport failure.
           audit_token="$(get_oidc_token)"
           audit_code="$(curl --silent --show-error --max-time 300 -o live-price-audit.json -w "%{http_code}" \
             -H "Authorization: Bearer ${audit_token}" \
@@ -113,9 +112,9 @@ jobs:
           with open("live-price-audit.json", encoding="utf-8") as f:
               r=json.load(f)
           print("ok:", r.get("ok"), "readOnly:", r.get("readOnly"), "complete:", r.get("complete"), "generatedAt:", r.get("generatedAt"))
-          print("summary:", json.dumps(r.get("summary", {}), ensure_ascii=False, separators=(",", ":")))
+          print("summary:", json.dumps(r.get("summary", {}), ensure_ascii=False, separators=(",",":")))
           counts=Counter((str(d.get("channel")), str(d.get("issue"))) for d in r.get("discrepancies", []))
-          print("discrepancyCounts:", json.dumps({channel: dict((issue,n) for (ch,issue),n in counts.items() if ch==channel) for channel in sorted({ch for ch,_ in counts})}, ensure_ascii=False, separators=(",", ":")))
+          print("discrepancyCounts:", json.dumps({channel: dict((issue,n) for (ch,issue),n in counts.items() if ch==channel) for channel in sorted({ch for ch,_ in counts})}, ensure_ascii=False, separators=(",",":")))
           if r.get("readOnly") is not True or r.get("complete") is not True:
               raise SystemExit("live storefront audit was not complete/read-only")
           PY
