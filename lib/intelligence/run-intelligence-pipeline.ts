@@ -6,7 +6,6 @@ import { scoreProductIntelligence } from "@/lib/intelligence/score-products";
 import { buildOpportunityIntelligence } from "@/lib/intelligence/build-opportunity-intelligence";
 import { persistDemandIntelligence } from "@/lib/intelligence/persist-demand-intelligence";
 import { persistReorderRecommendations } from "@/lib/ordering/persist-reorder";
-import { selectAndPublishSupplySalesTests } from "@/lib/market/select-supply-sales-tests";
 import { stampDemandCJIdentities } from "@/lib/intelligence/stamp-cj-identities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
@@ -345,12 +344,6 @@ export async function runIntelligencePipeline(options: {
   };
   steps.push(supplyFirstStep);
 
-  const supplyItems =
-    supplyFirstStep.result && typeof supplyFirstStep.result === "object" && Array.isArray((supplyFirstStep.result as { items?: unknown }).items)
-      ? ((supplyFirstStep.result as { items: Array<Record<string, unknown>> }).items)
-      : [];
-
-
   // Demand matching runs in its own five-minute cron. Keep broad catalog reads
   // out of this pipeline so slow data reads cannot starve product publication.
 
@@ -431,16 +424,9 @@ export async function runIntelligencePipeline(options: {
   // The 100-product scoring page can take >20s when Supabase is slow; a timeout stops all downstream gates.
   steps.push(await runStep("score", () => scoreProductIntelligence(), { downstream: true, budgetMs: 45_000 }));
 
-  // Reconsider supply verified by earlier patrols too, so a deferred or
-  // timed-out patrol does not strand verified supply before the gate.
-  const supplyProductIds = supplyItems.map((item) => String(item.productId ?? "")).filter(Boolean);
-  // Supply-first CJ products are standalone catalog items, not matches to a
-  // marketplace bestseller. Requiring identity_status=linked here silently
-  // excluded hundreds of verified, orderable variants marked supply_discovered.
-  // Native CJ identity is permitted downstream only when the selector rechecks
-  // verified product+variant IDs, shipping, price, inventory, API and orderability.
+  // Read fresh supplier readiness for reporting only; discovery and publication
+  // are handled by the canonical commerce importer and channel publishers.
   const freshSupplyCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const verifiedSupplyPageSize = 100;
   const { count: verifiedSupplyCount, error: verifiedSupplyCountError } = await db
     .from("supplier_listings")
     .select("id", { count: "exact", head: true })
@@ -458,44 +444,20 @@ export async function runIntelligencePipeline(options: {
     .not("product_id", "is", null)
     .gte("last_verified_at", freshSupplyCutoff);
   if (verifiedSupplyCountError) throw new Error(verifiedSupplyCountError.message);
-  const verifiedSupplyPages = Math.max(1, Math.ceil((verifiedSupplyCount ?? 0) / verifiedSupplyPageSize));
-  // Rotate on each five-minute patrol so already-published recent offers do not
-  // permanently occupy the first page and starve new sellable supplier products.
-  const verifiedSupplyOffset = (Math.floor(Date.now() / 300_000) % verifiedSupplyPages) * verifiedSupplyPageSize;
-  const { data: verifiedSupply, error: verifiedSupplyError } = await db
-    .from("supplier_listings")
-    .select("product_id")
-    .eq("supplier", "cj")
-    .eq("verification_status", "verified")
-    .eq("shipping_status", "verified")
-    .eq("price_confirmed", true)
-    .eq("inventory_confirmed", true)
-    .eq("orderable", true)
-    .eq("tracking_available", true)
-    .eq("api_available", true)
-    .gt("inventory", 0)
-    .not("supplier_product_id", "is", null)
-    .not("supplier_variant_id", "is", null)
-    .not("product_id", "is", null)
-    .gte("last_verified_at", freshSupplyCutoff)
-    .order("last_verified_at", { ascending: false, nullsFirst: false })
-    .range(verifiedSupplyOffset, verifiedSupplyOffset + verifiedSupplyPageSize - 1);
-  if (verifiedSupplyError) throw new Error(verifiedSupplyError.message);
-  const supplyCandidateIds = Array.from(new Set([
-    ...listedProductIds,
-    ...supplyProductIds,
-    ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
-  ]));
-  const supplySalesStep = await runStep(
-    "supply_sales_test_select",
-    () => selectAndPublishSupplySalesTests(supplyCandidateIds, 50, { allowNativeCjIdentity: true }),
-    { downstream: true, budgetMs: 20_000 },
-  );
+  // Legacy supplier_listings/shop_listings must not create BASE-only products.
+  // Canonical commerce-cj-import plus the shared BASE/Shopify publishers own
+  // all new saleable catalog rows; keep this stage visible for patrol telemetry.
+  const supplySalesStep: PipelineStepResult = {
+    name: "supply_sales_test_select",
+    ok: true,
+    skipped: true,
+    retryable: false,
+    result: { skipped: true, reason: "legacy_shop_listings_disabled_canonical_commerce_only" },
+  };
   steps.push(supplySalesStep);
 
-  // Only supplier-native CJ offers may enter the sale-selection path.
-  // Marketplace bestseller sales tests and NEWFIND delivery are out of scope;
-  // this pipeline owns TRACER, BASE, and Shopify only.
+  // Legacy marketplace sales-test selection is disabled here. The canonical
+  // commerce catalog owns supplier evidence and shared BASE/Shopify publication.
   const salesTestStep: PipelineStepResult = {
     name: "sales_test_select",
     ok: true,
