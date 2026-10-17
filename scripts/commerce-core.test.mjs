@@ -96,8 +96,8 @@ test("bounded recovery processes only unpublished channel listings", async () =>
   assert.match(publish, /sortedCandidates\.filter\(\(candidate\) => stateByVariant\.get\(candidate\.id\)\?\.status !== "published"\)/);
   assert.match(baseRoute, /searchParams\.get\("onlyUnpublished"\) === "true"/, "BASE cron only restricts to unpublished when explicitly requested");
   assert.match(shopifyRoute, /searchParams\.get\("onlyUnpublished"\) === "true"/, "Shopify cron only restricts to unpublished when explicitly requested");
-  assert.match(baseRoute, /Math\.min\(25, Math\.max\(1, Math\.floor\(requested\)\)\)/, "BASE cron caps each run at 25 listings");
-  assert.match(shopifyRoute, /Math\.min\(25, Math\.max\(1, Math\.floor\(requested\)\)\)/, "Shopify cron caps each run at 25 listings");
+  assert.match(baseRoute, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/, "BASE cron caps each run at 10 listings");
+  assert.match(shopifyRoute, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/, "Shopify cron caps each run at 10 listings");
   assert.match(workflow, /commerce-publish-base\?limit=10&onlyUnpublished=true/);
   assert.match(workflow, /commerce-publish-shopify\?limit=10&onlyUnpublished=true/);
 });
@@ -698,13 +698,14 @@ test("existing commerce prices below 50% margin are automatically repriced", asy
 });
 
  
-test("commerce publication cron batch defaults and invalid values remain bounded", async () => {
+test("commerce publication cron defaults to small batches and caps explicit requests", async () => {
   const baseRoute = await readFile(new URL("../app/api/cron/commerce-publish-base/route.ts", import.meta.url), "utf8");
   const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
   for (const route of [baseRoute, shopifyRoute]) {
-    assert.match(route, /searchParams\.get\("limit"\) \|\| 25/);
-    assert.match(route, /Math\.min\(25, Math\.max\(1, Math\.floor\(requested\)\)\)/);
-    assert.match(route, /Number\.isFinite\(requested\) \?[^\n]*: 25/);
+    assert.match(route, /searchParams\.get\("limit"\) \|\| 5/);
+    assert.match(route, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/);
+    assert.match(route, /Number\.isFinite\(requested\) \?[^\n]*: 5/);
+    assert.match(route, /searchParams\.get\("onlyUnpublished"\) === "true"/);
   }
 });
 
