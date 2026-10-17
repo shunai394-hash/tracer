@@ -14,7 +14,8 @@ test("CJ import prioritizes supplier refreshes for existing BASE/Shopify publica
   assert.match(route, /from\("channel_listings"\)\.select\("variant_id,channel,last_error"\)/);
   assert.match(route, /publicationErrorVariantIds/);
   assert.match(route, /aBlocked - bBlocked/);
-  assert.match(route, /!shopifyVariantIds\.has\(String\(offer\.variant_id\)\) && !publicationErrorVariantIds\.has\(String\(offer\.variant_id\)\)/);
+  assert.match(route, /Refresh every stale verified offer, not only offers already attached to Shopify/);
+  assert.doesNotMatch(route, /if \(!shopifyVariantIds\.has\(String\(offer\.variant_id\)\) && !publicationErrorVariantIds\.has\(String\(offer\.variant_id\)\)\) continue/);
   assert.match(route, /\[\.\.\.evidenceRetryCandidates, \.\.\.staleListingRetryCandidates\]/);
 });
 

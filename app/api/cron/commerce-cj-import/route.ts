@@ -433,7 +433,9 @@ export async function GET(request: Request) {
           String(a.last_checked_at ?? a.updated_at ?? "").localeCompare(String(b.last_checked_at ?? b.updated_at ?? ""));
       });
       for (const offer of existingOffersNeedingEvidence) {
-        if (!shopifyVariantIds.has(String(offer.variant_id)) && !publicationErrorVariantIds.has(String(offer.variant_id))) continue;
+        // Refresh every stale verified offer, not only offers already attached to Shopify
+        // or an existing publication error. Otherwise stale offers without a listing can
+        // never regain fresh stock/freight evidence and remain permanently unorderable.
         const parentId = String(offer.supplier_product_id ?? "").trim();
         const variantId = String(offer.supplier_variant_id ?? "").trim();
         if (!/^\d{10,22}$/.test(parentId) || !/^\d{10,25}$/.test(variantId)) continue;
