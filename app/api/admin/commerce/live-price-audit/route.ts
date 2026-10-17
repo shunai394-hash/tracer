@@ -93,7 +93,9 @@ export async function GET(request: Request) {
     let after: string | undefined;
     let shopifyPages = 0;
     let shopifyComplete = false;
-    if (isShopifyConfigured()) {
+    const needsShopify = listings.some((listing) => listing.channel === "shopify");
+    if (needsShopify && !isShopifyConfigured()) throw new Error("SHOPIFY_NOT_CONFIGURED_FOR_LIVE_AUDIT");
+    if (needsShopify) {
       const onlineStorePublicationId = await getOnlineStorePublicationId();
       for (let page = 0; page < 200; page += 1) {
         const result = await shopifyGraphQL<ShopifyPage>(
@@ -186,7 +188,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       ok: discrepancies.length === 0,
       readOnly: true,
-      complete: baseSnapshot.complete && (!isShopifyConfigured() || shopifyComplete),
+      complete: baseSnapshot.complete && (!needsShopify || shopifyComplete),
       generatedAt: new Date().toISOString(),
       summary,
       discrepancies: discrepancies.slice(0, 500),
