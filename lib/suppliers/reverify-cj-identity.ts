@@ -64,7 +64,7 @@ function num(value: unknown): number | null { const parsed = typeof value === "n
 function isHttpUrl(value: unknown): value is string { return typeof value === "string" && (value.trim().startsWith("https://") || value.trim().startsWith("http://")); }
 function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 
-export async function reverifyCjSupplyIdentities(options: { limit?: number; deadlineAt?: number; force?: boolean } = {}): Promise<CjIdentityReverifyResult> {
+export async function reverifyCjSupplyIdentities(options: { limit?: number; deadlineAt?: number; force?: boolean; supplierListingIds?: string[] } = {}): Promise<CjIdentityReverifyResult> {
   const db = createSupabaseAdminClient();
   const { data: quotaRuns, error: quotaReadError } = await db
     .from("cron_runs")
@@ -93,6 +93,10 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   }
   const limit = Math.max(1, Math.min(options.limit ?? DEFAULT_LIMIT, MAX_LIMIT));
   const force = options.force === true;
+  const targetSupplierListingIds = [...new Set((options.supplierListingIds ?? [])
+    .map((value) => String(value).trim())
+    .filter((value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)))]
+    .slice(0, 10);
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
   const candidateFilter = db.from("supplier_listings").select("id", { count: "exact", head: true }).eq("supplier", "cj").in("verification_status", ["unverified", "retryable", "verified"]).in("identity_method", ["supply_discovered", "none", "cj_supplier_variant"]).not("supplier_variant_id", "is", null);
   const { count: candidateCount, error: countError } = await candidateFilter;
@@ -100,7 +104,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   const total = candidateCount ?? 0;
   // Prioritize only the explicit stock-cap deployment hold after the cap is confirmed.
   // This bypasses that row's barcode-related retry backoff, not the API quota or evidence gates.
-  const stockCapHeldResult = process.env.TRACER_STOREFRONT_STOCK_CAP_DEPLOYED === "1"
+  const stockCapHeldResult = targetSupplierListingIds.length === 0 && process.env.TRACER_STOREFRONT_STOCK_CAP_DEPLOYED === "1"
     ? await db.from("supplier_listings")
         .select("id,product_id,title,sku,cost,shipping_cost,shipping_status,inventory,supplier_product_id,supplier_variant_id,identity_method,metadata,gtin,jan,ean,upc,mpn,verification_status,currency,price_confirmed,inventory_confirmed,configured,api_available,orderable,tracking_available,ship_to,verification_error")
         .eq("supplier", "cj")
@@ -137,20 +141,24 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
     .order("id", { ascending: true })
     .limit(MAX_CANDIDATE_SCAN);
 
-  let rowsResult = priorCursor
-    ? await buildCandidateQuery().gt("id", priorCursor)
-    : await buildCandidateQuery();
+  let rowsResult = targetSupplierListingIds.length > 0
+    ? await buildCandidateQuery().in("id", targetSupplierListingIds).limit(targetSupplierListingIds.length)
+    : priorCursor
+      ? await buildCandidateQuery().gt("id", priorCursor)
+      : await buildCandidateQuery();
   if (rowsResult.error) throw new Error(`identity reverify candidate query failed: ${rowsResult.error.message}`);
 
   // Scan a bounded page after the cursor. If the cursor is at the end of the
   // eligible set, wrap to the first page; never fetch the whole supplier table.
-  if ((rowsResult.data ?? []).length === 0 && priorCursor) {
+  if (targetSupplierListingIds.length === 0 && (rowsResult.data ?? []).length === 0 && priorCursor) {
     rowsResult = await buildCandidateQuery();
     if (rowsResult.error) throw new Error(`identity reverify candidate wrap query failed: ${rowsResult.error.message}`);
   }
 
   const scanRows = rowsResult.data ?? [];
-  const scanCursor = scanRows.length > 0 ? String(scanRows[scanRows.length - 1].id) : priorCursor;
+  const scanCursor = targetSupplierListingIds.length > 0
+    ? priorCursor
+    : scanRows.length > 0 ? String(scanRows[scanRows.length - 1].id) : priorCursor;
   const rowsById = new Map<string, (typeof scanRows)[number]>();
   for (const row of stockCapHeldRows) rowsById.set(String(row.id), row as (typeof scanRows)[number]);
   for (const row of scanRows) rowsById.set(String(row.id), row);
@@ -521,10 +529,10 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
     }
     if (quotaExhausted || circuitBlocked) break;
   }
-  if (quotaExhausted || circuitBlocked) result.nextCursor = priorCursor;
+  if (quotaExhausted || circuitBlocked || targetSupplierListingIds.length > 0) result.nextCursor = priorCursor;
   result.progress.after = await readCjIdentityProgressCounts(db);
   const now = new Date().toISOString();
-  const { error: runInsertError } = await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: "ascending_supplier_id_cursor_safe", candidateCount: total, exactShopListingCandidates: partition.matched.length, supplierOnlyCandidates: partition.unmatched.length, womensCandidates: womensRows.length, womensSelected: selectedRows.filter((row) => isWomensProductTitle(row.title, row.metadata)).length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, progress: result.progress, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
+  const { error: runInsertError } = await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: targetSupplierListingIds.length > 0 ? "explicit_supplier_listing_ids" : "ascending_supplier_id_cursor_safe", targetSupplierListingIds: targetSupplierListingIds.length > 0 ? targetSupplierListingIds : undefined, candidateCount: total, exactShopListingCandidates: partition.matched.length, supplierOnlyCandidates: partition.unmatched.length, womensCandidates: womensRows.length, womensSelected: selectedRows.filter((row) => isWomensProductTitle(row.title, row.metadata)).length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, progress: result.progress, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
   if (runInsertError) throw new Error("CJ identity progress audit persistence failed: " + runInsertError.message);
   return result;
 }
