@@ -327,7 +327,7 @@ export async function GET(request: Request) {
       }
       // Keep missing-publication recovery narrow and separately recheck existing listings
       // whose saved supplier status, stock, or Japan-bound freight evidence is in error.
-      const [{ data: erroredOffers, error: erroredOffersError }, { data: staleVerifiedOffers, error: staleVerifiedOffersError }, { data: shopifyRows, error: shopifyRowsError }] = await Promise.all([
+      const [{ data: erroredOffers, error: erroredOffersError }, { data: staleVerifiedOffers, error: staleVerifiedOffersError }, { data: shopifyRows, error: shopifyRowsError }, { data: cjListingRows, error: cjListingRowsError }] = await Promise.all([
         db.from("supplier_offers")
           .select("id,variant_id,supplier_product_id,supplier_variant_id,source_status,raw_data,updated_at,last_checked_at")
           .eq("supplier_code", "cj").eq("source_status", "error")
@@ -340,9 +340,16 @@ export async function GET(request: Request) {
           .eq("supplier_code", "cj").eq("source_status", "verified")
           .order("last_checked_at", { ascending: true, nullsFirst: true }).limit(2000),
         db.from("channel_listings").select("variant_id").eq("channel", "shopify").limit(5000),
+        // Procurement freshness gates read supplier_listings, not only commerce offers.
+        // Refresh stale/missing timestamps from the exact native CJ IDs so verified
+        // legacy listings don't remain permanently unorderable.
+        db.from("supplier_listings")
+          .select("id,supplier_product_id,supplier_variant_id,shipping_checked_at,inventory_checked_at,next_verification_at")
+          .eq("supplier", "cj")
+          .order("updated_at", { ascending: true }).limit(2000),
       ]);
-      if (erroredOffersError || staleVerifiedOffersError || shopifyRowsError) {
-        throw new Error("missing_shopify_offer_recovery_read_failed:" + (erroredOffersError?.message ?? staleVerifiedOffersError?.message ?? shopifyRowsError?.message));
+      if (erroredOffersError || staleVerifiedOffersError || shopifyRowsError || cjListingRowsError) {
+        throw new Error("missing_shopify_offer_recovery_read_failed:" + (erroredOffersError?.message ?? staleVerifiedOffersError?.message ?? shopifyRowsError?.message ?? cjListingRowsError?.message));
       }
       const shopifyVariantIds = new Set((shopifyRows ?? []).map((row) => String(row.variant_id)));
       const eligibleErroredOffers = (erroredOffers ?? []).filter((offer) => {
@@ -425,11 +432,34 @@ export async function GET(request: Request) {
         .slice(0, limit)
         .map(([id, variantIds]) => ({ id, title: "", retryVariantIds: variantIds }));
 
+      // Build a separate exact-ID queue for supplier_listings whose procurement
+      // evidence is missing or stale. Do not infer supplier IDs from titles/SKUs.
+      const staleListingGroups = new Map<string, { variantIds: string[]; oldestAt: number }>();
+      for (const listing of cjListingRows ?? []) {
+        const parentId = String(listing.supplier_product_id ?? "").trim();
+        const variantId = String(listing.supplier_variant_id ?? "").trim();
+        if (!/^\\d{10,22}$/.test(parentId) || !/^\\d{10,25}$/.test(variantId)) continue;
+        const shippingAt = typeof listing.shipping_checked_at === "string" ? Date.parse(listing.shipping_checked_at) : Number.NaN;
+        const inventoryAt = typeof listing.inventory_checked_at === "string" ? Date.parse(listing.inventory_checked_at) : Number.NaN;
+        const nextAt = typeof listing.next_verification_at === "string" ? Date.parse(listing.next_verification_at) : Number.NaN;
+        const evidenceStale = !Number.isFinite(shippingAt) || !Number.isFinite(inventoryAt) ||
+          shippingAt <= evidenceCutoff || inventoryAt <= evidenceCutoff;
+        if (!evidenceStale || (Number.isFinite(nextAt) && nextAt > Date.now())) continue;
+        const group = staleListingGroups.get(parentId) ?? { variantIds: [], oldestAt: Number.POSITIVE_INFINITY };
+        if (!group.variantIds.includes(variantId)) group.variantIds.push(variantId);
+        group.oldestAt = Math.min(group.oldestAt, Number.isFinite(shippingAt) ? shippingAt : 0, Number.isFinite(inventoryAt) ? inventoryAt : 0);
+        staleListingGroups.set(parentId, group);
+      }
+      const staleListingRetryCandidates: ImportCandidate[] = [...staleListingGroups.entries()]
+        .sort((a, b) => a[1].oldestAt - b[1].oldestAt)
+        .slice(0, limit)
+        .map(([id, group]) => ({ id, title: "", retryVariantIds: group.variantIds.slice(0, 3) }));
+
       // Prefer never-imported CJ parents for remaining slots so search pages
       // containing existing products cannot consume the entire discovery batch.
       const newCandidates = [...uniqueSearchProducts.values()].filter((item) => !knownParentIds.has(item.id));
       let scanPage = page + 1;
-      while (newCandidates.length < Math.max(0, limit - retryCandidates.length - evidenceRetryCandidates.length) && scanPage <= page + 2) {
+      while (newCandidates.length < Math.max(0, limit - retryCandidates.length - evidenceRetryCandidates.length - staleListingRetryCandidates.length) && scanPage <= page + 2) {
         const extra = await searchCJProducts(query, { page: scanPage, size: Math.min(20, limit * 2) });
         stats.searched += extra.products.length;
         for (const item of extra.products) {
@@ -442,11 +472,22 @@ export async function GET(request: Request) {
       }
       // Broad discovery still only imports new parents. Existing-parent retries are
       // limited to exact errored variants with no Shopify publication record.
-      const evidenceParentIds = new Set(evidenceRetryCandidates.map((candidate) => candidate.id));
+      const evidenceVariantsByParent = new Map<string, string[]>();
+      for (const candidate of [...staleListingRetryCandidates, ...evidenceRetryCandidates]) {
+        const variantIds = evidenceVariantsByParent.get(candidate.id) ?? [];
+        for (const variantId of candidate.retryVariantIds ?? []) {
+          if (!variantIds.includes(variantId)) variantIds.push(variantId);
+        }
+        evidenceVariantsByParent.set(candidate.id, variantIds);
+      }
+      const dedupedEvidenceCandidates: ImportCandidate[] = [...evidenceVariantsByParent.entries()]
+        .slice(0, limit)
+        .map(([id, variantIds]) => ({ id, title: "", retryVariantIds: variantIds.slice(0, 3) }));
+      const evidenceParentIds = new Set(dedupedEvidenceCandidates.map((candidate) => candidate.id));
       const missingPublicationRetries = retryCandidates.filter((candidate) => !evidenceParentIds.has(candidate.id))
-        .slice(0, Math.max(0, limit - evidenceRetryCandidates.length));
-      const discoverySlots = Math.max(0, limit - evidenceRetryCandidates.length - missingPublicationRetries.length);
-      candidates = [...evidenceRetryCandidates, ...missingPublicationRetries, ...newCandidates.slice(0, discoverySlots)];
+        .slice(0, Math.max(0, limit - dedupedEvidenceCandidates.length));
+      const discoverySlots = Math.max(0, limit - dedupedEvidenceCandidates.length - missingPublicationRetries.length);
+      candidates = [...dedupedEvidenceCandidates, ...missingPublicationRetries, ...newCandidates.slice(0, discoverySlots)];
     }
     for (const candidate of candidates) {
       try {
