@@ -4,6 +4,7 @@ import { addBaseItemImage, createBaseItem, editBaseItem, fetchBaseItemsSnapshot,
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, updateShopifyProduct } from "@/lib/shopify/admin";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { isCanonicalCjNativeId } from "@/lib/commerce/core";
 import { asRelationRows } from "@/lib/commerce/relation-rows";
 import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
@@ -339,7 +340,16 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const imageUrl = safeUrl(product.image_url);
     const sourceTitle = typeof product.metadata?.sourceTitle === "string" ? product.metadata.sourceTitle : typeof product.metadata?.source_title === "string" ? product.metadata.source_title : typeof product.metadata?.originalTitle === "string" ? product.metadata.originalTitle : null;
     const localizedSourceTitle = sourceTitle ? localizeProductTitle(sourceTitle) : null;
-    const title = isJapaneseProductTitle(candidate.title_ja) ? candidate.title_ja.trim() : isJapaneseProductTitle(product.title_ja) ? product.title_ja.trim() : localizedSourceTitle ?? "";
+    // Japanese text alone is not enough: category placeholders such as "ヘアケアアイテム"
+    // pass the language check but are rejected by the catalog title quality gate.
+    // Prefer a source-grounded localized title when stored titles are generic.
+    const title = isPublishableCatalogTitle(candidate.title_ja) && isJapaneseProductTitle(candidate.title_ja)
+      ? candidate.title_ja.trim()
+      : isPublishableCatalogTitle(product.title_ja) && isJapaneseProductTitle(product.title_ja)
+        ? product.title_ja.trim()
+        : localizedSourceTitle && isPublishableCatalogTitle(localizedSourceTitle)
+          ? localizedSourceTitle
+          : "";
     const rawOffer = currentPriceOfferId
       ? allOffers.find((candidateOffer) => String(candidateOffer.id) === currentPriceOfferId) ?? null
       : null;
