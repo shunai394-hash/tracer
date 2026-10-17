@@ -19,6 +19,15 @@ test("CJ import prioritizes supplier refreshes for existing BASE/Shopify publica
   assert.match(route, /\[\.\.\.evidenceRetryCandidates, \.\.\.staleListingRetryCandidates\]/);
 });
 
+test("CJ import keeps a discovery slot when recovery queues are full and scans beyond existing parents", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(route, /while \(newCandidates\.length < limit && scanPage <= page \+ 2\)/);
+  assert.match(route, /const recoveryCapacity = Math\.max\(0, limit - \(newCandidates\.length > 0 \? 1 : 0\)\)/);
+  assert.match(route, /\.slice\(0, recoveryCapacity\)/);
+  assert.match(route, /\.slice\(0, Math\.max\(0, recoveryCapacity - dedupedEvidenceCandidates\.length\)\)/);
+  assert.match(route, /const discoverySlots = Math\.max\(0, limit - dedupedEvidenceCandidates\.length - missingPublicationRetries\.length\)/);
+});
+
 test("CJ freight parsing searches nested object and array wrappers and preserves explicit free-shipping values", async () => {
   const client = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
   assert.match(client, /function collectCJFreightRows\(value: unknown\)/);
@@ -725,7 +734,8 @@ test("CJ catalog importer prioritizes stale evidence and unseen parent products 
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /from\("commerce_products"\)\.select\("source_key"\)\.like\("source_key", "cj:%"\)/);
   assert.match(importer, /Prefer never-imported CJ parents/);
-  assert.match(importer, /while \(newCandidates\.length < Math\.max\(0, limit - retryCandidates\.length - evidenceRetryCandidates\.length - staleListingRetryCandidates\.length\) && scanPage <= page \+ 2\)/);
+  assert.match(importer, /while \(newCandidates\.length < limit && scanPage <= page \+ 2\)/);
+  assert.match(importer, /const recoveryCapacity = Math\.max\(0, limit - \(newCandidates\.length > 0 \? 1 : 0\)\)/);
   assert.match(importer, /const queuedDiscoveryCandidates = newCandidates\.slice\(0, discoverySlots\)/);
   assert.match(importer, /candidates = \[\.\.\.dedupedEvidenceCandidates, \.\.\.missingPublicationRetries, \.\.\.queuedDiscoveryCandidates\]/);
   assert.match(importer, /shopifyVariantIds = new Set/);
