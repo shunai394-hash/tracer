@@ -654,6 +654,26 @@ test("CJ unknown stock still skips before supplier offer upsert", async () => {
 });
 
 
+test("CJ import reports stale supplier-evidence retry queue progress", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  for (const field of [
+    "verifiedOffersStaleEligible",
+    "publicationBlockedVariantsSeen",
+    "evidenceRetryVariantsQueued",
+    "evidenceRetryDeferredByBackoff",
+    "staleLegacyListingVariantsQueued",
+    "finalEvidenceParentCount",
+    "missingPublicationRetriesQueued",
+    "newDiscoveryCandidatesQueued",
+    "finalCandidateCount",
+  ]) {
+    assert.match(importer, new RegExp(field + ": 0"));
+  }
+  assert.ok(importer.includes("stats.verifiedOffersStaleEligible = staleVerifiedForEvidence.length;"));
+  assert.ok(importer.includes("stats.evidenceRetryVariantsQueued = evidenceRetryCount;"));
+  assert.ok(importer.includes("stats.finalCandidateCount = candidates.length;"));
+});
+
 test("scheduled CJ discovery only retries errored variants missing Shopify publication", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /requestedProductIds/);
@@ -705,7 +725,8 @@ test("CJ catalog importer prioritizes stale evidence and unseen parent products 
   assert.match(importer, /from\("commerce_products"\)\.select\("source_key"\)\.like\("source_key", "cj:%"\)/);
   assert.match(importer, /Prefer never-imported CJ parents/);
   assert.match(importer, /while \(newCandidates\.length < Math\.max\(0, limit - retryCandidates\.length - evidenceRetryCandidates\.length - staleListingRetryCandidates\.length\) && scanPage <= page \+ 2\)/);
-  assert.match(importer, /candidates = \[\.\.\.dedupedEvidenceCandidates, \.\.\.missingPublicationRetries, \.\.\.newCandidates\.slice\(0, discoverySlots\)\]/);
+  assert.match(importer, /const queuedDiscoveryCandidates = newCandidates\\.slice\\(0, discoverySlots\\)/);
+  assert.match(importer, /candidates = \\[\\.\\.\\.dedupedEvidenceCandidates, \\.\\.\\.missingPublicationRetries, \\.\\.\\.queuedDiscoveryCandidates\\]/);
   assert.match(importer, /shopifyVariantIds = new Set/);
   assert.match(importer, /retryVariantIds\?\.length/);
   assert.match(importer, /searchParams\.get\("limit"\) \|\| 3/);
