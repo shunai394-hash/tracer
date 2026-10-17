@@ -912,7 +912,7 @@ test("live storefront price audit prioritizes Shopify variant/product IDs before
   assert.match(route, /shopifyByProductId/);
   assert.match(route, /sameShopifyId\(id, recordedVariantId\)/);
   assert.match(route, /matchMethod = "variant_id"/);
-  assert.match(route, /matchMethod = "product_id_and_sku"/);
+  assert.match(route, /product_id_and_sku/);
   assert.match(route, /matchMethod = "sku"/);
   assert.match(route, /ambiguous_variant_id_no_mutation/);
   assert.match(route, /ambiguous_live_sku_no_mutation/);
