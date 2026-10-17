@@ -2,7 +2,7 @@ name: TRACER clean-commerce bounded recovery
 
 # TRACER_CLEAN_COMMERCE_RECOVERY: bounded production recovery requested 2026-10-16; wait for exact production commit before supplier import and gated channel publication.
 # Recovery re-trigger after CJ identity parser, bounded batch, and Shopify inventory idempotency fixes (2026-10-17).
-# Run the bounded publication recovery after the timeout fix is deployed.
+# Preserve the main branch's dedicated per-channel publisher and small batches.
 
 on:
   push:
@@ -56,6 +56,50 @@ jobs:
             sleep 10
           done
           [[ "$ready" == "1" ]] || { echo "Production did not serve this commit within 6 minutes."; exit 1; }
+
+      - name: Reconcile existing prices in bounded batches
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token() {
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          call_api() {
+            local path="$1" out="$2" t code
+            t="$(token)" || { echo "OIDC token failed for $path"; return 1; }
+            code="$(curl -sS -o "$out" -w "%{http_code}" --max-time 300 \
+              -H "Authorization: Bearer $t" "$BASE/$path" || true)"
+            echo "=== $path HTTP $code ==="
+            python3 - "$out" <<'PY'
+          import json,sys
+          try: print(json.dumps(json.load(open(sys.argv[1])),ensure_ascii=False)[:6000])
+          except Exception: print(open(sys.argv[1]).read()[:1200])
+          PY
+            [[ "$code" == "200" || "$code" == "207" ]]
+          }
+          failed=0
+          # Reprice bounded batches before publication; never import suppliers or place orders here.
+          for pass in $(seq 1 10); do
+            call_api "api/cron/commerce-reprice-existing?limit=25" "commerce-reprice-${pass}.json" || failed=1
+          done
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json,pathlib
+          print("## TRACER price reconciliation")
+          print("| Pass | ok | repriced | BASE remaining | Shopify remaining | errors |")
+          print("|---:|---:|---:|---:|---:|---:|")
+          for i in range(1,11):
+              p=pathlib.Path(f"commerce-reprice-{i}.json")
+              try: d=json.loads(p.read_text())
+              except Exception:
+                  print(f"| {i} | invalid response | — | — | — | — |"); continue
+              rem=d.get("storefrontSyncRemaining") or {}
+              errors=len(d.get("errors",[]))+len(d.get("storefrontSyncErrors",[]))
+              print(f"| {i} | {d.get('ok')} | {d.get('repriced')} | {rem.get('base')} | {rem.get('shopify')} | {errors} |")
+          PY
 
       - name: Publish verified commerce backlog in bounded batches
         shell: bash
