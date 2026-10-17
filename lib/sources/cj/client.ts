@@ -766,6 +766,11 @@ export async function calculateCJFreight(
     // Never log the full CJ response or credentials. Key names and response shape
     // are enough to identify API schema changes without exposing product payloads.
     console.warn("[CJ FREIGHT QUOTE UNRESOLVED]", {
+      vid: normalizedVid,
+      startCountryCode: options?.startCountryCode ?? "CN",
+      endCountryCode: options?.endCountryCode ?? "JP",
+      quantity: options?.quantity ?? 1,
+      zipProvided: Boolean(options?.zip),
       result: payload.result ?? null,
       message: typeof payload.message === "string" ? payload.message.slice(0, 120) : null,
       dataType: Array.isArray(data) ? "array" : data === null ? "null" : typeof data,
