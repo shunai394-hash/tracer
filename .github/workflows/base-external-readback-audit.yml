@@ -17,78 +17,81 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Read actual BASE item details in bounded batches
-        env:
-          OIDC_REQUEST_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}
-          OIDC_REQUEST_TOKEN: ${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
         run: |
           node <<'NODE'
-          const audience = "https://tracer-pied-alpha.vercel.app";
-          const oidcUrl = new URL(process.env.OIDC_REQUEST_URL);
-          oidcUrl.searchParams.set("audience", audience);
-          const oidcResponse = await fetch(oidcUrl, {
-            headers: { Authorization: `Bearer ${process.env.OIDC_REQUEST_TOKEN}` },
-          });
-          if (!oidcResponse.ok) throw new Error(`GitHub OIDC token request failed: HTTP ${oidcResponse.status}`);
-          const { value: token } = await oidcResponse.json();
-          if (!token) throw new Error("GitHub OIDC token was missing");
-
-          const baseUrl = "https://tracer-pied-alpha.vercel.app/api/cron/base-channel-external-readback";
-          const limit = 10;
-          let offset = 0;
-          let totalRows = null;
-          const totals = {
-            rowsReturned: 0, priceMatches: 0, priceMismatches: 0,
-            visibilityMatches: 0, visibilityMismatches: 0, readErrors: 0, missingSku: 0,
-          };
-          const anomalies = [];
-
-          while (totalRows === null || offset < totalRows) {
-            const url = new URL(baseUrl);
-            url.searchParams.set("offset", String(offset));
-            url.searchParams.set("limit", String(limit));
-            const response = await fetch(url, {
-              headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-              cache: "no-store",
+          const fs = require("node:fs/promises");
+          (async () => {
+            const audience = "https://tracer-pied-alpha.vercel.app";
+            const oidcUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+            oidcUrl.searchParams.set("audience", audience);
+            const oidcResponse = await fetch(oidcUrl, {
+              headers: { Authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
             });
-            const body = await response.json();
-            if (!response.ok && response.status !== 207) {
-              throw new Error(`BASE readback failed at offset ${offset}: HTTP ${response.status} ${body.error ?? "unknown"}`);
-            }
-            if (totalRows === null) totalRows = body.totalRows;
-            if (!Number.isFinite(totalRows)) throw new Error("Audit response did not include totalRows");
-            for (const key of Object.keys(totals)) totals[key] += Number(body[key] ?? 0);
-            for (const row of body.results ?? []) {
-              if (row.error || !row.priceMatches || !row.visibilityMatches || !row.skuPresent) {
-                anomalies.push({
-                  listingId: row.listingId, baseItemId: row.baseItemId, status: row.status,
-                  expectedPrice: row.expectedPrice, externalPrice: row.externalPrice,
-                  externalVisible: row.externalVisible, skuPresent: row.skuPresent,
-                  priceMatches: row.priceMatches, visibilityMatches: row.visibilityMatches,
-                  error: row.error,
-                });
-              }
-            }
-            const nextOffset = Number(body.nextOffset);
-            if (!Number.isFinite(nextOffset) || nextOffset <= offset) {
-              throw new Error(`Audit pagination did not advance at offset ${offset}`);
-            }
-            offset = nextOffset;
-            console.log(JSON.stringify({ offset, totalRows, pageRows: body.rowsReturned, pageErrors: body.readErrors }));
-          }
+            if (!oidcResponse.ok) throw new Error(`GitHub OIDC token request failed: HTTP ${oidcResponse.status}`);
+            const { value: token } = await oidcResponse.json();
+            if (!token) throw new Error("GitHub OIDC token was missing");
 
-          const report = { completedAt: new Date().toISOString(), totalRows, ...totals, anomalyCount: anomalies.length, anomalies };
-          await import("node:fs/promises").then(fs => fs.appendFile(process.env.GITHUB_STEP_SUMMARY, [
-            "# BASE external listing readback audit", "",
-            `- Total TRACER BASE listing rows scanned: **${totalRows}**`,
-            `- Price matches / mismatches: **${totals.priceMatches} / ${totals.priceMismatches}**`,
-            `- Visibility matches / mismatches: **${totals.visibilityMatches} / ${totals.visibilityMismatches}**`,
-            `- External API read errors: **${totals.readErrors}**`,
-            `- Rows without external SKU: **${totals.missingSku}**`,
-            `- Rows requiring review: **${anomalies.length}**`, "",
-            "## Exceptions", "",
-            anomalies.length ? "```json\n" + JSON.stringify(anomalies, null, 2) + "\n```" : "No discrepancies detected in the returned listing set.",
-            "",
-          ].join("\n")));
-          console.log(JSON.stringify({ ...report, anomalies: anomalies.slice(0, 50) }, null, 2));
-          if (totals.readErrors > 0) process.exitCode = 1;
+            const baseUrl = "https://tracer-pied-alpha.vercel.app/api/cron/base-channel-external-readback";
+            const limit = 10;
+            let offset = 0;
+            let totalRows = null;
+            const totals = {
+              rowsReturned: 0, priceMatches: 0, priceMismatches: 0,
+              visibilityMatches: 0, visibilityMismatches: 0, readErrors: 0, missingSku: 0,
+            };
+            const anomalies = [];
+
+            while (totalRows === null || offset < totalRows) {
+              const url = new URL(baseUrl);
+              url.searchParams.set("offset", String(offset));
+              url.searchParams.set("limit", String(limit));
+              const response = await fetch(url, {
+                headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+                cache: "no-store",
+              });
+              const body = await response.json();
+              if (!response.ok && response.status !== 207) {
+                throw new Error(`BASE readback failed at offset ${offset}: HTTP ${response.status} ${body.error ?? "unknown"}`);
+              }
+              if (totalRows === null) totalRows = body.totalRows;
+              if (!Number.isFinite(totalRows)) throw new Error("Audit response did not include totalRows");
+              for (const key of Object.keys(totals)) totals[key] += Number(body[key] ?? 0);
+              for (const row of body.results ?? []) {
+                if (row.error || !row.priceMatches || !row.visibilityMatches || !row.skuPresent) {
+                  anomalies.push({
+                    listingId: row.listingId, baseItemId: row.baseItemId, status: row.status,
+                    expectedPrice: row.expectedPrice, externalPrice: row.externalPrice,
+                    externalVisible: row.externalVisible, skuPresent: row.skuPresent,
+                    priceMatches: row.priceMatches, visibilityMatches: row.visibilityMatches,
+                    error: row.error,
+                  });
+                }
+              }
+              const nextOffset = Number(body.nextOffset);
+              if (!Number.isFinite(nextOffset) || nextOffset <= offset) {
+                throw new Error(`Audit pagination did not advance at offset ${offset}`);
+              }
+              offset = nextOffset;
+              console.log(JSON.stringify({ offset, totalRows, pageRows: body.rowsReturned, pageErrors: body.readErrors }));
+            }
+
+            const report = { completedAt: new Date().toISOString(), totalRows, ...totals, anomalyCount: anomalies.length, anomalies };
+            const summary = [
+              "# BASE external listing readback audit", "",
+              `- Total TRACER BASE listing rows scanned: **${totalRows}**`,
+              `- Price matches / mismatches: **${totals.priceMatches} / ${totals.priceMismatches}**`,
+              `- Visibility matches / mismatches: **${totals.visibilityMatches} / ${totals.visibilityMismatches}**`,
+              `- External API read errors: **${totals.readErrors}**`,
+              `- Rows without external SKU: **${totals.missingSku}**`,
+              `- Rows requiring review: **${anomalies.length}**`, "",
+              anomalies.length ? "```json\n" + JSON.stringify(anomalies, null, 2) + "\n```" : "No discrepancies detected in the returned listing set.",
+              "",
+            ].join("\n");
+            await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
+            console.log(JSON.stringify({ ...report, anomalies: anomalies.slice(0, 50) }, null, 2));
+            if (totals.readErrors > 0) process.exitCode = 1;
+          })().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
           NODE
