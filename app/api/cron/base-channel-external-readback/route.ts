@@ -43,7 +43,7 @@ export async function GET(request: Request) {
     const listingId = String(listing.id);
     const baseItemId = String(listing.external_product_id ?? "").trim();
     const expectedPrice = Number(listing.selling_price);
-    if (!/^\\d+$/.test(baseItemId)) {
+    if (!/^\d+$/.test(baseItemId)) {
       return {
         listingId, baseItemId: baseItemId || null, status: listing.status,
         skuPresent: Boolean(listing.external_sku), expectedPrice: Number.isFinite(expectedPrice) ? expectedPrice : null,
