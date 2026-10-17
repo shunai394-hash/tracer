@@ -1,5 +1,6 @@
 name: TRACER Shopify Auth Check
 
+# Re-run the read-only auth and catalog audit after bounded commerce recovery.
 # Diagnoses Shopify Admin API authentication and scopes, reconciles Shopify
 # against shop_listings and previews the next sync (all read-only). Only when
 # sync_batch > 0 does it write: the first N gate-eligible listings from the dry
