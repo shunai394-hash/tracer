@@ -138,6 +138,18 @@ jobs:
             call_publish "api/cron/commerce-publish-base?limit=10&onlyUnpublished=true" "base-publish-${pass}.json" || failed=1
             call_publish "api/cron/commerce-publish-shopify?limit=10&onlyUnpublished=true" "shopify-publish-${pass}.json" || failed=1
           done
+          python3 - <<'PY' || failed=1
+          import json,pathlib,sys
+          paths=[pathlib.Path(f"commerce-reprice-{i}.json") for i in range(1,11)]
+          try: rows=[json.loads(p.read_text()) for p in paths]
+          except Exception:
+              print("Price reconciliation responses incomplete."); sys.exit(1)
+          final=rows[-1]
+          if not final.get("ok") or not final.get("storefrontSyncComplete"):
+              print("Price reconciliation remains incomplete; see per-pass summary and runtime logs.")
+              sys.exit(1)
+          print("Price reconciliation backlog is drained.")
+          PY
           # No supplier purchase or customer order is created by this workflow.
           # Paid-order procurement remains separate and requires payment_status=paid.
           echo "Bounded publication passes finished; inspect each JSON response for published/failed counts."
