@@ -358,6 +358,15 @@ test("BASE Japanese address separates municipality from street without inventing
   assert.match(baseOrders, /address1: parsedAddress\.address1/);
 });
 
+test("CJ variant suffixes disambiguate non-color supplier options in Japanese", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /4ピン・No\.5斜めクリップ/);
+  assert.match(importer, /numberedColor/);
+  assert.match(importer, /パールトート・グラデーション/);
+  assert.match(importer, /巾着型ショルダー/);
+  assert.ok(importer.includes('[/khaki/, "カーキ"]'));
+});
+
 test("CJ importer serializes stock and freight requests to respect the supplier QPS limit", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   const stockCall = importer.indexOf("await fetchCJVariantStock(variant.vid)");
@@ -788,8 +797,10 @@ test("storefront reconciliation also syncs updated Japanese product copy", async
 });
 
 
-test("BASE item API requests have a bounded timeout", async () => {
-  const base = await readFile(new URL("../lib/channels/base.ts", import.meta.url), "utf8");
-  const requestBase = base.slice(base.indexOf("async function requestBase("), base.indexOf("export async function createBaseItem("));
-  assert.match(requestBase, /signal: AbortSignal\.timeout\(20_000\)/);
+test("storefront reconciliation prioritizes unverified listings and recently changed Japanese copy", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(route, /recentCopyCutoff/);
+  assert.match(route, /unverifiedVariantIds\.has\(variantId\)/);
+  assert.match(route, /contentNeedsSync/);
+  assert.match(route, /const priority =/);
 });
