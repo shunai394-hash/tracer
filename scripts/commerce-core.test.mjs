@@ -778,8 +778,8 @@ test("storefront price reconciliation emits bounded, privacy-safe completion tel
   assert.match(route, /\[TRACER STOREFRONT PRICE RECONCILE\]/);
   assert.match(route, /storefrontSyncErrorCount: result\.storefrontSyncErrors\.length/);
   assert.match(route, /storefrontSyncFailureDetails/);
-  assert.match(route, /variantId: String\\(failure.variantId\\)/);
-  assert.match(route, /reason: String\\(failure.error \\?\\? "storefront_sync_failed"\\)/);
+  assert.ok(route.includes("variantId: String(failure.variantId)"));
+  assert.ok(route.includes('reason: String(failure.error ?? "storefront_sync_failed")'));
   assert.doesNotMatch(route, /console\.info\([^\n]*(?:customer|orderId|supplierVariantId|accessToken)/i);
 });
 
