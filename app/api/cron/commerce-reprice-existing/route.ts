@@ -23,7 +23,7 @@ export async function GET(request: Request) {
 
   const [{ data: offers, error: offersError }, { data: activeProducts, error: productsError }, { data: prices, error: pricesError }] = await Promise.all([
     db.from("supplier_offers")
-      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,currency,unit_cost,shipping_cost,updated_at")
+      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,currency,unit_cost,shipping_cost,source_status,raw_data,updated_at")
       .order("updated_at", { ascending: true })
       .limit(2000),
     db.from("commerce_products").select("id").eq("active", true).limit(2000),
@@ -47,10 +47,20 @@ export async function GET(request: Request) {
   }
   const activeVariantIds = new Set((variants ?? []).map((row) => String(row.id)));
   const priceByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), row]));
+  let skippedUnknownShipping = 0;
   const oneOfferPerVariant = new Map<string, NonNullable<typeof offers>[number]>();
   for (const offer of offers ?? []) {
     const variantId = String(offer.variant_id);
     if (!activeVariantIds.has(variantId) || offer.unit_cost === null || offer.shipping_cost === null) continue;
+    const rawData = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
+      ? offer.raw_data as Record<string, unknown>
+      : {};
+    const shippingKnown = rawData.shippingKnown === true ||
+      (rawData.shippingKnown === undefined && offer.source_status === "verified" && Number(offer.shipping_cost) > 0);
+    if (!shippingKnown) {
+      skippedUnknownShipping++;
+      continue;
+    }
     if (!Number.isFinite(Number(offer.unit_cost)) || Number(offer.unit_cost) < 0) continue;
     if (!Number.isFinite(Number(offer.shipping_cost)) || Number(offer.shipping_cost) < 0) continue;
     if (!["USD", "JPY"].includes(String(offer.currency ?? "").toUpperCase())) continue;
@@ -61,6 +71,11 @@ export async function GET(request: Request) {
     if (!existing || (offerIsCurrent && !existingIsCurrent)) oneOfferPerVariant.set(variantId, offer);
   }
   const candidates = [...oneOfferPerVariant.values()]
+    .filter((offer) => {
+      const price = priceByVariant.get(String(offer.variant_id));
+      return !price || Number(price.expected_profit) <= 0 || String(price.supplier_offer_id) !== String(offer.id) ||
+        String(price.calculated_at ?? "") < String(offer.updated_at ?? "");
+    })
     .sort((a, b) => {
       const ap = priceByVariant.get(String(a.variant_id));
       const bp = priceByVariant.get(String(b.variant_id));
@@ -76,7 +91,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "usd_jpy_rate_unavailable", considered: candidates.length, repriced: 0 }, { status: 503 });
   }
 
-  const result = { considered: candidates.length, repriced: 0, skipped: 0, errors: [] as Array<{ offerId: string; reason: string }> };
+  const result = { considered: candidates.length, repriced: 0, skipped: 0, skippedUnknownShipping, errors: [] as Array<{ offerId: string; reason: string }> };
   for (const offer of candidates) {
     try {
       await recalculatePrice({
