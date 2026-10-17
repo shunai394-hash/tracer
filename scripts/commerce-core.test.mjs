@@ -652,3 +652,13 @@ test("canonical order pollers emit privacy-safe invocation and outcome counters"
   assert.match(shopify, /errorCategories: imported\.errors\.map/);
   assert.doesNotMatch(shopify, /console\.info\([^\n]*orderIds/);
 });
+
+
+test("existing commerce prices below 50% margin are automatically repriced", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(route, /const targetMarginRate = 0\.5/);
+  assert.match(route, /margin_rate,calculated_at/);
+  assert.match(route, /Number\(price\.margin_rate\) < targetMarginRate/);
+  assert.match(route, /targetMarginRate,/);
+  assert.doesNotMatch(route, /targetMarginRate: 0\.2/);
+});
