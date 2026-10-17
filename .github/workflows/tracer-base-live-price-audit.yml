@@ -1,0 +1,93 @@
+name: TRACER BASE Live Price Audit (Read Only)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/tracer-base-live-price-audit.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Fetch complete BASE live product snapshot (read-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { writeFile } from "node:fs/promises";
+          const base = "https://tracer-pied-alpha.vercel.app";
+          const tokenUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          tokenUrl.searchParams.set("audience", base);
+          const tokenResponse = await fetch(tokenUrl, {
+            headers: { Authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
+            signal: AbortSignal.timeout(15000),
+          });
+          if (!tokenResponse.ok) throw new Error(`OIDC_TOKEN_REQUEST_FAILED:${tokenResponse.status}`);
+          const tokenBody = await tokenResponse.json();
+          if (typeof tokenBody.value !== "string" || !tokenBody.value) throw new Error("OIDC_TOKEN_MISSING");
+          const response = await fetch(`${base}/api/admin/channels/base/snapshot`, {
+            headers: { Authorization: `Bearer ${tokenBody.value}`, Accept: "application/json" },
+            signal: AbortSignal.timeout(110000),
+            cache: "no-store",
+          });
+          if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(`BASE_SNAPSHOT_HTTP_${response.status}:${String(body.error ?? "request_failed").slice(0,100)}`);
+          }
+          const snapshot = await response.json();
+          if (snapshot.complete !== true || !Array.isArray(snapshot.items) ||
+              !Number.isInteger(snapshot.itemCount) || snapshot.itemCount !== snapshot.items.length ||
+              snapshot.itemCount < 1) throw new Error("BASE_SNAPSHOT_INCOMPLETE_OR_COUNT_MISMATCH");
+          const ids = snapshot.items.map(item => String(item?.item_id ?? ""));
+          if (ids.some(id => !id) || new Set(ids).size !== ids.length) throw new Error("BASE_ITEM_ID_MISSING_OR_DUPLICATE");
+          await writeFile("base-live-price-snapshot.json", JSON.stringify(snapshot, null, 2), { mode: 0o600 });
+          const esc = value => {
+            const s = value === null || value === undefined ? "" : String(value);
+            return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+          };
+          const headers = ["item_id","identifier","title","price","visible","stock"];
+          const lines = [headers.join(","), ...snapshot.items.map(item => [
+            item.item_id, item.identifier, item.title ?? item.name, item.price, item.visible, item.stock
+          ].map(esc).join(","))];
+          await writeFile("base-live-prices.csv", lines.join("\n") + "\n", { mode: 0o600 });
+          const visible = snapshot.items.filter(item => item.visible === true || item.visible === 1 || item.visible === "1").length;
+          const hidden = snapshot.items.filter(item => item.visible === false || item.visible === 0 || item.visible === "0").length;
+          const missingPrice = snapshot.items.filter(item => !Number.isFinite(Number(item.price)) || Number(item.price) <= 0).length;
+          const summary = {
+            readOnly: true, writesPerformed: false, generatedAt: snapshot.generatedAt,
+            pages: snapshot.pages, itemCount: snapshot.itemCount, visibleCount: visible,
+            hiddenCount: hidden, unknownVisibilityCount: snapshot.itemCount - visible - hidden,
+            missingOrInvalidPriceCount: missingPrice, duplicateItemIds: false,
+            artifacts: ["base-live-price-snapshot.json", "base-live-prices.csv"]
+          };
+          await writeFile("base-live-price-summary.json", JSON.stringify(summary, null, 2), { mode: 0o600 });
+          await writeFile(process.env.GITHUB_STEP_SUMMARY, [
+            "# BASE live price audit (read-only)", "",
+            `- Snapshot complete: ${snapshot.complete}`,
+            `- Items: ${snapshot.itemCount}`,
+            `- Visible: ${visible}; hidden: ${hidden}; unknown visibility: ${snapshot.itemCount - visible - hidden}`,
+            `- Missing/invalid price: ${missingPrice}`,
+            "- No BASE, Shopify, TRACER listing, order, or payment writes performed."
+          ].join("\n") + "\n");
+          console.log(JSON.stringify(summary));
+          NODE
+      - name: Save complete row-level audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tracer-base-live-price-audit-${{ github.run_id }}
+          path: |
+            base-live-price-snapshot.json
+            base-live-prices.csv
+            base-live-price-summary.json
+          if-no-files-found: error
+          retention-days: 30
