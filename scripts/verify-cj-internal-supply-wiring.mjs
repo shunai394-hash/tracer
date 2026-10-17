@@ -14,6 +14,8 @@ assert.match(discovery, /isCanonicalCJNativeId\(candidateProductId\)[\s\S]*?isCa
   "discovery must reject non-native product/variant IDs before accepting a resolved pair");
 assert.ok(nativeId.includes(String.raw`\d{10,22}`),
   "CJ native IDs must remain decimal IDs, not TRACER UUIDs or SKUs");
+assert.match(discovery, /if \(!isCanonicalCJNativeId\(row\.supplier_product_id\) \|\| !isCanonicalCJNativeId\(row\.supplier_variant_id\)\) return false/,
+  "seeded verification must skip legacy UUID/SKU values before making CJ provider calls");
 assert.match(discovery, /\.eq\("job_name", "cj-api-quota-circuit"\)/,
   "supply-first must inspect the persisted CJ quota circuit before attempting provider calls");
 assert.match(discovery, /if \(isCJQuotaCircuitActive\(quotaMetadata\)\) \{[\s\S]*?deadlineReached: false[\s\S]*?skipped: true[\s\S]*?retryable: true[\s\S]*?reason: "supplier_quota_cooldown"[\s\S]*?quotaBlocked: true[\s\S]*?retryAfter: quotaBlockedUntil \?\? undefined[\s\S]*?items: \[\]/,
