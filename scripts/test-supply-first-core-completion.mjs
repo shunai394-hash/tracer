@@ -12,7 +12,7 @@ for (const required of ["match", "supply_sales_test_select", "sales_test_select"
   assert.doesNotMatch(source, new RegExp('optionalDiscoverySteps = new Set\\(\\[[^\\]]*"' + required + '"'),
     required + " must remain a core pipeline stage");
 }
-assert.match(source, /dedicated_supply_first_cron_owns_live_cj_discovery/,
+assert.match(source, /dedicated_commerce_cj_import_cron_owns_live_cj_discovery/,
   "the five-minute patrol must leave live CJ discovery to its dedicated, longer-budget cron");
 assert.match(source, /discoveryCron: "\/api\/cron\/supply-first"/,
   "the skipped patrol stage must point to the actual supplier discovery worker");
@@ -47,6 +47,10 @@ assert.match(cronRoute, /const discoveryIncomplete/);
 assert.match(cronRoute, /status: runStatus/);
 assert.match(cronRoute, /status: discoveryIncomplete \? 503 : 200/);
 assert.ok(cronRoute.includes("supply_first_already_running"));
-assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/supply-first").map((job) => job.schedule), ["5,35 * * * *"]);
+assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule), ["*/10 * * * *"]);
+assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/supply-first"), [],
+  "legacy supply-first must not be scheduled beside the canonical commerce importer");
+assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule), ["*/5 * * * *"],
+  "the existing five-minute patrol must remain enabled");
 
 console.log("Supply-first core completion: optional discovery cooldowns do not block the core cycle; empty deadline runs are deferred");
