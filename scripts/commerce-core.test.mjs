@@ -688,3 +688,15 @@ test("commerce publication cron batch defaults and invalid values remain bounded
     assert.match(route, /Number\.isFinite\(requested\) \?[^\n]*: 5/);
   }
 });
+
+
+test("published storefront price reconciliation uses exact variants and bounded retry batches", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(route, /syncCommerceListings/);
+  assert.match(route, /storefrontSyncRemaining/);
+  assert.match(route, /allChannelIds\.slice\(0, 5\)/);
+  assert.match(route, /\.select\("variant_id,channel,selling_price,status"\)/);
+  assert.match(publish, /variantIds\?: string\[\]/);
+  assert.match(publish, /candidateQuery\.in\("id", \[\.\.\.new Set\(variantIds\)\]\)/);
+});
