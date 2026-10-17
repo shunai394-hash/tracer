@@ -118,9 +118,7 @@ export default async function ProductsPage() {
     const freshnessCutoff = Date.now() - 24 * 60 * 60 * 1000;
     const freshOffers = commerceOffers.filter((offer) =>
       offer.source_status === "verified" &&
-      offer.tracking_supported === true &&
       offer.ship_to === "JP" &&
-      Number(offer.inventory) > 0 &&
       Boolean(offer.supplier_product_id && offer.supplier_variant_id) &&
       Number.isFinite(Date.parse(String(offer.last_checked_at ?? ""))) &&
       Date.parse(String(offer.last_checked_at ?? "")) >= freshnessCutoff
