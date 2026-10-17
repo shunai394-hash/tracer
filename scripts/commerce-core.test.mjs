@@ -884,3 +884,23 @@ test("storefront reconciliation prioritizes stale prices and recently changed Ja
   assert.match(route, /startsWith\("supplier_offer_not_fulfillable:"\)/);
   assert.match(route, /const priority =/);
 });
+
+test("Shopify live reconciliation exports full row-level IDs, SKUs, prices, and unlinked products", async () => {
+  const route = await readFile(new URL("../app/api/admin/shopify/reconcile/route.ts", import.meta.url), "utf8");
+  const workflow = await readFile(new URL("../.github/workflows/tracer-shopify-auth-check.yml", import.meta.url), "utf8");
+  assert.match(route, /variants\(first: 100\)/);
+  assert.match(route, /pageInfo \{ hasNextPage endCursor \}/);
+  assert.match(route, /dbShopifyProductId/);
+  assert.match(route, /expectedSku/);
+  assert.match(route, /shopifyPrice/);
+  assert.match(route, /items: checks/);
+  assert.match(route, /unlinkedProducts: shopify\.filter/);
+  assert.match(route, /shop_listings_scan_incomplete/);
+  assert.match(workflow, /SHOPIFY_RECONCILIATION_INCOMPLETE_REFUSING_TO_LABEL_AUDIT_COMPLETE/);
+  assert.match(workflow, /cp out\.json shopify-reconcile\.json/);
+  assert.match(workflow, /shopify-linked-row-audit\.csv/);
+  assert.match(workflow, /shopify-unlinked-products\.csv/);
+  assert.match(workflow, /Upload read-only Shopify audit evidence/);
+  assert.match(workflow, /writesPerformed.*False/);
+});
+

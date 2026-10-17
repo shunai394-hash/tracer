@@ -14,7 +14,9 @@ on:
     paths:
       - ".github/workflows/tracer-shopify-auth-check.yml"
       - "app/api/admin/shopify/identity-audit/route.ts"
+      - "app/api/admin/shopify/reconcile/route.ts"
       - "app/api/admin/shopify/auth-check/route.ts"
+      - "scripts/commerce-core.test.mjs"
       - "app/api/channels/base/diagnostics/route.ts"
       - "lib/config/env.ts"
       - "lib/channels/base.ts"
@@ -106,6 +108,8 @@ jobs:
           print(json.dumps(d, ensure_ascii=False, indent=1)[:6000])
           PY
             if [ "$path" = "api/admin/shopify/auth-check" ]; then cp out.json auth-check.json; fi
+            if [ "$path" = "api/admin/shopify/catalog" ]; then cp out.json shopify-catalog.json; fi
+            if [ "$path" = "api/admin/shopify/reconcile" ]; then cp out.json shopify-reconcile.json; fi
             if [ "$path" = "api/admin/shopify/identity-audit" ]; then cp out.json identity-audit.json; fi
             if [ "$path" = "api/channels/base/diagnostics" ]; then cp out.json base-diagnostics.json; fi
           done
@@ -186,6 +190,7 @@ jobs:
           echo "=== sync dry run (no writes) ==="
           curl -sS -o sync.json --max-time 120 -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" -X POST "$BASE/api/admin/shopify/sync" -d '{"dryRun":true,"limit":1000}'
           summarize_sync
+          cp sync.json shopify-sync-dry-run.json
           if [ "${SYNC_BATCH%.*}" -gt 0 ] 2>/dev/null; then
             python3 - "${SYNC_BATCH%.*}" <<'PY' > ids.json
           import json, sys
@@ -260,4 +265,87 @@ jobs:
           gh issue create \
             --repo shunai394-hash/tracer \
             --title "[TRACER auth diagnostic] Run $GITHUB_RUN_ID" \
-            --body-file auth-report.md \
+            --body-file auth-report.md
+
+      - name: Export complete read-only Shopify reconciliation artifacts
+        if: always() && github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import csv, json
+          from pathlib import Path
+
+          report = json.load(open("shopify-reconcile.json"))
+          items = report.get("items") or []
+          if report.get("ok") is not True or report.get("shopifyStore", {}).get("countPrecision") != "EXACT" or report.get("shopify", {}).get("scanComplete") is not True:
+              raise SystemExit("SHOPIFY_RECONCILIATION_INCOMPLETE_REFUSING_TO_LABEL_AUDIT_COMPLETE")
+          if not isinstance(items, list) or not isinstance(report.get("unlinkedProducts"), list):
+              raise SystemExit("SHOPIFY_RECONCILIATION_MISSING_ROW_LEVEL_DATA")
+          fields = [
+              "listingId", "existsInShopify", "dbShopifyProductId", "shopifyProductId", "shopifyHandle",
+              "dbShopifyVariantId", "shopifyVariantId", "variantScanComplete", "expectedSku", "shopifySku",
+              "skuMatches", "variantIdMatches", "dbSellingPrice", "shopifyPrice", "priceMatches",
+              "dbInventory", "shopifyInventory", "expectedStorefrontInventory", "inventoryMatches",
+              "dbPublished", "shopifyStatus", "publishedOnOnlineStore", "expectedLive", "publicationMatches",
+              "gatePassed", "supplierVariantId", "syncStatus", "hasImage"
+          ]
+          with open("shopify-linked-row-audit.csv", "w", newline="", encoding="utf-8-sig") as f:
+              writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+              writer.writeheader()
+              writer.writerows(items)
+
+          unlinked_fields = ["shopifyProductId", "handle", "status", "publishedOnOnlineStore", "vendor",
+                             "totalInventory", "variantScanComplete", "shopifyVariantId", "sku", "price", "inventoryQuantity"]
+          with open("shopify-unlinked-products.csv", "w", newline="", encoding="utf-8-sig") as f:
+              writer = csv.DictWriter(f, fieldnames=unlinked_fields, extrasaction="ignore")
+              writer.writeheader()
+              for product in report.get("unlinkedProducts") or []:
+                  variants = product.get("variants") or [None]
+                  for variant in variants:
+                      row = {k: product.get(k) for k in unlinked_fields}
+                      if variant:
+                          row.update(variant)
+                      writer.writerow(row)
+
+          db = report.get("db") or {}
+          shopify = report.get("shopify") or {}
+          summary = {
+              "generatedAt": report.get("generatedAt"),
+              "ok": report.get("ok"),
+              "readOnly": True,
+              "writesPerformed": False,
+              "shopifyStore": report.get("shopifyStore"),
+              "shopify": shopify,
+              "commerceChannelListings": report.get("commerceChannelListings"),
+              "db": db,
+              "linkedRowsReturned": len(items),
+              "unlinkedProductsReturned": len(report.get("unlinkedProducts") or []),
+              "variantScanIncompleteLinkedRows": sum(1 for row in items if row.get("variantScanComplete") is False),
+              "skuMismatchRows": sum(1 for row in items if row.get("skuMatches") is False),
+              "priceMismatchRows": sum(1 for row in items if row.get("priceMatches") is False),
+              "inventoryMismatchRows": sum(1 for row in items if row.get("inventoryMatches") is False),
+              "publicationMismatchRows": sum(1 for row in items if row.get("publicationMatches") is False),
+              "variantIdMismatchRows": sum(1 for row in items if row.get("variantIdMatches") is False),
+          }
+          Path("shopify-live-audit-summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps(summary, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Upload read-only Shopify audit evidence
+        if: always() && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tracer-shopify-live-audit-${{ github.run_id }}
+          path: |
+            shopify-reconcile.json
+            shopify-catalog.json
+            shopify-sync-dry-run.json
+            shopify-linked-row-audit.csv
+            shopify-unlinked-products.csv
+            shopify-live-audit-summary.json
+            auth-check.json
+            identity-audit.json
+            base-diagnostics.json
+          if-no-files-found: error
+          retention-days: 30
