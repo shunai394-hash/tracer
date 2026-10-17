@@ -363,6 +363,9 @@ export async function discoverAndCreateCjSupply(
   const seenSeedKeys = new Set<string>();
   const seeded = (seededRows ?? [])
     .filter((row) => {
+      // Legacy rows may contain TRACER UUIDs in CJ identity columns. Quarantine
+      // them from provider calls; do not retry IDs that fail the native contract.
+      if (!isCanonicalCJNativeId(row.supplier_product_id) || !isCanonicalCJNativeId(row.supplier_variant_id)) return false;
       const key = `${String(row.supplier_product_id)}:${String(row.supplier_variant_id)}`;
       if (existingVariants.has(key) || seenSeedKeys.has(key)) return false;
       seenSeedKeys.add(key);
