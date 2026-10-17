@@ -431,6 +431,14 @@ export async function GET(request: Request) {
       before,
       after,
       progress,
+      // A completed intelligence pass is not proof that a customer order reached supplier procurement.
+      orderLifecycleEvidence: {
+        commerceOrdersRecorded: after.commerceOrders,
+        supplierProcurementOrdersRecorded: after.supplierProcurementOrders,
+        newCommerceOrdersThisRun: progress.newCommerceOrders,
+        newSupplierProcurementOrdersThisRun: progress.newSupplierProcurementOrders,
+        endToEndOrderFlowObservedThisRun: progress.newCommerceOrders > 0 && progress.newSupplierProcurementOrders > 0,
+      },
       actions,
       errors,
       message: errors.length
@@ -474,6 +482,8 @@ export async function GET(request: Request) {
       before: report.before,
       after: report.after,
       progress: report.progress,
+      // Keep order-flow evidence distinct from intelligence-pipeline completion.
+      orderLifecycleEvidence: report.orderLifecycleEvidence,
       pipelineComplete: pipeline.complete,
       errorCount: errors.length,
       errorCategories: Array.from(new Set(errors.map((error) => error.split(":")[0]))),
