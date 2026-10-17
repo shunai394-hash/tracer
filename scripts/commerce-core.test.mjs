@@ -42,7 +42,9 @@ test("storefront publication requires exact supplier identity and evidenced land
   assert.match(publish, /supplierEvidenceFresh/);
   assert.match(publish, /Date\.now\(\) - supplierCheckedAt <= 24 \* 60 \* 60_000/);
   assert.doesNotMatch(publish, /Math\.max\(1, Number\(offer\.inventory\) \|\| 0\)/);
-  assert.match(publish, /現在、仕入先の日本向け送料を再確認中のため、購入できません。確認が完了次第、販売を再開します。/);
+  assert.match(publish, /shippingInclusiveDescription/);
+  assert.match(publish, /日本向け送料は商品価格に含まれています/);
+  assert.doesNotMatch(publish, /現在、仕入先の日本向け送料を再確認中のため、購入できません。確認が完了次第、販売を再開します。/);
   assert.doesNotMatch(dashboard, /offer\.tracking_supported === true/);
   assert.doesNotMatch(dashboard, /Number\(offer\.inventory\) > 0/);
   assert.match(dashboard, /offer\.raw_data\?\.shippingKnown === true/);
