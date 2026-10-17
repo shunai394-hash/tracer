@@ -176,7 +176,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   return result;
 }
 
-export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnpublished = false) {
+export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnpublished = true) {
   // Storefront publication is independent of supplier purchasing. Only the paid-order
   // procurement path is gated by liveOrdering; a sandbox proof must not block listings.
   if (channel === "base" && !isBaseConfigured()) throw new Error("base_oauth_not_configured");
