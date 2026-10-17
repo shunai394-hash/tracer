@@ -90,7 +90,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
         const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id);
         return Boolean(price && price.currency === "JPY" && Number(price.selling_price) > 0 && Number(price.expected_profit) > 0 &&
-          offer.source_status === "verified" && nativeIdsValid && offer.tracking_supported === true &&
+          offer.source_status === "verified" && nativeIdsValid &&
           offer.ship_to === "JP" && fresh && Number(offer.inventory) > 0);
       };
       const hasPublishableLinkedOffer = offers.some((offer) => {
@@ -124,7 +124,6 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       const reason = !offer ? "supplier_offer_missing" :
         !nativeIdsValid ? "supplier_native_ids_invalid" :
         offer.source_status !== "verified" ? "supplier_offer_not_verified" :
-        offer.tracking_supported !== true ? "tracking_not_verified" :
         offer.ship_to !== "JP" ? "supplier_not_shipping_to_japan" :
         !fresh ? "supplier_verification_stale" :
         Number(offer.inventory) <= 0 ? "supplier_out_of_stock" :
@@ -253,8 +252,16 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
     const validOffers = asRelationRows(candidate.supplier_offers)
-      .filter((x) => Number.isFinite(Number(x.unit_cost)) && Number(x.unit_cost) >= 0 &&
-        Number.isFinite(Number(x.shipping_cost)) && Number(x.shipping_cost) >= 0);
+      .filter((x) => {
+        const checkedAt = typeof x.last_checked_at === "string" ? Date.parse(x.last_checked_at) : Number.NaN;
+        const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 && Date.now() - checkedAt <= 24 * 60 * 60_000;
+        const nativeIdsValid = x.supplier_code !== "cj" ||
+          (isCanonicalCjNativeId(x.supplier_product_id) && isCanonicalCjNativeId(x.supplier_variant_id));
+        return Number.isFinite(Number(x.unit_cost)) && Number(x.unit_cost) >= 0 &&
+          Number.isFinite(Number(x.shipping_cost)) && Number(x.shipping_cost) >= 0 &&
+          x.source_status === "verified" && x.ship_to === "JP" && Number(x.inventory) > 0 &&
+          fresh && nativeIdsValid;
+      });
     const validOfferIds = new Set(validOffers.map((x) => x.id));
     const price = asRelationRows(candidate.commerce_prices)
       .filter((x) => validOfferIds.has(x.supplier_offer_id) && x.currency === "JPY" && Number(x.selling_price) > 0 && Number(x.expected_profit) > 0)

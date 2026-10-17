@@ -142,6 +142,8 @@ test("publication and price calculation require fresh verified supplier evidence
   assert.match(core, /invalid_cj_native_supplier_ids/);
   assert.match(publish, /isCanonicalCjNativeId/);
   assert.match(core, /offer\.tracking_supported !== true/);
+  assert.doesNotMatch(publish, /offer\.tracking_supported !== true/);
+  assert.doesNotMatch(publish, /offer\.tracking_supported === true/);
   assert.match(core, /supplier_offer_verification_stale/);
   assert.match(core, /supplier_offer_price_not_fulfillable/);
   assert.match(core, /const quantityByOffer = new Map<string, number>\(\)/);
