@@ -265,7 +265,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       });
     const validOfferIds = new Set(validOffers.map((x) => x.id));
     const latestPrice = asRelationRows(candidate.commerce_prices)
-      .sort((a, b) => Date.parse(String(b.calculated_at ?? "")) - Date.parse(String(a.calculated_at ?? ""))[0];
+      .sort((a, b) => Date.parse(String(b.calculated_at ?? "")) - Date.parse(String(a.calculated_at ?? "")))[0];
     const price = latestPrice && validOfferIds.has(latestPrice.supplier_offer_id) && latestPrice.currency === "JPY" &&
       Number(latestPrice.selling_price) > 0 && Number(latestPrice.expected_profit) > 0 && Number(latestPrice.margin_rate) >= 0.5
       ? latestPrice
