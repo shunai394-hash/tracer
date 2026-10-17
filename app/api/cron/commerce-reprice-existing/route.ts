@@ -158,8 +158,9 @@ export async function GET(request: Request) {
             (Number(row.selling_price) !== canonicalPrice || row.status !== "published");
         })
         .map((row) => String(row.variant_id)))];
-      // Keep each channel update bounded while draining the backlog materially faster.
-      const batchIds = allChannelIds.slice(0, 20);
+      // Keep each channel update small enough to leave headroom under the 300s function timeout.
+      // Ten variants per channel is bounded and retries rotate through the oldest stale listings.
+      const batchIds = allChannelIds.slice(0, 10);
       if (batchIds.length === 0) continue;
       try {
         const synced = await syncCommerceListings(channel, batchIds.length, false, batchIds);
