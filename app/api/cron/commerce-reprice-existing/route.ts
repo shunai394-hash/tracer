@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { recalculatePrice } from "@/lib/commerce/core";
+import { syncCommerceListings } from "@/lib/commerce/publish";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
       .order("updated_at", { ascending: true })
       .limit(2000),
     db.from("commerce_products").select("id").eq("active", true).limit(2000),
-    db.from("commerce_prices").select("variant_id,supplier_offer_id,expected_profit,margin_rate,calculated_at").limit(4000),
+    db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit,margin_rate,calculated_at").limit(4000),
   ]);
   if (offersError || productsError || pricesError) {
     return NextResponse.json({
@@ -93,10 +94,19 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "usd_jpy_rate_unavailable", considered: candidates.length, repriced: 0 }, { status: 503 });
   }
 
-  const result = { considered: candidates.length, repriced: 0, skipped: 0, skippedUnknownShipping, errors: [] as Array<{ offerId: string; reason: string }> };
+  const result = {
+    considered: candidates.length,
+    repriced: 0,
+    skipped: 0,
+    skippedUnknownShipping,
+    errors: [] as Array<{ offerId: string; reason: string }>,
+    storefrontSync: { base: 0, shopify: 0 },
+    storefrontSyncErrors: [] as Array<{ channel: string; reason: string }>,
+  };
+  const repricedVariantIds: string[] = [];
   for (const offer of candidates) {
     try {
-      await recalculatePrice({
+      const price = await recalculatePrice({
         variantId: String(offer.variant_id),
         offerId: String(offer.id),
         exchangeRateToJpy: String(offer.currency).toUpperCase() === "JPY" ? 1 : usdJpy.rate,
@@ -104,6 +114,10 @@ export async function GET(request: Request) {
         targetMarginRate,
       });
       result.repriced++;
+      const prior = priceByVariant.get(String(offer.variant_id));
+      if (!prior || Number(prior.selling_price) !== price.sellingPrice) {
+        repricedVariantIds.push(String(offer.variant_id));
+      }
     } catch (error) {
       result.skipped++;
       result.errors.push({
@@ -113,5 +127,41 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, ...result, sourceApiCalls: 0, fxRate: usdJpy.rate });
+  // Repricing is not complete until any already-published external listing receives the new canonical price.
+  // Query only the variants whose price changed; never re-sync the entire catalog on each 10-minute pass.
+  if (repricedVariantIds.length > 0) {
+    const uniqueVariantIds = [...new Set(repricedVariantIds)];
+    const { data: publishedListings, error: listingReadError } = await db.from("channel_listings")
+      .select("variant_id,channel")
+      .in("variant_id", uniqueVariantIds)
+      .eq("status", "published");
+    if (listingReadError) {
+      result.storefrontSyncErrors.push({ channel: "lookup", reason: listingReadError.message.slice(0, 180) });
+    } else {
+      for (const channel of ["base", "shopify"] as const) {
+        const channelVariantIds = [...new Set((publishedListings ?? [])
+          .filter((row) => row.channel === channel)
+          .map((row) => String(row.variant_id)))];
+        if (channelVariantIds.length === 0) continue;
+        try {
+          const synced = await syncCommerceListings(channel, channelVariantIds.length, false, channelVariantIds);
+          result.storefrontSync[channel] += synced.published;
+          if (synced.failed > 0) {
+            result.storefrontSyncErrors.push({
+              channel,
+              reason: `updated=${synced.published}, failed=${synced.failed}`,
+            });
+          }
+        } catch (error) {
+          result.storefrontSyncErrors.push({
+            channel,
+            reason: (error instanceof Error ? error.message : String(error)).slice(0, 180),
+          });
+        }
+      }
+    }
+  }
+
+  const ok = result.skipped === 0 && result.errors.length === 0 && result.storefrontSyncErrors.length === 0;
+  return NextResponse.json({ ok, ...result, sourceApiCalls: 0, fxRate: usdJpy.rate }, { status: ok ? 200 : 207 });
 }
