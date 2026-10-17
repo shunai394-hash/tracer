@@ -24,11 +24,11 @@
     },
     {
       "path": "/api/cron/commerce-publish-base",
-      "schedule": "10,25,40,55 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/commerce-publish-shopify",
-      "schedule": "*/15 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/patrol-ai",
