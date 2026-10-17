@@ -338,16 +338,25 @@ export async function discoverAndCreateCjSupply(
   // verified variants are valid publication candidates and are live rechecked.
   const { data: seededRows, error: seededError } = await db
     .from("supplier_listings")
-    .select("id,product_id,title,metadata,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,next_verification_at,verification_attempts,configured,api_available,orderable,tracking_available,ship_to,verification_error,last_verified_at")
+    .select("id,product_id,title,metadata,supplier_product_id,supplier_variant_id,cost,inventory,inventory_confirmed,price_confirmed,verification_status,shipping_status,shipping_checked_at,inventory_checked_at,next_verification_at,verification_attempts,configured,api_available,orderable,tracking_available,ship_to,verification_error,last_verified_at")
     .eq("supplier", "cj")
     .not("supplier_product_id", "is", null)
     .not("supplier_variant_id", "is", null)
     .in("verification_status", ["verified", "unverified", "retryable"])
-    .or(`next_verification_at.is.null,next_verification_at.lte.${new Date().toISOString()}`)
+    .or(`next_verification_at.is.null,next_verification_at.lte.${new Date().toISOString()},shipping_checked_at.is.null,inventory_checked_at.is.null`)
     .order("next_verification_at", { ascending: true, nullsFirst: true })
     .order("inventory", { ascending: false, nullsFirst: false })
     .limit(500);
   if (seededError) throw new Error(`supply-first candidate query failed: ${seededError.message}`);
+
+  // Rows with missing live-check timestamps must re-enter the verification
+  // queue even if they already passed the Sales Test Gate. Their current
+  // listing is not proof of fresh inventory or Japan freight.
+  for (const row of seededRows ?? []) {
+    if (row.shipping_checked_at == null || row.inventory_checked_at == null) {
+      existingVariants.delete(`${String(row.supplier_product_id)}:${String(row.supplier_variant_id)}`);
+    }
+  }
 
   const seenSeedKeys = new Set<string>();
   const seeded = (seededRows ?? [])
