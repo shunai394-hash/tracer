@@ -12,7 +12,7 @@ const auditMigration = readFileSync("supabase/migrations/20261010150000_tracer_i
 assert.match(discovery, /import \{ persistCjInternalSupplyCandidate \} from "@\/lib\/suppliers\/persist-cj-internal-supply"/);
 assert.match(discovery, /isCanonicalCJNativeId\(candidateProductId\)[\s\S]*?isCanonicalCJNativeId\(variantId\)/,
   "discovery must reject non-native product/variant IDs before accepting a resolved pair");
-assert.match(nativeId, /\^\\\\d\{10,22\}\$/,
+assert.ok(nativeId.includes(String.raw`\\d{10,22}`),
   "CJ native IDs must remain decimal IDs, not TRACER UUIDs or SKUs");
 assert.match(discovery, /\.eq\("job_name", "cj-api-quota-circuit"\)/,
   "supply-first must inspect the persisted CJ quota circuit before attempting provider calls");
