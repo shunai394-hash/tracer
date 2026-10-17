@@ -922,6 +922,7 @@ test("Shopify live reconciliation exports full row-level IDs, SKUs, prices, and 
   assert.match(workflow, /shopify-linked-row-audit\.csv/);
   assert.match(workflow, /shopify-unlinked-products\.csv/);
   assert.match(workflow, /Upload read-only Shopify audit evidence/);
+  assert.match(workflow, /workflow_run:[\s\S]*?TRACER Run Supplier-First Recovery/);
   assert.match(workflow, /writesPerformed.*False/);
 });
 
