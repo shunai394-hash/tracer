@@ -122,15 +122,16 @@ test("publication matches each JPY profitable price to its own cost-bearing supp
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /asRelationRows\(candidate\.supplier_offers\)/);
   assert.match(publish, /asRelationRows\(candidate\.commerce_prices\)/);
-  assert.match(publish, /const validOfferIds = new Set\(validOffers\.map\(\(x\) => x\.id\)\)/);
-  assert.match(publish, /validOfferIds\.has\(x\.supplier_offer_id\) && x\.currency === "JPY"/);
-  assert.match(publish, /validOffers\.find\(\(x\) => x\.id === price\.supplier_offer_id\)/);
+  assert.match(publish, /currentPriceRows = asRelationRows\(candidate\.commerce_prices\)\.sort/);
+  assert.match(publish, /const currentCanonicalPrice = currentPriceRows\[0\]/);
+  assert.match(publish, /const price = currentCanonicalPrice && currentPriceOffer/);
+  assert.match(publish, /validOffers\.find\(\(candidateOffer\) => String\(candidateOffer\.id\) === currentPriceOfferId\)/);
   assert.doesNotMatch(publish, /candidate\.commerce_prices\.supplier_offer_id/);
 });
 test("supplier readiness failures do not automatically unpublish profitable catalog listings", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /const staleListings = await unpublishUnfulfillableListings\(channel, db\)/);
-  assert.match(publish, /Do not unpublish profitable catalog items merely because live supplier verification is temporarily unavailable/);
+  assert.match(publish, /disable external purchase until the exact priced offer has verified stock and Japan-bound freight/);
   assert.match(publish, /supplier_offer_no_longer_fulfillable:/);
 });
 test("patrol readiness and snapshots include canonical commerce tables after legacy reset", async () => {
@@ -789,6 +790,22 @@ test("TRACER product detail copy stays generic to the actual product", async () 
   assert.doesNotMatch(page, /お使いの端末に合うケース/);
 });
 
+
+test("publisher selects the latest canonical price calculation before matching its supplier offer", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /commerce_prices!inner\(supplier_offer_id,calculated_at,currency/);
+  assert.match(publish, /currentPriceRows = asRelationRows\(candidate\.commerce_prices\)\.sort/);
+});
+
+test("unpublish safety checks the exact supplier offer behind the canonical price", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /currentPriceOfferId/);
+  assert.match(publish, /const currentCanonicalPrice = currentPriceRows\[0\]/);
+  assert.match(publish, /const price = currentCanonicalPrice && currentPriceOffer/);
+  assert.match(publish, /allOffers\.find\(\(candidateOffer\) => String\(candidateOffer\.id\) === currentPriceOfferId\)/);
+  assert.doesNotMatch(publish, /const rawOffer = offer \?\? allOffers\[0\]/);
+  assert.doesNotMatch(publish, /price\?\.supplier_offer_id \?\? currentPriceRows\[0\]/);
+});
 
 test("price reconciliation disables published listings with unverified supplier evidence", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
