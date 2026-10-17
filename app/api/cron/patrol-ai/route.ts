@@ -409,11 +409,13 @@ export async function GET(request: Request) {
     }
 
     // Canonical commerce listings (Shopify channel_listings) are not in the
-    // shop_listings ledger above; deliver a few per run with their own ledger.
+    // shop_listings ledger above; deliver a bounded batch per run with their own ledger.
+    // Five concurrent deliveries keep the 500+ item backlog moving without
+    // approaching the patrol deadline; the delivery ledger prevents duplicates.
     if (Date.now() < startedAt + 250_000) {
       try {
         const commerceNewfind = await withinBudget(
-          promoteCommerceListingsToNewfind({ limit: 2, deadlineAt: startedAt + 285_000 }),
+          promoteCommerceListingsToNewfind({ limit: 5, deadlineAt: startedAt + 285_000 }),
           startedAt + 290_000,
           "newfind_commerce",
         );
