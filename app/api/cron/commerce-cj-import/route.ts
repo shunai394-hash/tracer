@@ -283,19 +283,52 @@ export async function GET(request: Request) {
         throw new Error("missing_shopify_offer_recovery_read_failed:" + (erroredOffersError?.message ?? shopifyRowsError?.message));
       }
       const shopifyVariantIds = new Set((shopifyRows ?? []).map((row) => String(row.variant_id)));
-      const missingShopifyByParent = new Map<string, string[]>();
-      for (const offer of erroredOffers ?? []) {
+      const eligibleErroredOffers = (erroredOffers ?? []).filter((offer) => {
         const parentId = String(offer.supplier_product_id ?? "").trim();
         const variantId = String(offer.supplier_variant_id ?? "").trim();
-        if (!/^\d{10,22}$/.test(parentId) || !/^\d{10,25}$/.test(variantId)) continue;
-        if (shopifyVariantIds.has(String(offer.variant_id))) continue;
-        const variantIds = missingShopifyByParent.get(parentId) ?? [];
-        if (!variantIds.includes(variantId)) variantIds.push(variantId);
-        missingShopifyByParent.set(parentId, variantIds);
+        return /^\d{10,22}$/.test(parentId) &&
+          /^\d{10,25}$/.test(variantId) &&
+          !shopifyVariantIds.has(String(offer.variant_id));
+      });
+      // Persisted exclusions record the last real attempt even when CJ returns
+      // no freight quote. Rotate by that timestamp so the oldest blocked offers
+      // do not monopolize every 10-minute import batch.
+      const retryIdentities = [...new Set(eligibleErroredOffers.map((offer) =>
+        String(offer.supplier_product_id).trim() + ":" + String(offer.supplier_variant_id).trim(),
+      ))];
+      const { data: exclusionRows, error: exclusionReadError } = retryIdentities.length
+        ? await db.from("commerce_events").select("entity_id,detail")
+          .eq("event_type", "cj_import_exclusion").in("entity_id", retryIdentities).limit(5000)
+        : { data: [], error: null };
+      if (exclusionReadError) throw new Error("missing_shopify_retry_history_read_failed:" + exclusionReadError.message);
+      const lastAttemptByIdentity = new Map<string, number>();
+      for (const row of exclusionRows ?? []) {
+        const identity = String(row.entity_id ?? "");
+        const detail = row.detail && typeof row.detail === "object" && !Array.isArray(row.detail)
+          ? row.detail as Record<string, unknown> : {};
+        const timestamp = typeof detail.recordedAt === "string" ? Date.parse(detail.recordedAt) : Number.NaN;
+        if (!Number.isFinite(timestamp)) continue;
+        if (timestamp > (lastAttemptByIdentity.get(identity) ?? 0)) lastAttemptByIdentity.set(identity, timestamp);
+      }
+      const missingShopifyByParent = new Map<string, { variantIds: string[]; lastAttemptedAt: number }>();
+      const orderedErroredOffers = [...eligibleErroredOffers].sort((a, b) => {
+        const aIdentity = String(a.supplier_product_id).trim() + ":" + String(a.supplier_variant_id).trim();
+        const bIdentity = String(b.supplier_product_id).trim() + ":" + String(b.supplier_variant_id).trim();
+        return (lastAttemptByIdentity.get(aIdentity) ?? 0) - (lastAttemptByIdentity.get(bIdentity) ?? 0);
+      });
+      for (const offer of orderedErroredOffers) {
+        const parentId = String(offer.supplier_product_id).trim();
+        const variantId = String(offer.supplier_variant_id).trim();
+        const identity = parentId + ":" + variantId;
+        const group = missingShopifyByParent.get(parentId) ?? { variantIds: [], lastAttemptedAt: Number.POSITIVE_INFINITY };
+        if (!group.variantIds.includes(variantId)) group.variantIds.push(variantId);
+        group.lastAttemptedAt = Math.min(group.lastAttemptedAt, lastAttemptByIdentity.get(identity) ?? 0);
+        missingShopifyByParent.set(parentId, group);
       }
       const retryCandidates: ImportCandidate[] = [...missingShopifyByParent.entries()]
+        .sort((a, b) => a[1].lastAttemptedAt - b[1].lastAttemptedAt)
         .slice(0, limit)
-        .map(([id, retryVariantIds]) => ({ id, title: "", retryVariantIds }));
+        .map(([id, group]) => ({ id, title: "", retryVariantIds: group.variantIds }));
 
       // Prefer never-imported CJ parents for remaining slots so search pages
       // containing existing products cannot consume the entire discovery batch.
