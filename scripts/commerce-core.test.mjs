@@ -22,12 +22,16 @@ test("rejects negative costs", () => {
   assert.throws(() => calculateSellingPrice({ unitCostJpy: -1, shippingCostJpy: 0, feeRate: 0.1 }), /invalid_unitCostJpy/);
 });
 
-test("storefront publication is profit-first and independent from live supplier readiness", async () => {
+test("storefront publication requires exact supplier identity and landed profit, not cached stock or tracking", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
   assert.match(publish, /commerce_prices\.expected_profit", 0/);
-  assert.doesNotMatch(publish, /supplier_offers\.source_status", "verified/);
-  assert.doesNotMatch(publish, /supplier_offers\.tracking_supported", true/);
+  assert.match(publish, /const hasPublishableLinkedOffer = offers\.some/);
+  assert.match(publish, /offer\.supplier_product_id && offer\.supplier_variant_id && nativeIdsValid/);
+  assert.match(publish, /Number\.isFinite\(Number\(offer\.unit_cost\)\)/);
+  assert.match(publish, /Number\.isFinite\(Number\(offer\.shipping_cost\)\)/);
+  assert.doesNotMatch(publish, /offer\.tracking_supported === true/);
+  assert.doesNotMatch(publish, /offer\.source_status === "verified" && nativeIdsValid/);
   assert.match(publish, /Math\.max\(1, Number\(offer\.inventory\) \|\| 0\)/);
 });
 
