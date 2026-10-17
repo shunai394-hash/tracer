@@ -110,7 +110,7 @@ export async function GET(request: Request) {
       ? offer.raw_data as Record<string, unknown>
       : {};
     const stockKnown = raw.stockKnown === true;
-    const shippingKnown = raw.shippingKnown === true || raw.shippingEstimated === true;
+    const shippingKnown = raw.shippingKnown === true && raw.shippingEstimated !== true;
     const inventory = Number(offer.inventory);
     const unitCost = Number(offer.unit_cost);
     const shippingCost = Number(offer.shipping_cost);

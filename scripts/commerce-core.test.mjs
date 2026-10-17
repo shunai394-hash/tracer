@@ -51,8 +51,15 @@ test("storefront publication requires exact supplier identity and evidenced land
   assert.match(publish, /unitCostKnown/);
   assert.match(publish, /offer\.raw_data\?\.shippingKnown === true/);
   assert.match(publish, /offer\.tracking_supported === true/);
+  const legacyReconcile = await readFile(new URL("../app/api/cron/base-legacy-price-reconcile/route.ts", import.meta.url), "utf8");
+  assert.match(legacyReconcile, /raw\.shippingKnown === true && raw\.shippingEstimated !== true/);
+  const repriceExisting = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(repriceExisting, /rawData\.shippingKnown === true && rawData\.shippingEstimated !== true/);
   assert.doesNotMatch(publish, /offer\.source_status === "verified" && nativeIdsValid/);
   assert.match(publish, /const supplierShippingKnown =/);
+  assert.match(publish, /x\.raw_data\?\.shippingEstimated !== true/);
+  assert.match(publish, /preflightRawOfferData\.shippingEstimated !== true/);
+  assert.match(publish, /rawOfferData\.shippingEstimated !== true/);
   assert.match(publish, /const supplierStockKnown =/);
   assert.match(publish, /const supplierSaleable = supplierShippingKnown && supplierStockKnown/);
   assert.match(publish, /offer\.source_status === "verified"/);
@@ -75,10 +82,10 @@ test("new storefront candidates require evidenced landed costs and exact supplie
   assert.match(publish, /const validOffers = asRelationRows\(candidate\.supplier_offers\)/);
   assert.match(publish, /const nativeIdsValid = x\.supplier_code !== "cj"/);
   assert.match(publish, /const unitCostKnown = Number\.isFinite\(Number\(x\.unit_cost\)\) && Number\(x\.unit_cost\) > 0/);
-  assert.match(publish, /const shippingKnown = x\.raw_data\?\.shippingKnown === true/);
+  assert.match(publish, /x\.raw_data\?\.shippingEstimated !== true/);
   assert.match(publish, /x\.raw_data\?\.shippingKnown === undefined && x\.source_status === "verified"/);
+  assert.match(publish, /offer\.raw_data\?\.shippingEstimated !== true/);
   assert.match(publish, /offer\.raw_data\?\.shippingKnown === undefined && offer\.source_status === "verified"/);
-  assert.match(publish, /x\.raw_data\?\.shippingKnown === true/);
   assert.match(publish, /Boolean\(x\.supplier_product_id && x\.supplier_variant_id && nativeIdsValid && unitCostKnown && shippingKnown\)/);
 });
 
@@ -957,8 +964,9 @@ test("CJ freight quote misses use a conservative historical reserve while preser
   const publisher = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   const repricer = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
   assert.ok(!publisher.includes("offer.raw_data?.shippingKnown === true || offer.raw_data?.shippingEstimated === true"));
-  assert.ok(publisher.includes("preflightRawOfferData.shippingEstimated === true"));
-  assert.ok(repricer.includes("rawData.shippingEstimated === true"));
+  assert.ok(publisher.includes("preflightRawOfferData.shippingEstimated !== true"));
+  assert.ok(publisher.includes("rawOfferData.shippingEstimated !== true"));
+  assert.ok(repricer.includes("rawData.shippingKnown === true && rawData.shippingEstimated !== true"));
   assert.ok(importer.includes("targetMarginRate: 0.5"));
 });
 
