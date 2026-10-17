@@ -237,7 +237,7 @@ test("clean commerce cron schedule preserves canonical routes and the required f
   assert.equal(schedules.get("/api/cron/patrol-ai"), "*/5 * * * *", "the existing patrol must remain enabled every five minutes");
   assert.equal(schedules.has("/api/cron/market-sourcing"), false);
   assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
-  assert.equal(schedules.has("/api/cron/supply-first"), false);
+  assert.equal(schedules.get("/api/cron/supply-first"), "3,33 * * * *", "supplier-first discovery must be scheduled so new products can be discovered");
 });
 
 test("both channels use the shared capped storefront quantity and Japanese title validation", async () => {
