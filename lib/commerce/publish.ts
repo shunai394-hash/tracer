@@ -3,7 +3,6 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { addBaseItemImage, createBaseItem, editBaseItem, fetchBaseItemsSnapshot, getBasePublicShopUrl, isBaseConfigured, BASE_ITEMS_MAX_PAGES } from "@/lib/channels/base";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, updateShopifyProduct } from "@/lib/shopify/admin";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
-import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isCanonicalCjNativeId } from "@/lib/commerce/core";
 import { asRelationRows } from "@/lib/commerce/relation-rows";
 import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
@@ -252,28 +251,31 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   const results: Array<{ variantId: string; ok: boolean; externalId?: string; error?: string }> = [];
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
+    // Listing requires an exact supplier destination, not a set of optional
+    // freshness/stock/tracking gates. The paid-order procurement worker checks
+    // current stock, shipping address, variant IDs, and fulfillment capability.
     const validOffers = asRelationRows(candidate.supplier_offers)
-      .filter((x) => Number.isFinite(Number(x.unit_cost)) && Number(x.unit_cost) >= 0 &&
-        Number.isFinite(Number(x.shipping_cost)) && Number(x.shipping_cost) >= 0);
+      .filter((x) => String(x.id ?? "").trim() !== ""
+        && String(x.supplier_code ?? "").trim() !== ""
+        && String(x.supplier_product_id ?? "").trim() !== ""
+        && String(x.supplier_variant_id ?? "").trim() !== ""
+        && Number.isFinite(Number(x.unit_cost)) && Number(x.unit_cost) >= 0
+        && Number.isFinite(Number(x.shipping_cost)) && Number(x.shipping_cost) >= 0);
     const validOfferIds = new Set(validOffers.map((x) => x.id));
     const price = asRelationRows(candidate.commerce_prices)
       .filter((x) => validOfferIds.has(x.supplier_offer_id) && x.currency === "JPY" && Number(x.selling_price) > 0 && Number(x.expected_profit) > 0)
       .sort((a, b) => Number(b.expected_profit) - Number(a.expected_profit))[0];
     const offer = price ? validOffers.find((x) => x.id === price.supplier_offer_id) : undefined;
     const imageUrl = safeUrl(product.image_url);
-    if (!offer || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0) {
-      results.push({ variantId: candidate.id, ok: false, error: !offer ? "supplier_offer_missing_or_cost_unknown" : !imageUrl ? "image_url_invalid" : "price_not_profitable" });
+    if (!offer || !price || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0) {
+      results.push({ variantId: candidate.id, ok: false, error: !offer ? "supplier_link_or_cost_missing" : "price_not_profitable" });
       continue;
     }
-    const title = candidate.title_ja.trim() || product.title_ja.trim();
-    // Keep profitable catalog items publishable even when the supplier's cached stock is zero.
-    // Procurement still revalidates live stock before placing any supplier order.
+    const title = candidate.title_ja.trim() || product.title_ja.trim() || offer.supplier_product_id;
+    // A linked item remains listable when cached stock is temporarily zero.
+    // Paid-order procurement rechecks live stock and the exact supplier variant.
     const storefrontStock = toStorefrontStockQuantity(Math.max(1, Number(offer.inventory) || 0), getStorefrontStockCap());
-    if (!isJapaneseProductTitle(title)) {
-      results.push({ variantId: candidate.id, ok: false, error: "japanese_product_title_invalid" });
-      continue;
-    }
-    const description = (product.description_ja || title + "。商品仕様・配送条件は仕入先の最新情報をご確認ください。").trim();
+    const description = (product.description_ja || title).trim();
     const sku = "TRC-" + candidate.id.replace(/-/g, "").slice(0, 24).toUpperCase();
     let baseCreateIdNeedsRecovery: string | null = null;
     try {
@@ -338,8 +340,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           if (saveCreatedIdError) throw new Error("base_created_item_id_save_failed:" + saveCreatedIdError.message);
           baseCreateIdNeedsRecovery = null;
         }
-        await addBaseItemImage({ itemId: externalProductId, imageNo: 1, imageUrl });
-        // Only make the item visible after the external ID and image are saved.
+        if (imageUrl) await addBaseItemImage({ itemId: externalProductId, imageNo: 1, imageUrl });
+        // Make the item visible after the external ID is saved; an optional image
+        // must not prevent a correctly linked supplier item from being listed.
         const visibleResponse = await editBaseItem({ itemId: externalProductId, title, detail: description, price: Number(price.selling_price), stock: storefrontStock, visible: true });
         publishedUrl = resolveBasePublicUrl(visibleResponse, externalProductId, basePublicShopUrl)
           ?? resolveBasePublicUrl(baseResponse, externalProductId, basePublicShopUrl);
@@ -394,7 +397,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           ? await updateShopifyProduct({ productId, title, descriptionHtml: description, handle, price: Number(price.selling_price), variantId, sku, imageUrl: null })
           : recoveredProduct && recoveredVariantId
             ? await updateShopifyProduct({ productId: recoveredProduct.id, title, descriptionHtml: description, handle, price: Number(price.selling_price), variantId: recoveredVariantId, sku, imageUrl: null })
-            : await createShopifyProduct({ title, descriptionHtml: description, handle, price: Number(price.selling_price), sku, imageUrl });
+            : await createShopifyProduct({ title, descriptionHtml: description, handle, price: Number(price.selling_price), sku, imageUrl: imageUrl ?? undefined });
         externalProductId = productResult.id;
         const variant = productResult.variants?.nodes?.[0];
         if (!variant?.id) throw new Error("shopify_variant_id_missing");
