@@ -44,13 +44,18 @@ export async function GET(request: Request) {
 
   const activeProductIds = new Set((activeProducts ?? []).map((row) => String(row.id)));
   const { data: variants, error: variantsError } = await db.from("commerce_variants")
-    .select("id,product_id")
+    .select("id,product_id,commerce_products!inner(updated_at)")
     .in("product_id", [...activeProductIds].slice(0, 2000))
     .limit(4000);
   if (variantsError) {
     return NextResponse.json({ ok: false, error: "existing_variant_read_failed", detail: variantsError.message }, { status: 500 });
   }
   const activeVariantIds = new Set((variants ?? []).map((row) => String(row.id)));
+  const productUpdatedAtByVariant = new Map<string, string>();
+  for (const row of variants ?? []) {
+    const relatedProduct = Array.isArray(row.commerce_products) ? row.commerce_products[0] : row.commerce_products;
+    if (typeof relatedProduct?.updated_at === "string") productUpdatedAtByVariant.set(String(row.id), relatedProduct.updated_at);
+  }
   // The query is newest-first. Keep the first row per variant so a later/older
   // historical price cannot overwrite the canonical current price in either map.
   const priceByVariant = new Map<string, NonNullable<typeof prices>[number]>();
@@ -166,10 +171,13 @@ export async function GET(request: Request) {
           if (row.channel !== channel) return false;
           const variantId = String(row.variant_id);
           const canonicalPrice = canonicalPriceByVariant.get(variantId);
+          const productUpdatedAt = productUpdatedAtByVariant.get(variantId);
+          const contentNeedsSync = Boolean(productUpdatedAt) &&
+            (!row.last_synced_at || Date.parse(productUpdatedAt!) > Date.parse(String(row.last_synced_at)));
           if (canonicalPrice !== undefined && row.status === "published" && unverifiedVariantIds.has(variantId)) return true;
           if (canonicalPrice !== undefined && unverifiedVariantIds.has(variantId)) return false;
           return canonicalPrice !== undefined &&
-            (Number(row.selling_price) !== canonicalPrice || row.status !== "published");
+            (Number(row.selling_price) !== canonicalPrice || row.status !== "published" || contentNeedsSync);
         })
         .map((row) => String(row.variant_id)))];
       // Keep each channel update small enough to leave headroom under the 300s function timeout.
