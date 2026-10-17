@@ -615,11 +615,13 @@ test("supply-first active-run lock conflicts are logged as expected skips, not e
   assert.match(route, /reason: "supply_first_already_running"/);
 });
 
-test("scheduled commerce publication refreshes existing listings by default and allows unpublished-only recovery", async () => {
+test("scheduled publication skips already-published rows while price reconciliation explicitly refreshes stale prices", async () => {
   const baseRoute = await readFile(new URL("../app/api/cron/commerce-publish-base/route.ts", import.meta.url), "utf8");
   const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
-  assert.match(baseRoute, /searchParams\.get\("onlyUnpublished"\) === "true"/);
-  assert.match(shopifyRoute, /searchParams\.get\("onlyUnpublished"\) === "true"/);
+  const repricer = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(baseRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/);
+  assert.match(shopifyRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/);
+  assert.match(repricer, /syncCommerceListings\(channel, batchIds\.length, false, batchIds\)/);
 });
 
 
