@@ -89,7 +89,8 @@ export async function GET(request: Request) {
     const priceMatchesOffer = Boolean(offer && price && String(price.supplier_offer_id ?? "") === String(offer.id));
     const raw = offer?.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
       ? offer.raw_data as Record<string, unknown> : {};
-    const shippingEvidence = raw.shippingKnown === true || raw.shippingEstimated === true;
+    const shippingKnown = raw.shippingKnown === true;
+    const shippingEstimated = raw.shippingEstimated === true;
 
     try {
       const item = await getBaseItemDetail(baseItemId);
@@ -110,10 +111,13 @@ export async function GET(request: Request) {
         offerMatchesSupplierVariant: offerMatches,
         offerStatus: offer?.source_status ?? null,
         supplierInventory: offer ? Number(offer.inventory) : null,
-        shippingEvidence,
+        shippingKnown,
+        shippingEstimated,
+        profitConfirmed: shippingKnown && offer?.source_status === "verified" && Number(offer.inventory) > 0 &&
+          canonicalPrice !== null && Number(price?.expected_profit) > 0,
         priceMatchesCanonical: canonicalPrice !== null && externalPrice === canonicalPrice,
         dbMatchesCanonical: canonicalPrice !== null && Number(listing.selling_price) === canonicalPrice,
-        ok: externalVisible && canonicalPrice !== null && externalPrice === canonicalPrice && offerMatches && shippingEvidence &&
+        ok: externalVisible && canonicalPrice !== null && externalPrice === canonicalPrice && offerMatches && shippingKnown &&
           offer?.source_status === "verified" && Number(offer.inventory) > 0 && Number(price?.expected_profit) > 0,
       };
     } catch (error) {
@@ -127,7 +131,9 @@ export async function GET(request: Request) {
         internalSku: variant?.sku ?? null,
         offerMatchesSupplierVariant: offerMatches,
         offerStatus: offer?.source_status ?? null,
-        shippingEvidence,
+        shippingKnown,
+        shippingEstimated,
+        profitConfirmed: false,
         externalReadError: message.split(":")[0].slice(0, 100),
         ok: false,
       };
