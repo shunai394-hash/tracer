@@ -198,7 +198,7 @@ export async function editBaseItem(input: {
 /** Read one existing BASE item by ID. This is read-only and never changes listing state. */
 export async function getBaseItemDetail(itemId: string): Promise<Record<string, unknown>> {
   const normalizedId = String(itemId ?? "").trim();
-  if (!/^\\d+$/.test(normalizedId)) throw new Error("BASE_ITEM_DETAIL_ID_INVALID");
+  if (!/^\d+$/.test(normalizedId)) throw new Error("BASE_ITEM_DETAIL_ID_INVALID");
   const token = await getBaseAccessToken();
   const response = await fetch(`${BASE_API_URL}/items/detail/${encodeURIComponent(normalizedId)}`, {
     method: "GET",
