@@ -56,22 +56,26 @@ function asNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, number>> {
+type LiveShopifyVariantState = { quantity: number; price: number; sku: string | null };
+
+async function getLiveShopifyVariantState(variantIds: string[]): Promise<Map<string, LiveShopifyVariantState>> {
   const requestedIds = [...new Set(variantIds)];
   const ids = requestedIds.filter((id) => /^gid:\/\/shopify\/ProductVariant\/\d+$/.test(id));
   if (ids.length !== requestedIds.length || ids.length === 0) {
-    throw new Error("shopify_live_stock_variant_ids_invalid");
+    throw new Error("shopify_live_variant_ids_invalid");
   }
-  const liveStock = new Map<string, number>();
+  const liveState = new Map<string, LiveShopifyVariantState>();
   const batchSize = 100;
   for (let offset = 0; offset < ids.length; offset += batchSize) {
     const batch = ids.slice(offset, offset + batchSize);
-    const data = await shopifyGraphQL<{ nodes: Array<{ id: string; inventoryQuantity: number | null } | null> }>(
-      `query LiveVariantInventory($ids: [ID!]!) {
+    const data = await shopifyGraphQL<{ nodes: Array<{ id: string; inventoryQuantity: number | null; price: string | null; sku: string | null } | null> }>(
+      `query LiveVariantState($ids: [ID!]!) {
         nodes(ids: $ids) {
           ... on ProductVariant {
             id
             inventoryQuantity
+            price
+            sku
           }
         }
       }`,
@@ -80,14 +84,16 @@ async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, nu
     for (const node of data.nodes ?? []) {
       if (!node?.id || !batch.includes(node.id)) continue;
       const quantity = asNumber(node.inventoryQuantity);
+      const price = asNumber(node.price);
       if (quantity === null) throw new Error("shopify_live_stock_quantity_unknown");
-      liveStock.set(node.id, Math.max(0, Math.floor(quantity)));
+      if (price === null || price <= 0) throw new Error("shopify_live_variant_price_unknown");
+      liveState.set(node.id, { quantity: Math.max(0, Math.floor(quantity)), price, sku: node.sku ?? null });
     }
-    if (batch.some((id) => !liveStock.has(id))) {
-      throw new Error("shopify_live_stock_response_incomplete");
+    if (batch.some((id) => !liveState.has(id))) {
+      throw new Error("shopify_live_variant_response_incomplete");
     }
   }
-  return liveStock;
+  return liveState;
 }
 
 
@@ -221,8 +227,8 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as Listing[];
   const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 15);
-  let liveStockByVariantId = new Map<string, number>();
-  let liveStockReconciliationError: string | null = null;
+  let liveVariantStateById = new Map<string, LiveShopifyVariantState>();
+  let liveVariantReconciliationError: string | null = null;
   if (!listingIds?.length) {
     const alreadySyncedVariantIds = rows
       .filter((row) => String(row.shopify_sync_status ?? "") === "synced" && Boolean(row.shopify_variant_id))
@@ -230,9 +236,9 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
       .filter((id): id is string => typeof id === "string" && /^gid:\/\/shopify\/ProductVariant\/\d+$/.test(id));
     if (alreadySyncedVariantIds.length > 0) {
       try {
-        liveStockByVariantId = await getLiveShopifyStock(alreadySyncedVariantIds);
+        liveVariantStateById = await getLiveShopifyVariantState(alreadySyncedVariantIds);
       } catch (error) {
-        liveStockReconciliationError = error instanceof Error ? error.message : String(error);
+        liveVariantReconciliationError = error instanceof Error ? error.message : String(error);
       }
     }
   }
@@ -250,11 +256,15 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
           // even if Shopify's current inventory still matches the stale TRACER quantity.
           if (!listingEligible) return true;
           if (status !== "synced") return true;
-          if (liveStockReconciliationError) return false;
+          if (liveVariantReconciliationError) return false;
           const variantId = toShopifyGid("ProductVariant", row.shopify_variant_id);
-          const liveQuantity = variantId ? liveStockByVariantId.get(variantId) : undefined;
-          if (liveQuantity === undefined) return !variantId;
-          return liveQuantity !== toStorefrontStockQuantity(row.inventory, getStorefrontStockCap());
+          const liveState = variantId ? liveVariantStateById.get(variantId) : undefined;
+          if (!liveState) return !variantId;
+          const expectedPrice = asNumber(row.selling_price);
+          return liveState.quantity !== toStorefrontStockQuantity(row.inventory, getStorefrontStockCap())
+            || expectedPrice === null
+            || liveState.price !== expectedPrice
+            || liveState.sku !== sku(row);
         }
         if (row.published === false) {
           return listingEligible;
@@ -263,11 +273,11 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
       }).slice(0, safeLimit);
 
   const result = await syncListingRows(actionable, supabase);
-  if (liveStockReconciliationError) {
+  if (liveVariantReconciliationError) {
     result.failed += 1;
     result.errors.push({
       listingId: "SYSTEM",
-      error: `shopify_live_stock_reconciliation_failed:${liveStockReconciliationError}`.slice(0, 2000),
+      error: `shopify_live_variant_reconciliation_failed:${liveVariantReconciliationError}`.slice(0, 2000),
     });
   }
   return result;
