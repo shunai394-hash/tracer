@@ -31,8 +31,8 @@ assert.match(supplySelector, /requireDomesticShipping: !nativeCjSupplyIdentity/)
 assert.equal(isPublishableCatalogTitle("トレンド・seeded_dueアイテム"), false);
 assert.equal(isPublishableCatalogTitle("Aroma Filter"), true);
 assert.match(supplySelector, /generic_non_merchandisable_title/);
-assert.match(supplySelector, /profitCalculable: profit\\.calculable/, "estimated CJ freight is included in landed-profit calculation");
-assert.match(supplySelector, /shippingUnknown: profit\\.shippingUnknown/);
+assert.match(supplySelector, /profitCalculable: profit\.calculable/, "estimated CJ freight is included in landed-profit calculation");
+assert.match(supplySelector, /shippingUnknown: profit\.shippingUnknown/);
 assert.match(marketSelector, /requireDomesticShipping: true/);
 assert.match(supplySelector, /rejectedCount: rejected\.length/);
 assert.match(supplySelector, /rejectionCounts: summarizeRejections\(rejected\)/);
