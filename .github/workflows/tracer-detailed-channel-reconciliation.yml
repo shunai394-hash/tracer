@@ -6,6 +6,13 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/tracer-detailed-channel-reconciliation.yml'
+      - 'app/api/channels/base/diagnostics/route.ts'
+      - 'app/api/channels/base/identity-repair/route.ts'
+      - 'app/api/admin/commerce/live-price-audit/route.ts'
+      - 'app/api/admin/shopify/reconcile/route.ts'
+      - 'lib/commerce/publish.ts'
+      - 'app/api/cron/commerce-reprice-existing/route.ts'
+      - 'app/api/cron/commerce-cj-import/route.ts'
 
 permissions:
   id-token: write
