@@ -573,6 +573,9 @@ test("scheduled CJ discovery retries errored variants with missing publication o
 test("BASE publication retries recover exact created IDs and refuse ambiguous stable SKUs", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /fetchBaseItemsSnapshot\(\{ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES \}\)/);
+  assert.match(publish, /const state = stateByVariant\.get\(candidate\.id\);\s*return Boolean\(state && !state\.external_product_id\);/);
+  assert.match(publish, /if \(!recoveredId && stateByVariant\.has\(candidate\.id\)\)/);
+  assert.match(publish, /base_create_recovery_snapshot_unavailable:/);
   assert.match(publish, /base_create_id_persist_failed:/);
   assert.match(publish, /base_identifier_ambiguous:/);
   assert.match(publish, /base_sku_already_mapped_to_other_variant:/);
@@ -644,6 +647,8 @@ test("existing supplier offers are repriced from database evidence without consu
   assert.match(route, /from\("supplier_offers"\)/);
   assert.match(route, /recalculatePrice\(/);
   assert.match(route, /sourceApiCalls: 0/);
+  assert.match(route, /\.order\("calculated_at", \{ ascending: false, nullsFirst: false \}\)/, "canonical price rows must be loaded newest first");
+  assert.match(route, /if \(priceByVariant\.has\(variantId\)\) continue/, "older price history must not overwrite the newest price for a variant");
   assert.match(route, /aNeedsPrice/);
   assert.match(route, /rawData\.shippingKnown === true/);
   assert.match(route, /skippedUnknownShipping/);
@@ -725,7 +730,7 @@ test("published storefront price reconciliation uses exact variants and bounded 
   assert.match(route, /canonicalPrice !== undefined/);
   assert.match(route, /Number\(row\.selling_price\) !== canonicalPrice/);
   assert.doesNotMatch(route, /needsSync/);
-  assert.match(route, /allChannelIds\.slice\(0, 20\)/);
+  assert.match(route, /allChannelIds\.slice\(0, 10\)/);
   assert.match(route, /\.select\("variant_id,channel,selling_price,status,last_synced_at"\)/);
   assert.match(route, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)/);
   assert.match(publish, /variantIds\?: string\[\]/);
@@ -740,4 +745,17 @@ test("storefront price reconciliation emits bounded, privacy-safe completion tel
   assert.match(route, /\[TRACER STOREFRONT PRICE RECONCILE\]/);
   assert.match(route, /storefrontSyncErrorCount: result\.storefrontSyncErrors\.length/);
   assert.doesNotMatch(route, /console\.info\([^\n]*(?:customer|orderId|supplierVariantId|accessToken)/i);
+});
+
+
+test("price reconciliation disables published listings with unverified supplier evidence", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(route, /unverifiedVariantIds/);
+  assert.match(route, /row\.status === "published" && unverifiedVariantIds\.has\(variantId\)/);
+  assert.match(route, /synced\.processed \?\? synced\.published/);
+  assert.match(publish, /supplierEvidenceUnverified/);
+  assert.match(publish, /supplier_offer_not_fulfillable:/);
+  assert.match(publish, /shopify_unpublish_failed:/);
+  assert.match(publish, /staleListings\.unpublished\+\+/);
 });
