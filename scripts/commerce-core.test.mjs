@@ -662,3 +662,16 @@ test("existing commerce prices below 50% margin are automatically repriced", asy
   assert.match(route, /targetMarginRate,/);
   assert.doesNotMatch(route, /targetMarginRate: 0\.2/);
 });
+
+
+test("repricing reconciles existing published storefront prices against canonical JPY prices", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.ok(route.includes("const canonicalPriceByVariant = new Map"));
+  assert.ok(route.includes('select("variant_id,channel,selling_price")'));
+  assert.ok(route.includes('eq("status", "published")'));
+  assert.ok(route.includes("Number(listing.selling_price) !== canonicalPrice"));
+  assert.ok(route.includes("syncCommerceListings(channel, channelVariantIds.length, false, channelVariantIds)"));
+  assert.ok(publish.includes("variantIds?: string[]"));
+  assert.ok(publish.includes('candidateQuery.in("id", uniqueVariantIds)'));
+});
