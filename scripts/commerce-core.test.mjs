@@ -759,3 +759,11 @@ test("price reconciliation disables published listings with unverified supplier 
   assert.match(publish, /shopify_unpublish_failed:/);
   assert.match(publish, /staleListings\.unpublished\+\+/);
 });
+
+
+test("storefront reconciliation also syncs updated Japanese product copy", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(route, /commerce_products!inner\(updated_at\)/);
+  assert.match(route, /productUpdatedAtByVariant/);
+  assert.match(route, /contentNeedsSync/);
+});
