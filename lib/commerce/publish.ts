@@ -424,8 +424,12 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         if (!publication.published) throw new Error("shopify_publication_not_confirmed");
         publishedUrl = "https://" + String(process.env.SHOPIFY_STORE_DOMAIN || "").replace(/^https?:\/\//, "") + "/products/" + productResult.handle;
       }
+      // BASE exposes a single sellable item, not a separate variant resource.
+      // Mirror its item ID into external_variant_id as the sellable-unit key; order
+      // ingestion continues to match the actual BASE order line by external_product_id.
+      const mappedExternalVariantId = channel === "base" ? externalProductId : externalVariantId;
       const { error: finishError } = await db.from("channel_listings").update({
-        external_product_id: externalProductId, external_variant_id: externalVariantId, external_sku: sku,
+        external_product_id: externalProductId, external_variant_id: mappedExternalVariantId, external_sku: sku,
         status: "published", published_url: publishedUrl, last_error: null, last_synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }).eq("id", listing.id);
