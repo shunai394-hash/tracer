@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/tracer-detailed-channel-reconciliation.yml'
       - 'app/api/channels/base/diagnostics/route.ts'
+      - 'app/api/channels/base/reconciliation/route.ts'
       - 'app/api/channels/base/identity-repair/route.ts'
       - 'app/api/admin/commerce/live-price-audit/route.ts'
       - 'app/api/admin/shopify/reconcile/route.ts'
@@ -52,6 +53,7 @@ jobs:
           }
 
           call_get "/api/channels/base/diagnostics" "audit-results/base-diagnostics.json" "BASE mapping diagnostics"
+          call_get "/api/channels/base/reconciliation" "audit-results/base-item-reconciliation.json" "BASE live API item reconciliation"
 
           token="$(get_oidc_token)"
           code="$(curl --silent --show-error --max-time 300 -o audit-results/base-identity-dry-run.json -w "%{http_code}" \
@@ -75,6 +77,12 @@ jobs:
           dry = read("base-identity-dry-run.json")
           audit = read("live-price-audit.json")
           shopify = read("shopify-reconcile.json")
+          base_api = read("base-item-reconciliation.json")
+
+          print("=== BASE LIVE API ITEM RECONCILIATION ===")
+          for key, value in base_api.items():
+              if key != "details":
+                  print(f"{key}: {json.dumps(value, ensure_ascii=False, separators=(',', ':'))}")
 
           print("=== BASE SUMMARY ===")
           for key in ("itemAuditComplete", "visibleItemsReturned", "visibleItemsMatchedToDatabase",
