@@ -81,6 +81,8 @@ export async function GET(request: Request) {
   const identityStatusCounts: Record<string, number> = {};
   const verificationStatusCounts: Record<string, number> = {};
   const identityMethodCounts: Record<string, number> = {};
+  const nativePublicationBlockReasonCounts: Record<string, number> = {};
+  const nativePublicationRows: Array<{ shopListingId: string; supplierListingId: string; identityStatus: string; eligible: boolean; blockReasons: string[] }> = [];
   const evidenceCounts = {
     referencedRows: 0,
     inventoryConfirmedTrue: 0,
@@ -133,6 +135,48 @@ export async function GET(request: Request) {
         if (referenced.shipping_cost !== null && Number.isFinite(Number(referenced.shipping_cost)) && Number(referenced.shipping_cost) >= 0) evidenceCounts.shippingCostPresent += 1;
         if (referenced.last_verified_at) evidenceCounts.lastVerifiedAtPresent += 1;
         if (referenced.verification_error) evidenceCounts.verificationErrorPresent += 1;
+        // A discovered CJ offer may be sold as native supplier inventory without
+        // claiming a marketplace identity link, but only if every required live
+        // publication field is present and fresh. Report the exact blockers here
+        // so "eligible" counts from the generic preview cannot be mistaken for
+        // actual Shopify sync eligibility.
+        const verifiedAt = typeof referenced.last_verified_at === "string"
+          ? Date.parse(referenced.last_verified_at)
+          : Number.NaN;
+        const verificationError = referenced.verification_error;
+        const nativeBlockReasons: string[] = [];
+        if (String(referenced.supplier ?? "").trim().toLowerCase() !== "cj") nativeBlockReasons.push("supplier_not_cj");
+        if (referenced.verification_status !== "verified") nativeBlockReasons.push("verification_status_not_verified");
+        if (referenced.shipping_status !== "verified") nativeBlockReasons.push("shipping_status_not_verified");
+        if (referenced.configured !== true) nativeBlockReasons.push("supplier_not_configured");
+        if (referenced.price_confirmed !== true) nativeBlockReasons.push("price_not_confirmed");
+        if (referenced.inventory_confirmed !== true) nativeBlockReasons.push("inventory_not_confirmed");
+        if (referenced.api_available !== true) nativeBlockReasons.push("supplier_api_unavailable");
+        if (referenced.orderable !== true) nativeBlockReasons.push("supplier_not_orderable");
+        if (referenced.tracking_available !== true) nativeBlockReasons.push("tracking_unavailable");
+        if (!(Number(referenced.inventory) > 0)) nativeBlockReasons.push("inventory_not_positive");
+        if (!(Number(referenced.cost) > 0)) nativeBlockReasons.push("supplier_cost_not_positive");
+        if (referenced.shipping_cost === null || referenced.shipping_cost === undefined || !(Number.isFinite(Number(referenced.shipping_cost)) && Number(referenced.shipping_cost) >= 0)) nativeBlockReasons.push("shipping_cost_unknown_or_negative");
+        if (String(referenced.ship_to ?? "").trim().toUpperCase() !== "JP") nativeBlockReasons.push("destination_not_japan");
+        if (!String(referenced.supplier_product_id ?? "").trim()) nativeBlockReasons.push("supplier_product_id_missing");
+        if (!String(referenced.supplier_variant_id ?? "").trim()) nativeBlockReasons.push("supplier_variant_id_missing");
+        if (!Number.isFinite(verifiedAt) || verifiedAt < Date.now() - 7 * 24 * 60 * 60 * 1000 || verifiedAt > Date.now() + 5 * 60 * 1000) {
+          nativeBlockReasons.push("supplier_verification_missing_or_stale");
+        }
+        if (verificationError != null && verificationError !== "" &&
+            !(verificationError === "CJdropshipping is not configured" && referenced.configured === true && referenced.api_available === true)) {
+          nativeBlockReasons.push("supplier_verification_error_present");
+        }
+        for (const reason of nativeBlockReasons) {
+          nativePublicationBlockReasonCounts[reason] = (nativePublicationBlockReasonCounts[reason] ?? 0) + 1;
+        }
+        nativePublicationRows.push({
+          shopListingId: String(row.id),
+          supplierListingId: fk,
+          identityStatus: status,
+          eligible: nativeBlockReasons.length === 0,
+          blockReasons: nativeBlockReasons,
+        });
         const exactPair =
           String(referenced.supplier_product_id ?? "").trim() === product &&
           String(referenced.supplier_variant_id ?? "").trim() === variant;
@@ -167,6 +211,13 @@ export async function GET(request: Request) {
     referencedSupplierVerificationStatusCounts: verificationStatusCounts,
     referencedSupplierIdentityMethodCounts: identityMethodCounts,
     referencedSupplierEvidenceCounts: evidenceCounts,
+    nativeCjPublicationReadiness: {
+      inspected: nativePublicationRows.length,
+      eligible: nativePublicationRows.filter((row) => row.eligible).length,
+      blocked: nativePublicationRows.filter((row) => !row.eligible).length,
+      blockReasonCounts: nativePublicationBlockReasonCounts,
+      rows: nativePublicationRows,
+    },
     repairPolicy: "No rows were changed. Only repairableExactUnique rows may be considered for a separately audited, idempotent link repair.",
   }, { headers: { "Cache-Control": "no-store" } });
 }

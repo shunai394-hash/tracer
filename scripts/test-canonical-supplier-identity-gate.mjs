@@ -178,3 +178,14 @@ console.log("Canonical supplier identity publication and reconciliation checks p
 const marketSourcingRouteForBrightData = await readFile(new URL("../app/api/cron/market-sourcing/route.ts", import.meta.url), "utf8");
 assert.match(marketSourcingRouteForBrightData, /reason: "observation_only"/);
 assert.doesNotMatch(marketSourcingRouteForBrightData, /selectAndPublishSalesTests|promoteShopListingToNewfind/);
+
+
+// The read-only identity audit must explain why exact, supplier-linked rows are not Shopify-sync eligible.
+const identityAuditRoute = await readFile(new URL("../app/api/admin/shopify/identity-audit/route.ts", import.meta.url), "utf8");
+assert.match(identityAuditRoute, /nativeCjPublicationReadiness/);
+assert.match(identityAuditRoute, /shipping_status !== "verified"/);
+assert.match(identityAuditRoute, /configured !== true/);
+assert.match(identityAuditRoute, /referenced\.ship_to[\s\S]*?!== "JP"/);
+assert.match(identityAuditRoute, /supplier_verification_missing_or_stale/);
+assert.match(identityAuditRoute, /nativePublicationBlockReasonCounts/);
+assert.match(identityAuditRoute, /blockReasons: nativeBlockReasons/);
