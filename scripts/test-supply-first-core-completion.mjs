@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
+assert.match(source, /reason: "legacy_shop_listings_disabled_canonical_commerce_only"/,
+  "legacy supplier rows must not create new BASE-only listings");
+assert.doesNotMatch(source, /selectAndPublishSupplySalesTests\\(/,
+  "patrol-ai must not use the legacy selector to create listings outside the canonical commerce catalog");
+const patrolRoute = await readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8");
+assert.doesNotMatch(patrolRoute, /publishPublishedListingsToBase\\(/,
+  "patrol-ai must not publish legacy shop_listings directly to BASE");
 assert.match(source, /optionalDiscoverySteps = new Set\(\["bestsellers", "auxiliary_trends", "supply", "supply_first", "dropship"\]\)/,
   "retryable source discovery/cooldown stages must not block processing of persisted supply candidates");
 assert.match(source, /optionalDiscoverySteps\.has\(step\.name\) && step\.retryable === true\) return false/,
