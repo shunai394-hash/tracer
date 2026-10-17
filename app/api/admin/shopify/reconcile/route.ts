@@ -212,7 +212,8 @@ export async function GET(request: Request) {
         publishedOnOnlineStore: shopify.filter((n) => n.publishedOnPublication).length,
         activeAndPublished: shopify.filter((n) => n.status === "ACTIVE" && n.publishedOnPublication).length,
         withoutImage: shopify.filter((n) => !n.featuredMedia).length,
-        notLinkedInDb: shopify.filter((n) => !linkedIds.has(tail(n.id))).length,
+        notLinkedInDb: shopify.filter((n) => !linkedIds.has(tail(n.id)) && !commerceIds.has(tail(n.id))).length,
+        notLinkedToAnyDbListing: shopify.filter((n) => !linkedIds.has(tail(n.id)) && !commerceIds.has(tail(n.id))).length,
         notLinkedToLegacyShopListings: shopify.filter((n) => !linkedIds.has(tail(n.id))).length,
         matchedToCommerceChannelListings: shopify.filter((n) => commerceIds.has(tail(n.id))).length,
         notLinkedToCommerceChannelListings: shopify.filter((n) => !commerceIds.has(tail(n.id))).length,
@@ -234,7 +235,7 @@ export async function GET(request: Request) {
       },
       // Full row-level evidence is returned to the authenticated audit workflow for artifact export.
       items: checks,
-      unlinkedProducts: shopify.filter((node) => !linkedIds.has(tail(node.id))).map((node) => ({
+      unlinkedProducts: shopify.filter((node) => !linkedIds.has(tail(node.id)) && !commerceIds.has(tail(node.id))).map((node) => ({
         shopifyProductId: node.id,
         handle: node.handle,
         status: node.status,
