@@ -711,10 +711,11 @@ test("commerce publication cron defaults to small batches and caps explicit requ
   const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
   for (const route of [baseRoute, shopifyRoute]) {
     assert.match(route, /searchParams\.get\("limit"\) \|\| 5/);
-    assert.match(route, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/);
     assert.match(route, /Number\.isFinite\(requested\) \?[^\n]*: 5/);
     assert.match(route, /searchParams\.get\("onlyUnpublished"\) === "true"/);
   }
+  assert.match(baseRoute, /Math\.min\(5, Math\.max\(1, Math\.floor\(requested\)\)\)/, "BASE cron caps each run at five listings");
+  assert.match(shopifyRoute, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/, "Shopify cron retains its ten-listing cap");
 });
 
 
