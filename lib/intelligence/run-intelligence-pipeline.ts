@@ -552,15 +552,14 @@ export async function runIntelligencePipeline(options: {
   const canonicalValidVariantIds = new Set((canonicalPrices ?? [])
     .filter((price) => canonicalOfferById.get(String(price.supplier_offer_id)) === String(price.variant_id))
     .map((price) => String(price.variant_id)));
-  const { data: canonicalPublishedRows, error: canonicalPublishedError } = canonicalValidVariantIds.size
+  const { count: canonicalPublishedCountResult, error: canonicalPublishedError } = canonicalValidVariantIds.size
     ? await db.from("channel_listings")
-        .select("id,variant_id,channel")
+        .select("id", { count: "exact", head: true })
         .eq("status", "published")
         .in("variant_id", [...canonicalValidVariantIds])
-        .limit(1000)
-    : { data: [], error: null };
+    : { count: 0, error: null };
   if (canonicalPublishedError) throw new Error("canonical business readiness listing read failed: " + canonicalPublishedError.message);
-  const canonicalPublishedCount = (canonicalPublishedRows ?? []).length;
+  const canonicalPublishedCount = canonicalPublishedCountResult ?? 0;
   const freshOrderableSupplierCount = Math.max(verifiedSupplyCount ?? 0, canonicalValidVariantIds.size);
   const publishedOrderableListings = Math.max(publishedOrderableListingCount ?? 0, canonicalPublishedCount);
   const businessReady =
