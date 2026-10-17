@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { fetchBaseItemsSnapshot } from "@/lib/channels/base";
-import { isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
+import { getOnlineStorePublicationId, isShopifyConfigured, shopifyGraphQL } from "@/lib/shopify/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +25,8 @@ type ShopifyPage = {
       id: string;
       title: string;
       status: string;
+      publishedOnPublication: boolean;
+      totalInventory: number;
       variants: { nodes: Array<{ id: string; sku: string | null; price: string | null }> };
     }>;
     pageInfo: { hasNextPage: boolean; endCursor: string | null };
@@ -87,15 +89,16 @@ export async function GET(request: Request) {
     const baseById = new Map<string, Record<string, unknown>>();
     for (const item of baseSnapshot.items) baseById.set(norm(item.item_id), item);
 
-    const shopifyBySku = new Map<string, Array<{ productId: string; variantId: string; title: string; status: string; price: number | null }>>();
+    const shopifyBySku = new Map<string, Array<{ productId: string; variantId: string; title: string; status: string; published: boolean; totalInventory: number; price: number | null }>>();
     let after: string | undefined;
     let shopifyPages = 0;
     let shopifyComplete = false;
     if (isShopifyConfigured()) {
+      const onlineStorePublicationId = await getOnlineStorePublicationId();
       for (let page = 0; page < 200; page += 1) {
         const result = await shopifyGraphQL<ShopifyPage>(
-          "query LivePriceAudit($first: Int!, $after: String) { products(first: $first, after: $after) { nodes { id title status variants(first: 100) { nodes { id sku price } } } pageInfo { hasNextPage endCursor } } }",
-          { first: 50, after: after ?? null },
+          "query LivePriceAudit($first: Int!, $after: String, $publicationId: ID!) { products(first: $first, after: $after) { nodes { id title status publishedOnPublication(publicationId: $publicationId) totalInventory variants(first: 100) { nodes { id sku price } } } pageInfo { hasNextPage endCursor } } }",
+          { first: 50, after: after ?? null, publicationId: onlineStorePublicationId },
         );
         shopifyPages += 1;
         for (const product of result.products.nodes) {
@@ -103,7 +106,7 @@ export async function GET(request: Request) {
             const sku = norm(variant.sku);
             if (!sku) continue;
             const group = shopifyBySku.get(sku) ?? [];
-            group.push({ productId: product.id, variantId: variant.id, title: product.title, status: product.status, price: yen(variant.price) });
+            group.push({ productId: product.id, variantId: variant.id, title: product.title, status: product.status, published: product.publishedOnPublication, totalInventory: product.totalInventory, price: yen(variant.price) });
             shopifyBySku.set(sku, group);
           }
         }
@@ -169,9 +172,11 @@ export async function GET(request: Request) {
           continue;
         }
         const actual = matches[0].price;
-        if (actual !== expected || (listing.external_product_id && matches[0].productId !== listing.external_product_id) || (listing.external_variant_id && matches[0].variantId !== listing.external_variant_id)) {
+        const externalIdMismatch = Boolean((listing.external_product_id && matches[0].productId !== listing.external_product_id) || (listing.external_variant_id && matches[0].variantId !== listing.external_variant_id));
+        const availabilityMismatch = matches[0].status !== "ACTIVE" || !matches[0].published || matches[0].totalInventory <= 0;
+        if (actual !== expected || externalIdMismatch || availabilityMismatch) {
           summary.priceMismatches += actual !== expected ? 1 : 0;
-          discrepancies.push({ channel: "shopify", listingId: listing.id, sku, expectedPrice: expected, actualPrice: actual, recordedProductId: listing.external_product_id, liveProductId: matches[0].productId, recordedVariantId: listing.external_variant_id, liveVariantId: matches[0].variantId, status: matches[0].status, issue: actual !== expected ? "live_price_mismatch" : "external_id_mismatch" });
+          discrepancies.push({ channel: "shopify", listingId: listing.id, sku, expectedPrice: expected, actualPrice: actual, recordedProductId: listing.external_product_id, liveProductId: matches[0].productId, recordedVariantId: listing.external_variant_id, liveVariantId: matches[0].variantId, status: matches[0].status, publishedOnOnlineStore: matches[0].published, totalInventory: matches[0].totalInventory, issue: actual !== expected ? "live_price_mismatch" : externalIdMismatch ? "external_id_mismatch" : "publication_or_inventory_mismatch" });
         }
       }
     }
