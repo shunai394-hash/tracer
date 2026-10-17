@@ -147,7 +147,6 @@ export async function GET(request: Request) {
         variantsNeedingSync.add(variantId);
       }
     }
-    const uniqueVariantIds = [...variantsNeedingSync];
     for (const channel of ["base", "shopify"] as const) {
       const channelVariantIds = [...new Set((publishedListings ?? [])
         .filter((row) => row.channel === channel && variantsNeedingSync.has(String(row.variant_id)))
