@@ -589,8 +589,10 @@ test("CJ catalog importer prioritizes unseen parent products and scans bounded e
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /from\("commerce_products"\)\.select\("source_key"\)\.like\("source_key", "cj:%"\)/);
   assert.match(importer, /Prefer never-imported CJ parents/);
-  assert.match(importer, /while \(newCandidates\.length < limit && scanPage <= page \+ 2\)/);
-  assert.ok(importer.includes("candidates = newCandidates.slice(0, limit)"));
+  assert.match(importer, /while \(newCandidates\.length < Math\.max\(0, limit - retryCandidates\.length\) && scanPage <= page \+ 2\)/);
+  assert.ok(importer.includes("candidates = [...retryCandidates, ...newCandidates.slice(0, Math.max(0, limit - retryCandidates.length))]"));
+  assert.match(importer, /shopifyVariantIds = new Set/);
+  assert.match(importer, /retryVariantIds\?\.length/);
   assert.match(importer, /searchParams\.get\("limit"\) \|\| 3/);
   assert.match(importer, /searchParams\.get\("variantLimit"\) \|\| 2/);
   assert.doesNotMatch(importer, /const fallbackCandidates/);
