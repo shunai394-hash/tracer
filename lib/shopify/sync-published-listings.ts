@@ -111,6 +111,14 @@ function sku(listing: Listing): string {
 async function ensureJapaneseCopy(row: Listing): Promise<{ title: string; description: string }> {
   const title = String(row.title ?? "").trim();
   const description = String(row.description ?? title).trim();
+  // Workflow/status text must never survive as buyer-facing copy, even when it
+  // happens to contain Japanese characters and passes the language-only check.
+  const workflowDescription = /商品アイデンティティが未確定|選定対象外|観測された需要と供給データに基づいて販売テスト候補になる|sales_test_gate_not_passed|identity_pending/i.test(description);
+  if (workflowDescription && isSpecificJapaneseProductTitle(title)) {
+    const repairedDescription = `${title}。商品画像と販売元の最新掲載情報で仕様をご確認ください。`;
+    await supabaseForCopyUpdate(row.id, title, repairedDescription);
+    return { title, description: repairedDescription };
+  }
   if (isSpecificJapaneseProductTitle(title) && isJapaneseProductDescription(description)) {
     return { title, description };
   }
@@ -261,7 +269,9 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
           const liveState = variantId ? liveVariantStateById.get(variantId) : undefined;
           if (!liveState) return !variantId;
           const expectedPrice = asNumber(row.selling_price);
-          return liveState.quantity !== toStorefrontStockQuantity(row.inventory, getStorefrontStockCap())
+          const staleWorkflowCopy = /商品アイデンティティが未確定|選定対象外|観測された需要と供給データに基づいて販売テスト候補になる|sales_test_gate_not_passed|identity_pending/i.test(String(row.description ?? ""));
+          return staleWorkflowCopy
+            || liveState.quantity !== toStorefrontStockQuantity(row.inventory, getStorefrontStockCap())
             || expectedPrice === null
             || liveState.price !== expectedPrice
             || liveState.sku !== sku(row);
@@ -469,7 +479,9 @@ async function syncListingRows(
       if (price === null || price <= 0) throw new Error("selling_price_invalid");
       if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) throw new Error("image_url_invalid");
 
-      const shippingText = `日本向け配送：${asNumber(row.shipping_cost) === 0 ? "送料無料" : "送料別（仕入先条件に従います）"}。配送条件は仕入先の最新情報をご確認ください。`;
+      const shippingText = asNumber(row.shipping_cost) === 0
+        ? "日本向け送料：仕入先の送料見積もりは0円です。最終的な配送費用は決済画面でご確認ください。"
+        : "日本向け送料：仕入先の送料見積もりは商品価格の計算に反映しています。最終的な配送費用は決済画面でご確認ください。";
       let productInput = {
         title: copy.title,
         descriptionHtml: html(`${copy.description}\n\n${shippingText}`),
