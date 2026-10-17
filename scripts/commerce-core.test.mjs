@@ -607,4 +607,7 @@ test("BASE order polling rotates through older pages while always rescanning the
   assert.match(route, /detail: \{ offset: nextOffset, pageSize: BASE_ORDER_PAGE_SIZE/);
   assert.match(route, /nextScanOffset: nextOffset/);
   assert.match(route, /new Map\(\[\.\.\.recentSummaries, \.\.\.rotatingSummaries\]/);
+  assert.match(route, /base_order_import_error:/);
+  assert.match(route, /status: "needs_review"/);
+  assert.match(route, /status: "resolved"/);
 });
