@@ -75,7 +75,7 @@ test("catalog publication requires positive profit, not current stock or trackin
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
   assert.match(publish, /supplier_offer_missing_or_cost_unknown/);
-  assert.match(publish, /Cover the complete current catalog/);
+  assert.match(publish, /candidateQuery\.order\("updated_at", \{ ascending: false \}\)\.limit\(1000\)/);
   assert.match(publish, /\.limit\(1000\)/);
 });
 
@@ -687,4 +687,16 @@ test("commerce publication cron batch defaults and invalid values remain bounded
     assert.match(route, /Math\.min\(25, Math\.max\(1, Math\.floor\(requested\)\)\)/);
     assert.match(route, /Number\.isFinite\(requested\) \?[^\n]*: 25/);
   }
+});
+
+
+test("published storefront price reconciliation uses exact variants and bounded retry batches", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(route, /syncCommerceListings/);
+  assert.match(route, /storefrontSyncRemaining/);
+  assert.match(route, /allChannelIds\.slice\(0, 5\)/);
+  assert.match(route, /\.select\("variant_id,channel,selling_price,status"\)/);
+  assert.match(publish, /variantIds\?: string\[\]/);
+  assert.match(publish, /candidateQuery\.in\("id", \[\.\.\.new Set\(variantIds\)\]\)/);
 });

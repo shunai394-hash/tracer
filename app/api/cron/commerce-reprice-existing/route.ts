@@ -3,9 +3,10 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { recalculatePrice } from "@/lib/commerce/core";
+import { syncCommerceListings } from "@/lib/commerce/publish";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 /**
  * Reprice already-linked supplier offers without calling the supplier API.
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
       .order("updated_at", { ascending: true })
       .limit(2000),
     db.from("commerce_products").select("id").eq("active", true).limit(2000),
-    db.from("commerce_prices").select("variant_id,supplier_offer_id,expected_profit,margin_rate,calculated_at").limit(4000),
+    db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit,margin_rate,calculated_at").limit(4000),
   ]);
   if (offersError || productsError || pricesError) {
     return NextResponse.json({
@@ -49,6 +50,7 @@ export async function GET(request: Request) {
   }
   const activeVariantIds = new Set((variants ?? []).map((row) => String(row.id)));
   const priceByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), row]));
+  const canonicalPriceByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), Number(row.selling_price)]));
   let skippedUnknownShipping = 0;
   const oneOfferPerVariant = new Map<string, NonNullable<typeof offers>[number]>();
   for (const offer of offers ?? []) {
@@ -93,10 +95,20 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "usd_jpy_rate_unavailable", considered: candidates.length, repriced: 0 }, { status: 503 });
   }
 
-  const result = { considered: candidates.length, repriced: 0, skipped: 0, skippedUnknownShipping, errors: [] as Array<{ offerId: string; reason: string }> };
+  const result = {
+    considered: candidates.length,
+    repriced: 0,
+    skipped: 0,
+    skippedUnknownShipping,
+    errors: [] as Array<{ offerId: string; reason: string }>,
+    storefrontSync: { base: 0, shopify: 0 },
+    storefrontSyncRemaining: { base: 0, shopify: 0 },
+    storefrontSyncErrors: [] as Array<{ channel: string; reason: string }>,
+  };
+  const repricedVariantIds: string[] = [];
   for (const offer of candidates) {
     try {
-      await recalculatePrice({
+      const price = await recalculatePrice({
         variantId: String(offer.variant_id),
         offerId: String(offer.id),
         exchangeRateToJpy: String(offer.currency).toUpperCase() === "JPY" ? 1 : usdJpy.rate,
@@ -104,6 +116,10 @@ export async function GET(request: Request) {
         targetMarginRate,
       });
       result.repriced++;
+      const variantId = String(offer.variant_id);
+      const previous = priceByVariant.get(variantId);
+      canonicalPriceByVariant.set(variantId, price.sellingPrice);
+      if (!previous || Number(previous.selling_price) !== price.sellingPrice) repricedVariantIds.push(variantId);
     } catch (error) {
       result.skipped++;
       result.errors.push({
@@ -113,5 +129,47 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, ...result, sourceApiCalls: 0, fxRate: usdJpy.rate });
+  // Reconcile storefront prices already published before the canonical price change.
+  // Query all states so a failed sync remains eligible for retry on the next cron run.
+  const { data: listings, error: listingReadError } = await db.from("channel_listings")
+    .select("variant_id,channel,selling_price,status")
+    .limit(5000);
+  if (listingReadError) {
+    result.storefrontSyncErrors.push({ channel: "lookup", reason: listingReadError.message.slice(0, 180) });
+  } else {
+    const needsSync = new Set(repricedVariantIds);
+    for (const listing of listings ?? []) {
+      const variantId = String(listing.variant_id);
+      const canonicalPrice = canonicalPriceByVariant.get(variantId);
+      if (canonicalPrice !== undefined &&
+          (Number(listing.selling_price) !== canonicalPrice || listing.status !== "published")) {
+        needsSync.add(variantId);
+      }
+    }
+    for (const channel of ["base", "shopify"] as const) {
+      const allChannelIds = [...new Set((listings ?? [])
+        .filter((row) => row.channel === channel && needsSync.has(String(row.variant_id)))
+        .map((row) => String(row.variant_id)))];
+      const batchIds = allChannelIds.slice(0, 5);
+      if (batchIds.length === 0) continue;
+      try {
+        const synced = await syncCommerceListings(channel, batchIds.length, false, batchIds);
+        result.storefrontSync[channel] += synced.published;
+        result.storefrontSyncRemaining[channel] = Math.max(0, allChannelIds.length - synced.published);
+        if (synced.failed > 0 || synced.considered < batchIds.length) {
+          result.storefrontSyncErrors.push({
+            channel,
+            reason: `requested=${batchIds.length}, considered=${synced.considered}, updated=${synced.published}, failed=${synced.failed}, backlog=${allChannelIds.length}`,
+          });
+        }
+      } catch (error) {
+        result.storefrontSyncErrors.push({
+          channel,
+          reason: (error instanceof Error ? error.message : String(error)).slice(0, 180),
+        });
+      }
+    }
+  }
+  const ok = result.skipped === 0 && result.errors.length === 0 && result.storefrontSyncErrors.length === 0;
+  return NextResponse.json({ ok, ...result, sourceApiCalls: 0, fxRate: usdJpy.rate }, { status: ok ? 200 : 207 });
 }
