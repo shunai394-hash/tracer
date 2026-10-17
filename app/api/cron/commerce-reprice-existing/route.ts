@@ -46,17 +46,26 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "existing_variant_read_failed", detail: variantsError.message }, { status: 500 });
   }
   const activeVariantIds = new Set((variants ?? []).map((row) => String(row.id)));
-  const priceByOffer = new Map((prices ?? []).map((row) => [String(row.supplier_offer_id), row]));
-  const candidates = (offers ?? [])
-    .filter((offer) => activeVariantIds.has(String(offer.variant_id)))
-    .filter((offer) => Number.isFinite(Number(offer.unit_cost)) && Number(offer.unit_cost) >= 0)
-    .filter((offer) => Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) >= 0)
-    .filter((offer) => ["USD", "JPY"].includes(String(offer.currency ?? "").toUpperCase()))
+  const priceByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), row]));
+  const oneOfferPerVariant = new Map<string, (typeof offers extends Array<infer T> ? T : never)>();
+  for (const offer of offers ?? []) {
+    const variantId = String(offer.variant_id);
+    if (!activeVariantIds.has(variantId) || offer.unit_cost === null || offer.shipping_cost === null) continue;
+    if (!Number.isFinite(Number(offer.unit_cost)) || Number(offer.unit_cost) < 0) continue;
+    if (!Number.isFinite(Number(offer.shipping_cost)) || Number(offer.shipping_cost) < 0) continue;
+    if (!["USD", "JPY"].includes(String(offer.currency ?? "").toUpperCase())) continue;
+    const currentPrice = priceByVariant.get(variantId);
+    const existing = oneOfferPerVariant.get(variantId);
+    const offerIsCurrent = currentPrice && String(currentPrice.supplier_offer_id) === String(offer.id);
+    const existingIsCurrent = existing && currentPrice && String(currentPrice.supplier_offer_id) === String(existing.id);
+    if (!existing || (offerIsCurrent && !existingIsCurrent)) oneOfferPerVariant.set(variantId, offer);
+  }
+  const candidates = [...oneOfferPerVariant.values()]
     .sort((a, b) => {
-      const ap = priceByOffer.get(String(a.id));
-      const bp = priceByOffer.get(String(b.id));
-      const aNeedsPrice = !ap || Number(ap.expected_profit) <= 0;
-      const bNeedsPrice = !bp || Number(bp.expected_profit) <= 0;
+      const ap = priceByVariant.get(String(a.variant_id));
+      const bp = priceByVariant.get(String(b.variant_id));
+      const aNeedsPrice = !ap || Number(ap.expected_profit) <= 0 || String(ap.supplier_offer_id) !== String(a.id);
+      const bNeedsPrice = !bp || Number(bp.expected_profit) <= 0 || String(bp.supplier_offer_id) !== String(b.id);
       if (aNeedsPrice !== bNeedsPrice) return aNeedsPrice ? -1 : 1;
       return String(ap?.calculated_at ?? a.updated_at ?? "").localeCompare(String(bp?.calculated_at ?? b.updated_at ?? ""));
     })
