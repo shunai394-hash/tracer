@@ -499,7 +499,10 @@ export async function GET(request: Request) {
               .sort((a, b) => b.quantity - a.quantity)
               .slice(0, 2)
               .map((warehouse) => warehouse.countryCode))];
-            if (freightOrigins.length === 0) freightOrigins.push("CN");
+            // Always retain CN as a final fallback. A verified warehouse can have stock
+            // while CJ offers no logistics route from that origin to Japan; do not stop
+            // after those warehouse origins return empty quote lists.
+            if (!freightOrigins.includes("CN")) freightOrigins.push("CN");
             const freightZip = process.env.TRACER_CJ_FREIGHT_QUOTE_ZIP?.trim() || undefined;
             let shipping: number | null = null;
             const freightErrors: string[] = [];
