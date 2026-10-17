@@ -819,7 +819,7 @@ test("unpublish safety checks the exact supplier offer behind the canonical pric
   assert.doesNotMatch(publish, /price\?\.supplier_offer_id \?\? currentPriceRows\[0\]/);
 });
 
-test("price reconciliation disables published listings with unverified supplier evidence", async () => {
+test("price reconciliation keeps catalog visible with zero stock for unverified supplier evidence", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(route, /unverifiedVariantIds/);
@@ -827,8 +827,10 @@ test("price reconciliation disables published listings with unverified supplier 
   assert.match(route, /synced\.processed \?\? synced\.published/);
   assert.match(publish, /supplierEvidenceUnverified/);
   assert.match(publish, /supplier_offer_not_fulfillable:/);
-  assert.match(publish, /shopify_unpublish_failed:/);
-  assert.match(publish, /staleListings\.unpublished\+\+/);
+  assert.doesNotMatch(publish, /shopify_unpublish_failed:/);
+  assert.doesNotMatch(publish, /staleListings\.unpublished\+\+/);
+  assert.match(publish, /ensureShopifyProductPublished\(productId\)/);
+  assert.match(publish, /stock: 0,[\s\S]*?visible: true/);
 });
 
 test("storefront reconciliation also syncs updated Japanese product copy", async () => {
