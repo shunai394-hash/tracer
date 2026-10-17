@@ -143,8 +143,15 @@ export async function POST(request: Request) {
       }
       return out;
     };
-    const commerceVariantIds = [...new Set(commerceRows.map((row) => String(row.variant_id ?? "")).filter(Boolean))];
-    const commerceVariants = await readIn(commerceVariantIds, (ids) => db.from("commerce_variants").select("id,product_id,source_variant_key,sku,title_ja").in("id", ids), "TRACER_COMMERCE_VARIANT_READ_FAILED");
+    const channelVariantIds = [...new Set(commerceRows.map((row) => String(row.variant_id ?? "")).filter(Boolean))];
+    const legacySupplierVariantIds = [...new Set(listings.map((row) => String(row.supplier_variant_id ?? "")).filter(Boolean))];
+    const channelCommerceVariants = await readIn(channelVariantIds, (ids) => db.from("commerce_variants").select("id,product_id,source_variant_key,sku,title_ja").in("id", ids), "TRACER_COMMERCE_VARIANT_READ_FAILED");
+    // Legacy BASE listings can have a real commerce variant and canonical price
+    // even when they are not represented in channel_listings. Resolve only exact,
+    // unique source_variant_key matches; never fall back to title or product IDs.
+    const legacyCommerceVariants = await readIn(legacySupplierVariantIds, (ids) => db.from("commerce_variants").select("id,product_id,source_variant_key,sku,title_ja").in("source_variant_key", ids), "TRACER_LEGACY_COMMERCE_VARIANT_READ_FAILED");
+    const commerceVariants = [...new Map([...channelCommerceVariants, ...legacyCommerceVariants].map((row) => [String(row.id), row])).values()];
+    const commerceVariantIds = [...new Set(commerceVariants.map((row) => String(row.id ?? "")).filter(Boolean))];
     const commerceProductIds = [...new Set(commerceVariants.map((row) => String(row.product_id ?? "")).filter(Boolean))];
     const commerceProducts = await readIn(commerceProductIds, (ids) => db.from("commerce_products").select("id,source_key,title_ja,active").in("id", ids), "TRACER_COMMERCE_PRODUCT_READ_FAILED");
     const commercePrices = (await readIn(commerceVariantIds, (ids) => db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit,calculated_at").in("variant_id", ids), "TRACER_COMMERCE_PRICE_READ_FAILED"))
@@ -160,6 +167,17 @@ export async function POST(request: Request) {
       if (!priceByVariant.has(variantId)) priceByVariant.set(variantId, row);
     }
     const offerById = new Map(commerceOffers.map((row) => [String(row.id), row]));
+    const variantsBySourceKey = new Map<string, Array<Record<string, unknown>>>();
+    for (const variant of commerceVariants) {
+      const sourceKey = text(variant.source_variant_key);
+      if (!sourceKey) continue;
+      const group = variantsBySourceKey.get(sourceKey) ?? [];
+      group.push(variant);
+      variantsBySourceKey.set(sourceKey, group);
+    }
+    const uniqueVariantBySourceKey = new Map(
+      [...variantsBySourceKey.entries()].filter(([, rows]) => rows.length === 1).map(([key, rows]) => [key, rows[0]]),
+    );
     const commerceListingRows: ListingRow[] = commerceRows.map((channelRow) => {
       const variant = variantById.get(String(channelRow.variant_id));
       const product = variant ? productById.get(String(variant.product_id)) : null;
@@ -189,7 +207,16 @@ export async function POST(request: Request) {
         base_publication_status: channelRow.status == null ? null : String(channelRow.status),
       };
     });
-    const reconciliationListings = [...listings, ...commerceListingRows];
+    const legacyListingRows: ListingRow[] = listings.map((listing) => {
+      const variant = uniqueVariantBySourceKey.get(String(listing.supplier_variant_id ?? ""));
+      const price = variant ? priceByVariant.get(String(variant.id)) : null;
+      return {
+        ...listing,
+        canonical_selling_price: price?.selling_price as number | string | null ?? null,
+        canonical_expected_profit: price?.expected_profit as number | string | null ?? null,
+      };
+    });
+    const reconciliationListings = [...legacyListingRows, ...commerceListingRows];
 
     const identifierKey = (value: unknown): string => String(value ?? "").normalize("NFKC").trim().toLocaleLowerCase("en-US");
     const bySupplierIdentifier = new Map<string, ListingRow[]>();
