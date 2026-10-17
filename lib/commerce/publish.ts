@@ -251,7 +251,35 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   // already-published products repeatedly resets their status to pending and wastes
   // the channel API budget without increasing the public catalog.
   const candidatesToProcess = onlyUnpublished
-    ? sortedCandidates.filter((candidate) => stateByVariant.get(candidate.id)?.status !== "published")
+    ? sortedCandidates.filter((candidate) => {
+        const state = stateByVariant.get(candidate.id);
+        if (state?.status !== "published") return true;
+        const offers = asRelationRows(candidate.supplier_offers);
+        const prices = asRelationRows(candidate.commerce_prices).sort((a, b) =>
+          Date.parse(String(b.calculated_at ?? "")) - Date.parse(String(a.calculated_at ?? "")),
+        );
+        const price = prices[0];
+        const offer = offers.find((item) => String(item.id) === String(price?.supplier_offer_id ?? ""));
+        const data = offer?.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
+          ? offer.raw_data as Record<string, unknown> : {};
+        const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
+        const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 &&
+          Date.now() - checkedAt <= 24 * 60 * 60_000;
+        const shippingKnown = Boolean(offer && (
+          (Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0) ||
+          data.shippingKnown === true || data.shippingEstimated === true
+        ));
+        const stockKnown = data.stockKnown === true ||
+          (data.stockKnown === undefined && offer?.source_status === "verified");
+        const saleable = Boolean(offer && price && offer.source_status === "verified" &&
+          shippingKnown && stockKnown && fresh && offer.ship_to === "JP" &&
+          offer.tracking_supported === true && Number(offer.inventory) > 0 &&
+          price.currency === "JPY" && Number(price.selling_price) > 0 &&
+          Number(price.expected_profit) > 0 && Number(price.margin_rate) >= 0.5);
+        // Recovery may revisit a published item only when supplier evidence says it
+        // is no longer genuinely purchasable, so it can be hidden rather than skipped.
+        return !saleable;
+      })
     : sortedCandidates;
   const candidates = candidatesToProcess.slice(0, Math.min(100, Math.max(1, Math.floor(limit))));
   type BaseSnapshotItem = Record<string, unknown>;
