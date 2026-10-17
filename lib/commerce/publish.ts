@@ -1,6 +1,6 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { addBaseItemImage, createBaseItem, editBaseItem, fetchBaseItemsSnapshot, getBasePublicShopUrl, isBaseConfigured, BASE_ITEMS_MAX_PAGES } from "@/lib/channels/base";
+import { addBaseItemImage, createBaseItem, editBaseItem, fetchBaseItemsSnapshot, getBaseItemDetail, getBasePublicShopUrl, isBaseConfigured, BASE_ITEMS_MAX_PAGES } from "@/lib/channels/base";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, updateShopifyProduct } from "@/lib/shopify/admin";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
@@ -639,12 +639,12 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     let readbackFailure: string | null = null;
     try {
       if (channel === "base") {
-        const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES });
-        if (!snapshot.complete) throw new Error("base_price_readback_snapshot_incomplete");
-        const itemsById = new Map(snapshot.items.map((item) => [String(item.item_id ?? ""), item]));
+        // Read back only the exact item IDs written in this run. A full 5,000-item
+        // catalog scan on every publish batch made the cron time out before it could
+        // finish verifying even a handful of newly published products.
         for (const item of successfulPriceWrites) {
-          const externalItem = itemsById.get(String(item.externalId ?? ""));
-          const rawPrice = externalItem?.price;
+          const externalItem = await getBaseItemDetail(String(item.externalId ?? ""));
+          const rawPrice = externalItem.price;
           const actual = rawPrice === undefined || rawPrice === null || String(rawPrice).trim() === ""
             ? Number.NaN
             : Number(rawPrice);
