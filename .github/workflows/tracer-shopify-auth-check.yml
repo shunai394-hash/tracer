@@ -328,7 +328,7 @@ jobs:
               "publicationMismatchRows": sum(1 for row in items if row.get("publicationMatches") is False),
               "variantIdMismatchRows": sum(1 for row in items if row.get("variantIdMatches") is False),
           }
-          Path("shopify-live-audit-summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+          Path("shopify-live-audit-summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
           print(json.dumps(summary, ensure_ascii=False, indent=2))
           PY
 
