@@ -434,7 +434,6 @@ export async function GET(request: Request) {
 
       // Build a separate exact-ID queue for supplier_listings whose procurement
       // evidence is missing or stale. Do not infer supplier IDs from titles/SKUs.
-      const evidenceCutoffIso = new Date(evidenceCutoff).toISOString();
       const staleListingGroups = new Map<string, { variantIds: string[]; oldestAt: number }>();
       for (const listing of cjListingRows ?? []) {
         const parentId = String(listing.supplier_product_id ?? "").trim();
@@ -473,9 +472,17 @@ export async function GET(request: Request) {
       }
       // Broad discovery still only imports new parents. Existing-parent retries are
       // limited to exact errored variants with no Shopify publication record.
-      const preferredEvidenceCandidates = [...staleListingRetryCandidates, ...evidenceRetryCandidates];
-      const dedupedEvidenceCandidates = [...new Map(preferredEvidenceCandidates.map((candidate) => [candidate.id, candidate])).values()]
-        .slice(0, limit);
+      const evidenceVariantsByParent = new Map<string, string[]>();
+      for (const candidate of [...staleListingRetryCandidates, ...evidenceRetryCandidates]) {
+        const variantIds = evidenceVariantsByParent.get(candidate.id) ?? [];
+        for (const variantId of candidate.retryVariantIds ?? []) {
+          if (!variantIds.includes(variantId)) variantIds.push(variantId);
+        }
+        evidenceVariantsByParent.set(candidate.id, variantIds);
+      }
+      const dedupedEvidenceCandidates: ImportCandidate[] = [...evidenceVariantsByParent.entries()]
+        .slice(0, limit)
+        .map(([id, variantIds]) => ({ id, title: "", retryVariantIds: variantIds.slice(0, 3) }));
       const evidenceParentIds = new Set(dedupedEvidenceCandidates.map((candidate) => candidate.id));
       const missingPublicationRetries = retryCandidates.filter((candidate) => !evidenceParentIds.has(candidate.id))
         .slice(0, Math.max(0, limit - dedupedEvidenceCandidates.length));
