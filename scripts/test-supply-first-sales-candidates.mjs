@@ -64,9 +64,9 @@ assert.match(selector, /resolveUnknownShippingAllowanceUsd\(process\.env\.TRACER
 assert.match(selector, /persistedListingShippingCost\(\{ supplierShippingCost: num\(item\.listing\.shipping_cost\), convertedInternationalShipping: item\.profit\.internationalShipping \}\)/, "real supplier freight must be persisted in selling currency; estimated freight stays null");
 assert.match(selector, /shipping_allowance_estimated_usd_\$\{shippingAllowanceUsd\}_not_supplier_quote/, "estimated freight is explicitly disclosed and is not stored as a supplier quote");
 assert.doesNotMatch(selector, /selection_reasons: \[[^\]]*"profit_not_positive"/, "a published listing must not carry a non-positive profit marker");
-assert.match(selector, /profitCalculable: profit\\.calculable, shippingUnknown: profit\\.shippingUnknown, contributionProfit: profit\\.contributionProfit/, "estimated freight flows into landed-profit validation");
-assert.match(selector, /\\[0-9\\]\\{10,22\\}.*supplier_product_id/, "allowance requires native-format CJ product IDs");
-assert.match(selector, /\\[0-9\\]\\{10,22\\}.*supplier_variant_id/, "allowance requires native-format CJ variant IDs");
+assert.match(selector, /profitCalculable: profit\.calculable, shippingUnknown: profit\.shippingUnknown, contributionProfit: profit\.contributionProfit/, "estimated freight flows into landed-profit validation");
+assert.match(selector, /\[0-9\]\{10,22\}.*supplier_product_id/, "allowance requires native-format CJ product IDs");
+assert.match(selector, /\[0-9\]\{10,22\}.*supplier_variant_id/, "allowance requires native-format CJ variant IDs");
 assert.match(selector, /calculateSupplySellingPriceJpy\\(/, "missing selling prices must flow through the tested landed-price calculator");
 assert.match(selector, /supplierMetadata\.image_url/ , "use the verified supplier image stored in metadata when the product master has no image");
 assert.match(selector, /image_url: item\.imageUrl/, "the selected supplier image must be the image persisted to the storefront listing");
