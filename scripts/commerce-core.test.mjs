@@ -144,7 +144,7 @@ test("publication and price calculation require fresh verified supplier evidence
   assert.doesNotMatch(publish, /createBaseItem\(\{[^}]*stock: Number\(offer\.inventory\)/s, "raw supplier inventory must never be exposed to the storefront");
   assert.match(publish, /base_created_item_id_save_failed/);
   assert.match(publish, /Make the item visible after the external ID is saved/);
-  assert.match(publish, /optional image must not prevent a correctly linked supplier item from being listed/);
+  assert.match(publish, /optional image[\\s\\S]*must not prevent a correctly linked supplier item from being listed/);
   assert.doesNotMatch(publish, /createBaseItem\(\{[^}]*visible: true/s, "new BASE items must stay hidden until image setup succeeds");
 });
 
