@@ -30,12 +30,12 @@ function shippingInclusiveDescription(description: string): string {
   // Remove legacy supplier copy that tells customers to pay freight separately.
   // The canonical JPY selling price already includes supplier shipping cost.
   const cleaned = description
-    .replace(/[^。！？\\n]*(?:送料別|送料別途|送料込み|送料無料|送料は商品価格に含まれています)[^。！？\\n]*[。！？]?/gu, "")
-    .replace(/\\n{3,}/g, "\\n\\n")
+    .replace(/[^。！？\n]*(?:送料別|送料別途|送料込み|送料無料|送料は商品価格に含まれています)[^。！？\n]*[。！？]?/gu, "")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
   return [cleaned, "送料込み・送料無料。日本向け送料は商品価格に含まれています。"]
     .filter(Boolean)
-    .join("\\n\\n");
+    .join("\n\n");
 }
 
 async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<typeof createSupabaseAdminClient>) {
@@ -412,7 +412,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     // Remove any legacy copy implying that customers pay supplier freight separately.
     const storefrontDescription = supplierShippingKnown
       ? shippingInclusiveDescription(description)
-      : `${description}\\n\\n日本向け送料を確認中のため、販売を一時停止しています。`;
+      : `${description}\n\n日本向け送料を確認中のため、販売を一時停止しています。`;
     const sku = "TRC-" + candidate.id.replace(/-/g, "").slice(0, 24).toUpperCase();
     let baseCreateIdNeedsRecovery: string | null = null;
     try {
