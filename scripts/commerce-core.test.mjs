@@ -31,7 +31,10 @@ test("storefront publication requires exact supplier identity and evidenced land
   assert.match(publish, /offer\.supplier_product_id && offer\.supplier_variant_id && nativeIdsValid/);
   assert.match(publish, /unitCostKnown/);
   assert.match(publish, /offer\.raw_data\?\.shippingKnown === true/);
-  assert.doesNotMatch(publish, /offer\.tracking_supported === true/);
+  const linkedOfferGateStart = publish.indexOf("const hasPublishableLinkedOffer = offers.some");
+  const linkedOfferGateEnd = publish.indexOf("if (hasPublishableLinkedOffer)", linkedOfferGateStart);
+  const linkedOfferGate = publish.slice(linkedOfferGateStart, linkedOfferGateEnd);
+  assert.doesNotMatch(linkedOfferGate, /tracking_supported|source_status === "verified"/);
   assert.doesNotMatch(publish, /offer\.source_status === "verified" && nativeIdsValid/);
   assert.match(publish, /const supplierShippingKnown =/);
   assert.match(publish, /const supplierStockKnown =/);
@@ -283,6 +286,10 @@ test("both channels use the shared capped storefront quantity and Japanese title
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /getStorefrontStockCap, toStorefrontStockQuantity/);
   assert.match(publish, /toStorefrontStockQuantity\(\s*supplierSaleable \? Number\(offer\.inventory\) : 0,\s*getStorefrontStockCap\(\),\s*\)/);
+  assert.match(publish, /offer\.source_status === "verified"/);
+  assert.match(publish, /offer\.ship_to === "JP"/);
+  assert.match(publish, /offer\.tracking_supported === true/);
+  assert.match(publish, /Date\.now\(\) - lastCheckedMs <= 24 \* 60 \* 60_000/);
   assert.doesNotMatch(publish, /Math\.max\(1, Number\(offer\.inventory\) \|\| 0\)/);
   assert.match(publish, /isJapaneseProductTitle\(title\)/);
   assert.match(publish, /stock: storefrontStock/);
