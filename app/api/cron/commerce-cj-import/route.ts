@@ -444,7 +444,10 @@ export async function GET(request: Request) {
           ? offer.raw_data as Record<string, unknown>
           : {};
         const nextReverifyAt = Date.parse(String(rawData.nextReverifyAt ?? ""));
-        if (Number.isFinite(nextReverifyAt) && nextReverifyAt > Date.now()) {
+        // A storefront listing already blocked by stale supplier evidence must be retried
+        // ahead of normal backoff. Otherwise a previously published product can stay
+        // unpurchasable indefinitely even while the importer runs successfully.
+        if (!publicationErrorVariantIds.has(String(offer.variant_id)) && Number.isFinite(nextReverifyAt) && nextReverifyAt > Date.now()) {
           stats.evidenceRetryDeferredByBackoff++;
           continue;
         }
