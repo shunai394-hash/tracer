@@ -10,10 +10,10 @@ import { japaneseCommerceDescription } from "../lib/commerce/japanese-copy.mjs";
 import { resolveBasePublicUrl } from "../lib/commerce/base-public-url.mjs";
 
 test("price calculation preserves positive profit after fees and target margin", () => {
-  const result = calculateSellingPrice({ unitCostJpy: 2000, shippingCostJpy: 500, feeRate: 0.1, targetMarginRate: 0.2 });
+  const result = calculateSellingPrice({ unitCostJpy: 2000, shippingCostJpy: 500, feeRate: 0.1, targetMarginRate: 0.5 });
   assert.ok(result.sellingPrice > 2500);
   assert.ok(result.expectedProfit > 0);
-  assert.ok(result.marginRate >= 0.2);
+  assert.ok(result.marginRate >= 0.5);
 });
 test("rejects invalid rates", () => {
   assert.throws(() => calculateSellingPrice({ unitCostJpy: 100, shippingCostJpy: 0, feeRate: 1, targetMarginRate: 0.1 }), /invalid_rate/);

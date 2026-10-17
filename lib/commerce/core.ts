@@ -26,7 +26,7 @@ export function calculateSellingPrice(input: {
   const shippingCostJpy = input.shippingCostJpy;
   const feeRate = input.feeRate;
   const fixedFeeJpy = input.fixedFeeJpy ?? 0;
-  const targetMarginRate = input.targetMarginRate ?? 0.2;
+  const targetMarginRate = input.targetMarginRate ?? 0.5;
   const values = { unitCostJpy, shippingCostJpy, feeRate, fixedFeeJpy, targetMarginRate };
   for (const [key, value] of Object.entries(values)) {
     if (!Number.isFinite(value) || value < 0) throw new Error("invalid_" + key);
