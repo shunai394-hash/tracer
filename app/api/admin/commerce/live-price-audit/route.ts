@@ -38,6 +38,16 @@ function norm(value: unknown): string {
   return String(value ?? "").trim();
 }
 
+function sameShopifyId(a: unknown, b: unknown): boolean {
+  const left = norm(a);
+  const right = norm(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  // Shopify IDs may be stored as either the full GraphQL GID or its numeric tail.
+  const tail = (value: string) => value.match(/(?:^|\/)(\d+)$/)?.[1] ?? value;
+  return tail(left) === tail(right);
+}
+
 function yen(value: unknown): number | null {
   if (value === null || value === undefined || (typeof value === "string" && !value.trim())) return null;
   const number = Number(value);
@@ -90,7 +100,9 @@ export async function GET(request: Request) {
     const baseById = new Map<string, Record<string, unknown>>();
     for (const item of baseSnapshot.items) baseById.set(norm(item.item_id), item);
 
-    const shopifyBySku = new Map<string, Array<{ productId: string; variantId: string; title: string; status: string; published: boolean; totalInventory: number; price: number | null }>>();
+    const shopifyBySku = new Map<string, Array<{ productId: string; variantId: string; sku: string; title: string; status: string; published: boolean; totalInventory: number; price: number | null }>>();
+    const shopifyByVariantId = new Map<string, Array<{ productId: string; variantId: string; sku: string; title: string; status: string; published: boolean; totalInventory: number; price: number | null }>>();
+    const shopifyByProductId = new Map<string, Array<{ productId: string; variantId: string; sku: string; title: string; status: string; published: boolean; totalInventory: number; price: number | null }>>();
     let after: string | undefined;
     let shopifyPages = 0;
     let shopifyComplete = false;
@@ -110,10 +122,18 @@ export async function GET(request: Request) {
           }
           for (const variant of product.variants.nodes) {
             const sku = norm(variant.sku);
-            if (!sku) continue;
-            const group = shopifyBySku.get(sku) ?? [];
-            group.push({ productId: product.id, variantId: variant.id, title: product.title, status: product.status, published: product.publishedOnPublication, totalInventory: product.totalInventory, price: yen(variant.price) });
-            shopifyBySku.set(sku, group);
+            const record = { productId: product.id, variantId: variant.id, sku, title: product.title, status: product.status, published: product.publishedOnPublication, totalInventory: product.totalInventory, price: yen(variant.price) };
+            const variantGroup = shopifyByVariantId.get(variant.id) ?? [];
+            variantGroup.push(record);
+            shopifyByVariantId.set(variant.id, variantGroup);
+            const productGroup = shopifyByProductId.get(product.id) ?? [];
+            productGroup.push(record);
+            shopifyByProductId.set(product.id, productGroup);
+            if (sku) {
+              const skuGroup = shopifyBySku.get(sku) ?? [];
+              skuGroup.push(record);
+              shopifyBySku.set(sku, skuGroup);
+            }
           }
         }
         if (!result.products.pageInfo.hasNextPage) {
@@ -167,24 +187,64 @@ export async function GET(request: Request) {
         }
       } else if (listing.channel === "shopify") {
         summary.shopifyListingsChecked += 1;
-        const matches = shopifyBySku.get(sku) ?? [];
-        if (matches.length === 0) {
-          summary.missingExternalItems += 1;
-          discrepancies.push({ channel: "shopify", listingId: listing.id, externalProductId: listing.external_product_id, externalVariantId: listing.external_variant_id, sku, expectedPrice: expected, issue: "external_sku_missing" });
+        const recordedVariantId = norm(listing.external_variant_id);
+        const recordedProductId = norm(listing.external_product_id);
+        const byVariantId = recordedVariantId
+          ? [...shopifyByVariantId.entries()].filter(([id]) => sameShopifyId(id, recordedVariantId)).flatMap(([, rows]) => rows)
+          : [];
+        const byProductId = recordedProductId
+          ? [...shopifyByProductId.entries()].filter(([id]) => sameShopifyId(id, recordedProductId)).flatMap(([, rows]) => rows)
+          : [];
+        const bySku = sku ? (shopifyBySku.get(sku) ?? []) : [];
+        let matches: typeof bySku = [];
+        let matchMethod: "variant_id" | "product_id_and_sku" | "product_id_unique_variant" | "sku" | "none" = "none";
+
+        // Stable external IDs are authoritative. SKU is only a fallback when IDs
+        // cannot establish a unique match; it must never override a conflicting ID.
+        if (byVariantId.length === 1) {
+          matches = byVariantId;
+          matchMethod = "variant_id";
+        } else if (byVariantId.length > 1) {
+          summary.ambiguousSkuMatches += 1;
+          discrepancies.push({ channel: "shopify", listingId: listing.id, sku, recordedProductId, recordedVariantId, liveMatches: byVariantId, issue: "ambiguous_variant_id_no_mutation" });
           continue;
+        } else if (byProductId.length > 0) {
+          const productCandidates = byProductId.filter((row) => !sku || row.sku === sku);
+          if (productCandidates.length === 1) {
+            matches = productCandidates;
+            matchMethod = sku ? "product_id_and_sku" : "product_id_unique_variant";
+          } else if (productCandidates.length > 1 || (!sku && byProductId.length > 1)) {
+            summary.ambiguousSkuMatches += 1;
+            discrepancies.push({ channel: "shopify", listingId: listing.id, sku, recordedProductId, recordedVariantId, liveMatches: productCandidates.length ? productCandidates : byProductId, issue: "ambiguous_product_id_no_mutation" });
+            continue;
+          }
         }
-        if (matches.length > 1) {
+
+        if (matches.length === 0 && bySku.length === 1) {
+          matches = bySku;
+          matchMethod = "sku";
+        } else if (matches.length === 0 && bySku.length > 1) {
           summary.ambiguousSkuMatches += 1;
           summary.duplicateLiveSku += 1;
-          discrepancies.push({ channel: "shopify", listingId: listing.id, sku, expectedPrice: expected, liveMatches: matches, issue: "ambiguous_live_sku_no_mutation" });
+          discrepancies.push({ channel: "shopify", listingId: listing.id, sku, expectedPrice: expected, liveMatches: bySku, issue: "ambiguous_live_sku_no_mutation" });
           continue;
         }
-        const actual = matches[0].price;
-        const externalIdMismatch = Boolean((listing.external_product_id && matches[0].productId !== listing.external_product_id) || (listing.external_variant_id && matches[0].variantId !== listing.external_variant_id));
-        const availabilityMismatch = matches[0].status !== "ACTIVE" || !matches[0].published || matches[0].totalInventory <= 0;
-        if (actual !== expected || externalIdMismatch || availabilityMismatch) {
+        if (matches.length === 0) {
+          summary.missingExternalItems += 1;
+          discrepancies.push({ channel: "shopify", listingId: listing.id, externalProductId: listing.external_product_id, externalVariantId: listing.external_variant_id, sku, expectedPrice: expected, issue: "external_product_variant_and_sku_missing" });
+          continue;
+        }
+        const matched = matches[0];
+        const actual = matched.price;
+        const externalIdMismatch = Boolean(
+          (recordedProductId && !sameShopifyId(matched.productId, recordedProductId)) ||
+          (recordedVariantId && !sameShopifyId(matched.variantId, recordedVariantId))
+        );
+        const skuMismatch = Boolean(sku && matched.sku && sku !== matched.sku);
+        const availabilityMismatch = matched.status !== "ACTIVE" || !matched.published || matched.totalInventory <= 0;
+        if (actual !== expected || externalIdMismatch || skuMismatch || availabilityMismatch) {
           summary.priceMismatches += actual !== expected ? 1 : 0;
-          discrepancies.push({ channel: "shopify", listingId: listing.id, sku, expectedPrice: expected, actualPrice: actual, recordedProductId: listing.external_product_id, liveProductId: matches[0].productId, recordedVariantId: listing.external_variant_id, liveVariantId: matches[0].variantId, status: matches[0].status, publishedOnOnlineStore: matches[0].published, totalInventory: matches[0].totalInventory, issue: actual !== expected ? "live_price_mismatch" : externalIdMismatch ? "external_id_mismatch" : "publication_or_inventory_mismatch" });
+          discrepancies.push({ channel: "shopify", listingId: listing.id, sku, matchMethod, expectedPrice: expected, actualPrice: actual, liveSku: matched.sku || null, recordedProductId: listing.external_product_id, liveProductId: matched.productId, recordedVariantId: listing.external_variant_id, liveVariantId: matched.variantId, status: matched.status, publishedOnOnlineStore: matched.published, totalInventory: matched.totalInventory, issue: actual !== expected ? "live_price_mismatch" : externalIdMismatch ? "external_id_mismatch" : skuMismatch ? "sku_mismatch" : "publication_or_inventory_mismatch" });
         }
       }
     }
