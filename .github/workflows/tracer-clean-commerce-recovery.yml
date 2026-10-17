@@ -100,6 +100,29 @@ jobs:
               print(f"| {i} | {d.get('ok')} | {d.get('repriced')} | {rem.get('base')} | {rem.get('shopify')} | {errors} |")
           PY
           [[ "$failed" == "0" ]] || { echo "One or more price reconciliation passes failed; stopping before publication."; exit 1; }
+          python3 - <<'PY'
+          import json,pathlib,sys
+          path=pathlib.Path("commerce-reprice-10.json")
+          try:
+              data=json.loads(path.read_text())
+          except Exception as exc:
+              print(f"Final price reconciliation response is invalid: {exc}")
+              sys.exit(1)
+          remaining=data.get("storefrontSyncRemaining") or {}
+          errors=data.get("errors") or []
+          sync_errors=data.get("storefrontSyncErrors") or []
+          if (data.get("ok") is not True or remaining.get("base") != 0 or
+              remaining.get("shopify") != 0 or errors or sync_errors):
+              print("Final price reconciliation is incomplete; refusing publication.")
+              print(json.dumps({
+                  "ok": data.get("ok"),
+                  "remaining": remaining,
+                  "repriceErrors": len(errors),
+                  "storefrontSyncErrors": len(sync_errors),
+              }, ensure_ascii=False))
+              sys.exit(1)
+          print("Final price reconciliation drained with no errors.")
+          PY
 
       - name: Publish verified commerce backlog in bounded batches
         shell: bash
