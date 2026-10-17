@@ -64,3 +64,23 @@ jobs:
                   print(key + ":", json.dumps(r[key], ensure_ascii=False, separators=(",", ":")))
           PY
           test "${base_code}" = "200"
+
+          # The identity-repair endpoint defaults to dry-run; explicitly keep apply=false.
+          repair_token="$(get_oidc_token)"
+          repair_code="$(curl --silent --show-error --max-time 150 -o base-identity-repair-dry-run.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${repair_token}" \
+            -H "Content-Type: application/json" \
+            --data '{"apply":false,"limit":1000}' \
+            "${BASE}/api/channels/base/identity-repair")"
+          echo "=== BASE IDENTITY REPAIR DRY RUN HTTP ${repair_code} ==="
+          python3 - <<'PY'
+          import json
+          with open("base-identity-repair-dry-run.json", encoding="utf-8") as f:
+              r=json.load(f)
+          print("ok:", r.get("ok"), "readOnly:", r.get("readOnly"), "apply:", r.get("apply"))
+          for key in ("snapshotComplete", "scannedBaseItems", "stableIdentifierCandidates", "recoveryMarkerCandidates", "uniqueEvidencePairs", "repairable", "repaired", "commerceRepairable", "commerceRepaired", "ambiguous", "listingNotFound", "listingAlreadyLinked", "baseItemAlreadyMapped", "publicationChanged"):
+              if key in r:
+                  print(key + ":", json.dumps(r[key], ensure_ascii=False, separators=(",", ":")))
+          PY
+          test "${repair_code}" = "200"
