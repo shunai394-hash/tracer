@@ -617,13 +617,16 @@ test("scheduled CJ discovery only retries errored variants missing Shopify publi
   assert.doesNotMatch(importer, /const recoveryPool/);
 });
 
-test("scheduled CJ discovery rechecks already-listed variants with missing supplier evidence", async () => {
+test("scheduled CJ discovery rechecks already-listed variants including compliance-blocked stock evidence", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /retryOfferByVariantId/);
   assert.match(importer, /evidenceRetryCandidates/);
   assert.match(importer, /rawData\.nextReverifyAt/);
   assert.match(importer, /reverifyAttempts/);
   assert.match(importer, /retryVariantLimit/);
+  assert.doesNotMatch(importer, /if \(rawData\.complianceBlockReason\) continue;/);
+  assert.match(importer, /observedInventory/);
+  assert.match(importer, /nextReverifyAt: new Date\(Date\.now\(\) \+ 24 \* 60 \* 60_000\)/);
 });
 
 test("BASE publication retries recover exact created IDs and refuse ambiguous stable SKUs", async () => {

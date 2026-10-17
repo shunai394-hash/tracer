@@ -400,7 +400,6 @@ export async function GET(request: Request) {
           : {};
         const nextReverifyAt = Date.parse(String(rawData.nextReverifyAt ?? ""));
         if (Number.isFinite(nextReverifyAt) && nextReverifyAt > Date.now()) continue;
-        if (rawData.complianceBlockReason) continue;
         if (evidenceRetryCount >= retryVariantLimit) break;
         const variantIds = evidenceRetryByParent.get(parentId) ?? [];
         if (!variantIds.includes(variantId)) {
@@ -555,6 +554,7 @@ export async function GET(request: Request) {
                 const { error: retryBackoffError } = await db.from("supplier_offers").update({
                   raw_data: {
                     ...retryRawData,
+                    ...(stock !== null ? { observedInventory: Math.max(0, Math.floor(stock)) } : {}),
                     reverifyAttempts: attempts,
                     lastReverifyAt: nowIso,
                     nextReverifyAt: new Date(now + delayMs).toISOString(),
@@ -597,7 +597,17 @@ export async function GET(request: Request) {
                 trackingSupported: !complianceBlockReason,
                 sourceStatus: !complianceBlockReason && stock !== null && shipping !== null ? "verified" : "error",
                 lastCheckedAt: new Date().toISOString(),
-                rawData: { query, page, catalogProductId: candidate.id, productId: supplierProductId, variantId: exactVariant.vid, stockKnown: stock !== null, shippingKnown: shipping !== null, fxRate: fx.rate, complianceBlockReason },
+                rawData: {
+                  query, page, catalogProductId: candidate.id, productId: supplierProductId, variantId: exactVariant.vid,
+                  stockKnown: stock !== null, shippingKnown: shipping !== null,
+                  ...(stock !== null ? { observedInventory: Math.max(0, Math.floor(stock)) } : {}),
+                  fxRate: fx.rate, complianceBlockReason,
+                  ...(complianceBlockReason ? {
+                    lastReverifyAt: new Date().toISOString(),
+                    nextReverifyAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+                    lastReverifyReason: complianceBlockReason,
+                  } : {}),
+                },
               },
             });
             stats.variants++;
