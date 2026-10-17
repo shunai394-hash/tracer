@@ -320,6 +320,8 @@ export async function POST(request: Request) {
           inventory: row.inventory,
           orderable: row.orderable,
           sellingPrice: row.selling_price,
+          canonicalSellingPrice: row.canonical_selling_price ?? null,
+          canonicalExpectedProfit: row.canonical_expected_profit ?? null,
           basePublicationStatus: row.base_publication_status,
         })),
         exactTitleCandidateCount: titleCandidates.length,
