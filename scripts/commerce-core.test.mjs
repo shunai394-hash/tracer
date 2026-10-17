@@ -561,6 +561,9 @@ test("existing supplier offers are repriced from database evidence without consu
   assert.match(route, /recalculatePrice\(/);
   assert.match(route, /sourceApiCalls: 0/);
   assert.match(route, /aNeedsPrice/);
+  assert.match(route, /rawData\.shippingKnown === true/);
+  assert.match(route, /skippedUnknownShipping/);
+  assert.match(route, /price\.calculated_at[^\n]*offer\.updated_at/);
   const cronEntries = JSON.parse(schedule).crons;
   assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/commerce-reprice-existing" && entry.schedule === "*/10 * * * *"));
   assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/patrol-ai" && entry.schedule === "*/5 * * * *"));
