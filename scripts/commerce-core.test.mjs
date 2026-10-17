@@ -792,7 +792,7 @@ test("TRACER product detail copy stays generic to the actual product", async () 
 test("publisher selects the latest canonical price calculation before matching its supplier offer", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /commerce_prices!inner\(supplier_offer_id,calculated_at,currency/);
-  assert.match(publish, /Date\.parse\(String\(b\.calculated_at\)\) - Date\.parse\(String\(a\.calculated_at\)\)/);
+  assert.match(publish, /currentPriceRows = asRelationRows\(candidate\.commerce_prices\)\.sort/);
 });
 
 test("unpublish safety checks the exact supplier offer behind the canonical price", async () => {
