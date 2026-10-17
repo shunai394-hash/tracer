@@ -568,3 +568,15 @@ test("existing supplier offers are repriced from database evidence without consu
   assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/commerce-reprice-existing" && entry.schedule === "*/10 * * * *"));
   assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/patrol-ai" && entry.schedule === "*/5 * * * *"));
 });
+
+test("BASE paid orders never procure a mapped subset when any non-cancelled line is unmapped", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
+  assert.match(route, /filter\(\(item\) => item\.status !== "cancelled"\)/);
+  assert.match(route, /base_order_line_identity_missing/);
+  assert.match(route, /let hasUnmappedLine = false/);
+  assert.match(route, /hasUnmappedLine = true/);
+  const blockPartial = route.indexOf("if (hasUnmappedLine)");
+  const ingest = route.indexOf("await ingestPaidOrder(");
+  assert.ok(blockPartial >= 0 && ingest > blockPartial, "an unmapped line must block the entire order before canonical ingestion");
+  assert.doesNotMatch(route, /filter\(\(item\) => item\.status !== "cancelled" && item\.item_id !== undefined\)/);
+});
