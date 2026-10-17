@@ -755,3 +755,10 @@ test("TRACER product detail copy stays generic to the actual product", async () 
   assert.doesNotMatch(page, /iPhone 11・12・13・14シリーズ向け/);
   assert.doesNotMatch(page, /お使いの端末に合うケース/);
 });
+
+
+test("BASE item API requests have a bounded timeout", async () => {
+  const base = await readFile(new URL("../lib/channels/base.ts", import.meta.url), "utf8");
+  const requestBase = base.slice(base.indexOf("async function requestBase("), base.indexOf("export async function createBaseItem("));
+  assert.match(requestBase, /signal: AbortSignal\.timeout\(20_000\)/);
+});
