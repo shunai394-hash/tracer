@@ -153,9 +153,11 @@ export async function GET(request: Request) {
         }
         const actual = yen(item.price);
         const identifier = norm(item.identifier);
-        if (actual !== expected || (sku && identifier && sku !== identifier)) {
+        const identifierMismatch = Boolean(sku && identifier && sku !== identifier);
+        const visibilityMismatch = (listing.status === "published" && item.visible === false) || (listing.status !== "published" && item.visible === true);
+        if (actual !== expected || identifierMismatch || visibilityMismatch) {
           summary.priceMismatches += actual !== expected ? 1 : 0;
-          discrepancies.push({ channel: "base", listingId: listing.id, externalProductId: listing.external_product_id, sku, actualIdentifier: identifier || null, expectedPrice: expected, actualPrice: actual, visible: item.visible ?? null, issue: actual !== expected ? "live_price_mismatch" : "identifier_mismatch" });
+          discrepancies.push({ channel: "base", listingId: listing.id, externalProductId: listing.external_product_id, sku, actualIdentifier: identifier || null, expectedPrice: expected, actualPrice: actual, visible: item.visible ?? null, issue: actual !== expected ? "live_price_mismatch" : identifierMismatch ? "identifier_mismatch" : "publication_state_mismatch" });
         }
       } else if (listing.channel === "shopify") {
         summary.shopifyListingsChecked += 1;
