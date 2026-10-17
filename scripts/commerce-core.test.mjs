@@ -839,7 +839,9 @@ test("price reconciliation keeps unverified supplier safety handling without sta
   const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(route, /unverifiedVariantIds/);
-  assert.doesNotMatch(route, /row\.status === "published" && unverifiedVariantIds\.has\(variantId\)/);
+  assert.match(route, /last_synced_at,last_error/);
+  assert.match(route, /row\.status === "published" && unverifiedVariantIds\.has\(variantId\)/);
+  assert.match(route, /startsWith\("supplier_offer_not_fulfillable:"\)/);
   assert.match(route, /synced\.processed \?\? synced\.published/);
   assert.match(publish, /supplierEvidenceUnverified/);
   assert.match(publish, /supplier_offer_not_fulfillable:/);
@@ -860,5 +862,6 @@ test("storefront reconciliation prioritizes stale prices and recently changed Ja
   assert.match(route, /recentCopyCutoff/);
   assert.match(route, /contentNeedsSync/);
   assert.match(route, /const priority =/);
-  assert.doesNotMatch(route, /row\.status === "published" && unverifiedVariantIds\.has\(variantId\)/);
+  assert.match(route, /row\.status === "published" && unverifiedVariantIds\.has\(variantId\)/);
+  assert.match(route, /startsWith\("supplier_offer_not_fulfillable:"\)/);
 });
