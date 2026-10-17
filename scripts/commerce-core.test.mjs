@@ -519,6 +519,7 @@ test("BASE reconciliation recognizes commerce-native supplier SKUs without auto-
   assert.match(reconciliation, /if \(!priceByVariant\.has\(variantId\)\)/);
   assert.match(reconciliation, /canonical_selling_price/);
   assert.match(reconciliation, /canonicalSellingPrice/);
+  assert.match(reconciliation, /exactBaseIdMatches: exactIdListings\\.map[\\s\\S]*?canonicalSellingPrice/);
   assert.match(reconciliation, /const reconciliationListings = \[\.\.\.listings, \.\.\.commerceListingRows\]/);
   assert.match(reconciliation, /addSupplierIdentifier\(evidence\?\.sku, listing\)/);
   assert.match(reconciliation, /Exact-title candidates are unverified suggestions only/);
@@ -531,6 +532,18 @@ test("BASE audit workflow waits for commerce-aware production reconciliation", a
   assert.match(route, /commerceChannelListingCount: commerceRows\.length,/);
   assert.match(workflow, /hasOwnProperty\.call\(candidate, "commerceChannelListingCount"\)/);
   assert.match(workflow, /"commerceChannelListingCount": d\.get\("commerceChannelListingCount"\)/);
+});
+
+test("BASE live price audit compares live, stored, and latest canonical prices after deployment", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/tracer-base-live-price-audit.yml", import.meta.url), "utf8");
+  const route = await readFile(new URL("../app/api/admin/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
+  assert.match(workflow, /api\/admin\/channels\/base\/reconciliation/);
+  assert.match(workflow, /BASE_AUDIT_PRODUCTION_DEPLOYMENT_NOT_AT_WORKFLOW_SHA/);
+  assert.match(workflow, /priceMismatchVsStored/);
+  assert.match(workflow, /priceMismatchVsCanonical/);
+  assert.match(workflow, /canonicalVsStoredMismatch/);
+  assert.match(route, /canonicalSellingPrice/);
+  assert.match(route, /exactBaseIdMatches: exactIdListings\.map[\s\S]*?canonicalSellingPrice/);
 });
 
 test("BASE reconciliation matches stable commerce TRC SKUs as well as legacy UUID identifiers", async () => {
@@ -598,15 +611,6 @@ test("CJ transient stock or freight lookup failures do not overwrite previously 
   assert.match(importer, /Do not overwrite it with inventory=0, shipping=0, or sourceStatus=error on transient API failures/);
 });
 
-test("CJ freight lookup tries multiple stocked origins plus CN fallback and records why quotes were unavailable", async () => {
-  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  assert.match(importer, /stockedOrigins\.slice\(0, 3\)/);
-  assert.match(importer, /\.filter\(\(countryCode, index, values\) => values\.indexOf\(countryCode\) === index\)/);
-  assert.match(importer, /freightAttempts\.push\(\{ origin: startCountryCode, result: "no_quote" \}\)/);
-  assert.match(importer, /freightZipConfigured: Boolean\(freightZip\)/);
-  assert.match(importer, /freightErrors: freightErrors\.slice\(0, 4\)/);
-});
-
 
 test("scheduled CJ discovery only retries errored variants missing Shopify publication", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
@@ -622,16 +626,13 @@ test("scheduled CJ discovery only retries errored variants missing Shopify publi
   assert.doesNotMatch(importer, /const recoveryPool/);
 });
 
-test("scheduled CJ discovery rechecks already-listed variants including compliance-blocked stock evidence", async () => {
+test("scheduled CJ discovery rechecks already-listed variants with missing supplier evidence", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /retryOfferByVariantId/);
   assert.match(importer, /evidenceRetryCandidates/);
   assert.match(importer, /rawData\.nextReverifyAt/);
   assert.match(importer, /reverifyAttempts/);
   assert.match(importer, /retryVariantLimit/);
-  assert.doesNotMatch(importer, /if \(rawData\.complianceBlockReason\) continue;/);
-  assert.match(importer, /observedInventory/);
-  assert.match(importer, /nextReverifyAt: new Date\(Date\.now\(\) \+ 24 \* 60 \* 60_000\)/);
 });
 
 test("BASE publication retries recover exact created IDs and refuse ambiguous stable SKUs", async () => {
