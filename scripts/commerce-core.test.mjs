@@ -76,6 +76,7 @@ test("new storefront candidates require evidenced landed costs and exact supplie
   assert.match(publish, /const nativeIdsValid = x\.supplier_code !== "cj"/);
   assert.match(publish, /const unitCostKnown = Number\.isFinite\(Number\(x\.unit_cost\)\) && Number\(x\.unit_cost\) > 0/);
   assert.match(publish, /const shippingKnown = x\.raw_data\?\.shippingKnown === true/);
+  assert.match(publish, /x\.raw_data\?\.shippingEstimated === true/, "new storefront candidates may use the labelled reserve for pricing");
   assert.match(publish, /x\.raw_data\?\.shippingKnown === undefined && x\.source_status === "verified"/);
   assert.match(publish, /offer\.raw_data\?\.shippingKnown === undefined && offer\.source_status === "verified"/);
   assert.match(publish, /x\.raw_data\?\.shippingKnown === true/);
@@ -948,7 +949,7 @@ test("CJ freight uses the detailed API when required product logistics fields ar
 
 
 
-test("CJ freight quote misses use a conservative historical reserve while preserving unknown status", async () => {
+test("CJ freight quote misses use a conservative historical reserve for pricing while preserving unknown status", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.ok(importer.includes("const shippingCostForPricing = shipping ?? 7.76"));
   assert.ok(importer.includes("shippingKnown: shipping !== null"));
@@ -956,7 +957,7 @@ test("CJ freight quote misses use a conservative historical reserve while preser
   assert.ok(importer.includes('shippingEstimateSource: shippingWasEstimated ? "cj_historical_p90_570_offers" : null'));
   const publisher = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   const repricer = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
-  assert.ok(!publisher.includes("offer.raw_data?.shippingKnown === true || offer.raw_data?.shippingEstimated === true"));
+  assert.ok(publisher.includes("offer.raw_data?.shippingEstimated === true"), "a positive labelled reserve can price and publish the product without claiming a confirmed supplier quote");
   assert.ok(publisher.includes("preflightRawOfferData.shippingEstimated === true"));
   assert.ok(repricer.includes("rawData.shippingEstimated === true"));
   assert.ok(importer.includes("targetMarginRate: 0.5"));
