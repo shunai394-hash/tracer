@@ -714,11 +714,11 @@ async function calculateCJFreightTipFromProductDetail(
   const widthMm = numberFrom(variant.variantWidth);
   const heightMm = numberFrom(variant.variantHeight);
   const volumeCm3 = volumeMm3 ? volumeMm3 / 1000 : lengthMm && widthMm && heightMm ? (lengthMm * widthMm * heightMm) / 1000 : null;
-  if (!weight || !wrapWeight || productProps.length === 0 || !volumeCm3) {
+  if (!weight || !wrapWeight || productProps.length === 0 || !volumeCm3 || !sku) {
     console.warn("[CJ FREIGHT TIP INPUT INCOMPLETE]", {
       vid, productId: String(product.pid ?? ""),
       hasWeight: Boolean(weight), hasWrapWeight: Boolean(wrapWeight),
-      hasProductProp: productProps.length > 0, hasVolume: Boolean(volumeCm3),
+      hasProductProp: productProps.length > 0, hasVolume: Boolean(volumeCm3), hasSku: Boolean(sku),
     });
     return null;
   }
@@ -765,7 +765,7 @@ async function calculateCJFreightTipFromProductDetail(
     if (!row || typeof row !== "object" || Array.isArray(row)) return null;
     const record = row as Record<string, unknown>;
     // postage is documented in USD. Do not silently convert or interpret CNY fields.
-    for (const key of ["postage", "totalPostageFee", "logisticPrice", "shippingCost", "freightAmount"]) {
+    for (const key of ["totalPostageFee", "wrapPostage", "postage", "logisticPrice", "shippingCost", "freightAmount"]) {
       const price = readCJFreightPrice(record[key]);
       if (price !== null) return price;
     }
