@@ -26,6 +26,18 @@ function safeSlug(value: string): string {
   return value.normalize("NFKC").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120) || "tracer-item";
 }
 
+function shippingInclusiveDescription(description: string): string {
+  // Remove legacy supplier copy that tells customers to pay freight separately.
+  // The canonical JPY selling price already includes supplier shipping cost.
+  const cleaned = description
+    .replace(/[^。！？\\n]*(?:送料別|送料別途|送料込み|送料無料|送料は商品価格に含まれています)[^。！？\\n]*[。！？]?/gu, "")
+    .replace(/\\n{3,}/g, "\\n\\n")
+    .trim();
+  return [cleaned, "送料込み・送料無料。日本向け送料は商品価格に含まれています。"]
+    .filter(Boolean)
+    .join("\\n\\n");
+}
+
 async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<typeof createSupabaseAdminClient>) {
   const result = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
   const { data: listings, error } = await db.from("channel_listings")
@@ -395,11 +407,12 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       results.push({ variantId: candidate.id, ok: false, error: "japanese_product_title_invalid" });
       continue;
     }
-    const description = (product.description_ja || title + "。商品仕様・配送条件は仕入先の最新情報をご確認ください。").trim();
-    // Do not promise free shipping until Japan-bound shipping is evidenced.
+    const description = (product.description_ja || title + "。商品仕様は販売元の最新情報をご確認ください。").trim();
+    // Selling price includes supplier item cost, Japan-bound freight, platform fees and target margin.
+    // Remove any legacy copy implying that customers pay supplier freight separately.
     const storefrontDescription = supplierShippingKnown
-      ? `${description}\n\n送料込み・送料無料。送料は商品価格に含まれています。`
-      : `${description}\n\n現在、仕入先の日本向け送料を再確認中のため、購入できません。確認が完了次第、販売を再開します。`;
+      ? shippingInclusiveDescription(description)
+      : `${description}\\n\\n日本向け送料を確認中のため、販売を一時停止しています。`;
     const sku = "TRC-" + candidate.id.replace(/-/g, "").slice(0, 24).toUpperCase();
     let baseCreateIdNeedsRecovery: string | null = null;
     try {
