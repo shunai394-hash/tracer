@@ -33,6 +33,31 @@ assert.equal(decideCommerceSkuLink({
   otherBaseItemIdsWithSameSku: [],
   listingIdsAlreadyUsingBaseItem: [],
 }).outcome, "listing_has_different_base_item");
+assert.deepEqual(decideCommerceSkuLink({
+  baseItemId: "100",
+  listingsForSku: [{ id: "listing-1", externalProductId: "999" }],
+  otherBaseItemIdsWithSameSku: [],
+  listingIdsAlreadyUsingBaseItem: [],
+  currentExternalIdExists: false,
+}), {
+  outcome: "repairable_stale_external_id",
+  listingId: "listing-1",
+  previousExternalProductId: "999",
+});
+assert.equal(decideCommerceSkuLink({
+  baseItemId: "100",
+  listingsForSku: [{ id: "listing-1", externalProductId: "999" }],
+  otherBaseItemIdsWithSameSku: [],
+  listingIdsAlreadyUsingBaseItem: [],
+  currentExternalIdExists: true,
+}).outcome, "listing_has_different_base_item");
+assert.equal(decideCommerceSkuLink({
+  baseItemId: "100",
+  listingsForSku: [{ id: "listing-1", externalProductId: "999" }],
+  otherBaseItemIdsWithSameSku: [],
+  listingIdsAlreadyUsingBaseItem: ["other-listing"],
+  currentExternalIdExists: false,
+}).outcome, "base_item_already_mapped");
 assert.equal(decideCommerceSkuLink({
   baseItemId: "100",
   listingsForSku: [listing, { id: "listing-2", externalProductId: null }],
