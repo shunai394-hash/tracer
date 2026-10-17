@@ -453,7 +453,7 @@ export async function GET(request: Request) {
       const staleListingRetryCandidates: ImportCandidate[] = [...staleListingGroups.entries()]
         .sort((a, b) => a[1].oldestAt - b[1].oldestAt)
         .slice(0, limit)
-        .map(([id, group]) => ({ id, title: "", retryVariantIds: group.variantIds.slice(0, 2) }));
+        .map(([id, group]) => ({ id, title: "", retryVariantIds: group.variantIds.slice(0, 3) }));
 
       // Prefer never-imported CJ parents for remaining slots so search pages
       // containing existing products cannot consume the entire discovery batch.
