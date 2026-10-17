@@ -34,6 +34,10 @@ assert.match(discovery, /let seededChecked = 0/,
   "failed seeded refreshes must count as attempts and not starve fresh catalog discovery");
 assert.match(discovery, /seededChecked >= seededVerificationLimit/,
   "seeded verification must have a hard per-run attempt budget");
+assert.match(ingest, /isCanonicalCJNativeId\(args\.supplierProductId\)[\s\S]*?isCanonicalCJNativeId\(args\.supplierVariantId\)/,
+  "internal-supply persistence must reject UUID/SKU placeholders as CJ native IDs");
+assert.match(ingest, /cj_internal_supply_native_identity_invalid/,
+  "invalid native supplier identity must fail before any persistence writes");
 assert.match(ingest, /sourceRef = `cj:\$\{args\.supplierProductId\}:\$\{args\.supplierVariantId\}`/,
   "source reference must be deterministic for the concrete supplier product+variant");
 assert.match(ingest, /onConflict: "source_name,source_ref"/,
