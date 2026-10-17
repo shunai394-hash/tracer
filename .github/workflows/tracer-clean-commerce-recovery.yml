@@ -89,20 +89,20 @@ jobs:
           # Reprice and reconcile existing listings repeatedly: each call syncs up to 25 stale variants per channel.
           # Accept HTTP 207 during intermediate passes, then require the final pass to report a drained backlog.
           # No supplier discovery or paid-order procurement is performed by this workflow.
-          for pass in 1 2 3 4 5 6; do
+          for pass in $(seq 1 10); do
             call_publish "api/cron/commerce-reprice-existing?limit=100" "commerce-reprice-${pass}.json" true || failed=1
           done
           python3 - <<'PY'
           import json,sys
           from pathlib import Path
-          paths = [Path(f"commerce-reprice-{i}.json") for i in range(1, 7)]
+          paths = [Path(f"commerce-reprice-{i}.json") for i in range(1, 11)]
           valid = []
           for path in paths:
               try:
                   valid.append(json.loads(path.read_text()))
               except Exception:
                   pass
-          if len(valid) != 6 or not valid[-1].get("ok") or not valid[-1].get("storefrontSyncComplete"):
+          if len(valid) != 10 or not valid[-1].get("ok") or not valid[-1].get("storefrontSyncComplete"):
               print("Final price reconciliation is incomplete; see response files and runtime logs.")
               sys.exit(1)
           print("Final price reconciliation reports a drained storefront backlog.")
@@ -116,7 +116,7 @@ jobs:
           print("## TRACER commerce recovery results")
           print("| Step | HTTP | Result details |")
           print("|---|---:|---|")
-          for name in [*(f"commerce-reprice-{i}.json" for i in range(1, 7)), "commerce-publish-1.json", "commerce-publish-2.json", "commerce-publish-3.json"]:
+          for name in [*(f"commerce-reprice-{i}.json" for i in range(1, 11)), "commerce-publish-1.json", "commerce-publish-2.json", "commerce-publish-3.json"]:
               path = pathlib.Path(name)
               if not path.exists():
                   print(f"| {name} | — | response file missing |")
