@@ -36,7 +36,11 @@ on:
         type: number
         default: 0
       apply_exact_base_links:
-        description: "1 writes only a missing BASE id when the TRC SKU or listing UUID is unique. 0 is a preview."
+        description: "1 writes missing BASE IDs only when the TRC SKU or listing UUID is unique. 0 is a preview."
+        type: number
+        default: 0
+      apply_stale_base_id_rebind:
+        description: "1 may rebind a BASE channel ID only when its prior ID is absent from a complete BASE snapshot and exact unique TRC SKU evidence identifies the replacement. 0 is a preview."
         type: number
         default: 0
 
@@ -122,8 +126,10 @@ jobs:
           PY
           echo "=== exact BASE identifier repair preview (read-only unless apply_exact_base_links=1) ==="
           BASE_APPLY=false
+          BASE_STALE_REBIND=false
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.apply_exact_base_links || 0 }}" = "1" ]; then BASE_APPLY=true; fi
-          base_repair_code=$(curl -sS -o base-identity-repair.json -w "%{http_code}" --max-time 120 -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" -X POST "$BASE/api/channels/base/identity-repair" -d "{\"apply\":$BASE_APPLY,\"limit\":1000}" || echo 000)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.apply_stale_base_id_rebind || 0 }}" = "1" ]; then BASE_APPLY=true; BASE_STALE_REBIND=true; fi
+          base_repair_code=$(curl -sS -o base-identity-repair.json -w "%{http_code}" --max-time 120 -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" -X POST "$BASE/api/channels/base/identity-repair" -d "{\"apply\":$BASE_APPLY,\"repairStaleExternalIds\":$BASE_STALE_REBIND,\"limit\":1000}" || echo 000)
           echo "=== api/channels/base/identity-repair dry-run HTTP $base_repair_code ==="
           python3 - <<'PY'
           import json

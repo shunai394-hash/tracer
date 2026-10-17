@@ -136,6 +136,8 @@ assert.match(baseRepair, /base_create_id_persist_failed/ , "BASE identity repair
 assert.match(baseRepair, /persisted_create_marker/);
 assert.match(baseRepair, /identity_evidence_ambiguous/);
 assert.match(baseRepair, /snapshot\.complete/, "incomplete BASE snapshots must never be used for identity repair");
+assert.match(baseRepair, /stale_external_id_repair_requires_explicit_flag/, "stale external BASE IDs require an explicit apply flag");
+assert.match(baseRepair, /stale_external_id_absent_from_complete_snapshot/, "stale BASE rebinds require exact SKU plus a complete-snapshot absence proof");
 assert.match(baseRepair, /\.is\("base_item_id", null\)/, "BASE identity repair must compare-and-set only missing links");
 assert.doesNotMatch(baseRepair, /\.update\(\{[^}]*published\s*:/, "BASE identity repair must not change publication state");
 // Keep Vercel Cron disabled; guarded 15-minute reconciliation runs through GitHub Actions OIDC.

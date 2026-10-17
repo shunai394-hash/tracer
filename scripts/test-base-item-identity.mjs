@@ -33,6 +33,31 @@ assert.equal(decideCommerceSkuLink({
   otherBaseItemIdsWithSameSku: [],
   listingIdsAlreadyUsingBaseItem: [],
 }).outcome, "listing_has_different_base_item");
+assert.deepEqual(decideCommerceSkuLink({
+  baseItemId: "100",
+  listingsForSku: [{ id: "listing-1", externalProductId: "999" }],
+  otherBaseItemIdsWithSameSku: [],
+  listingIdsAlreadyUsingBaseItem: [],
+  currentExternalIdExists: false,
+}), {
+  outcome: "repairable_stale_external_id",
+  listingId: "listing-1",
+  previousExternalProductId: "999",
+});
+assert.equal(decideCommerceSkuLink({
+  baseItemId: "100",
+  listingsForSku: [{ id: "listing-1", externalProductId: "999" }],
+  otherBaseItemIdsWithSameSku: [],
+  listingIdsAlreadyUsingBaseItem: [],
+  currentExternalIdExists: true,
+}).outcome, "listing_has_different_base_item");
+assert.equal(decideCommerceSkuLink({
+  baseItemId: "100",
+  listingsForSku: [{ id: "listing-1", externalProductId: "999" }],
+  otherBaseItemIdsWithSameSku: [],
+  listingIdsAlreadyUsingBaseItem: ["other-listing"],
+  currentExternalIdExists: false,
+}).outcome, "base_item_already_mapped");
 assert.equal(decideCommerceSkuLink({
   baseItemId: "100",
   listingsForSku: [listing, { id: "listing-2", externalProductId: null }],
@@ -72,4 +97,4 @@ assert.deepEqual(nextShopifyVendorPage({
   pageIndex: 1, maxPages: 100, hasNextPage: true, endCursor: "same", previousCursor: "same",
 }), { action: "incomplete", reason: "cursor_stuck" });
 
-console.log("BASE identifier and Shopify page scan: 16 cases passed");
+console.log("BASE identifier and Shopify page scan: 20 cases passed");
