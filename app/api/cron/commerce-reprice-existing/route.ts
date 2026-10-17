@@ -176,8 +176,10 @@ export async function GET(request: Request) {
     const rawData = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
       ? offer.raw_data as Record<string, unknown>
       : {};
-    const shippingKnown = rawData.shippingKnown === true || rawData.shippingEstimated === true ||
-      (rawData.shippingKnown === undefined && offer.source_status === "verified" && Number(offer.shipping_cost) > 0);
+    const shippingKnown = rawData.shippingEstimated !== true && (
+      rawData.shippingKnown === true ||
+      (rawData.shippingKnown === undefined && offer.source_status === "verified" && Number(offer.shipping_cost) > 0)
+    );
     const stockKnown = rawData.stockKnown === true ||
       (rawData.stockKnown === undefined && offer.source_status === "verified");
     return offer.source_status !== "verified" || !shippingKnown || !stockKnown;
