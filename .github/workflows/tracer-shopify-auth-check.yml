@@ -31,6 +31,15 @@ on:
       - "lib/intelligence/japanese-product.ts"
       - "lib/catalog/publishable-title.ts"
       - "scripts/test-publishable-title.mjs"
+  # Refresh the read-only catalog/ID/SKU/price/inventory audit after supplier-first
+  # recovery completes. sync_batch defaults to 0, so this trigger never writes listings.
+  workflow_run:
+    workflows:
+      - "TRACER Run Supplier-First Recovery"
+    types:
+      - completed
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       sync_batch:
