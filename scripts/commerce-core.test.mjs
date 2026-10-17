@@ -553,6 +553,9 @@ test("BASE live price audit compares live, stored, and latest canonical prices a
   assert.match(workflow, /priceMismatchVsCanonical/);
   assert.match(workflow, /canonicalVsStoredMismatch/);
   assert.match(route, /canonicalSellingPrice/);
+  assert.match(route, /TRACER_LEGACY_COMMERCE_PRICE_READ_FAILED/);
+  assert.match(route, /legacyOffersByVariant\.get\(variantId\)/);
+  assert.match(route, /if \(exactCandidates\.length !== 1\) return listing/);
   assert.match(route, /exactBaseIdMatches: exactIdListings\.map[\s\S]*?canonicalSellingPrice/);
   assert.match(workflow, /const numericPrice = value =>/);
   assert.match(workflow, /livePrice !== null && canonicalPrice !== null/);
