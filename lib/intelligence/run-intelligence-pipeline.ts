@@ -328,12 +328,10 @@ export async function runIntelligencePipeline(options: {
   pipelineTimedOut = false;
   const db = createSupabaseAdminClient();
 
-  // Live CJ catalog discovery runs in /api/cron/supply-first on its own
-  // four-times-daily 4-minute budget. Calling it again from every five-minute
-  // patrol repeatedly hit the 18-second sub-budget, produced deadlineReached
-  // with no candidates, and competed with the same supplier API quota.
-  // Keep the stage explicit for pipeline observability; this patrol consumes
-  // already-persisted verified supplier rows below.
+  // Live CJ catalog discovery is owned by /api/cron/commerce-cj-import,
+  // scheduled every 10 minutes. Do not duplicate live CJ requests from this
+  // five-minute patrol: it consumes persisted supplier offers, recalculates
+  // economics, and continues the BASE/Shopify/NEWFIND delivery work below.
   const supplyFirstStep: PipelineStepResult = {
     name: "supply_first",
     ok: true,
@@ -341,8 +339,8 @@ export async function runIntelligencePipeline(options: {
     retryable: false,
     result: {
       skipped: true,
-      reason: "dedicated_supply_first_cron_owns_live_cj_discovery",
-      discoveryCron: "/api/cron/supply-first",
+      reason: "dedicated_commerce_cj_import_cron_owns_live_cj_discovery",
+      discoveryCron: "/api/cron/commerce-cj-import",
     },
   };
   steps.push(supplyFirstStep);
