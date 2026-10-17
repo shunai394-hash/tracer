@@ -322,10 +322,20 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       (preflightRawOfferData.shippingKnown === true || preflightRawOfferData.shippingEstimated === true);
     const preflightStockKnown = preflightRawOfferData.stockKnown === true ||
       (preflightRawOfferData.stockKnown === undefined && rawOffer?.source_status === "verified");
+    const preflightCheckedAt = typeof rawOffer?.last_checked_at === "string"
+      ? Date.parse(rawOffer.last_checked_at) : Number.NaN;
+    const preflightFresh = Number.isFinite(preflightCheckedAt) &&
+      preflightCheckedAt <= Date.now() + 5 * 60_000 &&
+      Date.now() - preflightCheckedAt <= 24 * 60 * 60_000;
     const supplierEvidenceUnverified = !rawOffer || rawOffer.source_status !== "verified" ||
-      !preflightShippingKnown || !preflightStockKnown;
+      !preflightShippingKnown || !preflightStockKnown || !preflightFresh ||
+      rawOffer.tracking_supported !== true || rawOffer.ship_to !== "JP" ||
+      !Number.isFinite(Number(rawOffer.inventory)) || Number(rawOffer.inventory) <= 0;
     const currentState = stateByVariant.get(candidate.id);
-    if (!onlyUnpublished && currentState?.status === "published" && currentState.external_product_id && supplierEvidenceUnverified) {
+    // Never republish a previously-created item just because a recovery run selected
+    // pending/error rows. Existing unfulfillable items must remain hidden until the
+    // exact supplier offer proves fresh JP stock, shipping, and tracking.
+    if (currentState?.external_product_id && supplierEvidenceUnverified) {
       const reason = !rawOffer ? "supplier_offer_missing" :
         rawOffer.source_status !== "verified" ? "supplier_offer_not_verified" :
         !preflightShippingKnown ? "japan_freight_unconfirmed" : "supplier_stock_unconfirmed";
@@ -416,6 +426,11 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       offer.tracking_supported === true &&
       supplierEvidenceFresh &&
       Number.isFinite(Number(offer.inventory)) && Number(offer.inventory) > 0;
+    // Do not create a visible but non-purchasable listing for an unverified offer.
+    if (!supplierSaleable && !currentState?.external_product_id) {
+      results.push({ variantId: candidate.id, ok: false, error: "supplier_offer_not_fulfillable" });
+      continue;
+    }
     const storefrontStock = toStorefrontStockQuantity(
       supplierSaleable ? Number(offer.inventory) : 0,
       getStorefrontStockCap(),
