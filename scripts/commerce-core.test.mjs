@@ -9,6 +9,16 @@ import { isCanonicalCJNativeId } from "../lib/sources/cj/native-id.mjs";
 import { japaneseCommerceDescription } from "../lib/commerce/japanese-copy.mjs";
 import { resolveBasePublicUrl } from "../lib/commerce/base-public-url.mjs";
 
+test("CJ freight parsing searches nested object and array wrappers and preserves explicit free-shipping values", async () => {
+  const client = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
+  assert.match(client, /function collectCJFreightRows\(value: unknown\)/);
+  assert.match(client, /Object\.values\(record\)\.flatMap\(\(nested\) => collectCJFreightRows\(nested\)\)/);
+  assert.match(client, /CJ_FREIGHT_PRICE_KEYS\.some\(\(key\) => readCJFreightPrice\(record\[key\]\) !== null\)/);
+  assert.match(client, /const rows = collectCJFreightRows\(payload\.data\)/);
+  assert.match(client, /const shippingCost = CJ_FREIGHT_PRICE_KEYS/);
+  assert.match(client, /readCJFreightPrice\(record\[key\]\)/);
+});
+
 test("price calculation preserves positive profit after fees and target margin", () => {
   const result = calculateSellingPrice({ unitCostJpy: 2000, shippingCostJpy: 500, feeRate: 0.1, targetMarginRate: 0.5 });
   assert.ok(result.sellingPrice > 2500);
