@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isCJLiveOrderPathReady } from "@/lib/config/env";
 import { normalizeIdentifier } from "@/lib/market/identifiers";
+import { isCanonicalCJNativeId } from "@/lib/sources/cj/native-id.mjs";
 
 type CandidateArgs = {
   supplierProductId: string;
@@ -46,6 +47,11 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
 }> {
   if (!args.supplierProductId.trim() || !args.supplierVariantId.trim()) {
     throw new Error("cj_internal_supply_missing_supplier_identity");
+  }
+  // Enforce the supplier-native ID contract at the persistence boundary too.
+  // Discovery is not the only caller; UUIDs/SKUs must never be persisted as CJ IDs.
+  if (!isCanonicalCJNativeId(args.supplierProductId) || !isCanonicalCJNativeId(args.supplierVariantId)) {
+    throw new Error("cj_internal_supply_native_identity_invalid");
   }
   if (!Number.isFinite(args.costUsd) || args.costUsd <= 0
     || !Number.isFinite(args.shippingUsd) || args.shippingUsd < 0
