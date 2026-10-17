@@ -93,12 +93,23 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           offer.source_status === "verified" && nativeIdsValid && offer.tracking_supported === true &&
           offer.ship_to === "JP" && fresh && Number(offer.inventory) > 0);
       };
-      if (offers.some(offerIsValid)) {
-        // Rotate healthy rows to the back of the next bounded scan.
+      const hasPublishableLinkedOffer = offers.some((offer) => {
+        const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id);
+        const nativeIdsValid = offer.supplier_code !== "cj" ||
+          (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
+        return Boolean(
+          offer.supplier_product_id && offer.supplier_variant_id && nativeIdsValid &&
+          price && price.currency === "JPY" && Number(price.selling_price) > 0 && Number(price.expected_profit) > 0
+        );
+      });
+      if (offers.some(offerIsValid) || hasPublishableLinkedOffer) {
+        // Listing requires a mapped supplier product/variant and profitable JPY price.
+        // Stock freshness, tracking capability and supplier verification belong to procurement.
         const checkedAt = new Date().toISOString();
         const { error: markCheckedError } = await db.from("channel_listings").update({
           last_synced_at: checkedAt,
           updated_at: checkedAt,
+          ...(hasPublishableLinkedOffer ? { last_error: null } : {}),
         }).eq("id", listing.id);
         if (markCheckedError) throw new Error("stale_listing_check_timestamp_failed:" + markCheckedError.message);
         continue;
