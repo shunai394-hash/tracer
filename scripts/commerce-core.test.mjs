@@ -997,3 +997,11 @@ test("legacy BASE price reconciliation updates canonical profit margin using per
   assert.match(route, /canonical_margin_rate_invalid/);
   assert.match(route, /contribution_margin: Math\.round\(canonicalMarginRate \* 10000\) \/ 100/);
 });
+
+test("legacy BASE reconciliation repairs margin-only mismatches without editing the storefront price", async () => {
+  const route = await readFile(new URL("../app/api/cron/base-legacy-price-reconcile/route.ts", import.meta.url), "utf8");
+  assert.match(route, /Number\(listing\.contribution_margin\) !== canonicalMarginPercent/);
+  assert.match(route, /if \(oldPrice !== canonicalPrice\) \{[\s\S]*?await editBaseItem\(/);
+  assert.match(route, /contribution_margin: Math\.round\(canonicalMarginRate \* 10000\) \/ 100/);
+  assert.match(route, /const batch = mismatches\.slice\(0, limit\)/);
+});
