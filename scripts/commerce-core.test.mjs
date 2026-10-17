@@ -115,6 +115,16 @@ test("bounded recovery processes only unpublished channel listings", async () =>
   assert.doesNotMatch(workflow, /commerce-publish-shopify\?limit=10&onlyUnpublished=true/);
 });
 
+test("unified publication route authenticates and processes BASE then Shopify with a bounded shared batch", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-publish-all/route.ts", import.meta.url), "utf8");
+  assert.match(route, /requireAutomationAuth\(request\)/);
+  assert.match(route, /Math\.min\(5, Math\.max\(1, Math\.floor\(requested\)\)\)/);
+  assert.match(route, /const channels = \["base", "shopify"\] as const/);
+  assert.match(route, /for \(const channel of channels\)/);
+  assert.match(route, /await syncCommerceListings\(channel, limit, onlyUnpublished\)/);
+  assert.match(route, /status: failed \? 207 : 200/);
+});
+
 test("stale listing eligibility uses batched supplier, price, and variant reads", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   const start = publish.indexOf("async function unpublishUnfulfillableListings");
