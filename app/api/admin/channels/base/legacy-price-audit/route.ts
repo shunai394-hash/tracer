@@ -134,8 +134,8 @@ export async function GET(request: Request) {
     }
   }));
 
-  const priceMismatches = results.filter((row) => row.priceMatchesCanonical === false).length;
-  const hiddenItems = results.filter((row) => row.externalVisible === false).length;
+  const priceMismatches = results.filter((row) => "priceMatchesCanonical" in row && row.priceMatchesCanonical === false).length;
+  const hiddenItems = results.filter((row) => "externalVisible" in row && row.externalVisible === false).length;
   const readErrors = results.filter((row) => "externalReadError" in row).length;
   return NextResponse.json({
     ok: readErrors === 0 && priceMismatches === 0,
