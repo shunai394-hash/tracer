@@ -128,6 +128,10 @@ assert.match(adapter, /fromCountryCode: freight\.countryCode,\s+payType: 3,\s+is
 assert.match(adapter, /realFulfillment: false/);
 const sandboxRoute = read("app/api/cron/cj-sandbox-order-test/route.ts");
 assert.match(sandboxRoute, /CJ_SANDBOX_ORDER_TEST_ENABLED/);
+assert.match(sandboxRoute, /previousError\.startsWith\("Invalid target status UNPAID\\\(200\\\), allowed values:"\)/);
+assert.match(sandboxRoute, /previousMetadata\.sandbox === true/);
+assert.match(sandboxRoute, /previousMetadata\.charged === false/);
+assert.match(sandboxRoute, /previousMetadata\.realFulfillment === false/);
 assert.match(sandboxRoute, /requireAutomationAuth/);
 assert.match(sandboxRoute, /SUPPLIER_LISTING_NOT_CJ_SANDBOX_CANDIDATE/);
 assert.match(sandboxRoute, /CJ_API_QUOTA_COOLDOWN/);
