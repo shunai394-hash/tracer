@@ -232,6 +232,7 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
     .gt("inventory", 0)
     .eq("tracking_available", true)
     .gt("selling_price", 0)
+    .eq("currency", "JPY")
     .maybeSingle();
 
   if (error) throw new Error(error.message);
@@ -446,7 +447,8 @@ export async function placeShopOrder(args: {
     .eq("orderable", true)
     .gt("inventory", 0)
     .eq("tracking_available", true)
-    .gt("selling_price", 0);
+    .gt("selling_price", 0)
+    .eq("currency", "JPY");
 
   if (error) throw new Error(error.message);
   if (!listings || listings.length !== new Set(listingIds).size) throw new Error("published Shopify listing not found");
@@ -478,6 +480,7 @@ export async function placeShopOrder(args: {
     const inventory = Math.min(asNumber(listing.inventory) ?? 0, liveQuantity as number);
     if (inventory < item.qty) throw new Error("requested quantity exceeds verified live inventory");
     if (!Number.isFinite(item.qty) || item.qty <= 0) throw new Error("quantity must be greater than zero");
+    if (String(listing.currency ?? "").trim().toUpperCase() !== "JPY") throw new Error("currency must be JPY");
     const unitPrice = asNumber(listing.selling_price);
     if (unitPrice === null || unitPrice <= 0) throw new Error("selling price unknown");
     if (currency && listing.currency && currency !== listing.currency) throw new Error("currency mismatch");
