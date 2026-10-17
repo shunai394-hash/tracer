@@ -440,6 +440,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       const mappedExternalVariantId = channel === "base" ? externalProductId : externalVariantId;
       const { error: finishError } = await db.from("channel_listings").update({
         external_product_id: externalProductId, external_variant_id: mappedExternalVariantId, external_sku: sku,
+        selling_price: Number(price.selling_price),
         status: "published", published_url: publishedUrl, last_error: null, last_synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }).eq("id", listing.id);
