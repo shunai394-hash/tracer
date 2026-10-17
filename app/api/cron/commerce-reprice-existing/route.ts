@@ -95,10 +95,19 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "usd_jpy_rate_unavailable", considered: candidates.length, repriced: 0 }, { status: 503 });
   }
 
-  const result = { considered: candidates.length, repriced: 0, skipped: 0, skippedUnknownShipping, errors: [] as Array<{ offerId: string; reason: string }> };
+  const result = {
+    considered: candidates.length,
+    repriced: 0,
+    skipped: 0,
+    skippedUnknownShipping,
+    errors: [] as Array<{ offerId: string; reason: string }>,
+    storefrontSync: { base: 0, shopify: 0 },
+    storefrontSyncErrors: [] as Array<{ channel: string; reason: string }>,
+  };
+  const repricedVariantIds: string[] = [];
   for (const offer of candidates) {
     try {
-      await recalculatePrice({
+      const price = await recalculatePrice({
         variantId: String(offer.variant_id),
         offerId: String(offer.id),
         exchangeRateToJpy: String(offer.currency).toUpperCase() === "JPY" ? 1 : usdJpy.rate,
@@ -106,6 +115,12 @@ export async function GET(request: Request) {
         targetMarginRate,
       });
       result.repriced++;
+      const variantId = String(offer.variant_id);
+      const prior = priceByVariant.get(variantId);
+      canonicalPriceByVariant.set(variantId, price.sellingPrice);
+      if (!prior || Number(prior.selling_price) !== price.sellingPrice) {
+        repricedVariantIds.push(variantId);
+      }
     } catch (error) {
       result.skipped++;
       result.errors.push({
