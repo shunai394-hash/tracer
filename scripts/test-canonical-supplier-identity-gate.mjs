@@ -212,3 +212,6 @@ assert.match(targetedReverifyWorkflow, /supplierListingIds=\$IDS/);
 assert.match(targetedReverifyWorkflow, /'\{"dryRun":true,"limit":1000\}'/);
 assert.doesNotMatch(targetedReverifyWorkflow, /api\/cron\/commerce-procurement|api\/cron\/shopify-orders/);
 assert.match(targetedReverifyWorkflow, /No Shopify product write, unpublish, supplier order, or payment was requested/);
+
+assert.match(identityAuditRoute, /shipping_status,configured,ship_to/,
+  "native readiness audit must actually select the shipping/configuration/destination fields it evaluates");
