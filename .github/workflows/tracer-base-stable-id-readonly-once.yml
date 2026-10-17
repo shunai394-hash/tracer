@@ -1,6 +1,10 @@
 name: TRACER BASE Stable-ID Read-Only Audit
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tracer-base-stable-id-readonly-once.yml"
   schedule:
     - cron: "35 4 15 10 *"
 
@@ -14,7 +18,7 @@ concurrency:
 
 jobs:
   reconcile:
-    if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'schedule' || github.event_name == 'push') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
