@@ -918,3 +918,16 @@ test("Shopify live reconciliation exports full row-level IDs, SKUs, prices, and 
   assert.match(workflow, /writesPerformed.*False/);
 });
 
+
+test("CJ freight uses the detailed API when required product logistics fields are available", async () => {
+  const client = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
+  assert.match(client, /freightCalculateTip/);
+  assert.match(client, /productProEnSet/);
+  assert.match(client, /variant\.variantWeight/);
+  assert.match(client, /srcAreaCode: options\.startCountryCode/);
+  assert.match(client, /destAreaCode: options\.endCountryCode/);
+  assert.match(client, /if \(tipQuote !== null\) return tipQuote/);
+  assert.match(client, /CJ FREIGHT TIP INPUT INCOMPLETE/);
+  assert.match(client, /Do not silently convert or interpret CNY fields/);
+});
+
