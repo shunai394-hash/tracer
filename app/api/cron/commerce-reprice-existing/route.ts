@@ -47,7 +47,7 @@ export async function GET(request: Request) {
   }
   const activeVariantIds = new Set((variants ?? []).map((row) => String(row.id)));
   const priceByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), row]));
-  const oneOfferPerVariant = new Map<string, (typeof offers extends Array<infer T> ? T : never)>();
+  const oneOfferPerVariant = new Map<string, NonNullable<typeof offers>[number]>();
   for (const offer of offers ?? []) {
     const variantId = String(offer.variant_id);
     if (!activeVariantIds.has(variantId) || offer.unit_cost === null || offer.shipping_cost === null) continue;
