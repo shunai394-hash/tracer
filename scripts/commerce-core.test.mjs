@@ -386,7 +386,7 @@ test("CJ variant suffixes disambiguate non-color supplier options in Japanese", 
 test("CJ importer serializes stock and freight requests to respect the supplier QPS limit", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   const stockCall = importer.indexOf("await fetchCJVariantStock(variant.vid)");
-  const freightCall = importer.indexOf("await calculateCJFreight(variant.vid, { startCountryCode: \"CN\"");
+  const freightCall = importer.indexOf("await calculateCJFreight(variant.vid, {", stockCall);
   assert.ok(stockCall >= 0 && freightCall > stockCall, "stock must be awaited before the freight request");
   assert.doesNotMatch(importer, /Promise\.allSettled\(\[\s*fetchCJVariantStock[\s\S]*?calculateCJFreight/s);
 });
