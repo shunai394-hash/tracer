@@ -257,6 +257,10 @@ test("TRACER storefront displays published canonical Shopify listings without en
   assert.match(store, /from\("commerce_variants"\)/);
   assert.match(store, /from\("supplier_offers"\)/);
   assert.match(store, /from\("commerce_prices"\)/);
+  assert.match(store, /const linkedPairs = validPrices/);
+  assert.match(store, /candidate\.supplier_product_id\) && Boolean\(candidate\.supplier_variant_id/);
+  assert.match(store, /candidate\.source_status === "verified"/);
+  assert.match(store, /candidate\.tracking_supported === true && candidate\.ship_to === "JP"/);
   assert.doesNotMatch(store, /if \(!isCJLiveOrderingEnabled\(\)\) return \[\]/);
   assert.match(store, /orderable: isCJLiveOrderPathReady\(\)/);
   assert.match(store, /const canonicalListings = await loadCanonicalCommerceListings\(\)/);
