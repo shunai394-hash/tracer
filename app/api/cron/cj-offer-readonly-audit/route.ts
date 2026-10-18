@@ -104,6 +104,24 @@ export async function GET(request: Request) {
       }
 
       const parentMatches = variant.productId === productId;
+      if (!parentMatches || variant.vid !== variantId) {
+        results.push({
+          offerId,
+          ok: false,
+          error: "stored_cj_identity_mismatch",
+          identity: {
+            storedProductId: productId,
+            liveProductId: variant.productId,
+            storedVariantId: variantId,
+            liveVariantId: variant.vid,
+            parentMatches,
+            variantMatches: variant.vid === variantId,
+          },
+          publicationDecision: "not_evaluated_or_changed",
+        });
+        continue;
+      }
+
       const stock = await fetchCJVariantStock(variantId);
       const freightDiagnostics: string[] = [];
       let freight: number | null = null;
