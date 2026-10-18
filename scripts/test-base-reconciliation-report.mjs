@@ -75,3 +75,11 @@ const cleanupWorkflow = await readFile(new URL("../.github/workflows/tracer-base
 assert.match(cleanupWorkflow, /gitCommitSha\|\|j\.commitSha/);
 assert.match(cleanupWorkflow, /workflow_dispatch/);
 assert.match(cleanupWorkflow, /cancel-in-progress: true/);
+
+const legacyPairAudit = await readFile(new URL("../app/api/admin/channels/base/legacy-15-live-audit/route.ts", import.meta.url), "utf8");
+assert.match(legacyPairAudit, /const skuMatch = Boolean\(oldResult\.item && currentResult\.item && oldResult\.item\.sku === currentResult\.item\.sku\)/);
+assert.match(legacyPairAudit, /skuMismatches: results\.filter\(\(row\) => row\.oldItem !== null && row\.currentItem !== null && !row\.skuMatch\)\.length/);
+assert.match(legacyPairAudit, /oldItem !== null && row\.currentItem !== null && row\.skuMatch/);
+assert.match(legacyPairAudit, /readOnly: true/);
+assert.doesNotMatch(legacyPairAudit, /\.update\(|\.insert\(|\.upsert\(|editBaseItem\(|deleteBaseItem\(/);
+console.log("BASE legacy/current pair SKU identity audit contract: 5 assertions passed");
