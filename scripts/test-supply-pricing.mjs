@@ -95,7 +95,6 @@ assert.equal(calculateRecommendedSupplySellingPriceJpy({
   shippingCost: 4,
   sourceFxRateToSelling: 150,
   ...fees,
-  targetContributionMargin: 0.50,
   targetContributionMargin: 0.20,
 }), 4900, "recommended helper supports an explicit 20% target");
 console.log("Supply pricing: 9 cases passed");
