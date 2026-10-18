@@ -28,10 +28,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const CONFIRMATION = "REPAIR_BASE_PUBLICATION_MISMATCHES_AND_HIDDEN_DUPLICATES";
-const ACTION_IDS = [
-  ...HIDDEN_DUPLICATE_DELETES.map((pair) => pair.staleId),
-  ...VISIBLE_NONCANONICAL_HIDES.map((pair) => pair.staleId),
-];
+const ALLOWED_DELETE_IDS = HIDDEN_DUPLICATE_DELETES.map((pair) => pair.staleId);
 
 function asItem(item: Record<string, unknown>): PublicationRepairItem {
   const visible = item.visible === true || item.visible === 1 || item.visible === "1"
@@ -85,8 +82,19 @@ export async function POST(request: Request) {
   if (!isBaseConfigured()) {
     return NextResponse.json({ ok: false, error: "BASE_OAUTH_CONFIG_INCOMPLETE" }, { status: 503 });
   }
-  const body = await request.json().catch(() => ({})) as { apply?: unknown; confirmation?: unknown };
+  const body = await request.json().catch(() => ({})) as { apply?: unknown; confirmation?: unknown; staleIds?: unknown };
   const apply = body.apply === true;
+  const scoped = body.staleIds !== undefined;
+  if (scoped && (!Array.isArray(body.staleIds) || body.staleIds.length === 0 ||
+      body.staleIds.some((id) => typeof id !== "string" || !ALLOWED_DELETE_IDS.includes(id)) ||
+      new Set(body.staleIds).size !== body.staleIds.length)) {
+    return NextResponse.json({ ok: false, error: "invalid_stale_ids" }, { status: 400 });
+  }
+  const requestedDeletes = scoped ? HIDDEN_DUPLICATE_DELETES.filter((pair) => (body.staleIds as string[]).includes(pair.staleId)) : HIDDEN_DUPLICATE_DELETES;
+  const requestedHides = scoped ? [] : VISIBLE_NONCANONICAL_HIDES;
+  const requestedErrorHides = scoped ? [] : VISIBLE_ERROR_HIDES;
+  const requestedErrors = scoped ? [] : ERROR_HIDDEN_LEAVE;
+  const actionIds = [...requestedDeletes.map((pair) => pair.staleId), ...requestedHides.map((pair) => pair.staleId), ...requestedErrorHides.map((item) => item.itemId)];
   if (apply && body.confirmation !== CONFIRMATION) {
     return NextResponse.json({ ok: false, error: "explicit_confirmation_required" }, { status: 400 });
   }
@@ -99,11 +107,7 @@ export async function POST(request: Request) {
       return [view.itemId, view] as const;
     }));
     const db = createSupabaseAdminClient();
-    const skus = [
-      ...HIDDEN_DUPLICATE_DELETES.map((pair) => pair.sku),
-      ...VISIBLE_NONCANONICAL_HIDES.map((pair) => pair.sku),
-      ...ERROR_HIDDEN_LEAVE.map((item) => item.sku),
-    ];
+    const skus = [...requestedDeletes.map((pair) => pair.sku), ...requestedHides.map((pair) => pair.sku), ...requestedErrorHides.map((item) => item.sku), ...requestedErrors.map((item) => item.sku)];
     const { data: listings, error } = await db.from("channel_listings")
       .select("id,external_product_id,external_sku,status")
       .eq("channel", "base")
@@ -124,31 +128,31 @@ export async function POST(request: Request) {
       return group.length === 1 ? group[0] : null;
     };
 
-    const deletes = HIDDEN_DUPLICATE_DELETES.map((pair) => ({
+    const deletes = requestedDeletes.map((pair) => ({
       ...pair,
       action: "delete_hidden_duplicate" as const,
       ...assessHiddenDelete(pair, items, listingFor(pair.sku)?.externalId ?? null),
     }));
-    const errorHides = VISIBLE_ERROR_HIDES.map((target) => ({
+    const errorHides = requestedErrorHides.map((target) => ({
       ...target,
       action: "hide_visible_error_listing" as const,
       ...assessVisibleErrorHide(target, items, listingFor(target.sku)),
     }));
-    const hides = VISIBLE_NONCANONICAL_HIDES.map((pair) => ({
+    const hides = requestedHides.map((pair) => ({
       ...pair,
       action: "hide_visible_noncanonical" as const,
       ...assessVisibleHide(pair, items, listingFor(pair.sku)?.externalId ?? null),
     }));
-    const errors = ERROR_HIDDEN_LEAVE.map((target) => ({
+    const errors = requestedErrors.map((target) => ({
       ...target,
       action: "leave_db_error_base_already_hidden" as const,
       ...assessErrorHidden(target, items, listingFor(target.sku)),
     }));
-    const orders = await orderReferences(ACTION_IDS);
+    const orders = await orderReferences(actionIds);
     const { data: linked, error: linkError } = await db.from("channel_listings")
       .select("external_product_id")
       .eq("channel", "base")
-      .in("external_product_id", ACTION_IDS);
+      .in("external_product_id", actionIds);
     if (linkError) throw new Error("PUBLICATION_REPAIR_STALE_LINK_CHECK_FAILED");
     const listingReferences = (linked ?? []).map((row) => String(row.external_product_id));
     const observed = (id: string) => {
@@ -186,7 +190,7 @@ export async function POST(request: Request) {
     }
 
     const results: Array<{ itemId: string; outcome: string }> = [];
-    for (const pair of HIDDEN_DUPLICATE_DELETES.filter((candidate) => readyDeletes.some((row) => row.staleId === candidate.staleId))) {
+    for (const pair of requestedDeletes.filter((candidate) => readyDeletes.some((row) => row.staleId === candidate.staleId))) {
       const staleDetail = await readDetail(pair.staleId);
       const canonicalDetail = await readDetail(pair.canonicalId);
       if (canonicalDetail === "absent") throw new Error(`CANONICAL_READBACK_FAILED:${pair.canonicalId}`);
@@ -214,7 +218,7 @@ export async function POST(request: Request) {
       results.push({ itemId: pair.staleId, outcome: "deleted_and_readback_verified" });
     }
 
-    for (const pair of VISIBLE_NONCANONICAL_HIDES.filter((candidate) => readyHides.some((row) => row.staleId === candidate.staleId))) {
+    for (const pair of requestedHides.filter((candidate) => readyHides.some((row) => row.staleId === candidate.staleId))) {
       const raw = await getBaseItemDetail(pair.staleId);
       const title = typeof raw.title === "string" ? raw.title : "";
       const detail = typeof raw.detail === "string" ? raw.detail : null;
@@ -238,7 +242,7 @@ export async function POST(request: Request) {
       results.push({ itemId: pair.staleId, outcome: "hidden_and_readback_verified" });
     }
 
-    for (const target of VISIBLE_ERROR_HIDES.filter((candidate) => readyErrorHides.some((row) => row.itemId === candidate.itemId))) {
+    for (const target of requestedErrorHides.filter((candidate) => readyErrorHides.some((row) => row.itemId === candidate.itemId))) {
       const raw = await getBaseItemDetail(target.itemId);
       const title = typeof raw.title === "string" ? raw.title : "";
       const detail = typeof raw.detail === "string" ? raw.detail : null;
