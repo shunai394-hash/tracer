@@ -1,0 +1,95 @@
+name: TRACER BASE canonical hidden-item repair
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Publish eligible canonical items on BASE (false = read-only preflight)"
+        required: false
+        type: boolean
+        default: false
+      limit:
+        description: "Maximum canonical items to repair in this batch (1-10)"
+        required: false
+        type: number
+        default: 5
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-base-canonical-hidden-item-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Wait until production serves this commit
+        env:
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            response="$(curl --fail --silent --show-error --max-time 15 https://tracer-pied-alpha.vercel.app/api/health || true)"
+            deployed_sha="$(printf '%s' "$response" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);process.stdout.write(String(j.gitCommitSha||j.commitSha||j.commit||j.sha||""))}catch{}})')"
+            if [ "$deployed_sha" = "$TARGET_SHA" ]; then echo "Production serves $TARGET_SHA"; exit 0; fi
+            sleep 10
+          done
+          echo "Production did not report target SHA $TARGET_SHA; refusing BASE repair."
+          exit 1
+      - name: Run read-only preflight and optional bounded repair
+        env:
+          APPLY: ${{ inputs.apply }}
+          REPAIR_LIMIT: ${{ inputs.limit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { writeFile } from "node:fs/promises";
+          const audience = "https://tracer-pied-alpha.vercel.app";
+          const tokenUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          tokenUrl.searchParams.set("audience", audience);
+          const tokenResponse = await fetch(tokenUrl, { headers: { Authorization: "Bearer " + process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN } });
+          if (!tokenResponse.ok) throw new Error("OIDC_TOKEN_REQUEST_FAILED:" + tokenResponse.status);
+          const tokenBody = await tokenResponse.json();
+          if (typeof tokenBody.value !== "string" || !tokenBody.value) throw new Error("OIDC_TOKEN_MISSING");
+          const endpoint = audience + "/api/channels/base/visibility-repair";
+          const headers = { Authorization: "Bearer " + tokenBody.value, "Content-Type": "application/json", Accept: "application/json" };
+          const limit = Math.max(1, Math.min(10, Math.floor(Number(process.env.REPAIR_LIMIT) || 5)));
+          const preflightResponse = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify({ apply: false, limit }), signal: AbortSignal.timeout(110000) });
+          const preflight = await preflightResponse.json().catch(() => ({}));
+          console.log(JSON.stringify({ stage: "read-only preflight", status: preflightResponse.status, ...preflight }, null, 2));
+          if (!preflightResponse.ok || preflight.ok !== true || preflight.readOnly !== true) throw new Error("BASE_VISIBILITY_REPAIR_PREFLIGHT_FAILED");
+          let result = preflight;
+          if (process.env.APPLY === "true") {
+            const response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify({ apply: true, limit }), signal: AbortSignal.timeout(110000) });
+            result = await response.json().catch(() => ({}));
+            console.log(JSON.stringify({ stage: "bounded repair", status: response.status, ...result }, null, 2));
+            if (!response.ok || result.ok !== true || result.readbackFailed > 0) throw new Error("BASE_VISIBILITY_REPAIR_FAILED");
+          } else {
+            console.log("Read-only mode: no BASE item was edited.");
+          }
+          await writeFile("base-canonical-visibility-repair-result.json", JSON.stringify(result, null, 2), { mode: "0600" });
+          await writeFile(process.env.GITHUB_STEP_SUMMARY, [
+            "# TRACER BASE canonical hidden-item repair",
+            "",
+            "Mode: " + (process.env.APPLY === "true" ? "apply" : "read-only"),
+            "",
+            "```json",
+            JSON.stringify(result, null, 2),
+            "```",
+            ""
+          ].join("\n"));
+          NODE
+      - name: Upload repair evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: base-canonical-visibility-repair-${{ github.run_id }}
+          path: base-canonical-visibility-repair-result.json
+          if-no-files-found: ignore
+          retention-days: 14
