@@ -5,7 +5,7 @@
 
 export type BaseChannelListing = {
   id: string;
-  variantId: string;
+  variantId: string | null;
   externalProductId: string | null;
   externalVariantId: string | null;
   externalSku: string | null;
