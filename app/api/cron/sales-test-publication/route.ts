@@ -153,12 +153,17 @@ export async function GET(request: Request) {
     // Native CJ supply intentionally has no marketplace product FK. Resolve its
     // standalone product row only by the exact supplier product+variant source key.
     const nativeSourceRefs = Array.from(new Set((nativeCjSupplyRows ?? [])
-      .map((row) => {
+      .flatMap((row) => {
         const productId = String(row.supplier_product_id ?? "").trim();
         const variantId = String(row.supplier_variant_id ?? "").trim();
-        return productId && variantId ? `cj:product:${productId}:variant:${variantId}` : "";
-      })
-      .filter(Boolean)));
+        if (!productId || !variantId) return [];
+        // Both formats are already persisted in production. The labeled form is
+        // preferred for new rows; legacy rows use cj:<productId>:<variantId>.
+        return [
+          `cj:product:${productId}:variant:${variantId}`,
+          `cj:${productId}:${variantId}`,
+        ];
+      })));
     let nativeProducts: Array<{ id: string; identity_key: string }> = [];
     if (nativeSourceRefs.length > 0) {
       const { data, error } = await supabase
@@ -168,13 +173,23 @@ export async function GET(request: Request) {
       if (error) throw new Error(error.message);
       nativeProducts = (data ?? []) as Array<{ id: string; identity_key: string }>;
     }
-    const nativeProductBySourceRef = new Map(nativeProducts.map((row) => [String(row.identity_key), String(row.id)]));
+    const nativeProductBySupplierIdentity = new Map<string, string>();
+    for (const row of nativeProducts) {
+      const identityKey = String(row.identity_key ?? "");
+      const labeledMatch = /^cj:product:([^:]+):variant:(.+)$/.exec(identityKey);
+      const legacyMatch = /^cj:([^:]+):([^:]+)$/.exec(identityKey);
+      const productId = labeledMatch?.[1] ?? legacyMatch?.[1];
+      const variantId = labeledMatch?.[2] ?? legacyMatch?.[2];
+      if (productId && variantId) {
+        nativeProductBySupplierIdentity.set(`${productId}:${variantId}`, String(row.id));
+      }
+    }
     const nativeCjSupply = (nativeCjSupplyRows ?? [])
       .map((row) => {
         const productId = String(row.supplier_product_id ?? "").trim();
         const variantId = String(row.supplier_variant_id ?? "").trim();
-        const sourceRef = productId && variantId ? `cj:product:${productId}:variant:${variantId}` : "";
-        return { product_id: nativeProductBySourceRef.get(sourceRef) ?? null };
+        const key = productId && variantId ? `${productId}:${variantId}` : "";
+        return { product_id: nativeProductBySupplierIdentity.get(key) ?? null };
       })
       .filter((row): row is { product_id: string } => Boolean(row.product_id));
 
