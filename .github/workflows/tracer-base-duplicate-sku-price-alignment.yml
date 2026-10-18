@@ -1,6 +1,10 @@
 name: TRACER BASE duplicate SKU highest-price alignment
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "ops/run-base-duplicate-sku-highest-price-once.txt"
   workflow_dispatch:
     inputs:
       apply:
@@ -43,8 +47,8 @@ jobs:
           exit 1
       - name: Dry-run, optionally align prices, and verify readback
         env:
-          APPLY: ${{ inputs.apply }}
-          LIMIT: ${{ inputs.limit }}
+          APPLY: ${{ github.event_name == 'push' || inputs.apply }}
+          LIMIT: ${{ github.event_name == 'push' && 25 || inputs.limit }}
         shell: bash
         run: |
           set -euo pipefail
@@ -70,7 +74,23 @@ jobs:
           const dryRun = await post(false);
           if (dryRun.readOnly !== true || dryRun.snapshotComplete !== true) throw new Error("BASE_PRICE_ALIGNMENT_PREFLIGHT_FAILED");
           let result = dryRun;
-          if (process.env.APPLY === "true" && dryRun.candidatePriceUpdates > 0) result = await post(true);
+          const batches = [];
+          if (process.env.APPLY === "true") {
+            let remaining = Number(dryRun.candidatePriceUpdates || 0);
+            for (let batch = 1; batch <= 20 && remaining > 0; batch++) {
+              const applied = await post(true);
+              if (applied.failed > 0 || applied.ok !== true) throw new Error("BASE_PRICE_ALIGNMENT_BATCH_FAILED:" + batch);
+              batches.push({ batch, selected: applied.selected, updatedAndVerified: applied.updatedAndVerified, failed: applied.failed, groups: applied.duplicateSkuGroups });
+              const next = await post(false);
+              if (next.readOnly !== true || next.snapshotComplete !== true) throw new Error("BASE_PRICE_ALIGNMENT_PREFLIGHT_FAILED_AFTER_BATCH");
+              const nextCount = Number(next.candidatePriceUpdates || 0);
+              if (nextCount >= remaining && applied.updatedAndVerified === 0) throw new Error("BASE_PRICE_ALIGNMENT_NO_PROGRESS");
+              remaining = nextCount;
+              result = next;
+            }
+            if (remaining > 0) throw new Error("BASE_PRICE_ALIGNMENT_BATCH_CAP_REACHED:" + remaining);
+            result = { ok: true, apply: true, readOnly: false, batches, finalPreflight: result, totalUpdatedAndVerified: batches.reduce((n, b) => n + Number(b.updatedAndVerified || 0), 0) };
+          }
           await writeFile("base-duplicate-sku-price-alignment.json", JSON.stringify(result, null, 2), { mode: "0600" });
           await writeFile(process.env.GITHUB_STEP_SUMMARY, ["# BASE duplicate SKU highest-price alignment", "", "Mode: " + (process.env.APPLY === "true" ? "apply" : "read-only"), "", "```json", JSON.stringify(result, null, 2), "```", ""].join("\n"));
           NODE
