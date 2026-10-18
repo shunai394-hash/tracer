@@ -190,6 +190,7 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
   const { data, error } = await supabase
     .from("shop_listings")
     .select(STOREFRONT_SELECT)
+    .is("archived_at", null)
     .eq("published", true)
     .not("shopify_product_id", "is", null)
     .eq("shopify_sync_status", "synced")
@@ -225,6 +226,7 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
   const isListingId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
   const listingQuery = isListingId ? baseQuery.eq("id", slug) : baseQuery.eq("slug", slug);
   const { data, error } = await listingQuery
+    .is("archived_at", null)
     .eq("published", true)
     .not("shopify_product_id", "is", null)
     .eq("shopify_sync_status", "synced")
@@ -456,6 +458,7 @@ export async function placeShopOrder(args: {
     .from("shop_listings")
     .select("*")
     .in("id", listingIds)
+    .is("archived_at", null)
     .eq("published", true)
     .not("shopify_product_id", "is", null)
     .eq("shopify_sync_status", "synced")
