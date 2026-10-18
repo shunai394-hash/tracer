@@ -1,0 +1,75 @@
+name: TRACER exact CJ evidence refresh (six audited listings)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/tracer-exact-cj-evidence-refresh-six.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  refresh:
+    if: contains(github.event.head_commit.message, 'run exact CJ supplier evidence refresh for six blocked listings')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout history for deployment ancestry check
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait for matching production deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for i in $(seq 1 24); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected-or-ancestor=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Production deployment did not include this workflow commit; refusing CJ API calls."
+          exit 1
+
+      - name: Refresh exact CJ product and variant evidence only
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          PRODUCTS="1421048433334161408,1697462044414857216,1806361311660888064,1732295872995663872,1772106080361914368,1502193288508616704"
+          VARIANTS="1421048436026904576,1697462044427440128,1806361311681859584,1732295873117298688,1772106080441606144,1530747818649071616"
+          code="$(curl -sS -o cj-refresh.json -w "%{http_code}" --max-time 260 -H "Authorization: Bearer $token" "$BASE/api/cron/commerce-cj-import?limit=6&variantLimit=6&productIds=$PRODUCTS&variantIds=$VARIANTS" || true)"
+          echo "CJ importer HTTP $code"
+          python3 - <<PY
+          import json,sys
+          try:
+              d=json.load(open("cj-refresh.json"))
+          except Exception:
+              print("Importer returned no valid JSON")
+              sys.exit(1)
+          print(json.dumps({"ok":d.get("ok"),"skipped":d.get("skipped"),"reason":d.get("reason"),"stats":d.get("stats"),"error":d.get("error")},ensure_ascii=False,indent=2))
+          if not (200 <= int("$code") < 300):
+              sys.exit(1)
+          if d.get("ok") is False:
+              sys.exit(1)
+          PY
+          {
+            echo "## Exact CJ evidence refresh"
+            echo
+            echo "- Scope: 6 exact CJ product IDs and 6 exact variant IDs."
+            echo "- No BASE or Shopify publication writes, supplier orders, or payments were requested."
+            echo
+            echo '### Importer response'
+            cat cj-refresh.json
+          } >> "$GITHUB_STEP_SUMMARY"
