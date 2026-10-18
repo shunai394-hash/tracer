@@ -95,7 +95,7 @@ jobs:
           d = json.load(open("base-duplicate-cleanup-result.json", encoding="utf-8"))
           print("# TRACER BASE duplicate SKU cleanup")
           print()
-          print("Only exact duplicate TRC SKUs were considered. A duplicate was hidden only when one published canonical listing mapped to the other BASE item, titles/prices/stock matched exactly, and the duplicate item ID had no TRACER mapping. No BASE items were deleted.")
+          print("Only exact duplicate TRC SKUs were considered. A duplicate was hidden only when exactly one published canonical listing mapped to the canonical BASE item, the canonical item was visible, and the duplicate item ID had no commerce or legacy mapping. Stale duplicate title/price/stock do not block hiding. No BASE items were deleted.")
           print()
           print(json.dumps({k:d.get(k) for k in ["ok","snapshotComplete","scannedBaseItems","duplicateSkuGroups","duplicateHideCandidates","duplicateHidden","duplicateHideFailed","deferredByLimit","results"]}, ensure_ascii=False, indent=2))
           PY
