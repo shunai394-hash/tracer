@@ -1,6 +1,10 @@
 name: TRACER BASE canonical hidden-item repair
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "ops/run-base-canonical-visibility-repair-once.txt"
   workflow_dispatch:
     inputs:
       apply:
@@ -43,8 +47,8 @@ jobs:
           exit 1
       - name: Run read-only preflight and optional bounded repair
         env:
-          APPLY: ${{ inputs.apply }}
-          REPAIR_LIMIT: ${{ inputs.limit }}
+          APPLY: ${{ github.event_name == 'push' || inputs.apply }}
+          REPAIR_LIMIT: ${{ github.event_name == 'push' && 70 || inputs.limit }}
         shell: bash
         run: |
           set -euo pipefail
