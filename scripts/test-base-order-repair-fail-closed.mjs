@@ -22,4 +22,14 @@ const procurementCall = sync.indexOf("createDropshipPurchaseOrdersForShopOrder",
 assert.ok(existingBranch >= 0 && repairCall > existingBranch, "existing orders must be repaired");
 assert.ok(procurementCall > repairCall, "procurement must occur only after repair returns successfully");
 
-console.log("BASE existing-order repair fails closed on missing/ambiguous item mappings.");
+
+const newOrderStart = sync.indexOf("const itemIds = baseItems.map", existingBranch);
+const newOrderValidation = sync.indexOf("const unresolved = itemIds.filter", newOrderStart);
+const newOrderThrow = sync.indexOf("base_items_not_uniquely_mapped", newOrderValidation);
+const newOrderMap = sync.indexOf("const listingByBaseItem = new Map", newOrderValidation);
+assert.ok(newOrderStart > existingBranch, "new-order import mapping must be checked");
+assert.ok(newOrderValidation > newOrderStart, "new orders must reject missing or ambiguous mappings");
+assert.ok(newOrderThrow > newOrderValidation, "new-order mapping failure must be explicit");
+assert.ok(newOrderMap > newOrderThrow, "new-order listing map must be built only after validation");
+
+console.log("BASE order sync fails closed on missing/ambiguous item mappings.");
