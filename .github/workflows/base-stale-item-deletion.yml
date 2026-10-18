@@ -1,0 +1,104 @@
+name: BASE stale item deletion (three allowlisted IDs)
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Delete the three stale BASE items after a validated dry run
+        type: boolean
+        default: false
+        required: true
+      confirmation:
+        description: Type DELETE_THREE_STALE_BASE_ITEMS only when explicitly authorizing deletion
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  delete-stale-items:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out commit history for deployment verification
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait until production serves this commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for attempt in $(seq 1 36); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $attempt/36: production commit=$sha expected=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then exit 0; fi
+            sleep 10
+          done
+          echo "Production does not yet contain this commit; refusing to call an old route."
+          exit 1
+
+      - name: Run dry-run and validate all three target pairs
+        id: dryrun
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          mkdir -p deletion-results
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl -sS --max-time 180 -o deletion-results/dry-run.json -w "%{http_code}" -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" --data '{"apply":false}' "$BASE/api/channels/base/delete-stale-items")"
+          echo "dry-run HTTP $code"
+          [[ "$code" == "200" ]]
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("deletion-results/dry-run.json").read_text())
+          expected={
+            "163159366":("163355942","TRC-C9916FE0297A41ACADD8E19B"),
+            "163159368":("163355946","TRC-45370D7789BC4D34984EA727"),
+            "163159369":("163355950","TRC-19C334F2FD194CD3AB99F389"),
+          }
+          rows=d.get("plan") or []
+          if d.get("ok") is not True or d.get("readOnly") is not True or d.get("snapshotComplete") is not True:
+            raise SystemExit("dry-run did not prove read-only complete snapshot")
+          if len(rows)!=3:
+            raise SystemExit("dry-run must return exactly three target pairs")
+          for row in rows:
+            stale=str(row.get("staleId"))
+            if stale not in expected:
+              raise SystemExit("unexpected stale ID")
+            canonical,sku=expected[stale]
+            if str(row.get("canonicalId"))!=canonical or row.get("sku")!=sku or row.get("stalePresent") is not True or row.get("canonicalPresent") is not True:
+              raise SystemExit("target/canonical validation failed for "+stale)
+          print("Dry-run validated exactly three allowlisted stale/canonical pairs.")
+          PY
+
+      - name: Apply deletion only with explicit confirmation
+        if: inputs.apply
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CONFIRMATION" == "DELETE_THREE_STALE_BASE_ITEMS" ]] || { echo "Exact confirmation phrase required."; exit 1; }
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl -sS --max-time 180 -o deletion-results/apply.json -w "%{http_code}" -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" --data '{"apply":true,"confirmation":"DELETE_THREE_STALE_BASE_ITEMS"}' "$BASE/api/channels/base/delete-stale-items")"
+          echo "apply HTTP $code"
+          cat deletion-results/apply.json
+          [[ "$code" == "200" ]]
+
+      - name: Upload deletion evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: base-stale-item-deletion-evidence
+          path: deletion-results/
+          if-no-files-found: warn
+          retention-days: 30
