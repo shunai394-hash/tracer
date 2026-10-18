@@ -45,6 +45,19 @@ function summarize(item: Record<string, unknown>) {
   };
 }
 
+type DetailResult = {
+  item: Record<string, unknown> | null;
+  error: ReturnType<typeof safeError> | null;
+};
+
+async function readDetail(itemId: string): Promise<DetailResult> {
+  try {
+    return { item: summarize(await getBaseItemDetail(itemId)), error: null };
+  } catch (error) {
+    return { item: null, error: safeError(error) };
+  }
+}
+
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
@@ -54,20 +67,36 @@ export async function GET(request: Request) {
     });
   }
 
-  const results = await Promise.all(TARGETS.map(async ({ oldId, currentId }) => {
-    const [oldResult, currentResult] = await Promise.allSettled([
-      getBaseItemDetail(oldId),
-      getBaseItemDetail(currentId),
-    ]);
-    return {
-      oldId,
-      currentId,
-      oldItem: oldResult.status === "fulfilled" ? summarize(oldResult.value) : null,
-      oldError: oldResult.status === "rejected" ? safeError(oldResult.reason) : null,
-      currentItem: currentResult.status === "fulfilled" ? summarize(currentResult.value) : null,
-      currentError: currentResult.status === "rejected" ? safeError(currentResult.reason) : null,
-    };
-  }));
+  // Prime the shared OAuth token cache before concurrent item reads. Calling
+  // getBaseItemDetail for all 30 IDs at once can race refresh-token exchanges.
+  const firstOld = await readDetail(TARGETS[0].oldId);
+  const results: Array<{
+    oldId: string;
+    currentId: string;
+    oldItem: ReturnType<typeof summarize> | null;
+    oldError: ReturnType<typeof safeError> | null;
+    currentItem: ReturnType<typeof summarize> | null;
+    currentError: ReturnType<typeof safeError> | null;
+  }> = [];
+
+  for (let start = 0; start < TARGETS.length; start += 3) {
+    const batch = TARGETS.slice(start, start + 3);
+    const batchResults = await Promise.all(batch.map(async ({ oldId, currentId }) => {
+      const oldResult = oldId === TARGETS[0].oldId && start === 0
+        ? firstOld
+        : await readDetail(oldId);
+      const currentResult = await readDetail(currentId);
+      return {
+        oldId,
+        currentId,
+        oldItem: oldResult.item,
+        oldError: oldResult.error,
+        currentItem: currentResult.item,
+        currentError: currentResult.error,
+      };
+    }));
+    results.push(...batchResults);
+  }
 
   const summary = {
     ok: results.every((row) => row.oldItem !== null && row.currentItem !== null),
