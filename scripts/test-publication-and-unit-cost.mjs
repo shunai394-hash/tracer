@@ -39,8 +39,43 @@ for (const staleId of ["163159679", "163159245"]) {
     [pair.staleId, item(pair.staleId, pair.sku, true, pair.price)],
     [pair.canonicalId, item(pair.canonicalId, pair.sku, true, pair.price)],
   ]);
-  assert.equal(assessHiddenDelete(pair, visibleStale, pair.canonicalId).ok, false);
+  assert.equal(assessHiddenDelete(pair, visibleStale, pair.canonicalId).ok, false, "refuse if stale item became public");
+
+  const wrongStaleSku = new Map([
+    [pair.staleId, item(pair.staleId, "WRONG-SKU", false, pair.price)],
+    [pair.canonicalId, item(pair.canonicalId, pair.sku, true, pair.price)],
+  ]);
+  assert.equal(assessHiddenDelete(pair, wrongStaleSku, pair.canonicalId).ok, false, "refuse stale SKU mismatch");
+
+  const wrongStalePrice = new Map([
+    [pair.staleId, item(pair.staleId, pair.sku, false, pair.price + 1)],
+    [pair.canonicalId, item(pair.canonicalId, pair.sku, true, pair.price)],
+  ]);
+  assert.equal(assessHiddenDelete(pair, wrongStalePrice, pair.canonicalId).ok, false, "refuse stale price mismatch");
+
+  const hiddenCanonical = new Map([
+    [pair.staleId, item(pair.staleId, pair.sku, false, pair.price)],
+    [pair.canonicalId, item(pair.canonicalId, pair.sku, false, pair.price)],
+  ]);
+  assert.equal(assessHiddenDelete(pair, hiddenCanonical, pair.canonicalId).ok, false, "refuse if canonical is not public");
+
+  const wrongCanonicalSku = new Map([
+    [pair.staleId, item(pair.staleId, pair.sku, false, pair.price)],
+    [pair.canonicalId, item(pair.canonicalId, "WRONG-SKU", true, pair.price)],
+  ]);
+  assert.equal(assessHiddenDelete(pair, wrongCanonicalSku, pair.canonicalId).ok, false, "refuse canonical SKU mismatch");
+
+  const wrongCanonicalPrice = new Map([
+    [pair.staleId, item(pair.staleId, pair.sku, false, pair.price)],
+    [pair.canonicalId, item(pair.canonicalId, pair.sku, true, pair.price + 1)],
+  ]);
+  assert.equal(assessHiddenDelete(pair, wrongCanonicalPrice, pair.canonicalId).ok, false, "refuse canonical price mismatch");
 }
+assert.equal(
+  VISIBLE_ERROR_HIDES.some((target) => HIDDEN_DUPLICATE_DELETES.some((pair) => pair.canonicalId === target.itemId)),
+  false,
+  "a canonical item protected by duplicate deletion must not be hidden by the same repair",
+);
 
 const errorItem = ERROR_HIDDEN_LEAVE[0];
 const errorItems = new Map([[errorItem.itemId, item(errorItem.itemId, errorItem.sku, false, errorItem.price)]]);
