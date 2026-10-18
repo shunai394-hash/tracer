@@ -423,7 +423,10 @@ export async function GET(request: Request) {
       const evidenceCutoff = Date.now() - 24 * 60 * 60_000;
       const staleVerifiedForEvidence = (staleVerifiedOffers ?? []).filter((offer) => {
         const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
-        return !Number.isFinite(checkedAt) || checkedAt <= evidenceCutoff;
+        // A publication failure is itself a retry signal. Do not let a recent
+        // last_checked_at suppress live supplier revalidation for a blocked listing.
+        return publicationErrorVariantIds.has(String(offer.variant_id)) ||
+          !Number.isFinite(checkedAt) || checkedAt <= evidenceCutoff;
       });
       stats.verifiedOffersStaleEligible = staleVerifiedForEvidence.length;
       stats.publicationBlockedVariantsSeen = publicationErrorVariantIds.size;
