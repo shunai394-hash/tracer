@@ -569,7 +569,7 @@ export async function GET(request: Request) {
         .map(([id, variantIds]) => ({ id, title: "", retryVariantIds: variantIds.slice(0, 3) }));
       const evidenceParentIds = new Set(dedupedEvidenceCandidates.map((candidate) => candidate.id));
       const missingPublicationRetries = retryCandidates.filter((candidate) => !evidenceParentIds.has(candidate.id))
-        .slice(0, Math.max(0, limit - dedupedEvidenceCandidates.length));
+        .slice(0, Math.max(0, limit - dedupedEvidenceCandidates.length - (newCandidates.length > 0 ? 1 : 0)));
       const discoverySlots = Math.max(0, limit - dedupedEvidenceCandidates.length - missingPublicationRetries.length);
       const queuedDiscoveryCandidates = newCandidates.slice(0, discoverySlots);
       stats.finalEvidenceParentCount = dedupedEvidenceCandidates.length;
