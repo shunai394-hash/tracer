@@ -154,18 +154,55 @@ export async function GET(request: Request) {
       const { error } = await db.from("channel_price_reconciliation_audit").insert(batch);
       if (error) {
         console.error("[TRACER BASE RECONCILIATION AUDIT WRITE FAILED]", {
-          runId, batchStart: offset, code: error.code ?? null,
+          runId,
+          batchStart: offset,
+          code: error.code ?? null,
+          message: error.message?.slice(0, 240) ?? null,
         });
+        const failedSummary = {
+          apiReadComplete: true,
+          apiErrors: 0,
+          itemCount: snapshot.items.length,
+          dbListingCount: listings.length,
+          mappedItems: auditRows.filter((row) => row.details.mappingStatus === "matched").length,
+          exactIdMatches: auditRows.filter((row) => row.details.mappingMethod === "base_item_id" && row.details.mappingStatus === "matched").length,
+          exactSkuMatches: auditRows.filter((row) => row.details.mappingMethod === "exact_sku" && row.details.mappingStatus === "matched").length,
+          unmappedItems: auditRows.filter((row) => row.details.mappingStatus === "unmapped").length,
+          ambiguousItems: auditRows.filter((row) => row.details.mappingStatus === "ambiguous").length,
+          missingSku: auditRows.filter((row) => !textValue(row.external_sku)).length,
+          unknownVisibility: auditRows.filter((row) => row.product_status === "visibility_unknown").length,
+          unreadablePrices: auditRows.filter((row) => row.external_price === null).length,
+          priceMismatches: auditRows.filter((row) => row.price_matches === false).length,
+          skuMismatches: auditRows.filter((row) => row.sku_matches === false).length,
+        };
         return NextResponse.json({
           ok: false,
           phase: "base_item_reconciliation",
           runId,
-          apiReadComplete: true,
-          itemCount: snapshot.items.length,
           pages: snapshot.pages,
           auditRowsWritten: written,
-          error: "BASE_RECONCILIATION_AUDIT_WRITE_FAILED",
-        }, { status: 500, headers });
+          auditWriteFailed: true,
+          auditWriteErrorCode: error.code ?? null,
+          auditWriteError: error.message?.slice(0, 240) ?? "database insert failed",
+          ...failedSummary,
+          items: auditRows.map((row) => ({
+            baseItemId: row.external_product_id,
+            title: row.product_title,
+            baseIdentifier: row.external_sku,
+            basePrice: row.external_price,
+            tracerVariantId: row.details.mappingStatus === "matched" ? row.variant_id : null,
+            tracerSku: row.internal_sku,
+            tracerPrice: row.canonical_price,
+            baseVisibility: row.details.apiVisible,
+            mappingStatus: row.details.mappingStatus,
+            mappingMethod: row.details.mappingMethod,
+            candidateCount: row.details.mappingCount,
+            candidateListingIds: row.details.candidateListingIds,
+            priceMatches: row.price_matches,
+            skuMatches: row.sku_matches,
+            discrepancyReasons: row.details.discrepancyReasons,
+          })),
+        }, { status: 207, headers });
       }
       written += batch.length;
     }
