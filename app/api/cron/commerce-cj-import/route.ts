@@ -543,7 +543,7 @@ export async function GET(request: Request) {
       // containing existing products cannot consume the entire discovery batch.
       const newCandidates = [...uniqueSearchProducts.values()].filter((item) => !knownParentIds.has(item.id));
       let scanPage = page + 1;
-      while (newCandidates.length < Math.max(0, limit - retryCandidates.length - evidenceRetryCandidates.length - staleListingRetryCandidates.length) && scanPage <= page + 2) {
+      while (newCandidates.length < Math.max(1, limit - retryCandidates.length - evidenceRetryCandidates.length - staleListingRetryCandidates.length) && scanPage <= page + 2) {
         const extra = await searchCJProducts(query, { page: scanPage, size: Math.min(20, limit * 2) });
         stats.searched += extra.products.length;
         for (const item of extra.products) {
@@ -565,7 +565,7 @@ export async function GET(request: Request) {
         evidenceVariantsByParent.set(candidate.id, variantIds);
       }
       const dedupedEvidenceCandidates: ImportCandidate[] = [...evidenceVariantsByParent.entries()]
-        .slice(0, limit)
+        .slice(0, Math.max(0, limit - (newCandidates.length > 0 ? 1 : 0)))
         .map(([id, variantIds]) => ({ id, title: "", retryVariantIds: variantIds.slice(0, 3) }));
       const evidenceParentIds = new Set(dedupedEvidenceCandidates.map((candidate) => candidate.id));
       const missingPublicationRetries = retryCandidates.filter((candidate) => !evidenceParentIds.has(candidate.id))
