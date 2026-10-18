@@ -23,4 +23,4 @@ assert.ok(route.includes("CANONICAL_READBACK_FAILED"), "canonical item must be c
 assert.ok(workflow.includes("default: false"), "workflow apply input must default to false");
 assert.ok(workflow.includes("DELETE_THREE_STALE_BASE_ITEMS"), "workflow must require exact confirmation");
 assert.ok(workflow.includes("snapshotComplete") && workflow.includes("stalePresent"), "workflow must validate dry-run evidence");
-console.log("BASE stale-item deletion contract: 16 assertions passed");
+console.log("BASE stale-item deletion contract: 17 assertions passed");
