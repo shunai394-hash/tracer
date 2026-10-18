@@ -1,0 +1,83 @@
+name: BASE Japanese Copy Preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      item_ids:
+        description: "Comma-separated BASE item IDs (maximum 10); preview only"
+        required: true
+        default: "160408599,160408605,160408612,160408622,160437403,160437407,160437412,160437418,160437425,160437505"
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Request GitHub OIDC token
+        id: oidc
+        shell: bash
+        run: |
+          set -euo pipefail
+          OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app"
+          OIDC_TOKEN="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "$OIDC_URL" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          echo "::add-mask::$OIDC_TOKEN"
+          echo "token=$OIDC_TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Run read-only Japanese copy preview
+        env:
+          OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
+          ITEM_IDS: ${{ inputs.item_ids }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re, sys
+          ids = [x.strip() for x in os.environ["ITEM_IDS"].split(",") if x.strip()]
+          if not 1 <= len(ids) <= 10 or any(not re.fullmatch(r"[0-9]+", x) for x in ids):
+              sys.exit("item_ids must contain 1-10 numeric BASE item IDs")
+          if len(set(ids)) != len(ids):
+              sys.exit("item_ids must not contain duplicates")
+          print("Validated", len(ids), "item IDs")
+          PY
+          python3 - <<'PY' > request.json
+          import json, os
+          print(json.dumps({"itemIds":[x.strip() for x in os.environ["ITEM_IDS"].split(",") if x.strip()], "apply":False}))
+          PY
+          STATUS="$(curl --silent --show-error --output preview.json --write-out '%{http_code}' \
+            --max-time 300 \
+            -H "Authorization: Bearer ${OIDC_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-binary @request.json \
+            https://tracer-pied-alpha.vercel.app/api/admin/channels/base/japanese-copy-repair)"
+          echo "HTTP status: $STATUS"
+          STATUS="$STATUS" python3 - <<'PY'
+          import json, os
+          with open("preview.json", encoding="utf-8") as f:
+              data=json.load(f)
+          print(json.dumps(data, ensure_ascii=False, indent=2))
+          with open("preview-summary.md","w",encoding="utf-8") as f:
+              f.write("# BASE Japanese Copy Preview (read-only)\\n\\n")
+              f.write("HTTP status: " + os.environ["STATUS"] + "\\n\\n")
+              f.write("```json\\n" + json.dumps(data,ensure_ascii=False,indent=2) + "\\n```\\n")
+          PY
+          test "$STATUS" = "200"
+          echo "## BASE Japanese Copy Preview (read-only)" >> "$GITHUB_STEP_SUMMARY"
+          cat preview-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload preview report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: base-japanese-copy-preview
+          path: |
+            preview.json
+            preview-summary.md
+          if-no-files-found: ignore
+          retention-days: 7
