@@ -43,10 +43,12 @@ assert.equal(conflict.mappingStatus, "id_conflict");
 assert.equal(conflict.existingExternalProductId, "900");
 assert.ok(conflict.discrepancyReasons.includes("base_item_id_conflict"));
 assert.equal(conflict.tracerVariantId, null);
+assert.equal(conflict.publicationMatches, null);
 assert.equal(result.rows.find((row) => row.external_product_id === "500")?.variant_id, null);
 assert.equal(result.rows.find((row) => row.external_product_id === "500")?.details.mappingStatus, "id_conflict");
 assert.equal(publicationAgrees(true, "published"), true);
 assert.equal(publicationAgrees(false, "published"), false);
+assert.equal(publicationAgrees(false, "error"), null);
 assert.equal(publicationAgrees(null, "published"), null);
 
 assert.deepEqual(decideConfirmedPriceSync({
