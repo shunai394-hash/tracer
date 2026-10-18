@@ -44,7 +44,8 @@
     "test:commerce-core": "node --experimental-strip-types --no-warnings --test scripts/commerce-core.test.mjs",
     "test:cj-procurement-adapter": "node scripts/test-cj-procurement-adapter.mjs",
     "test:base-stale-item-deletion-contract": "node scripts/test-base-stale-item-deletion-contract.mjs",
-    "test:archived-listing-republication-guards": "node scripts/test-archived-listing-republication-guards.mjs"
+    "test:archived-listing-republication-guards": "node scripts/test-archived-listing-republication-guards.mjs",
+    "test:archive-listing-republication": "node scripts/test-archive-listing-republication.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
