@@ -33,16 +33,53 @@ async function readBaseListings(db: ReturnType<typeof createSupabaseAdminClient>
     const rows = data ?? [];
     listings.push(...rows.map((row) => ({
       id: String(row.id),
-      variantId: String(row.variant_id),
+      variantId: row.variant_id == null ? null : String(row.variant_id),
       externalProductId: row.external_product_id == null ? null : String(row.external_product_id),
       externalVariantId: row.external_variant_id == null ? null : String(row.external_variant_id),
       externalSku: row.external_sku == null ? null : String(row.external_sku),
       sellingPrice: row.selling_price == null ? null : Number(row.selling_price),
       status: row.status == null ? null : String(row.status),
     })));
-    if (rows.length < 1000) return listings;
+    if (rows.length < 1000) break;
+    if (page === 19) throw new Error("BASE_RECONCILIATION_DB_LISTINGS_SCAN_INCOMPLETE");
   }
-  throw new Error("BASE_RECONCILIATION_DB_LISTINGS_SCAN_INCOMPLETE");
+
+  // The active BASE publisher still has legacy shop_listings rows. Include them
+  // in reconciliation by exact BASE item ID when no commerce-native channel row
+  // owns that ID. Never use title or price to create a mapping.
+  const existingExternalIds = new Set(
+    listings.map((row) => String(row.externalProductId ?? "").trim()).filter(Boolean),
+  );
+  const legacyRows: Array<Record<string, unknown>> = [];
+  for (let from = 0; ; from += 1000) {
+    if (from >= 50_000) throw new Error("BASE_RECONCILIATION_LEGACY_SCAN_INCOMPLETE");
+    const { data, error } = await db
+      .from("shop_listings")
+      .select("id,base_item_id,selling_price,published,base_publication_status")
+      .not("base_item_id", "is", null)
+      .order("id", { ascending: true })
+      .range(from, from + 999);
+    if (error) throw new Error("BASE_RECONCILIATION_LEGACY_LISTINGS_READ_FAILED:" + (error.code ?? "unknown"));
+    legacyRows.push(...((data ?? []) as Array<Record<string, unknown>>));
+    if ((data ?? []).length < 1000) break;
+  }
+
+  for (const row of legacyRows) {
+    const externalId = String(row.base_item_id ?? "").trim();
+    if (!externalId || existingExternalIds.has(externalId)) continue;
+    listings.push({
+      id: "legacy-shop-listing:" + String(row.id),
+      variantId: null,
+      externalProductId: externalId,
+      externalVariantId: null,
+      externalSku: null,
+      sellingPrice: row.selling_price == null ? null : Number(row.selling_price),
+      status: row.base_publication_status == null
+        ? row.published === true ? "published" : row.published === false ? "hidden" : null
+        : String(row.base_publication_status),
+    });
+  }
+  return listings;
 }
 
 async function persistDedicated(
