@@ -19,13 +19,6 @@ function dbFailure(error: DbError) {
   };
 }
 
-function relationMissing(error: DbError): boolean {
-  const code = String(error.code ?? "");
-  const message = String(error.message ?? "");
-  return code === "42P01" || code === "PGRST205" || code === "PGRST204"
-    || /schema cache|does not exist|Could not find the table|Could not find the /i.test(message);
-}
-
 async function readBaseListings(db: ReturnType<typeof createSupabaseAdminClient>): Promise<BaseChannelListing[]> {
   const listings: BaseChannelListing[] = [];
   for (let page = 0; page < 20; page += 1) {
@@ -58,7 +51,6 @@ async function persistDedicated(
 ) {
   let written = 0;
   let primary: ReturnType<typeof dbFailure> | null = null;
-  const failedIds: string[] = [];
   for (let offset = 0; offset < rows.length; offset += 100) {
     const batch = rows.slice(offset, offset + 100);
     const { error } = await db.from("channel_price_reconciliation_audit").insert(batch);
@@ -66,25 +58,12 @@ async function persistDedicated(
       written += batch.length;
       continue;
     }
-    primary ??= dbFailure(error);
-    if (relationMissing(error)) {
-      return { written, primary, failedIds, missingFrom: offset, rest: rows.slice(offset) };
-    }
-    for (const row of batch) {
-      const one = await db.from("channel_price_reconciliation_audit").insert(row);
-      if (!one.error) {
-        written += 1;
-        continue;
-      }
-      primary ??= dbFailure(one.error);
-      if (relationMissing(one.error)) {
-        const index = batch.indexOf(row);
-        return { written, primary, failedIds, missingFrom: offset + index, rest: rows.slice(offset + index) };
-      }
-      failedIds.push(row.external_product_id ?? `missing:${offset}`);
-    }
+    // A privilege or missing-table error repeats for every row. Walking them
+    // one by one exceeds the function limit and drops the response.
+    primary = dbFailure(error);
+    return { written, primary, rest: rows.slice(offset) };
   }
-  return { written, primary, failedIds, missingFrom: null as number | null, rest: [] as typeof rows };
+  return { written, primary, rest: [] as typeof rows };
 }
 
 async function persistEventFallback(
@@ -112,14 +91,8 @@ async function persistEventFallback(
       continue;
     }
     error ??= dbFailure(upsertError);
-    for (const event of batch) {
-      const one = await db.from("commerce_events").upsert(event, { onConflict: "event_key" });
-      if (!one.error) written += 1;
-      else {
-        error ??= dbFailure(one.error);
-        failedIds.push(event.entity_id);
-      }
-    }
+    failedIds.push(...rows.slice(offset).map((row, index) => row.external_product_id ?? `missing:${offset + index}`));
+    break;
   }
   return { written, failedIds, error };
 }
@@ -164,7 +137,7 @@ export async function GET(request: Request) {
     let written = dedicated.written;
     let storage: "channel_price_reconciliation_audit" | "commerce_events" | "mixed" = "channel_price_reconciliation_audit";
     let fallbackError: ReturnType<typeof dbFailure> | null = null;
-    let failedIds = dedicated.failedIds;
+    let failedIds: string[] = [];
     if (dedicated.rest.length > 0) {
       const fallback = await persistEventFallback(db, dedicated.rest);
       written += fallback.written;
