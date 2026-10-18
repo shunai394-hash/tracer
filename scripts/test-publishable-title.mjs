@@ -207,4 +207,20 @@ assert.match(base, /const activeListings = \(listings \?\? \[\]\)\.filter\(\(lis
 assert.match(store, /isPublishableCatalogTitle\(listing\.title\)/, "storefront must filter invalid titles");
 assert.match(store, /isPublishableCatalogDescription\(listing\.description\)/, "storefront must filter generic descriptions");
 assert.match(store, /listing title failed catalog quality gate/, "order placement must revalidate title quality");
+
+for (const [source, expected] of [
+  ["One Word Clip Frog Buckle Pearl Full Diamond Hair Accessories Women", "パール装飾 カエルモチーフ ヘアクリップ"],
+  ["Combination Suit Women Side Clip Hair Accessories", "レディース サイドヘアクリップ セット"],
+  ["Sponge Hair Band Women Gold Velvet Diamond Accessories", "ゴールド装飾 ベルベットヘアバンド"],
+  ["Women's Hair Chain Wave Fashion Headdress Hair Accessories Women", "ウェーブデザイン ヘアチェーン"],
+  ["Women S Broad Brim Sports Headband Headband Jewelry Hair Accessories", "幅広スポーツヘッドバンド レディース"],
+  ["Rhinestone Hair Accessories Alloy Headband For Women", "ラインストーン装飾 メタルカチューシャ"],
+  ["Girl's Colorful Hair Band Handmade Crochet Fashion Color Contrast Hair Accessories Cotton Braided Ear Warmer Wear Matching Headband For Women", "手編み風 カラフルヘアバンド"],
+  ["Diamond-embedded Large Intestine Hair Ring Hair Accessories Women", "ラインストーン装飾 ヘアリング"],
+  ["Women's Fashion Hairpin Hairpin Hair Accessories Women", "レディース ファッションヘアピン"],
+  ["Vintage Hair Accessories Headband For Women", "ヴィンテージデザイン ヘッドバンド"],
+]) {
+  assert.equal(localizeProductTitle(source), expected, `audited CJ title must localize specifically: ${source}`);
+}
+
 console.log(`Catalog title/description quality tests: ${cases.length} cases + 20 channel wiring/title-quality checks passed.`);
