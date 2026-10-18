@@ -166,7 +166,7 @@ export async function POST(request: Request) {
     const readyHides = hides.filter((row) => row.ok);
     const readyErrorHides = errorHides.filter((row) => row.ok);
 
-    if (!apply || orders.complete !== true || orders.matches.length > 0 || listingReferences.length > 0) {
+    if (!apply || blocked) {
       return NextResponse.json({
         ok: !blocked,
         readOnly: true,
@@ -182,7 +182,7 @@ export async function POST(request: Request) {
         message: blocked
           ? "Repair refused. A target no longer matches the verified pair, or an order or listing still references it."
           : "Dry run only. No BASE item was deleted or hidden.",
-      }, { status: orders.complete !== true || orders.matches.length > 0 || listingReferences.length > 0 ? 409 : 200 });
+      }, { status: blocked ? 409 : 200 });
     }
 
     const results: Array<{ itemId: string; outcome: string }> = [];
