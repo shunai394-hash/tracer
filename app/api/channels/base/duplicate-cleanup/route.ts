@@ -12,8 +12,9 @@ const COMMERCE_SKU = /^TRC-[0-9A-F]{24}$/i;
 /**
  * Hide only an exact duplicate BASE copy. The canonical item remains visible.
  * A duplicate must share an exact TRC SKU with exactly one published channel
- * listing, match the canonical item's title/price/stock, be visible itself,
- * and have no legacy or commerce listing referencing its BASE item ID.
+ * listing; the canonical item must be present and visible, while the duplicate
+ * must be visible and unmapped in both commerce and legacy listings. Stale
+ * duplicate title, price, and stock are expected and do not block hiding it.
  * Default is dry-run; apply=true hides only, never deletes.
  */
 export async function POST(request: Request) {
@@ -112,13 +113,12 @@ export async function POST(request: Request) {
       const canonical = itemsById.get(canonicalId);
       if (!canonical || canonical.visible !== true || duplicate.visible !== true) continue;
       const title = String(canonical.title ?? "").trim();
-      const duplicateTitle = String(duplicate.title ?? "").trim();
       const price = Number(canonical.price);
-      const duplicatePrice = Number(duplicate.price);
       const stock = Number(canonical.stock);
-      const duplicateStock = Number(duplicate.stock);
-      if (!title || title !== duplicateTitle || !Number.isFinite(price) || price <= 0 || price !== duplicatePrice ||
-          !Number.isFinite(stock) || stock <= 0 || stock !== duplicateStock) continue;
+      // The exact SKU and unique canonical ID establish identity. Stale
+      // metadata on the unlinked duplicate must not prevent hiding it.
+      if (!title || !Number.isFinite(price) || price <= 0 ||
+          !Number.isFinite(stock) || stock <= 0) continue;
 
       candidates.push({
         sku, listingId: listingRows[0].id, canonicalBaseItemId: canonicalId, duplicateBaseItemId: duplicateId,
