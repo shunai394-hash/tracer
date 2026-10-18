@@ -52,8 +52,10 @@ const duplicateCleanup = await readFile(new URL("../app/api/channels/base/duplic
 assert.match(duplicateCleanup, /COMMERCE_SKU/);
 assert.match(duplicateCleanup, /listingRows\.length !== 1/);
 assert.match(duplicateCleanup, /canonical\.visible !== true \|\| duplicate\.visible !== true/);
-assert.match(duplicateCleanup, /price !== duplicatePrice/);
-assert.match(duplicateCleanup, /stock !== duplicateStock/);
+assert.match(duplicateCleanup, /Stale[\s\S]*duplicate/);
+assert.doesNotMatch(duplicateCleanup, /price !== duplicatePrice/);
+assert.doesNotMatch(duplicateCleanup, /stock !== duplicateStock/);
+assert.match(duplicateCleanup, /duplicateId \|\| commerceMappedIds\.has\(duplicateId\) \|\| legacyMappedIds\.has\(duplicateId\)/);
 assert.match(duplicateCleanup, /commerceMappedIds\.has\(duplicateId\) \|\| legacyMappedIds\.has\(duplicateId\)/);
 assert.match(duplicateCleanup, /stock: 0, visible: false/);
 assert.match(duplicateCleanup, /deleted: 0/);
