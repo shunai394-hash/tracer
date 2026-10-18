@@ -64,7 +64,7 @@ jobs:
               sys.exit(1)
           PY
           {
-            echo "## Targeted Shopify restoration"
+            echo "## Targeted Shopify restoration (exact five-listing scope)"
             echo
             echo "- Scope: five existing shop_listings IDs only."
             echo "- No BASE writes, supplier orders, or payments."
