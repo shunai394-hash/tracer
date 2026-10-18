@@ -47,6 +47,7 @@ jobs:
           VARIANTS="1392008578709196800,1392008578696613888,1392008578684030976"
           code="$(curl -sS -o reverify.json -w "%{http_code}" --max-time 240 -H "Authorization: Bearer $AUTH" "$BASE/api/cron/commerce-cj-import?variantIds=$VARIANTS" || true)"
           echo "Targeted CJ import HTTP $code"
+          export HTTP_STATUS="$code"
           python3 - <<'PY' > report.md
           import json, os
           try:
@@ -71,7 +72,6 @@ jobs:
           print()
           print(json.dumps(report, ensure_ascii=False, indent=2))
           PY
-          echo "HTTP_STATUS=$code" >> "$GITHUB_ENV"
           cat report.md
           gh issue create --repo shunai394-hash/tracer --title "[TRACER CJ variant reverify] Run $GITHUB_RUN_ID" --body-file report.md
         env:
