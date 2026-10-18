@@ -115,7 +115,6 @@ export async function POST(request: Request) {
       const ids = group.map((item) => String(item.item_id ?? "")).filter(Boolean);
       const listingRows = rowsBySku.get(sku) ?? [];
       const blockers: string[] = [];
-      if (group.length !== 2) blockers.push("base_group_size_not_two");
       if (listingRows.length !== 1) blockers.push(listingRows.length === 0 ? "channel_listing_missing" : "channel_listing_not_unique");
       if (listingRows.length === 1 && listingRows[0].status !== "published") blockers.push("channel_listing_not_published");
 
@@ -124,16 +123,8 @@ export async function POST(request: Request) {
       if (listingRows.length === 1 && !canonicalId) blockers.push("canonical_external_product_id_missing");
       else if (listingRows.length === 1 && canonicalId && !canonicalInGroup) blockers.push("canonical_id_not_in_duplicate_group");
 
-      const duplicate = group.length === 2 && canonicalInGroup
-        ? group.find((item) => String(item.item_id ?? "") !== canonicalId)
-        : undefined;
-      const duplicateId = String(duplicate?.item_id ?? "");
-      if (duplicate && (!duplicateId || commerceMappedIds.has(duplicateId))) blockers.push("duplicate_has_commerce_mapping");
-      if (duplicate && (!duplicateId || legacyMappedIds.has(duplicateId))) blockers.push("duplicate_has_legacy_mapping");
-
       const canonical = canonicalInGroup ? itemsById.get(canonicalId) : undefined;
       if (canonicalInGroup && (!canonical || !isBaseVisible(canonical.visible))) blockers.push("canonical_not_visible");
-      if (duplicate && !isBaseVisible(duplicate.visible)) blockers.push("duplicate_not_visible");
       const title = String(canonical?.title ?? "").trim();
       const price = Number(canonical?.price);
       const stock = Number(canonical?.stock);
@@ -141,20 +132,44 @@ export async function POST(request: Request) {
       if (canonicalInGroup && (!Number.isFinite(price) || price <= 0)) blockers.push("canonical_price_invalid");
       if (canonicalInGroup && (!Number.isFinite(stock) || stock <= 0)) blockers.push("canonical_stock_not_positive");
 
+      const eligibleCanonical = listingRows.length === 1
+        && listingRows[0].status === "published"
+        && canonicalInGroup
+        && Boolean(canonical)
+        && isBaseVisible(canonical?.visible)
+        && Boolean(title)
+        && Number.isFinite(price) && price > 0
+        && Number.isFinite(stock) && stock > 0;
+
+      const visibleItemIds = group.filter((item) => isBaseVisible(item.visible)).map((item) => String(item.item_id ?? ""));
+      const commerceMappedGroupIds = ids.filter((id) => commerceMappedIds.has(id));
+      const legacyMappedGroupIds = ids.filter((id) => legacyMappedIds.has(id));
+      for (const duplicate of group.filter((item) => String(item.item_id ?? "") !== canonicalId)) {
+        const duplicateId = String(duplicate.item_id ?? "");
+        const duplicateBlockers: string[] = [];
+        if (!eligibleCanonical) duplicateBlockers.push(...blockers);
+        if (!duplicateId || commerceMappedIds.has(duplicateId)) duplicateBlockers.push("duplicate_has_commerce_mapping");
+        if (!duplicateId || legacyMappedIds.has(duplicateId)) duplicateBlockers.push("duplicate_has_legacy_mapping");
+        if (!isBaseVisible(duplicate.visible)) duplicateBlockers.push("duplicate_not_visible");
+
+        if (duplicateBlockers.length > 0) {
+          blockers.push(...duplicateBlockers);
+          continue;
+        }
+        candidates.push({
+          sku, listingId: listingRows[0].id, canonicalBaseItemId: canonicalId, duplicateBaseItemId: duplicateId,
+          title, price, stock,
+        });
+      }
+
       diagnostics.push({
         sku, baseItemIds: ids, baseItemCount: group.length, listingRowCount: listingRows.length,
         listingStatuses: listingRows.map((row) => String(row.status ?? "null")),
         listingExternalProductIds: listingRows.map((row) => String(row.external_product_id ?? "")),
-        visibleItemIds: group.filter((item) => isBaseVisible(item.visible)).map((item) => String(item.item_id ?? "")),
-        commerceMappedItemIds: ids.filter((id) => commerceMappedIds.has(id)),
-        legacyMappedItemIds: ids.filter((id) => legacyMappedIds.has(id)),
+        visibleItemIds,
+        commerceMappedItemIds: commerceMappedGroupIds,
+        legacyMappedItemIds: legacyMappedGroupIds,
         blockers: [...new Set(blockers)],
-      });
-
-      if (blockers.length > 0 || !duplicate || !canonicalInGroup) continue;
-      candidates.push({
-        sku, listingId: listingRows[0].id, canonicalBaseItemId: canonicalId, duplicateBaseItemId: duplicateId,
-        title, price, stock,
       });
     }
 
