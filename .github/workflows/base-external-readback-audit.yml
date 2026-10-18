@@ -2,6 +2,11 @@ name: BASE external listing readback audit
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/base-external-readback-audit.yml
 
 permissions:
   contents: read
