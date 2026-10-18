@@ -219,13 +219,32 @@ export function decideConfirmedPriceSync(input: {
   listings: BaseChannelListing[];
 }): ConfirmedPriceSyncDecision {
   const linked = input.listings.filter((row) => textValue(row.externalProductId) === input.baseItemId);
-  if (linked.length !== 1) {
-    return { ok: false, reason: linked.length === 0 ? "not_linked_by_item_id" : "ambiguous_item_id" };
-  }
-  const listing = linked[0];
   const identifier = textValue(input.baseIdentifier);
+  if (!identifier) return { ok: false, reason: "sku_not_exact" };
+
+  // If BASE's item ID differs from TRACER's stored ID, a price-only repair is
+  // allowed only when this exact SKU resolves to one listing whose prior
+  // external ID is known. The caller must also prove the SKU is unique in the
+  // complete live BASE snapshot. Never rewrite the external ID here.
+  let listing: BaseChannelListing;
+  if (linked.length === 1) {
+    listing = linked[0];
+  } else if (linked.length > 1) {
+    return { ok: false, reason: "ambiguous_item_id" };
+  } else {
+    const skuCandidates = input.listings.filter(
+      (row) => textValue(row.externalSku)?.toUpperCase() === identifier.toUpperCase(),
+    );
+    if (skuCandidates.length !== 1) {
+      return { ok: false, reason: skuCandidates.length === 0 ? "not_linked_by_item_id" : "ambiguous_sku" };
+    }
+    if (!textValue(skuCandidates[0].externalProductId)) {
+      return { ok: false, reason: "sku_candidate_has_no_existing_external_id" };
+    }
+    listing = skuCandidates[0];
+  }
   const sku = textValue(listing.externalSku);
-  if (!identifier || !sku || identifier.toUpperCase() !== sku.toUpperCase()) {
+  if (!sku || identifier.toUpperCase() !== sku.toUpperCase()) {
     return { ok: false, reason: "sku_not_exact" };
   }
   const sameSku = input.listings.filter((row) => textValue(row.externalSku)?.toUpperCase() === sku.toUpperCase());

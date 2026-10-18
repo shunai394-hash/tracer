@@ -61,6 +61,18 @@ assert.equal(decideConfirmedPriceSync({
   basePrice: 1500,
   listings: [listing],
 }).ok, false);
+assert.deepEqual(decideConfirmedPriceSync({
+  baseItemId: "501",
+  baseIdentifier: "TRC-DDDDDDDDDDDDDDDDDDDDDDDD",
+  basePrice: 1200,
+  listings: [{
+    ...listing,
+    id: "listing-conflict",
+    externalProductId: "900",
+    externalSku: "TRC-DDDDDDDDDDDDDDDDDDDDDDDD",
+    sellingPrice: 2500,
+  }],
+}), { ok: true, listingId: "listing-conflict", canonicalPrice: 2500 });
 assert.equal(decideConfirmedPriceSync({
   baseItemId: "100",
   baseIdentifier: "TRC-OTHER",

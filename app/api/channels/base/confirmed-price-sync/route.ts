@@ -67,11 +67,20 @@ export async function POST(request: Request) {
       if ((data ?? []).length < 1000) break;
     }
 
+    const liveSkuCounts = new Map<string, number>();
+    for (const item of snapshot.items) {
+      const sku = typeof item.identifier === "string" ? item.identifier.trim().toUpperCase() : "";
+      if (sku) liveSkuCounts.set(sku, (liveSkuCounts.get(sku) ?? 0) + 1);
+    }
     const plans = snapshot.items.flatMap((item) => {
       const baseItemId = String(item.item_id ?? "");
+      const baseIdentifier = typeof item.identifier === "string" ? item.identifier.trim() : null;
+      // SKU-only price correction is safe only when that SKU occurs exactly
+      // once in the complete BASE snapshot; it never changes the stored ID.
+      if (!baseIdentifier || liveSkuCounts.get(baseIdentifier.toUpperCase()) !== 1) return [];
       const decision = decideConfirmedPriceSync({
         baseItemId,
-        baseIdentifier: typeof item.identifier === "string" ? item.identifier : null,
+        baseIdentifier,
         basePrice: Number.isFinite(Number(item.price)) ? Number(item.price) : null,
         listings,
       });
@@ -81,7 +90,7 @@ export async function POST(request: Request) {
         listingId: decision.listingId,
         basePrice: Number(item.price),
         canonicalPrice: decision.canonicalPrice,
-        baseIdentifier: String(item.identifier ?? ""),
+        baseIdentifier,
       }];
     });
 
