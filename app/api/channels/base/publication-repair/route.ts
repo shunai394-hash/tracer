@@ -144,29 +144,40 @@ export async function POST(request: Request) {
       .in("external_product_id", ACTION_IDS);
     if (linkError) throw new Error("PUBLICATION_REPAIR_STALE_LINK_CHECK_FAILED");
     const listingReferences = (linked ?? []).map((row) => String(row.external_product_id));
+    const observed = (id: string) => {
+      const item = items.get(id);
+      return item ? { visible: item.visible, price: item.price, sku: item.sku } : null;
+    };
+    const withObserved = <T extends { staleId?: string; itemId?: string; canonicalId?: string }>(row: T) => ({
+      ...row,
+      observed: observed(row.staleId ?? row.itemId ?? ""),
+      canonicalObserved: row.canonicalId ? observed(row.canonicalId) : undefined,
+    });
     const blocked = deletes.some((row) => !row.ok) || hides.some((row) => !row.ok) || errors.some((row) => !row.ok)
       || orders.complete !== true || orders.matches.length > 0 || listingReferences.length > 0;
+    const readyDeletes = deletes.filter((row) => row.ok);
+    const readyHides = hides.filter((row) => row.ok);
 
-    if (!apply || blocked) {
+    if (!apply || orders.complete !== true || orders.matches.length > 0 || listingReferences.length > 0) {
       return NextResponse.json({
         ok: !blocked,
         readOnly: true,
         snapshotComplete: true,
         itemCount: snapshot.items.length,
-        deletes,
-        hides,
-        errorItems: errors,
+        deletes: deletes.map(withObserved),
+        hides: hides.map(withObserved),
+        errorItems: errors.map(withObserved),
         orderScan: orders,
         listingReferences,
         blocked,
         message: blocked
           ? "Repair refused. A target no longer matches the verified pair, or an order or listing still references it."
           : "Dry run only. No BASE item was deleted or hidden.",
-      }, { status: blocked ? 409 : 200 });
+      }, { status: orders.complete !== true || orders.matches.length > 0 || listingReferences.length > 0 ? 409 : 200 });
     }
 
     const results: Array<{ itemId: string; outcome: string }> = [];
-    for (const pair of HIDDEN_DUPLICATE_DELETES) {
+    for (const pair of HIDDEN_DUPLICATE_DELETES.filter((candidate) => readyDeletes.some((row) => row.staleId === candidate.staleId))) {
       const before = new Map<string, PublicationRepairItem>();
       for (const id of [pair.staleId, pair.canonicalId]) {
         const detail = await readDetail(id);
@@ -186,7 +197,7 @@ export async function POST(request: Request) {
       results.push({ itemId: pair.staleId, outcome: "deleted_and_readback_verified" });
     }
 
-    for (const pair of VISIBLE_NONCANONICAL_HIDES) {
+    for (const pair of VISIBLE_NONCANONICAL_HIDES.filter((candidate) => readyHides.some((row) => row.staleId === candidate.staleId))) {
       const raw = await getBaseItemDetail(pair.staleId);
       const title = typeof raw.title === "string" ? raw.title : "";
       const detail = typeof raw.detail === "string" ? raw.detail : null;
