@@ -31,9 +31,8 @@ function nativeId(value: string | null): value is string {
 
 /**
  * Read-only supplier evidence diagnostic.
- * Reads supplier_offers and requests live CJ variant/stock/freight data, but does
- * not update product, offer, listing, BASE, or Shopify records. The shared CJ
- * client may still maintain its own API quota/rate-limit bookkeeping.
+ * Does not write product, offer, listing, BASE, or Shopify records. The shared
+ * CJ client may update API quota/rate-limit bookkeeping in Supabase.
  */
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -65,64 +64,70 @@ export async function GET(request: Request) {
 
   const found = (offers ?? []) as OfferRow[];
   const byId = new Map(found.map((offer) => [offer.id, offer]));
-  const results = [];
+  const results: Array<Record<string, unknown>> = [];
 
-  // Deliberately sequential: CJ applies a strict request-rate limit.
+  // Sequential requests respect CJ's shared request-rate limit.
   for (const offerId of offerIds) {
     const offer = byId.get(offerId);
     if (!offer) {
-      results.push({ offerId, ok: false, error: "cj_offer_not_found" });
+      results.push({ offerId, ok: false, status: "failed", error: "cj_offer_not_found" });
       continue;
     }
 
     const productId = offer.supplier_product_id?.trim() ?? "";
     const variantId = offer.supplier_variant_id?.trim() ?? "";
     if (!nativeId(productId) || !nativeId(variantId)) {
-      results.push({ offerId, ok: false, error: "invalid_stored_cj_native_ids" });
+      results.push({ offerId, ok: false, status: "failed", error: "invalid_stored_cj_native_ids" });
       continue;
     }
+
+    const stored = {
+      sourceStatus: offer.source_status,
+      unitCost: offer.unit_cost,
+      shippingCost: offer.shipping_cost,
+      inventory: offer.inventory,
+      shipTo: offer.ship_to,
+      trackingSupported: offer.tracking_supported,
+      lastCheckedAt: offer.last_checked_at,
+      supplierUrl: offer.supplier_url,
+    };
 
     try {
       const variant = await fetchCJVariantByVid(variantId);
       if (!variant) {
         results.push({
-          offerId,
-          ok: false,
-          error: "cj_variant_not_found",
-          stored: {
-            supplierProductId: productId,
-            supplierVariantId: variantId,
-            sourceStatus: offer.source_status,
-            inventory: offer.inventory,
-            shippingCost: offer.shipping_cost,
-            shipTo: offer.ship_to,
-            trackingSupported: offer.tracking_supported,
-            lastCheckedAt: offer.last_checked_at,
-          },
+          offerId, ok: false, status: "failed", error: "cj_variant_not_found",
+          identityVerified: false, stockVerified: false, freightVerified: false,
+          stored: { ...stored, supplierProductId: productId, supplierVariantId: variantId },
         });
         continue;
       }
 
       const parentMatches = variant.productId === productId;
-      if (!parentMatches || variant.vid !== variantId) {
+      const variantMatches = variant.vid === variantId;
+      if (!parentMatches || !variantMatches) {
         results.push({
-          offerId,
-          ok: false,
-          error: "stored_cj_identity_mismatch",
+          offerId, ok: false, status: "mismatch", error: "stored_cj_identity_mismatch",
+          identityVerified: false, stockVerified: false, freightVerified: false,
           identity: {
-            storedProductId: productId,
-            liveProductId: variant.productId,
-            storedVariantId: variantId,
-            liveVariantId: variant.vid,
-            parentMatches,
-            variantMatches: variant.vid === variantId,
+            storedProductId: productId, liveProductId: variant.productId,
+            storedVariantId: variantId, liveVariantId: variant.vid,
+            parentMatches, variantMatches,
           },
+          stored,
           publicationDecision: "not_evaluated_or_changed",
         });
         continue;
       }
 
-      const stock = await fetchCJVariantStock(variantId);
+      let stock: unknown = null;
+      let stockError: string | null = null;
+      try {
+        stock = await fetchCJVariantStock(variantId);
+      } catch (error) {
+        stockError = error instanceof Error ? error.message : String(error);
+      }
+
       const freightDiagnostics: string[] = [];
       let freight: number | null = null;
       let freightError: string | null = null;
@@ -138,57 +143,71 @@ export async function GET(request: Request) {
         freightError = error instanceof Error ? error.message : String(error);
       }
 
+      const stockVerified = stock !== null && stock !== undefined && stockError === null;
+      const freightVerified = typeof freight === "number" && Number.isFinite(freight) && freight >= 0 && freightError === null;
+      // Tracking is deliberately not inferred from a stored boolean. This route
+      // cannot certify end-to-end tracking support, so it can never return a
+      // fully verified/sale-ready status.
+      const status = !stockVerified || !freightVerified
+        ? "partial_data_unverified"
+        : "partial_unverified_tracking";
+
       results.push({
         offerId,
-        ok: parentMatches,
+        ok: false,
+        status,
+        identityVerified: true,
+        stockVerified,
+        freightVerified,
+        trackingVerified: false,
         identity: {
-          storedProductId: productId,
-          liveProductId: variant.productId,
-          storedVariantId: variantId,
-          liveVariantId: variant.vid,
-          parentMatches,
-          variantMatches: variant.vid === variantId,
-          sku: variant.sku,
-          nameEn: variant.nameEn,
+          storedProductId: productId, liveProductId: variant.productId,
+          storedVariantId: variantId, liveVariantId: variant.vid,
+          parentMatches, variantMatches, sku: variant.sku, nameEn: variant.nameEn,
         },
         live: {
           verifiedWarehouseInventory: variant.inventory,
           inventoryByCountry: variant.inventoryByCountry,
           stockEndpointInventory: stock,
+          stockError,
           japanFreightQuote: freight,
           freightDiagnostics,
           freightError,
-          // This endpoint does not establish parcel tracking capability.
           trackingCapability: "not_verified_by_this_endpoint",
         },
-        stored: {
-          sourceStatus: offer.source_status,
-          unitCost: offer.unit_cost,
-          shippingCost: offer.shipping_cost,
-          inventory: offer.inventory,
-          shipTo: offer.ship_to,
-          trackingSupported: offer.tracking_supported,
-          lastCheckedAt: offer.last_checked_at,
-          supplierUrl: offer.supplier_url,
-        },
+        stored,
         publicationDecision: "not_evaluated_or_changed",
       });
     } catch (error) {
       results.push({
         offerId,
         ok: false,
+        status: "failed",
         error: error instanceof Error ? error.message : String(error),
+        identityVerified: false,
+        stockVerified: false,
+        freightVerified: false,
+        trackingVerified: false,
         publicationDecision: "not_evaluated_or_changed",
       });
     }
   }
 
+  const counts = results.reduce<Record<string, number>>((acc, result) => {
+    const status = String(result.status ?? "unknown");
+    acc[status] = (acc[status] ?? 0) + 1;
+    return acc;
+  }, {});
+
   return NextResponse.json({
-    ok: results.every((item) => item.ok),
+    // "ok" means the full evidence set is complete; this endpoint intentionally
+    // cannot achieve that while tracking capability remains unverified.
+    ok: results.length > 0 && results.every((result) => result.status === "verified"),
     mode: "read_only_supplier_evidence_diagnostic",
     requested: offerIds.length,
-    checked: results.filter((item) => item.ok).length,
+    checked: results.filter((result) => result.identityVerified === true).length,
+    counts,
     results,
-    note: "No product, supplier offer, listing, BASE, or Shopify records are written by this route. CJ client quota/rate-limit bookkeeping may update independently.",
+    note: "This route never certifies an offer as sale-ready because tracking is not independently verified here. No product, supplier offer, listing, BASE, or Shopify records are written; CJ quota/rate-limit bookkeeping may update independently.",
   });
 }
