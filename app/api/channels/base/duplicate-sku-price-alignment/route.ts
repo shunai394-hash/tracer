@@ -70,7 +70,7 @@ export async function POST(request: Request) {
         const stock = Number(item.stock);
         const title = typeof item.title === "string" ? item.title : "";
         const detail = typeof item.detail === "string" ? item.detail : "";
-        if (visible === null || !Number.isFinite(stock) || stock < 0 || !title.trim() || typeof item.detail !== "string") {
+        if (visible === null || !Number.isFinite(stock) || stock < 0 || !title.trim()) {
           rejected.push({ sku, itemId: ids[i], reason: "live_item_state_incomplete" });
           continue;
         }
