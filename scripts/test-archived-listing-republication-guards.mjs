@@ -17,6 +17,9 @@ assert.match(base, /\.is\("archived_at", null\)/,
   "BASE publication query must exclude archived rows, including explicit listing ID retries");
 assert.match(shopify, /\.is\("archived_at", null\)/,
   "Shopify sync query must exclude archived rows, including explicit listing ID retries");
+const preview = shopify.slice(shopify.indexOf("export async function previewShopifySync"));
+assert.match(preview, /\.is\("archived_at", null\)/,
+  "Shopify sync preview must use the same archive exclusion as the live sync");
 assert.equal((inventory.match(/\.is\("archived_at", null\)/g) ?? []).length, 2,
   "both inventory-refresh candidate queries must exclude archived rows");
 assert.match(price, /\.is\("archived_at", null\)/,
